@@ -48,7 +48,14 @@ pub const CONTAINERS: [&str; 3] = ["mp4", "mkv", "webm"];
 /// §A's Codec row: h264, h265, vp9.
 pub const CODECS: [&str; 3] = ["h264", "h265", "vp9"];
 /// §A's Preset row, fastest to smallest.
-pub const PRESETS: [&str; 6] = ["ultrafast", "veryfast", "fast", "medium", "slow", "veryslow"];
+pub const PRESETS: [&str; 6] = [
+    "ultrafast",
+    "veryfast",
+    "fast",
+    "medium",
+    "slow",
+    "veryslow",
+];
 /// §A's Resolution row: the short side of the frame, or the footage's own size.
 pub const RESOLUTIONS: [&str; 3] = ["720p", "1080p", "original"];
 /// §A's Frame rate row. `source` keeps the recording's own rate.
@@ -328,15 +335,18 @@ pub const NEGATIVE_LINES: usize = 2;
 pub const INSTRUCTION_TIP: &str = "What the image model is told to make out of the images. No words: the title and the marked texts are printed on afterwards.";
 
 /// §A's Negative prompt tooltip.
-pub const NEGATIVE_TIP: &str = "What must stay out of the picture — watermarks, logos, lettering, extra limbs.";
+pub const NEGATIVE_TIP: &str =
+    "What must stay out of the picture — watermarks, logos, lettering, extra limbs.";
 
 // ---- C. the thumbnail and its text overlays (§1) ---------------------------------
 
 /// §A's ⤓ export: what YouTube takes is a JPEG under 2 MB, so the export says which limit it keeps under.
-pub const EXPORT_TIP: &str = "Export the thumbnail as a JPEG — what YouTube takes, under its 2 MB limit";
+pub const EXPORT_TIP: &str =
+    "Export the thumbnail as a JPEG — what YouTube takes, under its 2 MB limit";
 
 /// §A's ↻ redraw: the same images and instruction, a fresh draw.
-pub const REDRAW_TIP: &str = "Draw the thumbnail again from the images and the instruction as they stand — a fresh draw";
+pub const REDRAW_TIP: &str =
+    "Draw the thumbnail again from the images and the instruction as they stand — a fresh draw";
 
 /// §A ("Text overlays"): the picture column's width, the smallest box that can hold words, the snap
 /// distance to the picture's edges and middles and to other boxes, and the ✎ chip's size.

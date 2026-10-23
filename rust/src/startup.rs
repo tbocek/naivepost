@@ -93,7 +93,10 @@ pub fn last_project(conf: &settings::Conf, root: &Path) -> Option<PathBuf> {
 /// `project.json` stays the plain path it is.
 pub fn project_folder(path: &Path) -> PathBuf {
     if path.file_name().and_then(|name| name.to_str()) == Some(project::PROJECT_FILE) {
-        return path.parent().map(Path::to_path_buf).unwrap_or_else(|| path.to_path_buf());
+        return path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| path.to_path_buf());
     }
     path.to_path_buf()
 }
@@ -109,11 +112,15 @@ pub fn project_folder(path: &Path) -> PathBuf {
 /// Which project this launch opened is not recorded here either; that is F0.9's `rememberProject`.
 pub fn decide(root: &Path, conf: &settings::Conf, handed: &[PathBuf]) -> Opened {
     if let Some(path) = handed.first() {
-        return Opened::Desktop { path: project_folder(path) };
+        return Opened::Desktop {
+            path: project_folder(path),
+        };
     }
 
     if let Some(path) = last_project(conf, root) {
-        return Opened::Remembered { path: project_folder(&path) };
+        return Opened::Remembered {
+            path: project_folder(&path),
+        };
     }
 
     let session = session_dir(root);

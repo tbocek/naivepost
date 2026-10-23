@@ -161,7 +161,8 @@ where
         let entries = match narrate_reply::entries_of(&answer) {
             Ok(entries) => entries,
             Err(problem) => {
-                last_problem = format!("the reply could not be read as narration entries: {problem}");
+                last_problem =
+                    format!("the reply could not be read as narration entries: {problem}");
                 reject(&mut on_reject, attempt, &last_problem, false, &mut thinking);
                 continue;
             }
@@ -175,7 +176,8 @@ where
         for entry in &entries {
             let found = (cursor..clips.len()).find(|&i| {
                 (entry.start - clips[i].s).abs() <= narrate_reply::ENTRY_MATCH_TOLERANCE_SECONDS
-                    && (entry.end - clips[i].e).abs() <= narrate_reply::ENTRY_MATCH_TOLERANCE_SECONDS
+                    && (entry.end - clips[i].e).abs()
+                        <= narrate_reply::ENTRY_MATCH_TOLERANCE_SECONDS
             });
             let Some(index) = found else {
                 problem = narrate_reply::unmatched_entry_fault(entry.start, entry.end);
@@ -197,7 +199,13 @@ where
         }
         if !problem.is_empty() {
             last_problem = problem;
-            reject(&mut on_reject, attempt, &last_problem, !written.is_empty(), &mut thinking);
+            reject(
+                &mut on_reject,
+                attempt,
+                &last_problem,
+                !written.is_empty(),
+                &mut thinking,
+            );
             continue;
         }
         if written.iter().all(|line| line.text.trim().is_empty()) {
@@ -238,7 +246,10 @@ pub fn drive_by_clips<FReply, FProgress, FUnfitted, FReject>(
     mut on_reject: FReject,
 ) -> Result<Vec<narrate_run::Written>, String>
 where
-    FReply: FnMut(u32 /*attempt*/, bool /*thinking*/) -> Result<crate::narrate_live::Round, String>,
+    FReply: FnMut(
+        u32,  /*attempt*/
+        bool, /*thinking*/
+    ) -> Result<crate::narrate_live::Round, String>,
     FProgress: FnMut(u32, u32),
     FUnfitted: FnMut(&[narrate_run::Written]) -> Vec<u32>,
     FReject: FnMut(&str),
@@ -268,8 +279,10 @@ where
         let mut slots: Vec<Option<&crate::narrate_live::Picked>> = vec![None; clips.len()];
         for pick in &said.picks {
             let Some(index) = (1..=total).find(|n| *n == pick.clip) else {
-                problem = crate::cut_captions::clip_outside(pick.clip, 1, total)
-                    .unwrap_or_else(|| format!("clip {} is not one of this edit's clips", pick.clip));
+                problem =
+                    crate::cut_captions::clip_outside(pick.clip, 1, total).unwrap_or_else(|| {
+                        format!("clip {} is not one of this edit's clips", pick.clip)
+                    });
                 break;
             };
             let slot = &mut slots[index as usize - 1];
@@ -308,7 +321,9 @@ where
             continue;
         }
         // Silence must be SAID: a clip with neither a line nor `leave_silent` fails the attempt, named.
-        let missing: Vec<u32> = (1..=total).filter(|n| slots[(*n - 1) as usize].is_none()).collect();
+        let missing: Vec<u32> = (1..=total)
+            .filter(|n| slots[(*n - 1) as usize].is_none())
+            .collect();
         if let Some(first) = missing.first() {
             last_problem = narrate_reply::clip_without_entry(*first - 1, clips);
             reject(&mut on_reject, attempt, &last_problem, true, &mut thinking);
@@ -369,6 +384,8 @@ mod smoke {
     #[test]
     fn a_context_outranks_the_job_so_the_precedence_rule_closes_the_system_message() {
         let got = request("JOB", "", "a game session", &[], &[], &[], "", false);
-        assert!(got.system.ends_with(&crate::prompt_assembly::precedence_rule()));
+        assert!(got
+            .system
+            .ends_with(&crate::prompt_assembly::precedence_rule()));
     }
 }

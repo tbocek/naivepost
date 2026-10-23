@@ -58,7 +58,11 @@ pub struct Built {
 pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Built {
     let mut built = Built::default();
     // A label is §4's "nothing": filtered out before any builder sees it, so it cannot reach a filter by accident.
-    let drawn: Vec<Fx> = fx.iter().filter(|e| render_fx::is_rendered(&e.kind)).cloned().collect();
+    let drawn: Vec<Fx> = fx
+        .iter()
+        .filter(|e| render_fx::is_rendered(&e.kind))
+        .cloned()
+        .collect();
     let footage = footage_length(clip);
 
     // --- the camera: sampled, capped, then either crop+scale or zoompan -------------------------------------
@@ -73,7 +77,9 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
     // the whole picture would only give the encoder something to resample. §4's static branch is a CROP, so a parked
     // camera that looks anywhere but at the full frame does get its pair.
     if !samples.is_empty() && (!render_fx::is_static(&samples) || !fills_frame(&samples[0])) {
-        built.video.extend(render_fx::camera_chain(&samples, src, clip.frame));
+        built
+            .video
+            .extend(render_fx::camera_chain(&samples, src, clip.frame));
     }
 
     // --- the stop: a still over footage that runs on ----------------------------------------------------------------
@@ -90,14 +96,24 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
         // reads. Naming it under the scratch folder keeps it out of the project and out of the next run (§3).
         built.inputs.push((
             "still".to_string(),
-            Some(scratch.join(still_name(clip.no, stop.t)).display().to_string()),
+            Some(
+                scratch
+                    .join(still_name(clip.no, stop.t))
+                    .display()
+                    .to_string(),
+            ),
         ));
     }
 
     // --- words and drawings: after the camera and the burned cues -------------------------------------------------
     for (index, effect) in drawn
         .iter()
-        .filter(|e| matches!(e.effect_kind(), Some(EffectKind::Text) | Some(EffectKind::Svg)))
+        .filter(|e| {
+            matches!(
+                e.effect_kind(),
+                Some(EffectKind::Text) | Some(EffectKind::Svg)
+            )
+        })
         .enumerate()
     {
         let from = (effect.t - clip.seg_s).max(0.0);
@@ -111,7 +127,9 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
                     sheet.clone(),
                     render_fx::title_svg(&effect.text, box_px.2, box_px.3),
                 ));
-                built.inputs.push(("text".to_string(), Some(sheet.display().to_string())));
+                built
+                    .inputs
+                    .push(("text".to_string(), Some(sheet.display().to_string())));
             }
             Some(EffectKind::Svg) => {
                 // Their document, our box. An empty path is a drawing whose file went away: say so and draw nothing
@@ -120,8 +138,12 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
                     built.logs.push(missing_drawing_log(clip.no));
                     continue;
                 }
-                built.video.extend(render_fx::scaled_into_box(&effect.src, box_px));
-                built.inputs.push(("svg".to_string(), Some(effect.src.clone())));
+                built
+                    .video
+                    .extend(render_fx::scaled_into_box(&effect.src, box_px));
+                built
+                    .inputs
+                    .push(("svg".to_string(), Some(effect.src.clone())));
             }
             _ => {}
         }
@@ -139,10 +161,11 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
     // --- the sound of a re-timed stretch ----------------------------------------------------------------------------
     // `snd` is stored on the speed effect itself; a stop carries rate 0 and its own sound answer, so the first
     // sped effect with a spelling wins and a clip nobody re-timed gets nothing from here.
-    if let Some(speed) = drawn
-        .iter()
-        .find(|e| e.effect_kind() == Some(EffectKind::Speed) && !crate::fx_record::is_stop(e) && !e.snd.is_empty())
-    {
+    if let Some(speed) = drawn.iter().find(|e| {
+        e.effect_kind() == Some(EffectKind::Speed)
+            && !crate::fx_record::is_stop(e)
+            && !e.snd.is_empty()
+    }) {
         built.audio.extend(sound_of(clip, speed));
     }
 
@@ -155,14 +178,11 @@ pub fn for_clip(clip: &Clip, fx: &[Fx], src: (i32, i32), scratch: &Path) -> Buil
     // recording can still be taken apart, and the rest ride after it. One list per side
     // is what keeps the order honest — a lane-named duck appended to the summed bed would
     // have no lane to act on any more.
-    let (before, after): (Vec<_>, Vec<_>) = cues
-        .into_iter()
-        .partition(|cue| cue.before_the_mix());
+    let (before, after): (Vec<_>, Vec<_>) = cues.into_iter().partition(|cue| cue.before_the_mix());
     for cue in &before {
-        built.audio.push(render_fx::gain_chain(
-            std::slice::from_ref(cue),
-            &cue.lane,
-        ));
+        built
+            .audio
+            .push(render_fx::gain_chain(std::slice::from_ref(cue), &cue.lane));
     }
     if !after.is_empty() {
         built.audio.push(render_fx::gain_chain(&after, "snd"));
@@ -202,13 +222,23 @@ fn sound_of(clip: &Clip, speed: &Fx) -> Vec<String> {
 pub fn box_px(effect: &Fx, frame: (i32, i32)) -> (i32, i32, i32, i32) {
     let (cx, cy) = effect.centre();
     let fallback = match effect.effect_kind() {
-        Some(EffectKind::Text) => (crate::fx_text::LOWER_THIRD.wf, crate::fx_text::LOWER_THIRD.hf),
+        Some(EffectKind::Text) => (
+            crate::fx_text::LOWER_THIRD.wf,
+            crate::fx_text::LOWER_THIRD.hf,
+        ),
         _ => (crate::fx_svg::MIDDLE.wf, crate::fx_svg::MIDDLE.hf),
     };
-    let wf = effect.wf.unwrap_or(fallback.0).clamp(crate::fx_text::MIN_WIDTH_FRACTION, 1.0);
-    let hf = effect.hf.unwrap_or(fallback.1).clamp(crate::fx_text::MIN_HEIGHT_FRACTION, 1.0);
+    let wf = effect
+        .wf
+        .unwrap_or(fallback.0)
+        .clamp(crate::fx_text::MIN_WIDTH_FRACTION, 1.0);
+    let hf = effect
+        .hf
+        .unwrap_or(fallback.1)
+        .clamp(crate::fx_text::MIN_HEIGHT_FRACTION, 1.0);
     let w = even((wf * frame.0 as f64).round() as i32);
-    let h = even((hf * frame.1 as f64).round() as i32);    let x = ((cx * frame.0 as f64) - w as f64 / 2.0).max(0.0).round() as i32;
+    let h = even((hf * frame.1 as f64).round() as i32);
+    let x = ((cx * frame.0 as f64) - w as f64 / 2.0).max(0.0).round() as i32;
     let y = ((cy * frame.1 as f64) - h as f64 / 2.0).max(0.0).round() as i32;
     (x.min(frame.0 - w).max(0), y.min(frame.1 - h).max(0), w, h)
 }

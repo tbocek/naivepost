@@ -130,7 +130,10 @@ pub fn offsets_rows(sources: &[Source]) -> Vec<(String, String, f64)> {
 /// S1: what one pairing says — which recording starts how far into which, the sentence a reader of
 /// `offsets.tsv` needs beside the numbers.
 pub fn offsets_log(video: &str, audio: &str, offset: f64) -> String {
-    format!(">>> offset: {video} starts {} s into {audio}", fix_seconds(offset))
+    format!(
+        ">>> offset: {video} starts {} s into {audio}",
+        fix_seconds(offset)
+    )
 }
 
 /// Seconds as §6 spells them in this log: whole numbers lose the `.0`, so a pairing that lands exactly
@@ -178,7 +181,12 @@ pub fn load_events(tree: &Tree, source: &str) -> Vec<FrameEvent> {
 pub(crate) fn refused(answer: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(answer)
         .ok()
-        .and_then(|value| value.get("error").and_then(serde_json::Value::as_str).map(str::to_string))
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        })
         .is_some()
 }
 
@@ -199,7 +207,10 @@ fn refusal_reason(answer: &str) -> String {
 /// stays short, because the model is asked for exactly its own count and padding it with lines from
 /// nowhere would be asking for fixes to lines that do not exist.
 pub fn blocks(lines: &[Line]) -> Vec<Vec<Line>> {
-    lines.chunks(FIX_BLOCK_LINES).map(|block| block.to_vec()).collect()
+    lines
+        .chunks(FIX_BLOCK_LINES)
+        .map(|block| block.to_vec())
+        .collect()
 }
 
 /// S2: the grounding window around a block — five seconds either side ([`FIX_CONTEXT_SECONDS`]).
@@ -373,7 +384,7 @@ where
                     valid: true,
                     // This ask answered it: 1 means the first try, which is the only one §6 caches.
                     attempt: try_number,
-                })
+                });
             }
         }
     }
@@ -408,7 +419,10 @@ fn apply(block: &Block, lines: &[Line]) -> Vec<Line> {
 /// a reader who sees only "failed" looks for a crash, and there was none: the answer would not validate
 /// twice, so this block keeps the ASR's own lines and every other block still gets fixed.
 pub fn block_failed_log(base: &str, index: usize, total: usize) -> String {
-    format!(">>> [{base}] block {}/{total} failed validation, keeping original lines", index + 1)
+    format!(
+        ">>> [{base}] block {}/{total} failed validation, keeping original lines",
+        index + 1
+    )
 }
 
 /// S3: how many of this source's blocks were read back from `cache/llm/fix` rather than asked again.
@@ -480,7 +494,10 @@ pub fn cached_block(tree: &Tree, lines: &[Line]) -> Option<Vec<Reply>> {
 
 /// S3: store a valid block's text, one line per row in the block's own order.
 pub fn store_block(tree: &Tree, lines: &[Line], fixed: &[Line]) -> Result<(), String> {
-    let text: String = fixed.iter().map(|line| format!("{}\n", line.text)).collect();
+    let text: String = fixed
+        .iter()
+        .map(|line| format!("{}\n", line.text))
+        .collect();
     // Through `llm_cache` so §6's store rules hold here too: an empty answer is never filed, and a
     // cache that will not write comes back as a sentence for the log instead of failing the fix.
     match crate::llm_cache::store_at(tree, FIX_STEP, &block_key(lines), &text) {
@@ -534,7 +551,10 @@ pub fn write_fixed(
     let mut written = vec![tsv];
     if is_video {
         // The same writer the transcript step used, so both files carry §6's 0644 and one shape.
-        textfmt::write_rows(&tree.subtitles_srt(source), &crate::transcribe::srt_text(lines))?;
+        textfmt::write_rows(
+            &tree.subtitles_srt(source),
+            &crate::transcribe::srt_text(lines),
+        )?;
         written.push(tree.subtitles_srt(source));
     }
     Ok(written)
@@ -571,7 +591,11 @@ pub fn merge_session(
             });
         }
     }
-    rows.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
+    rows.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     rows
 }
 
@@ -809,7 +833,10 @@ where
 
     // S1: the clock first, and `offsets.tsv` with it — before any block goes out, so the seconds a
     // block's context names are ones the timeline on disk already agrees with.
-    let names: Vec<&str> = sources.iter().map(|source| source.file_name.as_str()).collect();
+    let names: Vec<&str> = sources
+        .iter()
+        .map(|source| source.file_name.as_str())
+        .collect();
     let starts = placement(&names);
     let placed: Vec<Source> = sources
         .iter()
@@ -856,7 +883,9 @@ where
         let every_event: Vec<(String, FrameEvent)> = events_by_source
             .iter()
             .flat_map(|(base, events)| {
-                events.iter().map(move |event| (base.clone(), event.clone()))
+                events
+                    .iter()
+                    .map(move |event| (base.clone(), event.clone()))
             })
             .collect();
 
@@ -881,7 +910,8 @@ where
             out.blocks += 1;
             out.fixed_lines += outcome.fixed;
             for (n, why) in outcome.flags {
-                out.logs.push(format!(">>> {} line {n}: {why}", source.base));
+                out.logs
+                    .push(format!(">>> {} line {n}: {why}", source.base));
             }
             if !outcome.valid {
                 out.logs.push(give_up_log(&source.base, index, total));
@@ -895,7 +925,8 @@ where
                     out.logs.push(format!("!!! could not keep the fix: {err}"));
                 }
             } else {
-                out.logs.push(repaired_uncached_log(&source.base, index, total));
+                out.logs
+                    .push(repaired_uncached_log(&source.base, index, total));
             }
             fixed_lines.extend(outcome.lines);
         }

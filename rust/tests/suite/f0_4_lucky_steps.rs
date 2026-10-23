@@ -45,7 +45,9 @@ fn f0_4_s4_a_walked_plan_is_ran_and_tallied_under_its_page_name() {
         other => panic!("two real tasks is a run, got {other:?}"),
     }
     // And the chain does tally it: hand it back and the end line names the step that ran.
-    let mut chain = naivepost::lucky::Chain::start(false).expect("idle press opens").0;
+    let mut chain = naivepost::lucky::Chain::start(false)
+        .expect("idle press opens")
+        .0;
     chain.set_narration_off(true);
     chain.set_hand_edits(true);
     // Prepare runs, everything else skips itself, so the tally holds exactly Prepare.
@@ -77,7 +79,11 @@ fn f0_4_s4_a_walked_plan_is_ran_and_tallied_under_its_page_name() {
             naivepost::lucky::Advance::End { .. } => {}
         }
     }
-    assert_eq!(ran_after, vec!["Produce".to_string()], "only Cut and Narrate skip themselves");
+    assert_eq!(
+        ran_after,
+        vec!["Produce".to_string()],
+        "only Cut and Narrate skip themselves"
+    );
     if let naivepost::lucky::Advance::End { line, status } = advance {
         lines.push(line);
         lines.push(status);
@@ -101,7 +107,10 @@ fn f0_4_s4_a_walked_plan_is_ran_and_tallied_under_its_page_name() {
 #[test]
 fn f0_4_s5_a_failed_walk_walks_on_where_a_stopped_one_ends() {
     assert_eq!(
-        outcome_of(&Drive::Failed { stage: "speech", error: "audio.cpp: not on PATH".into() }),
+        outcome_of(&Drive::Failed {
+            stage: "speech",
+            error: "audio.cpp: not on PATH".into()
+        }),
         StepOutcome::Failed,
         "a failure names itself in the log but is not a halt"
     );
@@ -224,7 +233,10 @@ fn f0_4_s4_the_chain_walks_a_real_stage_plan() {
         |_| {},
         &mut handles.procs.borrow_mut(),
     );
-    assert!(matches!(drive, Drive::Done { ran: 1, .. }), "the task ran: {drive:?}");
+    assert!(
+        matches!(drive, Drive::Done { ran: 1, .. }),
+        "the task ran: {drive:?}"
+    );
     assert!(marker.is_file(), "the walk really spawned the task");
     // ...and the mapping the gears apply to that very result is a `Ran`.
     assert_eq!(outcome_of(&drive), StepOutcome::Ran { seconds: 0 });
@@ -242,7 +254,8 @@ fn sentence_outcome(said: &str) -> StepOutcome {
 }
 
 fn scratch(tag: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("naivepost-f04-lucky-{tag}-{}", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("naivepost-f04-lucky-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch folder");
     dir
@@ -250,7 +263,13 @@ fn scratch(tag: &str) -> std::path::PathBuf {
 
 fn project_with_recording() -> Project {
     Project {
-        sources: vec![Source { path: "take.mp4".to_string(), footage: true, narrator: 0, sepvoice: false, tracks: vec![] }],
+        sources: vec![Source {
+            path: "take.mp4".to_string(),
+            footage: true,
+            narrator: 0,
+            sepvoice: false,
+            tracks: vec![],
+        }],
         ..Default::default()
     }
 }

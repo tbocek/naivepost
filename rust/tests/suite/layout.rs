@@ -4,9 +4,9 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use naivepost::layout::{self, Tree};
 use crate::common;
-use common::{temp_dir};
+use common::temp_dir;
+use naivepost::layout::{self, Tree};
 
 /// A project folder inside a throwaway application root: `<root>/<name>.naivepost`.
 fn fixture(tag: &str) -> (PathBuf, Tree) {
@@ -45,42 +45,57 @@ fn sec_01_project_and_files_1_layout_paths_match_the_spec_block() {
     assert_eq!(t.copy_part("cam.mkv"), here("sources/cam.mkv.part"));
     assert_eq!(t.stems_dir(), here("stems"));
     assert_eq!(t.split_voice("mic"), here("stems/mic.split-voice.wav"));
-    assert_eq!(t.split_novoice("cam", "mkv"), here("stems/cam.split-novoice.mkv"));
+    assert_eq!(
+        t.split_novoice("cam", "mkv"),
+        here("stems/cam.split-novoice.mkv")
+    );
 
     assert_eq!(t.meta_env(), here("prepare/inputs/meta.env"));
-    assert_eq!(t.voice16k_wav("mic"), here("prepare/inputs/mic/voice16k.wav"));
-    assert_eq!(t.transcript_txt("mic"), here("prepare/inputs/mic/transcript.txt"));
-    assert_eq!(t.transcript_tsv("mic"), here("prepare/inputs/mic/transcript.tsv"));
-    assert_eq!(t.transcript_srt("mic"), here("prepare/inputs/mic/transcript.srt"));
+    assert_eq!(
+        t.voice16k_wav("mic"),
+        here("prepare/inputs/mic/voice16k.wav")
+    );
+    assert_eq!(
+        t.transcript_txt("mic"),
+        here("prepare/inputs/mic/transcript.txt")
+    );
+    assert_eq!(
+        t.transcript_tsv("mic"),
+        here("prepare/inputs/mic/transcript.tsv")
+    );
+    assert_eq!(
+        t.transcript_srt("mic"),
+        here("prepare/inputs/mic/transcript.srt")
+    );
     assert_eq!(t.words_json("mic"), here("prepare/inputs/mic/words.json"));
-    assert_eq!(t.asrchunks_json("mic"), here("prepare/inputs/mic/asrchunks.json"));
+    assert_eq!(
+        t.asrchunks_json("mic"),
+        here("prepare/inputs/mic/asrchunks.json")
+    );
     assert_eq!(
         t.words_aligned_json("mic"),
         here("prepare/inputs/mic/words.aligned.json")
     );
     assert_eq!(t.turns_json("mic"), here("prepare/inputs/mic/turns.json"));
-    assert_eq!(
-        t.frames_dir("cam"),
-        here("prepare/inputs/frames/cam")
-    );
+    assert_eq!(t.frames_dir("cam"), here("prepare/inputs/frames/cam"));
     assert_eq!(t.events_tsv("cam"), here("prepare/describe/cam/events.tsv"));
-    assert_eq!(t.describe_state("cam"), here("prepare/describe/cam/state.txt"));
-    // P.machine.describeFrameWidth scales what goes into .llmframes/
-    assert_eq!(t.llm_frames_dir("cam"), here("prepare/describe/cam/.llmframes"));
     assert_eq!(
-        t.transcript_src_dir("mic"),
-        here("prepare/transcript/mic")
+        t.describe_state("cam"),
+        here("prepare/describe/cam/state.txt")
     );
+    // P.machine.describeFrameWidth scales what goes into .llmframes/
+    assert_eq!(
+        t.llm_frames_dir("cam"),
+        here("prepare/describe/cam/.llmframes")
+    );
+    assert_eq!(t.transcript_src_dir("mic"), here("prepare/transcript/mic"));
     assert_eq!(t.session_tsv(), here("prepare/transcript/session.tsv"));
     assert_eq!(t.session_txt(), here("prepare/transcript/session.txt"));
     assert_eq!(t.offsets_tsv(), here("prepare/transcript/offsets.tsv"));
     assert_eq!(t.retakes_tsv(), here("prepare/transcript/retakes.tsv"));
     assert_eq!(t.final_txt(), here("prepare/transcript/final.txt"));
 
-    assert_eq!(
-        t.cache_llm("cut", "ab12"),
-        here("cache/llm/cut/ab12")
-    );
+    assert_eq!(t.cache_llm("cut", "ab12"), here("cache/llm/cut/ab12"));
     assert_eq!(t.wave("cam-2"), here("cache/waves/cam-2.wave"));
     assert_eq!(t.edges_dir(), here("cache/edges"));
 
@@ -175,11 +190,16 @@ fn sec_01_project_and_files_1_layout_publish_legacy_is_read_never_migrated() {
 
     assert_eq!(t.publish_dir(), legacy);
     assert_eq!(t.publish_json(), legacy_file);
-    assert_eq!(std::fs::read_to_string(t.publish_json()).unwrap(), r#"{"title":"old"}"#);
+    assert_eq!(
+        std::fs::read_to_string(t.publish_json()).unwrap(),
+        r#"{"title":"old"}"#
+    );
 
     // Read there for ever: nothing moved, nothing copied, the new place untouched.
     assert!(legacy.exists());
-    assert!(!root.join("demo.naivepost/produce/publish/publish.json").exists());
+    assert!(!root
+        .join("demo.naivepost/produce/publish/publish.json")
+        .exists());
 
     // Once the new place exists it wins — that is a project written after the move.
     let now = root.join("demo.naivepost/produce/publish");
@@ -220,7 +240,11 @@ fn sec_01_project_and_files_1_layout_path_rule_three_forms_round_trip() {
     }
 
     assert_eq!(
-        layout::write_path(root, project, Path::new("/data/naivepost/lecture.naivepost/sources/a.mkv")),
+        layout::write_path(
+            root,
+            project,
+            Path::new("/data/naivepost/lecture.naivepost/sources/a.mkv")
+        ),
         "project:sources/a.mkv"
     );
     assert_eq!(

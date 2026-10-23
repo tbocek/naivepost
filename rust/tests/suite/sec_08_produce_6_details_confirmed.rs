@@ -13,8 +13,8 @@
 
 use naivepost::cut::{Fx, Seg};
 use naivepost::narration::Entry;
-use naivepost::produce_exec as exec;
 use naivepost::produce_details as details;
+use naivepost::produce_exec as exec;
 use naivepost::produce_flow as flow;
 use naivepost::produce_plan_logs as plan_logs;
 use naivepost::produce_render as render;
@@ -29,29 +29,63 @@ use common::produce_project as project;
 const TAPE: &[(f64, f64)] = &[(0.0, 600.0)];
 
 fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
+    Seg {
+        s,
+        e,
+        ..Default::default()
+    }
 }
 
 fn copy_seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ins: format!("copy:{}", e - s), ..Default::default() }
+    Seg {
+        s,
+        e,
+        ins: format!("copy:{}", e - s),
+        ..Default::default()
+    }
 }
 
 fn card_seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ins: "project:media/card.png".to_string(), ..Default::default() }
+    Seg {
+        s,
+        e,
+        ins: "project:media/card.png".to_string(),
+        ..Default::default()
+    }
 }
 
 fn line(s: f64, e: f64, text: &str) -> Entry {
-    Entry { s, e, text: text.to_string(), ..Default::default() }
+    Entry {
+        s,
+        e,
+        text: text.to_string(),
+        ..Default::default()
+    }
 }
 
 fn zoom_at(t: f64) -> Fx {
     // A rectangle of its own, so the camera really travels: a zoom that lands where the settled frame already
     // is moves nothing and the render correctly says no word about a fixed grid.
-    Fx { kind: "zoom".to_string(), t, dur: 2.0, cx: Some(0.3), cy: Some(0.4), hf: Some(0.5), ..Default::default() }
+    Fx {
+        kind: "zoom".to_string(),
+        t,
+        dur: 2.0,
+        cx: Some(0.3),
+        cy: Some(0.4),
+        hf: Some(0.5),
+        ..Default::default()
+    }
 }
 
 fn stop_at(t: f64) -> Fx {
-    Fx { kind: "speed".to_string(), t, dur: 1.0, rate: 0.0, snd: "mute".to_string(), ..Default::default() }
+    Fx {
+        kind: "speed".to_string(),
+        t,
+        dur: 1.0,
+        rate: 0.0,
+        snd: "mute".to_string(),
+        ..Default::default()
+    }
 }
 
 /// One planned run's log lines, over the tape the check names. `runs` is the filmed spans — the same list the
@@ -74,11 +108,19 @@ fn planned(
     let asset = root.join("card.png");
     std::fs::write(&asset, b"fake png").expect("a card can be staged");
     // The take door is the program's own: a real file on disk, or nothing to find.
-    let take = if take_on_disk { Some(root.join("take.wav")) } else { None };
+    let take = if take_on_disk {
+        Some(root.join("take.wav"))
+    } else {
+        None
+    };
     if let Some(path) = &take {
         std::fs::write(path, b"RIFFfake").expect("a take can be staged");
     }
-    let cut = naivepost::cut::Cut { segs, fx: fx.clone(), ..Default::default() };
+    let cut = naivepost::cut::Cut {
+        segs,
+        fx: fx.clone(),
+        ..Default::default()
+    };
     // The one door `plan_clips` and this walk both ask per segment; the cut carries the same list, so the
     // render's own answer and the planning answer are the same list, not two opinions about it.
     fx.sort_by(|a, b| a.t.total_cmp(&b.t));
@@ -93,7 +135,8 @@ fn planned(
         "1".to_string(),
     );
     let wav_of = move |_entry: &Entry| take.clone();
-    let exists = move |file: &str| file.ends_with("card.png") || std::path::Path::new(file).exists();
+    let exists =
+        move |file: &str| file.ends_with("card.png") || std::path::Path::new(file).exists();
     // The same arithmetic the produce page's own `footage_left` door answers with: the run covering the
     // segment's start, less the segment's end — so each clip gets its OWN leftover, and a clip no run covers
     // gets the page's "I do not know" (0.0), which is never read as a shortening.
@@ -130,7 +173,9 @@ fn planned(
         },
     };
     let plan = exec::plan(&run, &tree, &mats);
-    Planned { logs: plan.plan_logs }
+    Planned {
+        logs: plan.plan_logs,
+    }
 }
 
 fn project_sources() -> Vec<naivepost::project::Source> {
@@ -152,7 +197,8 @@ fn says(logs: &[String], line: &str) -> bool {
 }
 
 #[test]
-fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_copy_in_no_recording_is_said() {
+fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_copy_in_no_recording_is_said(
+) {
     assert_eq!(ITEM, "§08-produce#6-details-confirmed-against-the-code");
     let got = planned(
         "p6-s1-copy-nowhere",
@@ -171,7 +217,8 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_copy
 }
 
 #[test]
-fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_copy_past_the_end_is_shortened_out_loud() {
+fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_copy_past_the_end_is_shortened_out_loud(
+) {
     let got = planned(
         "p6-s1-copy-past",
         vec![copy_seg(10.0, 30.0)],
@@ -189,7 +236,8 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_copy
 }
 
 #[test]
-fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_sounds_on_no_recording_and_past_the_end() {
+fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_sounds_on_no_recording_and_past_the_end(
+) {
     let nowhere = planned(
         "p6-s1-sound-nowhere",
         vec![seg(120.0, 130.0)],
@@ -213,14 +261,18 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_soun
         false,
     );
     assert!(
-        says(&short.logs, &details::sound_past_end_log(1, "cam0.mp4", 12.0)),
+        says(
+            &short.logs,
+            &details::sound_past_end_log(1, "cam0.mp4", 12.0)
+        ),
         "{:?}",
         short.logs
     );
 }
 
 #[test]
-fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_an_insert_with_nothing_under_it_plays_silent() {
+fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_an_insert_with_nothing_under_it_plays_silent(
+) {
     let got = planned(
         "p6-s1-silent",
         vec![card_seg(10.0, 14.0)],
@@ -238,7 +290,8 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_an_i
 }
 
 #[test]
-fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_stop_on_no_recording_loses_its_still() {
+fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_stop_on_no_recording_loses_its_still(
+) {
     let got = planned(
         "p6-s1-stop",
         vec![seg(200.0, 210.0)],
@@ -269,7 +322,8 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_st
 }
 
 #[test]
-fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_card_with_no_line_keeps_its_own_audio() {
+fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_card_with_no_line_keeps_its_own_audio(
+) {
     // §6's exact-bounds half: the line carries the CARD's bounds, so nothing was ever written for it.
     let got = planned(
         "p6-s1-no-entry",
@@ -288,7 +342,8 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_ca
 }
 
 #[test]
-fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_line_with_no_take_is_captioned_only() {
+fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_line_with_no_take_is_captioned_only(
+) {
     let spoken = planned(
         "p6-s1-take",
         vec![seg(10.0, 15.0)],
@@ -318,7 +373,8 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_li
 }
 
 #[test]
-fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_moving_camera_names_its_fixed_grid() {
+fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_moving_camera_names_its_fixed_grid(
+) {
     let got = planned(
         "p6-s1-camera",
         vec![seg(0.0, 20.0)],
@@ -328,14 +384,27 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_mo
         false,
     );
     assert!(
-        says(&got.logs, &details::fixed_rate_log("clip 1", details::fixed_rate())),
+        says(
+            &got.logs,
+            &details::fixed_rate_log("clip 1", details::fixed_rate())
+        ),
         "{:?}",
         got.logs
     );
     // A parked camera (no zoom at all) says nothing: only a moving one needs the grid.
-    let still = planned("p6-s1-no-camera", vec![seg(0.0, 20.0)], Vec::new(), Vec::new(), TAPE, false);
+    let still = planned(
+        "p6-s1-no-camera",
+        vec![seg(0.0, 20.0)],
+        Vec::new(),
+        Vec::new(),
+        TAPE,
+        false,
+    );
     assert!(
-        !says(&still.logs, &details::fixed_rate_log("clip 1", details::fixed_rate())),
+        !says(
+            &still.logs,
+            &details::fixed_rate_log("clip 1", details::fixed_rate())
+        ),
         "{:?}",
         still.logs
     );
@@ -356,19 +425,31 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_clip
         &[(0.0, 45.0)],
         false,
     );
-    assert!(says(&got.logs, &details::sound_past_end_log(2, "cam0.mp4", 5.0)), "{:?}", got.logs);
+    assert!(
+        says(&got.logs, &details::sound_past_end_log(2, "cam0.mp4", 5.0)),
+        "{:?}",
+        got.logs
+    );
     // The `probe`/`plan_clips` path also keeps its own numbering: clip 2 is the only one named.
     let named = got.logs.iter().filter(|l| l.contains("cam0.mp4")).count();
-    assert_eq!(named, 1, "one refusal for the one clip that runs out: {:?}", got.logs);
+    assert_eq!(
+        named, 1,
+        "one refusal for the one clip that runs out: {:?}",
+        got.logs
+    );
 }
 
 #[test]
-fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_walk_prints_these_lines_too() {
+fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_walk_prints_these_lines_too(
+) {
     // The wire from the plan to the log: `walk` prints `Plan::plan_logs` and `Ran::logs` carries them back,
     // so the sentence a person reads after ▶ is the one asserted above.
     let (root, tree) = common::tree_in("p6-s1-walk");
     let _ = root;
-    let cut = naivepost::cut::Cut { segs: vec![copy_seg(500.0, 520.0)], ..Default::default() };
+    let cut = naivepost::cut::Cut {
+        segs: vec![copy_seg(500.0, 520.0)],
+        ..Default::default()
+    };
     let run = flow::snapshot(
         Some(cut),
         &tree,

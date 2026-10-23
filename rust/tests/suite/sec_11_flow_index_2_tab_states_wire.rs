@@ -12,13 +12,13 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use naivepost::cut::{Cut, Seg};
 use naivepost::run::Transport;
 use naivepost::shell::Page;
 use naivepost::{cut, cut_screen, run, tab_states, ui};
-use crate::common;
-use common::{fixture_dir, settle};
 
 static RAN_S4_TRANSPORT: AtomicBool = AtomicBool::new(false);
 static RAN_S5_TRIO: AtomicBool = AtomicBool::new(false);
@@ -37,9 +37,21 @@ fn preview_of(window: &adw::ApplicationWindow) -> cut_screen::Preview {
 fn three_clips() -> Cut {
     Cut {
         segs: vec![
-            Seg { s: 0.0, e: 10.0, ..Default::default() },
-            Seg { s: 20.0, e: 30.0, ..Default::default() },
-            Seg { s: 40.0, e: 50.0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 10.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 20.0,
+                e: 30.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 40.0,
+                e: 50.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }
@@ -99,10 +111,24 @@ fn check_s4_the_run_bar_becomes_the_transport(app: &adw::Application) {
     ui::seed_review_cut(&window, &cut);
     // Recording preview, cued: the state a person is in after clicking the timeline, which is exactly
     // when §2 says the button stopped meaning "Suggest".
-    ui::set_preview_state(&window, false, false, Transport { playing: false, started: true });
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        Transport {
+            playing: false,
+            started: true,
+        },
+    );
     let model = naivepost::project::load(&fixture_dir()).expect("the fixture loads");
     assert_eq!(
-        tab_states::play(Page::Cut, &model, true, ui::preview_player(&window).transport).0,
+        tab_states::play(
+            Page::Cut,
+            &model,
+            true,
+            ui::preview_player(&window).transport
+        )
+        .0,
         tab_states::Play::Transport { resume: true },
         "§2's rule: started but parked, so the transport owns ▶"
     );
@@ -124,7 +150,10 @@ fn check_s4_the_run_bar_becomes_the_transport(app: &adw::Application) {
     // Playing: the same press parks it again rather than starting the step.
     play.emit_by_name::<()>("clicked", &[]);
     let parked = ui::preview_player(&window).transport;
-    assert!(!parked.playing && parked.started, "the next press parked it again: {parked:?}");
+    assert!(
+        !parked.playing && parked.started,
+        "the next press parked it again: {parked:?}"
+    );
     assert_eq!(
         ui::play_tooltip(&window).as_deref(),
         Some(run::PLAY_TOOLTIP),
@@ -188,13 +217,29 @@ fn check_s5_exactly_one_preview_mode_is_lit(app: &adw::Application) {
     let cut = three_clips();
     ui::seed_review_cut(&window, &cut);
     naivepost::ui::cut_review_play::clear();
-    ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        Transport {
+            playing: false,
+            started: false,
+        },
+    );
     // Join 0 spans [50,110]: inside it, so ▶✂✂ plays on rather than seeking first.
     ui::set_playhead(&window, 70.0);
     naivepost::cut_play_back::halt();
 
     // ▶ recording first: the recording slot is lit and the other two say "Play".
-    ui::set_preview_state(&window, false, false, Transport { playing: true, started: true });
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        Transport {
+            playing: true,
+            started: true,
+        },
+    );
     crate::suite::sec_11_flow_index_2_tab_states_wire::ui::cut_record_play::paint_button(&window);
     crate::suite::sec_11_flow_index_2_tab_states_wire::ui::cut_cut_play::paint_both_skipping_buttons(&window);
     crate::suite::sec_11_flow_index_2_tab_states_wire::ui::cut_record_play::paint_button(&window);
@@ -203,7 +248,11 @@ fn check_s5_exactly_one_preview_mode_is_lit(app: &adw::Application) {
     let cut_button = ui::play_cut_button(&window).expect("the page has ▶✂");
     let review = ui::review_cuts_button(&window).expect("the page has ▶✂✂");
     assert!(
-        recording.label().as_deref().unwrap().starts_with('\u{23f8}'),
+        recording
+            .label()
+            .as_deref()
+            .unwrap()
+            .starts_with('\u{23f8}'),
         "the running recording wears ⏸: {:?}",
         recording.label()
     );
@@ -242,7 +291,15 @@ fn check_s5_exactly_one_preview_mode_is_lit(app: &adw::Application) {
     // arithmetic is pinned in `tests/suite/cut_play_the_cut.rs` and walked on the widget in
     // `tests/suite/cut_play_the_cut_widgets.rs`, which is why it is seeded here rather than pressed.
     naivepost::ui::cut_review_play::clear();
-    ui::set_preview_state(&window, true, false, Transport { playing: true, started: true });
+    ui::set_preview_state(
+        &window,
+        true,
+        false,
+        Transport {
+            playing: true,
+            started: true,
+        },
+    );
     naivepost::ui::cut_cut_play::paint_both_skipping_buttons(&window);
     crate::suite::sec_11_flow_index_2_tab_states_wire::ui::cut_record_play::paint_button(&window);
     let preview = preview_of(&window);
@@ -301,7 +358,11 @@ fn check_s4_no_cut_refuses_on_narrate(app: &adw::Application) {
         .expect("the shell has a Narrate tab")
         .emit_clicked();
     settle();
-    assert_eq!(ui::state(&window).page, Page::Narrate, "Narrate opens always");
+    assert_eq!(
+        ui::state(&window).page,
+        Page::Narrate,
+        "Narrate opens always"
+    );
     // No cut in this window's session: seed an empty one so "without a cut" is a fact, not a default.
     ui::seed_review_cut(&window, &Cut::default());
     ui::play_button(&window)
@@ -345,7 +406,10 @@ fn sec_11_flow_index_2_tab_states_s4_the_run_bar_becomes_the_preview_transport()
         RAN_S4_TRANSPORT.load(Ordering::SeqCst),
         "the S4 transport check never ran"
     );
-    assert!(RAN_S5_TRIO.load(Ordering::SeqCst), "the S5 trio check never ran");
+    assert!(
+        RAN_S5_TRIO.load(Ordering::SeqCst),
+        "the S5 trio check never ran"
+    );
     assert!(
         RAN_S4_REFUSAL.load(Ordering::SeqCst),
         "the Narrate no-cut refusal check never ran"

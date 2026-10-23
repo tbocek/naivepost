@@ -13,7 +13,13 @@ use naivepost::params;
 
 /// A zoom on the lane, staying or pulling back.
 fn zoom_at(t: f64, stay: bool) -> Fx {
-    Fx { kind: "zoom".into(), t, dur: 3.0, stay, ..Default::default() }
+    Fx {
+        kind: "zoom".into(),
+        t,
+        dur: 3.0,
+        stay,
+        ..Default::default()
+    }
 }
 
 /// F3.2 (`Dropdown source / 9:16 / 1:1 / 4:5 / 16:9`) — the five shapes in the dropdown's own order, and the one
@@ -47,8 +53,14 @@ fn f3_2_s1_the_dropdown_offers_five_shapes_and_says_what_one_is() {
 #[test]
 fn f3_2_s2_source_is_the_footages_own_shape() {
     let chosen = aspect::choose(&Cut::default(), aspect::SOURCE);
-    assert_eq!(chosen.aspect, "", "source is stored as no key at all (§10: `aspect (source)`)");
-    assert_eq!(chosen.zoom, None, "the footage's own shape needs no reframing");
+    assert_eq!(
+        chosen.aspect, "",
+        "source is stored as no key at all (§10: `aspect (source)`)"
+    );
+    assert_eq!(
+        chosen.zoom, None,
+        "the footage's own shape needs no reframing"
+    );
     assert_eq!(
         chosen.status,
         "aspect: the source's own \u{2014} the video comes out the shape it was filmed"
@@ -65,7 +77,10 @@ fn f3_2_s2_source_is_the_footages_own_shape() {
     let status = aspect::apply(&mut cut, aspect::SOURCE);
     assert_eq!(status, chosen.status);
     assert_eq!(cut.aspect, "");
-    assert_eq!(cut.fx, framed.fx, "choosing a shape is not a way to remove someone's effects");
+    assert_eq!(
+        cut.fx, framed.fx,
+        "choosing a shape is not a way to remove someone's effects"
+    );
     // And the readout falls back to the shape it prints for an unset aspect — which is a reading, not a choice.
     assert_eq!(cut_screen::ASPECT_DEFAULT, "16:9");
     assert!(!fx_zoom::aspect_is_set(&cut));
@@ -79,8 +94,14 @@ fn f3_2_s3_a_shape_with_no_staying_zoom_gets_one_at_0_00() {
     assert_eq!(aspect::HOLD_SECONDS, 1.0);
 
     let chosen = aspect::choose(&Cut::default(), "9:16");
-    assert_eq!(chosen.aspect, "9:16", "what was picked is what the file holds");
-    let zoom = chosen.zoom.clone().expect("no staying zoom yet, so the shape needs one");
+    assert_eq!(
+        chosen.aspect, "9:16",
+        "what was picked is what the file holds"
+    );
+    let zoom = chosen
+        .zoom
+        .clone()
+        .expect("no staying zoom yet, so the shape needs one");
     assert_eq!(zoom.kind, "zoom");
     assert_eq!((zoom.t, zoom.dur), (0.0, aspect::HOLD_SECONDS));
     assert!(zoom.stay, "a reframing, not an event that pulls back out");
@@ -88,7 +109,10 @@ fn f3_2_s3_a_shape_with_no_staying_zoom_gets_one_at_0_00() {
     assert_eq!((zoom.trans, zoom.tout), (0.0, 0.0));
     assert_eq!(fx_zoom::fades(true), (0.0, 0.0));
     // The whole frame, centred: §F3.2's word `centred`, and no camera of its own (§F3.2 names none).
-    assert_eq!((zoom.cx, zoom.cy, zoom.hf), (Some(0.5), Some(0.5), Some(1.0)));
+    assert_eq!(
+        (zoom.cx, zoom.cy, zoom.hf),
+        (Some(0.5), Some(0.5), Some(1.0))
+    );
     assert_eq!(zoom.cam, 0);
     // Linear: an empty `ease` writes no key, so a cut with a shape and no hand-drawn curve stays byte-identical.
     assert_eq!(zoom.ease, "");
@@ -102,10 +126,15 @@ fn f3_2_s3_a_shape_with_no_staying_zoom_gets_one_at_0_00() {
     for shape in ["1:1", "4:5", "16:9"] {
         let picked = aspect::choose(&Cut::default(), shape);
         assert_eq!(picked.aspect, shape);
-        assert!(picked.zoom.is_some(), "{shape} with nothing staying still has bars to fill");
+        assert!(
+            picked.zoom.is_some(),
+            "{shape} with nothing staying still has bars to fill"
+        );
         assert_eq!(
             picked.status,
-            format!("aspect {shape} \u{2014} a \u{2295} zoom at 0:00 holds the whole frame, centred")
+            format!(
+                "aspect {shape} \u{2014} a \u{2295} zoom at 0:00 holds the whole frame, centred"
+            )
         );
     }
 
@@ -122,20 +151,38 @@ fn f3_2_s3_a_shape_with_no_staying_zoom_gets_one_at_0_00() {
 /// reframing is added. Only a staying ZOOM counts: the question is asked through the typed kind.
 #[test]
 fn f3_2_s4_a_staying_zoom_already_decides_the_framing() {
-    let framed = Cut { aspect: String::new(), fx: vec![zoom_at(12.0, true)], ..Default::default() };
+    let framed = Cut {
+        aspect: String::new(),
+        fx: vec![zoom_at(12.0, true)],
+        ..Default::default()
+    };
     let chosen = aspect::choose(&framed, "9:16");
     assert_eq!(chosen.aspect, "9:16", "the shape is still what was picked");
-    assert_eq!(chosen.zoom, None, "a video already framed by a zoom is not reframed twice");
-    assert_eq!(chosen.status, "aspect 9:16 \u{2014} the zooms on the lane decide the framing");
+    assert_eq!(
+        chosen.zoom, None,
+        "a video already framed by a zoom is not reframed twice"
+    );
+    assert_eq!(
+        chosen.status,
+        "aspect 9:16 \u{2014} the zooms on the lane decide the framing"
+    );
 
     // A pull-back zoom leaves the frame where it was, so it does not answer for the framing.
-    let pulled = Cut { fx: vec![zoom_at(12.0, false)], ..Default::default() };
+    let pulled = Cut {
+        fx: vec![zoom_at(12.0, false)],
+        ..Default::default()
+    };
     assert!(!fx_zoom::a_staying_zoom_exists(&pulled.fx));
     assert!(aspect::choose(&pulled, "9:16").zoom.is_some());
 
     // Neither does a staying text: `stay` means something else on every other kind.
     let staying_text = Cut {
-        fx: vec![Fx { kind: "text".into(), t: 12.0, stay: true, ..Default::default() }],
+        fx: vec![Fx {
+            kind: "text".into(),
+            t: 12.0,
+            stay: true,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     assert!(!fx_zoom::a_staying_zoom_exists(&staying_text.fx));
@@ -156,28 +203,48 @@ fn f3_2_s5_aspect_and_zoom_are_one_undo_step() {
 
     let mut cut = before.clone();
     let status = aspect::apply(&mut cut, "9:16");
-    assert_eq!(status, "aspect 9:16 \u{2014} a \u{2295} zoom at 0:00 holds the whole frame, centred");
+    assert_eq!(
+        status,
+        "aspect 9:16 \u{2014} a \u{2295} zoom at 0:00 holds the whole frame, centred"
+    );
     // One push for the whole pick: the page records an edit around `apply`, not one per field it touched.
     history.push(&cut);
-    assert_eq!(history.depth(), depth_before + 1, "the aspect and its zoom are one step, not two");
+    assert_eq!(
+        history.depth(),
+        depth_before + 1,
+        "the aspect and its zoom are one step, not two"
+    );
 
     assert!(history.can_undo());
     let back = history.undo().expect("one step to take back");
     let mut restored = cut.clone();
     back.restore(&mut restored);
     assert_eq!(restored.aspect, "", "the shape went");
-    assert_eq!(restored.fx.len(), before.fx.len(), "and the zoom it brought went with it");
+    assert_eq!(
+        restored.fx.len(),
+        before.fx.len(),
+        "and the zoom it brought went with it"
+    );
 
     // The readout says what was chosen (§05-cut#1's Aspect ratio row reads the cut, not a default).
     let rows = cut_screen::idle_readouts(64, &cut.aspect, 0.0, None, &cut, 0.0);
-    let value = |label: &str| rows.iter().find(|row| row.label == label).unwrap().value.clone();
+    let value = |label: &str| {
+        rows.iter()
+            .find(|row| row.label == label)
+            .unwrap()
+            .value
+            .clone()
+    };
     assert_eq!(value("Aspect ratio"), "9:16");
 
     // F3.1 S3's default asks two questions and this pick answers both: an aspect is set, and a staying zoom now
     // exists — so the next zoom someone draws is a passing close-up rather than a second reframing.
     assert!(fx_zoom::aspect_is_set(&cut));
     assert!(fx_zoom::a_staying_zoom_exists(&cut.fx));
-    assert!(!fx_zoom::stays_by_default(fx_zoom::aspect_is_set(&cut), fx_zoom::a_staying_zoom_exists(&cut.fx)));
+    assert!(!fx_zoom::stays_by_default(
+        fx_zoom::aspect_is_set(&cut),
+        fx_zoom::a_staying_zoom_exists(&cut.fx)
+    ));
     // Before the pick, with no shape, it was nought for the other reason; after a hand zoom that stays, again nought.
     assert!(!fx_zoom::stays_by_default(false, false));
 }
@@ -189,10 +256,25 @@ fn f3_2_s6_the_hold_is_catalogued_once() {
     // value as `P.eng.aspectStaySeconds`, rowed beside it and reading the same constant (pinned in
     // tests/suite/aspect_stay_length.rs). This id keeps Family::Other: the bare name has no `P.` prefix to inherit.
     let listed: Vec<&str> = params::cut().iter().map(|row| row.id).collect();
-    assert_eq!(listed.iter().filter(|id| **id == "effects.aspectHoldSeconds").count(), 1);
+    assert_eq!(
+        listed
+            .iter()
+            .filter(|id| **id == "effects.aspectHoldSeconds")
+            .count(),
+        1
+    );
 
-    let row = params::cut().into_iter().find(|row| row.id == "effects.aspectHoldSeconds").unwrap();
+    let row = params::cut()
+        .into_iter()
+        .find(|row| row.id == "effects.aspectHoldSeconds")
+        .unwrap();
     assert_eq!(row.spelled.parse::<f64>().unwrap(), aspect::HOLD_SECONDS);
-    assert_eq!(row.from, "fx_aspect::HOLD_SECONDS", "a row must name the constant its rule reads");
-    assert_eq!(params::family("effects.aspectHoldSeconds"), params::Family::Other);
+    assert_eq!(
+        row.from, "fx_aspect::HOLD_SECONDS",
+        "a row must name the constant its rule reads"
+    );
+    assert_eq!(
+        params::family("effects.aspectHoldSeconds"),
+        params::Family::Other
+    );
 }

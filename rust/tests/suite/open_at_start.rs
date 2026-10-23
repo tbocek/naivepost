@@ -9,11 +9,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::temp_dir;
 use naivepost::project::{self, Project};
 use naivepost::settings::{self, Conf};
 use naivepost::startup::{self, Opened};
-use crate::common;
-use common::{temp_dir};
 
 /// A project folder on disk — what S2's "still on disk" and S3's "exists" both mean: the folder is
 /// there, since a project is a folder holding `naivepost.json`.
@@ -42,11 +42,7 @@ fn f0_6_s1_the_first_handed_file_is_the_one() {
     let first = project_folder(&root.join("first.naivepost"));
     let second = project_folder(&root.join("second.naivepost"));
 
-    let opened = startup::decide(
-        &root,
-        &Conf::default(),
-        &[first.clone(), second.clone()],
-    );
+    let opened = startup::decide(&root, &Conf::default(), &[first.clone(), second.clone()]);
     assert_eq!(opened, Opened::Desktop { path: first });
 
     fs::remove_dir_all(&root).unwrap();
@@ -198,7 +194,10 @@ fn f0_6_s4_a_session_that_is_not_there_is_a_blank_session() {
         }
     );
     let session = startup::session_dir(&root);
-    assert!(!session.exists(), "a blank session is a decision, not a file");
+    assert!(
+        !session.exists(),
+        "a blank session is a decision, not a file"
+    );
     assert_eq!(
         fs::read_dir(&root).unwrap().count(),
         0,
@@ -229,9 +228,7 @@ fn f0_6_s2_the_remembered_project_comes_from_the_settings_file() {
 
     assert_eq!(
         startup::decide(&root, &conf, &[]),
-        Opened::Remembered {
-            path: remembered
-        }
+        Opened::Remembered { path: remembered }
     );
 
     let other = temp_dir("conf-other-root");

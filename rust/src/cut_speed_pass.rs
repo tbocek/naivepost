@@ -148,7 +148,11 @@ pub fn place(clips: &Clips, calls: &[Call]) -> Reply {
     let count = clips.clips().len() as u32;
     for call in calls {
         if let Some(problem) = cut_captions::clip_outside(call.clip, 1, count) {
-            return Reply { effects: Vec::new(), answers: Vec::new(), fault: Some(problem) };
+            return Reply {
+                effects: Vec::new(),
+                answers: Vec::new(),
+                fault: Some(problem),
+            };
         }
     }
 
@@ -175,8 +179,15 @@ pub fn place(clips: &Clips, calls: &[Call]) -> Reply {
         }
         // The rate as APPLIED: §3.7 clamps what will not render, and a speed record holding the asked-for number would
         // promise seconds the render never produces.
-        let applied = body.get("applied").and_then(|v| v.as_f64()).unwrap_or(call.rate);
-        let clip = &batch.clips()[batch.clips().iter().position(|c| c.n == call.clip).expect("S2 checked membership")];
+        let applied = body
+            .get("applied")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(call.rate);
+        let clip = &batch.clips()[batch
+            .clips()
+            .iter()
+            .position(|c| c.n == call.clip)
+            .expect("S2 checked membership")];
         // The clip's OWN start, which is the state's session second for it. Not [`cut_captions::session_start`]'s sum:
         // that exists because F3.9's `(number, length)` pairs carry no position, and a sum of lengths is wrong as soon
         // as a clip has been trimmed or already sped up.
@@ -193,7 +204,11 @@ pub fn place(clips: &Clips, calls: &[Call]) -> Reply {
         answers.push(Answer::Placed(fx.clone()));
         effects.push(fx);
     }
-    Reply { effects: merge(&effects), answers, fault: None }
+    Reply {
+        effects: merge(&effects),
+        answers,
+        fault: None,
+    }
 }
 
 // --- S4: same-rate stretches nearer than the gap are one stretch -----------------------------------------------------

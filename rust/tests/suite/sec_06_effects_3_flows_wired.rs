@@ -91,16 +91,34 @@ fn round(app: &adw::Application) {
     let llm = FakeLlm::start(vec![add_captions_json(&[(1, 1.0, 3.0, "the reveal")])]);
     point_at(&llm.url());
     let window = cut_page(app, &common::three_clips_cut());
-    assert!(placed_of_kind(&window, "text").is_empty(), "the seeded cut holds no caption to confuse the count");
+    assert!(
+        placed_of_kind(&window, "text").is_empty(),
+        "the seeded cut holds no caption to confuse the count"
+    );
     let captions = wait_for_kind(&window, "captions-pass-button", "text");
-    assert_eq!(captions.len(), 1, "the answered caption landed: {captions:?}");
-    assert_eq!((captions[0].t, captions[0].dur, captions[0].text.as_str()), (1.0, 2.0, "the reveal"));
+    assert_eq!(
+        captions.len(),
+        1,
+        "the answered caption landed: {captions:?}"
+    );
+    assert_eq!(
+        (captions[0].t, captions[0].dur, captions[0].text.as_str()),
+        (1.0, 2.0, "the reveal")
+    );
     // The press really dialled the address the settings hold, offering this job's tool.
     let seen = llm.next_seen();
-    assert_eq!((seen.method.as_str(), seen.path.as_str()), ("POST", "/v1/chat/completions"));
-    assert!(seen.body.contains("add_caption"), "the captions tool was offered: the body names it");
+    assert_eq!(
+        (seen.method.as_str(), seen.path.as_str()),
+        ("POST", "/v1/chat/completions")
+    );
+    assert!(
+        seen.body.contains("add_caption"),
+        "the captions tool was offered: the body names it"
+    );
     // The pass's own sentence reached the window log -- the same seam `run_after_cut` copies into the run's log.
-    wait_until("the captions pass's line in the window log", || log_said(|line| line.contains("caption")));
+    wait_until("the captions pass's line in the window log", || {
+        log_said(|line| line.contains("caption"))
+    });
     RAN_CAPTIONS.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -111,10 +129,23 @@ fn round(app: &adw::Application) {
     point_at(&llm.url());
     let window = cut_page(app, &common::three_clips_cut());
     let speeds = wait_for_kind(&window, "speeds-pass-button", "speed");
-    assert_eq!(speeds.len(), 1, "the answered rate became one speed effect: {speeds:?}");
-    assert_eq!((speeds[0].t, speeds[0].dur, speeds[0].rate), (10.0, 10.0, 2.0), "over clip 2, at the answered rate");
-    assert!(llm.next_seen().body.contains("set_clip_speed"), "the speeds tool was offered");
-    wait_until("the speed pass's line in the window log", || log_said(|line| line.contains("speed")));
+    assert_eq!(
+        speeds.len(),
+        1,
+        "the answered rate became one speed effect: {speeds:?}"
+    );
+    assert_eq!(
+        (speeds[0].t, speeds[0].dur, speeds[0].rate),
+        (10.0, 10.0, 2.0),
+        "over clip 2, at the answered rate"
+    );
+    assert!(
+        llm.next_seen().body.contains("set_clip_speed"),
+        "the speeds tool was offered"
+    );
+    wait_until("the speed pass's line in the window log", || {
+        log_said(|line| line.contains("speed"))
+    });
     RAN_SPEEDS.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -122,16 +153,41 @@ fn round(app: &adw::Application) {
     // --- ✨ Decorations: the answered zoom lands with the APP's §F3.11 defaults, not the model's ----
     // The answer names only the span: §F3.11 keeps the box the app's own — centred, `ZOOM_HEIGHT` tall,
     // glides min(1, d/3) → 1 s over this 3 s span.
-    let llm = FakeLlm::start(vec![effects_json(&[json!({"clip": 2, "kind": "zoom", "start": 1.0, "end": 4.0})])]);
+    let llm = FakeLlm::start(vec![effects_json(&[
+        json!({"clip": 2, "kind": "zoom", "start": 1.0, "end": 4.0}),
+    ])]);
     point_at(&llm.url());
     let window = cut_page(app, &common::three_clips_cut());
     let zooms = wait_for_kind(&window, "decorations-pass-button", "zoom");
-    assert_eq!(zooms.len(), 1, "the answered zoom became one lane effect: {zooms:?}");
-    assert_eq!((zooms[0].t, zooms[0].dur), (11.0, 3.0), "the answered span, in session seconds");
-    assert_eq!((zooms[0].cx, zooms[0].cy), (Some(0.5), Some(0.5)), "centred: this pass sends no box");
-    assert_eq!(zooms[0].hf, Some(naivepost::cut_effects_pass::ZOOM_HEIGHT), "at 60 % of the frame height");
-    assert_eq!((zooms[0].trans, zooms[0].tout), (1.0, 1.0), "glides min(1, d/3) with d = 3");
-    assert!(llm.next_seen().body.contains("add_effect"), "the decoration tool was offered");
+    assert_eq!(
+        zooms.len(),
+        1,
+        "the answered zoom became one lane effect: {zooms:?}"
+    );
+    assert_eq!(
+        (zooms[0].t, zooms[0].dur),
+        (11.0, 3.0),
+        "the answered span, in session seconds"
+    );
+    assert_eq!(
+        (zooms[0].cx, zooms[0].cy),
+        (Some(0.5), Some(0.5)),
+        "centred: this pass sends no box"
+    );
+    assert_eq!(
+        zooms[0].hf,
+        Some(naivepost::cut_effects_pass::ZOOM_HEIGHT),
+        "at 60 % of the frame height"
+    );
+    assert_eq!(
+        (zooms[0].trans, zooms[0].tout),
+        (1.0, 1.0),
+        "glides min(1, d/3) with d = 3"
+    );
+    assert!(
+        llm.next_seen().body.contains("add_effect"),
+        "the decoration tool was offered"
+    );
     RAN_DECORATIONS.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -190,26 +246,50 @@ fn round(app: &adw::Application) {
         (gate.set)(&window, false);
         (gate.refresh)(&window);
         let button = (gate.button)(&window).expect("the pass's button is on the run-bar row");
-        assert!(!button.is_sensitive(), "{} off greys its control", gate.says);
-        assert_eq!(ui::review_cut_of(&window).fx.len(), 0, "the seeded cut holds nothing to begin with");
+        assert!(
+            !button.is_sensitive(),
+            "{} off greys its control",
+            gate.says
+        );
+        assert_eq!(
+            ui::review_cut_of(&window).fx.len(),
+            0,
+            "the seeded cut holds nothing to begin with"
+        );
         // GTK swallows a click on an insensitive control, so the emission is the honest test of the wire; the
         // direct call proves the pass itself refuses too, which is what `order` relies on.
         button.emit_by_name::<()>("clicked", &[]);
         settle();
         let refused = (gate.run)(&window);
-        assert!(refused.contains("off"), "the pass refuses its own press, got {refused}");
-        assert_eq!(ui::review_cut_of(&window).fx.len(), 0, "and a pass that is off places nothing");
-        assert!(placed_of_kind(&window, gate.kind).is_empty(), "no {} landed while off", gate.kind);
+        assert!(
+            refused.contains("off"),
+            "the pass refuses its own press, got {refused}"
+        );
+        assert_eq!(
+            ui::review_cut_of(&window).fx.len(),
+            0,
+            "and a pass that is off places nothing"
+        );
+        assert!(
+            placed_of_kind(&window, gate.kind).is_empty(),
+            "no {} landed while off",
+            gate.kind
+        );
         // Nothing was dialled: a 1 s timeout on the fake's channel is the whole wait, and an off pass that
         // phoned would leave a request behind. §S2b's rule is "never called", not "called and told nothing".
         assert!(
-            llm.seen_within(std::time::Duration::from_millis(250)).is_none(),
+            llm.seen_within(std::time::Duration::from_millis(250))
+                .is_none(),
             "an off pass never dials the model -- it is not called and told to return nothing"
         );
         // Back on: the grey is never sticky, so the gate tracks the field the pass reads.
         (gate.set)(&window, true);
         (gate.refresh)(&window);
-        assert!(button.is_sensitive(), "{} back on re-enables its control", gate.says);
+        assert!(
+            button.is_sensitive(),
+            "{} back on re-enables its control",
+            gate.says
+        );
         window.close();
         settle();
     }
@@ -222,10 +302,22 @@ fn sec_06_effects_3_flows_s3_pressing_captions_places_through_the_same_state_the
     // One app run holds every stage: the env is process-wide, so it is pinned once, before any window exists.
     pin_scenario_env("flows-wired");
     run_app_once(round);
-    assert!(RAN_CAPTIONS.load(Ordering::SeqCst), "the ✐ Captions stage never ran");
-    assert!(RAN_SPEEDS.load(Ordering::SeqCst), "the ⏩ Speeds stage never ran");
-    assert!(RAN_DECORATIONS.load(Ordering::SeqCst), "the ✨ Decorations stage never ran");
-    assert!(RAN_OFF_GATE.load(Ordering::SeqCst), "the pass-off gate stage never ran");
+    assert!(
+        RAN_CAPTIONS.load(Ordering::SeqCst),
+        "the ✐ Captions stage never ran"
+    );
+    assert!(
+        RAN_SPEEDS.load(Ordering::SeqCst),
+        "the ⏩ Speeds stage never ran"
+    );
+    assert!(
+        RAN_DECORATIONS.load(Ordering::SeqCst),
+        "the ✨ Decorations stage never ran"
+    );
+    assert!(
+        RAN_OFF_GATE.load(Ordering::SeqCst),
+        "the pass-off gate stage never ran"
+    );
 }
 
 /// Any window-log line matching `says` — the program's own log seam (`ui::window_logs`), scoped by the word
@@ -246,7 +338,8 @@ fn pin_scenario_env(tag: &str) {
         std::env::set_var("XDG_CONFIG_HOME", root.join("config"));
         std::env::set_var("XDG_DATA_HOME", root.join("data"));
     }
-    let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+    let paths =
+        naivepost::settings::from_environment().expect("settings folder from the pinned env");
     let mut conf = naivepost::settings::Conf::default();
     conf.model = "flows-model".to_string();
     naivepost::settings::save(&paths, &conf).expect("settings written");

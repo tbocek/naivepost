@@ -21,7 +21,10 @@ const REC: &str = "2026-09-16 17-26-20";
 const FILE: &str = "assets/audio.wav";
 
 fn anywhere(id: &str) -> params::Param {
-    let mut found = all_rows().into_iter().filter(|row| row.id == id).collect::<Vec<_>>();
+    let mut found = all_rows()
+        .into_iter()
+        .filter(|row| row.id == id)
+        .collect::<Vec<_>>();
     // `P.eng.minPieceSeconds` is catalogued twice by design (Prepare's §4 and the Cut page's §6, both reading
     // `cut_select::MIN_SECONDS`), so this helper takes the first of them instead of insisting on one. The
     // single-row check for THIS round's own id is done in s1 against `params::cut()`.
@@ -38,25 +41,39 @@ fn number_anywhere(id: &str) -> f64 {
         .unwrap_or_else(|_| panic!("{id} spells a number"))
 }
 
-
 /// A cut keeping the given spans of footage, as `tests/suite/cut_copy_paste_lane.rs::kept` builds one.
 fn kept(spans: &[(f64, f64)]) -> Cut {
     let mut cut = Cut::default();
     for (s, e) in spans {
-        cut.segs.push(Seg { s: *s, e: *e, cam: 0, ..Default::default() });
+        cut.segs.push(Seg {
+            s: *s,
+            e: *e,
+            cam: 0,
+            ..Default::default()
+        });
     }
     cut
 }
 
 /// A hand holding `length` seconds of the recording's sound, starting at session second `from`.
 fn sound_hand(from: f64, length: f64) -> cp::Hand {
-    cp::Hand { from, length, scope: Scope::Sound { recording: REC.to_string() } }
+    cp::Hand {
+        from,
+        length,
+        scope: Scope::Sound {
+            recording: REC.to_string(),
+        },
+    }
 }
 
 /// The seconds of every piece of footage the cut keeps, sorted — how s3 checks the picture was left alone.
 fn film(cut: &Cut) -> Vec<(f64, f64)> {
-    let mut spans: Vec<(f64, f64)> =
-        cut.segs.iter().filter(|seg| seg.ins.is_empty()).map(|seg| (seg.s, seg.e)).collect();
+    let mut spans: Vec<(f64, f64)> = cut
+        .segs
+        .iter()
+        .filter(|seg| seg.ins.is_empty())
+        .map(|seg| (seg.s, seg.e))
+        .collect();
     spans.sort_by(|a, b| a.0.total_cmp(&b.0));
     spans
 }
@@ -70,14 +87,22 @@ fn p_eng_soundminpieceseconds_s1_the_floor_is_0_05_and_catalogued_once() {
     assert_eq!(number_anywhere("P.eng.soundMinPieceSeconds"), 0.05);
 
     // The row names the constant its rule reads, not a copy of the number.
-    assert_eq!(anywhere("P.eng.soundMinPieceSeconds").from, "cut_copy::MIN_SOUND_PIECE_SECONDS");
+    assert_eq!(
+        anywhere("P.eng.soundMinPieceSeconds").from,
+        "cut_copy::MIN_SOUND_PIECE_SECONDS"
+    );
 
     // §10 §5.1 files it among the engineering constants, so the prefix must answer to Eng.
-    assert_eq!(params::family("P.eng.soundMinPieceSeconds"), params::Family::Eng);
+    assert_eq!(
+        params::family("P.eng.soundMinPieceSeconds"),
+        params::Family::Eng
+    );
 
     // And the row sits on the Cut page's list, where F2.9's paste rules live.
     assert!(
-        params::cut().iter().any(|row| row.id == "P.eng.soundMinPieceSeconds"),
+        params::cut()
+            .iter()
+            .any(|row| row.id == "P.eng.soundMinPieceSeconds"),
         "the sound-over floor belongs to §05-cut#6's list"
     );
 }
@@ -96,7 +121,10 @@ fn p_eng_soundminpieceseconds_s2_a_stretch_over_the_floor_gets_its_piece() {
     let pieces = cp::lay_pieces(&cut, FILE, &hand, 2.0, 1.0);
     assert_eq!(pieces.len(), 1, "one kept stretch, one piece");
     assert_eq!((pieces[0].s, pieces[0].e), (2.0, 8.0));
-    assert_eq!(pieces[0].ins, FILE, "the piece names the sound file it plays");
+    assert_eq!(
+        pieces[0].ins, FILE,
+        "the piece names the sound file it plays"
+    );
     // `ss` walks with the session second (another item's rule, asserted here only to show the floor did not
     // disturb it): the file second handed in, plus nothing — at `at == 2.0` and a piece starting at 2.0 the
     // piece is at the very start of the span, so it resumes where the caller said the span begins.
@@ -108,13 +136,21 @@ fn p_eng_soundminpieceseconds_s2_a_stretch_over_the_floor_gets_its_piece() {
     let holed = kept(&[(0.0, 10.0), (25.0, 30.0)]);
     let walked = cp::lay_pieces(&holed, FILE, &sound_hand(8.0, 22.0), 8.0, 4.0);
     assert_eq!(walked.len(), 2);
-    assert_close("first piece resumes at the span's file second", walked[0].ss, 4.0);
+    assert_close(
+        "first piece resumes at the span's file second",
+        walked[0].ss,
+        4.0,
+    );
     assert_close("second piece resumes mid-file", walked[1].ss, 21.0);
 
     // The laid-over cut keeps the picture whole outside the pieces.
     let mut cut = kept(&[(0.0, 10.0)]);
     let hand = sound_hand(2.0, 6.0);
-    assert_eq!(cp::lay_over(&mut cut, FILE, &hand, 2.0, 1.0), 1, "one piece laid");
+    assert_eq!(
+        cp::lay_over(&mut cut, FILE, &hand, 2.0, 1.0),
+        1,
+        "one piece laid"
+    );
     assert_eq!(film(&cut), vec![(0.0, 2.0), (8.0, 10.0)]);
 }
 
@@ -127,15 +163,29 @@ fn p_eng_soundminpieceseconds_s3_under_the_floor_lays_nothing_and_splits_nothing
     let footage = &cut.segs[0];
 
     // P.eng.soundMinPieceSeconds: the span [9.98, 12.0) overlaps the kept 0–10 by 0.02 s, well under 0.05.
-    assert_eq!(cp::sound_piece_overlap(footage, 9.98, 12.0), None, "0.02 s is a blink");
+    assert_eq!(
+        cp::sound_piece_overlap(footage, 9.98, 12.0),
+        None,
+        "0.02 s is a blink"
+    );
     let hand = sound_hand(9.98, 2.0);
-    assert!(cp::lay_pieces(&cut, FILE, &hand, 9.98, 5.0).is_empty(), "no piece is built");
+    assert!(
+        cp::lay_pieces(&cut, FILE, &hand, 9.98, 5.0).is_empty(),
+        "no piece is built"
+    );
 
     // The lay reports nothing laid, and — the load-bearing part — the footage comes back WHOLE.
     assert_eq!(cp::lay_over(&mut cut, FILE, &hand, 9.98, 5.0), 0);
     assert_eq!(cut.segs.len(), 1, "not split into 0–9.98 and 9.98–10");
-    assert_eq!(film(&cut), vec![(0.0, 10.0)], "the picture is exactly what it was");
-    assert!(cut.segs.iter().all(|seg| seg.ins.is_empty()), "no stray sound segment was added");
+    assert_eq!(
+        film(&cut),
+        vec![(0.0, 10.0)],
+        "the picture is exactly what it was"
+    );
+    assert!(
+        cut.segs.iter().all(|seg| seg.ins.is_empty()),
+        "no stray sound segment was added"
+    );
 }
 
 /// S4: inserts are stepped over whatever their length, because a card covers no footage of its own — the
@@ -143,8 +193,16 @@ fn p_eng_soundminpieceseconds_s3_under_the_floor_lays_nothing_and_splits_nothing
 #[test]
 fn p_eng_soundminpieceseconds_s4_an_insert_is_stepped_over_at_any_length() {
     // A card lying OVER a wide stretch: far more than the floor of overlap, and still no piece.
-    let card = Seg { s: 4.0, e: 20.0, ins: "assets/card.png".to_string(), ..Default::default() };
-    assert!(card.is_overwrite_insert(), "the fixture is an over-the-footage card");
+    let card = Seg {
+        s: 4.0,
+        e: 20.0,
+        ins: "assets/card.png".to_string(),
+        ..Default::default()
+    };
+    assert!(
+        card.is_overwrite_insert(),
+        "the fixture is an over-the-footage card"
+    );
     assert_eq!(
         cp::sound_piece_overlap(&card, 0.0, 30.0),
         None,
@@ -152,7 +210,13 @@ fn p_eng_soundminpieceseconds_s4_an_insert_is_stepped_over_at_any_length() {
     );
 
     // A spliced insert (s == e, its length in `dur`) likewise: it takes no session seconds to cover.
-    let spliced = Seg { s: 6.0, e: 6.0, ins: "copy:12.000".to_string(), dur: 8.0, ..Default::default() };
+    let spliced = Seg {
+        s: 6.0,
+        e: 6.0,
+        ins: "copy:12.000".to_string(),
+        dur: 8.0,
+        ..Default::default()
+    };
     assert!(spliced.is_insert(), "the fixture is a spliced copy");
     assert_eq!(cp::sound_piece_overlap(&spliced, 0.0, 30.0), None);
 
@@ -171,7 +235,11 @@ fn p_eng_soundminpieceseconds_s4_an_insert_is_stepped_over_at_any_length() {
         .filter(|seg| seg.ins.is_empty())
         .filter_map(|seg| cp::sound_piece_overlap(seg, 0.0, 30.0))
         .collect();
-    assert_eq!(asked, vec![(0.0, 5.0), (25.0, 30.0)], "only the filmed stretches offer a piece");
+    assert_eq!(
+        asked,
+        vec![(0.0, 5.0), (25.0, 30.0)],
+        "only the filmed stretches offer a piece"
+    );
     assert_eq!(pieces.len(), 2, "and that is what got laid");
     assert_eq!(cp::lay_over(&mut cut, FILE, &hand, 0.0, 0.0), 2);
     // The laid pieces stand over the two filmed stretches and nowhere else: the card's sixteen seconds and the
@@ -184,10 +252,17 @@ fn p_eng_soundminpieceseconds_s4_an_insert_is_stepped_over_at_any_length() {
         .filter(|seg| !seg.lane.is_empty())
         .map(|seg| (seg.s, seg.e))
         .collect();
-    assert_eq!(laid_spans, vec![(0.0, 5.0), (25.0, 30.0)], "pieces only where there was picture");
+    assert_eq!(
+        laid_spans,
+        vec![(0.0, 5.0), (25.0, 30.0)],
+        "pieces only where there was picture"
+    );
     // Both inserts are still in the cut, unchanged.
     assert_eq!(
-        cut.segs.iter().filter(|seg| seg.lane.is_empty() && !seg.ins.is_empty()).count(),
+        cut.segs
+            .iter()
+            .filter(|seg| seg.lane.is_empty() && !seg.ins.is_empty())
+            .count(),
         2,
         "the card and the spliced copy both survive as they were"
     );
@@ -201,7 +276,10 @@ fn p_eng_soundminpieceseconds_s5_the_boundary_and_three_look_alike_floors() {
     // blink, which is why the test is "not below" rather than "strictly above".
     let clip = kept(&[(0.0, 10.0)]);
     let footage = &clip.segs[0];
-    assert_eq!(cp::sound_piece_overlap(footage, 0.0, 0.05), Some((0.0, 0.05)));
+    assert_eq!(
+        cp::sound_piece_overlap(footage, 0.0, 0.05),
+        Some((0.0, 0.05))
+    );
     // A ulp under the floor still counts, for the same reason.
     assert!(
         cp::sound_piece_overlap(footage, 0.0, 0.05f64.next_down()).is_some(),
@@ -216,28 +294,40 @@ fn p_eng_soundminpieceseconds_s5_the_boundary_and_three_look_alike_floors() {
     // — so it is checked through `params::find` rather than the single-match helper above.
     assert_eq!(cut_select::MIN_SECONDS, 0.04);
     assert_ne!(
-        cp::MIN_SOUND_PIECE_SECONDS, cut_select::MIN_SECONDS,
+        cp::MIN_SOUND_PIECE_SECONDS,
+        cut_select::MIN_SECONDS,
         "worth-keeping-after-a-removal is not worth-a-piece-of-laid-sound"
     );
-    let piece_floor: f64 =
-        params::find("P.eng.minPieceSeconds").expect("the removal floor is catalogued").spelled.parse().unwrap();
+    let piece_floor: f64 = params::find("P.eng.minPieceSeconds")
+        .expect("the removal floor is catalogued")
+        .spelled
+        .parse()
+        .unwrap();
     assert_eq!(piece_floor, cut_select::MIN_SECONDS);
 
     // P.eng.effectMinSeconds (fx_lane::MIN_BAND_SECONDS, 0.1): how short an effect band may be DRAGGED.
     assert_eq!(fx_lane::MIN_BAND_SECONDS, 0.1);
     assert_ne!(
-        cp::MIN_SOUND_PIECE_SECONDS, fx_lane::MIN_BAND_SECONDS,
+        cp::MIN_SOUND_PIECE_SECONDS,
+        fx_lane::MIN_BAND_SECONDS,
         "the drag floor is not the sound-piece floor"
     );
-    assert_eq!(number_anywhere("P.eng.effectMinSeconds"), fx_lane::MIN_BAND_SECONDS);
+    assert_eq!(
+        number_anywhere("P.eng.effectMinSeconds"),
+        fx_lane::MIN_BAND_SECONDS
+    );
 
     // effects.volumeMinSeconds (fx_volume::MIN_SECONDS, 0.1): the volume FORM's typed Length floor.
     assert_eq!(fx_volume::MIN_SECONDS, 0.1);
     assert_ne!(
-        cp::MIN_SOUND_PIECE_SECONDS, fx_volume::MIN_SECONDS,
+        cp::MIN_SOUND_PIECE_SECONDS,
+        fx_volume::MIN_SECONDS,
         "a form's typed floor is not a laying floor"
     );
-    assert_eq!(number_anywhere("effects.volumeMinSeconds"), fx_volume::MIN_SECONDS);
+    assert_eq!(
+        number_anywhere("effects.volumeMinSeconds"),
+        fx_volume::MIN_SECONDS
+    );
 
     // Four floors, four rows, none of them borrowing another's constant.
     let sources = [

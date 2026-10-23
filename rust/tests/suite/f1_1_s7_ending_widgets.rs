@@ -21,11 +21,11 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::footage;
 use naivepost::layout::Tree;
 use naivepost::project::Project;
-use crate::common;
-use common::footage;
 use naivepost::ui;
 
 /// A root with `<root>/session.naivepost/` made and cwd pinned to the root — the arrangement
@@ -121,8 +121,14 @@ fn f1_1_s7_a_finished_press_ends_with_the_prepared_status() {
     });
     app.run_with_args::<String>(&[]);
 
-    assert!(RAN.load(Ordering::SeqCst), "the finished-press check never ran");
-    assert!(RAN_FAILED.load(Ordering::SeqCst), "the failing-press check never ran");
+    assert!(
+        RAN.load(Ordering::SeqCst),
+        "the finished-press check never ran"
+    );
+    assert!(
+        RAN_FAILED.load(Ordering::SeqCst),
+        "the failing-press check never ran"
+    );
 }
 
 /// The folders `run_stages::plan` looks in when deciding whether a stage has work: no frames folder and
@@ -199,7 +205,8 @@ fn check_a_press_ends_on_screen(app: &adw::Application) {
     // A real file at the path the session names: ffmpeg can open it, so the frames task runs (rather
     // than failing at once on a path no protocol can resolve) and gives ⏹ something to stop.
     std::fs::create_dir_all(tree.sources_dir()).expect("sources dir");
-    std::fs::write(tree.sources_dir().join("take.mkv"), b"fake media").expect("a source to point at");
+    std::fs::write(tree.sources_dir().join("take.mkv"), b"fake media")
+        .expect("a source to point at");
     let model = Project {
         sources: vec![footage("project:sources/take.mkv")],
         // The frame interval the describe stage reads; stated rather than defaulted so this session
@@ -228,15 +235,21 @@ fn check_a_press_ends_on_screen(app: &adw::Application) {
     // sentence (which is what this session gets: the walk fails on the very first task) or, if the
     // machine happened to answer, its success or stop sentence. One of the three, named by the run.
     let ended = failed.is_some()
-        || logs.iter().any(|line| line.starts_with(">>> prepare wrote:"))
-        || logs.iter().any(|line| line.starts_with(">>> stopped after"));
+        || logs
+            .iter()
+            .any(|line| line.starts_with(">>> prepare wrote:"))
+        || logs
+            .iter()
+            .any(|line| line.starts_with(">>> stopped after"));
     assert!(
         ended,
         "§S7: the press ended with one of §S7's three sentences in the log: {logs:?}"
     );
     if let Some(reason) = failed {
         assert!(
-            !logs.iter().any(|line| line.starts_with(">>> prepare wrote:")),
+            !logs
+                .iter()
+                .any(|line| line.starts_with(">>> prepare wrote:")),
             "a failed run does not claim its three folders: {logs:?}"
         );
         assert!(
@@ -253,8 +266,7 @@ fn check_a_press_ends_on_screen(app: &adw::Application) {
     }
     // §S8 runs for every ending, not only the happy one: the readouts were refreshed from the folder the
     // run worked in, through the doors Rescan uses, so the count is this folder's and not the launch's.
-    let readout = ui::outputs_sentence(&window)
-        .expect("the shell carries the Outputs readout");
+    let readout = ui::outputs_sentence(&window).expect("the shell carries the Outputs readout");
     let expected = naivepost::prepare::outputs_count(&tree).to_string();
     // §6 makes Prepare's row "Prepare: N files, size", so the count is the LEADING number of what
     // follows the label, not the whole row — read the same way `f1_1_endings` reads it.
@@ -307,15 +319,18 @@ fn check_a_failing_press_ends_with_its_reason(app: &adw::Application) {
         .iter()
         .find(|line| line.starts_with("prepare FAILED:"))
         .cloned();
-    let reason =
-        failed.unwrap_or_else(|| panic!("a stage whose ask cannot be answered must fail the run: {logs:?}"));
+    let reason = failed.unwrap_or_else(|| {
+        panic!("a stage whose ask cannot be answered must fail the run: {logs:?}")
+    });
     assert!(
         ui::state(&window).status.contains("frames 1/2"),
         "the row carries the queue's track line once the run closed (§2), so the log above is the ending's record: {:?}",
         ui::state(&window).status
     );
     assert!(
-        !logs.iter().any(|line| line.starts_with(">>> prepare wrote:")),
+        !logs
+            .iter()
+            .any(|line| line.starts_with(">>> prepare wrote:")),
         "a failed run does not claim its three folders: {logs:?}"
     );
     assert!(
@@ -325,7 +340,8 @@ fn check_a_failing_press_ends_with_its_reason(app: &adw::Application) {
     // The stage that broke is `frames`, and the walk logs it by name one line earlier; §S7's own sentence
     // carries the reason (the failing command and the tool's answer), so the name is read from the pair.
     assert!(
-        logs.iter().any(|line| line.starts_with("!!! frames failed")),
+        logs.iter()
+            .any(|line| line.starts_with("!!! frames failed")),
         "the failure names the stage that broke (§Failure-is-specific): {logs:?}"
     );
     // Which tool answers first is the frames door's business, not this test's: §F1.6 opens with ffprobe on

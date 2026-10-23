@@ -112,7 +112,10 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
     // inside it, so the band's surfaces are sized to the cut before anything is redrawn. `install` could only
     // size them for the empty page it was called on, and a `DrawingArea` clips its draw callback to its
     // allocation — an added row painted below the old height simply never appeared.
-    crate::ui::cut_tracks::fit_band_height_for_window(window, &crate::ui::cut_view::band_scene_for(window));
+    crate::ui::cut_tracks::fit_band_height_for_window(
+        window,
+        &crate::ui::cut_view::band_scene_for(window),
+    );
     if LANE_REFRESH.with(|cell| cell.get()) {
         return;
     }
@@ -150,7 +153,9 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
     if let Some(index) = held_index {
         if let Some(effect) = cut_.fx.get(index) {
             if effect.effect_kind().is_some_and(fx_lane::drawn_paused) {
-                scene.overlays.push((index, effect.effect_kind().expect("filtered above"), 1.0));
+                scene
+                    .overlays
+                    .push((index, effect.effect_kind().expect("filtered above"), 1.0));
             }
         }
     }
@@ -158,7 +163,9 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
     if let Some(lane) = effects_lane_box(window) {
         sync_lane_rows(&lane, rows.max(1));
         for bar in &bars {
-            let Some(row_box) = lane_row_box(&lane, bar.row) else { continue };
+            let Some(row_box) = lane_row_box(&lane, bar.row) else {
+                continue;
+            };
             let bar_widget = ensure_bar(&row_box, &format!("fx-bar-{}", bar.index), |slot| {
                 // F3.8 S3: the bar is an OVERLAY, not a box, so its ✕ sits OVER the middle of the wash instead of
                 // after it — §A.9 puts the kill "in the middle", and a box laid the ink and then the button out
@@ -191,10 +198,20 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
                 bar.index,
                 &crate::ui::cut_lane_paint::view_for(&cut_.fx[bar.index], drawn, slot_h),
             );
-            crate::ui::cut_debt_tail::wear_tail(bar_widget.as_ref(), &cut_, bar.index, t, &crate::ui::page_recordings());
+            crate::ui::cut_debt_tail::wear_tail(
+                bar_widget.as_ref(),
+                &cut_,
+                bar.index,
+                t,
+                &crate::ui::page_recordings(),
+            );
             set_class(&bar_widget, "fx-kind-zoom-staying", bar.staying);
             if !bar.staying {
-                set_class(&bar_widget, &format!("fx-kind-{}", spell_kind(bar.kind)), true);
+                set_class(
+                    &bar_widget,
+                    &format!("fx-kind-{}", spell_kind(bar.kind)),
+                    true,
+                );
             }
             // F3.8 S3: the ✕ lives INSIDE the bar it kills, named after the record rather than the row, so a
             // test can find "the kill button of effect #i" and click it. It exists only while the bar is wide
@@ -281,8 +298,8 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
         });
     }
     crate::ui::cut_preview_frame::repaint(window);
-    if let Some(stack) = preview_widget(window, "preview-overlays")
-        .and_then(|w| w.downcast::<gtk::Box>().ok())
+    if let Some(stack) =
+        preview_widget(window, "preview-overlays").and_then(|w| w.downcast::<gtk::Box>().ok())
     {
         crate::ui::cut_preview_panel::sync_overlay_stack(&stack, &scene, held_index);
     }
@@ -300,8 +317,8 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
         let room = fx_lane::room_px(panel.width() as f64, asked.max(0) as f64);
         // What the plate says is the debt of the record under the red line, not a placeholder.
         let said = fx_lane::plate_for(fx_lane::plate_debt_at(&cut_.fx, t), room);
-        if let Some(plate) = preview_widget(window, "preview-plate")
-            .and_then(|w| w.downcast::<gtk::Label>().ok())
+        if let Some(plate) =
+            preview_widget(window, "preview-plate").and_then(|w| w.downcast::<gtk::Label>().ok())
         {
             match said {
                 Some(text) => {
@@ -339,7 +356,11 @@ pub fn cut_bar_width_px(dur: f64) -> f64 {
 
 /// F3.8 S3: the same build-once rule as [`ensure_bar`], for the bar itself, which is an Overlay (so its ✕
 /// can sit over the middle of its ink rather than beside it).
-fn ensure_bar<F: FnOnce(i32) -> gtk::Overlay>(holder: &gtk::Box, name: &str, make: F) -> gtk::Overlay {
+fn ensure_bar<F: FnOnce(i32) -> gtk::Overlay>(
+    holder: &gtk::Box,
+    name: &str,
+    make: F,
+) -> gtk::Overlay {
     if let Some(found) = holder
         .first_child()
         .and_then(|node| walk_named(node, name))
@@ -355,7 +376,11 @@ fn ensure_bar<F: FnOnce(i32) -> gtk::Overlay>(holder: &gtk::Box, name: &str, mak
 
 /// F3.8 S3: the same build-once rule for the kill target, whose parent is a bar's Overlay — `add_overlay`, not
 /// `append`, or GTK would treat it as a second main child.
-fn ensure_kill_target<F: FnOnce(i32) -> gtk::Button>(bar: &gtk::Overlay, name: &str, make: F) -> gtk::Button {
+fn ensure_kill_target<F: FnOnce(i32) -> gtk::Button>(
+    bar: &gtk::Overlay,
+    name: &str,
+    make: F,
+) -> gtk::Button {
     if let Some(found) = bar
         .first_child()
         .and_then(|node| walk_named(node, name))
@@ -472,18 +497,22 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
     );
     for (index, row) in rows.iter().enumerate() {
         let name = cut_screen::readout_widget(row.label);
+        // §A's ladder: the Thumbnails row must answer to its readout name (`cut-readout-<key kebab>`, which
+        // `press_thumb` repaints), so the name goes on the row's VALUE box and the number label inside it
+        // is what the user reads.
+        let ladder = name == "cut-readout-thumbnails";
         let key = gtk::Label::new(Some(&format!("{}:", row.label)));
         key.set_xalign(0.0);
         key.add_css_class("dim-label");
         key.set_widget_name(&format!("{name}-key"));
-        let value = if row.tip.is_empty() {
+        let value: gtk::Widget = if row.tip.is_empty() {
             // No control on this row: the value is the whole of it, and it reads at the RIGHT end (§1).
-            let value = gtk::Label::new(Some(&row.value));
-            value.set_xalign(1.0);
+            let plain = gtk::Label::new(Some(&row.value));
+            plain.set_xalign(1.0);
             // GTK 4's GtkGrid has no per-column expand flag (that was GtkTable): a column grows when the
             // widgets in it ask to expand, so the value cells carry it and the key cells do not.
-            value.set_hexpand(true);
-            value.upcast::<gtk::Widget>()
+            plain.set_hexpand(true);
+            plain.upcast::<gtk::Widget>()
         } else {
             // Thumbnails: the ladder sits beside the number it drives.
             // The number sits between its two steps, and the ladder as a WHOLE ends at the column's right
@@ -492,6 +521,9 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
             let line = gtk::Box::new(gtk::Orientation::Horizontal, 4);
             line.set_hexpand(true);
             line.set_halign(gtk::Align::End);
+            if ladder {
+                line.set_widget_name(&cut_screen::readout_widget(row.label));
+            }
             let minus = gtk::Button::with_label("\u{1f5bc}\u{2212}");
             minus.set_widget_name("thumb-minus");
             minus.set_tooltip_text(Some(row.tip));
@@ -508,7 +540,9 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
             line.append(&plus);
             line.upcast::<gtk::Widget>()
         };
-        value.set_widget_name(&name);
+        if !ladder {
+            value.set_widget_name(&name);
+        }
         form.attach(&key, 0, index as i32, 1, 1);
         form.attach(&value, 1, index as i32, 1, 1);
     }

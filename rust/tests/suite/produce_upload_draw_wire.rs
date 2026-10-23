@@ -15,7 +15,6 @@ use naivepost::settings::{self, Conf};
 
 use crate::common;
 
-
 struct Fixture {
     root: PathBuf,
     tree: naivepost::layout::Tree,
@@ -52,7 +51,11 @@ fn fixture(tag: &str, sd_url: &str) -> Fixture {
     conf.sd_server = sd_url.to_string();
     settings::save(&paths, &conf).expect("settings written");
     let tree = naivepost::layout::Tree::new(&session).expect("a .naivepost folder is a project");
-    Fixture { root, tree, _scenario: scenario }
+    Fixture {
+        root,
+        tree,
+        _scenario: scenario,
+    }
 }
 
 // ---- the fake sd.cpp ----------------------------------------------------------------------------
@@ -107,7 +110,11 @@ impl FakeSd {
                 std::thread::spawn(move || serve(stream, &serving, &sender));
             }
         });
-        FakeSd { port, received, script }
+        FakeSd {
+            port,
+            received,
+            script,
+        }
     }
 
     fn url(&self) -> String {
@@ -130,7 +137,11 @@ fn serve(mut stream: TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender
 
 /// Records the request before it answers: the program's next call follows the answer at once, and a
 /// record sent after the reply let that call's thread report first, out of order.
-fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender<Seen>) -> Option<()> {
+fn serve_inner(
+    stream: &mut TcpStream,
+    script: &Arc<Mutex<Script>>,
+    seen: &mpsc::Sender<Seen>,
+) -> Option<()> {
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).ok()?;
@@ -152,7 +163,11 @@ fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc:
     if length > 0 {
         reader.read_exact(&mut payload).ok()?;
     }
-    let path = request_line.split_whitespace().nth(1).unwrap_or_default().to_string();
+    let path = request_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or_default()
+        .to_string();
     let body = String::from_utf8_lossy(&payload).to_string();
     let _ = seen.send(Seen { path, body });
     let reply = script.lock().expect("script lock").take();
@@ -184,12 +199,18 @@ fn f5_6_s6_the_submit_leg_dials_img_gen_and_reads_the_job_id() {
     let seen = sd.next();
     assert_eq!(seen.path, "/sdcpp/v1/img_gen", "§3.5's submit path");
     let sent: serde_json::Value = serde_json::from_str(&seen.body).expect("the body is JSON");
-    assert_eq!(sent["width"], 1280, "the frame is the video's shape at long side 1280");
+    assert_eq!(
+        sent["width"], 1280,
+        "the frame is the video's shape at long side 1280"
+    );
     assert_eq!(sent["height"], 720);
     assert_eq!(sent["seed"], -1, "a fresh draw every time");
     assert_eq!(sent["output_format"], "png");
     assert!(
-        sent["prompt"].as_str().unwrap_or_default().contains("Do not write any words"),
+        sent["prompt"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Do not write any words"),
         "the no-words tail belongs in the prompt: {sent}"
     );
 }
@@ -204,20 +225,31 @@ fn f5_6_s6_the_poll_leg_reports_status_and_queue() {
         serde_json::json!({ "status": "done" }).to_string(),
     ]);
     let scene = fixture("poll", &sd.url());
-    let job = up::DrawnJob { id: "job-77".to_string() };
+    let job = up::DrawnJob {
+        id: "job-77".to_string(),
+    };
     let mut lines: Vec<String> = Vec::new();
     let started = std::time::Instant::now();
-    let last = draw::wait_until_done(&scene.tree, &job, &|| false, |line| lines.push(line.to_string()))
-        .expect("the job finished");
+    let last = draw::wait_until_done(&scene.tree, &job, &|| false, |line| {
+        lines.push(line.to_string())
+    })
+    .expect("the job finished");
     assert!(last.done, "the loop stops on the answer that says done");
     assert_eq!(lines.len(), 3, "one line per ask: {lines:?}");
-    assert_eq!(lines[0], "drawing (queued, 3 ahead in the queue)", "{}", lines[0]);
+    assert_eq!(
+        lines[0], "drawing (queued, 3 ahead in the queue)",
+        "{}",
+        lines[0]
+    );
     assert_eq!(lines[1], "drawing (drawing)", "{}", lines[1]);
     assert_eq!(lines[2], "drawing (done)", "{}", lines[2]);
     // Every poll went to the JOB's own path, and the cadence is one ask per second (§F5.6).
     for _ in 0..3 {
         let seen = sd.next();
-        assert_eq!(seen.path, "/sdcpp/v1/jobs/job-77", "the job kind carries its id");
+        assert_eq!(
+            seen.path, "/sdcpp/v1/jobs/job-77",
+            "the job kind carries its id"
+        );
     }
     let elapsed = started.elapsed();
     // The first ask goes out at once and the next two wait a second each: three asks cannot finish inside
@@ -226,7 +258,11 @@ fn f5_6_s6_the_poll_leg_reports_status_and_queue() {
         elapsed >= std::time::Duration::from_millis(1900),
         "three asks at one per second take about two seconds: {elapsed:?}"
     );
-    assert_eq!(draw::poll_interval(), std::time::Duration::from_secs(1), "the spec's cadence");
+    assert_eq!(
+        draw::poll_interval(),
+        std::time::Duration::from_secs(1),
+        "the spec's cadence"
+    );
 }
 
 /// A drawing server that is not there fails by NAME, and the text published before the draw stays on disk
@@ -253,10 +289,17 @@ fn f5_6_s6_a_down_image_server_keeps_the_published_text() {
     naivepost::publish::save(&record, &scene.tree).expect("publish.json written");
     let body = up::request_body("brighten it", None, 1280, 720, &[]);
     let err = draw::submit(&scene.tree, &body).expect_err("nothing listens there");
-    assert!(err.contains(&dead), "the reason names the address tried: {err}");
+    assert!(
+        err.contains(&dead),
+        "the reason names the address tried: {err}"
+    );
     assert!(
         naivepost::publish::is_written(&scene.tree),
         "the publish files survive a failed draw (S5)"
     );
-    assert_eq!(live.script.lock().expect("script lock").served, 0, "the live fake was never dialled");
+    assert_eq!(
+        live.script.lock().expect("script lock").served,
+        0,
+        "the live fake was never dialled"
+    );
 }

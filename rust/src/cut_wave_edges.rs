@@ -56,7 +56,8 @@ pub fn read_lanes(tree: &Tree, sources: &[crate::project::Source]) -> Vec<Envelo
             )
         })
         .collect();
-    let offsets = crate::fix_transcripts::placement(&named.iter().map(|(name, _)| *name).collect::<Vec<_>>());
+    let offsets =
+        crate::fix_transcripts::placement(&named.iter().map(|(name, _)| *name).collect::<Vec<_>>());
     named
         .iter()
         .zip(offsets)
@@ -64,7 +65,12 @@ pub fn read_lanes(tree: &Tree, sources: &[crate::project::Source]) -> Vec<Envelo
             let (size, mtime) = stat_recording(tree, stored)?;
             let wave = wave::read(tree, lane_key(name), size, mtime).ok()??;
             let peaks = wave.chans.first()?.clone();
-            Some(Envelope { lane: lane_key(name).to_string(), at, hz: wave.hz, peaks })
+            Some(Envelope {
+                lane: lane_key(name).to_string(),
+                at,
+                hz: wave.hz,
+                peaks,
+            })
         })
         .collect()
 }
@@ -133,7 +139,9 @@ pub fn waveform_mode(aligner: &str) -> bool {
 /// which is the default, and so the waveform mode.
 pub fn aligner_from_settings() -> String {
     match crate::settings::from_environment() {
-        Some(paths) => crate::settings::read(&paths).map(|conf| conf.align_model).unwrap_or_default(),
+        Some(paths) => crate::settings::read(&paths)
+            .map(|conf| conf.align_model)
+            .unwrap_or_default(),
         None => String::new(),
     }
 }

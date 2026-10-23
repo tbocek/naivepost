@@ -51,7 +51,9 @@ pub fn build() -> gtk::Button {
 
 /// The picture widget of THIS window, newest window winning like every other per-window reader here.
 fn picture(window: &adw::ApplicationWindow) -> Option<gtk::Picture> {
-    find(window.content()?.upcast_ref(), "preview-picture")?.downcast().ok()
+    find(window.content()?.upcast_ref(), "preview-picture")?
+        .downcast()
+        .ok()
 }
 
 fn find(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
@@ -60,7 +62,9 @@ fn find(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     }
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if let Some(found) = find(&widget, name) {
             return Some(found);
         }
@@ -325,7 +329,9 @@ fn first_footage_shape(window: &adw::ApplicationWindow) -> Option<(i32, i32)> {
 /// fractions into pixels, so a caption, a drawing and a zoom box all agree with the render.
 pub fn plate_shape(window: &adw::ApplicationWindow) -> (i32, i32) {
     let _ = window;
-    PLATE_SHAPE.with(|slot| *slot.borrow()).unwrap_or(FALLBACK_SHAPE)
+    PLATE_SHAPE
+        .with(|slot| *slot.borrow())
+        .unwrap_or(FALLBACK_SHAPE)
 }
 
 /// The shape a preview panel falls back to with nothing decoded yet: the shipped declaration

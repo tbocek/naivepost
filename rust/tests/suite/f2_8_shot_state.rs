@@ -50,10 +50,8 @@ fn fixture_cut() -> Cut {
 
 /// A Cut-page window on that fixture, in its own temp folder so the drag has a real `cut/cut.json` to write.
 fn shot_window(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
-    let root = std::env::temp_dir().join(format!(
-        "naivepost-f28-shots-{}-{slug}",
-        std::process::id()
-    ));
+    let root =
+        std::env::temp_dir().join(format!("naivepost-f28-shots-{}-{slug}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let session = naivepost::startup::session_dir(&root);
     std::fs::create_dir_all(session.join("cut")).expect("a session cut folder");
@@ -101,12 +99,7 @@ fn total(segs: &[Seg]) -> f64 {
 /// throttled ticks work, one tick per mouse-move event). So a test that asks for 14 s of travel in ONE update
 /// gets 14 × pps seconds asked for, which the clamp stops at the next clip's start + 1 s. Real hands send many
 /// updates; this walks the border in [`STEP`] -second ticks, which is what a hand actually does.
-fn drag_border(
-    window: &adw::ApplicationWindow,
-    index: usize,
-    border: Border,
-    to_seconds: f64,
-) {
+fn drag_border(window: &adw::ApplicationWindow, index: usize, border: Border, to_seconds: f64) {
     let trimmer = ui::trim_gesture(window).expect("the Cut page wired a trim drag");
     let pps = deepened_pps(window);
     let boxes = cut_trim::clip_boxes(&ui::review_cut_segs(window), pps);
@@ -160,7 +153,11 @@ fn drag_border(
         "§S1's clamp moved this aim on its own ({to_seconds} -> {target}), so the test's target is wrong, \"
          not the app's behaviour"
     );
-    let direction = if to_seconds >= from_seconds { STEP } else { -STEP };
+    let direction = if to_seconds >= from_seconds {
+        STEP
+    } else {
+        -STEP
+    };
     let mut here = from_seconds;
     while (here - to_seconds).abs() > STEP.abs() {
         here += direction;
@@ -280,7 +277,10 @@ fn check_shot(app: &adw::Application) {
     // S1's other half: the picture landed on the edge, so the panel asked for the frame AT it.
     let asked = naivepost::ui::cut_picture::preview_asked_for_test();
     println!("TRIM shot preview asked: {asked:?}");
-    assert!(asked.is_some(), "the panel asked for a frame after the trim");
+    assert!(
+        asked.is_some(),
+        "the panel asked for a frame after the trim"
+    );
     RAN_SHOT.store(true, Ordering::SeqCst);
     window.close();
 }
@@ -290,7 +290,11 @@ fn check_real_drag(app: &adw::Application) {
     let window = shot_window(app, "drag");
     drag_border(&window, SHOT_CLIP, Border::End, SHOT_TO);
     let second = seg_at(&window, SHOT_CLIP);
-    println!("DRAG left clip {} at {:?}", SHOT_CLIP + 1, (second.s, second.e));
+    println!(
+        "DRAG left clip {} at {:?}",
+        SHOT_CLIP + 1,
+        (second.s, second.e)
+    );
     assert!(
         (second.e - SHOT_TO).abs() < 0.01,
         "the drag landed on the aimed second: {second:?}"
@@ -329,7 +333,8 @@ fn check_line_never_moves(app: &adw::Application) {
     let grab_px = boxes[SHOT_CLIP].x + boxes[SHOT_CLIP].w;
     assert!(
         cut_trim::border_at(&boxes, grab_px) == Some((SHOT_CLIP, Border::End)),
-        "the right press must land on clip {}'s end border", SHOT_CLIP + 1
+        "the right press must land on clip {}'s end border",
+        SHOT_CLIP + 1
     );
     mover.emit_by_name::<()>("drag-begin", &[&grab_px, &0.0f64]);
     settle();
@@ -406,23 +411,36 @@ fn round() {
         app.run_with_args::<String>(&[]);
     });
     let failed = failures.lock().unwrap().clone();
-    assert!(failed.is_empty(), "trim-shot checks failed -> {}", failed.join(" // "));
+    assert!(
+        failed.is_empty(),
+        "trim-shot checks failed -> {}",
+        failed.join(" // ")
+    );
 }
 
 #[test]
 fn f2_8_s1_the_trim_shot_drags_a_border_and_prints_the_trim_sentence() {
     round();
-    assert!(RAN_SHOT.load(Ordering::SeqCst), "the staged-shot check never ran");
+    assert!(
+        RAN_SHOT.load(Ordering::SeqCst),
+        "the staged-shot check never ran"
+    );
 }
 
 #[test]
 fn f2_8_s1_a_real_border_drag_trims_and_lands_the_picture_on_the_edge() {
     round();
-    assert!(RAN_DRAG.load(Ordering::SeqCst), "the real-drag check never ran");
+    assert!(
+        RAN_DRAG.load(Ordering::SeqCst),
+        "the real-drag check never ran"
+    );
 }
 
 #[test]
 fn f2_8_s3_a_right_drag_that_trims_never_moves_the_line() {
     round();
-    assert!(RAN_LINE.load(Ordering::SeqCst), "the line-never-moves check never ran");
+    assert!(
+        RAN_LINE.load(Ordering::SeqCst),
+        "the line-never-moves check never ran"
+    );
 }

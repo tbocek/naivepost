@@ -116,7 +116,10 @@ fn f4_2_a_plain_json_answer_is_accepted_as_well_as_the_entries_document() {
     assert_eq!(from_list.len(), 2);
     assert_eq!((from_list[0].start, from_list[0].end), (0.0, 10.0));
     assert_eq!(from_list[0].at, 1.0);
-    assert!(from_list[1].text.is_empty(), "clip 2's silence survives the parse");
+    assert!(
+        from_list[1].text.is_empty(),
+        "clip 2's silence survives the parse"
+    );
 
     // An unreadable answer costs an attempt and SAYS so; it is never mistaken for "nothing to write".
     let mut rejected: Vec<String> = Vec::new();
@@ -143,7 +146,10 @@ fn f4_2_a_plain_json_answer_is_accepted_as_well_as_the_entries_document() {
     )
     .expect_err("same answer, this time watching the log");
     assert_eq!(
-        rejected.iter().filter(|l| l.contains("narration attempt")).count(),
+        rejected
+            .iter()
+            .filter(|l| l.contains("narration attempt"))
+            .count(),
         pass::attempts() as usize,
         "each rejected attempt is logged with its number: {rejected:?}"
     );
@@ -311,7 +317,10 @@ fn f4_2_the_writer_really_dials_the_configured_address() {
         Ok(round) => round,
         Err(why) => panic!("the live call should have dialled the fake; it said: {why}"),
     };
-    assert_eq!(round.requests, 2, "the content answer is followed by the finish nudge round");
+    assert_eq!(
+        round.requests, 2,
+        "the content answer is followed by the finish nudge round"
+    );
     // What arrived on the wire, from the server's side. The fake hands back the request body; the path
     // and verb are asserted through what the body itself is: a chat-completion body, not a probe.
     let seen = llm.next_body();
@@ -327,9 +336,16 @@ fn f4_2_the_writer_really_dials_the_configured_address() {
     // And the answer that came back over that socket is the entries document, parsing to both clips.
     let parsed = naivepost::narrate_reply::entries_of(&round.answer)
         .expect("the answer off the socket reads as narration entries");
-    assert_eq!(parsed.len(), 2, "one line and one silence, both clips answered");
+    assert_eq!(
+        parsed.len(),
+        2,
+        "one line and one silence, both clips answered"
+    );
     assert_eq!(parsed[0].text, SHORT_LINE);
-    assert!(parsed[1].text.is_empty(), "clip 2's silence survives the wire");
+    assert!(
+        parsed[1].text.is_empty(),
+        "clip 2's silence survives the wire"
+    );
 }
 
 /// A fake LLM on a free loopback port: answers each ask with the next scripted reply, and keeps answering

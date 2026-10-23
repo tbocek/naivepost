@@ -54,7 +54,11 @@ fn f3_11_s5_live_effects_two_rounds_then_the_give_up_line_is_said() {
         // The same budget and the same doors the pass uses: each round asks afresh, the fault is said back, and
         // `cut_captions::retries` decides whether another round is owed. A third never is.
         let asked = effects_ask::ask(&fixture.tree, CTX, &batch, &[], attempt, &|| false);
-        assert!(!asked.failed, "the wire answered both times: {:?}", asked.reason);
+        assert!(
+            !asked.failed,
+            "the wire answered both times: {:?}",
+            asked.reason
+        );
         let reply = cut_effects_pass::place(&batch, &asked.calls);
         if let Some(problem) = &reply.fault {
             said.push(cut_effects_pass::rejected(problem));
@@ -68,8 +72,15 @@ fn f3_11_s5_live_effects_two_rounds_then_the_give_up_line_is_said() {
         }
     }
 
-    assert!(placed.is_none(), "both rounds were rejected, so nothing lands");
-    assert_eq!(asked(&fixture), 2, "two rounds, two requests — a third ask never happens");
+    assert!(
+        placed.is_none(),
+        "both rounds were rejected, so nothing lands"
+    );
+    assert_eq!(
+        asked(&fixture),
+        2,
+        "two rounds, two requests — a third ask never happens"
+    );
     assert_eq!(
         said,
         vec![

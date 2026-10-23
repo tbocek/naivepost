@@ -168,16 +168,19 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s3_img
     // keep a face and change the background. Checked over the serialised body because that is the
     // only place a stray key could hide.
     let serialized = serde_json::to_string(&full).expect("a body that serialises");
-    assert_eq!(full["ref_images"], json!([
-        "data:image/png;base64,AAA",
-        "data:image/png;base64,BBB"
-    ]));
+    assert_eq!(
+        full["ref_images"],
+        json!(["data:image/png;base64,AAA", "data:image/png;base64,BBB"])
+    );
     assert!(!serialized.contains("init_image"), "{serialized}");
 
     // auto_resize_ref_image is always there — including with no references at all, so the key a
     // server reads is the same key on every request.
     assert_eq!(full["auto_resize_ref_image"], json!(true));
-    assert!(empty.as_object().expect("an object").contains_key("auto_resize_ref_image"));
+    assert!(empty
+        .as_object()
+        .expect("an object")
+        .contains_key("auto_resize_ref_image"));
 }
 
 #[test]
@@ -258,7 +261,11 @@ use naivepost::checks::{self, AUDIO_ROWS};
 use naivepost::services::AudioModel;
 
 fn model(id: &str, family: &str, task: &str) -> AudioModel {
-    AudioModel { id: id.to_string(), family: family.to_string(), task: task.to_string() }
+    AudioModel {
+        id: id.to_string(),
+        family: family.to_string(),
+        task: task.to_string(),
+    }
 }
 
 /// The LLM and vision rows: the smallest request that proves an id and a key, and a picture a
@@ -271,11 +278,17 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s5_llm
     assert_eq!(body["max_tokens"], json!(16));
     assert_eq!(checks::LLM_TEST_MAX_TOKENS, 16);
     assert_eq!(body["enable_thinking"], json!(false));
-    assert_eq!(body["chat_template_kwargs"]["enable_thinking"], json!(false));
+    assert_eq!(
+        body["chat_template_kwargs"]["enable_thinking"],
+        json!(false)
+    );
     assert_eq!(body["model"], json!("some-model"));
     // A text answer is slow only because the server is loading; an image prompt also loads the
     // vision encoder, so it gets twice as long.
-    assert_eq!((checks::LLM_TEST_SECONDS, checks::VISION_TEST_SECONDS), (60, 120));
+    assert_eq!(
+        (checks::LLM_TEST_SECONDS, checks::VISION_TEST_SECONDS),
+        (60, 120)
+    );
 
     // The probe really is a 48 px solid red square: signature, IHDR read back, and the stored
     // IDAT inflated by hand (a stored-deflate block is length + complement + bytes).
@@ -290,13 +303,22 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s5_llm
     let idat = png_at(&png, b"IDAT");
     assert_eq!(idat[..2], [0x78, 0x01], "zlib stream");
     let raw = stored_deflate(&idat[2..]);
-    assert_eq!(raw.len(), 48 * (1 + 48 * 3), "one filter byte plus 48 pixels per row");
+    assert_eq!(
+        raw.len(),
+        48 * (1 + 48 * 3),
+        "one filter byte plus 48 pixels per row"
+    );
     for row in 0..48usize {
         let start = row * 145;
         assert_eq!(raw[start], 0, "row {row} uses no filter");
-        assert_eq!(&raw[start + 1..start + 7], &[0xDC, 0x00, 0x00, 0xDC, 0x00, 0x00]);
+        assert_eq!(
+            &raw[start + 1..start + 7],
+            &[0xDC, 0x00, 0x00, 0xDC, 0x00, 0x00]
+        );
         assert!(
-            raw[start + 1..start + 145].chunks(3).all(|p| p == [0xDC, 0x00, 0x00]),
+            raw[start + 1..start + 145]
+                .chunks(3)
+                .all(|p| p == [0xDC, 0x00, 0x00]),
             "row {row} is not solid red"
         );
     }
@@ -331,21 +353,61 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s6_aud
     assert!(err.contains("step-1"), "it names what is served: {err}");
 
     // One id per button, and the declared task is what decides.
-    let catalogue = [model("nemotron-asr", "nemotron", "asr"), model("mislabelled", "x", "diar")];
-    let absent = checks::model_verdict(&catalogue, "nope-asr", naivepost::services::Need { task: "asr", step: "Prepare" }).expect_err("not served");
+    let catalogue = [
+        model("nemotron-asr", "nemotron", "asr"),
+        model("mislabelled", "x", "diar"),
+    ];
+    let absent = checks::model_verdict(
+        &catalogue,
+        "nope-asr",
+        naivepost::services::Need {
+            task: "asr",
+            step: "Prepare",
+        },
+    )
+    .expect_err("not served");
     assert!(absent.contains("nope-asr"), "{absent}");
-    let wrong = checks::model_verdict(&catalogue, "mislabelled", naivepost::services::Need { task: "asr", step: "Prepare" })
-        .expect_err("declared for another task");
-    assert!(wrong.contains("diar"), "it says what the server declares: {wrong}");
-    assert!(checks::model_verdict(&catalogue, "nemotron-asr", naivepost::services::Need { task: "asr", step: "Prepare" }).is_ok());
+    let wrong = checks::model_verdict(
+        &catalogue,
+        "mislabelled",
+        naivepost::services::Need {
+            task: "asr",
+            step: "Prepare",
+        },
+    )
+    .expect_err("declared for another task");
+    assert!(
+        wrong.contains("diar"),
+        "it says what the server declares: {wrong}"
+    );
+    assert!(checks::model_verdict(
+        &catalogue,
+        "nemotron-asr",
+        naivepost::services::Need {
+            task: "asr",
+            step: "Prepare"
+        }
+    )
+    .is_ok());
     // A blank declared task passes: plenty of servers list ids with no task at all.
     let blank = [model("bs-roformer", "bs", "")];
-    assert!(checks::model_verdict(&blank, "bs-roformer", naivepost::services::Need { task: "sep", step: "Prepare" }).is_ok());
+    assert!(checks::model_verdict(
+        &blank,
+        "bs-roformer",
+        naivepost::services::Need {
+            task: "sep",
+            step: "Prepare"
+        }
+    )
+    .is_ok());
     // The four buttons this covers, each with the task it checks.
     assert_eq!(AUDIO_ROWS.len(), 4);
 
     // The aligner is chosen by task: a model whose id says nothing but is declared `align` is used…
-    let aligned = [model("whatever-1", "f", "align"), model("other", "f", "asr")];
+    let aligned = [
+        model("whatever-1", "f", "align"),
+        model("other", "f", "asr"),
+    ];
     let ok = checks::aligner_verdict("", &aligned).expect("task align is enough");
     assert!(ok.contains("whatever-1"), "{ok}");
     // …an id in the box that the server does not declare for `align` is a miss…
@@ -363,9 +425,20 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s7_bin
     // §5's lists, and no drawtext — the thumbnail title is lettered by the image model now.
     assert_eq!(
         checks::FF_FILTERS,
-        ["rubberband", "subtitles", "loudnorm", "atempo", "amix", "adelay", "alimiter"]
+        [
+            "rubberband",
+            "subtitles",
+            "loudnorm",
+            "atempo",
+            "amix",
+            "adelay",
+            "alimiter"
+        ]
     );
-    assert_eq!(checks::FF_ENCODERS, ["libx264", "libx265", "aac", "libopus"]);
+    assert_eq!(
+        checks::FF_ENCODERS,
+        ["libx264", "libx265", "aac", "libopus"]
+    );
     assert!(!checks::FF_FILTERS.contains(&"drawtext"));
 
     // A listing missing exactly one filter. The name is the second field of each line, after flags.
@@ -376,17 +449,32 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s7_bin
             out.push_str(&format!(" T.C {name} audio/video filter\n"));
             out
         });
-    assert_eq!(checks::ffmpeg_missing(&listing, &checks::FF_FILTERS), ["rubberband"]);
+    assert_eq!(
+        checks::ffmpeg_missing(&listing, &checks::FF_FILTERS),
+        ["rubberband"]
+    );
     assert!(checks::ffmpeg_missing(&listing, &checks::FF_ENCODERS).len() == 4);
 
     // §5's order: no binary, then no ffprobe beside it, then the build's components. Each failure
     // names the thing to fix and not the one behind it.
     let gone = checks::ffmpeg_verdict(None, false, "", None, None).expect_err("no ffmpeg");
     assert!(gone.contains("PATH"), "{gone}");
-    let alone = checks::ffmpeg_verdict(Some("/opt/ff/ffmpeg"), false, "ffmpeg version 7", None, None)
-        .expect_err("no ffprobe");
-    assert!(alone.contains("/opt/ff/ffprobe"), "it names where it looked: {alone}");
-    assert!(!alone.contains("rubberband"), "a missing ffprobe is not a build problem: {alone}");
+    let alone = checks::ffmpeg_verdict(
+        Some("/opt/ff/ffmpeg"),
+        false,
+        "ffmpeg version 7",
+        None,
+        None,
+    )
+    .expect_err("no ffprobe");
+    assert!(
+        alone.contains("/opt/ff/ffprobe"),
+        "it names where it looked: {alone}"
+    );
+    assert!(
+        !alone.contains("rubberband"),
+        "a missing ffprobe is not a build problem: {alone}"
+    );
     let stripped = checks::ffmpeg_verdict(
         Some("/usr/bin/ffmpeg"),
         true,
@@ -395,13 +483,17 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s7_bin
         Some("Encoders:\n V....D libx264\n A....D aac\n"),
     )
     .expect_err("built without things");
-    assert!(stripped.contains("rubberband") && stripped.contains("libx265"), "{stripped}");
-    let good_listing = checks::FF_ENCODERS
-        .iter()
-        .fold(String::from("Encoders:\n"), |mut out, name| {
-            out.push_str(&format!(" V....D {name}\n"));
-            out
-        });
+    assert!(
+        stripped.contains("rubberband") && stripped.contains("libx265"),
+        "{stripped}"
+    );
+    let good_listing =
+        checks::FF_ENCODERS
+            .iter()
+            .fold(String::from("Encoders:\n"), |mut out, name| {
+                out.push_str(&format!(" V....D {name}\n"));
+                out
+            });
     let full_listing = format!("{listing} T.C rubberband audio/video filter\n");
     let ok = checks::ffmpeg_verdict(
         Some("/usr/bin/ffmpeg"),
@@ -428,19 +520,33 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s7_bin
     assert!(ok.contains("3 result(s)"), "{ok}");
 
     // GET /v1/models on the LLM backs exactly two things, and neither is a run.
-    assert_eq!(checks::LIST_MODELS_LLM_USES, ["Fetch models", "sd.cpp fallback probe"]);
+    assert_eq!(
+        checks::LIST_MODELS_LLM_USES,
+        ["Fetch models", "sd.cpp fallback probe"]
+    );
     let listed = ["a-model".to_string(), "b-model".to_string()];
     assert!(checks::llm_model_listed(&listed, "a-model").is_ok());
     let absent = checks::llm_model_listed(&listed, "gone").expect_err("not listed");
-    assert!(absent.contains("a-model, b-model"), "it lists what is there: {absent}");
+    assert!(
+        absent.contains("a-model, b-model"),
+        "it lists what is there: {absent}"
+    );
     // The id has no default, so an empty box is its own answer.
     assert!(checks::llm_model_listed(&listed, "").is_err());
 
     // Ten rows and "Test All": one failing row neither stops nor hides the others. Named after the
     // dialog's own rows, in the order they are on screen.
     let names = [
-        "LLM", "LLM vision", "TTS endpoint", "TTS model", "ASR", "Diarization", "Separation",
-        "Aligner", "ffmpeg", "firefox",
+        "LLM",
+        "LLM vision",
+        "TTS endpoint",
+        "TTS model",
+        "ASR",
+        "Diarization",
+        "Separation",
+        "Aligner",
+        "ffmpeg",
+        "firefox",
     ];
     let verdicts: Vec<(&str, Result<String, String>)> = names
         .iter()
@@ -456,7 +562,10 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s7_bin
         .collect();
     let rows = checks::test_all(&verdicts);
     assert_eq!(rows.len(), 10);
-    assert!(!rows[0].ok && rows[1..].iter().all(|row| row.ok), "{rows:?}");
+    assert!(
+        !rows[0].ok && rows[1..].iter().all(|row| row.ok),
+        "{rows:?}"
+    );
     assert_eq!(rows[0].why, "first row is broken");
     let got: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
     assert_eq!(got, names, "the order of the rows is kept");
@@ -473,13 +582,19 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s8_no_
     assert!(!state.writable(ms * 2), "nothing typed, nothing owed");
     state.touched(Duration::ZERO);
     assert_eq!(state.due_at(), Some(ms));
-    assert!(!state.writable(ms - Duration::from_millis(1)), "the beat has not elapsed");
+    assert!(
+        !state.writable(ms - Duration::from_millis(1)),
+        "the beat has not elapsed"
+    );
     assert!(state.writable(ms));
 
     // A second keystroke pushes the deadline back — one write per pause, not one per letter.
     state.touched(Duration::from_millis(300));
     assert_eq!(state.due_at(), Some(Duration::from_millis(900)));
-    assert!(!state.writable(ms), "the first beat is not the due time any more");
+    assert!(
+        !state.writable(ms),
+        "the first beat is not the due time any more"
+    );
     assert!(state.writable(Duration::from_millis(900)));
 
     // Closing writes when a write is owed, and never twice.
@@ -498,7 +613,10 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s8_no_
         audio_noted: "127.0.0.1:8765".to_string(),
     };
     assert!(!draft.save(ms - Duration::from_millis(1)), "not yet");
-    assert_eq!(draft.cached_tts_model, "index-tts2", "a keystroke invalidates nothing");
+    assert_eq!(
+        draft.cached_tts_model, "index-tts2",
+        "a keystroke invalidates nothing"
+    );
     draft.state.touched(Duration::ZERO);
     assert!(draft.save(ms));
     assert!(draft.cached_tts_model.is_empty());
@@ -519,7 +637,10 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s8_no_
 
 /// The body of the PNG chunk named by `kind`, which this test walks rather than trusting.
 fn png_at(png: &[u8], kind: &[u8; 4]) -> Vec<u8> {
-    let at = png.windows(4).position(|w| w == kind).expect("the chunk is there");
+    let at = png
+        .windows(4)
+        .position(|w| w == kind)
+        .expect("the chunk is there");
     let len = u32::from_be_bytes(png[at - 4..at].try_into().unwrap()) as usize;
     png[at + 4..at + 4 + len].to_vec()
 }
@@ -533,7 +654,10 @@ fn stored_deflate(blocks: &[u8]) -> Vec<u8> {
         let last = blocks[at] & 1 == 1;
         let len = u16::from_le_bytes(blocks[at + 1..at + 3].try_into().unwrap()) as usize;
         let complement = !u16::from_le_bytes(blocks[at + 3..at + 5].try_into().unwrap());
-        assert_eq!(len as u16, complement, "a stored block carries its own length twice");
+        assert_eq!(
+            len as u16, complement,
+            "a stored block carries its own length twice"
+        );
         raw.extend_from_slice(&blocks[at + 5..at + 5 + len]);
         at += 5 + len;
         if last {
@@ -550,7 +674,10 @@ fn from_base64(text: &str) -> Vec<u8> {
     let mut buffer = 0u32;
     let mut bits = 0;
     for char in text.bytes().filter(|byte| *byte != b'=') {
-        let value = alphabet.iter().position(|a| *a == char).expect("a base64 character") as u32;
+        let value = alphabet
+            .iter()
+            .position(|a| *a == char)
+            .expect("a base64 character") as u32;
         buffer = (buffer << 6) | value;
         bits += 6;
         if bits >= 8 {

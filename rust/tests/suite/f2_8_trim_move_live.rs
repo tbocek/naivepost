@@ -59,21 +59,39 @@ fn px(secs: f64) -> f64 {
 }
 
 fn footage(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
+    Seg {
+        s,
+        e,
+        cam: 0,
+        ..Default::default()
+    }
 }
 
 fn lane(name: &str, at: f64, dur: f64) -> Lane {
-    Lane { name: name.into(), src: format!("project:sources/{name}.wav"), at, dur, ..Default::default() }
+    Lane {
+        name: name.into(),
+        src: format!("project:sources/{name}.wav"),
+        at,
+        dur,
+        ..Default::default()
+    }
 }
 
 fn recording(base: &str, start: f64, end: f64) -> Recording {
-    Recording { base: base.into(), start, end }
+    Recording {
+        base: base.into(),
+        start,
+        end,
+    }
 }
 
 /// The session's tape: the lecture take over the cut's own footage plus a second take past it. Together they
 /// merge to 120 s, which is what holds the strip at 4 px/s (see the module note).
 fn tape() -> Vec<Recording> {
-    vec![recording("lecture", 0.0, 70.0), recording("cam9", 90.0, 140.0)]
+    vec![
+        recording("lecture", 0.0, 70.0),
+        recording("cam9", 90.0, 140.0),
+    ]
 }
 
 /// Three scenes plus two separate lanes. Both plates (96..116 s, 120..140 s) lie past the last scene, so a
@@ -132,7 +150,11 @@ fn cut_window(
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    assert_eq!(ui::state(&window).page, Page::Cut, "the Cut tab is live with footage");
+    assert_eq!(
+        ui::state(&window).page,
+        Page::Cut,
+        "the Cut tab is live with footage"
+    );
     ui::set_session_recordings(recordings);
     ui::seed_review_cut(&window, seeded);
     ui::set_press_scene(None);
@@ -167,19 +189,33 @@ fn f2_8_s2_a_press_on_the_recorders_band_names_that_lane(app: &adw::Application)
     println!("OBSERVED: zoom={pps} band y={y} | mic-main plate 96..116 s (x {}), mic-boom 120..140 s (x {})", px(106.0), px(130.0));
 
     let (first, wave, border) = ui::right_press_took(px(106.0), y);
-    println!("PRESS x={} y={y} → band={first:?} wave={wave:?} border={border}", px(106.0));
-    assert_eq!(first.as_deref(), Some("mic-main"), "the plate under x names its own lane");
+    println!(
+        "PRESS x={} y={y} → band={first:?} wave={wave:?} border={border}",
+        px(106.0)
+    );
+    assert_eq!(
+        first.as_deref(),
+        Some("mic-main"),
+        "the plate under x names its own lane"
+    );
     assert_eq!(wave, None, "a lane press is not the wave strip's answer");
     assert!(!border, "mid-plate x is not a border");
 
     let (second, _, _) = ui::right_press_took(px(130.0), y);
     println!("PRESS x={} y={y} → band={second:?}", px(130.0));
-    assert_eq!(second.as_deref(), Some("mic-boom"), "a different plate answers a different lane");
+    assert_eq!(
+        second.as_deref(),
+        Some("mic-boom"),
+        "a different plate answers a different lane"
+    );
 
     // 118 s falls between the two plates (mic-main ends at 116, mic-boom starts at 120): band ground with no
     // plate under it, so it names nothing.
     let (gap, gap_wave, _) = ui::right_press_took(px(118.0), y);
-    println!("PRESS x={} y={y} → band={gap:?} wave={gap_wave:?}", px(118.0));
+    println!(
+        "PRESS x={} y={y} → band={gap:?} wave={gap_wave:?}",
+        px(118.0)
+    );
     assert_eq!(gap, None, "a bare strip of band is not a lane");
     assert_eq!(gap_wave, None, "and it names no recording either");
     drop(window);
@@ -193,16 +229,28 @@ fn f2_8_s2_a_press_on_the_wave_strip_names_the_recording_under_the_pointer(app: 
     let tape = tape();
     let (window, pps) = cut_window(app, "waveplate", &cut_, &tape);
     let y = wave_y(&cut_, &tape);
-    println!("OBSERVED: zoom={pps} wave y={y} | lecture 0..70 s (x {}), cam9 90..140 s (x {})", px(20.0), px(106.0));
+    println!(
+        "OBSERVED: zoom={pps} wave y={y} | lecture 0..70 s (x {}), cam9 90..140 s (x {})",
+        px(20.0),
+        px(106.0)
+    );
 
     let (band, wave, _) = ui::right_press_took(px(20.0), y);
     println!("PRESS x={} y={y} → band={band:?} wave={wave:?}", px(20.0));
-    assert_eq!(wave.as_deref(), Some("lecture"), "the wave plate under x names its recording");
+    assert_eq!(
+        wave.as_deref(),
+        Some("lecture"),
+        "the wave plate under x names its recording"
+    );
     assert_eq!(band, None, "and the recorders' band stays out of it");
 
     let (_, second, _) = ui::right_press_took(px(106.0), y);
     println!("PRESS x={} y={y} → wave={second:?}", px(106.0));
-    assert_eq!(second.as_deref(), Some("cam9"), "a second recording answers its own name");
+    assert_eq!(
+        second.as_deref(),
+        Some("cam9"),
+        "a second recording answers its own name"
+    );
     drop(window);
 }
 
@@ -217,7 +265,10 @@ fn f2_8_s2_ruler_ground_and_a_border_take_no_band(app: &adw::Application) {
 
     // Ruler ground over mic-main's plate: no band answers, and no border out there.
     let (band, wave, border) = ui::right_press_took(px(106.0), NO_BAND_Y);
-    println!("RULER PRESS x={} → ({band:?}, {wave:?}, {border})", px(106.0));
+    println!(
+        "RULER PRESS x={} → ({band:?}, {wave:?}, {border})",
+        px(106.0)
+    );
     assert_eq!((band, wave), (None, None), "ruler ground takes no band");
     assert!(!border, "and no border there either");
 
@@ -227,7 +278,11 @@ fn f2_8_s2_ruler_ground_and_a_border_take_no_band(app: &adw::Application) {
     let (b_band, b_wave, b_border) = ui::right_press_took(end_px, NO_BAND_Y);
     println!("BORDER PRESS x={end_px} → ({b_band:?}, {b_wave:?}, {b_border})");
     assert!(b_border, "a press on a drawn border is a border press");
-    assert_eq!((b_band, b_wave), (None, None), "and it names no band: the border owns the press");
+    assert_eq!(
+        (b_band, b_wave),
+        (None, None),
+        "and it names no band: the border owns the press"
+    );
     drop(window);
 }
 
@@ -238,9 +293,12 @@ fn f2_8_s2_only_a_selection_the_press_falls_inside_slides_its_scenes(app: &adw::
     let cut_ = lanes_cut();
     let tape = tape();
     let (window, _pps) = cut_window(app, "inside", &cut_, &tape);
-    let band = ui::draw_selection(&window, Surface::PictureRow(0), None, 5.0, 50.0)
-        .expect("a band draws");
-    assert!(band.length() > 1.0, "the band exists and is long — length is not the question");
+    let band =
+        ui::draw_selection(&window, Surface::PictureRow(0), None, 5.0, 50.0).expect("a band draws");
+    assert!(
+        band.length() > 1.0,
+        "the band exists and is long — length is not the question"
+    );
 
     // 20 s lies inside 5..50; 60 s does not. Same y (ruler ground, so no band answers), same travel.
     let inside = ui::press_move_at(&window, px(20.0), NO_BAND_Y, 12.0, 3.0);
@@ -344,7 +402,10 @@ fn f2_8_s2_one_undo_per_gesture_on_the_move_path(app: &adw::Application) {
         seen[1] > seen[0],
         "the hold moved as the pointer travelled: {seen:?}"
     );
-    assert!(after.abs() > f64::EPSILON, "and the drag did move something: {after}");
+    assert!(
+        after.abs() > f64::EPSILON,
+        "and the drag did move something: {after}"
+    );
 
     let said = ui::press_undo(&window);
     let back = ui::review_cut_shift(&window).values().sum::<f64>();
@@ -381,17 +442,33 @@ fn f2_8_s2_folds_near_the_grab_open_for_the_drag_and_refold_after(app: &adw::App
     let open_now = ui::open_folds(&window);
     let during = ui::review_cut_of(&window).folds.clone();
     println!("DURING DRAG: open={open_now:?} folds={during:?}");
-    assert!(open_now.contains(&0), "the fold the drag travelled through is the one it asked to open");
-    assert!(!open_now.contains(&1), "and not the one it never reached: {open_now:?}");
+    assert!(
+        open_now.contains(&0),
+        "the fold the drag travelled through is the one it asked to open"
+    );
+    assert!(
+        !open_now.contains(&1),
+        "and not the one it never reached: {open_now:?}"
+    );
 
     mover.emit_by_name::<()>("drag-end", &[&travel_px, &NO_BAND_Y]);
     settle();
     let after = ui::review_cut_of(&window).folds.clone();
-    println!("AFTER RELEASE: open={:?} folds={after:?}", ui::open_folds(&window));
-    assert_eq!(after, folds_at_open, "release refolds exactly what the drag opened");
-    assert!(ui::open_folds(&window).is_empty(), "and the drag forgets the hold: nothing stays opened for it");
+    println!(
+        "AFTER RELEASE: open={:?} folds={after:?}",
+        ui::open_folds(&window)
+    );
     assert_eq!(
-        saved_cut().folds, folds_at_open,
+        after, folds_at_open,
+        "release refolds exactly what the drag opened"
+    );
+    assert!(
+        ui::open_folds(&window).is_empty(),
+        "and the drag forgets the hold: nothing stays opened for it"
+    );
+    assert_eq!(
+        saved_cut().folds,
+        folds_at_open,
         "and the file keeps the fold list the person saved, not the drag's temporary opening"
     );
     drop(window);
@@ -417,17 +494,35 @@ fn f2_8_s3_an_unmoved_right_press_is_a_click_and_says_this_one(app: &adw::Applic
     settle();
 
     let said = status_text(&window);
-    println!("CLICK STATUS: {said:?} (want {:?})", cut_trim_press::CLICK_STATUS);
+    println!(
+        "CLICK STATUS: {said:?} (want {:?})",
+        cut_trim_press::CLICK_STATUS
+    );
     assert_eq!(
         said.trim(),
         cut_trim_press::CLICK_STATUS,
         "an unmoved right press says exactly `{}`",
         cut_trim_press::CLICK_STATUS
     );
-    assert_eq!(ui::review_cut_segs_count(&window), before_segs, "and a click cuts nothing");
-    assert_eq!(ui::review_cut_shift(&window), before_shift, "nor shifts anything");
-    assert_eq!(ui::line_position(&window).t, before_line, "nor moves the line");
-    assert!(matches!(gesture, cut_trim::Gesture::Click), "and the rule answers a click: {gesture:?}");
+    assert_eq!(
+        ui::review_cut_segs_count(&window),
+        before_segs,
+        "and a click cuts nothing"
+    );
+    assert_eq!(
+        ui::review_cut_shift(&window),
+        before_shift,
+        "nor shifts anything"
+    );
+    assert_eq!(
+        ui::line_position(&window).t,
+        before_line,
+        "nor moves the line"
+    );
+    assert!(
+        matches!(gesture, cut_trim::Gesture::Click),
+        "and the rule answers a click: {gesture:?}"
+    );
     drop(window);
 }
 
@@ -446,8 +541,15 @@ fn f2_8_s1_a_live_scrub_is_offered_at_most_one_seek_per_scrub_window() {
         cut_trim::SCRUB_MS
     );
     assert!(first, "a drag that has not scrubbed yet always does");
-    assert!(!too_soon, "and {} ms after a seek the picture waits", cut_trim::SCRUB_MS);
-    assert!(due, "one SCRUB_MS window later it goes again — exactly one seek per window");
+    assert!(
+        !too_soon,
+        "and {} ms after a seek the picture waits",
+        cut_trim::SCRUB_MS
+    );
+    assert!(
+        due,
+        "one SCRUB_MS window later it goes again — exactly one seek per window"
+    );
 }
 
 // The live-player leg of S1 — a real `-s` reaching a running mpv — is NOT covered by this file:

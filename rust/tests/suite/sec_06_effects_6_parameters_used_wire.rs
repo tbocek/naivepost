@@ -63,13 +63,21 @@ const PAST_GUIDE_WORDS: &str = "past the guide";
 
 /// One `add_effect` call: a clip number, a kind, two offsets inside that clip.
 fn call(clip: u32, start: f64, end: f64) -> Call {
-    Call { clip, kind: "zoom".to_string(), start, end, gain: None }
+    Call {
+        clip,
+        kind: "zoom".to_string(),
+        start,
+        end,
+        gain: None,
+    }
 }
 
 /// A reply of `count` zooms, one per clip: every call is inside its clip, so every one is PLACED and the list the
 /// cap is asked about really holds `count` effects.
 fn reply(count: usize) -> Vec<Call> {
-    (1..=count as u32).map(|clip| call(clip, 2.0, 5.0)).collect()
+    (1..=count as u32)
+        .map(|clip| call(clip, 2.0, 5.0))
+        .collect()
 }
 
 fn cap_round(app: &adw::Application) {
@@ -81,8 +89,12 @@ fn cap_round(app: &adw::Application) {
 
     // --- (1) a reply the cap allows is placed -----------------------------------------------------------------
     let window = cut_page(app, &many_clips(small));
-    let button = ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
-    assert!(button.is_sensitive(), "decorations are on, so the gate is open and the pass will run");
+    let button =
+        ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
+    assert!(
+        button.is_sensitive(),
+        "decorations are on, so the gate is open and the pass will run"
+    );
     // The real press first: with no endpoint wired the model proposes nothing, which proves the button forwards to
     // the pass rather than swallowing the press, and leaves the cut's fx where they were.
     let before = ui::review_cut_of(&window).fx.len();
@@ -103,7 +115,10 @@ fn cap_round(app: &adw::Application) {
         before + small,
         "a reply the cap allows ({small} effects) was placed in full"
     );
-    assert!(said.starts_with(&pass::placed(small)), "the pass said it placed them: {said:?}");
+    assert!(
+        said.starts_with(&pass::placed(small)),
+        "the pass said it placed them: {said:?}"
+    );
     // And they reached the lane the user counts bars on, not only the model.
     let bars = lane_bars(&window);
     assert!(
@@ -111,7 +126,11 @@ fn cap_round(app: &adw::Application) {
         "the effects lane drew a bar per placed decoration -- {} bars for {small} effects",
         bars.len()
     );
-    assert_eq!(status_text(&window), said, "the placement sentence is on the status line");
+    assert_eq!(
+        status_text(&window),
+        said,
+        "the placement sentence is on the status line"
+    );
     RAN_AT_CAP.store(true, Ordering::SeqCst);
     eprintln!("CAP block 1 (under the cap) done");
     window.close();
@@ -128,7 +147,10 @@ fn cap_round(app: &adw::Application) {
     let over = reply(small + 1);
     // The rule, asked with the very list the page was handed: under the cap, so the page must place it (it did).
     let verdict = pass::effect_cap_allows_reply(&over_effects(small + 1));
-    assert!(verdict.allowed, "{small}+1 effects are well under P.machine.maxProposedEffects: {verdict:?}");
+    assert!(
+        verdict.allowed,
+        "{small}+1 effects are well under P.machine.maxProposedEffects: {verdict:?}"
+    );
     let said = ui::run_effects_pass_with_reply(&window, &over);
     settle();
     assert_eq!(
@@ -143,7 +165,8 @@ fn cap_round(app: &adw::Application) {
     assert!(!blown.allowed, "one past the cap must be refused");
     let reason = pass::rejected(&blown.reason);
     assert!(
-        reason.contains("maxProposedEffects") && reason.contains(&(pass::MAX_PROPOSED_EFFECTS + 1).to_string()),
+        reason.contains("maxProposedEffects")
+            && reason.contains(&(pass::MAX_PROPOSED_EFFECTS + 1).to_string()),
         "the refusal names P.machine.maxProposedEffects and the count that blew it: {reason}"
     );
     assert!(
@@ -170,7 +193,8 @@ fn over_effects(count: usize) -> Vec<naivepost::cut::Fx> {
             t: 0.0,
             dur: 3.0,
             ..Default::default()
-        }; count
+        };
+        count
     ]
 }
 
@@ -219,12 +243,19 @@ fn density_round(app: &adw::Application) {
     let before = ui::review_cut_of(&window).fx.len();
     let said = ui::run_effects_pass_with_reply(&window, &reply(2));
     settle();
-    assert!(said.starts_with(&pass::placed(2)), "two decorations landed -- got {said:?}");
+    assert!(
+        said.starts_with(&pass::placed(2)),
+        "two decorations landed -- got {said:?}"
+    );
     assert!(
         !said.contains("guide"),
         "a reply inside (3-4 per five minutes) owes the reader nothing new -- got {said:?}"
     );
-    assert_eq!(ui::review_cut_of(&window).fx.len(), before + 2, "and both landed");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        before + 2,
+        "and both landed"
+    );
     RAN_DENSITY_QUIET.store(true, Ordering::SeqCst);
     eprintln!("DENSITY block (b) (inside the guide) done: {said}");
     window.close();
@@ -275,22 +306,49 @@ fn sec_06_effects_6_parameters_used_s10_the_density_row_points_at_the_prompt_cla
         .chain(naivepost::params::effects())
         .filter(|row| row.id == "P.policy.decorationDensity")
         .collect();
-    assert_eq!(rows.len(), 1, "§10's decorationDensity row must be catalogued exactly once");
+    assert_eq!(
+        rows.len(),
+        1,
+        "§10's decorationDensity row must be catalogued exactly once"
+    );
     assert_eq!(rows[0].from, "cut_effects_pass::DENSITY_GUIDE");
-    assert!(rows[0].spelled.contains("three or four"), "{}", rows[0].spelled);
-    assert!(rows[0].spelled.contains("five minutes"), "{}", rows[0].spelled);
+    assert!(
+        rows[0].spelled.contains("three or four"),
+        "{}",
+        rows[0].spelled
+    );
+    assert!(
+        rows[0].spelled.contains("five minutes"),
+        "{}",
+        rows[0].spelled
+    );
     // The row names the guide; the guide and its band agree with each other and with the scaling the pass reports.
-    assert!(pass::DENSITY_GUIDE.contains("three or four"), "{}", pass::DENSITY_GUIDE);
-    assert!(pass::DENSITY_GUIDE.contains("five minutes"), "{}", pass::DENSITY_GUIDE);
+    assert!(
+        pass::DENSITY_GUIDE.contains("three or four"),
+        "{}",
+        pass::DENSITY_GUIDE
+    );
+    assert!(
+        pass::DENSITY_GUIDE.contains("five minutes"),
+        "{}",
+        pass::DENSITY_GUIDE
+    );
     assert_eq!(pass::DENSITY_PER_FIVE_MINUTES, (3, 4));
-    assert_eq!(pass::expected_decorations(pass::FIVE_MINUTES_SECONDS), (3, 4));
-    assert_eq!(pass::expected_decorations(2.0 * pass::FIVE_MINUTES_SECONDS), (6, 8));
+    assert_eq!(
+        pass::expected_decorations(pass::FIVE_MINUTES_SECONDS),
+        (3, 4)
+    );
+    assert_eq!(
+        pass::expected_decorations(2.0 * pass::FIVE_MINUTES_SECONDS),
+        (6, 8)
+    );
 }
 
 // --- S9: the cap -------------------------------------------------------------------------------------------
 
 #[test]
-fn sec_06_effects_6_parameters_used_s9_the_decorations_button_refuses_a_reply_past_the_density_cap() {
+fn sec_06_effects_6_parameters_used_s9_the_decorations_button_refuses_a_reply_past_the_density_cap()
+{
     // Pin cwd BEFORE anything builds: the presses resolve the project through `startup::session_dir(current_dir())`,
     // and leaving it at rust/ writes a stray `rust/session.naivepost/` into the repo.
     let root = std::env::temp_dir().join(format!("np-06e6-cap-{}", std::process::id()));
@@ -300,9 +358,24 @@ fn sec_06_effects_6_parameters_used_s9_the_decorations_button_refuses_a_reply_pa
     ui::window::clear_logs_for_test();
 
     window_round();
-    assert!(RAN_BUTTON.load(Ordering::SeqCst), "the ✨ Decorations press never ran");
-    assert!(RAN_AT_CAP.load(Ordering::SeqCst), "the at-the-cap block never ran");
-    assert!(RAN_OVER_CAP.load(Ordering::SeqCst), "the over-the-cap block never ran");
-    assert!(RAN_DENSITY_SAYS.load(Ordering::SeqCst), "the past-the-guide block never ran");
-    assert!(RAN_DENSITY_QUIET.load(Ordering::SeqCst), "the inside-the-guide block never ran");
+    assert!(
+        RAN_BUTTON.load(Ordering::SeqCst),
+        "the ✨ Decorations press never ran"
+    );
+    assert!(
+        RAN_AT_CAP.load(Ordering::SeqCst),
+        "the at-the-cap block never ran"
+    );
+    assert!(
+        RAN_OVER_CAP.load(Ordering::SeqCst),
+        "the over-the-cap block never ran"
+    );
+    assert!(
+        RAN_DENSITY_SAYS.load(Ordering::SeqCst),
+        "the past-the-guide block never ran"
+    );
+    assert!(
+        RAN_DENSITY_QUIET.load(Ordering::SeqCst),
+        "the inside-the-guide block never ran"
+    );
 }

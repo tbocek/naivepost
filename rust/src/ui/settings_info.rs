@@ -41,7 +41,10 @@ const OPTIONAL_SUFFIX: &str = " (optional)";
 /// the text it was already passing. Unknown headings have no ⓘ, and stay exactly as they were.
 pub fn section_key(heading: &str) -> Option<&'static str> {
     let bare = heading.strip_suffix(OPTIONAL_SUFFIX).unwrap_or(heading);
-    SECTIONS.iter().find(|(_, title)| *title == bare).map(|(key, _)| *key)
+    SECTIONS
+        .iter()
+        .find(|(_, title)| *title == bare)
+        .map(|(key, _)| *key)
 }
 
 /// The ⓘ control's icon: the app's OWN packed ⓘ, from `icons/` -- the same one §1's header uses
@@ -131,8 +134,14 @@ mod tests {
     fn every_section_explains_a_server_in_a_paragraph() {
         for (key, _) in SECTIONS {
             let text = explanation(key).expect("each §5 section has an explanation");
-            assert!(text.chars().count() > 120, "{key}: §5 asks for length, got {text:?}");
+            assert!(
+                text.chars().count() > 120,
+                "{key}: §5 asks for length, got {text:?}"
+            );
         }
-        assert!(explanation("nope").is_none(), "an unknown section gets no ⓘ");
+        assert!(
+            explanation("nope").is_none(),
+            "an unknown section gets no ⓘ"
+        );
     }
 }

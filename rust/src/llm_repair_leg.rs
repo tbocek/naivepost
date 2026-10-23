@@ -109,7 +109,11 @@ pub fn ask_repair_after(
     log(&repair_log(step, &problem));
     let second = build(&grown, next_thinking)?;
     let (second_type, second_body) = dial(&second)?;
-    Ok(Repaired { body: second_body, content_type: second_type, retried: true })
+    Ok(Repaired {
+        body: second_body,
+        content_type: second_type,
+        retried: true,
+    })
 }
 
 /// §3's repair line: what the answer was found to be, and that it was asked for again. The prototype logged

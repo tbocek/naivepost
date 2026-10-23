@@ -43,7 +43,10 @@ pub fn stage(window: &adw::ApplicationWindow) -> Vec<String> {
     // The rows go in `cut_effect_menu` while the page is being built, from this very window, so by now the
     // popover holds them; the map makes them real on screen.
     crate::snapshot_face::pump_context(64);
-    assert!(button.is_active(), "snapshot: 06-effect-menu's dropdown would not open");
+    assert!(
+        button.is_active(),
+        "snapshot: 06-effect-menu's dropdown would not open"
+    );
     let popover = button
         .popover()
         .expect("snapshot: 06-effect-menu's ✚ Effect has no popover");

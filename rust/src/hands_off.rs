@@ -52,7 +52,9 @@ impl HandsOff {
             Self::SessionClock => "the session clock",
             Self::WalkBack => "edge snapping, hole closing, dead-air removal, coalescing, clamping",
             Self::RenderArithmetic => "the render's arithmetic",
-            Self::PipelineChoice => "which pass runs, and whether the cut comes from words or a model",
+            Self::PipelineChoice => {
+                "which pass runs, and whether the cut comes from words or a model"
+            }
         }
     }
 
@@ -95,7 +97,9 @@ impl HandsOff {
                 "the placed edge is drawn where the sound put it, and named in the mark's report"
             }
             Self::SessionClock => "every lane sits where the clock put it, shifts included",
-            Self::WalkBack => "the page shows what the walk-back did, and the log says how much moved",
+            Self::WalkBack => {
+                "the page shows what the walk-back did, and the log says how much moved"
+            }
             Self::RenderArithmetic => {
                 "the rendered picture and the fit warnings state the numbers that were used"
             }
@@ -111,11 +115,7 @@ impl HandsOff {
 /// make without the model is exactly the reason it is safe to make without asking anyone. Requiring all
 /// three keeps the two tables from drifting apart — if a candidate fails here it also fails there, and
 /// belongs at `finish` where the model hears about it.
-pub fn admits_to_hands_off(
-    mechanical: bool,
-    checkable: bool,
-    visible_afterwards: bool,
-) -> bool {
+pub fn admits_to_hands_off(mechanical: bool, checkable: bool, visible_afterwards: bool) -> bool {
     // `checkable` maps onto the audit's "explainable in one sentence": a rule nobody can state cannot be
     // checked by a person looking at the result. Both predicates are asked because §4 and §1's
     // walk-back row must not drift into two different bars for the same admission.
@@ -209,7 +209,8 @@ pub fn audit() -> [Ruled; 6] {
         Ruled {
             what: "word times",
             home: "the aligner's, never the model's (rule 2.1)",
-            lives_in: "align::pieces and the aligned word records; narrate_pass::at_offset takes the \
+            lives_in:
+                "align::pieces and the aligned word records; narrate_pass::at_offset takes the \
                       clip-relative offset the writer was shown, so no timestamp is ever asked for",
         },
         Ruled {
@@ -239,7 +240,8 @@ pub fn audit() -> [Ruled; 6] {
         },
         Ruled {
             what: "nothing chooses the pipeline but the User Context",
-            home: "policy fields the model sets once, visibly, in the policy form (F0.7 set_policy)",
+            home:
+                "policy fields the model sets once, visibly, in the policy form (F0.7 set_policy)",
             lives_in: "project::Policy::marking_pass and ::cut_mode via tool:set_policy; the \
                       cut-stage switches read by model_calls; hand-set fields stick through \
                       decision_homes::overridable_by_derivation",

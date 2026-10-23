@@ -38,12 +38,14 @@ impl Delta {
                 continue;
             }
             // Finish the line that started before this chunk, then take each complete line after it.
-            self.pending.push_str(&String::from_utf8_lossy(&bytes[start..at]));
+            self.pending
+                .push_str(&String::from_utf8_lossy(&bytes[start..at]));
             text.push_str(&self.take_line());
             start = at + 1;
         }
         if start < bytes.len() {
-            self.pending.push_str(&String::from_utf8_lossy(&bytes[start..]));
+            self.pending
+                .push_str(&String::from_utf8_lossy(&bytes[start..]));
             if self.pending.len() > MAX_PENDING_BYTES {
                 // Never terminated, so it will never be parsed: give up on it rather than grow forever.
                 self.pending.clear();

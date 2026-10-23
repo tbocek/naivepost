@@ -292,7 +292,11 @@ pub const PIC_GRIP_PX: f64 = 10.0;
 pub fn grip_px(surface: Surface) -> f64 {
     match surface {
         Surface::PictureRow(_) => PIC_GRIP_PX,
-        Surface::WaveStrip | Surface::Lane | Surface::Ruler | Surface::SelectionBand | Surface::FxLane => GRIP_PX,
+        Surface::WaveStrip
+        | Surface::Lane
+        | Surface::Ruler
+        | Surface::SelectionBand
+        | Surface::FxLane => GRIP_PX,
     }
 }
 
@@ -392,7 +396,10 @@ fn nearest_within(t: f64, marks: &[f64], reach: f64) -> Option<f64> {
 /// nearly does. Returns the new start, unsnapped when neither end is within reach.
 pub fn snap_span(from: f64, length: f64, marks: &[f64], pps: f64) -> f64 {
     let reach = SNAP_PX / pps.max(0.001);
-    match (nearest_within(from, marks, reach), nearest_within(from + length, marks, reach)) {
+    match (
+        nearest_within(from, marks, reach),
+        nearest_within(from + length, marks, reach),
+    ) {
         // Neither end near anything: exactly where the hand left it.
         (None, None) => from,
         (Some(start), None) => start,
@@ -422,7 +429,11 @@ pub fn resize(sel: &Selection, end: bool, to: f64, marks: &[f64], pps: f64) -> S
     } else {
         (moved.min(sel.end - MIN_SECONDS), sel.end)
     };
-    Selection { start, end: stop, scope: sel.scope.clone() }
+    Selection {
+        start,
+        end: stop,
+        scope: sel.scope.clone(),
+    }
 }
 
 /// F2.6 S2 (`middle moves`): slide the whole band so its start goes to `to`, snapped by [`snap_span`],
@@ -430,7 +441,11 @@ pub fn resize(sel: &Selection, end: bool, to: f64, marks: &[f64], pps: f64) -> S
 pub fn move_band(sel: &Selection, to: f64, marks: &[f64], pps: f64) -> Selection {
     let length = sel.length();
     let start = snap_span(to, length, marks, pps).max(0.0);
-    Selection { start, end: start + length, scope: sel.scope.clone() }
+    Selection {
+        start,
+        end: start + length,
+        scope: sel.scope.clone(),
+    }
 }
 
 // --- S3: the marks and the readout follow --------------------------------------------------------------

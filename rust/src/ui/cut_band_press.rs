@@ -145,7 +145,9 @@ fn update(window: &adw::ApplicationWindow, dx: f64, dy: f64) {
 /// that end moves. Both go through `ui::drag_held_band`, which owns the refind-by-kind-and-start, the line
 /// riding with the band, and the "<label> moved"/"<label> resized" sentences.
 fn move_held(window: &adw::ApplicationWindow, dx: f64, drag: BarDrag) {
-    let Some(held) = ui::held_effect() else { return };
+    let Some(held) = ui::held_effect() else {
+        return;
+    };
     let pps = ui::SELECT_SURFACE_PPS;
     if pps <= 0.0 {
         return;
@@ -185,9 +187,7 @@ fn band_snap_marks(window: &adw::ApplicationWindow, held: &crate::cut::Fx) -> Ve
     let playhead = ui::preview_playhead(window);
     cut_select::snap_marks(&cut_, &cut_.lanes, playhead)
         .into_iter()
-        .filter(|mark| {
-            (*mark - held.t).abs() > 1e-9 && (*mark - (held.t + held.dur)).abs() > 1e-9
-        })
+        .filter(|mark| (*mark - held.t).abs() > 1e-9 && (*mark - (held.t + held.dur)).abs() > 1e-9)
         .collect()
 }
 
@@ -234,7 +234,10 @@ fn end_in_flight(window: &adw::ApplicationWindow) {
 /// it the way GTK does. Naming this window live on the way through is what keeps an earlier check's closed
 /// window (still in the tree, controllers still attached) from answering the next check's drag.
 /// Test-only reader: the page attaches gestures and never asks for one back.
-pub fn bar_gesture_for_test(window: &adw::ApplicationWindow, index: usize) -> Option<gtk::GestureDrag> {
+pub fn bar_gesture_for_test(
+    window: &adw::ApplicationWindow,
+    index: usize,
+) -> Option<gtk::GestureDrag> {
     ACTIVE.with(|cell| *cell.borrow_mut() = Some(window.clone()));
     GESTURES.with(|cell| {
         cell.borrow()
@@ -244,4 +247,3 @@ pub fn bar_gesture_for_test(window: &adw::ApplicationWindow, index: usize) -> Op
             .map(|(_, gesture)| gesture.clone())
     })
 }
-

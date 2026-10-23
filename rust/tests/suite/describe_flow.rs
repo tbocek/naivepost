@@ -31,9 +31,16 @@ fn scratch(tag: &str) -> (PathBuf, Tree) {
 #[test]
 fn f1_7_s0_one_frame_every_freq_per_scene() {
     let picked = describe::pick_frames(&[4.0], 12.0, 0.25, 1.0);
-    assert_eq!(picked.len(), 12, "twelve seconds at Freq 1.0 is twelve frames: {picked:?}");
+    assert_eq!(
+        picked.len(),
+        12,
+        "twelve seconds at Freq 1.0 is twelve frames: {picked:?}"
+    );
     assert_eq!(picked.first(), Some(&0.0));
-    assert!(picked.contains(&4.0), "the scene change's first frame is there: {picked:?}");
+    assert!(
+        picked.contains(&4.0),
+        "the scene change's first frame is there: {picked:?}"
+    );
     assert!(!picked.contains(&12.0), "nothing past the take's end");
 }
 
@@ -44,8 +51,14 @@ fn f1_7_s0_a_scene_shorter_than_freq_sends_only_its_first_frame() {
     // 5 s take, changes at 0.7 (scene of 0.3 s) and 1.0 (scene of 4 s).
     let picked = describe::pick_frames(&[0.7, 1.0], 5.0, 0.25, 1.0);
     let in_short_scene = picked.iter().filter(|at| **at >= 0.7 && **at < 1.0).count();
-    assert_eq!(in_short_scene, 1, "the 0.3 s scene sends exactly its first frame: {picked:?}");
-    let short_first = *picked.iter().find(|at| **at >= 0.7).expect("the short scene sent a frame");
+    assert_eq!(
+        in_short_scene, 1,
+        "the 0.3 s scene sends exactly its first frame: {picked:?}"
+    );
+    let short_first = *picked
+        .iter()
+        .find(|at| **at >= 0.7)
+        .expect("the short scene sent a frame");
     assert!(
         (0.7..1.0).contains(&short_first),
         "and it is the change's own frame, snapped up onto the grid: {short_first}"
@@ -62,13 +75,19 @@ fn f1_7_s0_every_scene_change_has_its_first_picture() {
         let has_own = picked
             .iter()
             .any(|at| *at >= change && *at - change < 0.25 + 1e-9);
-        assert!(has_own, "no frame covers the change at {change}s: {picked:?}");
+        assert!(
+            has_own,
+            "no frame covers the change at {change}s: {picked:?}"
+        );
     }
     // And no frame is written twice where a Freq step lands on a change.
     let mut sorted = picked.clone();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
     for pair in sorted.windows(2) {
-        assert!((pair[1] - pair[0]).abs() > 1e-9, "duplicate frame in {picked:?}");
+        assert!(
+            (pair[1] - pair[0]).abs() > 1e-9,
+            "duplicate frame in {picked:?}"
+        );
     }
 }
 
@@ -96,8 +115,14 @@ fn f1_7_s0_an_every_frame_folder_is_refused() {
     );
     // A short take is not every-frame either -- this is why the test reads spacing, not count.
     let tiny = vec![0.0];
-    assert!(!describe::is_every_frame(&tiny, 0.25), "one frame cannot be judged by spacing");
-    assert!(!describe::is_every_frame(&[], 0.25), "an empty folder is missing, not every-frame");
+    assert!(
+        !describe::is_every_frame(&tiny, 0.25),
+        "one frame cannot be judged by spacing"
+    );
+    assert!(
+        !describe::is_every_frame(&[], 0.25),
+        "an empty folder is missing, not every-frame"
+    );
 }
 
 // ---- S1 ---------------------------------------------------------------------
@@ -114,8 +139,14 @@ fn f1_7_s1_frames_are_sorted_by_stamp() {
 /// it sends its single frame and is ordinary.
 #[test]
 fn f1_7_s1_a_missing_or_empty_folder_is_refused() {
-    assert!(describe::refuse_missing(&[]).is_some(), "no frames at all is refused");
-    assert!(describe::refuse_missing(&[0.0]).is_none(), "one frame is enough to describe");
+    assert!(
+        describe::refuse_missing(&[]).is_some(),
+        "no frames at all is refused"
+    );
+    assert!(
+        describe::refuse_missing(&[0.0]).is_none(),
+        "one frame is enough to describe"
+    );
 }
 
 /// S1: each frame that goes is scaled ONCE to P.machine.describeFrameWidth wide, height by aspect,
@@ -124,30 +155,44 @@ fn f1_7_s1_a_missing_or_empty_folder_is_refused() {
 fn f1_7_s1_the_scale_plan_hits_896_wide_into_llmframes() {
     let plan = describe::scale_plan(describe::FRAME_WIDTH);
     let joined = plan.join(" ");
-    assert!(joined.contains("scale=896:-2"), "896 wide, height by aspect: {joined}");
+    assert!(
+        joined.contains("scale=896:-2"),
+        "896 wide, height by aspect: {joined}"
+    );
     assert_eq!(describe::FRAME_WIDTH, 896, "P.machine.describeFrameWidth");
     // One name per frame, in clock order, and the names are the stored frames' own names so a row and
     // a file point at the same instant.
-    let names: Vec<String> = [1.0, 0.0].iter().map(|at| describe::scaled_name(*at)).collect();
+    let names: Vec<String> = [1.0, 0.0]
+        .iter()
+        .map(|at| describe::scaled_name(*at))
+        .collect();
     assert_eq!(names.len(), 2, "one scaled copy per frame: {joined}");
     // The stage sorts before it scales (`describe_scale::ensure` takes the frames in the order
     // `pick_frames`/`sorted` hands them over), so what has to hold is that the clock naming puts the
     // earlier frame first -- sorting the names of a shuffled pair says exactly that.
     let mut ordered = names.clone();
     ordered.sort();
-    assert_eq!(ordered[0], describe::scaled_name(0.0), "the earlier stamp sorts first: {names:?}");
+    assert_eq!(
+        ordered[0],
+        describe::scaled_name(0.0),
+        "the earlier stamp sorts first: {names:?}"
+    );
     // Where they land is the layout's own answer, so this stage cannot invent another folder.
     let (_keep, tree) = scratch("scale");
     let llm = tree.llm_frames_dir("lecture");
     assert!(llm.ends_with("describe/lecture/.llmframes"), "{llm:?}");
-    assert!(llm.to_string_lossy().contains(".llmframes"), "the scaled copies live under .llmframes/");
+    assert!(
+        llm.to_string_lossy().contains(".llmframes"),
+        "the scaled copies live under .llmframes/"
+    );
 }
 
 /// S1: the frames on disk stay the video's own size -- this stage scales only the copies it sends.
 /// Proven by pointing at F1.6's own plan, which mentions no scaling of delivered frames.
 #[test]
 fn f1_7_s1_stored_frames_stay_at_the_videos_own_size() {
-    let extract = naivepost::frames::extract_plan("v.mkv", &[0.0, 1.0], Path::new("/tmp/f17-x"), 0.0);
+    let extract =
+        naivepost::frames::extract_plan("v.mkv", &[0.0, 1.0], Path::new("/tmp/f17-x"), 0.0);
     let joined = extract
         .iter()
         .flatten()
@@ -183,8 +228,14 @@ fn f1_7_s2_chunks_already_in_events_tsv_are_skipped() {
     // 8 frames, 4 per request: chunks start at index 0 (t=0) and 4 (t=4). P.machine.describeFramesPerReq
     let frames: Vec<f64> = (0..8).map(|i| i as f64).collect();
     let done = vec![
-        describe::EventRow { at: 0.0, text: "title slide".into() },
-        describe::EventRow { at: 4.0, text: "a graph appears".into() },
+        describe::EventRow {
+            at: 0.0,
+            text: "title slide".into(),
+        },
+        describe::EventRow {
+            at: 4.0,
+            text: "a graph appears".into(),
+        },
     ];
     assert_eq!(
         describe::starts_already_logged(&done, &frames, describe::FRAMES_PER_REQ),
@@ -192,23 +243,43 @@ fn f1_7_s2_chunks_already_in_events_tsv_are_skipped() {
         "both chunks are done"
     );
     // Only the first chunk's start present: the second must run again.
-    let one = vec![describe::EventRow { at: 0.0, text: "title slide".into() }];
+    let one = vec![describe::EventRow {
+        at: 0.0,
+        text: "title slide".into(),
+    }];
     assert_eq!(describe::starts_already_logged(&one, &frames, 4), vec![0]);
     // A row in the MIDDLE of a chunk does not mark it done -- that would leave the chunk's tail
     // unanswered forever.
-    let middle = vec![describe::EventRow { at: 1.0, text: "middle".into() }];
-    assert!(describe::starts_already_logged(&middle, &frames, 4).is_empty(), "{middle:?} marks nothing");
+    let middle = vec![describe::EventRow {
+        at: 1.0,
+        text: "middle".into(),
+    }];
+    assert!(
+        describe::starts_already_logged(&middle, &frames, 4).is_empty(),
+        "{middle:?} marks nothing"
+    );
 }
 
 /// S2: the rolling window is seeded from the LAST three rows, oldest first.
 #[test]
 fn f1_7_s2_the_last_three_rows_seed_the_history() {
     let rows: Vec<describe::EventRow> = (1..=5)
-        .map(|i| describe::EventRow { at: i as f64, text: format!("e{i}") })
+        .map(|i| describe::EventRow {
+            at: i as f64,
+            text: format!("e{i}"),
+        })
         .collect();
     let seeded = describe::seed_history(&rows);
-    assert_eq!(seeded, vec!["e3", "e4", "e5"], "exactly the last RECENT_EVENTS rows");
-    assert_eq!(seeded.len(), tool::RECENT_EVENTS, "P.machine.describeRecentEvents = 3");
+    assert_eq!(
+        seeded,
+        vec!["e3", "e4", "e5"],
+        "exactly the last RECENT_EVENTS rows"
+    );
+    assert_eq!(
+        seeded.len(),
+        tool::RECENT_EVENTS,
+        "P.machine.describeRecentEvents = 3"
+    );
     // Fewer rows than three seeds with what exists, not with padding.
     assert_eq!(describe::seed_history(&rows[..2]), vec!["e1", "e2"]);
 }
@@ -216,8 +287,14 @@ fn f1_7_s2_the_last_three_rows_seed_the_history() {
 /// S2: state.txt seeds STATE; with none, the recording just started -- a real answer, not an empty one.
 #[test]
 fn f1_7_s2_state_txt_seeds_the_state() {
-    assert_eq!(describe::seed_state(Some("Talking about the graph.")), "Talking about the graph.");
-    assert_eq!(describe::seed_state(Some("   \n")), "Recording just started.");
+    assert_eq!(
+        describe::seed_state(Some("Talking about the graph.")),
+        "Talking about the graph."
+    );
+    assert_eq!(
+        describe::seed_state(Some("   \n")),
+        "Recording just started."
+    );
     assert_eq!(describe::seed_state(None), "Recording just started.");
 }
 
@@ -236,25 +313,45 @@ fn f1_7_s2_resume_reads_the_pair_off_disk() {
 
     let rows = describe::read_events(&tree, "lecture");
     assert_eq!(rows.len(), 3, "three rows parsed: {rows:?}");
-    assert_eq!(describe::seed_history(&rows), vec!["title slide", "same", "the speaker points left"]);
+    assert_eq!(
+        describe::seed_history(&rows),
+        vec!["title slide", "same", "the speaker points left"]
+    );
     // §6's middle column is the row's END, so it must never reach the text: a reading whose words
     // begin with a number would otherwise be handed to the model as an event that says "4.00 ...".
-    fs::write(tree.events_tsv("lecture"), "0.00\t4.00\t4.00 slides on screen\n").unwrap();
+    fs::write(
+        tree.events_tsv("lecture"),
+        "0.00\t4.00\t4.00 slides on screen\n",
+    )
+    .unwrap();
     assert_eq!(
-        describe::read_events(&tree, "lecture").first().map(|row| row.text.as_str()),
+        describe::read_events(&tree, "lecture")
+            .first()
+            .map(|row| row.text.as_str()),
         Some("4.00 slides on screen"),
         "the third field is the text, whatever it starts with"
     );
-    assert_eq!(describe::read_events(&tree, "lecture").first().map(|row| row.at), Some(0.0));
+    assert_eq!(
+        describe::read_events(&tree, "lecture")
+            .first()
+            .map(|row| row.at),
+        Some(0.0)
+    );
     // The older two-column shape (this file before §6's three columns) still resumes: its second
     // field IS the text, and the row's own second is its start.
     fs::write(tree.events_tsv("lecture"), "0.0\ttitle slide\n1.0\tsame\n").unwrap();
     assert_eq!(
-        describe::read_events(&tree, "lecture").iter().map(|r| r.text.clone()).collect::<Vec<_>>(),
+        describe::read_events(&tree, "lecture")
+            .iter()
+            .map(|r| r.text.clone())
+            .collect::<Vec<_>>(),
         vec!["title slide", "same"]
     );
     fs::write(tree.events_tsv("lecture"), "0.0\tok\n1.0\tha").unwrap();
-    assert_eq!(describe::read_state(&tree, "lecture").map(|s| s.trim().to_string()), Some("Mid-slide.".into()));
+    assert_eq!(
+        describe::read_state(&tree, "lecture").map(|s| s.trim().to_string()),
+        Some("Mid-slide.".into())
+    );
 
     // A half-written trailing line from a killed run is skipped, not fatal.
     fs::write(tree.events_tsv("lecture"), "0.0\tok\n1.0\tha").unwrap();
@@ -264,7 +361,11 @@ fn f1_7_s2_resume_reads_the_pair_off_disk() {
         "a truncated TEXT still describes its frame and is kept; only an unreadable STAMP is dropped"
     );
     fs::write(tree.events_tsv("lecture"), "0.0\tok\nnot-a-second\tgone\n").unwrap();
-    assert_eq!(describe::read_events(&tree, "lecture").len(), 1, "a line with no parsable second is dropped");
+    assert_eq!(
+        describe::read_events(&tree, "lecture").len(),
+        1,
+        "a line with no parsable second is dropped"
+    );
 }
 
 // ---- S3 ---------------------------------------------------------------------
@@ -279,10 +380,22 @@ fn f1_7_s3_the_message_layout_is_the_specs() {
         after: vec![],
     };
     let stamps = vec![
-        describe::Stamp { at: 0.0, new_scene: true },
-        describe::Stamp { at: 0.8, new_scene: false },
-        describe::Stamp { at: 1.6, new_scene: false },
-        describe::Stamp { at: 2.4, new_scene: false },
+        describe::Stamp {
+            at: 0.0,
+            new_scene: true,
+        },
+        describe::Stamp {
+            at: 0.8,
+            new_scene: false,
+        },
+        describe::Stamp {
+            at: 1.6,
+            new_scene: false,
+        },
+        describe::Stamp {
+            at: 2.4,
+            new_scene: false,
+        },
     ];
     let text = describe::message(
         "Ada presents the deck.",
@@ -294,23 +407,51 @@ fn f1_7_s3_the_message_layout_is_the_specs() {
         &stamps,
     );
     let head = text.lines().take(3).collect::<Vec<_>>().join("\n");
-    assert!(text.starts_with("Ada presents the deck."), "User Context leads: {head}");
-    assert!(text.contains("STATE so far: Mid-slide."), "STATE line: {head}");
+    assert!(
+        text.starts_with("Ada presents the deck."),
+        "User Context leads: {head}"
+    );
+    assert!(
+        text.contains("STATE so far: Mid-slide."),
+        "STATE line: {head}"
+    );
     assert!(
         text.contains("Frames cover t=0s to t=2.4s. A frame marked NEW SCENE is the first after a scene change."),
         "the covering line, verbatim: {head}"
     );
-    assert!(text.contains("Just before this: one | two"), "the last events ride along");
-    for heading in tool::SPEECH_HEADINGS {
-        assert!(text.contains(heading), "all three speech headings are present, missing {heading}");
-    }
-    let order: Vec<usize> = tool::SPEECH_HEADINGS.iter().map(|h| text.find(h).unwrap()).collect();
-    assert!(order.windows(2).all(|p| p[0] < p[1]), "before, during, after, in that order: {order:?}");
-    assert!(text.contains("[+0.0s] FRAME 1 of 4, NEW SCENE"), "the scene's first frame is marked: {text}");
-    assert!(text.contains("[+0.8s] FRAME 2 of 4\n"), "an ordinary frame is unmarked");
-    assert!(text.contains("[+2.4s] FRAME 4 of 4"), "the batch's last frame is numbered");
     assert!(
-        text.find("--- spoken during these frames ---").unwrap() < text.find("[+0.0s] FRAME 1").unwrap(),
+        text.contains("Just before this: one | two"),
+        "the last events ride along"
+    );
+    for heading in tool::SPEECH_HEADINGS {
+        assert!(
+            text.contains(heading),
+            "all three speech headings are present, missing {heading}"
+        );
+    }
+    let order: Vec<usize> = tool::SPEECH_HEADINGS
+        .iter()
+        .map(|h| text.find(h).unwrap())
+        .collect();
+    assert!(
+        order.windows(2).all(|p| p[0] < p[1]),
+        "before, during, after, in that order: {order:?}"
+    );
+    assert!(
+        text.contains("[+0.0s] FRAME 1 of 4, NEW SCENE"),
+        "the scene's first frame is marked: {text}"
+    );
+    assert!(
+        text.contains("[+0.8s] FRAME 2 of 4\n"),
+        "an ordinary frame is unmarked"
+    );
+    assert!(
+        text.contains("[+2.4s] FRAME 4 of 4"),
+        "the batch's last frame is numbered"
+    );
+    assert!(
+        text.find("--- spoken during these frames ---").unwrap()
+            < text.find("[+0.0s] FRAME 1").unwrap(),
         "the speech block precedes the frames"
     );
 }
@@ -326,16 +467,31 @@ fn f1_7_s3_no_history_drops_the_before_block_but_keeps_all_three_sections() {
         3.0,
         &[],
         &describe::Speech::default(),
-        &[describe::Stamp { at: 0.0, new_scene: true }],
+        &[describe::Stamp {
+            at: 0.0,
+            new_scene: true,
+        }],
     );
-    assert!(!text.contains("Just before this:"), "no history, no before block: {text}");
+    assert!(
+        !text.contains("Just before this:"),
+        "no history, no before block: {text}"
+    );
     assert_eq!(
-        tool::SPEECH_HEADINGS.iter().filter(|h| text.contains(*h)).count(),
+        tool::SPEECH_HEADINGS
+            .iter()
+            .filter(|h| text.contains(*h))
+            .count(),
         3,
         "the empty sections still print, each with its own word for empty"
     );
-    assert!(text.contains(tool::NO_SPEECH_DURING), "silence over the frames is stated as a fact");
-    assert!(!text.starts_with('\n'), "no stray blank where the context was");
+    assert!(
+        text.contains(tool::NO_SPEECH_DURING),
+        "silence over the frames is stated as a fact"
+    );
+    assert!(
+        !text.starts_with('\n'),
+        "no stray blank where the context was"
+    );
 }
 
 /// S3: the stamps are NOT evenly spaced -- a batch spanning a scene change carries the change's own
@@ -349,7 +505,11 @@ fn f1_7_s3_stamps_follow_the_real_uneven_spacing() {
         .enumerate()
         .map(|(i, at)| describe::Stamp {
             at: *at,
-            new_scene: describe::is_new_scene(*at, if i == 0 { None } else { Some(picked[i - 1]) }, &[1.35]),
+            new_scene: describe::is_new_scene(
+                *at,
+                if i == 0 { None } else { Some(picked[i - 1]) },
+                &[1.35],
+            ),
         })
         .collect();
     let gaps: Vec<f64> = picked.windows(2).map(|w| w[1] - w[0]).collect();
@@ -357,24 +517,55 @@ fn f1_7_s3_stamps_follow_the_real_uneven_spacing() {
         gaps.iter().any(|g| (*g - 1.0).abs() > 1e-6),
         "the chosen frames are unevenly spaced, otherwise this proves nothing: {picked:?}"
     );
-    let text = describe::message("", "s", picked[0], *picked.last().unwrap(), &[], &describe::Speech::default(), &stamps);
+    let text = describe::message(
+        "",
+        "s",
+        picked[0],
+        *picked.last().unwrap(),
+        &[],
+        &describe::Speech::default(),
+        &stamps,
+    );
     for (i, at) in picked.iter().enumerate() {
         assert!(
-            text.contains(&format!("[+{:.1}s] FRAME {} of {}", at, i + 1, picked.len())),
+            text.contains(&format!(
+                "[+{:.1}s] FRAME {} of {}",
+                at,
+                i + 1,
+                picked.len()
+            )),
             "frame {} stamped with its own second {at}: {text}",
             i + 1
         );
     }
-    let marked: Vec<usize> = stamps.iter().enumerate().filter(|(_, s)| s.new_scene).map(|(i, _)| i + 1).collect();
-    assert_eq!(marked, vec![1, 3], "the take's first frame and the change's first frame are marked: {stamps:?}");
+    let marked: Vec<usize> = stamps
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.new_scene)
+        .map(|(i, _)| i + 1)
+        .collect();
+    assert_eq!(
+        marked,
+        vec![1, 3],
+        "the take's first frame and the change's first frame are marked: {stamps:?}"
+    );
 }
 
 /// S3: which frame opens a scene is measured against the changes, not against equal spacing.
 #[test]
 fn f1_7_s3_new_scene_is_measured_against_the_changes() {
-    assert!(describe::is_new_scene(0.0, None, &[]), "the take's first frame opens the first scene");
-    assert!(describe::is_new_scene(1.0, Some(0.0), &[0.5]), "a change between two frames means a new scene");
-    assert!(!describe::is_new_scene(1.0, Some(0.0), &[2.5]), "a change ahead of both means the same scene");
+    assert!(
+        describe::is_new_scene(0.0, None, &[]),
+        "the take's first frame opens the first scene"
+    );
+    assert!(
+        describe::is_new_scene(1.0, Some(0.0), &[0.5]),
+        "a change between two frames means a new scene"
+    );
+    assert!(
+        !describe::is_new_scene(1.0, Some(0.0), &[2.5]),
+        "a change ahead of both means the same scene"
+    );
 }
 
 // ---- S4 ---------------------------------------------------------------------
@@ -396,7 +587,11 @@ fn f1_7_s4_the_key_covers_the_content_and_the_images() {
         "changed wording is a different question"
     );
     assert_ne!(
-        describe::cache_key("ask about four frames", &[b"frame-A".to_vec(), b"frame-b".to_vec()], "qwen-vl"),
+        describe::cache_key(
+            "ask about four frames",
+            &[b"frame-A".to_vec(), b"frame-b".to_vec()],
+            "qwen-vl"
+        ),
         key,
         "a re-encoded frame misses the cache -- hashing names only would make this a silent hit"
     );
@@ -423,7 +618,8 @@ fn sec_09_llm_and_tools_6_cache_s1_describe_names_its_file_with_the_shared_diges
     let key = describe::cache_key("ask about one frame", &images, "qwen-vl");
     assert_eq!(key.len(), 64, "a sha256 hex digest names the file");
     assert!(
-        key.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        key.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "lowercase hex, §6's shape: {key}"
     );
     // The same digest `llm_cache` hands any other job for the same parts: one rule, not two.
@@ -438,7 +634,11 @@ fn sec_09_llm_and_tools_6_cache_s1_describe_names_its_file_with_the_shared_diges
         model: "qwen-vl",
         thinking: false,
     };
-    assert_eq!(Some(key.clone()), llm_cache::key(&llm_cache::parts(&request)), "one digest rule here too");
+    assert_eq!(
+        Some(key.clone()),
+        llm_cache::key(&llm_cache::parts(&request)),
+        "one digest rule here too"
+    );
 }
 
 /// S4: the reply is read from and written to `cache/llm/describe/<key>` through the Tree path.
@@ -446,18 +646,34 @@ fn sec_09_llm_and_tools_6_cache_s1_describe_names_its_file_with_the_shared_diges
 fn f1_7_s4_cache_round_trip_under_the_step_folder() {
     let (_keep, tree) = scratch("cache");
     let key = describe::cache_key("ask", &[b"img".to_vec()], "qwen-vl");
-    assert!(describe::cached_reply(&tree, &key).is_none(), "cold cache is a miss");
+    assert!(
+        describe::cached_reply(&tree, &key).is_none(),
+        "cold cache is a miss"
+    );
     describe::store_reply(&tree, &key, "EVENT: a slide").expect("stored");
-    assert_eq!(describe::cached_reply(&tree, &key).as_deref(), Some("EVENT: a slide"));
-    assert!(tree.cache_llm(describe::STEP, &key).exists(), "under cache/llm/describe/");
-    assert_eq!(describe::STEP, "describe", "the step folder is named for the stage");
+    assert_eq!(
+        describe::cached_reply(&tree, &key).as_deref(),
+        Some("EVENT: a slide")
+    );
+    assert!(
+        tree.cache_llm(describe::STEP, &key).exists(),
+        "under cache/llm/describe/"
+    );
+    assert_eq!(
+        describe::STEP,
+        "describe",
+        "the step folder is named for the stage"
+    );
     // An unreadable file is a miss, not a failure: the step asks again rather than stopping.
     assert!(describe::cached_reply(&tree, "deadbeef").is_none());
     assert_eq!(describe::cached_note(3), ", 3 answered from the cache");
     // §6: an empty reply is never stored, so a blank answer cannot become a permanent "nothing".
     let blank = describe::cache_key("ask about nothing", &[b"img".to_vec()], "qwen-vl");
     describe::store_reply(&tree, &blank, "   ").expect("a refused store is not a failed step");
-    assert!(describe::cached_reply(&tree, &blank).is_none(), "nothing was filed for an empty reply");
+    assert!(
+        describe::cached_reply(&tree, &blank).is_none(),
+        "nothing was filed for an empty reply"
+    );
 }
 
 // ---- S5 ---------------------------------------------------------------------
@@ -489,7 +705,10 @@ fn f1_7_s5_record_event_through_apply_tool() {
         "record_event",
         &serde_json::json!({"frame": 9, "text": "nowhere", "calm": false}),
     );
-    assert!(bad.contains("error"), "a frame outside the batch is refused: {bad}");
+    assert!(
+        bad.contains("error"),
+        "a frame outside the batch is refused: {bad}"
+    );
     assert_eq!(batch.events().len(), 1, "the refusal changed nothing");
 }
 
@@ -497,13 +716,20 @@ fn f1_7_s5_record_event_through_apply_tool() {
 #[test]
 fn f1_7_s5_set_state_clears_on_empty_text() {
     let mut batch = Batch::new(0.0, 1.0, 4);
-    describe::apply_tool(&mut batch, "set_state", &serde_json::json!({"text": "Mid-slide."}));
+    describe::apply_tool(
+        &mut batch,
+        "set_state",
+        &serde_json::json!({"text": "Mid-slide."}),
+    );
     assert_eq!(batch.state(), Some("Mid-slide."));
     describe::apply_tool(&mut batch, "set_state", &serde_json::json!({"text": ""}));
     assert_eq!(batch.state(), None, "empty text CLEARS the state");
-    let answer: serde_json::Value =
-        serde_json::from_str(&describe::apply_tool(&mut batch, "set_state", &serde_json::json!({"text": " "})))
-            .unwrap();
+    let answer: serde_json::Value = serde_json::from_str(&describe::apply_tool(
+        &mut batch,
+        "set_state",
+        &serde_json::json!({"text": " "}),
+    ))
+    .unwrap();
     assert_eq!(answer["cleared"], true, "whitespace alone clears too");
 }
 
@@ -513,27 +739,39 @@ fn f1_7_s5_set_state_clears_on_empty_text() {
 fn f1_7_s5_finish_asks_for_what_is_unanswered() {
     let mut batch = Batch::new(0.0, 1.0, 3);
     batch.record_event(2, "something happens", false);
-    let answer: serde_json::Value =
-        serde_json::from_str(&describe::apply_tool(&mut batch, "finish", &serde_json::json!({})))
-            .unwrap();
+    let answer: serde_json::Value = serde_json::from_str(&describe::apply_tool(
+        &mut batch,
+        "finish",
+        &serde_json::json!({}),
+    ))
+    .unwrap();
     assert_eq!(answer["missing"], 2, "frames 1 and 3 are unanswered");
-    assert_eq!(answer["first_frame_has_no_history"], true, "frame 1 has nothing behind it");
+    assert_eq!(
+        answer["first_frame_has_no_history"], true,
+        "frame 1 has nothing behind it"
+    );
 
     // With history, an unanswered first frame is an ordinary gap.
     let mut warm = Batch::new(0.0, 1.0, 2).with_history();
     warm.record_event(2, "still the same slide", false);
-    let warm: serde_json::Value =
-        serde_json::from_str(&describe::apply_tool(&mut warm, "finish", &serde_json::json!({})))
-            .unwrap();
+    let warm: serde_json::Value = serde_json::from_str(&describe::apply_tool(
+        &mut warm,
+        "finish",
+        &serde_json::json!({}),
+    ))
+    .unwrap();
     assert_eq!(warm["missing"], 1);
     assert_eq!(warm["first_frame_has_no_history"], false);
 
     // Nothing missing when every frame was answered.
     let mut full = Batch::new(0.0, 1.0, 1).with_history();
     full.record_event(1, "a new slide", false);
-    let full: serde_json::Value =
-        serde_json::from_str(&describe::apply_tool(&mut full, "finish", &serde_json::json!({})))
-            .unwrap();
+    let full: serde_json::Value = serde_json::from_str(&describe::apply_tool(
+        &mut full,
+        "finish",
+        &serde_json::json!({}),
+    ))
+    .unwrap();
     assert_eq!(full["missing"], 0);
 }
 
@@ -543,8 +781,12 @@ fn f1_7_s5_an_unknown_tool_is_refused_not_fatal() {
     let mut batch = Batch::new(0.0, 1.0, 4);
     let answer = describe::apply_tool(&mut batch, "cut_here", &serde_json::json!({}));
     assert!(answer.contains("error"), "{answer}");
-    assert!(answer.contains("record_event") && answer.contains("set_state") && answer.contains("finish"),
-        "the refusal lists what IS offered: {answer}");
+    assert!(
+        answer.contains("record_event")
+            && answer.contains("set_state")
+            && answer.contains("finish"),
+        "the refusal lists what IS offered: {answer}"
+    );
 }
 
 // ---- S6 ---------------------------------------------------------------------
@@ -553,7 +795,11 @@ fn f1_7_s5_an_unknown_tool_is_refused_not_fatal() {
 #[test]
 fn f1_7_s6_one_row_per_frame_with_same_as_the_fallback() {
     let frames = vec![0.0, 1.0, 2.0];
-    let events = vec![Event { frame: 2, text: "a slide changes".into(), calm: false }];
+    let events = vec![Event {
+        frame: 2,
+        text: "a slide changes".into(),
+        calm: false,
+    }];
     let rows = describe::events_rows(&frames, &events, true, 3.0);
     assert_eq!(
         rows,
@@ -587,7 +833,9 @@ fn f1_7_s6_the_first_frame_of_a_cold_batch_is_never_written_same() {
     // The condition matches what the tool reports, so the two cannot drift apart.
     let batch = Batch::new(0.0, 1.0, 2);
     let missing = batch.finish();
-    assert!(missing.iter().any(|m| m.frame == 1 && m.reason == MissingReason::FirstFrameWithNoHistory));
+    assert!(missing
+        .iter()
+        .any(|m| m.frame == 1 && m.reason == MissingReason::FirstFrameWithNoHistory));
 }
 
 /// S6: state.txt is rewritten after EVERY chunk -- including when the state was cleared, so the old
@@ -595,20 +843,48 @@ fn f1_7_s6_the_first_frame_of_a_cold_batch_is_never_written_same() {
 #[test]
 fn f1_7_s6_state_txt_is_rewritten_after_every_chunk() {
     let (_keep, tree) = scratch("write");
-    describe::write_chunk(&tree, "lecture", &["0.0\ttitle".into()], Some("Title slide."))
-        .expect("chunk 1");
-    assert_eq!(fs::read_to_string(tree.describe_state("lecture")).unwrap(), "Title slide.");
-    assert_eq!(fs::read_to_string(tree.events_tsv("lecture")).unwrap(), "0.0\ttitle\n");
+    describe::write_chunk(
+        &tree,
+        "lecture",
+        &["0.0\ttitle".into()],
+        Some("Title slide."),
+    )
+    .expect("chunk 1");
+    assert_eq!(
+        fs::read_to_string(tree.describe_state("lecture")).unwrap(),
+        "Title slide."
+    );
+    assert_eq!(
+        fs::read_to_string(tree.events_tsv("lecture")).unwrap(),
+        "0.0\ttitle\n"
+    );
 
-    describe::write_chunk(&tree, "lecture", &["1.0\tsame".into()], Some("Still the title."))
-        .expect("chunk 2");
+    describe::write_chunk(
+        &tree,
+        "lecture",
+        &["1.0\tsame".into()],
+        Some("Still the title."),
+    )
+    .expect("chunk 2");
     let tsv = fs::read_to_string(tree.events_tsv("lecture")).unwrap();
     assert_eq!(tsv, "0.0\ttitle\n1.0\tsame\n", "rows APPEND across chunks");
-    assert_eq!(fs::read_to_string(tree.describe_state("lecture")).unwrap(), "Still the title.", "state OVERWRITES");
+    assert_eq!(
+        fs::read_to_string(tree.describe_state("lecture")).unwrap(),
+        "Still the title.",
+        "state OVERWRITES"
+    );
 
     describe::write_chunk(&tree, "lecture", &[], None).expect("a cleared state still writes");
-    assert_eq!(fs::read_to_string(tree.describe_state("lecture")).unwrap(), "", "cleared state reaches the file");
-    assert_eq!(fs::read_to_string(tree.events_tsv("lecture")).unwrap(), tsv, "no rows, no change to events.tsv");
+    assert_eq!(
+        fs::read_to_string(tree.describe_state("lecture")).unwrap(),
+        "",
+        "cleared state reaches the file"
+    );
+    assert_eq!(
+        fs::read_to_string(tree.events_tsv("lecture")).unwrap(),
+        tsv,
+        "no rows, no change to events.tsv"
+    );
     assert_eq!(describe::state_line(None), "");
     assert_eq!(describe::state_line(Some("x")), "x");
 }
@@ -628,8 +904,10 @@ fn f1_7_s7_the_completion_line_names_the_chunks_and_any_cache_hits() {
     );
     // The cached form is built from the note S4 supplies, so the two spellings cannot diverge.
     assert_eq!(
-        describe::complete_log("lecture", 12)
-            .replace("(12 chunks)", &format!("(12 chunks{})", describe::cached_note(9))),
+        describe::complete_log("lecture", 12).replace(
+            "(12 chunks)",
+            &format!("(12 chunks{})", describe::cached_note(9))
+        ),
         describe::complete_log_cached("lecture", 12, 9)
     );
 }
@@ -641,10 +919,34 @@ fn f1_7_s7_the_completion_line_names_the_chunks_and_any_cache_hits() {
 #[test]
 fn f1_7_chunk_plan_uses_frames_per_request() {
     let frames: Vec<f64> = (0..10).map(|i| i as f64).collect();
-    assert_eq!(describe::FRAMES_PER_REQ, 4, "P.machine.describeFramesPerReq");
-    assert_eq!(describe::chunk_plan(&frames, 4), vec![0, 4, 8], "three chunks, the last two frames long");
-    assert_eq!(describe::requests_for(frames.len()), 3, "and the count matches prepare's own arithmetic");
-    assert_eq!(describe::chunk_plan(&frames[..4], 4), vec![0], "an exact multiple is not padded");
-    assert_eq!(describe::chunk_plan(&[], 4), Vec::<usize>::new(), "no frames, no requests");
-    assert_eq!(describe::chunk_plan(&frames, 0), Vec::<usize>::new(), "a zero-width request asks for nothing");
+    assert_eq!(
+        describe::FRAMES_PER_REQ,
+        4,
+        "P.machine.describeFramesPerReq"
+    );
+    assert_eq!(
+        describe::chunk_plan(&frames, 4),
+        vec![0, 4, 8],
+        "three chunks, the last two frames long"
+    );
+    assert_eq!(
+        describe::requests_for(frames.len()),
+        3,
+        "and the count matches prepare's own arithmetic"
+    );
+    assert_eq!(
+        describe::chunk_plan(&frames[..4], 4),
+        vec![0],
+        "an exact multiple is not padded"
+    );
+    assert_eq!(
+        describe::chunk_plan(&[], 4),
+        Vec::<usize>::new(),
+        "no frames, no requests"
+    );
+    assert_eq!(
+        describe::chunk_plan(&frames, 0),
+        Vec::<usize>::new(),
+        "a zero-width request asks for nothing"
+    );
 }

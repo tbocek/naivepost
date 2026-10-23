@@ -8,13 +8,19 @@ use naivepost::cut::Seg;
 use naivepost::cut_trim as trim;
 
 use crate::common;
-use common::{clip};
+use common::clip;
 
 /// An insert is `s == e` with a `dur` (`Seg::is_insert`): material spliced in beside the footage, which
 /// rule 8 of `spec/05-cut.md` keeps out of every trim reach. The box it gets on the strip stands for its
 /// own length so there is something to see and click.
 fn insert(seconds: f64, asset: &str) -> Seg {
-    Seg { s: 0.0, e: 0.0, dur: seconds, ins: asset.to_string(), ..Default::default() }
+    Seg {
+        s: 0.0,
+        e: 0.0,
+        dur: seconds,
+        ins: asset.to_string(),
+        ..Default::default()
+    }
 }
 
 const PPS: f64 = 4.0;
@@ -45,7 +51,10 @@ fn f2_8_s1_an_insert_is_boxed_and_flagged_never_trimmable() {
     let segs = vec![clip(0.0, 9.5), insert(10.0, "project:titles/intro.png")];
     let boxes = trim::clip_boxes(&segs, PPS);
 
-    assert!(boxes[1].insert, "and carries the flag that keeps it out of every trim reach");
+    assert!(
+        boxes[1].insert,
+        "and carries the flag that keeps it out of every trim reach"
+    );
     // A spliced insert sits at one instant (`s == e`), so the box on the strip stands for `dur`: a card
     // has to be seen and clicked, not drawn as a hairline. 10 s * 4 px/s = 40 px.
     // `index` is the caller's to fill: this helper draws one card, so it leaves 0 and the painter sets it
@@ -55,10 +64,22 @@ fn f2_8_s1_an_insert_is_boxed_and_flagged_never_trimmable() {
     assert_eq!(boxes[0].x, 0.0, "the footage before it is unaffected");
 
     // Every press on an insert takes nothing at all; the only thing in reach is the footage's own end.
-    assert_eq!(trim::box_at(&boxes, 0.0), Some((0, Some(trim::Border::Start))), "footage start still grabbable");
-    assert_eq!(trim::box_at(&boxes, 38.0), Some((0, Some(trim::Border::End))), "// layout.edgeGrabPx: 2 px off the footage end is inside the reach");
+    assert_eq!(
+        trim::box_at(&boxes, 0.0),
+        Some((0, Some(trim::Border::Start))),
+        "footage start still grabbable"
+    );
+    assert_eq!(
+        trim::box_at(&boxes, 38.0),
+        Some((0, Some(trim::Border::End))),
+        "// layout.edgeGrabPx: 2 px off the footage end is inside the reach"
+    );
     let only_insert = trim::clip_boxes(&[insert(10.0, "project:titles/intro.png")], PPS);
-    assert_eq!(trim::box_at(&only_insert, 20.0), None, "rule 8: an insert offers no border");
+    assert_eq!(
+        trim::box_at(&only_insert, 20.0),
+        None,
+        "rule 8: an insert offers no border"
+    );
 }
 
 /// F2.8 S1: a zero-length or backwards segment draws as nothing rather than a box running into its
@@ -67,8 +88,14 @@ fn f2_8_s1_an_insert_is_boxed_and_flagged_never_trimmable() {
 fn f2_8_s1_a_zero_or_backwards_segment_draws_no_width() {
     let boxes = trim::clip_boxes(&[clip(20.0, 20.0), clip(30.0, 25.0)], PPS);
     assert_eq!(boxes[0].w, 0.0);
-    assert_eq!(boxes[1].w, 0.0, "backwards length clamps to zero, never negative");
-    assert_eq!(boxes[1].x, 120.0, "its left edge still reads from its own start");
+    assert_eq!(
+        boxes[1].w, 0.0,
+        "backwards length clamps to zero, never negative"
+    );
+    assert_eq!(
+        boxes[1].x, 120.0,
+        "its left edge still reads from its own start"
+    );
 }
 
 /// F2.8 S1: the press side asks the same mapping in reverse — within 6 px of a border that border is taken,
@@ -78,17 +105,35 @@ fn f2_8_s1_a_press_px_resolves_to_a_border_or_the_bar_body() {
     let boxes = trim::clip_boxes(&[clip(10.0, 30.0), clip(40.0, 70.0)], PPS);
 
     // Border of clip 1 sits at 40 px and 120 px; clip 2's at 160 px and 280 px.
-    assert_eq!(trim::box_at(&boxes, 40.0), Some((0, Some(trim::Border::Start))));
-    assert_eq!(trim::box_at(&boxes, 124.0), Some((0, Some(trim::Border::End))), "4 px past the end is still inside the reach");
-    assert_eq!(trim::box_at(&boxes, 156.0), Some((1, Some(trim::Border::Start))));
+    assert_eq!(
+        trim::box_at(&boxes, 40.0),
+        Some((0, Some(trim::Border::Start)))
+    );
+    assert_eq!(
+        trim::box_at(&boxes, 124.0),
+        Some((0, Some(trim::Border::End))),
+        "4 px past the end is still inside the reach"
+    );
+    assert_eq!(
+        trim::box_at(&boxes, 156.0),
+        Some((1, Some(trim::Border::Start)))
+    );
 
     // In the middle of the green bar: the box, no border — the answer that means "move me", not "trim me".
     assert_eq!(trim::box_at(&boxes, 80.0), Some((0, None)));
     assert_eq!(trim::box_at(&boxes, 200.0), Some((1, None)));
 
     // Outside every box, and further from a border than the reach: nothing under the pointer.
-    assert_eq!(trim::box_at(&boxes, 140.0), None, "20 px from both neighbours' borders is no trim and no bar");
-    assert_eq!(trim::box_at(&[], 40.0), None, "an empty cut offers nothing to grab");
+    assert_eq!(
+        trim::box_at(&boxes, 140.0),
+        None,
+        "20 px from both neighbours' borders is no trim and no bar"
+    );
+    assert_eq!(
+        trim::box_at(&[], 40.0),
+        None,
+        "an empty cut offers nothing to grab"
+    );
 }
 
 /// F2.8 S1: two borders closer together than the reach — the nearer one wins, so a narrow clip is still
@@ -116,9 +161,17 @@ fn f2_8_s1_the_nearer_border_wins_when_two_are_in_reach() {
 fn f2_8_s1_ruler_ticks_are_whole_second_marks_laid_out_at_the_same_zoom() {
     let ticks = trim::ruler_ticks(90.0, PPS, 30.0);
     let labels: Vec<&str> = ticks.iter().map(|(_, l)| l.as_str()).collect();
-    assert_eq!(labels, vec!["00:00", "00:30", "01:00", "01:30"], "the picture's spelling, minus the playhead's tenth");
+    assert_eq!(
+        labels,
+        vec!["00:00", "00:30", "01:00", "01:30"],
+        "the picture's spelling, minus the playhead's tenth"
+    );
     let xs: Vec<f64> = ticks.iter().map(|(x, _)| *x).collect();
-    assert_eq!(xs, vec![0.0, 120.0, 240.0, 360.0], "a tick every 30 s is a tick every 120 px at 4 px/s");
+    assert_eq!(
+        xs,
+        vec![0.0, 120.0, 240.0, 360.0],
+        "a tick every 30 s is a tick every 120 px at 4 px/s"
+    );
 }
 
 /// F2.8 S1: the ruler stops at the recording's end — a mark with no footage under it asks a question
@@ -126,11 +179,27 @@ fn f2_8_s1_ruler_ticks_are_whole_second_marks_laid_out_at_the_same_zoom() {
 #[test]
 fn f2_8_s1_ruler_ticks_stop_at_the_end_and_survive_nonsense() {
     let ticks = trim::ruler_ticks(65.0, PPS, 30.0);
-    assert_eq!(ticks.len(), 3, "0, 30, 60 — 90 is past the end and does not appear");
+    assert_eq!(
+        ticks.len(),
+        3,
+        "0, 30, 60 — 90 is past the end and does not appear"
+    );
     assert_eq!(ticks.last().unwrap().0, 240.0);
 
-    assert_eq!(trim::ruler_ticks(0.0, PPS, 30.0).len(), 0, "no recording, no ruler");
+    assert_eq!(
+        trim::ruler_ticks(0.0, PPS, 30.0).len(),
+        0,
+        "no recording, no ruler"
+    );
     assert_eq!(trim::ruler_ticks(-5.0, PPS, 30.0).len(), 0);
-    assert_eq!(trim::ruler_ticks(60.0, 0.0, 30.0).len(), 0, "zero zoom would loop forever");
-    assert_eq!(trim::ruler_ticks(60.0, PPS, 0.0).len(), 0, "zero spacing likewise");
+    assert_eq!(
+        trim::ruler_ticks(60.0, 0.0, 30.0).len(),
+        0,
+        "zero zoom would loop forever"
+    );
+    assert_eq!(
+        trim::ruler_ticks(60.0, PPS, 0.0).len(),
+        0,
+        "zero spacing likewise"
+    );
 }

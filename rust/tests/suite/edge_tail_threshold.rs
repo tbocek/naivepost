@@ -20,7 +20,7 @@ use naivepost::params;
 use naivepost::textfmt::Retake;
 
 use crate::common;
-use common::{all_rows, word, anywhere};
+use common::{all_rows, anywhere, word};
 
 const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
@@ -34,7 +34,14 @@ fn edges(total: f64, spans: &[(f64, f64, u8)]) -> Edges {
 
 #[allow(dead_code)]
 fn mark(s: f64, e: f64, again: f64, to: f64) -> Retake {
-    Retake { s, e, again, to, text: String::new(), whole: String::new() }
+    Retake {
+        s,
+        e,
+        again,
+        to,
+        text: String::new(),
+        whole: String::new(),
+    }
 }
 
 /// No envelope anywhere. Kept for shape-parity with the sibling fixture files; every case here
@@ -64,8 +71,13 @@ fn p_eng_edgetaildb_s1_the_threshold_is_12_db_and_catalogued_once() {
     let row = params::prepare()
         .into_iter()
         .find(|param| param.id == "P.eng.edgeTailDB")
-        .expect("the tail threshold must be catalogued for Prepare, whose fenced placement reads it");
-    assert_eq!(row.from, "edges::EDGE_TAIL_DB", "a row must name the constant its rule reads");
+        .expect(
+            "the tail threshold must be catalogued for Prepare, whose fenced placement reads it",
+        );
+    assert_eq!(
+        row.from, "edges::EDGE_TAIL_DB",
+        "a row must name the constant its rule reads"
+    );
     assert_eq!(row.spelled, "12");
     assert_eq!(row.spelled.parse::<f64>().unwrap(), 12.0);
 
@@ -74,7 +86,10 @@ fn p_eng_edgetaildb_s1_the_threshold_is_12_db_and_catalogued_once() {
 
     // And exactly one row for it across all five lists — one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.edgeTailDB").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.edgeTailDB")
+            .count(),
         1,
         "P.eng.edgeTailDB catalogued more than once"
     );
@@ -88,8 +103,15 @@ fn p_eng_edgetaildb_s2_a_tail_within_the_threshold_is_followed() {
     let e = edges(8.0, &[(1.0, 1.5, WORD), (1.5, 2.4, 170)]);
     let w = word("stays", 1.0, 1.5);
     // Followed to where EDGE_TAIL_MAX stops it: 1.5 + 0.25 s = 1.75, bucket 350.
-    assert_eq!(e.end_after(&w, 4.0), 1.75, "the tail is walked to the follow-cap, not dropped at the stamp");
-    assert!(e.end_after(&w, 4.0) > w.e, "inside the threshold the cut goes past the aligner's end");
+    assert_eq!(
+        e.end_after(&w, 4.0),
+        1.75,
+        "the tail is walked to the follow-cap, not dropped at the stamp"
+    );
+    assert!(
+        e.end_after(&w, 4.0) > w.e,
+        "inside the threshold the cut goes past the aligner's end"
+    );
 }
 
 /// S3: a tail deeper than the threshold is not the word, and nothing drags the cut into it.
@@ -99,34 +121,58 @@ fn p_eng_edgetaildb_s3_a_tail_deeper_than_the_threshold_is_left_behind() {
     // so the walk stops dead at the aligner's end.
     let e = edges(8.0, &[(1.0, 1.5, WORD), (1.5, 2.4, 100)]);
     let w = word("stays", 1.0, 1.5);
-    assert_eq!(e.end_after(&w, 4.0), 1.5, "the cut lands on the aligner's end: the plateau is not the word");
+    assert_eq!(
+        e.end_after(&w, 4.0),
+        1.5,
+        "the cut lands on the aligner's end: the plateau is not the word"
+    );
     // The trough walk over the next 0.4 s finds nothing quieter than the plateau either, so no trough
     // pulls the edge into the breath: a tail deeper than twelve decibels is left out of the cut.
-    assert!(e.end_after(&w, 4.0) <= w.e, "never dragged past the word by what follows it");
+    assert!(
+        e.end_after(&w, 4.0) <= w.e,
+        "never dragged past the word by what follows it"
+    );
 
     // The contrast without literals: the identical envelope with the plateau back inside the threshold
     // is followed to 1.75. Twelve decibels is the whole difference between these two cuts.
     let kept = edges(8.0, &[(1.0, 1.5, WORD), (1.5, 2.4, 170)]);
-    assert_ne!(kept.end_after(&w, 4.0), e.end_after(&w, 4.0), "1.75 vs 1.5, the twelve-decibel line");
+    assert_ne!(
+        kept.end_after(&w, 4.0),
+        e.end_after(&w, 4.0),
+        "1.75 vs 1.5, the twelve-decibel line"
+    );
 }
 
 /// S4: the threshold is the word's OWN peak minus twelve decibels, not an absolute level — the same
 /// byte value is the word under one peak and not under another.
 #[test]
-fn p_eng_edgetaildb_s4_the_threshold_is_the_words_own_peak_minus_twelve_decibels_not_an_absolute_level() {
+fn p_eng_edgetaildb_s4_the_threshold_is_the_words_own_peak_minus_twelve_decibels_not_an_absolute_level(
+) {
     // A quieter word, 140, puts the threshold at 140 − 44 = 96.
     // Exactly AT the threshold still counts: `sound` compares >=.
     let at = edges(8.0, &[(1.0, 1.5, 140), (1.5, 2.0, 96)]);
-    assert_eq!(at.end_after(&word("stays", 1.0, 1.5), 4.0), 2.0, "exactly at the threshold it still counts");
+    assert_eq!(
+        at.end_after(&word("stays", 1.0, 1.5), 4.0),
+        2.0,
+        "exactly at the threshold it still counts"
+    );
 
     // One byte UNDER and the tail is gone — the cut lands on the aligner's end.
     let under = edges(8.0, &[(1.0, 1.5, 140), (1.5, 2.0, 95)]);
-    assert_eq!(under.end_after(&word("stays", 1.0, 1.5), 4.0), 1.5, "one byte under and the tail is gone");
+    assert_eq!(
+        under.end_after(&word("stays", 1.0, 1.5), 4.0),
+        1.5,
+        "one byte under and the tail is gone"
+    );
 
     // So 96 is the word here and not under a 200 peak (where the threshold is 156): the bound travels
     // with the word, which is why it cannot be written as an absolute level.
     let loud = edges(8.0, &[(1.0, 1.5, WORD), (1.5, 2.0, 96)]);
-    assert_eq!(loud.end_after(&word("stays", 1.0, 1.5), 4.0), 1.5, "96 is not the word under a 200 peak");
+    assert_eq!(
+        loud.end_after(&word("stays", 1.0, 1.5), 4.0),
+        1.5,
+        "96 is not the word under a 200 peak"
+    );
 }
 
 /// S5: the tail threshold belongs to the fenced side. The envelope-only methods ask the room instead,
@@ -142,8 +188,15 @@ fn p_eng_edgetaildb_s5_the_tail_threshold_belongs_to_the_fenced_side_and_is_not_
     // the word", the envelope-only side asks "is this louder than the room".
     // (2.4 + 0.05 lands on 2.4499999999999997 in binary floating point, so the bound is compared with
     // a tolerance rather than as a literal.)
-    assert!((e.end_before(2.5) - 2.45).abs() < 1e-9, "to the envelope-only rule the plateau is sound: the pad lands after it");
-    assert_ne!(e.end_after(&w, 4.0), e.end_before(2.5), "two rules, two thresholds, two answers");
+    assert!(
+        (e.end_before(2.5) - 2.45).abs() < 1e-9,
+        "to the envelope-only rule the plateau is sound: the pad lands after it"
+    );
+    assert_ne!(
+        e.end_after(&w, 4.0),
+        e.end_before(2.5),
+        "two rules, two thresholds, two answers"
+    );
 
     // Each neighbour is a separate constant answering a separate question.
     // P.eng.edgePadSeconds (0.05): what is left of a sound once the envelope has placed it.
@@ -163,13 +216,37 @@ fn p_eng_edgetaildb_s5_the_tail_threshold_belongs_to_the_fenced_side_and_is_not_
     assert_eq!(edge::ENVELOPE_WINDOW, 4.0);
 
     // And this is the only one of them measured in decibels; every other bound on the list is seconds.
-    assert_ne!(edge::EDGE_TAIL_DB, edge::EDGE_PAD, "a level is not a length");
+    assert_ne!(
+        edge::EDGE_TAIL_DB,
+        edge::EDGE_PAD,
+        "a level is not a length"
+    );
     assert_ne!(edge::EDGE_TAIL_DB, edge::WORD_PAD, "a level is not a room");
-    assert_ne!(edge::EDGE_TAIL_DB, edge::EDGE_REACH, "a level is not a reach");
-    assert_ne!(edge::EDGE_TAIL_DB, edge::LATE_STAMP, "a level is not a lateness");
-    assert_ne!(edge::EDGE_TAIL_DB, edge::TROUGH_REACH, "a level is not a search distance");
-    assert_ne!(edge::EDGE_TAIL_DB, edge::EDGE_TAIL_MAX, "how deep a tail may be is not how long it is followed");
-    assert_ne!(edge::EDGE_TAIL_DB, edge::ENVELOPE_WINDOW, "a level is not a window");
+    assert_ne!(
+        edge::EDGE_TAIL_DB,
+        edge::EDGE_REACH,
+        "a level is not a reach"
+    );
+    assert_ne!(
+        edge::EDGE_TAIL_DB,
+        edge::LATE_STAMP,
+        "a level is not a lateness"
+    );
+    assert_ne!(
+        edge::EDGE_TAIL_DB,
+        edge::TROUGH_REACH,
+        "a level is not a search distance"
+    );
+    assert_ne!(
+        edge::EDGE_TAIL_DB,
+        edge::EDGE_TAIL_MAX,
+        "how deep a tail may be is not how long it is followed"
+    );
+    assert_ne!(
+        edge::EDGE_TAIL_DB,
+        edge::ENVELOPE_WINDOW,
+        "a level is not a window"
+    );
 
     // And this row points at the threshold, not at any neighbour's constant.
     assert_eq!(anywhere("P.eng.edgeTailDB").from, "edges::EDGE_TAIL_DB");

@@ -7,13 +7,18 @@
 use naivepost::cut::{Cut, Seg};
 use naivepost::cut_screen;
 use naivepost::project::Project;
-use naivepost::shell::{self, Shell};
 use naivepost::shell::Page;
+use naivepost::shell::{self, Shell};
 
 /// A kept stretch of footage at some playback speed. `rate` 0 is what a hand-made scene carries:
 /// only produceSegs writes one (spec/inventory/cut.md §B).
 fn footage(start: f64, end: f64, rate: f64) -> Seg {
-    Seg { s: start, e: end, rate, ..Default::default() }
+    Seg {
+        s: start,
+        e: end,
+        rate,
+        ..Default::default()
+    }
 }
 
 #[test]
@@ -46,12 +51,20 @@ fn sec_05_cut_1_screen_s6_the_idle_form_reads_the_session_eight_ways() {
     assert_eq!(value("Segments"), "0");
     assert_eq!(value("Cut"), "00:00");
     assert_eq!(value("Thumbnails"), "64 px");
-    assert_eq!(value("Aspect ratio"), cut_screen::ASPECT_DEFAULT, "an unset aspect still has a shape");
+    assert_eq!(
+        value("Aspect ratio"),
+        cut_screen::ASPECT_DEFAULT,
+        "an unset aspect still has a shape"
+    );
     assert_eq!(value("Selection"), "", "a reading, not a prompt");
 
     // §A supplies a tooltip for the thumbnail buttons and nothing else.
     let tip = |label: &str| {
-        rows.iter().find(|row| row.label == label).unwrap().tip.to_string()
+        rows.iter()
+            .find(|row| row.label == label)
+            .unwrap()
+            .tip
+            .to_string()
     };
     assert_eq!(tip("Thumbnails"), "smaller|larger thumbnails on the tracks");
     assert_eq!(tip("Segments"), "");
@@ -63,23 +76,43 @@ fn sec_05_cut_1_screen_s7_cut_and_cut_at_1x_disagree_by_the_speed_effects() {
     let cut = Cut {
         segs: vec![
             footage(0.0, 10.0, 2.0),
-            Seg { ins: "card.svg".into(), dur: 3.0, ..Default::default() },
+            Seg {
+                ins: "card.svg".into(),
+                dur: 3.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
-    assert_eq!(cut_screen::cut_seconds(&cut), 8.0, "five seconds at 2\u{00d7}, plus the card's three");
+    assert_eq!(
+        cut_screen::cut_seconds(&cut),
+        8.0,
+        "five seconds at 2\u{00d7}, plus the card's three"
+    );
     assert_eq!(cut_screen::cut_seconds_at_1x(&cut), 13.0);
     assert_eq!(cut_screen::segment_count(&cut), 2);
 
     let rows = cut_screen::idle_readouts(64, "9:16", 75.0, Some((12.0, 20.0)), &cut, 3600.0);
     let value = |label: &str| {
-        rows.iter().find(|row| row.label == label).unwrap().value.clone()
+        rows.iter()
+            .find(|row| row.label == label)
+            .unwrap()
+            .value
+            .clone()
     };
     assert_eq!(value("Cut"), "00:08");
     assert_eq!(value("Cut at 1\u{00d7}"), "00:13");
-    assert_eq!(value("Aspect ratio"), "9:16", "what the cut stores is what the row reads");
+    assert_eq!(
+        value("Aspect ratio"),
+        "9:16",
+        "what the cut stores is what the row reads"
+    );
     assert_eq!(value("Playhead"), "01:15");
-    assert_eq!(value("Source"), "60:00", "mm_ss lets the minutes run past an hour");
+    assert_eq!(
+        value("Source"),
+        "60:00",
+        "mm_ss lets the minutes run past an hour"
+    );
     assert_eq!(value("Selection"), "00:12 \u{2013} 00:20");
 }
 
@@ -101,11 +134,20 @@ fn sec_05_cut_1_screen_s8_the_thumbnail_ladder_steps_by_a_third_and_clamps() {
     }
     assert_eq!(px, cut_screen::THUMB_MIN);
 
-    assert_eq!(cut_screen::thumb_up(cut_screen::THUMB_MAX), cut_screen::THUMB_MAX);
-    assert_eq!(cut_screen::thumb_down(cut_screen::THUMB_MIN), cut_screen::THUMB_MIN);
+    assert_eq!(
+        cut_screen::thumb_up(cut_screen::THUMB_MAX),
+        cut_screen::THUMB_MAX
+    );
+    assert_eq!(
+        cut_screen::thumb_down(cut_screen::THUMB_MIN),
+        cut_screen::THUMB_MIN
+    );
     // One step each way is the size you started with, within a px of rounding.
     let back = cut_screen::thumb_down(cut_screen::thumb_up(64));
-    assert!((back as i32 - 64).abs() <= 1, "{back} after one step each way");
+    assert!(
+        (back as i32 - 64).abs() <= 1,
+        "{back} after one step each way"
+    );
 }
 
 #[test]
@@ -114,7 +156,8 @@ fn sec_05_cut_1_screen_s9_the_picture_band_counts_the_seconds_between_two_pictur
     // every zoom; prototype: one frame every Freq seconds, so zoomed in the band shows black between
     // them." The row that makes the grid is `P.eng.frameGridSeconds` = 0.25, which is
     // prepare::EXTRACTION_GRID; the slot is what has to fit inside it.
-    let slot = |thumb: u32, aspect: &str| cut_screen::slot_seconds(thumb, aspect, cut_screen::ZOOM_MAX);
+    let slot =
+        |thumb: u32, aspect: &str| cut_screen::slot_seconds(thumb, aspect, cut_screen::ZOOM_MAX);
     // A 64 px row of 16:9 footage is 113.8 px wide; at 4 px a second one thumbnail slot covers
     // nearly half a minute of the session, which is why zooming in is what makes the grid matter.
     assert!((cut_screen::slot_seconds(64, "16:9", 4.0) - 28.444).abs() < 0.01);
@@ -132,16 +175,26 @@ fn sec_05_cut_1_screen_s9_the_picture_band_counts_the_seconds_between_two_pictur
     // as a number rather than as a bool that could only be wished true. Zooming in makes a slot cover
     // LESS footage (28.4 s at the opening 4 px/s), which is exactly where §1 says the prototype showed
     // black between its one-frame-per-Freq pictures.
-    assert!(!cut_screen::picture_at_every_zoom(cut_screen::ZOOM_MAX, cut_screen::THUMB_AT_OPEN, "16:9"));
+    assert!(!cut_screen::picture_at_every_zoom(
+        cut_screen::ZOOM_MAX,
+        cut_screen::THUMB_AT_OPEN,
+        "16:9"
+    ));
     let at_ceiling = slot(cut_screen::THUMB_AT_OPEN, "16:9");
-    assert!(at_ceiling > naivepost::prepare::EXTRACTION_GRID && at_ceiling < 0.5, "{at_ceiling} s a slot");
+    assert!(
+        at_ceiling > naivepost::prepare::EXTRACTION_GRID && at_ceiling < 0.5,
+        "{at_ceiling} s a slot"
+    );
     assert!(
         cut_screen::slot_seconds(64, "16:9", cut_screen::ZOOM_AT_OPEN) > at_ceiling,
         "a slot shrinks as the zoom deepens"
     );
 
     // An aspect the page cannot parse falls back to the shipped shape rather than dividing by nothing.
-    assert_eq!(slot_seconds_unparsed(), cut_screen::slot_seconds(64, "16:9", 240.0));
+    assert_eq!(
+        slot_seconds_unparsed(),
+        cut_screen::slot_seconds(64, "16:9", 240.0)
+    );
     assert_eq!(cut_screen::slot_seconds(64, "16:9", 0.0), 0.0);
 }
 
@@ -154,7 +207,10 @@ fn slot_seconds_unparsed() -> f64 {
 fn sec_05_cut_1_screen_s11_the_cut_readout_says_there_is_nothing_to_cut_without_footage() {
     // `spec/inventory/cut.md` §A: the bottom bar reads "nothing to cut — no source on Inputs is marked
     // as footage" when no source carries the footage mark. A listened-to-only recording is not a cut.
-    let shell = Shell { page: Page::Cut, ..Default::default() };
+    let shell = Shell {
+        page: Page::Cut,
+        ..Default::default()
+    };
     let narration = naivepost::narration::Narration::default();
     let mut project = Project::default();
     project.sources = vec![naivepost::project::Source {
@@ -171,8 +227,15 @@ fn sec_05_cut_1_screen_s11_the_cut_readout_says_there_is_nothing_to_cut_without_
     // Mark it footage and the row goes back to counting clips.
     project.sources[0].footage = true;
     let said = shell.inputs(None, &project, &Cut::default(), &narration);
-    assert_ne!(said, shell::NOTHING_TO_CUT, "there IS footage now: {said:?}");
-    assert_eq!(said, "0 clip(s)", "an uncut session still counts its zero clips");
+    assert_ne!(
+        said,
+        shell::NOTHING_TO_CUT,
+        "there IS footage now: {said:?}"
+    );
+    assert_eq!(
+        said, "0 clip(s)",
+        "an uncut session still counts its zero clips"
+    );
     let two = Cut {
         segs: vec![footage(0.0, 10.0, 1.0), footage(20.0, 30.0, 1.0)],
         ..Default::default()
@@ -186,7 +249,11 @@ fn sec_05_cut_1_screen_s10_the_bands_and_the_red_line_are_the_heights_the_page_d
     assert_eq!(cut_screen::GUTTER_PX, 30.0);
     assert_eq!(cut_screen::RULER_PX, 18.0);
     assert_eq!(cut_screen::SELECTION_BAND_PX, 22.0);
-    assert_eq!(cut_screen::EFFECT_ROW_PX, 26.0, "one row per overlapping group");
+    assert_eq!(
+        cut_screen::EFFECT_ROW_PX,
+        26.0,
+        "one row per overlapping group"
+    );
     assert_eq!(cut_screen::WAVE_LANE_PX, 30.0);
     assert_eq!(cut_screen::ROW_GAP_PX, 3.0);
     assert_eq!(cut_screen::RED_LINE_PX, 2.0);

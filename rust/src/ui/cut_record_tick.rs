@@ -101,7 +101,11 @@ impl RecordingPreviewPage for TablePage {
 ///
 /// `runs` are the merged filmed spans ([`crate::timeline::filmed_runs`]); `elapsed_secs` is one tick's
 /// worth, which is what makes this callable from a test without a timer.
-pub fn step(page: &dyn RecordingPreviewPage, runs: &[(f64, f64)], elapsed_secs: f64) -> Option<String> {
+pub fn step(
+    page: &dyn RecordingPreviewPage,
+    runs: &[(f64, f64)],
+    elapsed_secs: f64,
+) -> Option<String> {
     let from = page.playhead()?;
     // F2.12 S7 (`a spliced card holds the footage while it plays on the wall clock`): a card with no session
     // seconds of its own cannot be carried by the line, so the tick asks `cut_card_preview` how far THIS second
@@ -130,7 +134,10 @@ pub fn step(page: &dyn RecordingPreviewPage, runs: &[(f64, f64)], elapsed_secs: 
     }
     // S3: a folded seam the line ran into opens. `walk_fold` itself refuses while paused or under ✂.
     let player = preview::Player {
-        transport: crate::run::Transport { playing: true, started: true },
+        transport: crate::run::Transport {
+            playing: true,
+            started: true,
+        },
         cut_only: false,
         reviewing: false,
         playhead: Some(at),
@@ -201,11 +208,10 @@ impl RecordingPreviewPage for WindowPage {
     fn is_recording_playing(&self) -> bool {
         // S4: the line follows THE PLAYER — with no player process running there is nothing to follow, so
         // a press whose cue failed (logged where it happened) moves no line.
-        play_back::playing_pid().is_some()
-            && {
-                let player = ui::preview_player(&self.0);
-                player.transport.playing && !player.cut_only && !player.reviewing
-            }
+        play_back::playing_pid().is_some() && {
+            let player = ui::preview_player(&self.0);
+            player.transport.playing && !player.cut_only && !player.reviewing
+        }
     }
     fn playhead(&self) -> Option<f64> {
         ui::preview_player(&self.0).playhead

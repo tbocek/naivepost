@@ -33,12 +33,12 @@ use crate::project::Project;
 use crate::requests::{Request, Service};
 use crate::roles::Job;
 use crate::seam_retries::{self, Asking};
-use crate::tool_reads;
 use crate::services;
 use crate::settings::{self, Conf, Paths};
 use crate::tool_loop;
-use crate::tools::{self, Tool};
+use crate::tool_reads;
 use crate::tools::textedit::{Join, SEAM_REACH_WORDS};
+use crate::tools::{self, Tool};
 use crate::word_list::{self, Word};
 
 /// The shipped wording of one prompt key: the fenced ``` block of `spec/prompts/<key>.md`.
@@ -122,7 +122,17 @@ pub fn ask(
         }
         None => Conf::default(),
     };
-    ask_at(tree, &conf, user_context, k, n, before, after, attempt, cancelled)
+    ask_at(
+        tree,
+        &conf,
+        user_context,
+        k,
+        n,
+        before,
+        after,
+        attempt,
+        cancelled,
+    )
 }
 
 /// [`ask`] with the settings already read, for a caller that resolved them itself.
@@ -152,7 +162,13 @@ pub fn ask_at(
         // wire at all, and it is the same shape the prose path always stored — a reply this door reads.
         let outcome = judge(&cached, before, after);
         crate::request_timing::record_cached(tree, base_row(&model));
-        return Answered { outcome, settled: true, reply: cached, failed: false, from_cache: true };
+        return Answered {
+            outcome,
+            settled: true,
+            reply: cached,
+            failed: false,
+            from_cache: true,
+        };
     }
     // No model configured: asking again answers the same way, so this settles. Checked before the
     // loop dials, because a body cannot even be built without one.
@@ -168,8 +184,14 @@ pub fn ask_at(
     let base = base_row(&model);
     let endpoint = services::llm_endpoint(conf);
     let messages = vec![
-        Message { role: "system".to_string(), parts: vec![Part::Text(system.clone())] },
-        Message { role: "user".to_string(), parts: vec![Part::Text(user.clone())] },
+        Message {
+            role: "system".to_string(),
+            parts: vec![Part::Text(system.clone())],
+        },
+        Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text(user.clone())],
+        },
     ];
     // §3.2: this job has tools and they are offered. `drop_words`, `keep_join`, `get_words` and
     // `finish` are `tools::offered(Job::Joins)` already and `Join` implements every one of them;
@@ -200,7 +222,10 @@ pub fn ask_at(
     let mut turn_of = |sent: &crate::server_leg::Sent| -> Result<tool_loop::Turn, String> {
         let reply = llm_request::reply_from(&sent.content_type, &sent.body)
             .map_err(|why| format!("{}: {why}", joins::STEP))?;
-        let finishing = reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
+        let finishing = reply
+            .tool_calls
+            .iter()
+            .any(|call| call.name == Tool::Finish.name());
         if finishing || reply.tool_calls.is_empty() {
             // A round that brings NO CALLS is the answer, whatever the model also wrote beside it; a
             // round that brings calls is not, even when a thinking model slips its `"joined"` text in
@@ -298,7 +323,9 @@ pub fn ask_at(
                     > 0
             {
                 outcome_of(&join)
-            } else if !refusals.is_empty() && final_body.as_deref().map(empty_answer).unwrap_or(true) {
+            } else if !refusals.is_empty()
+                && final_body.as_deref().map(empty_answer).unwrap_or(true)
+            {
                 // The last reason the TOOL gave, quoted unchanged: the rule that refused it lives in
                 // `Join`, and a copy of its sentence here would be a second rule. Only when that last
                 // round carried no prose of its own — a model that says something instead of calling is
@@ -314,7 +341,13 @@ pub fn ask_at(
     // A transport failure is not a refusal of an answer: the join is not retried against a server that
     // is not there, and nothing is cached.
     if let Some(reason) = wire_error {
-        return Answered { outcome: Outcome::Refused(reason), settled: true, reply: String::new(), failed: true, from_cache: false };
+        return Answered {
+            outcome: Outcome::Refused(reason),
+            settled: true,
+            reply: String::new(),
+            failed: true,
+            from_cache: false,
+        };
     }
     if outcome.usable() {
         // Cached only when usable (§F1.10): a refusal must go out again rather than be replayed from
@@ -333,14 +366,25 @@ pub fn ask_at(
             llm_cache::store(tree, joins::STEP, &parts, body.as_str());
         }
     }
-    Answered { outcome, settled: true, reply: final_body.unwrap_or_default(), failed: false, from_cache: false }
+    Answered {
+        outcome,
+        settled: true,
+        reply: final_body.unwrap_or_default(),
+        failed: false,
+        from_cache: false,
+    }
 }
 
 /// The answer a set of accepted `drop_words` counts is worth, in the one shape this door reads back:
 /// the joined text, spelled as the words kept (everything shown, minus what went). Storing THAT rather
 /// than the raw calls is what lets a cached tool answer be read by `judge` with no second parser, and
 /// it is honest about what the flow decided — the drops, not the round that announced them.
-fn drop_answer(before: &[String], after: &[String], before_gone: usize, after_gone: usize) -> String {
+fn drop_answer(
+    before: &[String],
+    after: &[String],
+    before_gone: usize,
+    after_gone: usize,
+) -> String {
     let mut kept: Vec<&str> = before
         .iter()
         .map(String::as_str)
@@ -394,7 +438,10 @@ fn outcome_of(join: &Join) -> Outcome {
     if join.kept() {
         Outcome::Kept
     } else if before_gone + after_gone > 0 {
-        Outcome::Applied { before: before_gone, after: after_gone }
+        Outcome::Applied {
+            before: before_gone,
+            after: after_gone,
+        }
     } else {
         Outcome::Kept
     }
@@ -455,7 +502,10 @@ fn read_answer(
     before: &[String],
     after: &[String],
 ) -> Option<String> {
-    if !matches!(asked.name.as_str(), "get_context" | "get_lines" | "get_frames") {
+    if !matches!(
+        asked.name.as_str(),
+        "get_context" | "get_lines" | "get_frames"
+    ) {
         return None;
     }
     // The two sides of THIS seam, numbered the way the request numbered them: before first, then after,
@@ -506,7 +556,12 @@ fn live_call(
 fn tool_refused(answer: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(answer)
         .ok()
-        .and_then(|value| value.get("error").and_then(serde_json::Value::as_str).map(str::to_string))
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        })
         .is_some()
 }
 
@@ -514,7 +569,12 @@ fn tool_refused(answer: &str) -> bool {
 fn refusal_reason(answer: &str) -> String {
     serde_json::from_str::<serde_json::Value>(answer)
         .ok()
-        .and_then(|value| value.get("error").and_then(serde_json::Value::as_str).map(str::to_string))
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        })
         .unwrap_or_default()
 }
 
@@ -529,7 +589,11 @@ fn run_one(asked: &crate::exchanges::ToolCall, join: &mut Join) -> String {
         Some("after") => Some(crate::tools::textedit::Side::After),
         _ => None,
     };
-    let count = || args.get("count").and_then(|v| v.as_u64()).map(|v| v as usize);
+    let count = || {
+        args.get("count")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+    };
     match asked.name.as_str() {
         "drop_words" => match (side("side"), count()) {
             (Some(side), Some(count)) => join.drop_words(side, count),
@@ -578,8 +642,14 @@ fn join_system(context: &str) -> String {
 /// next reader believe it is the bare-body door.
 fn messages0(system: &str, user: &str) -> Vec<Message> {
     vec![
-        Message { role: "system".to_string(), parts: vec![Part::Text(system.to_string())] },
-        Message { role: "user".to_string(), parts: vec![Part::Text(user.to_string())] },
+        Message {
+            role: "system".to_string(),
+            parts: vec![Part::Text(system.to_string())],
+        },
+        Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text(user.to_string())],
+        },
     ]
 }
 
@@ -594,7 +664,14 @@ fn chat_body_with(
     // streaming request is still read correctly. That is what lets a one-shot fake keep answering while the
     // real llama.cpp gets chunks a person can watch arrive.
     // §4 gives the text edit thinking ON; read from the prompt table (§10 §4) rather than named here.
-    llm_request::body(joins::STEP, model, conversation, crate::prompts::mode_of("textedit"), offered, true)
+    llm_request::body(
+        joins::STEP,
+        model,
+        conversation,
+        crate::prompts::mode_of("textedit"),
+        offered,
+        true,
+    )
 }
 
 /// The answer text out of a chat reply: `content`, never the reasoning. Routed by §1's rule — an
@@ -613,12 +690,7 @@ fn answer_of(content_type: &str, reply: &str) -> String {
 /// door the pass hashes: the bytes on the wire, the system prompt's wording included, decide the key, so
 /// the caller passes the two finished messages rather than the seam's numbers (`joins::request` and
 /// `join_system` are private, and re-deriving them here would let a planted reply drift from the ask).
-pub fn seam_parts(
-    system: &str,
-    user: &str,
-    model: &str,
-    attempt: u32,
-) -> Vec<serde_json::Value> {
+pub fn seam_parts(system: &str, user: &str, model: &str, attempt: u32) -> Vec<serde_json::Value> {
     let state = seam_retries::ask_slot(system, attempt);
     let request = llm_cache::Request {
         system,
@@ -672,18 +744,16 @@ pub struct Pass {
 /// later seam see a clean join: showing it what an earlier seam already removed made the
 /// one-stretch check count that stretch here and refuse an answer that was right (join 22 of the
 /// ETH lecture, fixed 2026-09-18).
-pub fn run_seams(
-    tree: &Tree,
-    project: &Project,
-    words: &[Word],
-    times: &[(f64, f64)],
-) -> Pass {
+pub fn run_seams(tree: &Tree, project: &Project, words: &[Word], times: &[(f64, f64)]) -> Pass {
     let total = words.len();
     let mut kept = vec![true; total];
     // What was standing when the pass began, so the whole-take flag below can tell a word this pass
     // removed from one that was already gone.
     let started_kept: Vec<bool> = kept.clone();
-    let mut pass = Pass { kept: kept.clone(), ..Default::default() };
+    let mut pass = Pass {
+        kept: kept.clone(),
+        ..Default::default()
+    };
     if total == 0 {
         return pass;
     }
@@ -719,7 +789,10 @@ pub fn run_seams(
                 &cancelled,
             );
             match answered.outcome {
-                Outcome::Applied { before: off_before, after: off_after } => {
+                Outcome::Applied {
+                    before: off_before,
+                    after: off_after,
+                } => {
                     take_off_end(&mut kept, *seam, off_before);
                     take_off_start(&mut kept, *seam, off_after);
                     applied += 1;
@@ -738,13 +811,18 @@ pub fn run_seams(
                 }
                 Outcome::Refused(reason) => {
                     if answered.failed {
-                        pass.logs.push(joins::refusal_line(k, &reason, "nothing removed there"));
+                        pass.logs
+                            .push(joins::refusal_line(k, &reason, "nothing removed there"));
                         break;
                     }
                     match asking.refused() {
                         Some(tail) => pass.logs.push(joins::refusal_line(k, &reason, tail)),
                         None => {
-                            pass.logs.push(joins::refusal_line(k, &reason, "nothing removed there"));
+                            pass.logs.push(joins::refusal_line(
+                                k,
+                                &reason,
+                                "nothing removed there",
+                            ));
                             break;
                         }
                     }
@@ -762,7 +840,8 @@ pub fn run_seams(
     let written: Vec<String> = words.iter().map(|word| word.written.clone()).collect();
     let sources: Vec<String> = words.iter().map(|word| word.source.clone()).collect();
     for note in joins::dedupe_across(&written, times, &mut kept) {
-        pass.logs.push(crate::tools::textedit::dedupe_log_head(&note));
+        pass.logs
+            .push(crate::tools::textedit::dedupe_log_head(&note));
     }
     // S5: the dropped runs become marks, and F1.11 places their edges on the sound — the words fence
     // both edges and each lane's cached envelope chooses where inside the fence. No envelope (no wave
@@ -770,10 +849,15 @@ pub fn run_seams(
     // fallback, not a failure.
     let aligned: Vec<crate::edges::AlignedWord> = words
         .iter()
-        .map(|word| crate::edges::AlignedWord { word: word.match_word.clone(), s: word.start, e: word.end })
+        .map(|word| crate::edges::AlignedWord {
+            word: word.match_word.clone(),
+            s: word.start,
+            e: word.end,
+        })
         .collect();
     let held = crate::edges::load(tree, &joins::session_lanes(tree, words));
-    let (marks, edge_notes) = joins::marks_for(times, &kept, &aligned, crate::edges::finder(&held), &spoken);
+    let (marks, edge_notes) =
+        joins::marks_for(times, &kept, &aligned, crate::edges::finder(&held), &spoken);
     pass.logs.extend(edge_notes);
     // Only words THIS pass removed count toward the flag: `kept` also carries words that were
     // already gone before the joins ran, and blaming those would hang a whole-take wash on a
@@ -790,7 +874,9 @@ pub fn run_seams(
     }
     // S6: both files, in one step, together.
     if let Err(error) = joins::write_pair(tree, &sources, &written, &kept, &pass.whole, &marks) {
-        pass.logs.push(format!("!!! text edit: could not write the text files -- {error}"));
+        pass.logs.push(format!(
+            "!!! text edit: could not write the text files -- {error}"
+        ));
         pass.kept = kept;
         return pass;
     }
@@ -803,8 +889,11 @@ pub fn run_seams(
         // §6's own summary of the asks, said before the arithmetic line so a reader learns where the
         // answers came from before being told what they cost. `applied` counts the seams repaired; a
         // reply read back from `cache/llm/textedit` is counted in both halves, which is the point.
-        pass.logs.push(crate::tools::textedit::joins_repaired_log(applied, from_cache));
-        pass.logs.push(joins::written_log(pass.removed, total, pass.stretches));
+        pass.logs.push(crate::tools::textedit::joins_repaired_log(
+            applied, from_cache,
+        ));
+        pass.logs
+            .push(joins::written_log(pass.removed, total, pass.stretches));
     }
     pass.kept = kept;
     pass

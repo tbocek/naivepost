@@ -20,7 +20,9 @@ use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{hold_last_window, narrate_button as button, release_last_window, settle, status_text};
+use common::{
+    hold_last_window, narrate_button as button, release_last_window, settle, status_text,
+};
 
 #[path = "speak_tts_wire_harness.rs"]
 mod harness;
@@ -79,12 +81,24 @@ fn sec_01_project_and_files_4_narratenarrationjson_s2_a_bare_tag_still_keys_as_t
         narration::tts_key(&calm, None, None),
         "no weights, no vector: the tag IS the field"
     );
-    assert_eq!(narration::key_for(&calm, None), "25e0.85|We start with \u{2026}|calm");
+    assert_eq!(
+        narration::key_for(&calm, None),
+        "25e0.85|We start with \u{2026}|calm"
+    );
     // A kin word is still a bare tag: nothing to be exact about, so nothing becomes a vector.
-    assert_eq!(narration::key_for(&entry("furious"), None), "25e0.85|We start with \u{2026}|furious");
+    assert_eq!(
+        narration::key_for(&entry("furious"), None),
+        "25e0.85|We start with \u{2026}|furious"
+    );
     // No emotion at all adds nothing beyond the empty field, and `own` still adds nothing either.
-    assert_eq!(narration::key_for(&entry(""), None), "25e0.85|We start with \u{2026}|");
-    assert_eq!(narration::key_for(&calm, Some("own")), narration::key_for(&calm, None));
+    assert_eq!(
+        narration::key_for(&entry(""), None),
+        "25e0.85|We start with \u{2026}|"
+    );
+    assert_eq!(
+        narration::key_for(&calm, Some("own")),
+        narration::key_for(&calm, None)
+    );
 }
 
 /// S3: three performances of one line get three names, which is what lets a moved recipe take effect.
@@ -102,11 +116,15 @@ fn sec_01_project_and_files_4_narratenarrationjson_s3_a_recipe_move_names_a_diff
     for key in [&full, &half, &spelled] {
         assert_eq!(narration::tts_file(key).len(), 16, "{key}");
     }
-    let files: std::collections::HashSet<String> =
-        [&full, &half, &spelled].iter().map(|k| narration::tts_file(k)).collect();
+    let files: std::collections::HashSet<String> = [&full, &half, &spelled]
+        .iter()
+        .map(|k| narration::tts_file(k))
+        .collect();
     assert_eq!(files.len(), 3, "three keys, three filenames");
-    let seeds: std::collections::HashSet<u32> =
-        [&full, &half, &spelled].iter().map(|k| narration::tts_seed(k)).collect();
+    let seeds: std::collections::HashSet<u32> = [&full, &half, &spelled]
+        .iter()
+        .map(|k| narration::tts_seed(k))
+        .collect();
     assert_eq!(seeds.len(), 3, "three keys, three seeds");
 }
 
@@ -144,10 +162,18 @@ fn run_round(app: &adw::Application) {
         ..Default::default()
     });
     naivepost::project::save(&project, tree.dir()).expect("naivepost.json written");
-    let cut = Cut { segs: vec![Seg { s: 0.0, e: 10.0, ..Default::default() }], ..Default::default() };
+    let cut = Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     naivepost::cut::save(&cut, &tree).expect("cut.json written");
     let reference = tree.voice_ref_wav();
-    std::fs::create_dir_all(reference.parent().expect("narrate/ has a parent")).expect("narrate/ made");
+    std::fs::create_dir_all(reference.parent().expect("narrate/ has a parent"))
+        .expect("narrate/ made");
     std::fs::write(&reference, b"RIFF fake voice reference").expect("reference written");
 
     // A WEIGHTED tag: this is the case where the key's emotion field is a vector.
@@ -160,9 +186,14 @@ fn run_round(app: &adw::Application) {
         pos: String::new(),
         roll: 0,
     };
-    let vector_named = naivepost::narrate_tts::take_path(&tree, &narration::key_for(&line, Some("")));
-    let tag_named = naivepost::narrate_tts::take_path(&tree, &narration::tts_key(&line, Some(""), None));
-    assert_ne!(vector_named, tag_named, "the two spellings name different files");
+    let vector_named =
+        naivepost::narrate_tts::take_path(&tree, &narration::key_for(&line, Some("")));
+    let tag_named =
+        naivepost::narrate_tts::take_path(&tree, &narration::tts_key(&line, Some(""), None));
+    assert_ne!(
+        vector_named, tag_named,
+        "the two spellings name different files"
+    );
 
     release_last_window();
     let window = ui::build_window(app, &project, "Prepare");
@@ -209,7 +240,10 @@ fn run_round(app: &adw::Application) {
     }
 
     let said = status_text(&window);
-    assert!(said.starts_with("spoken"), "the row's ▶ reported the take, not a refusal: {said}");
+    assert!(
+        said.starts_with("spoken"),
+        "the row's ▶ reported the take, not a refusal: {said}"
+    );
     assert!(
         vector_named.is_file(),
         "the click filed the take under the vector name {}",
@@ -231,7 +265,8 @@ fn run_round(app: &adw::Application) {
     let body: serde_json::Value =
         serde_json::from_str(&speech.body_text()).expect("a JSON body went out");
     assert_eq!(
-        body["options"]["emotion_vector"], "0,1,0,0,0,0,0,0",
+        body["options"]["emotion_vector"],
+        "0,1,0,0,0,0,0,0",
         "the engine was sent the vector the file is named for: {}",
         speech.body_text()
     );
@@ -252,5 +287,8 @@ fn sec_01_project_and_files_4_narratenarrationjson_s4_the_row_press_lands_the_ve
         app.connect_activate(run_round);
         app.run_with_args(&["naivepost"]);
     });
-    assert!(RAN_VECTOR_WIRE.load(Ordering::SeqCst), "the vector-name wire check never ran");
+    assert!(
+        RAN_VECTOR_WIRE.load(Ordering::SeqCst),
+        "the vector-name wire check never ran"
+    );
 }

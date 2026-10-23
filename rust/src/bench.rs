@@ -35,19 +35,58 @@ pub struct Row {
 /// the narration, then the upload text. Per machine: a different build could ship a
 /// different set, which is why nothing here counts them at compile time beyond this list.
 pub const ROWS: [Row; 13] = [
-    Row { title: "User Context", key: "" },
-    Row { title: "System context", key: "system" },
-    Row { title: "Describe", key: "describe" },
-    Row { title: "Transcript", key: "fix" },
-    Row { title: "Retakes", key: "retake" },
-    Row { title: "Text edit", key: "textedit" },
-    Row { title: "Cut", key: "cut" },
-    Row { title: "Captions", key: "captions" },
-    Row { title: "Speed", key: "speed" },
-    Row { title: "Effects", key: "effects" },
-    Row { title: "Narration", key: "narrate" },
-    Row { title: "Translate", key: "translate" },
-    Row { title: "Upload text", key: "youtube" },
+    Row {
+        title: "User Context",
+        key: "",
+    },
+    Row {
+        title: "System context",
+        key: "system",
+    },
+    Row {
+        title: "Describe",
+        key: "describe",
+    },
+    Row {
+        title: "Transcript",
+        key: "fix",
+    },
+    Row {
+        title: "Retakes",
+        key: "retake",
+    },
+    Row {
+        title: "Text edit",
+        key: "textedit",
+    },
+    Row {
+        title: "Cut",
+        key: "cut",
+    },
+    Row {
+        title: "Captions",
+        key: "captions",
+    },
+    Row {
+        title: "Speed",
+        key: "speed",
+    },
+    Row {
+        title: "Effects",
+        key: "effects",
+    },
+    Row {
+        title: "Narration",
+        key: "narrate",
+    },
+    Row {
+        title: "Translate",
+        key: "translate",
+    },
+    Row {
+        title: "Upload text",
+        key: "youtube",
+    },
 ];
 
 /// The heading: "\u2039Name\u203a prompt" for a prompt, and the plain name for the User
@@ -122,7 +161,10 @@ pub fn edited(paths: &Paths, row: &Row) -> bool {
     if is_context(row) {
         return false;
     }
-    settings::stored_prompt(paths, row.key).ok().flatten().is_some()
+    settings::stored_prompt(paths, row.key)
+        .ok()
+        .flatten()
+        .is_some()
 }
 
 /// What the text box holds: the project's note for row 0, else this machine's text or

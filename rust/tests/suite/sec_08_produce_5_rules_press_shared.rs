@@ -32,18 +32,34 @@ use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle};
+use common::{
+    fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle,
+};
 
 fn two_segs() -> Vec<naivepost::cut::Seg> {
     vec![
-        naivepost::cut::Seg { s: 0.0, e: 9.5, cam: 0, ..Default::default() },
-        naivepost::cut::Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() },
+        naivepost::cut::Seg {
+            s: 0.0,
+            e: 9.5,
+            cam: 0,
+            ..Default::default()
+        },
+        naivepost::cut::Seg {
+            s: 10.0,
+            e: 30.0,
+            cam: 0,
+            ..Default::default()
+        },
     ]
 }
 
 /// The cut the press finds on disk (§08 reads the Cut page's saved cut when no live review cut stands).
 fn write_cut(tree: &Tree) {
-    let cut = naivepost::cut::Cut { segs: two_segs(), aspect: "16:9".to_string(), ..Default::default() };
+    let cut = naivepost::cut::Cut {
+        segs: two_segs(),
+        aspect: "16:9".to_string(),
+        ..Default::default()
+    };
     std::fs::create_dir_all(tree.cut_json().parent().unwrap()).unwrap();
     std::fs::write(tree.cut_json(), serde_json::to_string_pretty(&cut).unwrap()).unwrap();
 }
@@ -59,7 +75,8 @@ fn write_words(tree: &Tree) {
         end: start + 0.6,
         stray: false,
     };
-    naivepost::word_list::save(tree, &[one("hello", 1.0), one("there", 11.0)]).expect("word list saved");
+    naivepost::word_list::save(tree, &[one("hello", 1.0), one("there", 11.0)])
+        .expect("word list saved");
 }
 
 /// The spawner the walk is handed through the program's own seam: each command's output file appears on disk,
@@ -93,7 +110,9 @@ thread_local! {
 /// about; every other row comes from `produce_screen::defaults`, so the press hashes real settings.
 fn press(container: &str, translate: &[&str]) -> Vec<String> {
     naivepost::produce_translate::set_spawn_for_test(scripted_spawn());
-    let app = CURRENT_APP.with(|held| held.borrow().clone()).expect("the round published the application");
+    let app = CURRENT_APP
+        .with(|held| held.borrow().clone())
+        .expect("the round published the application");
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     release_last_window();
     let window = ui::build_window(&app, &model, Page::Produce.label());
@@ -117,10 +136,15 @@ fn press(container: &str, translate: &[&str]) -> Vec<String> {
     ui::produce_page::set_state(page);
     ui::seed_review_cut(
         &window,
-        &naivepost::cut::Cut { segs: two_segs(), aspect: "16:9".to_string(), ..Default::default() },
+        &naivepost::cut::Cut {
+            segs: two_segs(),
+            aspect: "16:9".to_string(),
+            ..Default::default()
+        },
     );
 
-    let button = ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
+    let button =
+        ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
     button.emit_by_name::<()>("clicked", &[]);
     settle();
     let logs = ui::window::window_logs();
@@ -128,7 +152,8 @@ fn press(container: &str, translate: &[&str]) -> Vec<String> {
     settle();
     // A click that never reached the run would leave the log looking like some earlier press's.
     assert!(
-        logs.iter().any(|l| l.starts_with(">>> producing ") || l.starts_with(">>> transcoding ")),
+        logs.iter()
+            .any(|l| l.starts_with(">>> producing ") || l.starts_with(">>> transcoding ")),
         "the press never reached the render: {:?}",
         logs
     );
@@ -161,25 +186,40 @@ fn check_sidecars_for_every_language(tree: &Tree) {
     let produced = tree.final_video("mp4").parent().unwrap().to_path_buf();
     for name in render::sidecar_names("final", None) {
         let path = produced.join(&name);
-        assert!(path.is_file(), "the session's own track {name} is not beside the video");
-        assert!(!std::fs::read_to_string(&path).unwrap().trim().is_empty(), "{name} is empty");
+        assert!(
+            path.is_file(),
+            "the session's own track {name} is not beside the video"
+        );
+        assert!(
+            !std::fs::read_to_string(&path).unwrap().trim().is_empty(),
+            "{name} is empty"
+        );
     }
     for name in render::sidecar_names("final", Some("German")) {
-        assert!(produced.join(&name).is_file(), "the ticked language wrote no {name}");
+        assert!(
+            produced.join(&name).is_file(),
+            "the ticked language wrote no {name}"
+        );
     }
     assert!(
-        logs.iter().any(|l| *l == render::sidecar_log("final", Some("German"))),
+        logs.iter()
+            .any(|l| *l == render::sidecar_log("final", Some("German"))),
         "the press never said the ticked language's sidecar: {:?}",
         logs
     );
     // "never an empty cue", read off the file the press wrote rather than off a cue list.
     let bodies = cue_texts(&tree.final_srt(None));
-    assert!(!bodies.is_empty(), "the sheet holds no cue at all: {bodies:?}");
+    assert!(
+        !bodies.is_empty(),
+        "the sheet holds no cue at all: {bodies:?}"
+    );
     for body in bodies.iter() {
         assert!(!body.trim().is_empty(), "one cue said nothing: {bodies:?}");
     }
     assert!(
-        bodies.iter().any(|b| b.contains("hello") || b.contains("there")),
+        bodies
+            .iter()
+            .any(|b| b.contains("hello") || b.contains("there")),
         "the cues are not the session's own speech: {bodies:?}"
     );
 }
@@ -217,14 +257,19 @@ fn check_nothing_to_say(tree: &Tree) {
     // Nothing was written: the bare sheet is still the OLD text, not this run's, because this run had nothing
     // to put in it.
     assert!(
-        std::fs::read_to_string(&bare_sheet).unwrap().contains("weg"),
+        std::fs::read_to_string(&bare_sheet)
+            .unwrap()
+            .contains("weg"),
         "a run with nothing to say wrote its own sheet anyway"
     );
     assert!(
         !stale_de.is_file() && !stale_de_vtt.is_file(),
         "the ticked language's stale pair outlived a run that had nothing to say"
     );
-    assert!(foreign.is_file(), "a language nobody ticked is not this run's to delete");
+    assert!(
+        foreign.is_file(),
+        "a language nobody ticked is not this run's to delete"
+    );
     let _ = bare_vtt;
 }
 
@@ -236,12 +281,22 @@ fn check_stale_sidecar_replaced(tree: &Tree) {
     let produced = tree.final_video("mp4").parent().unwrap().to_path_buf();
     std::fs::create_dir_all(&produced).unwrap();
     let stale = produced.join("final.German.srt");
-    std::fs::write(&stale, "1\n00:00:00,000 --> 00:00:01,000\nvon einem alteren render\n\n").unwrap();
+    std::fs::write(
+        &stale,
+        "1\n00:00:00,000 --> 00:00:01,000\nvon einem alteren render\n\n",
+    )
+    .unwrap();
 
     press("mp4", &["German"]);
     let now = std::fs::read_to_string(&stale).expect("the .de sheet after the press");
-    assert!(!now.contains("alteren"), "the old render's file still stands: {now}");
-    assert!(now.contains("hello") || now.contains("there"), "the replacement is not this run's cues: {now}");
+    assert!(
+        !now.contains("alteren"),
+        "the old render's file still stands: {now}"
+    );
+    assert!(
+        now.contains("hello") || now.contains("there"),
+        "the replacement is not this run's cues: {now}"
+    );
 }
 
 /// webm carries no subtitle track, so the run says where its subtitles are — after the mux, and the files it
@@ -261,7 +316,10 @@ fn check_webm_names_its_files(tree: &Tree) {
     assert!(note > mux_at, "the note comes before the mux: {:?}", logs);
     let produced = tree.final_video("webm").parent().unwrap().to_path_buf();
     for name in render::sidecar_names("final", None) {
-        assert!(produced.join(&name).is_file(), "the note points at {name}, which is not there");
+        assert!(
+            produced.join(&name).is_file(),
+            "the note points at {name}, which is not there"
+        );
     }
 }
 
@@ -305,7 +363,10 @@ fn run(tag: &str, body: impl FnOnce(&Tree) + std::panic::RefUnwindSafe + 'static
         {
             let mut held = FAILURE.lock().unwrap();
             if held.is_none() {
-                *held = Some(format!("the press for `{}` left the folder §5 does not describe", CASE));
+                *held = Some(format!(
+                    "the press for `{}` left the folder §5 does not describe",
+                    CASE
+                ));
             }
         }
         glib::idle_add_local(move || {

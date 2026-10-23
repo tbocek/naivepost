@@ -54,7 +54,12 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> 
     // One scene long enough to hold the caption's seconds, so the lane, the rows and the clock all agree that
     // 1:21 is inside the cut. Seeded rather than typed: the fixture's own `cut.json` keeps one clip and `fx: []`.
     let shot = cut::Cut {
-        segs: vec![cut::Seg { s: 0.0, e: 300.0, cam: 0, ..Default::default() }],
+        segs: vec![cut::Seg {
+            s: 0.0,
+            e: 300.0,
+            cam: 0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     ui::seed_review_cut(window, &shot);
@@ -70,15 +75,25 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> 
     let mut said = Vec::new();
     // --- 1. the caption the frame paints: arm, land the lower third, type, Apply --------------------------
     let armed = ui::press_effect_item(window, cut::EffectKind::Text);
-    assert!(ui::text_armed(), "snapshot: 06-text could not arm -- {armed}");
+    assert!(
+        ui::text_armed(),
+        "snapshot: 06-text could not arm -- {armed}"
+    );
     said.push(format!("armed: {armed}"));
     // A zero-travel press: §S2 makes a click take the lower third, the wide box the spec's picture shows across
     // the bottom of the frame. The panel's own drag door is what a hand uses; `text_drag_ended` is the seam it
     // hands to, with the panel's pinned size as the frame the box is measured against.
     let landed = ui::text_drag_ended(window, (40.0, 40.0), (40.0, 40.0));
     let form = ui::text_form_open().expect("snapshot: 06-text landed no caption form");
-    assert_eq!(form.on, fx_text::LOWER_THIRD, "a click must take the lower third");
-    assert_eq!(form.t, LINE_SECOND, "the caption belongs at the line's second -- {landed}");
+    assert_eq!(
+        form.on,
+        fx_text::LOWER_THIRD,
+        "a click must take the lower third"
+    );
+    assert_eq!(
+        form.t, LINE_SECOND,
+        "the caption belongs at the line's second -- {landed}"
+    );
     ui::text_type_words(window, fx_text::SNAPSHOT_CAPTION);
     let applied = ui::press_text_apply(window);
     let placed = ui::review_cut_of(window)
@@ -87,23 +102,37 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> 
         .filter(|fx| fx.kind == "text")
         .count();
     assert_eq!(placed, 1, "Apply put the caption on the cut -- {applied}");
-    assert!(ui::text_form_open().is_none(), "Apply closes the form it applied");
+    assert!(
+        ui::text_form_open().is_none(),
+        "Apply closes the form it applied"
+    );
     said.push(format!("applied: {applied} caption -- {applied}"));
 
     // --- 2. the form the spec's right column shows: arm again, land at the same second, type ----------------
     let rearmed = ui::press_effect_item(window, cut::EffectKind::Text);
-    assert!(ui::text_armed(), "snapshot: 06-text could not re-arm -- {rearmed}");
+    assert!(
+        ui::text_armed(),
+        "snapshot: 06-text could not re-arm -- {rearmed}"
+    );
     let landed = ui::text_drag_ended(window, (40.0, 40.0), (40.0, 40.0));
     let open = ui::text_form_open().expect("snapshot: 06-text drew no caption form");
-    assert_eq!(open.t, LINE_SECOND, "the form on screen is not for the line's second");
-    assert_eq!(open.on, fx_text::LOWER_THIRD, "the reopened box is not the lower third");
+    assert_eq!(
+        open.t, LINE_SECOND,
+        "the form on screen is not for the line's second"
+    );
+    assert_eq!(
+        open.on,
+        fx_text::LOWER_THIRD,
+        "the reopened box is not the lower third"
+    );
     said.push(format!("re-armed and landed: {landed}"));
     ui::text_type_words(window, fx_text::SNAPSHOT_CAPTION);
     // Read back off the form's own TextView rather than echoing the constant: if the typing ever stopped reaching
     // the widget, this prints empty and the stdout line -- and the round's test -- say so.
     let field = words_in(window);
     assert_eq!(
-        field, fx_text::SNAPSHOT_CAPTION,
+        field,
+        fx_text::SNAPSHOT_CAPTION,
         "snapshot: 06-text's words never reached the form's own words box"
     );
     // The form's STORED caption is still nothing: publishing it is Apply's job, and Apply would close the form
@@ -124,7 +153,12 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> 
     // The line steps one second inside the caption for the repaint: `fx_lane::visibility_at` ramps the fade-in
     // from the record's own first second, so a line standing AT it paints the words at alpha 0.0 -- invisible.
     // The record's second stays 81.0, which is what the heading and the test read.
-    ui::set_line_position(window, cut_line::LinePos { t: LINE_SECOND + 1.0 });
+    ui::set_line_position(
+        window,
+        cut_line::LinePos {
+            t: LINE_SECOND + 1.0,
+        },
+    );
     ui::set_playhead(window, LINE_SECOND + 1.0);
 
     // Repaint through the page's own door, which is what a keystroke's refresh calls, so the picture and the lane

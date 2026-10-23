@@ -98,7 +98,8 @@ pub fn spoken_log(spoken: usize, cached: usize) -> String {
 // put where they are read rather than being pushed into a bar field.
 
 /// S7: narrated, spoken, ready to hear.
-pub const DONE_SPOKEN: &str = "narration ready and spoken \u{2014} \u{25b6} the preview hears it in place";
+pub const DONE_SPOKEN: &str =
+    "narration ready and spoken \u{2014} \u{25b6} the preview hears it in place";
 /// S7: captions-only voice, so there was never anything to speak.
 pub const DONE_CAPTIONS: &str = "narration ready \u{2014} captions only, nothing spoken";
 
@@ -136,12 +137,7 @@ pub struct Plan {
 /// nothing is spoken over it, and silence is the user's decision rather than the model's, so it survives
 /// an entry rewrite ([`crate::audit_gaps::silent_survives_entry_rewrite`]). Nothing in this function
 /// mutates the [`Narration`] it is handed, which is what makes that survival structural.
-pub fn plan_run(
-    rewrite: bool,
-    clips: &[(f64, f64)],
-    narration: &Narration,
-    voice: &str,
-) -> Plan {
+pub fn plan_run(rewrite: bool, clips: &[(f64, f64)], narration: &Narration, voice: &str) -> Plan {
     let without = crate::narrate_rewrite::indexes_without_line(clips, narration);
     let reason = why(
         rewrite,
@@ -224,11 +220,13 @@ pub fn speak_line(text: &str, voice: &str, cached_wav_exists: bool) -> Speak {
 /// Count a speaking pass's outcome for [`spoken_log`]: how many were synthesized, how many were already
 /// there. Blanks count as neither — they were not spoken and they were not cached.
 pub fn tally(outcomes: &[Speak]) -> (usize, usize) {
-    outcomes.iter().fold((0, 0), |(spoken, cached), outcome| match outcome {
-        Speak::Synthesize => (spoken + 1, cached),
-        Speak::SkippedCached => (spoken, cached + 1),
-        Speak::SkippedBlank => (spoken, cached),
-    })
+    outcomes
+        .iter()
+        .fold((0, 0), |(spoken, cached), outcome| match outcome {
+            Speak::Synthesize => (spoken + 1, cached),
+            Speak::SkippedCached => (spoken, cached + 1),
+            Speak::SkippedBlank => (spoken, cached),
+        })
 }
 
 // --- S4: folding what the call answered into the record ---------------------------------------
@@ -284,11 +282,7 @@ pub fn fold_written(record: &Narration, written: &[Written]) -> Narration {
 /// against the project folder). Blank lines are skipped before the cache is consulted, for the reason
 /// [`speak_line`] gives: synthesizing `""` would cache a mistake under a key that suppresses the line.
 /// [`tally`] and [`spoken_log`] turn the result into the run's four-space summary.
-pub fn speak_pass(
-    voice: &str,
-    record: &[Entry],
-    cached: impl Fn(&Entry) -> bool,
-) -> Vec<Speak> {
+pub fn speak_pass(voice: &str, record: &[Entry], cached: impl Fn(&Entry) -> bool) -> Vec<Speak> {
     record
         .iter()
         .map(|entry| speak_line(&entry.text, voice, cached(entry)))
@@ -366,10 +360,22 @@ mod smoke {
     #[test]
     fn module_is_wired() {
         assert_eq!(super::JOBS, 2);
-        let w = super::Written { start: 0.0, end: 1.0, at: 0.5, text: "x".into(), emotion: String::new() };
+        let w = super::Written {
+            start: 0.0,
+            end: 1.0,
+            at: 0.5,
+            text: "x".into(),
+            emotion: String::new(),
+        };
         let folded = super::fold_written(&Narration::default(), &[w]);
         assert_eq!(folded.entries.len(), 1);
-        assert_eq!(super::tally(&super::speak_pass("own", &folded.entries, |_| false)), (1, 0));
-        assert_eq!(super::tally(&super::speak_pass("own", &folded.entries, |_| true)), (0, 1));
+        assert_eq!(
+            super::tally(&super::speak_pass("own", &folded.entries, |_| false)),
+            (1, 0)
+        );
+        assert_eq!(
+            super::tally(&super::speak_pass("own", &folded.entries, |_| true)),
+            (0, 1)
+        );
     }
 }

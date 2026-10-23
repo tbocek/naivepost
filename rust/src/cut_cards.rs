@@ -54,10 +54,7 @@ pub fn unesc(value: &str) -> String {
             }
             // A `%` that opens nothing is a percent sign: keep the file's bytes rather than dropping them.
         }
-        let step = tail[1..]
-            .find('%')
-            .map(|at| at + 1)
-            .unwrap_or(tail.len());
+        let step = tail[1..].find('%').map(|at| at + 1).unwrap_or(tail.len());
         out.push_str(&tail[..step]);
         i += step;
     }
@@ -146,7 +143,11 @@ pub fn inputs(doc: &str) -> Vec<Input> {
             hint: parts.next().unwrap_or_default().to_string(),
             ..Default::default()
         };
-        for flag in flags.split([' ', ',']).map(str::trim).filter(|f| !f.is_empty()) {
+        for flag in flags
+            .split([' ', ','])
+            .map(str::trim)
+            .filter(|f| !f.is_empty())
+        {
             match flag {
                 "keep" => input.keep = true,
                 "logo" => input.logo = true,
@@ -199,12 +200,16 @@ pub fn card_words(doc: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut rest = doc;
     while let Some(open) = rest.find("<text") {
-        let Some(tag_end) = rest[open..].find('>') else { break };
+        let Some(tag_end) = rest[open..].find('>') else {
+            break;
+        };
         let tag = &rest[open..open + tag_end];
         let body_from = open + tag_end + 1;
         // A self-closing `<text .../>` has no content to read.
         if !tag.trim_end().ends_with('/') {
-            let Some(close) = rest[body_from..].find("</text>") else { break };
+            let Some(close) = rest[body_from..].find("</text>") else {
+                break;
+            };
             let words: String = rest[body_from..body_from + close]
                 .chars()
                 .map(|c| match c {
@@ -266,7 +271,9 @@ fn blank_comments(doc: &str) -> String {
     while let Some(rel) = text[from..].find("<!--") {
         let start = from + rel;
         let after = start + 4;
-        let Some(rel_end) = text[after..].find("-->") else { break };
+        let Some(rel_end) = text[after..].find("-->") else {
+            break;
+        };
         let end = after + rel_end + 3;
         for byte in out.iter_mut().take(end).skip(start) {
             *byte = b' ';
@@ -289,10 +296,7 @@ pub struct Hole {
 
 /// S3 (`holes as {{name}} / {{name|fallback}} (outside comments)`).
 pub fn holes(doc: &str) -> Vec<Hole> {
-    find_holes(doc)
-        .into_iter()
-        .map(|(hole, _)| hole)
-        .collect()
+    find_holes(doc).into_iter().map(|(hole, _)| hole).collect()
 }
 
 /// The holes with the byte range each one occupies — what [`fill`] writes over. A hole inside `<!-- … -->` is skipped:
@@ -304,7 +308,9 @@ fn find_holes(doc: &str) -> Vec<(Hole, (usize, usize))> {
     let mut from = 0usize;
     while let Some(rel) = blanked[from..].find("{{") {
         let start = from + rel;
-        let Some(rel_end) = blanked[start..].find("}}") else { break };
+        let Some(rel_end) = blanked[start..].find("}}") else {
+            break;
+        };
         let end = start + rel_end + 2;
         // Read the name out of the ORIGINAL text; the blanked copy only says where braces really are.
         let body = doc[start + 2..end - 2].trim();
@@ -427,11 +433,7 @@ pub fn parse_arrivals(list: &str) -> Vec<Arrival> {
                 ),
                 None => (head.to_string(), None),
             };
-            Arrival {
-                label,
-                delay,
-                logo,
-            }
+            Arrival { label, delay, logo }
         })
         .collect()
 }
@@ -538,8 +540,10 @@ pub fn seeds() -> Vec<(&'static str, &'static str)> {
             // The seed badges are static: a letter and its tier word, with no animation to miss. `Box::leak` rather
             // than a `String` because the seeds are constants in effect — six small files written once per install —
             // and `seed_cards` takes borrowed names and contents.
-            let name: &'static str = Box::leak(format!("{}.svg", row.to_lowercase()).into_boxed_str());
-            let body: &'static str = Box::leak(badge_svg(row, &format!("{row} tier")).into_boxed_str());
+            let name: &'static str =
+                Box::leak(format!("{}.svg", row.to_lowercase()).into_boxed_str());
+            let body: &'static str =
+                Box::leak(badge_svg(row, &format!("{row} tier")).into_boxed_str());
             (name, body)
         })
         .collect();
@@ -578,7 +582,11 @@ pub struct Anim {
 /// S7 (`bakes SMIL (animate/set/animateTransform …)`): read one tag's attributes. Anything else — a `rect`, a `g` — is
 /// not an animation and answers `None`.
 pub fn parse_anim(tag: &str) -> Option<Anim> {
-    let name = tag.trim_start_matches('<').split_whitespace().next()?.trim_end_matches("/>");
+    let name = tag
+        .trim_start_matches('<')
+        .split_whitespace()
+        .next()?
+        .trim_end_matches("/>");
     if !matches!(name, "animate" | "set" | "animateTransform") {
         return None;
     }
@@ -638,7 +646,10 @@ fn parse_seconds(text: &str) -> f64 {
     if let Some(ms) = text.strip_suffix("ms") {
         return ms.trim().parse::<f64>().unwrap_or(0.0) / 1000.0;
     }
-    text.trim_end_matches('s').trim().parse::<f64>().unwrap_or(0.0)
+    text.trim_end_matches('s')
+        .trim()
+        .parse::<f64>()
+        .unwrap_or(0.0)
 }
 
 /// S7 (`on numbers, lengths, colours`): the three kinds of value this bake interpolates. Anything else is passed
@@ -672,7 +683,11 @@ fn parse_hex(hex: &str) -> Option<[u8; 3]> {
     let byte = |a: char, b: char| u8::from_str_radix(&format!("{a}{b}"), 16).ok();
     let chars: Vec<char> = hex.chars().collect();
     match chars.len() {
-        3 => Some([byte(chars[0], chars[0])?, byte(chars[1], chars[1])?, byte(chars[2], chars[2])?]),
+        3 => Some([
+            byte(chars[0], chars[0])?,
+            byte(chars[1], chars[1])?,
+            byte(chars[2], chars[2])?,
+        ]),
         6 => Some([
             byte(chars[0], chars[1])?,
             byte(chars[2], chars[3])?,
@@ -709,7 +724,11 @@ pub fn value_at(anim: &Anim, t: f64) -> Option<String> {
             clock = elapsed % run;
         }
     }
-    let progress = if run == 0.0 { 1.0 } else { (clock / run).min(1.0) };
+    let progress = if run == 0.0 {
+        1.0
+    } else {
+        (clock / run).min(1.0)
+    };
     // Where does that put us in keyTimes? The animation waits inside them, so the fraction is read against the pair it
     // falls between rather than against the value list's length.
     let keys = &anim.key_times;
@@ -729,7 +748,11 @@ pub fn value_at(anim: &Anim, t: f64) -> Option<String> {
         let (lo, hi) = (window[0], window[1]);
         if progress <= hi {
             let span = hi - lo;
-            let at = if span <= 0.0 { 1.0 } else { (progress - lo) / span };
+            let at = if span <= 0.0 {
+                1.0
+            } else {
+                (progress - lo) / span
+            };
             let index = keys.iter().position(|k| *k == lo)?;
             return interpolate(
                 &anim.values[index],
@@ -756,7 +779,11 @@ fn interpolate(from: &str, to: &str, at: f64, additive: bool) -> Option<String> 
     match (base, target) {
         (Value::Number(a), Value::Number(b)) => Some(number(a + (b - a) * at, additive)),
         (Value::Colour(a), Value::Colour(b)) => {
-            let mix = |x: u8, y: u8| (x as f64 + (y as f64 - x as f64) * at).round().clamp(0.0, 255.0) as u8;
+            let mix = |x: u8, y: u8| {
+                (x as f64 + (y as f64 - x as f64) * at)
+                    .round()
+                    .clamp(0.0, 255.0) as u8
+            };
             Some(format!(
                 "#{:02x}{:02x}{:02x}",
                 mix(a[0], b[0]),
@@ -826,7 +853,9 @@ pub fn selector_simple(selector: &str) -> bool {
         && parts.iter().all(|part| {
             !part.is_empty()
                 && !part.contains([' ', '>', '+', '~', ':', '['])
-                && part.chars().all(|c| c.is_alphanumeric() || matches!(c, '.' | '#' | '-' | '_'))
+                && part
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '.' | '#' | '-' | '_'))
         })
 }
 
@@ -951,7 +980,7 @@ pub fn absolute_href(doc: &str) -> Option<String> {
     while let Some(at) = rest.find("href=\"") {
         let from = at + "href=\"".len();
         let value = &rest[from..];
-        let Some(end) = value.find('"') else { return None };
+        let end = value.find('"')?;
         let value = &value[..end];
         if !value.is_empty() && !value.starts_with("data:") {
             return Some(value.to_string());

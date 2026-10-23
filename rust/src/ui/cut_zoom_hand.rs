@@ -109,22 +109,32 @@ pub fn press_on_release(win: &adw::ApplicationWindow, at_px: (f64, f64)) -> Stri
 /// [`crate::ui::window::PREVIEW_PANEL_H`] and the painter measures the camera against the fitted footage, so
 /// the same two doors are asked here: a press cannot fall inside a box the frame does not draw.
 pub fn framed_boxes(cut_: &Cut, at: f64, fit: (f64, f64)) -> Vec<(usize, (f64, f64, f64, f64))> {
-    cut_
-        .fx
+    cut_.fx
         .iter()
         .enumerate()
         .filter(|(_, effect)| effect.effect_kind() == Some(crate::cut::EffectKind::Zoom))
         .filter(|(_, effect)| effect.t <= at && at < effect.t + effect.dur)
-        .map(|(index, _)| (index, cut_preview_frame::camera_rect_px(&fx_zoom::camera_at(&cut_.fx, at), fit)))
+        .map(|(index, _)| {
+            (
+                index,
+                cut_preview_frame::camera_rect_px(&fx_zoom::camera_at(&cut_.fx, at), fit),
+            )
+        })
         .collect()
 }
 
 /// F3.1: is this press inside a zoom's box? Which one, as the index into `cut.fx`, or `None` when the press
 /// fell clear of every box — which is the case that draws a new rectangle instead.
 pub fn box_under_pointer(cut_: &Cut, at: f64, fit: (f64, f64), at_px: (f64, f64)) -> Option<usize> {
-    framed_boxes(cut_, at, fit).into_iter().find(|(_, box_)| {
-        at_px.0 >= box_.0 && at_px.0 <= box_.0 + box_.2 && at_px.1 >= box_.1 && at_px.1 <= box_.1 + box_.3
-    }).map(|(index, _)| index)
+    framed_boxes(cut_, at, fit)
+        .into_iter()
+        .find(|(_, box_)| {
+            at_px.0 >= box_.0
+                && at_px.0 <= box_.0 + box_.2
+                && at_px.1 >= box_.1
+                && at_px.1 <= box_.1 + box_.3
+        })
+        .map(|(index, _)| index)
 }
 
 /// F3.8 S3 (`A box or camera rect dragged on the picture ends with "<label> moved — ↶ Undo takes it back" or
@@ -184,26 +194,25 @@ pub fn zoom_box_edit_on_release(
                 Some(fx_text::Edge::Top) => target.max(0.0).min(was_bottom),
                 _ => target.max(was_y).min(fit.1),
             };
-            let height = (kept - match edge {
-                Some(fx_text::Edge::Top) => was_bottom,
-                _ => was_y,
-            })
+            let height = (kept
+                - match edge {
+                    Some(fx_text::Edge::Top) => was_bottom,
+                    _ => was_y,
+                })
             .abs();
             let hf = (height / fit.1).max(0.0);
             // The pinned edge stays put, so the centre is exactly half of the new height away from it.
-            let cy = (kept + match edge {
-                Some(fx_text::Edge::Top) => was_bottom,
-                _ => was_y,
-            }) / (2.0 * fit.1);
+            let cy = (kept
+                + match edge {
+                    Some(fx_text::Edge::Top) => was_bottom,
+                    _ => was_y,
+                })
+                / (2.0 * fit.1);
             fx_zoom::clamp_rect(hf, camera.cx, cy)
         }
         // A horizontal edge of a full-width slice has no width to take: sliding sideways is what x can do.
         Some(_) => fx_zoom::clamp_rect(camera.hf, camera.cx + dx / fit.0, camera.cy),
-        None => fx_zoom::clamp_rect(
-            camera.hf,
-            camera.cx + dx / fit.0,
-            camera.cy + dy / fit.1,
-        ),
+        None => fx_zoom::clamp_rect(camera.hf, camera.cx + dx / fit.0, camera.cy + dy / fit.1),
     };
     let (hf, cx, cy) = moved;
     let mut edited = cut_.clone();
@@ -216,9 +225,7 @@ pub fn zoom_box_edit_on_release(
     crate::ui::refresh_effects_lane(window);
     let label = crate::fx_record::label_of(crate::cut::EffectKind::Zoom);
     let said = match edge {
-        Some(fx_text::Edge::Top) | Some(fx_text::Edge::Bottom) => {
-            crate::fx_band::resized(label)
-        }
+        Some(fx_text::Edge::Top) | Some(fx_text::Edge::Bottom) => crate::fx_band::resized(label),
         _ => crate::fx_band::moved(label),
     };
     crate::ui::window_logs::log_line(&said);
@@ -246,7 +253,11 @@ pub fn settle_plate(win: &adw::ApplicationWindow, at: f64) -> bool {
         hide_plate(win);
         return false;
     };
-    let (trans, tout) = if effect.stay { (0.0, 0.0) } else { (effect.trans, effect.tout) };
+    let (trans, tout) = if effect.stay {
+        (0.0, 0.0)
+    } else {
+        (effect.trans, effect.tout)
+    };
     let text = fx_zoom::zoom_plate(effect.t, effect.dur, trans, tout);
     let Some(stack) = overlay_stack(win) else {
         return false;
@@ -270,7 +281,9 @@ pub fn settle_plate(win: &adw::ApplicationWindow, at: f64) -> bool {
 /// fixed overlay stack is not something a check can find by walking blindly, and nothing in the program reads
 /// it back.
 pub fn plate_shown_for_test(win: &adw::ApplicationWindow) -> Option<String> {
-    plate_widget(win).filter(|plate| plate.is_visible()).map(|plate| plate.label().to_string())
+    plate_widget(win)
+        .filter(|plate| plate.is_visible())
+        .map(|plate| plate.label().to_string())
 }
 
 /// The overlay stack's widget name, shared with the page that builds it.
@@ -442,7 +455,6 @@ pub fn set_zoom_form(form: Option<fx_zoom::Form>) {
     ZOOM_FORM.with(|cell| *cell.borrow_mut() = form);
 }
 
-
 /// F3.1 S2: the panel's own picture size, in px. The panel pins itself to 240 x 135 (240 wide as drawn,
 /// 9/16 of that tall — see `page_box`), and this pair is what BOTH that `set_size_request` and the drag's
 /// fallback read, so a change to the frame cannot leave the two halves disagreeing about what a box covers.
@@ -486,11 +498,7 @@ pub fn zoom_drag_ended_with_source(
             // performs it through the picture's own door and answers `None` for every other click, so §F3.1's
             // after-S5 rule below is untouched.
             let at = ui::paste_line(window);
-            let fit = cut_preview_frame::fit_size_of(
-                window,
-                PREVIEW_PANEL_W,
-                PREVIEW_PANEL_H,
-            );
+            let fit = cut_preview_frame::fit_size_of(window, PREVIEW_PANEL_W, PREVIEW_PANEL_H);
             if let Some(said) = cut_preview_press::play_toggle_on_press(window, at, fit, from) {
                 return said;
             }
@@ -664,7 +672,9 @@ pub fn show_zoom_form(window: &adw::ApplicationWindow, form: &fx_zoom::Form) {
         "zoom-field-fade-out",
         &trim_seconds(form.tout),
     );
-    if let Some(entry) = find_named(fade_out.upcast_ref(), "zoom-field-fade-out").and_then(|w| w.downcast::<gtk::Entry>().ok()) {
+    if let Some(entry) = find_named(fade_out.upcast_ref(), "zoom-field-fade-out")
+        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+    {
         let greyed = fx_zoom::fade_out_greyed(form.stay);
         entry.set_sensitive(!greyed);
         if greyed {
@@ -792,7 +802,9 @@ thread_local! {
 
 /// Move `stay` onto the open form and re-grey the fade-out for it, through the module's own rule.
 fn store_zoom_stay(stay: bool) {
-    let Some(mut form) = zoom_form_open() else { return };
+    let Some(mut form) = zoom_form_open() else {
+        return;
+    };
     form.stay = stay;
     // A camera that stays has no way back, so its fades go to nought the moment `stay` is chosen — the same
     // `fx_zoom::fades` the defaults came from, not a number typed here.

@@ -5,14 +5,14 @@
 
 use std::path::{Path, PathBuf};
 
+use naivepost::layout::Tree;
 use naivepost::narrate_data::{
     self, base_reference, clean_takes, drop_reference, keep_previous, load_takes, previous,
     read_pitch, read_voice, reference_needs_shift, sample_hex, sample_path, sanitize_voice_id,
-    save_takes, served_reference, take_base, write_pitch, write_voice, DATA_FILES, OWN_VOICE, Take,
+    save_takes, served_reference, take_base, write_pitch, write_voice, Take, DATA_FILES, OWN_VOICE,
 };
 use naivepost::narrate_screen::{self, CAPTIONS};
 use naivepost::narration::{self, Entry, Narration};
-use naivepost::layout::Tree;
 
 fn tree(tag: &str) -> (PathBuf, Tree) {
     let root = std::env::temp_dir().join(format!(
@@ -114,7 +114,10 @@ fn sec_07_narrate_3_data_s2_the_previous_generation_is_one_deep_and_its_copy_nev
     assert_eq!(std::fs::read(tree.narration_json()).unwrap(), record_before);
 
     let second = Narration {
-        entries: vec![entry(1.5, "we open on the desktop"), entry(20.0, "then the menu")],
+        entries: vec![
+            entry(1.5, "we open on the desktop"),
+            entry(20.0, "then the menu"),
+        ],
         silent: vec![],
     };
     narration::save(&second, &tree).unwrap();
@@ -188,7 +191,10 @@ fn sec_07_narrate_3_data_s4_an_id_that_is_not_a_file_name_is_made_into_one() {
     // The id is pasted into samples/<id>_<hash>.wav and read back out of voice.txt, so a slash
     // would write somewhere else entirely.
     let escaped = sanitize_voice_id("../../etc/passwd");
-    assert!(!escaped.contains('/'), "{escaped} still has a path separator");
+    assert!(
+        !escaped.contains('/'),
+        "{escaped} still has a path separator"
+    );
     assert_eq!(Path::new(&escaped).parent().unwrap(), Path::new(""));
 
     assert_eq!(sanitize_voice_id("///"), "voice");
@@ -197,7 +203,11 @@ fn sec_07_narrate_3_data_s4_an_id_that_is_not_a_file_name_is_made_into_one() {
 
     // Letters stay, the space between them becomes a separator.
     assert_eq!(sanitize_voice_id("Ana María"), "Ana-Mar-a");
-    assert_eq!(sanitize_voice_id("aria_2.wav"), "aria_2.wav", "a clean id is left alone");
+    assert_eq!(
+        sanitize_voice_id("aria_2.wav"),
+        "aria_2.wav",
+        "a clean id is left alone"
+    );
 }
 
 /// §07-narrate#3-data S5 — pitch.txt: one decimal, clamped to half an octave.
@@ -240,16 +250,16 @@ fn sec_07_narrate_3_data_s6_takes_are_keyed_by_the_recording_and_cleaned_on_the_
     save_takes(
         &tree,
         "session.mp4",
-        &[
-            Take { s: 4.0, e: 7.0 },
-            Take { s: 40.0, e: 40.05 },
-        ],
+        &[Take { s: 4.0, e: 7.0 }, Take { s: 40.0, e: 40.05 }],
     )
     .unwrap();
     let text = std::fs::read_to_string(tree.takes_json()).unwrap();
     assert!(text.contains("4.0"));
     // The 50 ms take never reaches the file — P.eng.takeMinSeconds is applied on the way in.
-    assert!(!text.contains("40.05"), "a take below the floor was stored: {text}");
+    assert!(
+        !text.contains("40.05"),
+        "a take below the floor was stored: {text}"
+    );
 
     // A second recording keeps the first's key; takes belong to the recording, not the slot.
     save_takes(&tree, "second.mp4", &[Take { s: 1.0, e: 9.0 }]).unwrap();
@@ -295,7 +305,10 @@ fn sec_07_narrate_3_data_s7_the_reference_the_server_reads_is_the_one_that_goes(
     assert_eq!(drop_reference(&tree, true), 1);
     assert!(!served_reference(&tree).exists());
     assert!(base_reference(&tree).exists());
-    assert!(reference_needs_shift(&base_reference(&tree), &served_reference(&tree)));
+    assert!(reference_needs_shift(
+        &base_reference(&tree),
+        &served_reference(&tree)
+    ));
 
     // Nothing there to drop is not a failure and counts as nothing dropped.
     assert_eq!(drop_reference(&tree, true), 0);
@@ -303,11 +316,17 @@ fn sec_07_narrate_3_data_s7_the_reference_the_server_reads_is_the_one_that_goes(
     // A take set or a slot voice makes the base itself wrong.
     assert_eq!(drop_reference(&tree, false), 1);
     assert!(!base_reference(&tree).exists());
-    assert!(!reference_needs_shift(&base_reference(&tree), &served_reference(&tree)));
+    assert!(!reference_needs_shift(
+        &base_reference(&tree),
+        &served_reference(&tree)
+    ));
 
     // With both files present the server is already reading the copy it wants.
     seed(&tree);
-    assert!(!reference_needs_shift(&base_reference(&tree), &served_reference(&tree)));
+    assert!(!reference_needs_shift(
+        &base_reference(&tree),
+        &served_reference(&tree)
+    ));
 
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -318,7 +337,8 @@ fn sec_07_narrate_3_data_s8_samples_are_named_by_voice_and_the_hash_of_their_key
     let hex = sample_hex("hello");
     assert_eq!(hex.len(), 12, "six bytes of digest as hex");
     assert!(
-        hex.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+        hex.chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
         "{hex} is not lowercase hex"
     );
     assert_eq!(sample_hex("hello"), hex, "the same key names the same file");
@@ -344,14 +364,20 @@ fn sec_07_narrate_3_data_s9_the_record_and_its_cache_key_stay_what_narration_own
 
     // Written out of order, saved through crate::narration, kept by keep_previous as it stands.
     let record = Narration {
-        entries: vec![entry(20.0, "then the menu"), entry(1.5, "we open on the desktop")],
+        entries: vec![
+            entry(20.0, "then the menu"),
+            entry(1.5, "we open on the desktop"),
+        ],
         silent: vec![],
     };
     narration::save(&record, &tree).unwrap();
     assert_eq!(keep_previous(&tree), Ok(true));
 
     let kept = previous(&tree).expect("the copy of a saved record");
-    assert_eq!(kept.entries[0].text, "we open on the desktop", "sorted by (s, at)");
+    assert_eq!(
+        kept.entries[0].text, "we open on the desktop",
+        "sorted by (s, at)"
+    );
     assert_eq!(
         std::fs::read(tree.narration_prev_json()).unwrap(),
         std::fs::read(tree.narration_json()).unwrap()
@@ -361,7 +387,10 @@ fn sec_07_narrate_3_data_s9_the_record_and_its_cache_key_stay_what_narration_own
     // implementation for §3's tts/*.wav and §01 §4, not two.
     let line = narration::load(&tree).unwrap().entries.remove(0);
     let key = narration::tts_key(&line, None, None);
-    assert!(key.starts_with("25e0.85|"), "{key} is not the shipped key shape");
+    assert!(
+        key.starts_with("25e0.85|"),
+        "{key} is not the shipped key shape"
+    );
     let file = narration::tts_file(&key);
     assert_eq!(file.len(), 16);
     assert_eq!(sample_hex(&key)[..], file[..12], "one digest, cut twice");
@@ -389,7 +418,11 @@ fn sec_07_narrate_3_data_s10_the_module_adds_no_path_of_its_own() {
         tree.pitch_txt(),
         tree.narration_prev_json(),
     ] {
-        assert!(path.starts_with(dir), "{} outside the project", path.display());
+        assert!(
+            path.starts_with(dir),
+            "{} outside the project",
+            path.display()
+        );
     }
     // The write helpers land in the same place their readers look.
     write_voice(&tree, "aria").unwrap();

@@ -78,14 +78,32 @@ fn run_round(app: &adw::Application) {
     }
     // A cut with two clips and three lines. The first line's take is the one the fake will serve.
     let segs = vec![
-        Seg { s: 0.0, e: 10.0, ins: "a.mp4".into(), dur: 10.0, ..Default::default() },
-        Seg { s: 10.0, e: 20.0, ins: "b.mp4".into(), dur: 10.0, ..Default::default() },
+        Seg {
+            s: 0.0,
+            e: 10.0,
+            ins: "a.mp4".into(),
+            dur: 10.0,
+            ..Default::default()
+        },
+        Seg {
+            s: 10.0,
+            e: 20.0,
+            ins: "b.mp4".into(),
+            dur: 10.0,
+            ..Default::default()
+        },
     ];
     // The play seam reads the CUT off disk (`cut::load`), not the seeded state, so the scenario writes
     // the files a real session has: the cut, and one footage row whose file exists on disk — without a
     // recording to cue, S1 answers `no recording covers the start of the cut` and nothing spawns.
-    naivepost::cut::save(&naivepost::cut::Cut { segs: segs.clone(), ..Default::default() }, &fixture.tree)
-        .expect("cut written");
+    naivepost::cut::save(
+        &naivepost::cut::Cut {
+            segs: segs.clone(),
+            ..Default::default()
+        },
+        &fixture.tree,
+    )
+    .expect("cut written");
     std::fs::write(fixture.root.join("cam0.mp4"), b"stub footage").expect("footage on disk");
     let project = naivepost::project::Project {
         sources: vec![naivepost::project::Source {
@@ -97,9 +115,33 @@ fn run_round(app: &adw::Application) {
     };
     naivepost::project::save(&project, fixture.tree.dir()).expect("project written");
     let entries = vec![
-        Entry { s: 0.0, e: 10.0, at: 0.5, text: "first line".into(), emotion: String::new(), pos: String::new(), roll: 0 },
-        Entry { s: 10.0, e: 20.0, at: 0.5, text: "second line".into(), emotion: String::new(), pos: String::new(), roll: 0 },
-        Entry { s: 20.0, e: 30.0, at: 0.5, text: "third line".into(), emotion: String::new(), pos: String::new(), roll: 0 },
+        Entry {
+            s: 0.0,
+            e: 10.0,
+            at: 0.5,
+            text: "first line".into(),
+            emotion: String::new(),
+            pos: String::new(),
+            roll: 0,
+        },
+        Entry {
+            s: 10.0,
+            e: 20.0,
+            at: 0.5,
+            text: "second line".into(),
+            emotion: String::new(),
+            pos: String::new(),
+            roll: 0,
+        },
+        Entry {
+            s: 20.0,
+            e: 30.0,
+            at: 0.5,
+            text: "third line".into(),
+            emotion: String::new(),
+            pos: String::new(),
+            roll: 0,
+        },
     ];
 
     release_last_window();
@@ -152,7 +194,9 @@ fn run_round(app: &adw::Application) {
     let play_said = ui::narrate_page::press_preview_picture(&window);
     settle();
     assert!(
-        play_said.contains("playing") || play_said.contains("synthesizing") || play_said.contains("line"),
+        play_said.contains("playing")
+            || play_said.contains("synthesizing")
+            || play_said.contains("line"),
         "the play seam started something over the socket: {play_said}"
     );
     RAN_PLAY.store(true, Ordering::SeqCst);
@@ -199,7 +243,9 @@ fn f4_5_s1_s6_wire_picture_play_and_stop() {
         app.run_with_args(&["naivepost"]);
     });
     assert!(
-        RAN_PLAY.load(Ordering::SeqCst) && RAN_STOP.load(Ordering::SeqCst) && RAN_SAW_REQUESTS.load(Ordering::SeqCst),
+        RAN_PLAY.load(Ordering::SeqCst)
+            && RAN_STOP.load(Ordering::SeqCst)
+            && RAN_SAW_REQUESTS.load(Ordering::SeqCst),
         "the F4.5 wire round-trip never completed"
     );
 }

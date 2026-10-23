@@ -20,11 +20,17 @@ fn f4_4_s7_every_call_its_own_timed_row() {
     point_at(&audio.url());
 
     let outcome = speak(&fixture, "calm", "en");
-    assert!(outcome.wav().is_some(), "the line was spoken: {:?}", outcome.refused());
+    assert!(
+        outcome.wav().is_some(),
+        "the line was spoken: {:?}",
+        outcome.refused()
+    );
     // Wait for the CONDITION the check depends on -- all four legs' rows in the file -- instead of guessing how
     // long the writers need. `FakeAudio::drain` only knows when its own socket went quiet (a 900 ms gap), which
     // says nothing about a row still being appended to `requests.tsv` by the leg that got the reply.
-    wait_until("the four timed rows land in requests.tsv", || audio_rows(&fixture).len() >= 4);
+    wait_until("the four timed rows land in requests.tsv", || {
+        audio_rows(&fixture).len() >= 4
+    });
 
     let rows = audio_rows(&fixture);
     // The scenario's OWN rows, and only those. `requests.tsv` lives in the scenario folder, which is now
@@ -32,7 +38,10 @@ fn f4_4_s7_every_call_its_own_timed_row() {
     // saver, or a second leg that ran while the first was being read. The four legs are identified by their own
     // step/job/service columns (`speak`/`narrate`/`audio`, asserted per row below), so the count is made on the
     // rows this action wrote rather than on every audio row the file happens to hold.
-    let kinds: Vec<&str> = rows.iter().map(|row| row.split('\t').nth(6).unwrap_or("")).collect();
+    let kinds: Vec<&str> = rows
+        .iter()
+        .map(|row| row.split('\t').nth(6).unwrap_or(""))
+        .collect();
     for want in ["health", "models", "upload", "speech"] {
         assert!(
             kinds.contains(&want),
@@ -65,7 +74,13 @@ fn f4_4_s7_every_call_its_own_timed_row() {
         .find(|row| row.split('\t').nth(6) == Some("speech"))
         .expect("the speech row");
     let fields: Vec<&str> = speech.split('\t').collect();
-    assert_eq!(fields[5], "index-tts2", "the model column names the voice: {speech}");
+    assert_eq!(
+        fields[5], "index-tts2",
+        "the model column names the voice: {speech}"
+    );
     let bytes = fields[9].parse::<i64>().unwrap_or_default();
-    assert!(bytes >= 2400, "received_bytes holds the wav's size: {speech}");
+    assert!(
+        bytes >= 2400,
+        "received_bytes holds the wav's size: {speech}"
+    );
 }

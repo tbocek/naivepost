@@ -97,9 +97,6 @@ pub fn note_takes(tree: &Tree, takes: &[(f64, f64)]) -> Option<String> {
         // No narrator tagged: there is no recording to file the picks under, so nothing is written.
         return None;
     };
-    let stored: Vec<Take> = takes
-        .iter()
-        .map(|(s, e)| Take { s: *s, e: *e })
-        .collect();
+    let stored: Vec<Take> = takes.iter().map(|(s, e)| Take { s: *s, e: *e }).collect();
     narrate_data::save_takes(tree, &recording, &stored).err()
 }

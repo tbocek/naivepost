@@ -81,7 +81,12 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s0_the_item_under_test_is_nam
 #[test]
 fn sec_09_llm_and_tools_10_every_request_timed_new_s1_the_four_timings_are_captured() {
     // §6's header still carries the four timing columns this module fills, under those names.
-    assert_eq!(requests::HEADER.split('\t').count(), 18, "{}", requests::HEADER);
+    assert_eq!(
+        requests::HEADER.split('\t').count(),
+        18,
+        "{}",
+        requests::HEADER
+    );
     for name in ["wait_s", "first_byte_s", "on_wire_s", "thinking_s"] {
         assert!(column(name) < 18, "{name} is not a column");
     }
@@ -118,7 +123,10 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s2_every_outcome_leaves_a_row
     let cases: Vec<(Outcome, &str)> = vec![
         (Outcome::Ok, "ok"),
         (Outcome::Error("500".into()), "error 500"),
-        (Outcome::Error("connection refused".into()), "error connection refused"),
+        (
+            Outcome::Error("connection refused".into()),
+            "error connection refused",
+        ),
         (Outcome::Stalled, "stalled"),
         (Outcome::Cancelled, "cancelled"),
     ];
@@ -126,7 +134,12 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s2_every_outcome_leaves_a_row
     timer.finished(103_000);
 
     for (outcome, spelling) in cases {
-        let row = rt::finish_row(&base(Service::Audio, "transcribe", "asr"), &timer, outcome.clone(), 1);
+        let row = rt::finish_row(
+            &base(Service::Audio, "transcribe", "asr"),
+            &timer,
+            outcome.clone(),
+            1,
+        );
         let line = requests::write_line(&row);
         let fields: Vec<&str> = line.trim_end().split('\t').collect();
         assert_eq!(fields.len(), 18, "{line}");
@@ -199,7 +212,10 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s4_a_cache_hit_has_no_time_on
     // back instantly. That distinction is the whole reason cache rows are counted at all.
     assert_eq!(row.on_wire_s, None);
     assert_eq!(row.first_byte_s, None);
-    assert_eq!(row.wait_s, None, "a hit is answered before the gate, so it never queued");
+    assert_eq!(
+        row.wait_s, None,
+        "a hit is answered before the gate, so it never queued"
+    );
     assert_eq!(row.thinking_s, None);
     // What the cache knows about the reply stays: sizes and tokens describe the answer, not the trip.
     assert_eq!(row.received_bytes, Some(512));
@@ -239,7 +255,10 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s4b_a_cache_hit_records_its_o
     assert_eq!(rows.len(), 1, "the hit wrote exactly one row");
     let row = &rows[0];
     assert_eq!(row.outcome, Outcome::Cache);
-    assert!(!row.started.is_empty(), "the door stamped the moment the answer was read");
+    assert!(
+        !row.started.is_empty(),
+        "the door stamped the moment the answer was read"
+    );
     assert_eq!(row.attempt, 1, "a hit is not a retry");
     // Round-tripped as empty fields, so a reader cannot mistake the hit for a fast request.
     assert_eq!(row.on_wire_s, None);
@@ -280,7 +299,12 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s5_rows_are_appended_and_neve
     stalled.finished(800_000);
     requests::record(
         &tree,
-        &rt::finish_row(&base(Service::Web, "youtube", "read"), &stalled, Outcome::Stalled, 3),
+        &rt::finish_row(
+            &base(Service::Web, "youtube", "read"),
+            &stalled,
+            Outcome::Stalled,
+            3,
+        ),
     )
     .unwrap();
 
@@ -291,7 +315,10 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s5_rows_are_appended_and_neve
     for i in 0..4 {
         assert_eq!(after_lines[i], before_lines[i], "line {i} changed");
     }
-    assert!(after.starts_with(&before), "the old content is a prefix of the new");
+    assert!(
+        after.starts_with(&before),
+        "the old content is a prefix of the new"
+    );
     assert!(after_lines[4].contains("stalled"));
     // And reading the file gives all four back.
     assert_eq!(requests::read(&tree).unwrap().len(), 4);
@@ -335,10 +362,18 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s6_rows_are_tallied_per_servi
     );
     let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
     assert_eq!(tallies[0].count, 57);
-    assert!(near(tallies[0].on_wire_s, 7980.0), "2h13m: {}", tallies[0].on_wire_s);
+    assert!(
+        near(tallies[0].on_wire_s, 7980.0),
+        "2h13m: {}",
+        tallies[0].on_wire_s
+    );
     assert!(near(tallies[0].wait_s, 240.0), "4m: {}", tallies[0].wait_s);
     assert_eq!(tallies[1].count, 38);
-    assert!(near(tallies[1].on_wire_s, 370.0), "6m10s: {}", tallies[1].on_wire_s);
+    assert!(
+        near(tallies[1].on_wire_s, 370.0),
+        "6m10s: {}",
+        tallies[1].on_wire_s
+    );
     assert!(near(tallies[1].wait_s, 0.0));
     assert_eq!(tallies[2].count, 3);
     assert!(near(tallies[2].on_wire_s, 12.0));
@@ -352,7 +387,10 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s6_rows_are_tallied_per_servi
     assert_eq!(mixed_tallies.len(), 1);
     assert_eq!(mixed_tallies[0].count, 2, "the cached row is counted");
     assert_eq!(mixed_tallies[0].cached, 1);
-    assert!(mixed_tallies[0].on_wire_s > 0.0, "only the real row adds time");
+    assert!(
+        mixed_tallies[0].on_wire_s > 0.0,
+        "only the real row adds time"
+    );
 
     // No rows at all: no entries, not four zero ones.
     assert!(rt::tally(&[]).is_empty());
@@ -384,9 +422,21 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s7_the_run_ends_with_one_line
         }]);
         rt::summary_line(&t)
     };
-    assert!(spelled(360.0).contains("in 6m on the wire"), "{}", spelled(360.0));
-    assert!(spelled(12.0).ends_with("in 12s on the wire"), "{}", spelled(12.0));
-    assert!(spelled(7200.0).contains("2h on the wire"), "{}", spelled(7200.0));
+    assert!(
+        spelled(360.0).contains("in 6m on the wire"),
+        "{}",
+        spelled(360.0)
+    );
+    assert!(
+        spelled(12.0).ends_with("in 12s on the wire"),
+        "{}",
+        spelled(12.0)
+    );
+    assert!(
+        spelled(7200.0).contains("2h on the wire"),
+        "{}",
+        spelled(7200.0)
+    );
     assert!(spelled(7260.0).contains("2h 1m"), "{}", spelled(7260.0));
     assert!(spelled(0.0).contains("0s on the wire"), "{}", spelled(0.0));
 
@@ -411,7 +461,6 @@ struct RunScenario {
     _root: PathBuf,
 }
 
-
 fn run_scenario(tag: &str) -> RunScenario {
     let guard = common::scenario_lock()
         .lock()
@@ -429,7 +478,8 @@ fn run_scenario(tag: &str) -> RunScenario {
 }
 
 #[test]
-fn sec_09_llm_and_tools_10_every_request_timed_new_s9_the_run_ends_with_one_line_per_service_it_used() {
+fn sec_09_llm_and_tools_10_every_request_timed_new_s9_the_run_ends_with_one_line_per_service_it_used(
+) {
     // §10: "At the end of every run the log says it in one line per service". The sentence itself is
     // s7's; what this pins is that the run's OWN rows are the ones tallied, both services named, llm
     // first (the fixed order), and its slot wait carried into the clause.
@@ -438,14 +488,21 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s9_the_run_ends_with_one_line
     let mut llm = worked(Service::Llm, "cut", "chat", 20.0);
     llm.wait_s = Some(4.0);
     requests::record(&scene.tree, &llm).unwrap();
-    requests::record(&scene.tree, &worked(Service::Audio, "transcribe", "asr", 6.5)).unwrap();
+    requests::record(
+        &scene.tree,
+        &worked(Service::Audio, "transcribe", "asr", 6.5),
+    )
+    .unwrap();
 
     let line = naivepost::request_run::closing_line().expect("the open project has a log to tally");
     assert!(line.starts_with(">>> requests: llm 1 in "), "{line}");
     assert!(line.contains("on the wire"), "{line}");
     assert!(line.contains("waiting for a slot"), "{line}");
     assert!(line.contains("; audio 1 in "), "{line}");
-    assert!(!line.contains("image"), "a service the run never touched says nothing: {line}");
+    assert!(
+        !line.contains("image"),
+        "a service the run never touched says nothing: {line}"
+    );
     // The same numbers s7 spells from hand: 20 s then 6.5 s rounds to 7 s, and the wait to 4 s.
     assert!(line.contains("llm 1 in 20s"), "{line}");
     assert!(line.contains("4s waiting for a slot"), "{line}");
@@ -457,7 +514,11 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s10_a_run_that_sent_nothing_s
     // Nothing outside was used: `>>> requests: none`, not an empty sentence after the prefix.
     let scene = run_scenario("closing-none");
     naivepost::request_run::note_run_begins();
-    assert_eq!(rows_of(&scene.tree).len(), 0, "a new project starts an empty log");
+    assert_eq!(
+        rows_of(&scene.tree).len(),
+        0,
+        "a new project starts an empty log"
+    );
     assert_eq!(
         naivepost::request_run::closing_line().as_deref(),
         Some(">>> requests: none")
@@ -483,7 +544,10 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s11_only_this_runs_rows_are_c
 
     // Mark again -- as the next ▶ does -- and the row just counted belongs to a finished run.
     naivepost::request_run::note_run_begins();
-    assert_eq!(naivepost::request_run::closing_line().as_deref(), Some(">>> requests: none"));
+    assert_eq!(
+        naivepost::request_run::closing_line().as_deref(),
+        Some(">>> requests: none")
+    );
 }
 
 #[test]
@@ -536,11 +600,15 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s8_the_wait_share_is_what_slo
     // The header's service column accepts exactly these four words and nothing naming a subprocess.
     for word in ["llm", "audio", "image", "web"] {
         assert!(requests::HEADER.contains("service"));
-        assert!(rt::OUTSIDE_SERVICES.iter().any(|s| format!("{s:?}").to_lowercase().contains(word)));
+        assert!(rt::OUTSIDE_SERVICES
+            .iter()
+            .any(|s| format!("{s:?}").to_lowercase().contains(word)));
     }
     for absent in ["ffmpeg", "ffprobe", "local", "subprocess"] {
         assert!(
-            !rt::OUTSIDE_SERVICES.iter().any(|s| format!("{s:?}").to_lowercase() == absent),
+            !rt::OUTSIDE_SERVICES
+                .iter()
+                .any(|s| format!("{s:?}").to_lowercase() == absent),
             "{absent} must not be a timed service"
         );
     }

@@ -1,11 +1,10 @@
 //! Smoke tests: the project file round-trips, and GTK actually links and draws.
 
-
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, temp_dir};
 use naivepost::project::{self, Project, Source};
 use naivepost::shell::{self, Page};
-use crate::common;
-use common::{fixture_dir,temp_dir};
 
 #[test]
 fn project_round_trip() {
@@ -88,7 +87,10 @@ static RAN_UNLOCKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBo
 
 fn ran(flag: &std::sync::atomic::AtomicBool, what: &str) {
     window_round();
-    assert!(flag.load(std::sync::atomic::Ordering::SeqCst), "{what} never ran");
+    assert!(
+        flag.load(std::sync::atomic::Ordering::SeqCst),
+        "{what} never ran"
+    );
 }
 
 #[test]
@@ -134,14 +136,20 @@ fn check_four_pages(app: &adw::Application) {
 fn check_locked_tab(app: &adw::Application) {
     // No source is marked footage, which is the state that locks Cut (§1).
     let model = Project {
-        sources: vec![Source { path: "voice.wav".to_string(), ..Default::default() }],
+        sources: vec![Source {
+            path: "voice.wav".to_string(),
+            ..Default::default()
+        }],
         ..Default::default()
     };
     let window = naivepost::ui::build_window(app, &model, "Prepare");
     window.present();
 
     // Greyed and holding the reason, but still clickable — that is how a click gets to bounce at all.
-    assert!(naivepost::ui::tab_dimmed(&window, Page::Cut), "the Cut tab is greyed");
+    assert!(
+        naivepost::ui::tab_dimmed(&window, Page::Cut),
+        "the Cut tab is greyed"
+    );
     assert!(!naivepost::ui::tab_dimmed(&window, Page::Prepare));
     assert_eq!(
         naivepost::ui::tab_tooltip(&window, Page::Cut).as_deref(),
@@ -164,17 +172,25 @@ fn check_unlocked_tab(app: &adw::Application) {
     let window = naivepost::ui::build_window(app, &model, "Prepare");
     window.present();
 
-    assert!(!naivepost::ui::tab_dimmed(&window, Page::Cut), "the fixture has footage");
+    assert!(
+        !naivepost::ui::tab_dimmed(&window, Page::Cut),
+        "the fixture has footage"
+    );
     assert_eq!(
         naivepost::ui::tab_tooltip(&window, Page::Cut).as_deref(),
         Some(Page::Cut.tip()),
         "an unlocked tab describes its page instead"
     );
 
-    naivepost::ui::tab_button(&window, Page::Cut).expect("a Cut tab").emit_clicked();
+    naivepost::ui::tab_button(&window, Page::Cut)
+        .expect("a Cut tab")
+        .emit_clicked();
     let state = naivepost::ui::state(&window);
     assert_eq!(state.page, Page::Cut);
-    assert_eq!(state.status, "", "a switch that worked has nothing to report");
+    assert_eq!(
+        state.status, "",
+        "a switch that worked has nothing to report"
+    );
 }
 
 /// Depth-first walk of the window's widget tree.
@@ -196,7 +212,10 @@ fn widgets(root: &gtk4::Widget) -> Vec<gtk4::Widget> {
 fn labels(window: &adw::ApplicationWindow) -> Vec<String> {
     let all = widgets(&window.clone().upcast());
     all.iter()
-        .filter_map(|w| w.downcast_ref::<gtk4::Label>().map(|l| l.text().to_string()))
+        .filter_map(|w| {
+            w.downcast_ref::<gtk4::Label>()
+                .map(|l| l.text().to_string())
+        })
         .collect()
 }
 

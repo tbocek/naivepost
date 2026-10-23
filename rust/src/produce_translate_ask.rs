@@ -165,9 +165,16 @@ pub fn parse_answer(content_type: &str, reply: &str, numbers: &[usize]) -> BTree
         let number = args
             .get("n")
             .and_then(|n| n.as_u64())
-            .or_else(|| args.get("n").and_then(|n| n.as_str()).and_then(|s| s.trim().parse().ok()))
+            .or_else(|| {
+                args.get("n")
+                    .and_then(|n| n.as_str())
+                    .and_then(|s| s.trim().parse().ok())
+            })
             .map(|n| n as usize);
-        let text = args.get("text").and_then(|t| t.as_str()).unwrap_or_default();
+        let text = args
+            .get("text")
+            .and_then(|t| t.as_str())
+            .unwrap_or_default();
         if let Some(number) = number {
             if numbers.contains(&number) && !text.trim().is_empty() {
                 got.insert(number, text.to_string());
@@ -212,10 +219,7 @@ pub fn parse_numbered(answer: &str, numbers: &[usize]) -> BTreeMap<usize, String
 /// call), the cache is honoured per batch, and every dial writes its timed row. `Err` names the model
 /// and the reason — the walk ships that language's track as the original with the merge's warning
 /// rather than failing the render over one server (§F5.4 S3, §00-principles).
-pub fn ask(
-    tree: &Tree,
-    cancelled: &std::rc::Rc<dyn Fn() -> bool>,
-) -> Box<Ask> {
+pub fn ask(tree: &Tree, cancelled: &std::rc::Rc<dyn Fn() -> bool>) -> Box<Ask> {
     let tree = tree.clone();
     let cancelled = std::rc::Rc::clone(cancelled);
     Box::new(move |message: &str, numbers: &[usize]| {
@@ -278,16 +282,18 @@ pub fn ask_at(
                     let reconstructed: Vec<String> = numbers
                         .iter()
                         .filter_map(|number| {
-                            got.get(number).map(|text| subs::numbered_one(*number, text))
+                            got.get(number)
+                                .map(|text| subs::numbered_one(*number, text))
                         })
                         .collect();
-                    let stored =
-                        llm_cache::translate_store_value(&reconstructed.join("\n"), &text);
+                    let stored = llm_cache::translate_store_value(&reconstructed.join("\n"), &text);
                     llm_cache::store(tree, STEP, &parts, &stored);
                 }
             }
             Ok(got)
         }
-        Err(reason) => Err(format!("the translation model {model:?} did not answer: {reason}")),
+        Err(reason) => Err(format!(
+            "the translation model {model:?} did not answer: {reason}"
+        )),
     }
 }

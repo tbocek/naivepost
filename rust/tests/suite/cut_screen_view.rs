@@ -5,21 +5,28 @@
 //! here without a window. The widgets themselves are the page's business; they hold no rule
 //! (spec/00-principles.md §5).
 
+use crate::common;
+use common::settle;
 use naivepost::cut::{Cut, Seg};
 use naivepost::cut_screen::{self as cut_screen, Preview, Wheel, WheelOver};
-use crate::common;
-use common::{settle};
 
 /// A kept stretch of footage — what §A counts as a clip.
 fn footage(start: f64, end: f64) -> Seg {
-    Seg { s: start, e: end, ..Default::default() }
+    Seg {
+        s: start,
+        e: end,
+        ..Default::default()
+    }
 }
 
 #[test]
 fn sec_05_cut_1_screen_s1_the_toolbar_groups_are_six_and_in_spec_order() {
     // §1: "Toolbar groups (left to right): transport …; preview volume; verbs …; effects dropdown
     // …; history …; zoom". The window builds one box per entry, so this list is that order.
-    assert_eq!(cut_screen::TOOLBAR_GROUPS, ["transport", "volume", "verbs", "effects", "history", "zoom"]);
+    assert_eq!(
+        cut_screen::TOOLBAR_GROUPS,
+        ["transport", "volume", "verbs", "effects", "history", "zoom"]
+    );
 }
 
 #[test]
@@ -29,21 +36,43 @@ fn sec_05_cut_1_screen_s2_the_two_cut_buttons_are_greyed_until_there_is_a_cut() 
     assert!(!cut_screen::can_play_cut(&empty));
     assert!(!cut_screen::can_review(&empty));
 
-    let one = Cut { segs: vec![footage(0.0, 10.0)], ..Default::default() };
-    assert!(cut_screen::can_play_cut(&one), "one scene is still a cut to play");
-    assert!(!cut_screen::can_review(&one), "one scene has no join to review");
+    let one = Cut {
+        segs: vec![footage(0.0, 10.0)],
+        ..Default::default()
+    };
+    assert!(
+        cut_screen::can_play_cut(&one),
+        "one scene is still a cut to play"
+    );
+    assert!(
+        !cut_screen::can_review(&one),
+        "one scene has no join to review"
+    );
 
-    let two = Cut { segs: vec![footage(0.0, 10.0), footage(20.0, 30.0)], ..Default::default() };
+    let two = Cut {
+        segs: vec![footage(0.0, 10.0), footage(20.0, 30.0)],
+        ..Default::default()
+    };
     assert!(cut_screen::can_play_cut(&two));
     assert!(cut_screen::can_review(&two));
 
     // A card is not a clip: reviewing it would play one still and call the tour done.
     let with_card = Cut {
-        segs: vec![footage(0.0, 10.0), Seg { ins: "card.svg".into(), dur: 3.0, ..Default::default() }],
+        segs: vec![
+            footage(0.0, 10.0),
+            Seg {
+                ins: "card.svg".into(),
+                dur: 3.0,
+                ..Default::default()
+            },
+        ],
         ..Default::default()
     };
     assert!(cut_screen::can_play_cut(&with_card));
-    assert!(!cut_screen::can_review(&with_card), "an insert is not a second clip");
+    assert!(
+        !cut_screen::can_review(&with_card),
+        "an insert is not a second clip"
+    );
 
     assert!(cut_screen::play_recording_sensitive());
 }
@@ -51,18 +80,33 @@ fn sec_05_cut_1_screen_s2_the_two_cut_buttons_are_greyed_until_there_is_a_cut() 
 #[test]
 fn sec_05_cut_1_screen_s3_the_lit_state_follows_what_the_preview_is_doing() {
     // ▶✂ is "lit while cutOnly and no review"; ▶✂✂ is lit while the review runs.
-    let cut_running = Preview { cut_only: true, reviewing: false };
+    let cut_running = Preview {
+        cut_only: true,
+        reviewing: false,
+    };
     assert!(cut_screen::play_cut_lit(&cut_running));
     assert!(!cut_screen::review_lit(&cut_running));
 
-    let reviewing = Preview { cut_only: false, reviewing: true };
+    let reviewing = Preview {
+        cut_only: false,
+        reviewing: true,
+    };
     assert!(cut_screen::review_lit(&reviewing));
-    assert!(!cut_screen::play_cut_lit(&reviewing), "nothing is running but the review");
+    assert!(
+        !cut_screen::play_cut_lit(&reviewing),
+        "nothing is running but the review"
+    );
 
     // The review skips as ▶✂ does, so it holds the light while it runs.
-    let both = Preview { cut_only: true, reviewing: true };
+    let both = Preview {
+        cut_only: true,
+        reviewing: true,
+    };
     assert!(cut_screen::review_lit(&both));
-    assert!(!cut_screen::play_cut_lit(&both), "two lit play buttons read as two previews");
+    assert!(
+        !cut_screen::play_cut_lit(&both),
+        "two lit play buttons read as two previews"
+    );
 
     assert!(!cut_screen::play_cut_lit(&Preview::default()));
     assert!(!cut_screen::review_lit(&Preview::default()));
@@ -75,14 +119,29 @@ fn sec_05_cut_1_screen_s4_the_wheel_steps_frames_over_the_transport_and_the_pict
     assert_eq!(cut_screen::frame_step(true), 5);
 
     for over in [WheelOver::Transport, WheelOver::Preview] {
-        assert_eq!(cut_screen::wheel(over, false, 1.0, 0.0, 1000.0), Wheel::StepFrames { frames: 1 });
-        assert_eq!(cut_screen::wheel(over, false, -1.0, 0.0, 1000.0), Wheel::StepFrames { frames: -1 });
-        assert_eq!(cut_screen::wheel(over, true, 1.0, 0.0, 1000.0), Wheel::StepFrames { frames: 5 });
-        assert_eq!(cut_screen::wheel(over, true, -2.0, 0.0, 1000.0), Wheel::StepFrames { frames: -5 });
+        assert_eq!(
+            cut_screen::wheel(over, false, 1.0, 0.0, 1000.0),
+            Wheel::StepFrames { frames: 1 }
+        );
+        assert_eq!(
+            cut_screen::wheel(over, false, -1.0, 0.0, 1000.0),
+            Wheel::StepFrames { frames: -1 }
+        );
+        assert_eq!(
+            cut_screen::wheel(over, true, 1.0, 0.0, 1000.0),
+            Wheel::StepFrames { frames: 5 }
+        );
+        assert_eq!(
+            cut_screen::wheel(over, true, -2.0, 0.0, 1000.0),
+            Wheel::StepFrames { frames: -5 }
+        );
     }
 
     // Nothing moved is nothing stepped — a wheel that reports an event it did not make.
-    assert_eq!(cut_screen::wheel(WheelOver::Transport, false, 0.0, 0.0, 1000.0), Wheel::StepFrames { frames: 0 });
+    assert_eq!(
+        cut_screen::wheel(WheelOver::Transport, false, 0.0, 0.0, 1000.0),
+        Wheel::StepFrames { frames: 0 }
+    );
 }
 
 #[test]
@@ -92,11 +151,17 @@ fn sec_05_cut_1_screen_s5_the_wheel_zooms_around_the_cursor_and_pans_an_eighth()
     let view = 1000.0;
     assert_eq!(
         cut_screen::wheel(WheelOver::Tracks, false, 1.0, 0.0, view),
-        Wheel::Zoom { factor: 1.0 / cut_screen::ZOOM_STEP, at_x: 0.0 }
+        Wheel::Zoom {
+            factor: 1.0 / cut_screen::ZOOM_STEP,
+            at_x: 0.0
+        }
     );
     assert_eq!(
         cut_screen::wheel(WheelOver::Tracks, false, -1.0, 0.0, view),
-        Wheel::Zoom { factor: cut_screen::ZOOM_STEP, at_x: 0.0 }
+        Wheel::Zoom {
+            factor: cut_screen::ZOOM_STEP,
+            at_x: 0.0
+        }
     );
 
     let expected = cut_screen::pan_px(view);
@@ -124,12 +189,19 @@ fn sec_05_cut_1_screen_s5_the_wheel_zooms_around_the_cursor_and_pans_an_eighth()
     for _ in 0..40 {
         pps = cut_screen::zoom_down(pps, floor);
     }
-    assert_eq!(pps, floor, "zooming out stops where the whole session is on screen");
+    assert_eq!(
+        pps, floor,
+        "zooming out stops where the whole session is on screen"
+    );
     let mut pps = cut_screen::ZOOM_AT_OPEN;
     for _ in 0..80 {
         pps = cut_screen::zoom_up(pps, floor);
     }
-    assert_eq!(pps, cut_screen::ZOOM_MAX, "240 px a second is the deepest zoom");
+    assert_eq!(
+        pps,
+        cut_screen::ZOOM_MAX,
+        "240 px a second is the deepest zoom"
+    );
 
     // An empty session still has a timeline: the floor is a number that draws.
     assert_eq!(cut_screen::fit_pps(0.0, 1200.0), cut_screen::ZOOM_AT_OPEN);
@@ -143,7 +215,10 @@ fn sec_05_cut_1_screen_s5_the_wheel_zooms_around_the_cursor_and_pans_an_eighth()
 
 /// The verb run's names, §1 items 10 → 15.
 fn verb_names() -> Vec<&'static str> {
-    cut_screen::VERB_BUTTONS.iter().map(|tool| tool.name).collect()
+    cut_screen::VERB_BUTTONS
+        .iter()
+        .map(|tool| tool.name)
+        .collect()
 }
 
 #[test]
@@ -166,27 +241,42 @@ fn sec_05_cut_1_screen_s11_the_seven_verbs_are_in_spec_order_with_insert_between
 
     // One spelling of each name: the three F2.7 verbs come from cut_verbs and the three F2.9 ones from
     // cut_copy, so this table cannot invent a fourth spelling of a control those modules already own.
-    let verbs: Vec<&str> = cut_screen::VERB_BUTTONS[..3].iter().map(|t| t.name).collect();
+    let verbs: Vec<&str> = cut_screen::VERB_BUTTONS[..3]
+        .iter()
+        .map(|t| t.name)
+        .collect();
     assert_eq!(
         verbs,
-        naivepost::cut_verbs::BUTTONS.iter().map(|(n, _, _)| *n).collect::<Vec<_>>(),
+        naivepost::cut_verbs::BUTTONS
+            .iter()
+            .map(|(n, _, _)| *n)
+            .collect::<Vec<_>>(),
         "Add/Split/Remove keep cut_verbs' names"
     );
-    let copies: Vec<&str> =
-        vec![cut_screen::VERB_BUTTONS[3], cut_screen::VERB_BUTTONS[4], cut_screen::VERB_BUTTONS[6]]
-            .iter()
-            .map(|t| t.name)
-            .collect();
+    let copies: Vec<&str> = vec![
+        cut_screen::VERB_BUTTONS[3],
+        cut_screen::VERB_BUTTONS[4],
+        cut_screen::VERB_BUTTONS[6],
+    ]
+    .iter()
+    .map(|t| t.name)
+    .collect();
     assert_eq!(
         copies,
-        naivepost::cut_copy::BUTTONS.iter().map(|(n, _, _)| *n).collect::<Vec<_>>(),
+        naivepost::cut_copy::BUTTONS
+            .iter()
+            .map(|(n, _, _)| *n)
+            .collect::<Vec<_>>(),
         "Copy/Paste/Lane keep cut_copy's names"
     );
 
     // Insert is the one control no other module owns; its label and tooltip are its own.
     assert_eq!(cut_screen::INSERT_TOOL.name, "insert-button");
     assert_eq!(cut_screen::INSERT_TOOL.label, "Insert");
-    assert!(!cut_screen::INSERT_TOOL.tip.is_empty(), "a bare word on a button says nothing about what it opens");
+    assert!(
+        !cut_screen::INSERT_TOOL.tip.is_empty(),
+        "a bare word on a button says nothing about what it opens"
+    );
 }
 
 #[test]
@@ -196,9 +286,21 @@ fn sec_05_cut_1_screen_s12_the_effects_dropdown_holds_the_six_kinds_the_page_can
     for item in &cut_screen::EFFECT_ITEMS {
         // The third field is the kind id, and a dropdown entry must not offer what the cut cannot hold:
         // `Fx::effect_kind` answers None for anything EffectKind::parse does not know.
-        let fx = naivepost::cut::Fx { kind: item.tip.to_string(), ..Default::default() };
-        assert!(fx.effect_kind().is_some(), "{} offers kind {:?}, which the cut cannot store", item.name, item.tip);
-        assert!(item.name.starts_with("effect-item-"), "dropdown entries share one name prefix: {}", item.name);
+        let fx = naivepost::cut::Fx {
+            kind: item.tip.to_string(),
+            ..Default::default()
+        };
+        assert!(
+            fx.effect_kind().is_some(),
+            "{} offers kind {:?}, which the cut cannot store",
+            item.name,
+            item.tip
+        );
+        assert!(
+            item.name.starts_with("effect-item-"),
+            "dropdown entries share one name prefix: {}",
+            item.name
+        );
     }
     // Exactly the six kinds, no duplicates and no seventh: a stop is folded into Speed by EffectKind,
     // so listing one here would be a second door to the same record.
@@ -219,18 +321,30 @@ fn sec_05_cut_1_screen_s13_undo_and_redo_grey_with_nothing_to_do_and_revert_with
     let [undo, redo, revert, clear] = cut_screen::history_buttons_enabled(0, 0, false);
     assert!(!undo, "nothing below the pointer to take back");
     assert!(!redo, "nothing above it to put back");
-    assert!(!revert, "the screen IS the base, so there is nothing to revert to");
+    assert!(
+        !revert,
+        "the screen IS the base, so there is nothing to revert to"
+    );
     assert!(!clear, "and nothing of the person's own to clear away");
 
     let [undo, redo, revert, clear] = cut_screen::history_buttons_enabled(2, 0, true);
     assert!(undo, "two states behind: Undo is live");
-    assert!(!redo, "the branch ahead was thrown away by the last new edit");
-    assert!(revert && clear, "there is hand work on the timeline to drop");
+    assert!(
+        !redo,
+        "the branch ahead was thrown away by the last new edit"
+    );
+    assert!(
+        revert && clear,
+        "there is hand work on the timeline to drop"
+    );
 
     let [undo, redo, revert, _clear] = cut_screen::history_buttons_enabled(0, 1, true);
     assert!(!undo, "at the bottom of the stack");
     assert!(redo, "one state ahead: Redo is live again");
-    assert!(revert, "Revert does not care where the pointer is, only that there is something to lose");
+    assert!(
+        revert,
+        "Revert does not care where the pointer is, only that there is something to lose"
+    );
 
     // The counts travel with the real stack: after N recorded edits the pointer sits at the top, so
     // undo_left is everything but the current state and redo_left is nought. `History::can_undo` /
@@ -242,8 +356,15 @@ fn sec_05_cut_1_screen_s13_undo_and_redo_grey_with_nothing_to_do_and_revert_with
     history.push(&edited);
     let depth = history.depth();
     let [undo, redo, _, _] = cut_screen::history_buttons_enabled(depth - 1, 0, true);
-    assert!(undo && !redo, "freshly-edited page: Undo live, Redo dead (depth {depth})");
-    assert_eq!(history.can_undo(), undo, "the count agrees with the stack's own answer");
+    assert!(
+        undo && !redo,
+        "freshly-edited page: Undo live, Redo dead (depth {depth})"
+    );
+    assert_eq!(
+        history.can_undo(),
+        undo,
+        "the count agrees with the stack's own answer"
+    );
     assert_eq!(history.can_redo(), redo, "and so does the one ahead");
     history.undo();
     // One step back from the top of a three-snapshot stack: one state below the pointer and one above,
@@ -251,10 +372,18 @@ fn sec_05_cut_1_screen_s13_undo_and_redo_grey_with_nothing_to_do_and_revert_with
     // private pointer — the table takes counts, the stack answers the same question about itself.
     let [undo, redo, _, _] = cut_screen::history_buttons_enabled(1, 1, true);
     assert!(undo && redo, "one step back from the top, both doors open");
-    assert_eq!(history.can_undo(), undo, "the stack agrees there is something behind");
+    assert_eq!(
+        history.can_undo(),
+        undo,
+        "the stack agrees there is something behind"
+    );
     assert_eq!(history.can_redo(), redo, "and something ahead");
     // And the depth never outruns the catalogue's bound.
-    assert!(depth <= naivepost::cut::UNDO_DEPTH + 1, "// P.layout.undoDepth {}", naivepost::cut::UNDO_DEPTH);
+    assert!(
+        depth <= naivepost::cut::UNDO_DEPTH + 1,
+        "// P.layout.undoDepth {}",
+        naivepost::cut::UNDO_DEPTH
+    );
 }
 
 #[test]
@@ -278,16 +407,29 @@ fn sec_05_cut_1_screen_s14_the_idle_form_reads_eight_things_in_the_order_the_spe
 
     // The list describes what idle_readouts actually emits, in the same order: no drift between the
     // row set the page builds and the values it fills them with.
-    let cut = Cut { segs: vec![footage(0.0, 10.0)], ..Default::default() };
+    let cut = Cut {
+        segs: vec![footage(0.0, 10.0)],
+        ..Default::default()
+    };
     let rows = cut_screen::idle_readouts(64, "", 3.0, None, &cut, 12.0);
     let emitted: Vec<&str> = rows.iter().map(|row| row.label).collect();
-    assert_eq!(emitted, cut_screen::IDLE_FORM_ROWS.to_vec(), "eight rows, this order");
+    assert_eq!(
+        emitted,
+        cut_screen::IDLE_FORM_ROWS.to_vec(),
+        "eight rows, this order"
+    );
 
     // Every row gets its own widget name off its label, so a label is spelled once and the name follows.
-    let names: Vec<String> =
-        cut_screen::IDLE_FORM_ROWS.iter().map(|l| cut_screen::readout_widget(l)).collect();
+    let names: Vec<String> = cut_screen::IDLE_FORM_ROWS
+        .iter()
+        .map(|l| cut_screen::readout_widget(l))
+        .collect();
     let unique: std::collections::HashSet<&str> = names.iter().map(String::as_str).collect();
-    assert_eq!(unique.len(), 8, "no two readings collide on a widget name: {names:?}");
+    assert_eq!(
+        unique.len(),
+        8,
+        "no two readings collide on a widget name: {names:?}"
+    );
     assert_eq!(names[2], "cut-readout-playhead");
     assert_eq!(names[7], "cut-readout-segments");
     // "Cut at 1×" spells its × out rather than dropping it: a truncated-looking name reads as a bug.
@@ -299,22 +441,45 @@ fn sec_05_cut_1_screen_s14_the_idle_form_reads_eight_things_in_the_order_the_spe
     // so building this with the Fx alone would leave both rows reading the same and prove nothing.
     let sped = Cut {
         segs: vec![
-            Seg { s: 0.0, e: 10.0, rate: 2.0, ..Default::default() },
-            Seg { ins: "card.svg".into(), dur: 3.0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 10.0,
+                rate: 2.0,
+                ..Default::default()
+            },
+            Seg {
+                ins: "card.svg".into(),
+                dur: 3.0,
+                ..Default::default()
+            },
         ],
-        fx: vec![naivepost::cut::Fx { kind: "speed".into(), t: 0.0, dur: 10.0, rate: 2.0, ..Default::default() }],
+        fx: vec![naivepost::cut::Fx {
+            kind: "speed".into(),
+            t: 0.0,
+            dur: 10.0,
+            rate: 2.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     let rows = cut_screen::idle_readouts(64, "", 0.0, None, &sped, 13.0);
     let value = |label: &str| {
-        rows.iter().find(|r| r.label == label).unwrap_or_else(|| panic!("no {label} row")).value.clone()
+        rows.iter()
+            .find(|r| r.label == label)
+            .unwrap_or_else(|| panic!("no {label} row"))
+            .value
+            .clone()
     };
     assert_ne!(
         value("Cut"),
         value("Cut at 1\u{00d7}"),
         "the running length and the plain length differ while a speed effect is on"
     );
-    assert_eq!(value("Cut"), "00:08", "five seconds at 2\u{00d7}, plus the card's three");
+    assert_eq!(
+        value("Cut"),
+        "00:08",
+        "five seconds at 2\u{00d7}, plus the card's three"
+    );
     assert_eq!(value("Cut at 1\u{00d7}"), "00:13");
     assert_eq!(value("Segments"), "2");
 }
@@ -351,7 +516,11 @@ fn sec_05_cut_1_screen_s6_the_zoom_ladder_steps_by_the_ratio_and_clamps_both_end
     for _ in 0..80 {
         pps = cut_screen::zoom_up(pps, 0.0);
     }
-    assert_eq!(pps, cut_screen::ZOOM_MAX, "// P.layout.zoomMaxPps stops the ladder");
+    assert_eq!(
+        pps,
+        cut_screen::ZOOM_MAX,
+        "// P.layout.zoomMaxPps stops the ladder"
+    );
 
     // The floor is the CALLER'S number, not a constant of its own: zooming out cannot pass "all of it
     // fits". A page whose session is 100 s wide and 400 px across floors at 4 px/s; hand it a wider
@@ -362,14 +531,21 @@ fn sec_05_cut_1_screen_s6_the_zoom_ladder_steps_by_the_ratio_and_clamps_both_end
     for _ in 0..200 {
         pps = cut_screen::zoom_down(pps, wide_floor);
     }
-    assert_eq!(pps, wide_floor, "zoom_out stops at the floor it was handed, not below it");
+    assert_eq!(
+        pps, wide_floor,
+        "zoom_out stops at the floor it was handed, not below it"
+    );
     // Same starting point, a floor ten times higher, and the ladder stops ten times sooner. Proves the
     // floor is honoured rather than being decoration on the signature.
     let mut pps = cut_screen::ZOOM_MAX;
     for _ in 0..200 {
         pps = cut_screen::zoom_down(pps, wide_floor * 10.0);
     }
-    assert_eq!(pps, wide_floor * 10.0, "a higher floor stops the same ladder earlier");
+    assert_eq!(
+        pps,
+        wide_floor * 10.0,
+        "a higher floor stops the same ladder earlier"
+    );
 }
 
 /// §A's thumbnail ladder: 🖼+ is ×4/3 and 🖼− is ÷3/4, so the two invert, clamped at 40 and 160 px.
@@ -380,12 +556,24 @@ fn sec_05_cut_1_screen_s6_the_zoom_ladder_steps_by_the_ratio_and_clamps_both_end
 fn sec_05_cut_1_screen_s7_the_thumbnail_ladder_is_x4_3_and_div3_4_and_clamps_at_40_and_160() {
     // The open-at size, and the two ends of the ladder.
     assert_eq!(cut_screen::THUMB_AT_OPEN, 64, "the page meets you at 64 px");
-    assert_eq!(cut_screen::THUMB_MIN, 40, "P.layout.thumbMin 40 clamps the small end");
-    assert_eq!(cut_screen::THUMB_MAX, 160, "P.layout.thumbMax 160 clamps the large end");
+    assert_eq!(
+        cut_screen::THUMB_MIN,
+        40,
+        "P.layout.thumbMin 40 clamps the small end"
+    );
+    assert_eq!(
+        cut_screen::THUMB_MAX,
+        160,
+        "P.layout.thumbMax 160 clamps the large end"
+    );
 
     // One step each way from the open-at size, and the round trip back.
     assert_eq!(cut_screen::thumb_up(64), 85, "64 * 4/3 rounds to 85");
-    assert_eq!(cut_screen::thumb_down(85), 64, "85 * 3/4 rounds back to 64 -- the steps invert");
+    assert_eq!(
+        cut_screen::thumb_down(85),
+        64,
+        "85 * 3/4 rounds back to 64 -- the steps invert"
+    );
     assert_eq!(cut_screen::thumb_down(64), 48, "64 * 3/4 = 48");
     assert_eq!(cut_screen::thumb_up(48), 64, "and 48 * 4/3 = 64");
 
@@ -441,7 +629,8 @@ fn sec_05_cut_1_screen_s8_ctrl_z_ctrl_shift_z_and_ctrl_y_all_reach_one_history()
                 .expect("the shell has a Cut tab")
                 .emit_clicked();
             settle();
-            let controller = ui::history_key_controller(&window).expect("history has a key controller");
+            let controller =
+                ui::history_key_controller(&window).expect("history has a key controller");
 
             // Each chord gets its OWN edit underneath it. One note_edit cannot serve all three: after the
             // first undo there is exactly one redo step left, so the second chord would answer
@@ -457,26 +646,44 @@ fn sec_05_cut_1_screen_s8_ctrl_z_ctrl_shift_z_and_ctrl_y_all_reach_one_history()
             // the shape `tests/suite/cut_copy_paste_lane_widgets.rs::press_key` uses for Esc.
             let _ = controller.emit_by_name::<bool>(
                 "key-pressed",
-                &[&gtk::gdk::Key::z, &0u32, &gtk::gdk::ModifierType::CONTROL_MASK],
+                &[
+                    &gtk::gdk::Key::z,
+                    &0u32,
+                    &gtk::gdk::ModifierType::CONTROL_MASK,
+                ],
             );
             settle();
             let z = status_line(&window);
-            assert!(z.contains("undone \u{2014}") && z.ends_with("segment(s) left"), "F2.13 S1: Ctrl+Z reached the history: {z}");
+            assert!(
+                z.contains("undone \u{2014}") && z.ends_with("segment(s) left"),
+                "F2.13 S1: Ctrl+Z reached the history: {z}"
+            );
 
             // Ctrl+Y redoes -- the second chord §1 spells.
             let _ = controller.emit_by_name::<bool>(
                 "key-pressed",
-                &[&gtk::gdk::Key::y, &0u32, &gtk::gdk::ModifierType::CONTROL_MASK],
+                &[
+                    &gtk::gdk::Key::y,
+                    &0u32,
+                    &gtk::gdk::ModifierType::CONTROL_MASK,
+                ],
             );
             settle();
             let y = status_line(&window);
-            assert!(y.contains("undone \u{2014}") && y.ends_with("segment(s) left"), "F2.13 S1: Ctrl+Y shares the one walk sentence: {y}");
+            assert!(
+                y.contains("undone \u{2014}") && y.ends_with("segment(s) left"),
+                "F2.13 S1: Ctrl+Y shares the one walk sentence: {y}"
+            );
 
             // Ctrl+Shift+Z redoes too, so either hand's habit works. Rewound first so it has a step
             // of its own to take, rather than riding the previous chord's leftover.
             let _ = controller.emit_by_name::<bool>(
                 "key-pressed",
-                &[&gtk::gdk::Key::z, &0u32, &gtk::gdk::ModifierType::CONTROL_MASK],
+                &[
+                    &gtk::gdk::Key::z,
+                    &0u32,
+                    &gtk::gdk::ModifierType::CONTROL_MASK,
+                ],
             );
             settle();
             let _ = controller.emit_by_name::<bool>(
@@ -489,7 +696,10 @@ fn sec_05_cut_1_screen_s8_ctrl_z_ctrl_shift_z_and_ctrl_y_all_reach_one_history()
             );
             settle();
             let zs = status_line(&window);
-            assert!(zs.contains("undone \u{2014}") && zs.ends_with("segment(s) left"), "F2.13 S1: Ctrl+Shift+Z also redoes with the same line: {zs}");
+            assert!(
+                zs.contains("undone \u{2014}") && zs.ends_with("segment(s) left"),
+                "F2.13 S1: Ctrl+Shift+Z also redoes with the same line: {zs}"
+            );
 
             // An UNMODIFIED letter is not ours: plain `z` leaves the status line exactly where it was,
             // which is what lets a focused Entry keep its keystrokes.
@@ -499,7 +709,11 @@ fn sec_05_cut_1_screen_s8_ctrl_z_ctrl_shift_z_and_ctrl_y_all_reach_one_history()
                 &[&gtk::gdk::Key::z, &0u32, &gtk::gdk::ModifierType::empty()],
             );
             settle();
-            assert_eq!(status_line(&window), before, "plain z without Ctrl is not ours");
+            assert_eq!(
+                status_line(&window),
+                before,
+                "plain z without Ctrl is not ours"
+            );
 
             RAN.store(true, std::sync::atomic::Ordering::SeqCst);
             app.quit();
@@ -507,7 +721,10 @@ fn sec_05_cut_1_screen_s8_ctrl_z_ctrl_shift_z_and_ctrl_y_all_reach_one_history()
         app.run_with_args::<String>(&[]);
     });
 
-    assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the chord checks never ran");
+    assert!(
+        RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the chord checks never ran"
+    );
 }
 
 /// Let GTK finish mapping and dispatching what was just shown or emitted.

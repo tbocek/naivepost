@@ -50,13 +50,22 @@ fn sec_04_prepare_5_rules_b3_the_direction_of_the_match_keeps_the_later_saying()
     let outcome = joins::answer_join(&mut join, reply, &before, &after);
     let applied_before = match outcome {
         joins::Outcome::Applied { before, after } => {
-            assert_eq!(before, 0, "BEFORE stands whole — the earlier saying was not the one dropped: {outcome:?}");
-            assert_eq!(after, 2, "the doubled pair came off AFTER's head: {outcome:?}");
+            assert_eq!(
+                before, 0,
+                "BEFORE stands whole — the earlier saying was not the one dropped: {outcome:?}"
+            );
+            assert_eq!(
+                after, 2,
+                "the doubled pair came off AFTER's head: {outcome:?}"
+            );
             after
         }
         other => panic!("a repaired join is an Applied, not {other:?}"),
     };
-    assert_eq!(applied_before, 2, "two words went, and they were AFTER's head");
+    assert_eq!(
+        applied_before, 2,
+        "two words went, and they were AFTER's head"
+    );
     // Which side the tool was told about is the same fact from its side: `answer_join` hands the counts to
     // `tool:textedit`, so a reading that charged BEFORE would show up as BEFORE's tail taken instead.
     assert!(
@@ -107,8 +116,14 @@ fn sec_04_prepare_5_rules_b3_the_direction_is_not_asked_of_the_model() {
         &words("and the next begins"),
     );
     assert!(request.contains("JOIN 3 of 7"), "{request}");
-    assert!(request.contains("BEFORE (the end of the take that was interrupted)"), "{request}");
-    assert!(request.contains("AFTER (the beginning of the take that follows)"), "{request}");
+    assert!(
+        request.contains("BEFORE (the end of the take that was interrupted)"),
+        "{request}"
+    );
+    assert!(
+        request.contains("AFTER (the beginning of the take that follows)"),
+        "{request}"
+    );
     assert!(request.contains("{\"joined\":\"...\"}"), "{request}");
     for phrase in ASKS_THE_MODEL {
         assert!(
@@ -117,5 +132,8 @@ fn sec_04_prepare_5_rules_b3_the_direction_is_not_asked_of_the_model() {
         );
     }
     // Asking whether thinking is on is a different question and stays the flow's own (§F1.10).
-    assert!(joins::thinking_on(), "P.machine.textEditThinking: this job thinks");
+    assert!(
+        joins::thinking_on(),
+        "P.machine.textEditThinking: this job thinks"
+    );
 }

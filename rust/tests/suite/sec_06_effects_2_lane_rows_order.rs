@@ -47,7 +47,11 @@ fn scene(fx: Vec<Fx>) -> Scene {
     Scene {
         pps: PPS,
         origin: 0.0,
-        segs: vec![Seg { s: 0.0, e: 20.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 20.0,
+            ..Default::default()
+        }],
         fx,
         recordings: vec![naivepost::timeline::Recording {
             base: "take-a".into(),
@@ -73,7 +77,13 @@ fn painted(scene: &Scene) -> (Vec<u8>, usize, i32) {
         cairo::ImageSurface::create(cairo::Format::ARgb32, WIDTH, height).expect("a surface");
     {
         let cr = cairo::Context::new(&surface).expect("a context");
-        tracks::paint_at(&cr, scene, WIDTH as f64, height as f64, tracks::THUMB_DEFAULT_PX);
+        tracks::paint_at(
+            &cr,
+            scene,
+            WIDTH as f64,
+            height as f64,
+            tracks::THUMB_DEFAULT_PX,
+        );
     }
     let data = surface.data().expect("read the pixels back").to_vec();
     let stride = surface.stride() as usize;
@@ -135,18 +145,31 @@ fn row_with(
     None
 }
 
-fn first_row_with(painted: &(Vec<u8>, usize, i32), colour: (f64, f64, f64), kind: EffectKind, from: i32, to: i32) -> Option<i32> {
+fn first_row_with(
+    painted: &(Vec<u8>, usize, i32),
+    colour: (f64, f64, f64),
+    kind: EffectKind,
+    from: i32,
+    to: i32,
+) -> Option<i32> {
     row_with(painted, colour, kind, from, to, true)
 }
 
-fn last_row_with(painted: &(Vec<u8>, usize, i32), colour: (f64, f64, f64), kind: EffectKind, from: i32, to: i32) -> Option<i32> {
+fn last_row_with(
+    painted: &(Vec<u8>, usize, i32),
+    colour: (f64, f64, f64),
+    kind: EffectKind,
+    from: i32,
+    to: i32,
+) -> Option<i32> {
     row_with(painted, colour, kind, from, to, false)
 }
 
 /// §2: the lane sits BETWEEN the selection band above and the picture rows below — in the arithmetic the
 /// painter uses and in the ink it leaves.
 #[test]
-fn sec_06_effects_2_the_lane_and_the_preview_s3_the_lane_sits_between_the_selection_band_and_the_pictures() {
+fn sec_06_effects_2_the_lane_and_the_preview_s3_the_lane_sits_between_the_selection_band_and_the_pictures(
+) {
     let single = scene(vec![fx(EffectKind::Zoom, 0.0, 5.0)]);
     let top = lane_top();
     let row_h = fx_lane::lane_height_px(1);
@@ -166,16 +189,40 @@ fn sec_06_effects_2_the_lane_and_the_preview_s3_the_lane_sits_between_the_select
     let painted_band = painted(&single);
     let zoom = fx_lane::bar_colour(EffectKind::Zoom, false);
     let lane_bottom = (top + row_h) as i32;
-    let in_lane = first_row_with(&painted_band, zoom, EffectKind::Zoom, top as i32, lane_bottom);
+    let in_lane = first_row_with(
+        &painted_band,
+        zoom,
+        EffectKind::Zoom,
+        top as i32,
+        lane_bottom,
+    );
     assert!(
         in_lane.is_some(),
         "the zoom bar is painted inside the lane's own rows [{top}, {lane_bottom})"
     );
     // Above the lane is the selection band; below it, the pictures. Neither may carry the bar's ink.
-    let above = first_row_with(&painted_band, zoom, EffectKind::Zoom, naivepost::cut_trim::RULER_H as i32, top as i32);
-    assert_eq!(above, None, "no bar ink in the selection band above the lane (found at {above:?})");
-    let below = first_row_with(&painted_band, zoom, EffectKind::Zoom, lane_bottom, painted_band.2);
-    assert_eq!(below, None, "no bar ink in the picture rows below the lane (found at {below:?})");
+    let above = first_row_with(
+        &painted_band,
+        zoom,
+        EffectKind::Zoom,
+        naivepost::cut_trim::RULER_H as i32,
+        top as i32,
+    );
+    assert_eq!(
+        above, None,
+        "no bar ink in the selection band above the lane (found at {above:?})"
+    );
+    let below = first_row_with(
+        &painted_band,
+        zoom,
+        EffectKind::Zoom,
+        lane_bottom,
+        painted_band.2,
+    );
+    assert_eq!(
+        below, None,
+        "no bar ink in the picture rows below the lane (found at {below:?})"
+    );
 }
 
 /// §2: rows stack TOP TO BOTTOM, so "the topmost row where it fits" is the SMALLEST painted y — and the
@@ -199,15 +246,30 @@ fn sec_06_effects_2_the_lane_and_the_preview_s3_the_topmost_row_is_the_smallest_
         cut_band_rows::lane_row_top_px(top, 0),
         cut_band_rows::lane_row_top_px(top, 1)
     );
-    assert!((row_h - 26.0).abs() < 0.01, "one lane row is 26 px ({row_h})");
+    assert!(
+        (row_h - 26.0).abs() < 0.01,
+        "one lane row is 26 px ({row_h})"
+    );
 
     let painted_band = painted(&pair);
     let zoom = fx_lane::bar_colour(EffectKind::Zoom, false);
     let text = fx_lane::bar_colour(EffectKind::Text, false);
-    let zoom_y = last_row_with(&painted_band, zoom, EffectKind::Zoom, top as i32, (top + 2.0 * row_h) as i32)
-        .expect("the zoom bar is painted");
-    let text_y = first_row_with(&painted_band, text, EffectKind::Text, top as i32, (top + 2.0 * row_h) as i32)
-        .expect("the text bar is painted");
+    let zoom_y = last_row_with(
+        &painted_band,
+        zoom,
+        EffectKind::Zoom,
+        top as i32,
+        (top + 2.0 * row_h) as i32,
+    )
+    .expect("the zoom bar is painted");
+    let text_y = first_row_with(
+        &painted_band,
+        text,
+        EffectKind::Text,
+        top as i32,
+        (top + 2.0 * row_h) as i32,
+    )
+    .expect("the text bar is painted");
     println!(
         "lane top {top}: zoom row y={zoom_y}, text row y={text_y}, second row starts {}",
         cut_band_rows::lane_row_top_px(top, 1)
@@ -235,4 +297,3 @@ fn sec_06_effects_2_the_lane_and_the_preview_s3_the_topmost_row_is_the_smallest_
         "nor does zooming out: the row numbers are the same {small:?}"
     );
 }
-

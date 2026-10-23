@@ -17,15 +17,16 @@
 
 use crate::cut::{Cut, Lane, Seg};
 use crate::cut_select::{Scope, Selection, MIN_SCENE_SECONDS};
-use crate::{timeline, tools};
 use crate::timeline::Recording;
+use crate::{timeline, tools};
 
 /// F2.9: the three buttons' labels and tooltips, spelled once here so the page's widgets and the tests
 /// that read them cannot drift apart — the same arrangement `cut_verbs::BUTTONS` sets for ＋ / | / －.
 /// Wording follows `spec/inventory/cut.md` §D item 4; the glyphs are part of the label because the
 /// headless container has no icon theme (the precedent F2.5's volume control sets).
 pub const COPY_LABEL: &str = "\u{29c9} Copy";
-pub const COPY_TIP: &str = "take the selection in hand \u{2014} a second at least; the band keeps showing it";
+pub const COPY_TIP: &str =
+    "take the selection in hand \u{2014} a second at least; the band keeps showing it";
 pub const PASTE_LABEL: &str = "\u{29c9} Paste";
 pub const PASTE_TIP: &str = "put what is in hand where the red line is \u{2014} footage splices in, sound lays over kept footage";
 pub const LANE_LABEL: &str = "\u{21f2} Lane";
@@ -114,7 +115,11 @@ pub fn copy(selection: Option<&Selection>) -> Take {
     };
     // A drag may run either way (F2.6), so the length is measured before anything is compared with the floor —
     // a right-to-left band is eight seconds, not minus eight, and refusing it for its sign would be absurd.
-    let (from, end) = if band.start <= band.end { (band.start, band.end) } else { (band.end, band.start) };
+    let (from, end) = if band.start <= band.end {
+        (band.start, band.end)
+    } else {
+        (band.end, band.start)
+    };
     let length = end - from;
     if length < MIN_SCENE_SECONDS {
         // Two decimals: half a second must not read as "under 1 s" with a number that rounds to it.
@@ -122,7 +127,11 @@ pub fn copy(selection: Option<&Selection>) -> Take {
             "the selection is {length:.2} s \u{2014} under 1 s there is nothing worth copying"
         ));
     }
-    Take::Taken(Hand { from, length, scope: band.scope.clone() })
+    Take::Taken(Hand {
+        from,
+        length,
+        scope: band.scope.clone(),
+    })
 }
 
 /// F2.9 S1: what the page says once the seconds are in hand — and where to take them next. A sound names its
@@ -159,7 +168,14 @@ pub const NO_LINE_YET: &str = "click the timeline where the copy goes first";
 /// asset of its own (`ins` carries the copy) and reads no file second: `ss` stays 0, so [`Seg::is_insert`]
 /// reports it as spliced rather than overwriting.
 pub fn spliced(hand: &Hand, at: f64) -> Seg {
-    Seg { s: at, e: at, ins: format!("copy:{:.3}", hand.from), dur: hand.length, cam: hand.row(), ..Default::default() }
+    Seg {
+        s: at,
+        e: at,
+        ins: format!("copy:{:.3}", hand.from),
+        dur: hand.length,
+        cam: hand.row(),
+        ..Default::default()
+    }
 }
 
 /// F2.9 S2 (`sound → laid over the kept footage at the line, one piece per kept stretch`): the kept footage
@@ -281,16 +297,28 @@ pub fn lay_over(cut: &mut Cut, path: &str, hand: &Hand, at: f64, file_seconds: f
         let head = (seg.s, seg.s.max(at));
         let tail = (seg.e.min(to), seg.e);
         if head.1 > head.0 {
-            out.push(Seg { s: head.0, e: head.1, ..seg.clone() });
+            out.push(Seg {
+                s: head.0,
+                e: head.1,
+                ..seg.clone()
+            });
         }
         for piece in &pieces {
             if piece.s < seg.e && piece.e > seg.s {
                 let (from, to) = (piece.s.max(seg.s), piece.e.min(seg.e));
-                out.push(Seg { s: from, e: to, ..piece.clone() });
+                out.push(Seg {
+                    s: from,
+                    e: to,
+                    ..piece.clone()
+                });
             }
         }
         if tail.1 > tail.0 {
-            out.push(Seg { s: tail.0, e: tail.1, ..seg.clone() });
+            out.push(Seg {
+                s: tail.0,
+                e: tail.1,
+                ..seg.clone()
+            });
         }
     }
     cut.segs = out;
@@ -323,7 +351,9 @@ pub fn file_seconds(cut: &Cut, filmed: &[Recording], hand: &Hand) -> f64 {
             .find(|rec| rec.start <= hand.from && hand.from < rec.end)
             .cloned(),
     };
-    let Some(recording) = recording else { return 0.0 };
+    let Some(recording) = recording else {
+        return 0.0;
+    };
     timeline::local_at(
         hand.from,
         recording.start,
@@ -353,11 +383,15 @@ pub fn paste(
     file_seconds: f64,
     session: &[String],
 ) -> Result<String, String> {
-    let Some(at) = at else { return Err(NO_LINE_YET.to_string()) };
+    let Some(at) = at else {
+        return Err(NO_LINE_YET.to_string());
+    };
     let Some(held) = hand.as_ref() else {
         // Nothing in hand: the button on the page is ⧉ Insert, not ⧉ Paste, so this is a call that should
         // not happen — said plainly rather than pasting nothing quietly.
-        return Err("nothing is in hand \u{2014} \u{29c9} Copy takes a selection there first".to_string());
+        return Err(
+            "nothing is in hand \u{2014} \u{29c9} Copy takes a selection there first".to_string(),
+        );
     };
     if held.is_footage() {
         let was = cut_length(cut);
@@ -406,7 +440,11 @@ pub fn pasted_status(length: f64, from: f64, at: f64, now: f64, was: f64) -> Str
 /// F2.9 S2: what a sound paste says. Naming the stretches is the difference between a puzzling second marker
 /// in the lanes and an expected one, so a copy that crossed a hole in the cut says so.
 pub fn laid_status(length: f64, recording: &str, stretches: usize, at: f64) -> String {
-    let over = if stretches > 1 { format!("{stretches} stretches of footage") } else { "the footage".to_string() };
+    let over = if stretches > 1 {
+        format!("{stretches} stretches of footage")
+    } else {
+        "the footage".to_string()
+    };
     format!(
         "laid {} of {recording} over {over} at {}",
         tools::tenths(length),
@@ -416,7 +454,10 @@ pub fn laid_status(length: f64, recording: &str, stretches: usize, at: f64) -> S
 
 /// F2.9 S2 (`refused: "the cut keeps no footage at m:ss — a sound needs a picture under it"`).
 pub fn no_footage_status(at: f64) -> String {
-    format!("the cut keeps no footage at {} \u{2014} a sound needs a picture under it", tools::mm_ss(at))
+    format!(
+        "the cut keeps no footage at {} \u{2014} a sound needs a picture under it",
+        tools::mm_ss(at)
+    )
 }
 
 /// F2.9 S2 (`Esc drops it`): let go of the copy. `true` when there was one, so the page only says the copy is
@@ -448,7 +489,9 @@ pub fn not_rolling(at: f64) -> String {
 /// §05-cut#8 (`Paste refuses "<base> is not in the session any more — the copied sound has nowhere to come
 /// from"`): the refusal when the recording the copy was taken from is no longer one of the session's files.
 pub fn no_source(base: &str) -> String {
-    format!("{base} is not in the session any more \u{2014} the copied sound has nowhere to come from")
+    format!(
+        "{base} is not in the session any more \u{2014} the copied sound has nowhere to come from"
+    )
 }
 
 /// F2.9 S3: a name for the new lane that nothing already uses — `want`, then `want-2`, `want-3`… The name is
@@ -479,7 +522,9 @@ pub enum LaneStart {
 }
 
 pub fn lane_start(at: Option<f64>, hand: &Hand, filmed: &[(f64, f64)]) -> LaneStart {
-    let Some(at) = at else { return LaneStart::Refusal(NO_LANE_LINE_YET.to_string()) };
+    let Some(at) = at else {
+        return LaneStart::Refusal(NO_LANE_LINE_YET.to_string());
+    };
     if !filmed.iter().any(|(from, to)| *from <= at && at < *to) {
         return LaneStart::Refusal(not_rolling(at));
     }
@@ -502,7 +547,13 @@ pub fn lane(hand: &Hand, source: &str, file_seconds: f64, at: f64, name: String)
     if hand.length < MIN_SCENE_SECONDS {
         return None;
     }
-    Some(Lane { name, src: source.to_string(), at, off: file_seconds, dur: hand.length })
+    Some(Lane {
+        name,
+        src: source.to_string(),
+        at,
+        off: file_seconds,
+        dur: hand.length,
+    })
 }
 
 /// F2.9 S3: what the lane says when it arrives — the seconds, where they came from, its name, and where it

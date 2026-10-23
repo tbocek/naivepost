@@ -12,23 +12,38 @@ fn f2_1_s1_pressing_play_while_the_cut_is_previewed_switches_back_to_the_recordi
     // S1: "the preview is the cut?" → "switch to the recording · 'preview is the recording again — …'".
     let runs = [(0.0, 60.0)];
 
-    let mut player = Player { cut_only: true, playhead: Some(30.0), ..Default::default() };
+    let mut player = Player {
+        cut_only: true,
+        playhead: Some(30.0),
+        ..Default::default()
+    };
     assert_eq!(
         preview::press_recording(&mut player, &runs),
-        Press::SwitchedToRecording { kept_playing: false }
+        Press::SwitchedToRecording {
+            kept_playing: false
+        }
     );
     assert!(!player.cut_only, "the preview is the recording now");
-    assert!(!player.transport.playing, "nothing was running, and nothing started");
+    assert!(
+        !player.transport.playing,
+        "nothing was running, and nothing started"
+    );
     assert_eq!(
         preview::RECORDING_STATUS,
         "preview is the recording again \u{2014} everything plays, cuts and all"
     );
 
     // A review previews the cut too — it skips the removed stretches exactly as ▶✂ does.
-    let mut reviewing = Player { reviewing: true, playhead: Some(30.0), ..Default::default() };
+    let mut reviewing = Player {
+        reviewing: true,
+        playhead: Some(30.0),
+        ..Default::default()
+    };
     assert_eq!(
         preview::press_recording(&mut reviewing, &runs),
-        Press::SwitchedToRecording { kept_playing: false }
+        Press::SwitchedToRecording {
+            kept_playing: false
+        }
     );
     assert!(!reviewing.reviewing);
 
@@ -36,7 +51,10 @@ fn f2_1_s1_pressing_play_while_the_cut_is_previewed_switches_back_to_the_recordi
     let mut running = Player {
         cut_only: true,
         reviewing: false,
-        transport: Transport { playing: true, started: true },
+        transport: Transport {
+            playing: true,
+            started: true,
+        },
         playhead: Some(30.0),
         volume: None,
         footage_muted: false,
@@ -56,19 +74,31 @@ fn f2_1_s1_pressing_play_while_the_cut_is_previewed_switches_back_to_the_recordi
 fn f2_1_s2_the_button_toggles_and_plays_from_the_red_line() {
     // S2: "Else toggle: playing → pause; else play from the red line."
     let runs = [(0.0, 60.0)];
-    let mut player = Player { playhead: Some(12.5), ..Default::default() };
+    let mut player = Player {
+        playhead: Some(12.5),
+        ..Default::default()
+    };
 
-    assert_eq!(preview::press_recording(&mut player, &runs), Press::Playing { from: 12.5 });
+    assert_eq!(
+        preview::press_recording(&mut player, &runs),
+        Press::Playing { from: 12.5 }
+    );
     assert!(player.transport.playing && player.transport.started);
 
     // Pause: `playing` clears, `started` stays — the preview is the run bar's business until ⏹ (run.rs).
     assert_eq!(preview::press_recording(&mut player, &runs), Press::Paused);
     assert!(!player.transport.playing);
     assert!(player.transport.started);
-    assert!(player.transport.cued(), "a paused preview still has something to resume");
+    assert!(
+        player.transport.cued(),
+        "a paused preview still has something to resume"
+    );
 
     // And the next press resumes from the same line rather than from the top.
-    assert_eq!(preview::press_recording(&mut player, &runs), Press::Playing { from: 12.5 });
+    assert_eq!(
+        preview::press_recording(&mut player, &runs),
+        Press::Playing { from: 12.5 }
+    );
 
     // No red line yet: the first thing filmed is where the recording starts.
     let mut fresh = Player::default();
@@ -101,20 +131,29 @@ fn f2_1_s3_every_second_plays_cuts_and_all() {
     assert!((line - 41.0).abs() < 1e-9, "ten tenths landed on {line}");
 
     // The ✂ argument changes nothing this round: F2.2 owns the skipping and its rule is not invented here.
-    assert_eq!(preview::play_advance(removed_at, 0.1, true), preview::play_advance(removed_at, 0.1, false));
+    assert_eq!(
+        preview::play_advance(removed_at, 0.1, true),
+        preview::play_advance(removed_at, 0.1, false)
+    );
 }
 
 #[test]
 fn f2_1_s4_running_into_a_fold_opens_it_and_says_so() {
     // S3 / §B: "▶ playing into a fold opens it ('unfolded m:ss — ▶ ran into it')".
     let playing = |at: f64| Player {
-        transport: Transport { playing: true, started: true },
+        transport: Transport {
+            playing: true,
+            started: true,
+        },
         playhead: Some(at),
         ..Default::default()
     };
 
     let mut folds = vec![[20.0, 30.0]];
-    assert_eq!(preview::walk_fold(&playing(22.0), &mut folds), Some("unfolded 00:20 \u{2014} \u{25b6} ran into it".to_string()));
+    assert_eq!(
+        preview::walk_fold(&playing(22.0), &mut folds),
+        Some("unfolded 00:20 \u{2014} \u{25b6} ran into it".to_string())
+    );
     assert!(folds.is_empty(), "the fold is gone, not merely skipped");
 
     // Short of the fold nothing opens.
@@ -124,14 +163,21 @@ fn f2_1_s4_running_into_a_fold_opens_it_and_says_so() {
 
     // Paused, nothing runs into anything.
     let mut folds = vec![[20.0, 30.0]];
-    let paused = Player { playhead: Some(22.0), ..Default::default() };
+    let paused = Player {
+        playhead: Some(22.0),
+        ..Default::default()
+    };
     assert_eq!(preview::walk_fold(&paused, &mut folds), None);
     assert_eq!(folds, vec![[20.0, 30.0]]);
 
     // And §B's other half: "▶✂ never enters one" — a fold is the person's own choice of what not to look
     // at, and the cut preview unfolding it would undo that under them.
     let mut folds = vec![[20.0, 30.0]];
-    let cut_preview = Player { cut_only: true, playhead: Some(22.0), ..playing(22.0) };
+    let cut_preview = Player {
+        cut_only: true,
+        playhead: Some(22.0),
+        ..playing(22.0)
+    };
     assert_eq!(preview::walk_fold(&cut_preview, &mut folds), None);
     assert_eq!(folds, vec![[20.0, 30.0]]);
 
@@ -146,7 +192,11 @@ fn f2_1_s5_at_a_recordings_end_the_line_walks_on() {
     // S3: "at a recording's end the line walks on to the next one (or a camera still rolling then)".
     // §D's own order: "another camera rolling at this second, else the next recording start".
     let gap = [(0.0, 60.0), (65.0, 90.0)];
-    assert_eq!(preview::walk_on(&gap, 60.0), Some(65.0), "the next recording's start");
+    assert_eq!(
+        preview::walk_on(&gap, 60.0),
+        Some(65.0),
+        "the next recording's start"
+    );
 
     // Two cameras over the same minute: at the second one of them stops, the other is still rolling, so
     // the line stays where it is and the player re-cues onto that file.
@@ -171,12 +221,22 @@ fn f2_1_s6_the_clock_reads_session_time_ten_times_a_second() {
 
     assert_eq!(preview::clock(Some(75.34)), "01:15.3");
     assert_eq!(preview::clock(Some(0.0)), "00:00.0");
-    assert!(preview::clock(Some(3661.0)).starts_with("61:01"), "minutes keep counting: {}", preview::clock(Some(3661.0)));
+    assert!(
+        preview::clock(Some(3661.0)).starts_with("61:01"),
+        "minutes keep counting: {}",
+        preview::clock(Some(3661.0))
+    );
     assert_eq!(preview::clock(None), "--:--.-");
 
     // The live clock runs at the rate, no further than one tick, and never backwards.
     assert!((preview::live_clock(10.0, 40, 1.0) - 10.04).abs() < 1e-9);
-    assert!((preview::live_clock(10.0, 900, 1.0) - 10.1).abs() < 1e-9, "capped at one tick");
+    assert!(
+        (preview::live_clock(10.0, 900, 1.0) - 10.1).abs() < 1e-9,
+        "capped at one tick"
+    );
     assert!(preview::live_clock(10.0, 40, -1.0) >= 10.0, "monotone");
-    assert!((preview::live_clock(10.0, 40, 2.0) - 10.08).abs() < 1e-9, "at double speed");
+    assert!(
+        (preview::live_clock(10.0, 40, 2.0) - 10.08).abs() < 1e-9,
+        "at double speed"
+    );
 }

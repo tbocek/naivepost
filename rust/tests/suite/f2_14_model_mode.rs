@@ -20,15 +20,16 @@ use naivepost::project::Project;
 use naivepost::roles::Job;
 use naivepost::settings::{self, Paths};
 use naivepost::suggest;
+use naivepost::suggest as sug;
 use naivepost::textfmt::{self, Retake};
 use naivepost::tool_loop::Turn;
 use naivepost::tools::{cutpass, Tool};
 use naivepost::ui::cut_suggest_model_run as model;
-use naivepost::suggest as sug;
 
 use crate::common;
 #[allow(dead_code)]
-#[allow(unused_imports)] // the widget-case helpers stay imported so this file matches `f2_14_words_mode.rs`'s shape
+#[allow(unused_imports)]
+// the widget-case helpers stay imported so this file matches `f2_14_words_mode.rs`'s shape
 use common::{fixture_dir, settle, status_text, temp_dir};
 
 static RAN_SNAP: AtomicBool = AtomicBool::new(false);
@@ -92,7 +93,11 @@ impl Scenario {
             })
             .collect();
         let doc = naivepost::requests::WordsDoc {
-            text: spoken.iter().map(|(w, _)| *w).collect::<Vec<&str>>().join(" "),
+            text: spoken
+                .iter()
+                .map(|(w, _)| *w)
+                .collect::<Vec<&str>>()
+                .join(" "),
             words: words.clone(),
         };
         naivepost::requests::write_words(&self.tree, source, &doc).expect("write words.json");
@@ -131,7 +136,12 @@ fn retake(s: f64, e: f64) -> Retake {
 /// A cut showing one camera's footage from `s` to `e`.
 fn cam_cut(s: f64, e: f64) -> Cut {
     Cut {
-        segs: vec![Seg { s, e, cam: 0, ..Default::default() }],
+        segs: vec![Seg {
+            s,
+            e,
+            cam: 0,
+            ..Default::default()
+        }],
         ..Default::default()
     }
 }
@@ -203,15 +213,24 @@ fn f2_14_s2b_a_segment_lands_on_a_snap_point_not_the_models_number() {
     );
     assert_eq!(plan.segments().len(), 1, "the model asked for one segment");
     assert_eq!(
-        plan.segments()[0].start, 19.0,
+        plan.segments()[0].start,
+        19.0,
         "the edge moved to the word edge, so the model's own 20 is not a cut"
     );
-    assert_eq!(plan.segments()[0].why, "the point", "the model's reason rides along");
+    assert_eq!(
+        plan.segments()[0].why,
+        "the point",
+        "the model's reason rides along"
+    );
     // No candidate near a stamp leaves it exactly where the model put it: `suggest::apply` later applies
     // the same rule, so a number with nothing beside it survives unchanged rather than drifting.
     let mut bare = cutpass::Plan::new(600.0, 60.0);
     model::answer_call(&mut bare, &add(20.0, 40.0));
-    assert_eq!(bare.segments()[0].start, 20.0, "nothing to snap to, nothing moved");
+    assert_eq!(
+        bare.segments()[0].start,
+        20.0,
+        "nothing to snap to, nothing moved"
+    );
     RAN_SNAP.store(true, Ordering::SeqCst);
 }
 
@@ -221,25 +240,52 @@ fn f2_14_s2b_a_bad_request_is_answered_not_defaulted() {
     // Past the footage: the tool's own sentence, naming the model's own number in mm:ss.
     let past = model::answer_call(&mut plan, &add(90.0, 200.0));
     assert!(past.contains("error"), "past the end is an error: {past}");
-    assert!(past.contains("03:20"), "the model's own end is quoted back: {past}");
+    assert!(
+        past.contains("03:20"),
+        "the model's own end is quoted back: {past}"
+    );
     assert!(past.contains("01:40"), "and the footage's own end: {past}");
-    assert!(plan.segments().is_empty(), "a refused segment is not placed");
+    assert!(
+        plan.segments().is_empty(),
+        "a refused segment is not placed"
+    );
     // A missing `start` names `start`, and nothing was placed at 0 — the default that would silently cut
     // the head of the session.
     let missing = model::answer_call(&mut plan, &call("add_segment", r#"{"end": 30.0}"#));
-    assert!(missing.contains("start"), "the absent argument is named: {missing}");
-    assert!(!missing.contains("end"), "an argument it DID send is not named: {missing}");
-    assert!(plan.segments().is_empty(), "no zero-second segment was invented");
+    assert!(
+        missing.contains("start"),
+        "the absent argument is named: {missing}"
+    );
+    assert!(
+        !missing.contains("end"),
+        "an argument it DID send is not named: {missing}"
+    );
+    assert!(
+        plan.segments().is_empty(),
+        "no zero-second segment was invented"
+    );
     // A non-numeric one, and an argument blob that is not JSON at all: both answered, neither panics.
-    let junk = model::answer_call(&mut plan, &call("add_segment", r#"{"start":"soon","end":9.0}"#));
-    assert!(junk.contains("start"), "a non-number is the argument that is wrong: {junk}");
+    let junk = model::answer_call(
+        &mut plan,
+        &call("add_segment", r#"{"start":"soon","end":9.0}"#),
+    );
+    assert!(
+        junk.contains("start"),
+        "a non-number is the argument that is wrong: {junk}"
+    );
     let not_json = model::answer_call(&mut plan, &call("set_speed", "start=5 rate=2"));
-    assert!(not_json.contains("start"), "an unreadable blob names its arguments: {not_json}");
+    assert!(
+        not_json.contains("start"),
+        "an unreadable blob names its arguments: {not_json}"
+    );
     assert!(plan.segments().is_empty());
     // An unknown tool name is answered too: §S2b offers five, and a model that invents a sixth must be
     // told, not silently ignored.
     let unknown = model::answer_call(&mut plan, &call("add_perfect_cut", "{}"));
-    assert!(unknown.contains("add_perfect_cut"), "the name comes back: {unknown}");
+    assert!(
+        unknown.contains("add_perfect_cut"),
+        "the name comes back: {unknown}"
+    );
     RAN_REFUSE_ARGS.store(true, Ordering::SeqCst);
 }
 
@@ -252,10 +298,16 @@ fn f2_14_s2b_status_and_finish_come_from_the_tools() {
         plan.status_json(),
         "cut_status is the plan's own reading, not a second one"
     );
-    assert!(status.contains("\"segments\""), "the reading names the count: {status}");
+    assert!(
+        status.contains("\"segments\""),
+        "the reading names the count: {status}"
+    );
     // Short of the target window, `finish_cut` answers the problem list §S2 S6 sends back.
     let empty = model::answer_call(&mut plan, &call("finish_cut", "{}"));
-    assert!(empty.contains("error"), "nothing placed is not a cut: {empty}");
+    assert!(
+        empty.contains("error"),
+        "nothing placed is not a cut: {empty}"
+    );
     assert!(model::answer_call(&mut plan, &add(0.0, 25.0)).contains("span"));
     assert!(model::answer_call(&mut plan, &add(30.0, 55.0)).contains("span"));
     assert!(model::answer_call(&mut plan, &add(60.0, 78.0)).contains("span"));
@@ -265,20 +317,22 @@ fn f2_14_s2b_status_and_finish_come_from_the_tools() {
         !enough.contains("error") && enough.contains("footage"),
         "inside the window, finish_cut says ok: {enough}"
     );
-    assert!(model::acceptable(&plan, 60.0), "and this module agrees with it");
+    assert!(
+        model::acceptable(&plan, 60.0),
+        "and this module agrees with it"
+    );
     RAN_STATUS_FINISH.store(true, Ordering::SeqCst);
 }
 
 #[test]
 fn f2_14_s2b_a_first_answer_that_is_not_a_cut_gets_one_correction() {
-    let s = Scenario::fresh("repair").with_timeline().with_words("cam0", &[("hi", 2.0), ("yo", 30.0)]);
+    let s = Scenario::fresh("repair")
+        .with_timeline()
+        .with_words("cam0", &[("hi", 2.0), ("yo", 30.0)]);
     let cut = cam_cut(0.0, 60.0);
     // Round 1 places one short stretch and calls it done; §S2 S6's complaint goes back; round 2 fills
     // the window and finishes. The attempts are counted here, so the script must cover both.
-    let short = turn(vec![
-        add(2.0, 5.0),
-        call("finish_cut", "{}"),
-    ]);
+    let short = turn(vec![add(2.0, 5.0), call("finish_cut", "{}")]);
     let filled = turn(vec![
         add(2.0, 20.0),
         add(25.0, 45.0),
@@ -305,7 +359,11 @@ fn f2_14_s2b_a_first_answer_that_is_not_a_cut_gets_one_correction() {
         "two rounds, one per attempt: {:?}",
         made.log
     );
-    assert_eq!(scripted.times(), 2, "the repair round was asked, and only that one");
+    assert_eq!(
+        scripted.times(),
+        2,
+        "the repair round was asked, and only that one"
+    );
     // §S3's own pair rides on `applied.log` — the two lines the flowchart prints for a landed
     // suggestion — which is where `landed_log` reads the status sentence from.
     assert!(
@@ -326,12 +384,12 @@ fn f2_14_s2b_a_first_answer_that_is_not_a_cut_gets_one_correction() {
 
 #[test]
 fn f2_14_s2b_three_attempts_and_it_says_so() {
-    let s = Scenario::fresh("exhaust").with_timeline().with_words("cam0", &[("hi", 2.0)]);
+    let s = Scenario::fresh("exhaust")
+        .with_timeline()
+        .with_words("cam0", &[("hi", 2.0)]);
     let cut = cam_cut(0.0, 60.0);
     // Every attempt finishes on a cut that fails the whole-check: too short for a 10-minute target.
-    let never = || {
-        Scripted::new(vec![turn(vec![add(2.0, 4.0), call("finish_cut", "{}")])])
-    };
+    let never = || Scripted::new(vec![turn(vec![add(2.0, 4.0), call("finish_cut", "{}")])]);
     let mut scripted = never();
     let made = model::run_model(
         &s.tree,
@@ -380,7 +438,9 @@ fn f2_14_s2b_a_failed_suggestion_touches_nothing() {
     );
     // And the flowchart's story is in the log: the rounds, then the reason it stopped.
     assert!(
-        made.log.last().is_some_and(|line| line.contains(sug::NO_VALID_CUT)),
+        made.log
+            .last()
+            .is_some_and(|line| line.contains(sug::NO_VALID_CUT)),
         "the last line is the reason: {:?}",
         made.log
     );
@@ -389,7 +449,9 @@ fn f2_14_s2b_a_failed_suggestion_touches_nothing() {
 
 #[test]
 fn f2_14_s2b_the_answer_is_walked_back_before_it_is_a_suggestion() {
-    let s = Scenario::fresh("walkback").with_timeline().with_words("cam0", &[("hi", 2.0), ("yo", 40.0)]);
+    let s = Scenario::fresh("walkback")
+        .with_timeline()
+        .with_words("cam0", &[("hi", 2.0), ("yo", 40.0)]);
     let mut cut = cam_cut(0.0, 60.0);
     // One hand-placed card: §S3 keeps it, and says so by handing it back rather than re-proposing it.
     cut.segs.push(Seg {
@@ -415,7 +477,11 @@ fn f2_14_s2b_the_answer_is_walked_back_before_it_is_a_suggestion() {
         Some(&s.paths),
         |conversation, tools| scripted.ask(conversation, tools),
     );
-    assert!(made.wrote, "a no-target cut has no length complaint: {:?}", made.said);
+    assert!(
+        made.wrote,
+        "a no-target cut has no length complaint: {:?}",
+        made.said
+    );
     assert_eq!(
         made.applied.kept_inserts.len(),
         1,
@@ -431,8 +497,14 @@ fn f2_14_s2b_the_answer_is_walked_back_before_it_is_a_suggestion() {
         made.segs
     );
     // Same answer, same walk-back, spelled directly: `close_holes` is the rule the run went through.
-    let walk = model::walk_of(&naivepost::cut_suggest_words_run::inputs(&s.tree, &s.project, &cut));
-    let direct = suggest::close_holes(&[(2.0, 20.0), (21.0, 45.0)], &walk.talked, suggest::SEAM_MAX_SECONDS);
+    let walk = model::walk_of(&naivepost::cut_suggest_words_run::inputs(
+        &s.tree, &s.project, &cut,
+    ));
+    let direct = suggest::close_holes(
+        &[(2.0, 20.0), (21.0, 45.0)],
+        &walk.talked,
+        suggest::SEAM_MAX_SECONDS,
+    );
     assert_eq!(direct.len(), 1, "and the pure rule agrees: {direct:?}");
     RAN_WALK_BACK.store(true, Ordering::SeqCst);
 }

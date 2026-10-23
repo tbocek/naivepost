@@ -55,9 +55,15 @@ fn staged_text_shot_has_its_form_open(app: &adw::Application) {
         std::path::Path::new("/tmp/f3_4_text_staging.png"),
         "06-text",
     );
-    assert!(owned, "`snapshot_effects::paint` no longer owns the `06-text` screen");
+    assert!(
+        owned,
+        "`snapshot_effects::paint` no longer owns the `06-text` screen"
+    );
     let form = ui::text_form_open().expect("the staged `06-text` shot drew no caption form");
-    assert_eq!(form.t, LINE_SECOND, "the staged caption does not start at the line it placed");
+    assert_eq!(
+        form.t, LINE_SECOND,
+        "the staged caption does not start at the line it placed"
+    );
     assert_eq!(
         form.on,
         fx_text::LOWER_THIRD,
@@ -65,7 +71,10 @@ fn staged_text_shot_has_its_form_open(app: &adw::Application) {
     );
     // The heading the shot shows, spelled by the module that owns it -- and the app's own `tools::mm_ss`, not a
     // hand-rolled copy of it, so the two can never drift.
-    assert_eq!(fx_text::form_title(form.t), format!("Text at {}", naivepost::tools::mm_ss(form.t)));
+    assert_eq!(
+        fx_text::form_title(form.t),
+        format!("Text at {}", naivepost::tools::mm_ss(form.t))
+    );
     for field in [
         "text-heading",
         "text-field-words",
@@ -74,7 +83,8 @@ fn staged_text_shot_has_its_form_open(app: &adw::Application) {
         "text-field-fade-out",
         "text-field-curve",
     ] {
-        let widget = find_widget(window.upcast_ref(), field).unwrap_or_else(|| panic!("the form draws no {field}"));
+        let widget = find_widget(window.upcast_ref(), field)
+            .unwrap_or_else(|| panic!("the form draws no {field}"));
         assert!(
             widget.is_visible() && widget.is_mapped(),
             "`{field}` is not on screen in the staged shot"
@@ -115,7 +125,10 @@ fn sec_06_effects_2_the_lane_and_the_preview_s3_the_staged_text_shot_has_its_for
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_TEXT_STAGE.load(Ordering::SeqCst), "the `06-text` staging check never ran");
+    assert!(
+        RAN_TEXT_STAGE.load(Ordering::SeqCst),
+        "the `06-text` staging check never ran"
+    );
 }
 
 /// §F3.4 S4 (`PREVIEW = RENDER`, and the shot has to show the words): a placed caption is only painted where

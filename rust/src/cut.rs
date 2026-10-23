@@ -260,7 +260,11 @@ impl Cut {
             if !seg.quiet.is_empty() {
                 continue;
             }
-            seg.quiet = recordings.iter().filter(|lane| *lane != &heard).cloned().collect();
+            seg.quiet = recordings
+                .iter()
+                .filter(|lane| *lane != &heard)
+                .cloned()
+                .collect();
         }
         Some(format!(
             "this cut was heard on {heard} from end to end; that is now said scene by scene, \
@@ -486,7 +490,9 @@ pub fn save(cut: &Cut, tree: &layout::Tree) -> Result<(), String> {
     // inside the project is taken back off, which is what lets write_file create the
     // directory and set §1's 0644.
     let file = tree.cut_json();
-    let rel = file.strip_prefix(tree.dir()).unwrap_or(Path::new("cut/cut.json"));
+    let rel = file
+        .strip_prefix(tree.dir())
+        .unwrap_or(Path::new("cut/cut.json"));
     tree.write_file(rel, text.as_bytes())?;
     if let Some(said) = note {
         crate::ui::window::log_line(&said);
@@ -585,7 +591,11 @@ impl History {
     /// makes the base "the last suggestion or what the page opened with".
     pub fn open(cut: &Cut) -> History {
         let now = Snapshot::of(cut);
-        History { snapshots: vec![now.clone()], at: 0, base: now }
+        History {
+            snapshots: vec![now.clone()],
+            at: 0,
+            base: now,
+        }
     }
 
     /// F2.13 S4 (`only a real change reaches the stack`): record the cut if it actually differs from the
@@ -707,7 +717,8 @@ pub fn undone(left: usize) -> String {
 /// F2.13 S1: the refusal at the bottom of the stack. The spec words the other three refusals and leaves
 /// this one to the flow's shape; the wording kept is the page's own, because "the state this page opened
 /// with" says where the floor is rather than only that there is one.
-pub const NOTHING_TO_UNDO: &str = "nothing to undo \u{2014} you are at the state this page opened with";
+pub const NOTHING_TO_UNDO: &str =
+    "nothing to undo \u{2014} you are at the state this page opened with";
 
 /// F2.13 S2 (`greyed · "nothing to revert — the cut is as it was"`): Revert with nothing changed since
 /// the base. Same string greys the button and answers a press that got through anyway.
@@ -752,5 +763,9 @@ pub fn cleared_message(scenes: usize, effects: usize) -> String {
 /// timeline rather than undoing where a person parked a file — and the rows are what the page is drawn
 /// from, so emptying them would blank the tracks rather than clear them.
 pub fn cleared(cut: &Cut) -> Cut {
-    Cut { segs: Vec::new(), fx: Vec::new(), ..cut.clone() }
+    Cut {
+        segs: Vec::new(),
+        fx: Vec::new(),
+        ..cut.clone()
+    }
 }

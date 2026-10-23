@@ -21,7 +21,7 @@ use naivepost::cut_select::Surface;
 use naivepost::ui;
 
 use crate::common;
-use common::{settle, status_text, fx, cut_page};
+use common::{cut_page, fx, settle, status_text};
 
 static RAN_VERB_CLAMP: AtomicBool = AtomicBool::new(false);
 static RAN_FLOOR: AtomicBool = AtomicBool::new(false);
@@ -37,7 +37,11 @@ fn approx(a: f64, b: f64) -> bool {
 /// checkable by hand.
 fn three_clips() -> Cut {
     Cut {
-        segs: vec![common::seg_cam(0.0, 10.0, 0), common::seg_cam(10.0, 20.0, 0), common::seg_cam(20.0, 30.0, 0)],
+        segs: vec![
+            common::seg_cam(0.0, 10.0, 0),
+            common::seg_cam(10.0, 20.0, 0),
+            common::seg_cam(20.0, 30.0, 0),
+        ],
         ..Default::default()
     }
 }
@@ -113,13 +117,15 @@ fn clamp_round(app: &adw::Application) {
     let window = cut_page(app, &cut_);
     let said = ui::clamp_effects_to_cut(&window);
     assert_eq!(
-        said,
-        "effects clamped to the cut \u{2014} 1 dropped",
+        said, "effects clamped to the cut \u{2014} 1 dropped",
         "the under-floor band is the one that went"
     );
     let kept = ui::review_cut_of(&window).fx;
     assert_eq!(kept.len(), 1, "only the 2.5 s survivor is left: {kept:?}");
-    assert!(approx(kept[0].t, 7.5), "the survivor starts where it was placed");
+    assert!(
+        approx(kept[0].t, 7.5),
+        "the survivor starts where it was placed"
+    );
     assert!(
         approx(kept[0].dur, 2.5),
         "trimmed to the footage the cut keeps: dur was {}",

@@ -69,7 +69,8 @@ impl Fake {
                     let mut length = 0usize;
                     loop {
                         let mut header = String::new();
-                        if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty()
+                        if reader.read_line(&mut header).unwrap_or(0) == 0
+                            || header.trim().is_empty()
                         {
                             break;
                         }
@@ -161,12 +162,7 @@ fn base(step: &str, model: &str) -> Request {
 
 /// One live chat call through the ONE door every chat ask in the app goes through. `log` collects
 /// what the app log would show.
-fn dial(
-    scene: &Scene,
-    step: &str,
-    body: &str,
-    log: &mut Vec<String>,
-) -> Result<String, String> {
+fn dial(scene: &Scene, step: &str, body: &str, log: &mut Vec<String>) -> Result<String, String> {
     let log = std::cell::RefCell::new(log);
     let reply = llm_retry_leg::chat(
         step,
@@ -184,14 +180,23 @@ fn dial(
 /// The chat body for a message list, in `llm_request::body`'s own shape — so the request under
 /// test is built by the program's builder, not hand-written around it.
 fn body_for(step: &str, messages: &[Message]) -> Result<String, String> {
-    llm_request::body(step, "budget-model", messages, naivepost::exchanges::Mode::Execute, None, false).map(|json| json.to_string())
+    llm_request::body(
+        step,
+        "budget-model",
+        messages,
+        naivepost::exchanges::Mode::Execute,
+        None,
+        false,
+    )
+    .map(|json| json.to_string())
 }
 
 /// How many picture parts a request body carried, counted the way the server sees them: one
 /// `"image_url"` is spelled twice in the JSON (the part's `type` and its key), so a substring
 /// count says four for two frames.
 fn image_parts(body: &str) -> usize {
-    let asked: serde_json::Value = serde_json::from_str(body).expect("the body the fake read is JSON");
+    let asked: serde_json::Value =
+        serde_json::from_str(body).expect("the body the fake read is JSON");
     asked
         .get("messages")
         .and_then(|messages| messages.as_array())
@@ -221,16 +226,25 @@ fn letters(chars: usize) -> String {
 /// refused WITHOUT touching the socket; exactly 120 000 goes out. `tests/suite/context_budgets.rs` pins
 /// the refusal's WORDING at the builder; this proves the door passes a real request through it.
 #[test]
-fn p_machine_promptmaxchars_s1_the_live_door_refuses_one_char_over_the_bound_and_sends_exactly_it() {
+fn p_machine_promptmaxchars_s1_the_live_door_refuses_one_char_over_the_bound_and_sends_exactly_it()
+{
     // Scene re-points the process-wide cwd and settings env, and the tests of this file run on threads
     // side by side: one test's fake was read from another's settings, and its request never came.
-    let _scenario = common::scenario_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _scenario = common::scenario_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let fake = Fake::start(chat("an answer nobody should have to pay for"));
     let scene = Scene::new("s1", &fake.url);
     // Over the bound: the system and user halves together are one char more than the cap allows.
     let over = vec![
-        Message { role: "system".into(), parts: vec![Part::Text(letters(MAX / 2))] },
-        Message { role: "user".into(), parts: vec![Part::Text(letters(MAX - MAX / 2 + 1))] },
+        Message {
+            role: "system".into(),
+            parts: vec![Part::Text(letters(MAX / 2))],
+        },
+        Message {
+            role: "user".into(),
+            parts: vec![Part::Text(letters(MAX - MAX / 2 + 1))],
+        },
     ];
     let mut log = Vec::new();
     let body = body_for("Upload brief", &over);
@@ -244,36 +258,56 @@ fn p_machine_promptmaxchars_s1_the_live_door_refuses_one_char_over_the_bound_and
         reason.contains("over the budget"),
         "the refusal says which rule stopped it: {reason}"
     );
-    assert!(reason.contains("Upload brief"), "and names the step: {reason}");
+    assert!(
+        reason.contains("Upload brief"),
+        "and names the step: {reason}"
+    );
     assert!(
         reason.contains(&MAX.to_string()) && reason.contains("get_lines"),
         "and says the bound and both ways out: {reason}"
     );
-    assert!(fake.silent(), "the refusal happened before the socket: nothing was asked");
+    assert!(
+        fake.silent(),
+        "the refusal happened before the socket: nothing was asked"
+    );
 
     // Exactly at the bound is WITHIN it (the boundary is inclusive), and it really goes out.
     let at = vec![
-        Message { role: "system".into(), parts: vec![Part::Text(letters(MAX / 2))] },
-        Message { role: "user".into(), parts: vec![Part::Text(letters(MAX - MAX / 2))] },
+        Message {
+            role: "system".into(),
+            parts: vec![Part::Text(letters(MAX / 2))],
+        },
+        Message {
+            role: "user".into(),
+            parts: vec![Part::Text(letters(MAX - MAX / 2))],
+        },
     ];
     let body = body_for("Upload brief", &at).expect("exactly the bound is inside it");
     let answered = dial(&scene, "Upload brief", &body, &mut log)
         .expect("a request of exactly the bound is sent");
     assert_eq!(answered, chat("an answer nobody should have to pay for"));
     let (asked, _) = fake.waited();
-    assert!(asked.contains("Upload brief") || asked.contains('"'), "the ask reached the wire");
+    assert!(
+        asked.contains("Upload brief") || asked.contains('"'),
+        "the ask reached the wire"
+    );
 }
 
 /// s2: §5's size line, from a call that answered — in the app log, in kB, with the image count
 /// separate from the text (a vision call's base64 must not read as prose).
 #[test]
 fn p_machine_promptmaxchars_s2_the_log_records_the_size_that_went_to_the_llm() {
-    let _scenario = common::scenario_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _scenario = common::scenario_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let fake = Fake::start(chat("split at twelve seconds"));
     let scene = Scene::new("s2", &fake.url);
     let text = letters(2000);
     let messages = vec![
-        Message { role: "system".into(), parts: vec![Part::Text(text.clone())] },
+        Message {
+            role: "system".into(),
+            parts: vec![Part::Text(text.clone())],
+        },
         Message {
             role: "user".into(),
             parts: vec![
@@ -287,17 +321,16 @@ fn p_machine_promptmaxchars_s2_the_log_records_the_size_that_went_to_the_llm() {
     let mut log = Vec::new();
     dial(&scene, "Describe", &body, &mut log).expect("the call answered");
     let (asked, _) = fake.waited();
-    assert_eq!(
-        image_parts(&asked),
-        2,
-        "two frames went out: {asked}"
-    );
+    assert_eq!(image_parts(&asked), 2, "two frames went out: {asked}");
     // The line §5 spells, with THIS step's name.
     let line = log
         .iter()
         .find(|line| line.contains("of text and") && line.contains("went to the LLM"))
         .unwrap_or_else(|| panic!("no size line in the app log: {log:?}"));
-    assert!(line.starts_with(">>> Describe:"), "named for the step: {line}");
+    assert!(
+        line.starts_with(">>> Describe:"),
+        "named for the step: {line}"
+    );
     assert!(line.contains("2 image(s)"), "both pictures counted: {line}");
     // The kB figure is what the bytes the wire carried say, and it excludes the pictures: the
     // two data URLs are ~40 bytes, so a figure that included them would round differently.
@@ -323,12 +356,17 @@ fn p_machine_promptmaxchars_s2_the_log_records_the_size_that_went_to_the_llm() {
 /// refused the call — the row is written only for a request that went out.
 #[test]
 fn p_machine_promptmaxchars_s3_the_timed_row_records_what_was_sent() {
-    let _scenario = common::scenario_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _scenario = common::scenario_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let fake = Fake::start(chat("a short answer"));
     let scene = Scene::new("s3", &fake.url);
     let text = letters(1500);
     let messages = vec![
-        Message { role: "system".into(), parts: vec![Part::Text(text.clone())] },
+        Message {
+            role: "system".into(),
+            parts: vec![Part::Text(text.clone())],
+        },
         Message {
             role: "user".into(),
             parts: vec![
@@ -361,13 +399,20 @@ fn p_machine_promptmaxchars_s3_the_timed_row_records_what_was_sent() {
         "the row carries the text it sent (the fake counted {} bytes of JSON): {row:?}",
         asked.len()
     );
-    assert_eq!(row.images, Some(1), "and the one picture it carried: {row:?}");
+    assert_eq!(
+        row.images,
+        Some(1),
+        "and the one picture it carried: {row:?}"
+    );
 
     // A text-only call leaves the picture column EMPTY, not zero: §10's reader must tell "no
     // images" apart from "not recorded" the same way it does for every other column.
     let plain_body = body_for(
         "Narrate",
-        &[Message { role: "user".into(), parts: vec![Part::Text(letters(20))] }],
+        &[Message {
+            role: "user".into(),
+            parts: vec![Part::Text(letters(20))],
+        }],
     )
     .expect("inside the bound");
     let fake_plain = Fake::start(chat("spoken"));
@@ -376,15 +421,27 @@ fn p_machine_promptmaxchars_s3_the_timed_row_records_what_was_sent() {
     fake_plain.waited();
     let rows = requests::read(&plain_scene.tree).expect("requests.tsv");
     assert_eq!(rows.len(), 1, "one ask, one row: {rows:?}");
-    assert_eq!(rows[0].images, None, "no pictures, so no figure: {:?}", rows[0]);
-    assert_eq!(rows[0].sent_bytes, Some(20), "and the text is still recorded: {:?}", rows[0]);
+    assert_eq!(
+        rows[0].images, None,
+        "no pictures, so no figure: {:?}",
+        rows[0]
+    );
+    assert_eq!(
+        rows[0].sent_bytes,
+        Some(20),
+        "and the text is still recorded: {:?}",
+        rows[0]
+    );
 
     // A call whose refusal came from the bound never reaches the wire, so no row is written for it.
     let refused_scene = Scene::new("s3-refused", "http://127.0.0.1:1");
     let mut refused_log = Vec::new();
     let too_big = body_for(
         "Upload brief",
-        &[Message { role: "user".into(), parts: vec![Part::Text(letters(MAX + 1))] }],
+        &[Message {
+            role: "user".into(),
+            parts: vec![Part::Text(letters(MAX + 1))],
+        }],
     );
     let refused = match too_big {
         Ok(body) => dial(&refused_scene, "Upload brief", &body, &mut refused_log),
@@ -392,7 +449,9 @@ fn p_machine_promptmaxchars_s3_the_timed_row_records_what_was_sent() {
     };
     assert!(refused.is_err(), "one char over the bound is refused");
     assert!(
-        requests::read(&refused_scene.tree).expect("a readable log").is_empty(),
+        requests::read(&refused_scene.tree)
+            .expect("a readable log")
+            .is_empty(),
         "a refused request wrote no timed row: {:?}",
         requests::read(&refused_scene.tree).expect("a readable log")
     );
@@ -403,12 +462,19 @@ fn p_machine_promptmaxchars_s3_the_timed_row_records_what_was_sent() {
 /// list to measure) records its whole length.
 #[test]
 fn p_machine_promptmaxchars_s4_a_caller_s_own_size_is_kept_and_a_plain_body_is_measured_whole() {
-    let with_size = Request { sent_bytes: Some(999), ..Default::default() };
+    let with_size = Request {
+        sent_bytes: Some(999),
+        ..Default::default()
+    };
     let filled = naivepost::server_leg::fill_sizes(
         with_size,
         Some(r#"{"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}"#),
     );
-    assert_eq!(filled.sent_bytes, Some(999), "a caller's own number is never overwritten");
+    assert_eq!(
+        filled.sent_bytes,
+        Some(999),
+        "a caller's own number is never overwritten"
+    );
     let plain = naivepost::server_leg::fill_sizes(
         Request::default(),
         Some(r#"{"model":"asr","request":{"path":"/uploads/c00.wav"}}"#),

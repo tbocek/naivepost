@@ -70,9 +70,18 @@ fn sec_10_parameters_4_prompts_s1_the_thirteen_keys_are_exactly_the_specs_list()
         ]
     );
     // The new row is known, and the file that shares `prompts/` but is not a prompt is not.
-    assert!(prompts::is_known("policy"), "F0.7's policy prompt must be known");
-    assert!(!prompts::is_known("tools"), "prompts/tools.md is tool descriptions, not a prompt key");
-    assert!(!prompts::is_known(""), "an empty key is the User Context, not a prompt");
+    assert!(
+        prompts::is_known("policy"),
+        "F0.7's policy prompt must be known"
+    );
+    assert!(
+        !prompts::is_known("tools"),
+        "prompts/tools.md is tool descriptions, not a prompt key"
+    );
+    assert!(
+        !prompts::is_known(""),
+        "an empty key is the User Context, not a prompt"
+    );
 }
 
 // ---- S2: every key is a storable per-machine override -------------------------------------
@@ -100,8 +109,13 @@ fn sec_10_parameters_4_prompts_s2_every_key_stores_as_a_per_machine_override() {
         "nothing stored yet: the shipped wording answers"
     );
     assert!(
-        settings::write_prompt(&d.paths, "policy", "set markingPass from the context alone", shipped)
-            .unwrap(),
+        settings::write_prompt(
+            &d.paths,
+            "policy",
+            "set markingPass from the context alone",
+            shipped
+        )
+        .unwrap(),
         "an edit differs from shipped, so it is kept"
     );
     assert_eq!(
@@ -123,7 +137,10 @@ fn sec_10_parameters_4_prompts_s2_every_key_stores_as_a_per_machine_override() {
         "a no-op write leaves the previous override where it was"
     );
     assert!(settings::clear_prompt(&d.paths, "policy").unwrap());
-    assert_eq!(settings::prompt_text(&d.paths, "policy", shipped).unwrap(), shipped);
+    assert_eq!(
+        settings::prompt_text(&d.paths, "policy", shipped).unwrap(),
+        shipped
+    );
 }
 
 // ---- S3: thinking on for exactly four ------------------------------------------------------
@@ -132,7 +149,10 @@ fn sec_10_parameters_4_prompts_s2_every_key_stores_as_a_per_machine_override() {
 fn sec_10_parameters_4_prompts_s3_thinking_is_on_for_exactly_the_four_named() {
     assert_eq!(ITEM, "§10-parameters#4-prompts");
     // §4: "Thinking on for textedit, cut, narrate, youtube; off elsewhere."
-    assert_eq!(prompts::THINKING_ON, ["textedit", "cut", "narrate", "youtube"]);
+    assert_eq!(
+        prompts::THINKING_ON,
+        ["textedit", "cut", "narrate", "youtube"]
+    );
     for key in prompts::THINKING_ON {
         assert!(prompts::thinking(key), "{key} is in §4's thinking set");
     }
@@ -157,7 +177,10 @@ fn sec_10_parameters_4_prompts_s3_thinking_is_on_for_exactly_the_four_named() {
         "nine stay off — a tenth would have to be added to THINKING_ON on purpose"
     );
     // F0.7 asks with thinking off, which is why `policy` is in the off list rather than missing.
-    assert!(!prompts::thinking("policy"), "F0.7 S2: the policy call runs with thinking off");
+    assert!(
+        !prompts::thinking("policy"),
+        "F0.7 S2: the policy call runs with thinking off"
+    );
 }
 
 // ---- S4: the two tables agree ------------------------------------------------------------
@@ -196,11 +219,23 @@ fn sec_10_parameters_4_prompts_s4_thinking_agrees_with_the_job_table_where_both_
         );
     }
     // The two keys with no job are the two §4 lists can only reach at this level.
-    assert_eq!(prompts::job("system"), None, "the preamble is never a call of its own");
-    assert_eq!(prompts::job("policy"), None, "the policy derivation has no §2 job row");
+    assert_eq!(
+        prompts::job("system"),
+        None,
+        "the preamble is never a call of its own"
+    );
+    assert_eq!(
+        prompts::job("policy"),
+        None,
+        "the policy derivation has no §2 job row"
+    );
     // Three prompts share the clip-rules job: captions, speed and effects are one shape asked thrice.
     for key in ["captions", "speed", "effects"] {
-        assert_eq!(prompts::job(key), Some(roles::Job::ClipRules), "{key} is a clip pass");
+        assert_eq!(
+            prompts::job(key),
+            Some(roles::Job::ClipRules),
+            "{key} is a clip pass"
+        );
     }
 }
 
@@ -248,7 +283,11 @@ fn sec_10_parameters_4_prompts_s6_the_bench_rows_are_the_twelve_in_order_and_pol
     // a person edits and the catalogue a request is built from cannot drift apart.
     assert!(bench::ROWS[0].key.is_empty(), "row 0 is the User Context");
     let bench_keys: Vec<&str> = bench::ROWS[1..].iter().map(|row| row.key).collect();
-    assert_eq!(bench_keys, prompts::KEYS[..12], "the bench lists §4's twelve in order");
+    assert_eq!(
+        bench_keys,
+        prompts::KEYS[..12],
+        "the bench lists §4's twelve in order"
+    );
     // `policy` is deliberately NOT a bench row: §04-prepare#1 keeps "Editing policy" as a
     // REVIEW note, and F0.7 opens the policy *form* (value, source and reason per field) rather
     // than a box of wording. This assertion is what makes adding it later a deliberate change
@@ -317,7 +356,11 @@ fn sec_10_parameters_4_prompts_s7_the_wire_carries_the_thinking_flag_4_gives_eac
         );
     }
     // And exactly the four §4 names are on: nothing crept in beside them.
-    let on: Vec<&str> = LIVE_KEYS.iter().filter(|(_, t)| *t).map(|(k, _)| *k).collect();
+    let on: Vec<&str> = LIVE_KEYS
+        .iter()
+        .filter(|(_, t)| *t)
+        .map(|(k, _)| *k)
+        .collect();
     assert_eq!(on, vec!["textedit", "cut", "narrate", "youtube"]);
 }
 
@@ -360,4 +403,3 @@ fn sec_10_parameters_4_prompts_s8_no_live_ask_module_names_a_mode_of_its_own() {
         );
     }
 }
-

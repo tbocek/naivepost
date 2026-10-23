@@ -7,6 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::seg;
 use naivepost::cut::{Cut, Fx, Seg};
 use naivepost::cut_hear;
 use naivepost::narrate_data::{self, Take};
@@ -18,8 +20,6 @@ use naivepost::narration::{self, Entry, Narration, Silent};
 use naivepost::params;
 use naivepost::run::{self, Transport};
 use naivepost::shell::{self, Page};
-use crate::common;
-use common::seg;
 
 fn tree(tag: &str) -> (PathBuf, naivepost::layout::Tree) {
     let root = std::env::temp_dir().join(format!(
@@ -31,7 +31,6 @@ fn tree(tag: &str) -> (PathBuf, naivepost::layout::Tree) {
     std::fs::create_dir_all(&dir).unwrap();
     (root, naivepost::layout::Tree::new(&dir).unwrap())
 }
-
 
 fn line(s: f64, e: f64, at: f64, text: &str) -> Entry {
     Entry {
@@ -111,7 +110,10 @@ fn sec_07_narrate_5_rules_s2_a_line_holds_its_clips_numbers() {
     assert_eq!(entries[0].s, 15.0);
     assert_eq!(entries[0].e, 40.0);
     // 15.0 was the session second; over a clip that now starts at 15 it is still 15.0 in — right at its head.
-    assert_eq!(entries[0].at, 0.0, "the line kept its place against the video");
+    assert_eq!(
+        entries[0].at, 0.0,
+        "the line kept its place against the video"
+    );
     assert_eq!(
         shell::refit_sentence(1, 0),
         "the cut moved \u{2014} 1 line(s) followed their clips"
@@ -142,9 +144,16 @@ fn sec_07_narrate_5_rules_s3_a_line_never_starts_in_the_last_second() {
     // A tag naming a second inside the last one moves the line to the last second that can be kept, and says the
     // requested second could not be kept rather than hushing it.
     let (at, clamped) = page::tag_moves_line(10.0, 20.0, 19.0, 2.0);
-    assert_eq!((at, clamped), (19.0, false), "19.0 is the last keepable second");
+    assert_eq!(
+        (at, clamped),
+        (19.0, false),
+        "19.0 is the last keepable second"
+    );
     let (at, clamped) = page::tag_moves_line(10.0, 20.0, 19.5, 2.0);
-    assert!(clamped, "a second in the clip's last second is refused: {at}");
+    assert!(
+        clamped,
+        "a second in the clip's last second is refused: {at}"
+    );
 
     // A second outside the clip moves the line nowhere and keeps its current placement.
     let (at, clamped) = page::tag_moves_line(10.0, 20.0, 40.0, 2.0);
@@ -218,12 +227,11 @@ fn sec_07_narrate_5_rules_s5_the_preview_hears_what_the_render_will_hear() {
     // Same scene, same answer as the owner gives it — and nothing outside every clip.
     for t in [12.0, 19.9, 35.0, 45.0] {
         let heard = view::lanes_heard(&cut, t);
-        let want: Vec<String> = match cut_hear::scene_at(&cut.segs, t)
-            .and_then(|scene| cut.segs.get(scene))
-        {
-            Some(scene) => cut_hear::hush(scene).to_vec(),
-            None => Vec::new(),
-        };
+        let want: Vec<String> =
+            match cut_hear::scene_at(&cut.segs, t).and_then(|scene| cut.segs.get(scene)) {
+                Some(scene) => cut_hear::hush(scene).to_vec(),
+                None => Vec::new(),
+            };
         assert_eq!(heard, want, "the preview hushed differently at {t}");
     }
     assert_eq!(view::lanes_heard(&cut, 12.0), vec!["mic.mkv".to_string()]);
@@ -267,7 +275,10 @@ fn sec_07_narrate_5_rules_s6_a_boundary_is_held_while_a_line_speaks() {
     let entries = [line(10.0, 20.0, 8.0, "a line still speaking into the gap")];
 
     // Within the ceiling: hold rather than jump away from the middle of a sentence.
-    assert_eq!(view::tick(22.0, &clips, &entries, &[], Some(0)), view::Tick::Hold);
+    assert_eq!(
+        view::tick(22.0, &clips, &entries, &[], Some(0)),
+        view::Tick::Hold
+    );
     assert_eq!(
         view::tick(23.9, &clips, &entries, &[], Some(0)),
         view::Tick::Hold
@@ -403,7 +414,9 @@ fn sec_07_narrate_5_rules_s11_nothing_here_deletes_a_take() {
     let (root, tree) = tree("s11");
 
     // A take: spoken audio, never swept.
-    assert!(rules::deletes_a_spoken_take(&tree.tts_wav("0123456789abcdef")));
+    assert!(rules::deletes_a_spoken_take(
+        &tree.tts_wav("0123456789abcdef")
+    ));
 
     // Everything the invalidation does remove, and the record — none of them takes.
     for path in [
@@ -432,20 +445,14 @@ fn sec_07_narrate_5_rules_s11_nothing_here_deletes_a_take() {
     let file = narration::tts_file(&key);
     assert_eq!(file.len(), 16, "{file}");
     assert!(
-        file.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+        file.chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
         "{file} is not lowercase hex"
     );
 
     // A line nobody re-rolled keeps the key it had before the voice picker and the re-roll existed; rolling salts
     // it, which is a new take rather than an old one to throw away.
-    let rolled = narration::tts_key(
-        &Entry {
-            roll: 3,
-            ..entry
-        },
-        None,
-        None,
-    );
+    let rolled = narration::tts_key(&Entry { roll: 3, ..entry }, None, None);
     assert!(rolled.contains("|3#"), "{rolled}");
     assert_ne!(narration::tts_file(&key), narration::tts_file(&rolled));
 
@@ -491,7 +498,11 @@ fn sec_07_narrate_5_rules_s12_hand_picked_takes_are_never_re_ranked() {
 fn sec_07_narrate_5_rules_s13_a_voice_not_on_offer_leaves_the_picker_empty() {
     assert_eq!(rules::narrator_slot("own"), Some(1));
     assert_eq!(rules::narrator_slot("narrator3"), Some(3));
-    assert_eq!(rules::narrator_slot("narrator5"), None, "only four slots exist");
+    assert_eq!(
+        rules::narrator_slot("narrator5"),
+        None,
+        "only four slots exist"
+    );
     assert_eq!(rules::narrator_slot("aria"), None);
     assert_eq!(rules::narrator_slot(""), None);
 

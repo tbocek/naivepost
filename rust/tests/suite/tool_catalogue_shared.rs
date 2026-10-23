@@ -73,9 +73,7 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_the_names_are_the_spe
     assert_eq!(all.len(), names.len());
     for name in names {
         assert_eq!(
-            all.iter()
-                .filter(|tool| tool.name() == name)
-                .count(),
+            all.iter().filter(|tool| tool.name() == name).count(),
             1,
             "{name} offered more than once"
         );
@@ -128,7 +126,10 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_tools_are_offered_per
         (Tool::SetTitle, &[Job::UploadText, Job::Thumbnail]),
         (Tool::SetDescription, &[Job::UploadText, Job::Thumbnail]),
         (Tool::PickFrame, &[Job::UploadText, Job::Thumbnail]),
-        (Tool::SetThumbnailInstruction, &[Job::UploadText, Job::Thumbnail]),
+        (
+            Tool::SetThumbnailInstruction,
+            &[Job::UploadText, Job::Thumbnail],
+        ),
         (Tool::TranslateLine, &[Job::Subtitles]),
     ];
     for (tool, owners) in exclusive {
@@ -169,14 +170,20 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_tools_are_offered_per
     // The cut ends with finish_cut and has no plain finish: one way to end a job, not two.
     let cut = tools::offered(Job::ModelCut);
     assert!(cut.contains(&Tool::FinishCut));
-    assert!(!cut.contains(&Tool::Finish), "the cut has finish_cut instead");
+    assert!(
+        !cut.contains(&Tool::Finish),
+        "the cut has finish_cut instead"
+    );
     for which in Job::all() {
         if which == Job::ModelCut {
             continue;
         }
         let list = tools::offered(which);
         if !list.is_empty() {
-            assert!(list.contains(&Tool::Finish), "{which:?} has no way to finish");
+            assert!(
+                list.contains(&Tool::Finish),
+                "{which:?} has no way to finish"
+            );
         }
     }
 
@@ -204,7 +211,11 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_the_web_follows_the_w
             matches!(which, Job::ModelCut | Job::Narrate | Job::UploadText),
             "web_search on {which:?}"
         );
-        assert_eq!(list.contains(&Tool::WebRead), list.contains(&Tool::WebSearch), "{which:?}");
+        assert_eq!(
+            list.contains(&Tool::WebRead),
+            list.contains(&Tool::WebSearch),
+            "{which:?}"
+        );
         // §2's column is the single source: both tables agree because one asks the other.
         assert_eq!(
             tools::web_search_offered(which),
@@ -219,7 +230,10 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_eight_rounds_then_no_
     // P.eng.llmToolRounds
     assert_eq!(tools::TOOL_ROUNDS, 8);
     for round in 1..=8 {
-        assert!(!tools::rounds_exhausted(round), "round {round} is inside the budget");
+        assert!(
+            !tools::rounds_exhausted(round),
+            "round {round} is inside the budget"
+        );
     }
     assert!(tools::rounds_exhausted(9));
     assert!(tools::rounds_exhausted(u32::MAX));
@@ -256,7 +270,10 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_a_problem_is_one_acti
     // result the client reads as a broken reply.
     let tricky = tools::error("the field \"again\" is missing -- send 0 for never picked up");
     let parsed: serde_json::Value = serde_json::from_str(&tricky).expect("still valid JSON");
-    assert_eq!(parsed["error"].as_str().unwrap(), "the field \"again\" is missing -- send 0 for never picked up");
+    assert_eq!(
+        parsed["error"].as_str().unwrap(),
+        "the field \"again\" is missing -- send 0 for never picked up"
+    );
     let multiline = tools::error("line 3\nhas a break");
     let parsed: serde_json::Value = serde_json::from_str(&multiline).expect("still valid JSON");
     assert!(parsed["error"].as_str().unwrap().contains('\n'));
@@ -294,7 +311,11 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_the_web_caps_are_smal
 #[test]
 fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_seconds_are_read_as_mm_ss() {
     assert_eq!(tools::mm_ss(0.0), "00:00");
-    assert_eq!(tools::mm_ss(59.4), "00:59", "the fraction is not a rounding question");
+    assert_eq!(
+        tools::mm_ss(59.4),
+        "00:59",
+        "the fraction is not a rounding question"
+    );
     assert_eq!(tools::mm_ss(60.0), "01:00");
     // Past an hour the minutes keep counting: 62:05 says where the second hour is, 02:05 would
     // read as two minutes past something.
@@ -355,70 +376,134 @@ fn call(name: &str, args: serde_json::Value) -> naivepost::exchanges::ToolCall {
 }
 
 #[test]
-fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_get_lines_answers_with_the_stamped_rows() {
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_get_lines_answers_with_the_stamped_rows()
+{
     let lines = [
-        naivepost::textfmt::Line { start: 0.0, end: 1.5, speaker: "S1".into(), text: "first row".into() },
-        naivepost::textfmt::Line { start: 1.5, end: 62.25, speaker: "S1".into(), text: "second row".into() },
-        naivepost::textfmt::Line { start: 62.25, end: 64.0, speaker: "S2".into(), text: "third row".into() },
+        naivepost::textfmt::Line {
+            start: 0.0,
+            end: 1.5,
+            speaker: "S1".into(),
+            text: "first row".into(),
+        },
+        naivepost::textfmt::Line {
+            start: 1.5,
+            end: 62.25,
+            speaker: "S1".into(),
+            text: "second row".into(),
+        },
+        naivepost::textfmt::Line {
+            start: 62.25,
+            end: 64.0,
+            speaker: "S2".into(),
+            text: "third row".into(),
+        },
     ];
     let ctx = reads_context(&lines, &[]);
-    let answer = naivepost::tool_reads::dispatch(&ctx, &call("get_lines", serde_json::json!({"from": 1, "to": 2})))
-        .expect("get_lines is a shared read and must be answered");
+    let answer = naivepost::tool_reads::dispatch(
+        &ctx,
+        &call("get_lines", serde_json::json!({"from": 1, "to": 2})),
+    )
+    .expect("get_lines is a shared read and must be answered");
     let body: serde_json::Value = serde_json::from_str(&answer).expect("ok shape");
     assert_eq!(body["from"], 1.0);
     assert_eq!(body["to"], 2.0);
     let rows = body["lines"].as_array().expect("a list of rows");
-    assert_eq!(rows.len(), 2, "line numbers are 1-based over the rows the request numbered");
+    assert_eq!(
+        rows.len(),
+        2,
+        "line numbers are 1-based over the rows the request numbered"
+    );
     // Stamped the way the request stamps them (mm:ss both ends), then speaker, then text: a number the
     // model reads back means the second it was shown.
     assert_eq!(rows[0], "00:00-00:01\tS1\tfirst row");
     assert_eq!(rows[1], "00:01-01:02\tS1\tsecond row");
 
     // A quoted number is a spelling, not a wrong argument: refusing "4" would turn format into failure.
-    let quoted = naivepost::tool_reads::dispatch(&ctx, &call("get_lines", serde_json::json!({"from": "2", "to": "4"})))
-        .expect("answered");
+    let quoted = naivepost::tool_reads::dispatch(
+        &ctx,
+        &call("get_lines", serde_json::json!({"from": "2", "to": "4"})),
+    )
+    .expect("answered");
     let body: serde_json::Value = serde_json::from_str(&quoted).unwrap();
-    assert_eq!(body["lines"].as_array().unwrap().len(), 2, "rows 2 and 3, clamped to what exists");
+    assert_eq!(
+        body["lines"].as_array().unwrap().len(),
+        2,
+        "rows 2 and 3, clamped to what exists"
+    );
 
     // Missing arguments come back as one actionable sentence (§3), never silence and never a guess.
     let missing = naivepost::tool_reads::dispatch(&ctx, &call("get_lines", serde_json::json!({})))
         .expect("answered");
-    assert!(missing.contains("\"error\""), "bad args are an error sentence: {missing}");
-    assert!(missing.contains("from") && missing.contains("to"), "it names what to send: {missing}");
+    assert!(
+        missing.contains("\"error\""),
+        "bad args are an error sentence: {missing}"
+    );
+    assert!(
+        missing.contains("from") && missing.contains("to"),
+        "it names what to send: {missing}"
+    );
 }
 
 #[test]
-fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_get_events_keeps_rows_that_overlap_the_range() {
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_get_events_keeps_rows_that_overlap_the_range(
+) {
     let events = [
-        naivepost::textfmt::FrameEvent { start: 0.0, end: 5.0, text: "editor open".into() },
-        naivepost::textfmt::FrameEvent { start: 5.0, end: 12.0, text: "clip dragged in".into() },
-        naivepost::textfmt::FrameEvent { start: 20.0, end: 24.0, text: "export dialog".into() },
+        naivepost::textfmt::FrameEvent {
+            start: 0.0,
+            end: 5.0,
+            text: "editor open".into(),
+        },
+        naivepost::textfmt::FrameEvent {
+            start: 5.0,
+            end: 12.0,
+            text: "clip dragged in".into(),
+        },
+        naivepost::textfmt::FrameEvent {
+            start: 20.0,
+            end: 24.0,
+            text: "export dialog".into(),
+        },
     ];
     let ctx = reads_context(&[], &events);
-    let answer = naivepost::tool_reads::dispatch(&ctx, &call("get_events", serde_json::json!({"from": 4.0, "to": 6.0})))
-        .expect("get_events is a shared read and must be answered");
+    let answer = naivepost::tool_reads::dispatch(
+        &ctx,
+        &call("get_events", serde_json::json!({"from": 4.0, "to": 6.0})),
+    )
+    .expect("get_events is a shared read and must be answered");
     let body: serde_json::Value = serde_json::from_str(&answer).unwrap();
     let rows = body["events"].as_array().unwrap();
     // Overlap, not containment: a reading that started before the window still describes the picture
     // inside it, which is the rule fix_transcripts::context_text already applies unasked.
-    assert_eq!(rows.len(), 2, "the two rows whose span touches 4-6 s: {rows:?}");
+    assert_eq!(
+        rows.len(),
+        2,
+        "the two rows whose span touches 4-6 s: {rows:?}"
+    );
     assert!(rows[0].as_str().unwrap().contains("editor open"));
     assert!(rows[1].as_str().unwrap().contains("clip dragged in"));
 }
 
 #[test]
-fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_get_context_echoes_the_context_and_this_jobs_policy() {
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_get_context_echoes_the_context_and_this_jobs_policy(
+) {
     let ctx = reads_context(&[], &[]);
     let answer = naivepost::tool_reads::dispatch(&ctx, &call("get_context", serde_json::json!({})))
         .expect("get_context is a shared read and must be answered");
     let body: serde_json::Value = serde_json::from_str(&answer).unwrap();
     assert_eq!(body["userContext"], "hand-cut demo, no music");
-    assert_eq!(body["policy"]["markingPass"], "retakes", "only the fields this job reads");
-    assert!(body["job"].is_string(), "the job says which rules these answers are under");
+    assert_eq!(
+        body["policy"]["markingPass"], "retakes",
+        "only the fields this job reads"
+    );
+    assert!(
+        body["job"].is_string(),
+        "the job says which rules these answers are under"
+    );
 }
 
 #[test]
-fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_finish_is_left_to_the_job_that_owns_its_check_list() {
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_finish_is_left_to_the_job_that_owns_its_check_list(
+) {
     let ctx = reads_context(&[], &[]);
     // Every job finishes with ITS OWN check list (§3.2's frames with no event, §3.8's clips with no
     // line, §3.6's segments and footage), so a generic ok here would pre-empt all of them.
@@ -427,7 +512,8 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_finish_is_left_to_the
         "finish belongs to the caller's job tools"
     );
     assert!(
-        naivepost::tool_reads::dispatch(&ctx, &call("fix_line", serde_json::json!({"n": 1}))).is_none(),
+        naivepost::tool_reads::dispatch(&ctx, &call("fix_line", serde_json::json!({"n": 1})))
+            .is_none(),
         "a job's own tool is not the shared layer's to answer"
     );
 }

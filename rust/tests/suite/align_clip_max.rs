@@ -20,7 +20,7 @@ use naivepost::transcribe::{self, SAMPLE_RATE};
 use serde_json::json;
 
 use crate::common;
-use common::{all_rows};
+use common::all_rows;
 
 /// A complete entry whose `start` is set to `value`; `end` is pinned at 1.0 s so the entry parses and
 /// only the start's reading is under test. `parse_words` skips an entry that lacks EITHER time, so a
@@ -48,8 +48,7 @@ fn p_eng_alignclipmaxseconds_s1_the_ceiling_is_120_and_catalogued_once() {
         .find(|param| param.id == "P.eng.alignClipMaxSeconds")
         .expect("the ceiling must be catalogued for Prepare, whose align pass reads it");
     assert_eq!(
-        row.from,
-        "align::PLAIN_AS_SAMPLES",
+        row.from, "align::PLAIN_AS_SAMPLES",
         "a row must name the constant its rule reads (the prototype called it alignClipMax)"
     );
     // num() takes the integer branch for a whole value, which is how §10 spells this one: "120".
@@ -65,7 +64,10 @@ fn p_eng_alignclipmaxseconds_s1_the_ceiling_is_120_and_catalogued_once() {
 
     // And exactly one row for it across all five lists -- one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.alignClipMaxSeconds").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.alignClipMaxSeconds")
+            .count(),
         1,
         "P.eng.alignClipMaxSeconds catalogued more than once"
     );
@@ -81,8 +83,16 @@ fn p_eng_alignclipmaxseconds_s2_past_the_ceiling_the_number_was_samples() {
         "words": [{ "word": "a", "start": 32000.0, "end": 48000.0 }]
     }))
     .expect("a mislabelled sample count still parses");
-    assert_eq!(transcribe::seconds(word[0].start_sample), 2.0, "start read as samples");
-    assert_eq!(transcribe::seconds(word[0].end_sample), 3.0, "end read as samples");
+    assert_eq!(
+        transcribe::seconds(word[0].start_sample),
+        2.0,
+        "start read as samples"
+    );
+    assert_eq!(
+        transcribe::seconds(word[0].end_sample),
+        3.0,
+        "end read as samples"
+    );
     // Stored as samples, so the rescue is exact rather than a rounded approximation.
     assert_eq!(word[0].start_sample, 32_000);
     assert_eq!(word[0].end_sample, 48_000);
@@ -93,8 +103,16 @@ fn p_eng_alignclipmaxseconds_s2_past_the_ceiling_the_number_was_samples() {
         "words": [{ "word": "a", "start": 5.0, "end": 32000.0 }]
     }))
     .expect("mixed units parse");
-    assert_eq!(transcribe::seconds(mixed[0].start_sample), 5.0, "the small one stayed seconds");
-    assert_eq!(transcribe::seconds(mixed[0].end_sample), 2.0, "the large one became samples");
+    assert_eq!(
+        transcribe::seconds(mixed[0].start_sample),
+        5.0,
+        "the small one stayed seconds"
+    );
+    assert_eq!(
+        transcribe::seconds(mixed[0].end_sample),
+        2.0,
+        "the large one became samples"
+    );
 }
 
 /// S3: at and below the ceiling a bare number means seconds, and the comparison is strict -- "past the
@@ -120,8 +138,15 @@ fn p_eng_alignclipmaxseconds_s3_at_or_below_the_ceiling_it_means_seconds() {
     // The sub-sample part of the original number is lost, which is fine -- one tenth of a second at
     // this scale is far below anything a cut could land on.
     let crossed = start_secs(starting_at(120.1));
-    assert_eq!(crossed, 120.0 / SAMPLE_RATE as f64, "divided by the rate, rounded to a sample");
-    assert!((crossed - 0.0075).abs() < 1e-12, "0.0075 s after sample rounding: got {crossed}");
+    assert_eq!(
+        crossed,
+        120.0 / SAMPLE_RATE as f64,
+        "divided by the rate, rounded to a sample"
+    );
+    assert!(
+        (crossed - 0.0075).abs() < 1e-12,
+        "0.0075 s after sample rounding: got {crossed}"
+    );
     assert_ne!(crossed, 120.1, "it was not kept as seconds");
 
     // The two sides of the boundary differ by four orders of magnitude, which is what makes the strict
@@ -192,7 +217,11 @@ fn p_eng_alignclipmaxseconds_s4_no_legitimate_second_reaches_the_ceiling() {
     // And the error path: the ceiling rescues a MISLABELLED number, not a MISSING one. An entry with no
     // time keys at all is skipped, and a body with no usable words errors.
     let missing = align::parse_words(&json!({ "words": [{ "word": "a" }] }));
-    assert_eq!(missing.unwrap_err(), "no words in the answer", "a missing time is not rescued");
+    assert_eq!(
+        missing.unwrap_err(),
+        "no words in the answer",
+        "a missing time is not rescued"
+    );
 }
 
 /// S5: the neighbours. Several constants live next door in `align.rs` or share a magnitude; the ids and
@@ -201,22 +230,27 @@ fn p_eng_alignclipmaxseconds_s4_no_legitimate_second_reaches_the_ceiling() {
 fn p_eng_alignclipmaxseconds_s5_neighbours_by_home_not_by_proximity() {
     // P.machine.alignChunkMaxSeconds (60, `align::WINDOW`) caps the CLIP SENT to an aligner. This
     // item's 120 caps the NUMBER RETURNED. Related by the ratio above, different questions entirely.
-    let chunk_max = params::find("P.machine.alignChunkMaxSeconds").expect("alignChunkMaxSeconds is catalogued");
+    let chunk_max =
+        params::find("P.machine.alignChunkMaxSeconds").expect("alignChunkMaxSeconds is catalogued");
     assert_eq!(chunk_max.from, "align::WINDOW");
     assert_eq!(chunk_max.spelled, "60");
-    assert_ne!(chunk_max.from, "align::PLAIN_AS_SAMPLES", "distinct homes for distinct rules");
+    assert_ne!(
+        chunk_max.from, "align::PLAIN_AS_SAMPLES",
+        "distinct homes for distinct rules"
+    );
     assert!(align::WINDOW < align::PLAIN_AS_SAMPLES);
 
     // align::PAD (0.25) and align::CUT_SEEK (4.0) belong to the pad and reach rules, not to unit
     // inference -- orders of magnitude smaller than the ceiling.
     assert_eq!(align::PAD, 0.25);
     assert_eq!(align::CUT_SEEK, 4.0);
-    assert!(align::PAD < align::CUT_SEEK, "the pad is smaller than the reach");
+    let pad = align::PAD;
+    let seek = align::CUT_SEEK;
+    assert!(pad < seek, "the pad is smaller than the reach");
+    let ceiling = align::PLAIN_AS_SAMPLES;
     assert!(
-        align::CUT_SEEK < align::PLAIN_AS_SAMPLES,
-        "and both are dwarfed by the ceiling: {} << {}",
-        align::CUT_SEEK,
-        align::PLAIN_AS_SAMPLES
+        seek < ceiling,
+        "and both are dwarfed by the ceiling: {seek} << {ceiling}"
     );
 
     // P.eng.asrSampleRate (16000, `transcribe::SAMPLE_RATE`) is the divisor the rescue uses: the
@@ -225,11 +259,20 @@ fn p_eng_alignclipmaxseconds_s5_neighbours_by_home_not_by_proximity() {
     assert_eq!(rate.from, "transcribe::SAMPLE_RATE");
     assert_eq!(SAMPLE_RATE, 16_000);
     // Round-trip a rescued value: 32000 written bare -> 2.0 s -> 32000 samples again.
-    let rescued = align::parse_words(&json!({ "words": [{ "word": "a", "start": 32000.0, "end": 32001.0 }] }))
-        .expect("rescued");
+    let rescued = align::parse_words(
+        &json!({ "words": [{ "word": "a", "start": 32000.0, "end": 32001.0 }] }),
+    )
+    .expect("rescued");
     let as_seconds = transcribe::seconds(rescued[0].start_sample);
-    assert_eq!(as_seconds, 32_000.0 / SAMPLE_RATE as f64, "divided by the rate");
-    assert_eq!(rescued[0].start_sample, 32_000, "and lands back on the original sample count");
+    assert_eq!(
+        as_seconds,
+        32_000.0 / SAMPLE_RATE as f64,
+        "divided by the rate"
+    );
+    assert_eq!(
+        rescued[0].start_sample, 32_000,
+        "and lands back on the original sample count"
+    );
 
     // The ceiling is far larger than the rate's per-second scale in the other direction too: a bare
     // number equal to SAMPLE_RATE (16000) is past the ceiling and reads as 1.0 s, not 16000 s.

@@ -8,8 +8,8 @@
 use std::fs;
 use std::path::Path;
 
-use adw::prelude::*;
 use crate::common;
+use adw::prelude::*;
 use naivepost::project::{Project, Source};
 use naivepost::ui;
 
@@ -34,7 +34,10 @@ fn walked_steps_are_tallied(app: &adw::Application) {
     plant_hand_edit(&root);
     std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
 
-    let model = Project { sources: vec![recording("lecture.mkv")], ..Default::default() };
+    let model = Project {
+        sources: vec![recording("lecture.mkv")],
+        ..Default::default()
+    };
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
 
@@ -53,7 +56,9 @@ fn walked_steps_are_tallied(app: &adw::Application) {
     assert!(logged.contains(&">>> run: Prepare".to_string()), "{joined}");
     // Cut skipped itself over the hand edit -- the sentence only exists if the flag was really set.
     assert!(
-        logged.iter().any(|line| line.contains("Cut skipped") && line.contains("hand edits")),
+        logged
+            .iter()
+            .any(|line| line.contains("Cut skipped") && line.contains("hand edits")),
         "S4's hand-edits branch must fire from the session folder: {joined}"
     );
     // Something ran: the walk reached a real tool of its own. The frames row is a dial now (§F1.6), so
@@ -62,13 +67,17 @@ fn walked_steps_are_tallied(app: &adw::Application) {
     // required: a tool call proves work was attempted, the reason proves it was the walk reporting and
     // not a short-circuit.
     assert!(
-        logged.iter().any(|line| line.contains("ffprobe") || line.contains("ffmpeg") || line.contains("scening frames")),
+        logged.iter().any(|line| line.contains("ffprobe")
+            || line.contains("ffmpeg")
+            || line.contains("scening frames")),
         "the walk calls tools for real, so its own lines appear: {joined}"
     );
     assert!(
         logged.iter().any(|line| {
             line.starts_with("!!! ")
-                && (line.contains("no video to frame") || line.contains("Invalid data") || line.contains("failed:"))
+                && (line.contains("no video to frame")
+                    || line.contains("Invalid data")
+                    || line.contains("failed:"))
         }),
         "the frames row must say what stopped it: {joined}"
     );
@@ -81,7 +90,10 @@ fn walked_steps_are_tallied(app: &adw::Application) {
         last.starts_with(">>> run:"),
         "S6's end line closes the press: {last}"
     );
-    assert!(!ui::state(&window).status.is_empty(), "the status mirrors the end line");
+    assert!(
+        !ui::state(&window).status.is_empty(),
+        "the status mirrors the end line"
+    );
     assert!(gears.is_sensitive(), "the gears come back after the chain");
     window.close();
 }
@@ -97,7 +109,10 @@ fn hand_edits_come_from_the_session_folder(app: &adw::Application) {
         "a session with no transcript text has no hand edit"
     );
 
-    let model = Project { sources: vec![recording("lecture.mkv")], ..Default::default() };
+    let model = Project {
+        sources: vec![recording("lecture.mkv")],
+        ..Default::default()
+    };
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
 
@@ -121,11 +136,15 @@ fn hand_edits_come_from_the_session_folder(app: &adw::Application) {
 #[test]
 fn f0_4_s4_the_press_walks_real_work_through_the_button() {
     window_round();
-    assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the rounds never ran");
+    assert!(
+        RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the rounds never ran"
+    );
 }
 
 fn scratch(tag: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("naivepost-f04-press-{tag}-{}", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("naivepost-f04-press-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("scratch folder");
     dir
@@ -143,7 +162,9 @@ fn plant_recording(root: &Path, name: &str) {
 /// the same accessors the driver reads (`Tree::final_txt`, `Tree::retakes_tsv`), so this plants the
 /// condition rather than guessing at a layout.
 fn plant_hand_edit(root: &Path) {
-    let transcript = naivepost::startup::session_dir(root).join("prepare").join("transcript");
+    let transcript = naivepost::startup::session_dir(root)
+        .join("prepare")
+        .join("transcript");
     fs::create_dir_all(&transcript).expect("transcript folder");
     fs::write(transcript.join("retakes.tsv"), "1\t2\n").expect("marks");
     std::thread::sleep(std::time::Duration::from_millis(5));
@@ -155,5 +176,11 @@ fn recording(name: &str) -> Source {
         .join(name)
         .to_string_lossy()
         .to_string();
-    Source { path, footage: true, narrator: 0, sepvoice: false, tracks: vec![] }
+    Source {
+        path,
+        footage: true,
+        narrator: 0,
+        sepvoice: false,
+        tracks: vec![],
+    }
 }

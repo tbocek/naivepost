@@ -141,8 +141,11 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
     let controls = sources::row_controls(&source, count);
 
     if controls.contains(&Control::Footage) {
-        let footage =
-            icon_toggle("camera-video-symbolic", &format!("footage-{index}"), sources::FOOTAGE_TIP);
+        let footage = icon_toggle(
+            "camera-video-symbolic",
+            &format!("footage-{index}"),
+            sources::FOOTAGE_TIP,
+        );
         footage.set_active(source.footage);
         wire_footage(&footage, session.clone(), &rows.status, index, name.clone());
         box_.append(&footage);
@@ -157,7 +160,13 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
         narrator.add_css_class("suggested-action");
         narrator.add_css_class("narrator-one");
     }
-    wire_narrator(&narrator, session.clone(), &rows.status, index, name.clone());
+    wire_narrator(
+        &narrator,
+        session.clone(),
+        &rows.status,
+        index,
+        name.clone(),
+    );
     box_.append(&narrator);
 
     let label = gtk::Label::new(Some(&name));
@@ -168,7 +177,13 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
     box_.append(&label);
 
     if let Some(face) = sources::tracks_face(&source, count) {
-        let menu = track_menu(rows, index, &tracks, &face, sources::tracks_dimmed(any_track_out));
+        let menu = track_menu(
+            rows,
+            index,
+            &tracks,
+            &face,
+            sources::tracks_dimmed(any_track_out),
+        );
         box_.append(&menu);
     }
 
@@ -184,14 +199,27 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
     // 🗣 split-the-voice toggle. Greyed on a split product (§4), never dropped: a row without it would
     // pull the trash to a different x than its neighbours. The prototype's ✂ is NOT reused, because on
     // Cut ✂ means Split; this reads as the voice it takes off.
-    let separate =
-        icon_toggle("audio-input-microphone-symbolic", &format!("separate-{index}"), sources::SEPARATE_TIP);
+    let separate = icon_toggle(
+        "audio-input-microphone-symbolic",
+        &format!("separate-{index}"),
+        sources::SEPARATE_TIP,
+    );
     separate.set_active(source.sepvoice);
     separate.set_sensitive(sources::separable(&source));
-    wire_separate(&separate, session.clone(), &rows.status, index, name.clone());
+    wire_separate(
+        &separate,
+        session.clone(),
+        &rows.status,
+        index,
+        name.clone(),
+    );
     box_.append(&separate);
 
-    let remove = icon_button("user-trash-symbolic", &format!("remove-{index}"), sources::REMOVE_TIP);
+    let remove = icon_button(
+        "user-trash-symbolic",
+        &format!("remove-{index}"),
+        sources::REMOVE_TIP,
+    );
     wire_remove(&remove, rows.clone(), index);
     box_.append(&remove);
 
@@ -284,7 +312,11 @@ fn wire_footage(
         if sources::toggle_footage(&mut session.borrow_mut(), index, button.is_active()) {
             status.set_text(&format!(
                 "{name}: {}",
-                if button.is_active() { "footage" } else { "not footage" }
+                if button.is_active() {
+                    "footage"
+                } else {
+                    "not footage"
+                }
             ));
         }
     });
@@ -305,7 +337,11 @@ fn wire_narrator(
         let slot = sources::cycle_narrator(&mut session.borrow_mut(), index);
         // The button's face is the slot it just took, so the row repaints itself.
         face.set_label(&slot.to_string());
-        face.set_tooltip_text(Some(&format!("{}{}", sources::slot_tip(slot), sources::ROW_KEY)));
+        face.set_tooltip_text(Some(&format!(
+            "{}{}",
+            sources::slot_tip(slot),
+            sources::ROW_KEY
+        )));
         face.remove_css_class("suggested-action");
         face.remove_css_class("narrator-one");
         if slot == 1 {
@@ -332,12 +368,18 @@ fn wire_separate(
         if sources::set_sepvoice(&mut session.borrow_mut(), index, asked) {
             status.set_text(&format!(
                 "{name}: {}",
-                if asked { "voice split off on \u{25b6}" } else { "used as it stands" }
+                if asked {
+                    "voice split off on \u{25b6}"
+                } else {
+                    "used as it stands"
+                }
             ));
             return;
         }
         button.set_active(!asked);
-        status.set_text(&format!("{name}: already a split product \u{2014} nothing left to split"));
+        status.set_text(&format!(
+            "{name}: already a split product \u{2014} nothing left to split"
+        ));
     });
 }
 

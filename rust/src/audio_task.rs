@@ -25,9 +25,9 @@ use serde_json::Value;
 use crate::bodies::{self, ServerPath};
 use crate::layout::Tree;
 use crate::requests::{Turn, Word, WordsDoc};
-use crate::transcribe::SAMPLE_RATE;
 use crate::server_leg;
 use crate::services::{self, Kind, Need, Server};
+use crate::transcribe::SAMPLE_RATE;
 
 /// What one dial needs to know beyond the body: who is asking (the step's word, which lands in the
 /// `requests.tsv` step column), which job of it (`asr/c03.wav`, so a failed chunk is comparable
@@ -69,8 +69,14 @@ pub fn asr_answer(body: &Value) -> Result<WordsDoc, String> {
         None => Vec::new(),
     };
     match text {
-        Some(text) => Ok(WordsDoc { text: text.to_string(), words }),
-        None if !words.is_empty() => Ok(WordsDoc { text: joined(&words), words }),
+        Some(text) => Ok(WordsDoc {
+            text: text.to_string(),
+            words,
+        }),
+        None if !words.is_empty() => Ok(WordsDoc {
+            text: joined(&words),
+            words,
+        }),
         None => Err(format!(
             "the audio.cpp server answered {body} -- no text and no word times to read it as"
         )),
@@ -79,7 +85,11 @@ pub fn asr_answer(body: &Value) -> Result<WordsDoc, String> {
 
 /// The text an ASR's word times spell, for a server that sends only times and tokens.
 fn joined(words: &[Word]) -> String {
-    words.iter().map(|word| word.word.as_str()).collect::<Vec<_>>().join(" ")
+    words
+        .iter()
+        .map(|word| word.word.as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Diarization's answer: speaker turns as samples.
@@ -115,11 +125,17 @@ fn turn(entry: &Value) -> Option<Turn> {
         .or_else(|| entry.get("speaker"))
         .map(|value| match value {
             Value::Number(number) => number.as_u64().unwrap_or_default() as u32,
-            Value::String(name) => name.bytes().fold(0u32, |hash, byte| hash.wrapping_mul(31).wrapping_add(byte as u32)),
+            Value::String(name) => name.bytes().fold(0u32, |hash, byte| {
+                hash.wrapping_mul(31).wrapping_add(byte as u32)
+            }),
             _ => 0,
         })
         .unwrap_or(0);
-    (end > start).then_some(Turn { start_sample: start, end_sample: end, speaker_id: speaker })
+    (end > start).then_some(Turn {
+        start_sample: start,
+        end_sample: end,
+        speaker_id: speaker,
+    })
 }
 
 /// A time in samples, whichever unit the entry carried. Same rule [`crate::align`] applies to words:
@@ -159,8 +175,9 @@ pub fn stem_paths(body: &Value) -> Result<(Stems, ServerPath, ServerPath), Strin
     };
     let voice = path(&["voice", "vocals", "stem_voice"])
         .ok_or_else(|| format!("the audio.cpp server answered {body} -- no voice stem path"))?;
-    let rest = path(&["rest", "accompaniment", "other", "stem_rest"])
-        .ok_or_else(|| format!("the audio.cpp server answered {body} -- no accompaniment stem path"))?;
+    let rest = path(&["rest", "accompaniment", "other", "stem_rest"]).ok_or_else(|| {
+        format!("the audio.cpp server answered {body} -- no accompaniment stem path")
+    })?;
     Ok((Stems::Both, voice, rest))
 }
 
@@ -177,7 +194,13 @@ pub enum Stems {
 /// The path a task names is always one an upload handed back, never a local path — audio.cpp reads
 /// inside its own container, so a local path is a file-not-found minutes later. Hence the
 /// [`ServerPath`] type rather than a `&str` here.
-pub fn task_body(kind: Task, model: &str, audio: &ServerPath, language: &str, text: Option<&str>) -> Value {
+pub fn task_body(
+    kind: Task,
+    model: &str,
+    audio: &ServerPath,
+    language: &str,
+    text: Option<&str>,
+) -> Value {
     match kind {
         Task::Asr => bodies::asr_body(model, audio, language),
         Task::Diarize => bodies::diar_body(model, audio),
@@ -239,42 +262,62 @@ pub fn dial(
     // the row's own wait column instead of inflating its time on the wire.
     let conf = crate::settings::read(paths).unwrap_or_default();
     let slots = crate::slot_gate::slots_for_task(&conf, ask.task);
-    let (slot, waited) = match crate::slot_gate::hold(&endpoint.url, model, slots, ask.step, &cancelled) {
-        Ok(got) => got,
-        // ⏹ landed while every slot was busy: nothing went out, so this is the same refusal as the check
-        // above rather than a server problem.
-        Err(crate::slot_gate::Wait::Cancelled) => {
-            return Err(format!("{}: cancelled while waiting for a {model} slot", ask.step))
-        }
-    };
+    let (slot, waited) =
+        match crate::slot_gate::hold(&endpoint.url, model, slots, ask.step, &cancelled) {
+            Ok(got) => got,
+            // ⏹ landed while every slot was busy: nothing went out, so this is the same refusal as the check
+            // above rather than a server problem.
+            Err(crate::slot_gate::Wait::Cancelled) => {
+                return Err(format!(
+                    "{}: cancelled while waiting for a {model} slot",
+                    ask.step
+                ))
+            }
+        };
     // §4 holds the slot across the HTTP call only. `call_dialed` reads the reply inside its own call, so the
     // guard lives until it returns; dropping it here is the release.
     let _slot_hold = slot;
-    let base = server_leg::base_row(Server::Audio, model, Kind::RunTask.method(), "", ask.step, ask.job);
+    let base = server_leg::base_row(
+        Server::Audio,
+        model,
+        Kind::RunTask.method(),
+        "",
+        ask.step,
+        ask.job,
+    );
     // The wait goes in as milliseconds beside the request, not on `base`: `call_dialed` builds every timing
     // column itself and would drop a field it did not measure (see its `waited_ms`).
     let waited_ms = (waited * 1000.0).round() as i64;
     let reply = match tree {
-        Some(tree) => server_leg::call_dialed(
-            tree,
-            &base,
-            &server_leg::Dial {
-                server: Server::Audio,
-                endpoint: &endpoint,
-                kind: Kind::RunTask,
-                job: None,
-                body: Some(&envelope),
-                filename: None,
-                cancelled: &cancelled,
-                liveness: None,
-                waited_ms,
-                delta: None,
-                budget: None,
-                attempt: 1,
-            },
-        )
-        .1,
-        None => server_leg::send(Server::Audio, &endpoint, Kind::RunTask, None, Some(&envelope), &cancelled),
+        Some(tree) => {
+            server_leg::call_dialed(
+                tree,
+                &base,
+                &server_leg::Dial {
+                    server: Server::Audio,
+                    endpoint: &endpoint,
+                    kind: Kind::RunTask,
+                    job: None,
+                    body: Some(&envelope),
+                    filename: None,
+                    cancelled: &cancelled,
+                    liveness: None,
+                    waited_ms,
+                    delta: None,
+                    budget: None,
+                    attempt: 1,
+                },
+            )
+            .1
+        }
+        None => server_leg::send(
+            Server::Audio,
+            &endpoint,
+            Kind::RunTask,
+            None,
+            Some(&envelope),
+            &cancelled,
+        ),
     }?;
     // Given back before the answer is read through: §4's hold covers the call, not the caller's thinking.
     drop(_slot_hold);
@@ -287,7 +330,10 @@ pub fn dial(
             &endpoint.url,
             &catalogue,
             model,
-            Need { task: ask.task, step: ask.step },
+            Need {
+                task: ask.task,
+                step: ask.step,
+            },
         ));
     }
     Err(format!(
@@ -309,19 +355,48 @@ fn says_missing(status: &u16, body: &str, model: &str) -> bool {
     let lower = body.to_lowercase();
     !model.trim().is_empty()
         && lower.contains(&model.to_lowercase())
-        && ["not found", "unknown model", "not loaded", "not served", "no such model"]
-            .iter()
-            .any(|phrase| lower.contains(phrase))
+        && [
+            "not found",
+            "unknown model",
+            "not loaded",
+            "not served",
+            "no such model",
+        ]
+        .iter()
+        .any(|phrase| lower.contains(phrase))
 }
 
 /// The server's own model list, for the message that names what it does serve.
-pub fn catalog(tree: &Option<Tree>, paths: &crate::settings::Paths, step: &str) -> Result<Vec<services::AudioModel>, String> {
+pub fn catalog(
+    tree: &Option<Tree>,
+    paths: &crate::settings::Paths,
+    step: &str,
+) -> Result<Vec<services::AudioModel>, String> {
     let endpoint = services::endpoint_for(paths, Server::Audio, |name| std::env::var(name).ok());
     let cancelled = crate::cancel_leg::cancel_check_now();
     let base = server_leg::base_row(Server::Audio, "", Kind::ListModels.method(), "", step, "");
     let reply = match tree {
-        Some(tree) => server_leg::call(tree, &base, Server::Audio, &endpoint, Kind::ListModels, None, None, &cancelled).1,
-        None => server_leg::send(Server::Audio, &endpoint, Kind::ListModels, None, None, &cancelled),
+        Some(tree) => {
+            server_leg::call(
+                tree,
+                &base,
+                Server::Audio,
+                &endpoint,
+                Kind::ListModels,
+                None,
+                None,
+                &cancelled,
+            )
+            .1
+        }
+        None => server_leg::send(
+            Server::Audio,
+            &endpoint,
+            Kind::ListModels,
+            None,
+            None,
+            &cancelled,
+        ),
     }?;
     if !reply.ok() {
         return Err(format!(
@@ -371,13 +446,20 @@ pub fn asr_ask<'a>(
         let body = dial(
             tree,
             paths,
-            Ask { step: Task::Asr.step(), job: file, task: Task::Asr.task() },
+            Ask {
+                step: Task::Asr.step(),
+                job: file,
+                task: Task::Asr.task(),
+            },
             model,
             &envelope,
         )?;
         let parsed: Value = parse_json(&body)?;
         let doc = asr_answer(&parsed)?;
-        Ok(crate::asr::Answer { text: doc.text, words: doc.words })
+        Ok(crate::asr::Answer {
+            text: doc.text,
+            words: doc.words,
+        })
     }
 }
 
@@ -415,7 +497,11 @@ pub fn align_ask<'a>(
         let body = dial(
             tree,
             paths,
-            Ask { step: Task::Align.step(), job: clip, task: Task::Align.task() },
+            Ask {
+                step: Task::Align.step(),
+                job: clip,
+                task: Task::Align.task(),
+            },
             model,
             &envelope,
         )?;
@@ -432,7 +518,8 @@ fn align_plan(tree: &Option<Tree>, source: &str, clip: &str) -> Result<Vec<Strin
         None => scratch_dir(),
     };
     let path = dir.join(format!("{clip}.plan"));
-    let text = std::fs::read_to_string(&path).map_err(|why| format!("{}: {why}", path.display()))?;
+    let text =
+        std::fs::read_to_string(&path).map_err(|why| format!("{}: {why}", path.display()))?;
     let plan: Vec<String> = text
         .lines()
         .next()
@@ -441,7 +528,10 @@ fn align_plan(tree: &Option<Tree>, source: &str, clip: &str) -> Result<Vec<Strin
         .map(str::to_string)
         .collect();
     if plan.is_empty() {
-        return Err(format!("{}: no cut arguments in the scratch note", path.display()));
+        return Err(format!(
+            "{}: no cut arguments in the scratch note",
+            path.display()
+        ));
     }
     Ok(plan)
 }
@@ -477,7 +567,9 @@ pub fn diar_scan<'a>(
                 let one = diar_window_ask(tree, paths, source, model);
                 windows.iter().map(|span| one(span.0, span.1)).collect()
             },
-            |(from, to), anchor_seconds| placement_ask(tree, paths, source, model, from, to, anchor_seconds),
+            |(from, to), anchor_seconds| {
+                placement_ask(tree, paths, source, model, from, to, anchor_seconds)
+            },
             |line| said.borrow_mut().push(line.to_string()),
         )?;
         Ok(rung.turns)
@@ -540,7 +632,8 @@ pub fn diar_window_ask<'a>(
         write_scratch_at(&dir, &chunk, &plan, &note)?;
         let out = dir.join(&chunk);
         if let Some(parent) = out.parent() {
-            std::fs::create_dir_all(parent).map_err(|why| format!("{}: {why}", parent.display()))?;
+            std::fs::create_dir_all(parent)
+                .map_err(|why| format!("{}: {why}", parent.display()))?;
         }
         let input = tree
             .as_ref()
@@ -553,7 +646,11 @@ pub fn diar_window_ask<'a>(
         let body = dial(
             tree,
             paths,
-            Ask { step: Task::Diarize.step(), job: &chunk, task: Task::Diarize.task() },
+            Ask {
+                step: Task::Diarize.step(),
+                job: &chunk,
+                task: Task::Diarize.task(),
+            },
             model,
             &envelope,
         )?;
@@ -614,7 +711,8 @@ where
 {
     move || {
         let outcome = crate::asr::run(
-            tree.as_ref().expect("a session folder to write the chunks into"),
+            tree.as_ref()
+                .expect("a session folder to write the chunks into"),
             source,
             duration,
             model,
@@ -634,7 +732,10 @@ where
         for line in &outcome.steps {
             log(line);
         }
-        Ok(WordsDoc { text: outcome.text, words: outcome.words })
+        Ok(WordsDoc {
+            text: outcome.text,
+            words: outcome.words,
+        })
     }
 }
 
@@ -691,8 +792,13 @@ pub fn chunk_stems(body: &Value) -> Result<ChunkStems, String> {
     // An explicit failure is reported before anything is parsed: `answer` keeps the whole body for
     // exactly this case, so the sentence the server wrote is what reaches the log.
     if reply.get("ok").and_then(Value::as_bool) == Some(false) {
-        let why = reply.get("error").and_then(Value::as_str).unwrap_or("no reason given");
-        return Err(format!("the audio.cpp server refused the separation: {why}"));
+        let why = reply
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("no reason given");
+        return Err(format!(
+            "the audio.cpp server refused the separation: {why}"
+        ));
     }
     let mut named: Vec<(String, ServerPath)> = Vec::new();
     if let Some(list) = reply.get("stems").and_then(Value::as_array) {
@@ -759,9 +865,17 @@ pub fn chunk_stems(body: &Value) -> Result<ChunkStems, String> {
                 "the audio.cpp server answered {body} -- no stem paths in it"
             ));
         }
-        return Ok(ChunkStems { voice: None, voices, rests });
+        return Ok(ChunkStems {
+            voice: None,
+            voices,
+            rests,
+        });
     }
-    Ok(ChunkStems { voice: voice_index, voices, rests })
+    Ok(ChunkStems {
+        voice: voice_index,
+        voices,
+        rests,
+    })
 }
 
 /// One JSON value's server paths: a single string or an array of them, ignoring anything else.
@@ -794,25 +908,27 @@ pub fn upload_bytes(
     let payload = String::from_utf8_lossy(bytes).into_owned();
     let base = server_leg::base_row(Server::Audio, "", Kind::Upload.method(), "", "upload", name);
     let reply = match tree {
-        Some(tree) => server_leg::call_dialed(
-            tree,
-            &base,
-            &server_leg::Dial {
-                server: Server::Audio,
-                endpoint: &endpoint,
-                kind: Kind::Upload,
-                job: None,
-                body: Some(&payload),
-                filename: Some(name),
-                cancelled: &cancelled,
-                liveness: None,
-                waited_ms: 0,
-                delta: None,
-                budget: None,
-                attempt: 1,
-            },
-        )
-        .1,
+        Some(tree) => {
+            server_leg::call_dialed(
+                tree,
+                &base,
+                &server_leg::Dial {
+                    server: Server::Audio,
+                    endpoint: &endpoint,
+                    kind: Kind::Upload,
+                    job: None,
+                    body: Some(&payload),
+                    filename: Some(name),
+                    cancelled: &cancelled,
+                    liveness: None,
+                    waited_ms: 0,
+                    delta: None,
+                    budget: None,
+                    attempt: 1,
+                },
+            )
+            .1
+        }
         None => server_leg::send_named(
             Server::Audio,
             &endpoint,
@@ -836,7 +952,8 @@ pub fn upload_bytes(
     }
     let parsed = parse_json(&reply.body)?;
     let path = services::upload_path(&parsed)?;
-    ServerPath::from_upload(&path).ok_or_else(|| format!("the upload named {path:?}, which is not a server path"))
+    ServerPath::from_upload(&path)
+        .ok_or_else(|| format!("the upload named {path:?}, which is not a server path"))
 }
 
 /// The scratch folder this door's chunks and uploads live in, under the session when one is open.
@@ -893,13 +1010,18 @@ fn write_scratch_at(
 /// Read one chunk's scratch note back: ffmpeg's cut arguments on the first line, the request body on the
 /// second — the file format [`write_scratch`] and `asr::make_scratch` both write. The door needs the plan
 /// because that is the only place a chunk's span is recorded for whoever runs the cut.
-fn read_scratch(tree: &Option<Tree>, source: &str, file: &str) -> Result<(Vec<String>, String), String> {
+fn read_scratch(
+    tree: &Option<Tree>,
+    source: &str,
+    file: &str,
+) -> Result<(Vec<String>, String), String> {
     let dir = match tree {
         Some(tree) => tree.asr_scratch(source),
         None => scratch_dir(),
     };
     let path = dir.join(format!("{file}.plan"));
-    let text = std::fs::read_to_string(&path).map_err(|why| format!("{}: {why}", path.display()))?;
+    let text =
+        std::fs::read_to_string(&path).map_err(|why| format!("{}: {why}", path.display()))?;
     let mut lines = text.lines();
     let plan: Vec<String> = lines
         .next()
@@ -908,7 +1030,10 @@ fn read_scratch(tree: &Option<Tree>, source: &str, file: &str) -> Result<(Vec<St
         .map(str::to_string)
         .collect();
     if plan.is_empty() {
-        return Err(format!("{}: no cut arguments in the scratch note", path.display()));
+        return Err(format!(
+            "{}: no cut arguments in the scratch note",
+            path.display()
+        ));
     }
     Ok((plan, lines.next().unwrap_or_default().to_string()))
 }
@@ -917,7 +1042,10 @@ fn read_scratch(tree: &Option<Tree>, source: &str, file: &str) -> Result<(Vec<St
 /// in, and the cut lands there anyway. `transcribe_source` holds the tree but hands its closures an
 /// `Option<Tree>` clone, so without this the ASR's chunks would fall outside every stage's folder and
 /// outside the session — invisible to the cleanup that is supposed to keep them.
-fn scratch_folder(tree: &Option<Tree>, fallback: impl FnOnce(&Tree) -> std::path::PathBuf) -> std::path::PathBuf {
+fn scratch_folder(
+    tree: &Option<Tree>,
+    fallback: impl FnOnce(&Tree) -> std::path::PathBuf,
+) -> std::path::PathBuf {
     match tree {
         Some(tree) => fallback(tree),
         None => scratch_dir(),
@@ -927,7 +1055,12 @@ fn scratch_folder(tree: &Option<Tree>, fallback: impl FnOnce(&Tree) -> std::path
 /// ffmpeg's cut of one chunk from a named input, through the same spawn path the run's stages use so a
 /// failure names the tool and its tail. `Err` when the output is not there afterwards: a decode that
 /// produced nothing is not an upload, and naming the file is the useful half of that sentence.
-fn cut_from(paths: &crate::settings::Paths, input: &Path, plan: &[String], out: &Path) -> Result<(), String> {
+fn cut_from(
+    paths: &crate::settings::Paths,
+    input: &Path,
+    plan: &[String],
+    out: &Path,
+) -> Result<(), String> {
     // `-ss` goes AFTER the input on purpose: the door cuts `voice16k.wav`, which §F1.3 S1 decoded to pcm,
     // and a seek before the input is exact only for formats with an index. Here it must be exact — a chunk
     // whose start is a keyframe away would have its word times shifted by the difference, and `asr::shift`
@@ -1040,7 +1173,9 @@ pub fn transcribe_source(
         duration,
         &asr_model,
         align,
-        transcribe_asr(&held, paths, source, &asr_model, language, duration, &silences, log),
+        transcribe_asr(
+            &held, paths, source, &asr_model, language, duration, &silences, log,
+        ),
         diar_ask(&held, paths, source, &diar_model, duration, &diar_lines),
     )?;
     // `speech_stage` prints `passage.logs` in order after this returns, so appending here puts the
@@ -1067,7 +1202,12 @@ pub fn source_lane(path: &str) -> String {
 ///
 /// A reply body that is not JSON is a protocol disagreement, said as one with the reply quoted.
 fn parse_json(body: &str) -> Result<Value, String> {
-    serde_json::from_str(body).map_err(|_| format!("the audio.cpp server answered something that is not JSON: {}", trim(body)))
+    serde_json::from_str(body).map_err(|_| {
+        format!(
+            "the audio.cpp server answered something that is not JSON: {}",
+            trim(body)
+        )
+    })
 }
 
 /// Enough of a server's sentence to put in a log line.

@@ -50,7 +50,13 @@ pub fn words_for(
     // is timed on; `subs::Word` wants the same numbers, unshifted, because `on_clock` adds the clip's
     // place in the video afterwards.
     let start = clip.seg_s;
-    let end = clip.seg_s + clip.on_screen * if clip.rate.abs() < f64::EPSILON { 1.0 } else { clip.rate };
+    let end = clip.seg_s
+        + clip.on_screen
+            * if clip.rate.abs() < f64::EPSILON {
+                1.0
+            } else {
+                clip.rate
+            };
     list.iter()
         .filter(|word| !narrator_sources.contains(&word.source))
         .filter(|word| word.end > start && word.start < end)
@@ -85,7 +91,11 @@ pub fn build(
     entries: &[Entry],
     words: &[subs::Word],
 ) -> Vec<subs::Cue> {
-    let scale = if clip.rate.abs() < f64::EPSILON { 1.0 } else { clip.rate };
+    let scale = if clip.rate.abs() < f64::EPSILON {
+        1.0
+    } else {
+        clip.rate
+    };
     let lines: Vec<Entry> = placed
         .iter()
         .filter_map(|line| {

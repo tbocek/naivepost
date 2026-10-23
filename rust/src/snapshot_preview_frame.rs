@@ -46,12 +46,14 @@ pub fn write_png(
     playing: bool,
     out: &Path,
 ) -> Result<String, String> {
-    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, FRAME_W as i32, FRAME_H as i32)
-        .map_err(|why| format!("the preview surface: {why}"))?;
+    let surface =
+        cairo::ImageSurface::create(cairo::Format::ARgb32, FRAME_W as i32, FRAME_H as i32)
+            .map_err(|why| format!("the preview surface: {why}"))?;
     let mut drawn = String::new();
     let mut plate_said = String::new();
     {
-        let cr = cairo::Context::new(&surface).map_err(|why| format!("the preview context: {why}"))?;
+        let cr =
+            cairo::Context::new(&surface).map_err(|why| format!("the preview context: {why}"))?;
         draw_with_plate(&cr, cut, t, frame, playing, &mut drawn, &mut plate_said);
     }
     let mut file = std::fs::File::create(out).map_err(|why| format!("{}: {why}", out.display()))?;
@@ -72,21 +74,31 @@ pub fn write_png(
 /// label to lean on, so without this the frame shot shows the rect and never the plate §2 pairs with it. Same
 /// door for the words (`fx_lane::plate_debt_at` + `fx_lane::plate_for`, asked with the rect's OWN width as the
 /// room, which is what `PLATE_MIN_PX` is measured against), same centre the overlay puts it at.
-fn plate_on_rect(cr: &cairo::Context, cut: &Cut, t: f64, rect: (f64, f64, f64, f64)) -> Option<String> {
+fn plate_on_rect(
+    cr: &cairo::Context,
+    cut: &Cut,
+    t: f64,
+    rect: (f64, f64, f64, f64),
+) -> Option<String> {
     let text = crate::fx_lane::plate_for(crate::fx_lane::plate_debt_at(&cut.fx, t), rect.2)?;
     cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
     cr.set_font_size(PLATE_FONT_PX);
     let extents = cr.text_extents(&text).ok()?;
     let box_w = extents.width() + 2.0 * PLATE_PAD_X;
     let box_h = extents.height() + 2.0 * PLATE_PAD_Y;
-    let x = (rect.0 + rect.2 / 2.0 - box_w / 2.0).clamp(rect.0, (rect.0 + rect.2 - box_w).max(rect.0));
-    let y = (rect.1 + rect.3 / 2.0 - box_h / 2.0).clamp(rect.1, (rect.1 + rect.3 - box_h).max(rect.1));
+    let x =
+        (rect.0 + rect.2 / 2.0 - box_w / 2.0).clamp(rect.0, (rect.0 + rect.2 - box_w).max(rect.0));
+    let y =
+        (rect.1 + rect.3 / 2.0 - box_h / 2.0).clamp(rect.1, (rect.1 + rect.3 - box_h).max(rect.1));
     // Dark plate, white words: it sits over the picture, and this reads on either ground.
     cr.set_source_rgba(0.0, 0.0, 0.0, 0.78);
     cr.rectangle(x, y, box_w, box_h);
     let _ = cr.fill();
     cr.set_source_rgb(1.0, 1.0, 1.0);
-    cr.move_to(x + PLATE_PAD_X - extents.x_bearing(), y + PLATE_PAD_Y - extents.y_bearing());
+    cr.move_to(
+        x + PLATE_PAD_X - extents.x_bearing(),
+        y + PLATE_PAD_Y - extents.y_bearing(),
+    );
     let _ = cr.show_text(&text);
     Some(text)
 }
@@ -140,13 +152,19 @@ fn draw_with_plate(
         let _ = cr.save();
         cr.translate(ox, oy);
         if let Some(surface) = raster {
-            cr.scale(fit.0 / surface.width() as f64, fit.1 / surface.height() as f64);
+            cr.scale(
+                fit.0 / surface.width() as f64,
+                fit.1 / surface.height() as f64,
+            );
             let _ = cr.set_source_surface(&surface, 0.0, 0.0);
             let _ = cr.paint();
         } else {
             // No surface (a path gdk-pixbuf could not hand back): the pixbuf's bytes go through here instead, and
             // the picture still shows rather than leaving the shot a black plate.
-            cr.scale(fit.0 / pixbuf.width() as f64, fit.1 / pixbuf.height() as f64);
+            cr.scale(
+                fit.0 / pixbuf.width() as f64,
+                fit.1 / pixbuf.height() as f64,
+            );
             if let Some(surface) = raster_of(pixbuf) {
                 let _ = cr.set_source_surface(&surface, 0.0, 0.0);
                 let _ = cr.paint();
@@ -158,7 +176,10 @@ fn draw_with_plate(
     // is translated once and the two halves can be handed the plain `describe`/`observe` pair they already take.
     let _ = cr.save();
     cr.translate(ox, oy);
-    let held = Held { index: None, box_px: None };
+    let held = Held {
+        index: None,
+        box_px: None,
+    };
     let frame_state = cut_preview_frame::describe_at(cut, t, playing, false, fit, &held);
     let seen = cut_preview_frame::observe(&frame_state, None);
     // The stop's still, BEFORE the paused half's dim: §2 puts it on the footage's transform (it is part of the
@@ -176,8 +197,8 @@ fn draw_with_plate(
         // …and the plate that goes WITH the stroked rect (§2: "rect stroked white with a plate"), which only the
         // live panel's label can supply — see [`plate_on_rect`].
         let rect = cut_preview_frame::camera_rect_px(&seen.camera, fit);
-        *plate_said =
-            plate_on_rect(cr, cut, t, rect).unwrap_or_else(|| "none (no debt worth a line here)".to_string());
+        *plate_said = plate_on_rect(cr, cut, t, rect)
+            .unwrap_or_else(|| "none (no debt worth a line here)".to_string());
     }
     let _ = cr.restore();
     *said = format!(
@@ -211,12 +232,21 @@ fn raster_of(pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Option<cairo::ImageSurface> {
             if from + 2 >= bytes.len() {
                 break;
             }
-            let (r, g, b) = (bytes[from] as u32, bytes[from + 1] as u32, bytes[from + 2] as u32);
-            let a = if has_alpha { bytes[from + 3] as u32 } else { 255 };
+            let (r, g, b) = (
+                bytes[from] as u32,
+                bytes[from + 1] as u32,
+                bytes[from + 2] as u32,
+            );
+            let a = if has_alpha {
+                bytes[from + 3] as u32
+            } else {
+                255
+            };
             let word = (b * a / 255) | ((g * a / 255) << 8) | ((r * a / 255) << 16) | (a << 24);
             let at = y * out_stride + x * 4;
             pixels[at..at + 4].copy_from_slice(&word.to_le_bytes());
         }
     }
-    cairo::ImageSurface::create_for_data(pixels, cairo::Format::ARgb32, w, h, out_stride as i32).ok()
+    cairo::ImageSurface::create_for_data(pixels, cairo::Format::ARgb32, w, h, out_stride as i32)
+        .ok()
 }

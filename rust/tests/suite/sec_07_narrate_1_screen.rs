@@ -72,8 +72,14 @@ fn sec_07_narrate_1_screen_s2_one_notch_is_one_ratio_and_the_view_cannot_leave_t
     assert_eq!(band::zoom_step(1.0, -1.0), 1.25);
     // A down-notch shrinks toward fit and stops there: fit is the floor, so the view can never show
     // more than the whole recording.
-    assert!((band::zoom_step(1.0, 1.0) - 1.0).abs() < 1e-12, "fit is the floor: never less");
-    assert!((band::zoom_step(4.0, 1.0) - 3.2).abs() < 1e-9, "a down-notch divides by the ratio");
+    assert!(
+        (band::zoom_step(1.0, 1.0) - 1.0).abs() < 1e-12,
+        "fit is the floor: never less"
+    );
+    assert!(
+        (band::zoom_step(4.0, 1.0) - 3.2).abs() < 1e-9,
+        "a down-notch divides by the ratio"
+    );
     // Two notches compound the way the spec's ratio says.
     assert!((band::zoom_step(1.0, -2.0) - 1.5625).abs() < 1e-9);
     // Past fit the px/s grows by the same ratio, and stops growing at 200 px/s however hard the wheel
@@ -83,7 +89,11 @@ fn sec_07_narrate_1_screen_s2_one_notch_is_one_ratio_and_the_view_cannot_leave_t
         zoom = band::zoom_step(zoom, -1.0);
     }
     assert_eq!(band::px_per_second(zoom, 60.0, 300.0), screen::BAND_MAX_PPS);
-    assert_eq!(band::px_per_second(1000.0, 60.0, 300.0), screen::BAND_MAX_PPS, "the cap holds");
+    assert_eq!(
+        band::px_per_second(1000.0, 60.0, 300.0),
+        screen::BAND_MAX_PPS,
+        "the cap holds"
+    );
     // A shift-notch pans an eighth of the view.
     assert_eq!(band::pan_by(300.0), 37.5);
     // Clamping keeps the left edge inside: never negative, never past the last screenful of file.
@@ -91,13 +101,21 @@ fn sec_07_narrate_1_screen_s2_one_notch_is_one_ratio_and_the_view_cannot_leave_t
     let span = band::content_px(2.0, 60.0, 300.0);
     assert_eq!(span, 600.0, "2× of 5 px/s over 60 s");
     assert_eq!(band::clamp_view(9999.0, 2.0, 60.0, 300.0), span - 300.0);
-    assert_eq!(band::clamp_view(120.0, 2.0, 60.0, 300.0), 120.0, "an honest offset stands");
+    assert_eq!(
+        band::clamp_view(120.0, 2.0, 60.0, 300.0),
+        120.0,
+        "an honest offset stands"
+    );
     // At fit the whole recording IS the view, so there is nothing to pan to.
     assert_eq!(band::clamp_view(50.0, 1.0, 60.0, 300.0), 0.0);
     // The scrollbar question follows the same arithmetic: absent at fit, present past it (§1's "own
     // scrollbar once the wheel zooms past fit").
     assert!(!band::needs_scrollbar(1.0, 60.0, 300.0));
-    assert!(band::needs_scrollbar(band::zoom_step(1.0, -1.0), 60.0, 300.0));
+    assert!(band::needs_scrollbar(
+        band::zoom_step(1.0, -1.0),
+        60.0,
+        300.0
+    ));
 }
 
 // --- S3: click versus drag -------------------------------------------------------
@@ -110,23 +128,35 @@ fn sec_07_narrate_1_screen_s3_a_press_under_the_slop_sets_the_bar_and_a_drag_sel
     assert_eq!(band::drag_or_click(50.0, 53.0, 0.0), TakePress::SetBar);
     assert_eq!(
         band::drag_or_click(50.0, 54.0, 0.0),
-        TakePress::Select { from: 50.0, to: 54.0 }
+        TakePress::Select {
+            from: 50.0,
+            to: 54.0
+        }
     );
     // Backwards drags name their seconds in order, because a take's seconds have no direction.
     assert_eq!(
         band::drag_or_click(54.0, 50.0, 0.0),
-        TakePress::Select { from: 50.0, to: 54.0 }
+        TakePress::Select {
+            from: 50.0,
+            to: 54.0
+        }
     );
     // With a start second (the view's own origin) the seconds arrive shifted by it.
     assert_eq!(
         band::drag_or_click(10.0, 20.0, 100.0),
-        TakePress::Select { from: 110.0, to: 120.0 }
+        TakePress::Select {
+            from: 110.0,
+            to: 120.0
+        }
     );
     // The floor a take must clear, and the sentence when it does not.
     assert!(!screen::can_make_take((4.0, 4.3)));
     assert!(screen::can_make_take((4.0, 4.4)));
     assert!(screen::take_too_short(0.3).contains("0.3"));
-    assert!(screen::take_too_short(0.3).contains("0.4"), "P.eng.takeMinSeconds");
+    assert!(
+        screen::take_too_short(0.3).contains("0.4"),
+        "P.eng.takeMinSeconds"
+    );
 }
 
 // --- S4: what a take shows -------------------------------------------------------
@@ -137,17 +167,36 @@ fn sec_07_narrate_1_screen_s3_a_press_under_the_slop_sets_the_bar_and_a_drag_sel
 #[test]
 fn sec_07_narrate_1_screen_s4_a_wide_take_reads_its_duration_alone() {
     assert!(!band::take_shows_label(33.0));
-    assert!(!band::take_shows_label(34.0), "wider THAN 34 px, so 34 is not");
+    assert!(
+        !band::take_shows_label(34.0),
+        "wider THAN 34 px, so 34 is not"
+    );
     assert!(band::take_shows_label(35.0));
     // The duration alone — no range, no seconds word, one decimal like the status line's.
     assert_eq!(band::label_in((10.0, 14.2)), "4.2s");
-    assert_eq!(band::label_in((0.0, 0.4)), "0.4s", "the shortest legal take");
+    assert_eq!(
+        band::label_in((0.0, 0.4)),
+        "0.4s",
+        "the shortest legal take"
+    );
     // Where a take is drawn: fully visible, then clipped at each edge of the view.
     let pps = band::px_per_second(1.0, 60.0, 300.0);
     assert_eq!(band::take_box((2.0, 10.0), 0.0, pps, 300.0), (10.0, 40.0));
-    assert_eq!(band::take_box((0.0, 20.0), 50.0, pps, 300.0), (0.0, 50.0), "left edge clipped");
-    assert_eq!(band::take_box((50.0, 60.0), 0.0, pps, 30.0), (250.0, 0.0), "past the right edge");
-    assert_eq!(band::take_box((0.0, 4.0), 250.0, pps, 300.0), (0.0, 0.0), "scrolled past the left edge");    // The plan the painter draws, from state alone: labels appear only where they fit.
+    assert_eq!(
+        band::take_box((0.0, 20.0), 50.0, pps, 300.0),
+        (0.0, 50.0),
+        "left edge clipped"
+    );
+    assert_eq!(
+        band::take_box((50.0, 60.0), 0.0, pps, 30.0),
+        (250.0, 0.0),
+        "past the right edge"
+    );
+    assert_eq!(
+        band::take_box((0.0, 4.0), 250.0, pps, 300.0),
+        (0.0, 0.0),
+        "scrolled past the left edge"
+    ); // The plan the painter draws, from state alone: labels appear only where they fit.
     let mut state = view();
     state.takes = vec![(2.0, 10.0), (20.0, 21.0)];
     let plan = band::paint_plan(&state);
@@ -206,13 +255,19 @@ fn sec_07_narrate_1_screen_s5_every_bar_has_its_own_answer_and_the_playhead_only
 #[test]
 fn sec_07_narrate_1_screen_s6_a_copied_voice_gets_a_sanitised_never_overwritten_name() {
     // Spaces, parens and punctuation fold to single dashes; the extension goes.
-    assert_eq!(voices::sanitised_base(Path::new("/x/my take (2).wav")), "my-take-2");
+    assert_eq!(
+        voices::sanitised_base(Path::new("/x/my take (2).wav")),
+        "my-take-2"
+    );
     assert_eq!(
         voices::sanitised_base(Path::new("/x/Studio Take_01 FINAL.mkv")),
         "Studio-Take-01-FINAL",
         "an underscore is punctuation to a file name this app writes"
     );
-    assert_eq!(voices::sanitised_base(Path::new("/x/.hidden.wav")), "hidden");
+    assert_eq!(
+        voices::sanitised_base(Path::new("/x/.hidden.wav")),
+        "hidden"
+    );
     // A name with nothing letters-or-digits in it cannot be a voice called "" — it gets a usable one.
     assert_eq!(voices::sanitised_base(Path::new("/x/___.wav")), "voice");
     // Never overwriting: the first copy keeps the base, the next two count up.
@@ -239,13 +294,25 @@ fn sec_07_narrate_1_screen_s6b_the_folder_listing_is_sorted_wavs_only() {
     let dir = std::env::temp_dir().join(format!("np-sec07-voices-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch folder");
-    for name in ["warm.wav", "brisk.wav", "notes.txt", "sub.wav", "warm-2.wav"] {
+    for name in [
+        "warm.wav",
+        "brisk.wav",
+        "notes.txt",
+        "sub.wav",
+        "warm-2.wav",
+    ] {
         std::fs::write(dir.join(name), b"x").expect("write");
     }
     std::fs::create_dir(dir.join("a-folder.wav")).expect("a directory named like a wav");
     assert_eq!(
         voices::list_wavs(&dir),
-        ["a-folder.wav", "brisk.wav", "sub.wav", "warm-2.wav", "warm.wav"]
+        [
+            "a-folder.wav",
+            "brisk.wav",
+            "sub.wav",
+            "warm-2.wav",
+            "warm.wav"
+        ]
     );
     std::fs::remove_dir_all(&dir).expect("clean up");
 }
@@ -259,10 +326,15 @@ fn sec_07_narrate_1_screen_s6b_the_folder_listing_is_sorted_wavs_only() {
 /// the arithmetic every caller of it uses.
 #[test]
 fn sec_07_narrate_1_screen_s7_the_lane_asks_for_exactly_the_content_it_zooms_to() {
-    use naivepost::ui::narrate_band::{LANE_MIN_PX, lane_width};
+    use naivepost::ui::narrate_band::{lane_width, LANE_MIN_PX};
 
     // (zoom, duration, viewport). Past fit means px/s × seconds wider than the strip showing it.
-    let views = [(1.0, 60.0, 300.0), (2.0, 60.0, 300.0), (8.0, 60.0, 300.0), (1.0, 4.0, 300.0)];
+    let views = [
+        (1.0, 60.0, 300.0),
+        (2.0, 60.0, 300.0),
+        (8.0, 60.0, 300.0),
+        (1.0, 4.0, 300.0),
+    ];
     for (zoom, duration, viewport) in views {
         let asked = lane_width(zoom, duration, viewport);
         let content = band::content_px(zoom, duration, viewport);
@@ -281,7 +353,11 @@ fn sec_07_narrate_1_screen_s7_the_lane_asks_for_exactly_the_content_it_zooms_to(
     // At fit the lane keeps its 240 px floor, so nothing about the strip changes: no bar, no jump.
     // (A short recording is the other case: `fit_pps` spreads it across the whole viewport, so its
     // content is exactly the viewport and the floor never comes into play.)
-    assert_eq!(lane_width(1.0, 4.0, 300.0), 300.0, "a 4 s file fills the strip at fit and stops there");
+    assert_eq!(
+        lane_width(1.0, 4.0, 300.0),
+        300.0,
+        "a 4 s file fills the strip at fit and stops there"
+    );
     assert!(!band::needs_scrollbar(1.0, 4.0, 300.0));
 }
 
@@ -300,12 +376,36 @@ fn sec_07_narrate_1_screen_s8_a_frame_step_is_one_frame_and_never_leaves_the_cut
         1.0 / DEFAULT_FPS,
         "an unset rate falls back rather than dividing by zero"
     );
-    assert_eq!(frame::step(10.0, 60.0, 0.04, true), Some(10.04), "forward is one frame");
-    assert_eq!(frame::step(10.0, 60.0, 0.04, false), Some(9.96), "back is one frame");
-    assert_eq!(frame::step(0.01, 60.0, 0.04, false), Some(0.0), "the start holds at zero");
-    assert_eq!(frame::step(59.99, 60.0, 0.04, true), Some(60.0), "the end holds at the length");
-    assert_eq!(frame::step(0.0, 0.0, 0.04, true), None, "no cut means no clock to step");
-    assert_eq!(frame::step(3.0, -1.0, 0.04, true), None, "a negative length is not a cut either");
+    assert_eq!(
+        frame::step(10.0, 60.0, 0.04, true),
+        Some(10.04),
+        "forward is one frame"
+    );
+    assert_eq!(
+        frame::step(10.0, 60.0, 0.04, false),
+        Some(9.96),
+        "back is one frame"
+    );
+    assert_eq!(
+        frame::step(0.01, 60.0, 0.04, false),
+        Some(0.0),
+        "the start holds at zero"
+    );
+    assert_eq!(
+        frame::step(59.99, 60.0, 0.04, true),
+        Some(60.0),
+        "the end holds at the length"
+    );
+    assert_eq!(
+        frame::step(0.0, 0.0, 0.04, true),
+        None,
+        "no cut means no clock to step"
+    );
+    assert_eq!(
+        frame::step(3.0, -1.0, 0.04, true),
+        None,
+        "a negative length is not a cut either"
+    );
 }
 
 /// §07-narrate#1-screen badge **13** (`pitch −6..+6 semitones`, drawn as `pitch: ─── 0.0` in
@@ -314,19 +414,42 @@ fn sec_07_narrate_1_screen_s8_a_frame_step_is_one_frame_and_never_leaves_the_cut
 #[test]
 fn sec_07_narrate_1_screen_s13_the_pitch_readout_is_the_sliders_face() {
     // The ends and the middle, spelled the way the picture spells them.
-    assert_eq!(screen::pitch_readout(0.0), "0.0", "no shift still shows a number");
-    assert_eq!(screen::pitch_readout(1.5), "1.5", "half a semitone keeps its decimal");
+    assert_eq!(
+        screen::pitch_readout(0.0),
+        "0.0",
+        "no shift still shows a number"
+    );
+    assert_eq!(
+        screen::pitch_readout(1.5),
+        "1.5",
+        "half a semitone keeps its decimal"
+    );
     assert_eq!(screen::pitch_readout(-2.5), "-2.5");
     assert_eq!(screen::pitch_readout(screen::PITCH_MIN_SEMITONES), "-6.0");
     assert_eq!(screen::pitch_readout(screen::PITCH_MAX_SEMITONES), "6.0");
     // An edited `narrate/pitch.txt` outside the range acts as the nearest end, so that is what it shows.
-    assert_eq!(screen::pitch_readout(9.0), "6.0", "past the top it reads the top");
-    assert_eq!(screen::pitch_readout(-9.0), "-6.0", "below the bottom it reads the bottom");
+    assert_eq!(
+        screen::pitch_readout(9.0),
+        "6.0",
+        "past the top it reads the top"
+    );
+    assert_eq!(
+        screen::pitch_readout(-9.0),
+        "-6.0",
+        "below the bottom it reads the bottom"
+    );
     // The face and the slider cannot drift: these are the numbers the scale spans, and the step it moves by.
-    assert_eq!((screen::PITCH_MIN_SEMITONES, screen::PITCH_MAX_SEMITONES), (-6.0, 6.0));
+    assert_eq!(
+        (screen::PITCH_MIN_SEMITONES, screen::PITCH_MAX_SEMITONES),
+        (-6.0, 6.0)
+    );
     assert_eq!(screen::clamp_pitch(9.0), screen::PITCH_MAX_SEMITONES);
     assert_eq!(screen::clamp_pitch(-9.0), screen::PITCH_MIN_SEMITONES);
-    assert_eq!(screen::PITCH_STEP, 0.5, "the face's one decimal can show every stop the slider has");
+    assert_eq!(
+        screen::PITCH_STEP,
+        0.5,
+        "the face's one decimal can show every stop the slider has"
+    );
 }
 
 use naivepost::ui::narrate_inputs_tally as tally;
@@ -336,7 +459,9 @@ use naivepost::ui::narrate_inputs_tally as tally;
 /// replaces the whole line.
 #[test]
 fn sec_07_narrate_1_screen_inputs_readout_names_unwritten_off_cut_and_no_timeline() {
-    let read = |unwritten, off_cut, has_timeline| screen::inputs_readout(4, 95.0, unwritten, off_cut, has_timeline, true);
+    let read = |unwritten, off_cut, has_timeline| {
+        screen::inputs_readout(4, 95.0, unwritten, off_cut, has_timeline, true)
+    };
     // The plain case: count and length, nothing in brackets.
     assert_eq!(read(0, 0, true), "4 clip(s) \u{b7} 01:35");
     // Both halves at once, §1's wording exactly.
@@ -354,7 +479,10 @@ fn sec_07_narrate_1_screen_inputs_readout_names_unwritten_off_cut_and_no_timelin
         "4 clip(s) \u{b7} 01:35 \u{b7} \u{26a0} 0 clip(s) unwritten, 2 line(s) off the cut"
     );
     // The timeline half stands on its own and rides along with the counts when both are missing.
-    assert_eq!(read(0, 0, false), "4 clip(s) \u{b7} 01:35 \u{b7} no timeline");
+    assert_eq!(
+        read(0, 0, false),
+        "4 clip(s) \u{b7} 01:35 \u{b7} no timeline"
+    );
     assert_eq!(
         read(1, 1, false),
         "4 clip(s) \u{b7} 01:35 \u{b7} \u{26a0} 1 clip(s) unwritten, 1 line(s) off the cut \u{b7} no timeline"
@@ -374,26 +502,61 @@ fn sec_07_narrate_1_screen_inputs_readout_names_unwritten_off_cut_and_no_timelin
 fn sec_07_narrate_1_screen_inputs_tally_counts_unwritten_silent_and_orphan() {
     let clips = [(0.0, 10.0), (10.0, 20.0), (20.0, 30.0)];
     let on_first = on_first_line_at(0.0, 10.0);
-    let orphan = Entry { s: 100.0, e: 110.0, at: 1.0, text: "gone video".into(), ..Default::default() };
+    let orphan = Entry {
+        s: 100.0,
+        e: 110.0,
+        at: 1.0,
+        text: "gone video".into(),
+        ..Default::default()
+    };
     // Clips 2 and 3 have no line: two unwritten, none off the cut, and the timeline question passed through.
     let plain = tally::of(&clips, std::slice::from_ref(&on_first), false, true);
     assert_eq!(
         plain,
-        tally::Tally { unwritten: 2, off_cut: 0, has_cut: true, has_timeline: true }
+        tally::Tally {
+            unwritten: 2,
+            off_cut: 0,
+            has_cut: true,
+            has_timeline: true
+        }
     );
     // No clip silenced: two of the three have no line. Silencing them all (what `silent: true` marks here)
     // takes the whole count back, because a deliberately silent clip is no staleness a person caused.
     let silenced = tally::of(&clips, std::slice::from_ref(&on_first), true, true);
-    assert_eq!(silenced.unwritten, 0, "a deliberately silent clip is not counted as waiting for a line");
+    assert_eq!(
+        silenced.unwritten, 0,
+        "a deliberately silent clip is not counted as waiting for a line"
+    );
     assert_eq!(silenced.off_cut, 0);
     // A line on video the cut no longer has is off the cut; the kept line still leaves one clip unwritten.
     let stale = tally::of(&clips, &[on_first, orphan], false, false);
-    assert_eq!((stale.unwritten, stale.off_cut, stale.has_timeline), (2, 1, false));
+    assert_eq!(
+        (stale.unwritten, stale.off_cut, stale.has_timeline),
+        (2, 1, false)
+    );
     // Every clip written: no bracket at all, which is the same answer `inputs_readout` prints bare.
     let all = [
-        Entry { s: 0.0, e: 10.0, at: 1.0, text: "one".into(), ..Default::default() },
-        Entry { s: 10.0, e: 20.0, at: 1.0, text: "two".into(), ..Default::default() },
-        Entry { s: 20.0, e: 30.0, at: 1.0, text: "three".into(), ..Default::default() },
+        Entry {
+            s: 0.0,
+            e: 10.0,
+            at: 1.0,
+            text: "one".into(),
+            ..Default::default()
+        },
+        Entry {
+            s: 10.0,
+            e: 20.0,
+            at: 1.0,
+            text: "two".into(),
+            ..Default::default()
+        },
+        Entry {
+            s: 20.0,
+            e: 30.0,
+            at: 1.0,
+            text: "three".into(),
+            ..Default::default()
+        },
     ];
     assert_eq!(tally::of(&clips, &all, false, true).unwritten, 0);
     assert_eq!(
@@ -404,7 +567,12 @@ fn sec_07_narrate_1_screen_inputs_tally_counts_unwritten_silent_and_orphan() {
     // No clips: `has_cut` false, and the counts are not half-answered beside the no-cut sentence.
     assert_eq!(
         tally::of(&[], &[on_first_line_at(100.0, 110.0)], false, true),
-        tally::Tally { unwritten: 0, off_cut: 0, has_cut: false, has_timeline: true }
+        tally::Tally {
+            unwritten: 0,
+            off_cut: 0,
+            has_cut: false,
+            has_timeline: true
+        }
     );
     // A silent marker on a clip that got a line back stops silencing it — `has_line` wins, as `narration`
     // says it must — so silencing everything while writing every clip still leaves nothing waiting.
@@ -420,7 +588,13 @@ fn sec_07_narrate_1_screen_inputs_tally_counts_unwritten_silent_and_orphan() {
 }
 
 fn on_first_line_at(s: f64, e: f64) -> Entry {
-    Entry { s, e, at: 1.0, text: "a line on the clip".into(), ..Default::default() }
+    Entry {
+        s,
+        e,
+        at: 1.0,
+        text: "a line on the clip".into(),
+        ..Default::default()
+    }
 }
 
 // --- the row's shape on the page: §1's header order and the box under it -------------------------------
@@ -441,7 +615,8 @@ use crate::common;
 use common::{hold_last_window, release_last_window, settle, widget_in};
 
 static RAN_HEADER_ORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static RAN_BOX_UNDER_HEADER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_BOX_UNDER_HEADER: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 static RAN_INPUTS_ROW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_OUTPUTS_ROW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -457,9 +632,24 @@ fn label_of(window: &adw::ApplicationWindow, name: &str) -> String {
 /// Three kept clips of ten seconds each, so a row's session second is checkable by hand.
 fn three_clips() -> Vec<Seg> {
     vec![
-        Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-        Seg { s: 10.0, e: 20.0, cam: 0, ..Default::default() },
-        Seg { s: 20.0, e: 30.0, cam: 0, ..Default::default() },
+        Seg {
+            s: 0.0,
+            e: 10.0,
+            cam: 0,
+            ..Default::default()
+        },
+        Seg {
+            s: 10.0,
+            e: 20.0,
+            cam: 0,
+            ..Default::default()
+        },
+        Seg {
+            s: 20.0,
+            e: 30.0,
+            cam: 0,
+            ..Default::default()
+        },
     ]
 }
 
@@ -667,7 +857,10 @@ fn row_round(app: &adw::Application) {
     let folder = widget_in(&window, "narrate-outputs-folder")
         .expect("§A.8's Outputs row has its folder button");
     let tip = folder.tooltip_text().unwrap_or_default();
-    assert!(!tip.is_empty(), "the folder button says what pressing it does");
+    assert!(
+        !tip.is_empty(),
+        "the folder button says what pressing it does"
+    );
     assert!(
         !tip.contains("narration.json"),
         "the button's tooltip must not repeat the readout's sentence: {tip}"
@@ -685,8 +878,7 @@ fn row_round(app: &adw::Application) {
         "the Inputs row prints the counts the cut and the narration make, brackets and all"
     );
     assert_eq!(
-        inputs,
-        "3 clip(s) \u{b7} 00:30 \u{b7} \u{26a0} 1 clip(s) unwritten, 1 line(s) off the cut",
+        inputs, "3 clip(s) \u{b7} 00:30 \u{b7} \u{26a0} 1 clip(s) unwritten, 1 line(s) off the cut",
         "§1's row byte for byte: count, length and the \u{26a0} mark"
     );
     RAN_INPUTS_ROW.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -696,11 +888,7 @@ fn row_round(app: &adw::Application) {
 
 /// A fresh scratch folder. Every round gets its own name so parallel tests cannot share a tree.
 fn scratch_dir(name: &str) -> std::path::PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "np-sec07{}-{}",
-        name,
-        std::process::id()
-    ));
+    let root = std::env::temp_dir().join(format!("np-sec07{}-{}", name, std::process::id()));
     std::fs::create_dir_all(&root).expect("scratch folder created");
     root
 }

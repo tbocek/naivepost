@@ -9,14 +9,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, temp_dir_created as temp_dir};
 use gtk4 as gtk;
 use naivepost::open_project::{CANNOT_OPEN, NOT_A_PROJECT};
 use naivepost::project::PROJECT_FILE;
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, temp_dir_created as temp_dir};
 
 /// One running GTK application for this test binary, taken in turn by the checks below.
 fn window_round() {
@@ -108,7 +108,9 @@ fn header_names(window: &adw::ApplicationWindow) -> Vec<String> {
 fn collect_button_names(widget: &gtk::Widget, out: &mut Vec<String>) {
     for child in widget.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(child) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(child) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         let name = child.widget_name().to_string();
         if name.ends_with("-button") {
             out.push(name);
@@ -126,7 +128,10 @@ fn a_press_nobody_answers_changes_nothing(app: &adw::Application) {
     window.present();
 
     let before = ui::session_sources(&window);
-    assert!(!before.is_empty(), "the fixture's session has sources to compare against");
+    assert!(
+        !before.is_empty(),
+        "the fixture's session has sources to compare against"
+    );
 
     let open_ = ui::open_button(&window).expect("Open button");
     open_.emit_clicked();
@@ -232,9 +237,8 @@ fn a_valid_project_switches_the_session(app: &adw::Application) {
         "only the source that exists survived"
     );
     assert!(
-        ui::window_logs()
-            .iter()
-            .any(|line| line == "!!! project:sources/gone.mkv is not there any more -- dropped from the session"),
+        ui::window_logs().iter().any(|line| line
+            == "!!! project:sources/gone.mkv is not there any more -- dropped from the session"),
         "the drop is said once in the log: {:?}",
         ui::window_logs()
     );
@@ -278,7 +282,11 @@ fn s4_refreshes_every_page_through_the_doors_a_tab_switch_uses(app: &adw::Applic
     let root = temp_dir("s4-refresh");
     // A project with footage, opened over a session that has none: Cut goes from greyed to live, which
     // is something only a repaint can do, and the Inputs row changes wording entirely.
-    let folder = project_folder(&root.join("fresh.naivepost"), TWO_SOURCES_ONE_GONE, &["keep.mkv"]);
+    let folder = project_folder(
+        &root.join("fresh.naivepost"),
+        TWO_SOURCES_ONE_GONE,
+        &["keep.mkv"],
+    );
 
     let empty = naivepost::project::Project::default();
     let window = ui::build_window(app, &empty, "Prepare");
@@ -287,7 +295,9 @@ fn s4_refreshes_every_page_through_the_doors_a_tab_switch_uses(app: &adw::Applic
         ui::tab_dimmed(&window, Page::Cut),
         "a session with no footage opens with Cut greyed"
     );
-    let before = ui::inputs_readout(&window).map(|l| l.text().to_string()).unwrap_or_default();
+    let before = ui::inputs_readout(&window)
+        .map(|l| l.text().to_string())
+        .unwrap_or_default();
 
     assert!(ui::open_from(&window, &folder), "the project opened");
 
@@ -295,8 +305,13 @@ fn s4_refreshes_every_page_through_the_doors_a_tab_switch_uses(app: &adw::Applic
         !ui::tab_dimmed(&window, Page::Cut),
         "S4: the tabs were repainted from the opened project — Cut is live now"
     );
-    let after = ui::inputs_readout(&window).map(|l| l.text().to_string()).unwrap_or_default();
-    assert_ne!(after, before, "S4: the Inputs row was redrawn ({before:?} -> {after:?})");
+    let after = ui::inputs_readout(&window)
+        .map(|l| l.text().to_string())
+        .unwrap_or_default();
+    assert_ne!(
+        after, before,
+        "S4: the Inputs row was redrawn ({before:?} -> {after:?})"
+    );
     assert!(after.starts_with("Inputs: "), "{after:?}");
     assert_eq!(
         ui::state(&window).status,
@@ -328,11 +343,16 @@ fn s4_the_opened_project_lands_in_the_conf_on_disk(app: &adw::Application) {
     // its own pair rather than replacing the first, so the numbering here is not PROJECT_1.
     let opened = ui::open_from(&window, &folder);
     let status = ui::state(&window).status;
-    let inputs = ui::inputs_readout(&window).map(|l| l.text().to_string()).unwrap_or_default();
+    let inputs = ui::inputs_readout(&window)
+        .map(|l| l.text().to_string())
+        .unwrap_or_default();
     window.close();
 
     assert!(opened, "F0.9 S4: the project opened");
-    assert_eq!(status, "opened \u{2014} conf-eth.naivepost", "S4's status sentence");
+    assert_eq!(
+        status, "opened \u{2014} conf-eth.naivepost",
+        "S4's status sentence"
+    );
     assert!(
         inputs.starts_with("Inputs: "),
         "the readout row was repainted, not left blank: {inputs:?}"
@@ -346,10 +366,7 @@ fn s4_the_opened_project_lands_in_the_conf_on_disk(app: &adw::Application) {
         "the ROOT half is in the file: {body}"
     );
     assert!(
-        body.contains(&format!(
-            "FILE=\"{}\"",
-            folder.join(PROJECT_FILE).display()
-        )),
+        body.contains(&format!("FILE=\"{}\"", folder.join(PROJECT_FILE).display())),
         "and the FILE half: {body}"
     );
 }
@@ -384,7 +401,9 @@ fn the_dropped_source_is_said_by_the_real_open(app: &adw::Application) {
     let logs = ui::window_logs();
     let end = logs
         .iter()
-        .rposition(|line| line.starts_with(">>> opened") && line.contains(&folder.display().to_string()))
+        .rposition(|line| {
+            line.starts_with(">>> opened") && line.contains(&folder.display().to_string())
+        })
         .expect("this open logged its own >>> opened line");
     let start = logs[..end]
         .iter()

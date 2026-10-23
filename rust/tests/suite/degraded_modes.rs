@@ -6,7 +6,7 @@
 //! the module's formula before it is used, so a fixture that stops being a fixture fails at the fixture.
 
 use naivepost::degraded::{
-    self, CUTOFF_RETRY, CutSource, RenderOutcome, ToolsFallback, AfterCutOff, FINISH_LENGTH,
+    self, AfterCutOff, CutSource, RenderOutcome, ToolsFallback, CUTOFF_RETRY, FINISH_LENGTH,
     SETTINGS_FALLBACK, SILENCE_MIN_SECONDS, SILENCE_THRESHOLD_DB,
 };
 use naivepost::roles::{self, Job};
@@ -61,7 +61,11 @@ fn sec_02_services_4_degraded_modes_s2_a_silence_is_a_long_enough_quiet_run() {
     peaks.extend_from_slice(&quiet_short);
     peaks.push(1.0);
     // The short run really is under the minimum at this rate, or it would survive too.
-    assert!(short_samples / hz < SILENCE_MIN_SECONDS, "{} s", short_samples / hz);
+    assert!(
+        short_samples / hz < SILENCE_MIN_SECONDS,
+        "{} s",
+        short_samples / hz
+    );
 
     let spans = degraded::silence_spans(&peaks, hz, SILENCE_THRESHOLD_DB, SILENCE_MIN_SECONDS);
     assert_eq!(spans.len(), 1, "the short run must not count: {spans:?}");
@@ -125,7 +129,10 @@ fn sec_02_services_4_degraded_modes_s4_no_browser_means_the_web_tools_are_not_of
     assert!(!degraded::web_available("OFF", false));
     assert!(!degraded::web_available("", false));
     assert!(!degraded::web_available("   ", false));
-    assert!(!degraded::web_available("/usr/bin/firefox", true), "Flatpak");
+    assert!(
+        !degraded::web_available("/usr/bin/firefox", true),
+        "Flatpak"
+    );
     assert!(degraded::web_available("/usr/bin/firefox", false));
 
     // A web job loses exactly the two web tools and keeps everything else, in order.
@@ -172,10 +179,14 @@ fn sec_02_services_4_degraded_modes_s5_sd_cpp_down_still_completes_the_render() 
     assert!(logs[0].contains("thumbnail"), "{}", logs[0]);
 
     // A thumbnail that failed for its own reason names that reason and still completes.
-    let (outcome, logs) = degraded::finish_render(false, Err("png could not be written".to_string()));
+    let (outcome, logs) =
+        degraded::finish_render(false, Err("png could not be written".to_string()));
     match &outcome {
         RenderOutcome::ThumbnailFailed(line) => {
-            assert!(line.contains("thumbnail") && line.contains("png could not be written"), "{line}");
+            assert!(
+                line.contains("thumbnail") && line.contains("png could not be written"),
+                "{line}"
+            );
         }
         RenderOutcome::Complete => panic!("a failed thumbnail is never Complete"),
     }
@@ -193,7 +204,10 @@ fn sec_02_services_4_degraded_modes_s6_a_job_the_server_forgot_is_named() {
     assert!(degraded::forgot_job(404));
     assert!(degraded::forgot_job(410));
     for status in [200u16, 400, 401, 500, 503] {
-        assert!(!degraded::forgot_job(status), "{status} is not a forgotten job");
+        assert!(
+            !degraded::forgot_job(status),
+            "{status} is not a forgotten job"
+        );
     }
 
     // The spec's sentence, verbatim.
@@ -205,7 +219,10 @@ fn sec_02_services_4_degraded_modes_s6_a_job_the_server_forgot_is_named() {
     // reason arrives as a sentence carrying the id and the status, which is all this module is given — so
     // it has to find both in the text, and this checks what it finds.
     let (outcome, logs) = degraded::finish_render(false, Err(forgotten("abc", 404)));
-    assert!(logs.len() == 1 && logs[0].contains("sd.cpp forgot job abc (404)"), "{logs:?}");
+    assert!(
+        logs.len() == 1 && logs[0].contains("sd.cpp forgot job abc (404)"),
+        "{logs:?}"
+    );
     match outcome {
         RenderOutcome::ThumbnailFailed(line) => assert_eq!(line, logs[0]),
         RenderOutcome::Complete => panic!("the thumbnail did fail"),
@@ -218,7 +235,10 @@ fn sec_02_services_4_degraded_modes_s7_no_supported_modes_is_assumed_able_to_dra
     assert!(degraded::can_draw(None));
     assert!(degraded::can_draw(Some(&[])));
     assert!(degraded::can_draw(Some(&["draw", "blur"])));
-    assert!(!degraded::can_draw(Some(&["blur"])), "a list that does not name draw");
+    assert!(
+        !degraded::can_draw(Some(&["blur"])),
+        "a list that does not name draw"
+    );
 
     // The Settings test falls back to /v1/models only when sd.cpp's own route says it is not there.
     assert_eq!(SETTINGS_FALLBACK, "/v1/models");
@@ -276,7 +296,10 @@ fn sec_02_services_4_degraded_modes_s9_a_tools_refusal_later_fails_the_call() {
     // §4.4 — a `tools` error on a later round fails the call rather than changing shape mid-job.
     let refusal = "unknown field tools in this request";
     for round in [2u32, 3, degraded::SNAP_TOLERANCE_SECONDS as u32 * 2] {
-        assert_eq!(degraded::tools_fallback(refusal, round), ToolsFallback::FailCall);
+        assert_eq!(
+            degraded::tools_fallback(refusal, round),
+            ToolsFallback::FailCall
+        );
     }
     // Round 1 is the only round that falls back.
     assert_eq!(
@@ -357,7 +380,10 @@ fn sec_02_services_4_degraded_modes_s13_the_parameters_this_item_uses() {
     let silences = [(10.0, 14.0)];
     let points = degraded::cut_points(&[14.1], &silences, 0.0);
     assert_eq!(points, vec![None]);
-    assert_eq!(degraded::cut_points(&[13.9], &silences, 0.0), vec![Some(13.9)]);
+    assert_eq!(
+        degraded::cut_points(&[13.9], &silences, 0.0),
+        vec![Some(13.9)]
+    );
 
     // A run exactly at the minimum is silence; a hair under it is not.
     let peaks = [0.0, 0.0];
@@ -380,7 +406,12 @@ fn sec_02_services_4_degraded_modes_s14_every_degradation_at_once_is_survivable(
     // 1. Cut points come off the waveform: one edge lands inside a silence and keeps its own second, the
     // other is refused because nothing near it can be cut in.
     assert_eq!(degraded::cut_source(""), CutSource::Waveform);
-    let silences = degraded::silence_spans(&[1.0, 0.0, 0.0, 1.0], 1.0, SILENCE_THRESHOLD_DB, SILENCE_MIN_SECONDS);
+    let silences = degraded::silence_spans(
+        &[1.0, 0.0, 0.0, 1.0],
+        1.0,
+        SILENCE_THRESHOLD_DB,
+        SILENCE_MIN_SECONDS,
+    );
     let points = degraded::cut_points(&[2.5, 300.0], &silences, degraded::SNAP_TOLERANCE_SECONDS);
     assert_eq!(points[0], Some(2.5), "the edge inside a silence was kept");
     assert_eq!(points[1], None, "and the one that could not, was refused");
@@ -388,7 +419,10 @@ fn sec_02_services_4_degraded_modes_s14_every_degradation_at_once_is_survivable(
     // 2. No web tools; the job still has its own.
     let offered = degraded::offered_offline(Job::UploadText, "", false);
     assert!(!offered.contains(&Tool::WebSearch));
-    assert!(!offered.is_empty(), "the job is not left with nothing to do");
+    assert!(
+        !offered.is_empty(),
+        "the job is not left with nothing to do"
+    );
 
     // 3. The tools refusal sends the job to one JSON answer.
     assert_eq!(

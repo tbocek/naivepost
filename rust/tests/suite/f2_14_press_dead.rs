@@ -48,12 +48,18 @@ fn round(app: &adw::Application) {
         "a refused dial says something and claims no cut: {sentence:?}"
     );
     assert_eq!(
-        std::fs::read(press_fixture::run_tree().cut_json()).ok().as_deref(),
+        std::fs::read(press_fixture::run_tree().cut_json())
+            .ok()
+            .as_deref(),
         before.as_deref(),
         "a failed suggestion touches the working copy's cut not at all"
     );
     assert!(
-        ui::run_bar(&window).expect("the window carries a run bar").borrow().running.is_none(),
+        ui::run_bar(&window)
+            .expect("the window carries a run bar")
+            .borrow()
+            .running
+            .is_none(),
         "a refused press opens no run"
     );
     cut_suggest_land::point_session_at(None);

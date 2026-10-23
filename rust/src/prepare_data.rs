@@ -137,8 +137,14 @@ pub fn paths(tree: &Tree, source: &str) -> Vec<(&'static str, std::path::PathBuf
         ("one row per frame", tree.events_tsv(source)),
         ("where describing got to", tree.describe_state(source)),
         ("the frames sent, scaled", tree.llm_frames_dir(source)),
-        ("the fixed words of a recording", tree.transcript_fixed_tsv(source)),
-        ("the fixed words of a microphone", tree.commentary_fixed_tsv(source)),
+        (
+            "the fixed words of a recording",
+            tree.transcript_fixed_tsv(source),
+        ),
+        (
+            "the fixed words of a microphone",
+            tree.commentary_fixed_tsv(source),
+        ),
         ("captions for a video", tree.subtitles_srt(source)),
         ("the merged timeline", tree.session_tsv()),
         ("the timeline as the cut reads it", tree.session_txt()),

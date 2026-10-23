@@ -139,7 +139,11 @@ pub fn derived_fields() -> [CatalogueRow; 6] {
         // P.policy.targetLengthSeconds — §12 entry 21. A number, so no `values`: the form prints the seconds
         // and the derivation writes what the User Context's own words say (or a model's proposal), instead of
         // the prototype's regex that silently left 0 = none.
-        CatalogueRow { field: "targetLengthSeconds", id: "P.policy.targetLengthSeconds", values: &[] },
+        CatalogueRow {
+            field: "targetLengthSeconds",
+            id: "P.policy.targetLengthSeconds",
+            values: &[],
+        },
     ]
 }
 
@@ -257,7 +261,11 @@ fn parse_cut_mode(value: &str) -> CutMode {
 }
 
 fn bool_field(value: &str, because: Option<String>) -> Field<bool> {
-    Field { value: value != "off" && value != "false", origin: Origin::Model, because }
+    Field {
+        value: value != "off" && value != "false",
+        origin: Origin::Model,
+        because,
+    }
 }
 
 // ---- S2: the request ------------------------------------------------------------------------
@@ -464,10 +472,13 @@ pub fn derive(
         // A round that could not be dialled at all says so itself (§failure is specific and local): the
         // sentence naming the model and its fault goes straight into the refusals, rather than being
         // re-derived from a proposal about a field that does not exist.
-        if let Some(fault) = proposals.iter().find_map(|proposal| match proposal.field.as_str() {
-            crate::policy_call::FAULT_FIELD => Some(proposal.because.clone()),
-            _ => None,
-        }) {
+        if let Some(fault) = proposals
+            .iter()
+            .find_map(|proposal| match proposal.field.as_str() {
+                crate::policy_call::FAULT_FIELD => Some(proposal.because.clone()),
+                _ => None,
+            })
+        {
             if !out.refusals.contains(&fault) {
                 out.refusals.push(fault);
             }

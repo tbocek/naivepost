@@ -2,12 +2,11 @@
 //! [`naivepost::save_as`] and forwards the chooser's answer, so what these checks assert is that a
 //! click either opened the dialog or was refused, never that it saved (spec/00-principles.md §5).
 
-
+use crate::common;
 use adw::prelude::*;
+use common::fixture_dir;
 use naivepost::save_as;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir};
 
 /// One running GTK application for this test binary, taken in turn by the two checks below — the
 /// same single-main-loop arrangement tests/suite/smoke.rs needs for the same reason. Each check records
@@ -62,7 +61,11 @@ fn check_save_offers_the_project(app: &adw::Application) {
     save_.emit_clicked();
     // The chooser is the desktop's and was never answered, so no branch of S3/S4 ran: nothing was
     // saved, nothing was refused.
-    assert_eq!(ui::state(&window).status, "", "opening a dialog says nothing");
+    assert_eq!(
+        ui::state(&window).status,
+        "",
+        "opening a dialog says nothing"
+    );
 }
 
 fn check_refused_during_a_run(app: &adw::Application) {
@@ -72,7 +75,9 @@ fn check_refused_during_a_run(app: &adw::Application) {
 
     // A run under way, started the way a user starts one. F0.5 S4 closes what a single-step press
     // opens, so the busy state is stood up as an open run -- `start_run`, the call ▶ itself makes.
-    ui::play_button(&window).expect("the run bar has a ▶").emit_clicked();
+    ui::play_button(&window)
+        .expect("the run bar has a ▶")
+        .emit_clicked();
     if let (Some(bar), Some(queue)) = (ui::run_bar(&window), ui::run_queue(&window)) {
         naivepost::runqueue::start_run(
             &mut bar.borrow_mut(),

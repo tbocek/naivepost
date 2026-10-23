@@ -151,7 +151,9 @@ fn check_the_words_box_sits_above_the_other_fields(app: &adw::Application) {
     let holder = form_holder(&window);
     let mut seen: Vec<String> = Vec::new();
     for row in holder.observe_children().iter::<glib::Object>().flatten() {
-        let Ok(row) = row.downcast::<gtk::Widget>() else { continue };
+        let Ok(row) = row.downcast::<gtk::Widget>() else {
+            continue;
+        };
         for field in ["text-field-words", "text-field-length"] {
             if find_in(&row, field).is_some() {
                 seen.push(field.to_string());
@@ -189,7 +191,12 @@ fn f3_4_s3_the_words_box_fills_the_column_above_the_other_fields() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_WIDTH.load(Ordering::SeqCst), "the full-width check never ran");
-    assert!(RAN_ORDER.load(Ordering::SeqCst), "the above-the-fields check never ran");
+    assert!(
+        RAN_WIDTH.load(Ordering::SeqCst),
+        "the full-width check never ran"
+    );
+    assert!(
+        RAN_ORDER.load(Ordering::SeqCst),
+        "the above-the-fields check never ran"
+    );
 }
-

@@ -100,7 +100,14 @@ fn ask(
 pub fn health(tree: &Tree) -> Result<Vec<services::AudioModel>, String> {
     let conf = current_conf();
     let endpoint = endpoint(&conf);
-    ask(tree, &row("health", ""), &endpoint, Kind::Health, None, None)?;
+    ask(
+        tree,
+        &row("health", ""),
+        &endpoint,
+        Kind::Health,
+        None,
+        None,
+    )?;
     let models = ask(
         tree,
         &row("models", ""),
@@ -211,51 +218,44 @@ pub fn speech_call(
     // it back when the wav is in. Without this every synthesis joins a queue inside audio.cpp, where this app
     // can neither see nor time it — and `wait_s` would stay empty for the one model that runs per sentence.
     let slots = services::slots_for(&current_conf(), services::AudioTask::Tts);
-    let (slot, waited) = match crate::slot_gate::hold(
-        &endpoint.url,
-        &model,
-        slots,
-        "speech",
-        &|| crate::cancel_leg::cancelled(),
-    ) {
-        Ok(got) => got,
-        // ⏹ landed while every voice slot was busy: nothing went out, so this reads as the refusal at the top
-        // of this function rather than as a server failure.
-        Err(crate::slot_gate::Wait::Cancelled) => {
-            return Err("speech: cancelled before sending".to_string())
-        }
-    };
+    let (slot, waited) =
+        match crate::slot_gate::hold(&endpoint.url, &model, slots, "speech", &|| {
+            crate::cancel_leg::cancelled()
+        }) {
+            Ok(got) => got,
+            // ⏹ landed while every voice slot was busy: nothing went out, so this reads as the refusal at the top
+            // of this function rather than as a server failure.
+            Err(crate::slot_gate::Wait::Cancelled) => {
+                return Err("speech: cancelled before sending".to_string())
+            }
+        };
     let base = row("speech", &model);
     let attempt = crate::request_timing::next_attempt(None);
     let started_ms = epoch_ms();
     // The wait is reported beside the call rather than folded into it (§10): a row whose `wait_s` is a real
     // number is how a slot count gets chosen from the log instead of guessed.
-    let mut timer = crate::request_timing::Timer::queued((waited * 1000.0).round() as i64, started_ms);
+    let mut timer =
+        crate::request_timing::Timer::queued((waited * 1000.0).round() as i64, started_ms);
     // One writer for the row, whichever way the dial ended: §09 §10 wants the request on file even
     // when it died, and written before the caller looks at the bytes.
-    let landed = |timer: &crate::request_timing::Timer,
-                 outcome: crate::requests::Outcome,
-                 got: i64| {
-        let mut row = base.clone();
-        row.sent_bytes = Some(payload.len() as i64);
-        row.received_bytes = Some(got);
-        // §10's run column, stamped by the same door every other leg uses.
-        crate::request_timing::stamp_run(&mut row);
-        let _ = crate::requests::record(
-            tree,
-            &crate::request_timing::finish_row(&row, timer, outcome, attempt),
-        );
-    };
+    let landed =
+        |timer: &crate::request_timing::Timer, outcome: crate::requests::Outcome, got: i64| {
+            let mut row = base.clone();
+            row.sent_bytes = Some(payload.len() as i64);
+            row.received_bytes = Some(got);
+            // §10's run column, stamped by the same door every other leg uses.
+            crate::request_timing::stamp_run(&mut row);
+            let _ = crate::requests::record(
+                tree,
+                &crate::request_timing::finish_row(&row, timer, outcome, attempt),
+            );
+        };
     let response = match builder.send(payload.clone()) {
         Ok(response) => response,
         Err(why) => {
             timer.finished(epoch_ms());
             drop(slot);
-            landed(
-                &timer,
-                crate::requests::Outcome::Error(why.to_string()),
-                0,
-            );
+            landed(&timer, crate::requests::Outcome::Error(why.to_string()), 0);
             return Err(format!("audio.cpp ({url}) is not answering: {why}"));
         }
     };
@@ -318,10 +318,7 @@ pub fn speak(
                 for line in &built.said {
                     crate::ui::window::log_line(line);
                 }
-                crate::ui::window::log_line(&voice_ref::built_log(
-                    &built,
-                    &source_file_name(tree),
-                ));
+                crate::ui::window::log_line(&voice_ref::built_log(&built, &source_file_name(tree)));
             }
             Err(why) => {
                 crate::ui::window::log_line(&why);

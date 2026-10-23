@@ -21,7 +21,6 @@
 //! speed among the prompts that do not think), and the answer is a `{"speeds":[…]}` document.
 
 use crate::cut_speed_pass::{self, Call, GAP_SECONDS};
-use std::path::PathBuf;
 use crate::exchanges::{Message, Part};
 use crate::layout::Tree;
 use crate::llm_cache;
@@ -31,6 +30,7 @@ use crate::roles::Job;
 use crate::services;
 use crate::settings::{self, Conf, Paths};
 use crate::tools::Tool;
+use std::path::PathBuf;
 
 /// The step name this job's cache entries and timed rows carry. §3.7 is one section for the three per-clip
 /// passes, but the cache must tell a speed answer from a caption answer apart, so each gets its own step
@@ -99,7 +99,11 @@ fn gap_seconds() -> f64 {
 /// a model shown a session second would have to compute one, which is the standing rule's first
 /// prohibition, and a captioned clip is marked in its own line so the refusal in S2 is a rule the model was
 /// told before it broke it rather than a surprise it gets afterwards.
-pub fn user_message(clips: &[(u32, f64)], captioned: &[(u32, usize)], total_seconds: f64) -> String {
+pub fn user_message(
+    clips: &[(u32, f64)],
+    captioned: &[(u32, usize)],
+    total_seconds: f64,
+) -> String {
     user_message_over(clips, captioned, total_seconds, &[], &[])
 }
 
@@ -134,8 +138,14 @@ pub fn user_message_over(
         "Total video {total_seconds:.0} s of footage. Speed only what would bore, and answer with the clips \
          you would speed and nothing else \u{2014} a cut with nothing dull in it gets no rates at all."
     ));
-    lines.push("- Only rates above 1. Below 1 costs seconds instead of saving them, and is not this job.".to_string());
-    lines.push("- Never a timestamp and never a second count: a clip is one rate from end to end.".to_string());
+    lines.push(
+        "- Only rates above 1. Below 1 costs seconds instead of saving them, and is not this job."
+            .to_string(),
+    );
+    lines.push(
+        "- Never a timestamp and never a second count: a clip is one rate from end to end."
+            .to_string(),
+    );
     lines.push("- A clip marked \"captions\" plays at 1 whatever else is true: words on screen at 4 are gone before they are read.".to_string());
     lines.push(format!(
         "- Two stretches at the same rate nearer than {gap} s apart are one stretch, so give them one rate."
@@ -156,14 +166,28 @@ pub fn user_message_over(
 pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String> {
     let messages = two_messages(system, user);
     let tools: Vec<Tool> = this_pass_tools();
-    Ok(llm_request::body(STEP, model, &messages, crate::prompts::mode_of(STEP), Some(&tools), true)?.to_string())
+    Ok(llm_request::body(
+        STEP,
+        model,
+        &messages,
+        crate::prompts::mode_of(STEP),
+        Some(&tools),
+        true,
+    )?
+    .to_string())
 }
 
 /// The two messages every speed ask carries: the SYSTEM rules and the USER clips/rows.
 fn two_messages(system: &str, user: &str) -> Vec<Message> {
     vec![
-        Message { role: "system".to_string(), parts: vec![Part::Text(system.to_string())] },
-        Message { role: "user".to_string(), parts: vec![Part::Text(user.to_string())] },
+        Message {
+            role: "system".to_string(),
+            parts: vec![Part::Text(system.to_string())],
+        },
+        Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text(user.to_string())],
+        },
     ]
 }
 
@@ -253,11 +277,17 @@ pub fn parse_speeds(reply: &str) -> Vec<Call> {
 fn call_of(value: &serde_json::Value) -> Option<Call> {
     let clip = value
         .get("clip")
-        .and_then(|clip| clip.as_f64().or_else(|| clip.as_str().and_then(|t| t.trim().parse::<f64>().ok())))
+        .and_then(|clip| {
+            clip.as_f64()
+                .or_else(|| clip.as_str().and_then(|t| t.trim().parse::<f64>().ok()))
+        })
         .filter(|n| n.is_finite() && *n >= 1.0)? as u32;
     let rate = value
         .get("rate")
-        .and_then(|rate| rate.as_f64().or_else(|| rate.as_str().and_then(|t| t.trim().parse::<f64>().ok())))
+        .and_then(|rate| {
+            rate.as_f64()
+                .or_else(|| rate.as_str().and_then(|t| t.trim().parse::<f64>().ok()))
+        })
         .filter(|rate| rate.is_finite())?;
     Some(Call { clip, rate })
 }
@@ -318,7 +348,9 @@ pub fn ask_named(
     if services::server_url(&conf.server).is_none() {
         return failed("no LLM address is set \u{2014} nothing was asked".to_string());
     }
-    ask_at_over(tree, &conf, context, clips, captioned, rows, lanes, attempt, cancel)
+    ask_at_over(
+        tree, &conf, context, clips, captioned, rows, lanes, attempt, cancel,
+    )
 }
 
 /// [`ask`] with the settings already read, for a caller that resolved them itself.
@@ -331,7 +363,17 @@ pub fn ask_at(
     attempt: u32,
     cancel: &dyn Fn() -> bool,
 ) -> Asked {
-    ask_at_over(tree, conf, context, clips, captioned, &[], &[], attempt, cancel)
+    ask_at_over(
+        tree,
+        conf,
+        context,
+        clips,
+        captioned,
+        &[],
+        &[],
+        attempt,
+        cancel,
+    )
 }
 
 /// [`ask_at`] with the session's camera rows and heard lanes named in the brief (§9).
@@ -349,7 +391,11 @@ pub fn ask_at_over(
 ) -> Asked {
     if clips.is_empty() {
         // Nothing to ask about is not a failure and not worth a request.
-        return Asked { calls: Vec::new(), failed: false, reason: String::new() };
+        return Asked {
+            calls: Vec::new(),
+            failed: false,
+            reason: String::new(),
+        };
     }
     let model = conf.model.clone();
     let total: f64 = clips.iter().map(|(_, length)| length).sum();
@@ -362,7 +408,11 @@ pub fn ask_at_over(
         // §09 §10: the cached answer writes its own `cache` line, with no time on the wire; the row is
         // the record that this ask cost nothing, not a second count of the request that earned it.
         crate::request_timing::record_cached(tree, base_row(&model));
-        return Asked { calls: parse_speeds(&cached), failed: false, reason: String::new() };
+        return Asked {
+            calls: parse_speeds(&cached),
+            failed: false,
+            reason: String::new(),
+        };
     }
     let base = base_row(&model);
     let endpoint = services::llm_endpoint(conf);
@@ -390,7 +440,15 @@ pub fn ask_at_over(
         Some(&offered),
         &build,
         &|body: &str| {
-            crate::llm_retry_leg::chat(STEP, tree, &base, &endpoint, body, cancel, &crate::ui::window::log_line)
+            crate::llm_retry_leg::chat(
+                STEP,
+                tree,
+                &base,
+                &endpoint,
+                body,
+                cancel,
+                &crate::ui::window::log_line,
+            )
         },
         &crate::ui::window::log_line,
     ) {
@@ -404,7 +462,11 @@ pub fn ask_at_over(
         Err(_) => {
             // Neither JSON nor a stream: nothing to place, read as "the model proposed nothing" — the same
             // ending a `{"speeds":[]}` answer has (§F3.10 does not fail a cut over an unreadable rate list).
-            return Asked { calls: Vec::new(), failed: false, reason: String::new() };
+            return Asked {
+                calls: Vec::new(),
+                failed: false,
+                reason: String::new(),
+            };
         }
     };
     if reply.tool_calls.is_empty() {
@@ -416,15 +478,27 @@ pub fn ask_at_over(
             if !text.trim().is_empty() {
                 llm_cache::store(tree, STEP, &parts, &text);
             }
-            return Asked { calls: parse_speeds(&text), failed: false, reason: String::new() };
+            return Asked {
+                calls: parse_speeds(&text),
+                failed: false,
+                reason: String::new(),
+            };
         }
         // §3's answered question on this item: the tools ARE on the wire, and a reply carrying a JSON document
         // instead of calling `set_clip_speed` has not answered. Ask again, once, with the correction in the
         // conversation (§3's repair); a second prose answer is this pass's failure, said by name.
         let went_out = std::time::Instant::now();
         let dial = |body: &str| {
-            crate::llm_retry_leg::chat(STEP, tree, &base, &endpoint, body, cancel, &crate::ui::window::log_line)
-                .map(|sent| (sent.content_type, sent.body))
+            crate::llm_retry_leg::chat(
+                STEP,
+                tree,
+                &base,
+                &endpoint,
+                body,
+                cancel,
+                &crate::ui::window::log_line,
+            )
+            .map(|sent| (sent.content_type, sent.body))
         };
         let second = match crate::clip_rules_tools_leg::ask_again_for_calls(
             STEP,
@@ -469,7 +543,11 @@ pub fn ask_at_over(
                 &crate::clip_rules_tools_leg::answering_envelope(&second).to_string(),
             );
         }
-        return Asked { calls, failed: false, reason: String::new() };
+        return Asked {
+            calls,
+            failed: false,
+            reason: String::new(),
+        };
     }
     // The refusal a captioned clip earns comes back as the tool's own sentence, so it has to be REACHED. The batch
     // the loop answers its own calls from is filled with the captions here, so every rate the model asked for is
@@ -507,11 +585,20 @@ pub fn ask_at_over(
     // asked again. The repair path above stores this same shape; a first reply that already called the tool must
     // too, or the cache is only half a cache and the next identical ask dials the model a second time.
     if crate::clip_rules_tools_leg::asks_for_anything(&reply) {
-        llm_cache::store(tree, STEP, &parts, &crate::clip_rules_tools_leg::answering_envelope(&reply).to_string());
+        llm_cache::store(
+            tree,
+            STEP,
+            &parts,
+            &crate::clip_rules_tools_leg::answering_envelope(&reply).to_string(),
+        );
     }
     // A call this pass can already answer ENDS the ask: the model has its result and there is nothing to ask it
     // for, so no second request goes out (§F3.10 counts batches by rows in `requests.tsv`).
-    Asked { calls: calls_out, failed: false, reason: String::new() }
+    Asked {
+        calls: calls_out,
+        failed: false,
+        reason: String::new(),
+    }
 }
 
 /// `stored_form` is gone: since §3's answer on this item the answer IS a call list, so what a pass caches is
@@ -522,14 +609,24 @@ pub fn ask_at_over(
 /// texts the request is made of.
 fn messages(context: &str, clips: &[(u32, f64)], captioned: &[(u32, usize)]) -> (String, String) {
     let total: f64 = clips.iter().map(|(_, length)| length).sum();
-    (speeds_system(context), user_message(clips, captioned, total))
+    (
+        speeds_system(context),
+        user_message(clips, captioned, total),
+    )
 }
 
 /// The file one ask's answer is cached in — `Tree::cache_llm`'s layout and `llm_cache`'s key, reached through
 /// `cache_parts`, the ONE key recipe the pass itself stores by, so the two cannot drift apart. Named
 /// `_for_test` because only a proof names the file: the pass never asks for a path, it just stores and reads.
 /// A second hash recipe inside a test would be a rule able to disagree with the code.
-pub fn cache_file_for_test(tree: &Tree, context: &str, clips: &[(u32, f64)], captioned: &[(u32, usize)], model: &str, attempt: u32) -> PathBuf {
+pub fn cache_file_for_test(
+    tree: &Tree,
+    context: &str,
+    clips: &[(u32, f64)],
+    captioned: &[(u32, usize)],
+    model: &str,
+    attempt: u32,
+) -> PathBuf {
     let (system, user) = messages(context, clips, captioned);
     // A missing key is no file: `llm_cache::store` refuses to write one either (§6).
     let key = llm_cache::key(&cache_parts(&system, &user, model, attempt)).unwrap_or_default();
@@ -580,5 +677,9 @@ fn base_row(model: &str) -> Request {
 
 /// One failure answer, with the reason kept beside it for the log.
 fn failed(reason: String) -> Asked {
-    Asked { calls: Vec::new(), failed: true, reason }
+    Asked {
+        calls: Vec::new(),
+        failed: true,
+        reason,
+    }
 }

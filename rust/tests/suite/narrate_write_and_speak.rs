@@ -18,7 +18,7 @@ use naivepost::narrate_run::{
 };
 use naivepost::narrate_screen::CAPTIONS;
 use naivepost::narration::{Entry, Narration, Silent};
-use naivepost::runqueue::{PROGRESS_PULSE, Queue};
+use naivepost::runqueue::{Queue, PROGRESS_PULSE};
 
 /// A throwaway `.naivepost` folder for the file-level assertions.
 fn tmp_tree(tag: &str) -> (PathBuf, Tree) {
@@ -212,13 +212,18 @@ fn f4_1_s4_rewrite_toggle_off_writes_only_missing() {
         vec![(0.0, 10.0), (24.0, 31.0)],
         "the narrated middle clip is left exactly as it is, and play order is kept"
     );
-    assert_eq!(plan.why, "clip 1 has no narration \u{2014} it is new, or the cut moved under it");
+    assert_eq!(
+        plan.why,
+        "clip 1 has no narration \u{2014} it is new, or the cut moved under it"
+    );
     assert!(plan.log.contains("writing 2 clip(s)"));
     assert!(!plan.captions_only);
     // The default the project ships agrees with the rule's default.
     assert_eq!(
         naivepost::narrate_rewrite::REWRITE_DEFAULT,
-        naivepost::project::Policy::default().narration_rewrite.value,
+        naivepost::project::Policy::default()
+            .narration_rewrite
+            .value,
         "the toggle's default must be one number in two places at most"
     );
 }
@@ -232,7 +237,10 @@ fn f4_1_s4_rewrite_on_writes_every_clip() {
         CLIPS.to_vec(),
         "on: every clip, in the order the caller passed them"
     );
-    assert_eq!(plan.why, "rewriting every line", "the toggle wins over staleness in <why>");
+    assert_eq!(
+        plan.why, "rewriting every line",
+        "the toggle wins over staleness in <why>"
+    );
     assert!(plan.log.contains("writing 3 clip(s)"));
 }
 
@@ -255,15 +263,17 @@ fn f4_1_s4_silent_list_survives() {
         ..Default::default()
     }];
     let kept = silent_survives_entry_rewrite(&narration.silent, &narration.entries, &new_entries);
-    assert_eq!(kept, narration.silent, "the user's own silence decisions are not the model's to drop");
+    assert_eq!(
+        kept, narration.silent,
+        "the user's own silence decisions are not the model's to drop"
+    );
 }
 
 #[test]
 fn f4_1_s4_written_log() {
     assert_eq!(written_log(4), ">>> narration written for 4 clips");
     assert_eq!(
-        SPEAKING_STATUS,
-        "narration written \u{2014} speaking it",
+        SPEAKING_STATUS, "narration written \u{2014} speaking it",
         "the status between the two jobs, em dash included"
     );
 }
@@ -287,13 +297,20 @@ fn f4_1_s5_captions_only_stops_before_speaking() {
 
     // With that plan, the run ends at the write: synthesize is never called.
     let mut synth_calls = 0usize;
-    let outcome = plan_with(&plan, |_clips| Ok(2), |_s, _e, _t| {
-        synth_calls += 1;
-        Ok(true)
-    });
+    let outcome = plan_with(
+        &plan,
+        |_clips| Ok(2),
+        |_s, _e, _t| {
+            synth_calls += 1;
+            Ok(true)
+        },
+    );
     assert_eq!(outcome, Ok(Outcome::CaptionsOnly { written: 2 }));
     assert_eq!(synth_calls, 0, "captions only means NOTHING is spoken");
-    assert_eq!(captions_only_done(2), "narrate: captions only \u{2014} 2 line(s) written, none spoken");
+    assert_eq!(
+        captions_only_done(2),
+        "narrate: captions only \u{2014} 2 line(s) written, none spoken"
+    );
 }
 
 // --- S6: the per-line checkpoint -----------------------------------------------------------
@@ -305,14 +322,20 @@ fn f4_1_s6_speak_skips_blank_and_cached() {
     assert_eq!(speak_line("   \n\t ", "own", false), Speak::SkippedBlank);
     assert_eq!(speak_line("", "own", true), Speak::SkippedBlank);
     // Not blank but already in the cache: spend nothing.
-    assert_eq!(speak_line("said it already", "own", true), Speak::SkippedCached);
+    assert_eq!(
+        speak_line("said it already", "own", true),
+        Speak::SkippedCached
+    );
     // Otherwise hand it to F4.4.
     assert_eq!(speak_line("a new line", "own", false), Speak::Synthesize);
 
     // The summary's indent is part of the spec: FOUR spaces, never `>>> `.
     assert!(spoken_log(2, 3).starts_with("    narrate:"));
     assert!(!spoken_log(2, 3).contains(">>>"));
-    assert_eq!(spoken_log(2, 3), "    narrate: 2 line(s) spoken, 3 already in the cache");
+    assert_eq!(
+        spoken_log(2, 3),
+        "    narrate: 2 line(s) spoken, 3 already in the cache"
+    );
 
     // Blanks count as neither spoken nor cached.
     assert_eq!(
@@ -336,9 +359,15 @@ fn f4_1_s7_done_statuses() {
         DONE_SPOKEN,
         "narration ready and spoken \u{2014} \u{25b6} the preview hears it in place"
     );
-    assert_eq!(DONE_CAPTIONS, "narration ready \u{2014} captions only, nothing spoken");
+    assert_eq!(
+        DONE_CAPTIONS,
+        "narration ready \u{2014} captions only, nothing spoken"
+    );
     assert_eq!(stopped_status("speaking"), "speaking stopped");
-    assert_eq!(failed_status("narration"), "narration failed \u{2014} see log");
+    assert_eq!(
+        failed_status("narration"),
+        "narration failed \u{2014} see log"
+    );
 
     // They are RETURNED strings, so the door can put them where they are read: the prototype wrote
     // them to the progress bar's hidden text, where nobody saw them (§F4.1 S7's bug note).
@@ -364,7 +393,11 @@ fn f4_1_s7_stopped_ends_name_the_stage() {
     // per run and `RunBar::press_stop` raises — so a stop can only ever name the stage it interrupted.
     assert_eq!(stopped_status(JOB_NARRATION), "narration stopped");
     assert_eq!(stopped_status(JOB_SPEAKING), "speaking stopped");
-    assert_ne!(stopped_status(JOB_NARRATION), DONE_SPOKEN, "a stop is not a finished narration");
+    assert_ne!(
+        stopped_status(JOB_NARRATION),
+        DONE_SPOKEN,
+        "a stop is not a finished narration"
+    );
 
     // The speaking half reports it: with the switch raised before the first line, nothing is dialled,
     // nothing is counted, and the pass says it was cut short rather than reporting an ending.
@@ -388,7 +421,10 @@ fn f4_1_s7_stopped_ends_name_the_stage() {
             Ok(std::path::PathBuf::from("/tmp/take.wav"))
         },
     );
-    assert!(!clean.stopped && clean.spoken == 1, "with no stop the pass runs: {clean:?}");
+    assert!(
+        !clean.stopped && clean.spoken == 1,
+        "with no stop the pass runs: {clean:?}"
+    );
 
     naivepost::cancel_leg::cancel_now();
     let stopped = naivepost::ui::narrate_run_speak::speak_lines(
@@ -401,9 +437,20 @@ fn f4_1_s7_stopped_ends_name_the_stage() {
     );
     naivepost::cancel_leg::clear();
     assert!(stopped.stopped, "the raised switch ended the pass");
-    assert_eq!(stopped.spoken, 0, "nothing was spoken after a stop: {stopped:?}");
-    assert!(stopped.lines.is_empty(), "no verdicts were earned: {:?}", stopped.lines);
-    assert_eq!(dialed.get(), 1, "the stopped pass dialled the synth for nothing");
+    assert_eq!(
+        stopped.spoken, 0,
+        "nothing was spoken after a stop: {stopped:?}"
+    );
+    assert!(
+        stopped.lines.is_empty(),
+        "no verdicts were earned: {:?}",
+        stopped.lines
+    );
+    assert_eq!(
+        dialed.get(),
+        1,
+        "the stopped pass dialled the synth for nothing"
+    );
     // And the sentence the run puts on the status line is the stage's own, not the done wording.
     assert_eq!(stopped_status(JOB_SPEAKING), "speaking stopped");
 }
@@ -445,7 +492,10 @@ fn f4_1_s2_fold_replaces_only_covered_clips() {
 
     assert_eq!(folded.entries.len(), 2, "a replace is not an append");
     assert_eq!(folded.entries[0].text, "the new first line");
-    assert_eq!(folded.entries[0].at, 1.25, "the clip-relative offset passes through");
+    assert_eq!(
+        folded.entries[0].at, 1.25,
+        "the clip-relative offset passes through"
+    );
     assert_eq!(folded.entries[0].emotion, "happy");
     assert_eq!(
         folded.entries[1], before_second,
@@ -523,8 +573,15 @@ fn f4_1_s6_speak_pass_counts() {
         vec![Speak::SkippedBlank, Speak::SkippedCached, Speak::Synthesize],
         "one decision per line, in the record's order"
     );
-    assert_eq!(tally(&speaks), (1, 1), "one synthesized, one cached, the blank neither");
-    assert_eq!(spoken_log(1, 1), "    narrate: 1 line(s) spoken, 1 already in the cache");
+    assert_eq!(
+        tally(&speaks),
+        (1, 1),
+        "one synthesized, one cached, the blank neither"
+    );
+    assert_eq!(
+        spoken_log(1, 1),
+        "    narrate: 1 line(s) spoken, 1 already in the cache"
+    );
 }
 
 /// Run a plan through [`naivepost::narrate_run::run_with`] with stub seams, keeping the helper short

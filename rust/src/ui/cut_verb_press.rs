@@ -116,7 +116,10 @@ pub fn press_split(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
     let outcome = cut_verbs::split(band.as_ref(), line, &cut_.segs);
     // The hand is filled from the answer's OWN segment list, before `report_verb` clears the band: the
     // right half is the scene that now starts at the line, and after a clear there is nothing left to ask.
-    if let cut_verbs::Outcome::Applied { segs, into_hand, .. } = &outcome {
+    if let cut_verbs::Outcome::Applied {
+        segs, into_hand, ..
+    } = &outcome
+    {
         if *into_hand {
             take_into_hand(right_half_at_line(segs, line));
         }
@@ -138,7 +141,9 @@ fn right_half_at_line(segs: &[Seg], line: f64) -> Option<Selection> {
     Some(Selection {
         start: scene.s.max(line),
         end: scene.e,
-        scope: Scope::Footage { row: scene.cam.max(0) as usize },
+        scope: Scope::Footage {
+            row: scene.cam.max(0) as usize,
+        },
     })
 }
 
@@ -221,8 +226,9 @@ pub fn press_badge(window: &adw::ApplicationWindow, badge: Badge, target: usize)
             }
             cut_folds::press_lane_cross(window, &name)
         }
-        Badge::EmptyRow => cut_folds::press_row_cross(window, target)
-            .unwrap_or_else(|| "this row still has footage \u{2014} nothing to remove here".to_string()),
+        Badge::EmptyRow => cut_folds::press_row_cross(window, target).unwrap_or_else(|| {
+            "this row still has footage \u{2014} nothing to remove here".to_string()
+        }),
         Badge::Effect => ui::remove_effect_at(window, target),
         Badge::GreenBar => remove_scene_at(window, target),
     }
@@ -245,7 +251,8 @@ pub fn remove_scene_at(window: &adw::ApplicationWindow, index: usize) -> String 
     cut_folds::refresh_fold_badges(window);
     crate::ui::cut_cameras::refresh_camera_rows(window);
     ui::refresh_effects_lane(window);
-    let said = format!("removed \u{2014} 1 segment(s), was {was} \u{2014} \u{21b6} Undo takes it back");
+    let said =
+        format!("removed \u{2014} 1 segment(s), was {was} \u{2014} \u{21b6} Undo takes it back");
     if let Some(status_line) = ui::find_status(window.upcast_ref()) {
         status_line.set_text(&said);
     }

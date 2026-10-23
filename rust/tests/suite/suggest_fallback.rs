@@ -34,7 +34,10 @@ fn p_eng_suggestfallbacksegments_s2_the_denominator_is_what_divides() {
     // Computed from the constant rather than written as literals, so moving 20 moves the expectation.
     assert_eq!(suggest::fallback_fraction(10), expected(10));
     assert_eq!(suggest::fallback_fraction(10), 0.5);
-    assert_eq!(suggest::fallback_fraction(suggest::SUGGEST_FALLBACK_SEGMENTS), 1.0);
+    assert_eq!(
+        suggest::fallback_fraction(suggest::SUGGEST_FALLBACK_SEGMENTS),
+        1.0
+    );
     assert_eq!(suggest::fallback_fraction(5), expected(5));
 }
 
@@ -43,8 +46,14 @@ fn p_eng_suggestfallbacksegments_s2_the_denominator_is_what_divides() {
 #[test]
 fn p_eng_suggestfallbacksegments_s3_never_reads_zero() {
     // suggest.progressFloorSeconds — the same floor the placed progress uses.
-    assert_eq!(suggest::fallback_fraction(0), suggest::PROGRESS_FLOOR_SECONDS);
-    assert!(suggest::fallback_fraction(0) > 0.0, "a bar at 0 looks like no run at all");
+    assert_eq!(
+        suggest::fallback_fraction(0),
+        suggest::PROGRESS_FLOOR_SECONDS
+    );
+    assert!(
+        suggest::fallback_fraction(0) > 0.0,
+        "a bar at 0 looks like no run at all"
+    );
     // A count that would divide below the floor is lifted to it, not left under it.
     let raw = expected(0);
     assert!(raw < suggest::PROGRESS_FLOOR_SECONDS);
@@ -56,9 +65,16 @@ fn p_eng_suggestfallbacksegments_s3_never_reads_zero() {
 #[test]
 fn p_eng_suggestfallbacksegments_s4_a_full_bar_not_five() {
     // Past the denominator the bar is full; a longer reply never reports 5 or 500%.
-    assert_eq!(suggest::fallback_fraction(suggest::SUGGEST_FALLBACK_SEGMENTS), 1.0);
+    assert_eq!(
+        suggest::fallback_fraction(suggest::SUGGEST_FALLBACK_SEGMENTS),
+        1.0
+    );
     assert_eq!(suggest::fallback_fraction(100), 1.0);
-    assert_eq!(suggest::fallback_fraction(usize::MAX / 2), 1.0, "no overflow past the ceiling either");
+    assert_eq!(
+        suggest::fallback_fraction(usize::MAX / 2),
+        1.0,
+        "no overflow past the ceiling either"
+    );
     // And every value in between stays inside the band.
     for moments in 0..=40usize {
         let fraction = suggest::fallback_fraction(moments);

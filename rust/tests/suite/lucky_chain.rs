@@ -50,8 +50,7 @@ fn f0_4_s1_busy_refuses_the_press() {
     let err = Chain::start(true).expect_err("busy must refuse");
     assert_eq!(err, lucky::BUSY_REFUSAL);
     assert_eq!(
-        err,
-        "a run is already active \u{2014} stop it first (\u{23f9})",
+        err, "a run is already active \u{2014} stop it first (\u{23f9})",
         "the spec's sentence, em dash and stop glyph included"
     );
     // And not busy is the other side of the same branch.
@@ -64,12 +63,15 @@ fn f0_4_s1_busy_refuses_the_press() {
 fn f0_4_s2_s3_the_opening_lists_all_four_in_page_order() {
     let (_chain, opening) = started();
     assert_eq!(
-        opening,
-        ">>> run: Prepare \u{2192} Cut \u{2192} Narrate \u{2192} Produce",
+        opening, ">>> run: Prepare \u{2192} Cut \u{2192} Narrate \u{2192} Produce",
         "page order, arrow U+2192 between the names"
     );
     // The opening comes from the same four names the chain walks, so it cannot drift from the walk.
-    assert_eq!(opening.matches('\u{2192}').count(), 3, "four names, three arrows");
+    assert_eq!(
+        opening.matches('\u{2192}').count(),
+        3,
+        "four names, three arrows"
+    );
 
     // Both skip conditions set up front changes nothing about the opening line: the list is intent.
     let (mut both, _) = Chain::start(false).expect("not busy");
@@ -113,11 +115,25 @@ fn f0_4_s4_narration_off_skips_narrate() {
         true,
         false,
     );
-    assert_eq!(advances[0], Advance::Run { page: Page::Prepare, name: "Prepare" });
-    assert_eq!(advances[1], Advance::Run { page: Page::Cut, name: "Cut" });
+    assert_eq!(
+        advances[0],
+        Advance::Run {
+            page: Page::Prepare,
+            name: "Prepare"
+        }
+    );
+    assert_eq!(
+        advances[1],
+        Advance::Run {
+            page: Page::Cut,
+            name: "Cut"
+        }
+    );
     assert_eq!(
         advances[2],
-        Advance::Skipped { line: lucky::NARRATE_SKIPPED.to_string() },
+        Advance::Skipped {
+            line: lucky::NARRATE_SKIPPED.to_string()
+        },
         "Narrate is skipped, not waited for"
     );
     assert_eq!(
@@ -125,7 +141,13 @@ fn f0_4_s4_narration_off_skips_narrate() {
         ">>> run: Narrate skipped \u{2014} this video has no narration"
     );
     // Not stuck: the walk continues into Produce.
-    assert_eq!(advances[3], Advance::Run { page: Page::Produce, name: "Produce" });
+    assert_eq!(
+        advances[3],
+        Advance::Run {
+            page: Page::Produce,
+            name: "Produce"
+        }
+    );
 }
 
 /// S4: hand edits skip Cut with the spec's exact sentence — the edits are the answer, so the step has
@@ -137,17 +159,31 @@ fn f0_4_s4_hand_edits_skip_cut() {
         false,
         true,
     );
-    assert_eq!(advances[0], Advance::Run { page: Page::Prepare, name: "Prepare" });
+    assert_eq!(
+        advances[0],
+        Advance::Run {
+            page: Page::Prepare,
+            name: "Prepare"
+        }
+    );
     assert_eq!(
         advances[1],
-        Advance::Skipped { line: lucky::CUT_SKIPPED.to_string() }
+        Advance::Skipped {
+            line: lucky::CUT_SKIPPED.to_string()
+        }
     );
     assert_eq!(
         lucky::CUT_SKIPPED,
         ">>> run: Cut skipped \u{2014} the cut has hand edits, which are kept"
     );
     // Walking on past the skip reaches Narrate, not a halt.
-    assert_eq!(advances[2], Advance::Run { page: Page::Narrate, name: "Narrate" });
+    assert_eq!(
+        advances[2],
+        Advance::Run {
+            page: Page::Narrate,
+            name: "Narrate"
+        }
+    );
 }
 
 /// S4: a declined step is carried past, not waited for, and earns no tally entry — there was no
@@ -176,7 +212,13 @@ fn f0_4_s4_a_declined_step_is_carried_past_and_not_tallied() {
         .collect();
     assert_eq!(
         shape,
-        vec!["run:Prepare", "run:Cut", "run:Narrate", "run:Produce", "end"],
+        vec![
+            "run:Prepare",
+            "run:Cut",
+            "run:Narrate",
+            "run:Produce",
+            "end"
+        ],
         "each decline moves on rather than halting"
     );
     match advances.last().unwrap() {
@@ -201,10 +243,21 @@ fn f0_4_s5_a_stop_ends_the_run_where_it_lands() {
         &[StepOutcome::Ran { seconds: 90 }, StepOutcome::Stopped],
         false,
         false,
-    )
-    ;
-    assert_eq!(advances[0], Advance::Run { page: Page::Prepare, name: "Prepare" });
-    assert_eq!(advances[1], Advance::Run { page: Page::Cut, name: "Cut" });
+    );
+    assert_eq!(
+        advances[0],
+        Advance::Run {
+            page: Page::Prepare,
+            name: "Prepare"
+        }
+    );
+    assert_eq!(
+        advances[1],
+        Advance::Run {
+            page: Page::Cut,
+            name: "Cut"
+        }
+    );
     match &advances[2] {
         Advance::End { line, status } => {
             assert_eq!(
@@ -224,14 +277,26 @@ fn f0_4_s5_a_stop_ends_the_run_where_it_lands() {
 fn f0_4_s5_a_failing_step_walks_on_unlike_a_stop() {
     // Prepare fails; the chain must hand over Cut rather than ending.
     let (mut chain, advances) = pump(&[StepOutcome::Failed], false, false);
-    assert_eq!(advances[0], Advance::Run { page: Page::Prepare, name: "Prepare" });
+    assert_eq!(
+        advances[0],
+        Advance::Run {
+            page: Page::Prepare,
+            name: "Prepare"
+        }
+    );
     assert_eq!(
         advances[1],
-        Advance::Run { page: Page::Cut, name: "Cut" },
+        Advance::Run {
+            page: Page::Cut,
+            name: "Cut"
+        },
         "a failed step must not halt the chain"
     );
     // Contrast: a stop on the same chain does end it.
-    assert!(matches!(chain.next(StepOutcome::Stopped), Advance::End { .. }));
+    assert!(matches!(
+        chain.next(StepOutcome::Stopped),
+        Advance::End { .. }
+    ));
 }
 
 /// S6: the three end forms and their distinct status mirrors.
@@ -294,7 +359,10 @@ fn f0_4_s6_the_three_end_forms_and_their_status_mirrors() {
     match advances.last().unwrap() {
         Advance::End { line, status } => {
             // All four were handed out and none tallied, so the press ended having done nothing.
-            assert!(line.contains("all done in 0s") || line.contains("left undone"), "{line}");
+            assert!(
+                line.contains("all done in 0s") || line.contains("left undone"),
+                "{line}"
+            );
             assert!(!line.contains("Prepare "), "{line}");
             assert!(status.contains("done"), "{status}");
         }
@@ -311,7 +379,11 @@ fn f0_4_s6_chain_time_padding() {
     assert_eq!(lucky::chain_time(59), "59s");
     // The boundary: 60 s is no longer under a minute.
     assert_eq!(lucky::chain_time(60), "1m 00s");
-    assert_eq!(lucky::chain_time(63), "1m 03s", "seconds pad to two once past a minute");
+    assert_eq!(
+        lucky::chain_time(63),
+        "1m 03s",
+        "seconds pad to two once past a minute"
+    );
     assert_eq!(lucky::chain_time(123), "2m 03s", "the spec's own example");
     assert_eq!(lucky::chain_time(600), "10m 00s");
     assert_eq!(lucky::chain_time(3599), "59m 59s");

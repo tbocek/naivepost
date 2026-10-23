@@ -23,7 +23,8 @@ pub fn clamp_effects_to_cut(window: &adw::ApplicationWindow) -> String {
     let clamped = crate::cut_clamp::clamp_to_cut(&before);
     // Nothing dropped and nothing trimmed: the effects already sit inside the footage the cut keeps.
     if clamped.dropped == 0 && clamped.kept == before.fx {
-        return "nothing to clamp \u{2014} every effect sits inside the footage the cut keeps".to_string();
+        return "nothing to clamp \u{2014} every effect sits inside the footage the cut keeps"
+            .to_string();
     }
     let mut cut_ = before.clone();
     cut_.fx = clamped.kept.clone();
@@ -54,10 +55,7 @@ pub fn clamp_effects_to_cut(window: &adw::ApplicationWindow) -> String {
             clamped.dropped
         )
     } else {
-        format!(
-            "effects trimmed to the cut \u{2014} {} kept",
-            cut_.fx.len()
-        )
+        format!("effects trimmed to the cut \u{2014} {} kept", cut_.fx.len())
     };
     if let Some(status_line) = super::window_doors::find_status(window.upcast_ref()) {
         status_line.set_text(&said);

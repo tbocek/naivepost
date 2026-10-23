@@ -71,8 +71,11 @@ fn seed_frames(tree: &Tree, path: &str, n: usize) {
     let dir = tree.frames_dir(&lane_of(path));
     fs::create_dir_all(&dir).expect("frames dir");
     for i in 0..n {
-        fs::write(dir.join(format!("2026-09-16_18-43-0{}.000.jpg", i % 10)), b"jpg")
-            .expect("frame file");
+        fs::write(
+            dir.join(format!("2026-09-16_18-43-0{}.000.jpg", i % 10)),
+            b"jpg",
+        )
+        .expect("frame file");
     }
 }
 
@@ -122,7 +125,11 @@ fn sec_04_prepare_1_screen_s_inputs_divisors_are_the_named_parameters() {
     assert_eq!(prepare::vision_calls(0), 0);
     assert_eq!(prepare::vision_calls(4), 1);
     assert_eq!(prepare::vision_calls(8), 2);
-    assert_eq!(prepare::vision_calls(9), 3, "// P.machine.describeFramesPerReq");
+    assert_eq!(
+        prepare::vision_calls(9),
+        3,
+        "// P.machine.describeFramesPerReq"
+    );
 
     // prepare::FIX_BLOCK_LINES = 25, the fixer's block size.
     assert_eq!(prepare::FIX_BLOCK_LINES, 25);
@@ -229,7 +236,10 @@ fn sec_04_prepare_1_screen_s_outputs_label_and_three_subfolder_tooltip() {
     seed_frames(&tree, LECTURE, 9);
     seed_transcript(&tree, LECTURE, 26);
     let total = prepare::outputs_count(&tree);
-    assert!(total >= 10, "the count covers the whole prepare/ tree: {total}");
+    assert!(
+        total >= 10,
+        "the count covers the whole prepare/ tree: {total}"
+    );
     // §6's half of the row, round-tripped through the same helpers the row uses rather than a literal
     // the test invented: "N files, size" after §1's label.
     let (bytes, newest) = prepare::outputs_size(&tree);
@@ -243,12 +253,18 @@ fn sec_04_prepare_1_screen_s_outputs_label_and_three_subfolder_tooltip() {
         "the row prints the spec's label followed by the count and its size"
     );
     assert!(
-        shell.outputs(Some(&tree)).starts_with(prepare::OUTPUTS_LABEL),
+        shell
+            .outputs(Some(&tree))
+            .starts_with(prepare::OUTPUTS_LABEL),
         "label first, as §1 writes it"
     );
 
     // The folder button's tooltip names all three subfolders the count spans.
-    for sub in ["prepare/inputs/", "prepare/describe/", "prepare/transcript/"] {
+    for sub in [
+        "prepare/inputs/",
+        "prepare/describe/",
+        "prepare/transcript/",
+    ] {
         assert!(
             prepare::OUTPUTS_TIP.contains(sub),
             "the tooltip must name {sub}, it says: {:?}",
@@ -311,7 +327,11 @@ fn sec_04_prepare_1_screen_s_freq_is_a_stop_not_a_number_box() {
         "0.25",
         "a fraction of a second prints bare"
     );
-    assert_eq!(prepare::freq_label(5.0), "5s", "a second and up carries its unit");
+    assert_eq!(
+        prepare::freq_label(5.0),
+        "5s",
+        "a second and up carries its unit"
+    );
 }
 
 /// The reason Freq and the extraction grid are two numbers at all: changing what the model is
@@ -324,11 +344,13 @@ fn sec_04_prepare_1_screen_s_freq_change_never_moves_the_extraction_grid() {
     let grid_before = prepare::EXTRACTION_GRID;
     assert!(prepare::set_freq(&mut project, 5.0));
     assert_eq!(
-        prepare::EXTRACTION_GRID, grid_before,
+        prepare::EXTRACTION_GRID,
+        grid_before,
         "Freq moved to 5 s and the grid stayed at 250 ms — the whole point of the split"
     );
     assert_ne!(
-        project.interval, prepare::EXTRACTION_GRID,
+        project.interval,
+        prepare::EXTRACTION_GRID,
         "and the two are not aliases of one field"
     );
 }
@@ -338,7 +360,15 @@ fn sec_04_prepare_1_screen_s_freq_change_never_moves_the_extraction_grid() {
 /// video's own size and are scaled only on the way to the model (F1.7).
 #[test]
 fn sec_04_prepare_1_screen_s_no_style_and_no_frame_size_control() {
-    let banned = ["Style", "style", "Frame size", "frame size", "Original", "480p", "720p"];
+    let banned = [
+        "Style",
+        "style",
+        "Frame size",
+        "frame size",
+        "Original",
+        "480p",
+        "720p",
+    ];
     for row in bench::ROWS.iter() {
         for word in banned {
             assert!(
@@ -349,7 +379,11 @@ fn sec_04_prepare_1_screen_s_no_style_and_no_frame_size_control() {
         }
     }
     // The twelve prompts plus the User Context, and nothing else.
-    assert_eq!(bench::ROWS.len(), 13, "row 0 + twelve prompts in pipeline order");
+    assert_eq!(
+        bench::ROWS.len(),
+        13,
+        "row 0 + twelve prompts in pipeline order"
+    );
     assert_eq!(bench::ROWS[0].title, "User Context");
     assert!(bench::is_context(&bench::ROWS[0]));
     // Language stays: it is a recording property, not a style.
@@ -393,7 +427,8 @@ what this pins is that a missing file shows as zeros rather than vanishing: {tip
 /// the state before Open, where a "0 files" or a "newest just now" would both be claims about a folder
 /// the app has never seen.
 #[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_readouts_say_no_sources_and_no_age_without_a_project() {
+fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_readouts_say_no_sources_and_no_age_without_a_project(
+) {
     let shell = prepare_shell();
     let project = Project::default();
     assert_eq!(
@@ -424,5 +459,9 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_readout
     // And every other page keeps its plain count with no tooltip of this kind: the age is Prepare's,
     // because only Prepare's walk looks at stamps.
     let cut_shell = shell_on(Page::Cut);
-    assert_eq!(cut_shell.outputs_tip(Some(&tree)), None, "Cut has no age to show");
+    assert_eq!(
+        cut_shell.outputs_tip(Some(&tree)),
+        None,
+        "Cut has no age to show"
+    );
 }

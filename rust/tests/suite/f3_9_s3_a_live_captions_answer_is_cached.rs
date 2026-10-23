@@ -20,14 +20,14 @@ fn cache_dir(fixture: &Fixture) -> std::path::PathBuf {
 fn kept(fixture: &Fixture, needle: &str) -> bool {
     let mut stack = vec![cache_dir(fixture)];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if std::fs::read_to_string(&path)
-                .is_ok_and(|text| text.contains(needle))
-            {
+            } else if std::fs::read_to_string(&path).is_ok_and(|text| text.contains(needle)) {
                 return true;
             }
         }
@@ -45,31 +45,77 @@ fn f3_9_s3_a_live_captions_answer_is_cached_so_the_next_identical_ask_opens_no_s
     let llm = FakeLlm::start(vec![answer.clone()]);
     point_at(&llm.url());
 
-    let first = captions_ask::ask(&fixture.tree, "Caption every spoken line.", &clips, &[], 0, &|| false);
+    let first = captions_ask::ask(
+        &fixture.tree,
+        "Caption every spoken line.",
+        &clips,
+        &[],
+        0,
+        &|| false,
+    );
     assert!(!first.failed, "the ask was answered: {:?}", first.reason);
-    assert_eq!(first.calls.len(), 1, "one caption came back over the socket");
-    assert_eq!(first.calls[0].clip, 1, "and it was clip 1's, as the wire said");
+    assert_eq!(
+        first.calls.len(),
+        1,
+        "one caption came back over the socket"
+    );
+    assert_eq!(
+        first.calls[0].clip, 1,
+        "and it was clip 1's, as the wire said"
+    );
     let _ = llm.next_seen();
-    assert!(kept(&fixture, "The network is live"), "a readable answer is kept");
+    assert!(
+        kept(&fixture, "The network is live"),
+        "a readable answer is kept"
+    );
     // The stored bytes are the ANSWERING round's envelope: since §3's answer on this item the answer IS a call
     // list, so what the pass read and keeps is the envelope carrying `add_caption` (see `chat_envelope`). A tool
     // answer's prose `content` is not the answer, which is why it is no longer what lands in the slot.
-    assert!(kept(&fixture, "add_caption"), "the call is what got cached: {:?}", cache_dir(&fixture));
+    assert!(
+        kept(&fixture, "add_caption"),
+        "the call is what got cached: {:?}",
+        cache_dir(&fixture)
+    );
 
     // Same settings, same prompt, same attempt: the slot answers it, so the fake sees no second
     // request. §09 §10 still wants the hit in the log: one `cache` line, and no second WIRE line.
-    let second = captions_ask::ask(&fixture.tree, "Caption every spoken line.", &clips, &[], 0, &|| false);
+    let second = captions_ask::ask(
+        &fixture.tree,
+        "Caption every spoken line.",
+        &clips,
+        &[],
+        0,
+        &|| false,
+    );
     assert!(
         !second.failed,
         "the cached answer is a whole answer: {:?}",
         second.reason
     );
-    assert_eq!(second.calls, first.calls, "the cache handed back the same answer, word for word");
+    assert_eq!(
+        second.calls, first.calls,
+        "the cache handed back the same answer, word for word"
+    );
     let rows = requests::read(&fixture.tree).expect("requests.tsv reads back");
-    let wire = rows.iter().filter(|row| row.outcome != requests::Outcome::Cache).count();
-    let hits = rows.iter().filter(|row| row.outcome == requests::Outcome::Cache).count();
-    assert_eq!(wire, 1, "the identical ask dialled nobody, so the wire count did not grow: {rows:?}");
-    assert_eq!(hits, 1, "§10: the cache hit is a line of its own, marked as such: {rows:?}");
-    let hit = rows.iter().find(|row| row.outcome == requests::Outcome::Cache).expect("the cache row");
+    let wire = rows
+        .iter()
+        .filter(|row| row.outcome != requests::Outcome::Cache)
+        .count();
+    let hits = rows
+        .iter()
+        .filter(|row| row.outcome == requests::Outcome::Cache)
+        .count();
+    assert_eq!(
+        wire, 1,
+        "the identical ask dialled nobody, so the wire count did not grow: {rows:?}"
+    );
+    assert_eq!(
+        hits, 1,
+        "§10: the cache hit is a line of its own, marked as such: {rows:?}"
+    );
+    let hit = rows
+        .iter()
+        .find(|row| row.outcome == requests::Outcome::Cache)
+        .expect("the cache row");
     assert_eq!(hit.on_wire_s, None, "a hit never was on the wire");
 }

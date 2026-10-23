@@ -417,7 +417,12 @@ pub fn parse_event_line(line: &str, interval: f64, frames: &[f64]) -> ParseOutco
         // is the same — there is no moment to attach the words to.
         return ParseOutcome::Dropped(DropReason::UnparseableOffset);
     };
-    let Ok(offset) = offset_text.trim().trim_end_matches('s').trim().parse::<f64>() else {
+    let Ok(offset) = offset_text
+        .trim()
+        .trim_end_matches('s')
+        .trim()
+        .parse::<f64>()
+    else {
         return ParseOutcome::Dropped(DropReason::UnparseableOffset);
     };
 
@@ -447,10 +452,7 @@ fn flatten(text: &str) -> String {
 /// Split a reply at its `STATE:` label, returning the half before it and the state after.
 fn split_state(reply: &str) -> (&str, Option<String>) {
     match reply.find("STATE:") {
-        Some(at) => (
-            &reply[..at],
-            Some(flatten(&reply[at + "STATE:".len()..])),
-        ),
+        Some(at) => (&reply[..at], Some(flatten(&reply[at + "STATE:".len()..]))),
         None => (reply, None),
     }
 }
@@ -461,7 +463,9 @@ fn bracketed_offset(body: &str) -> Option<(&str, &str)> {
     let inner = &body[start + 1..];
     let end = inner.find(']')?;
     let offset = &inner[..end];
-    let rest = inner[end + 1..].find(':').map(|colon| &inner[end + 1 + colon + 1..])?;
+    let rest = inner[end + 1..]
+        .find(':')
+        .map(|colon| &inner[end + 1 + colon + 1..])?;
     Some((offset, rest))
 }
 

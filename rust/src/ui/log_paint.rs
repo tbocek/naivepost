@@ -36,7 +36,9 @@ pub fn log_view(window: &adw::ApplicationWindow) -> Option<gtk::TextView> {
 /// and nothing is painted: recording never fails the thing that recorded.
 pub fn note_exchange_line(line: &str) {
     window::log_line(line);
-    let Some(window) = window::built_window() else { return };
+    let Some(window) = window::built_window() else {
+        return;
+    };
     let (Some(progress), Some(expander), Some(view), Some(queue), Some(status)) = (
         window::progress_bar(&window),
         window::log_expander(&window),
@@ -51,7 +53,10 @@ pub fn note_exchange_line(line: &str) {
         &expander,
         &view,
         &queue.borrow(),
-        crate::ui::shell_beats::StatusLine { status: &status, owned: false },
+        crate::ui::shell_beats::StatusLine {
+            status: &status,
+            owned: false,
+        },
         true,
     );
 }

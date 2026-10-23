@@ -17,7 +17,11 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::Mutex;
 
+use crate::common;
 use adw::prelude::*;
+use common::{
+    fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle,
+};
 use naivepost::cut::Seg;
 use naivepost::layout::Tree;
 use naivepost::narration::Entry;
@@ -26,8 +30,6 @@ use naivepost::project::{Publish, TitleBox};
 use naivepost::roles::Job;
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle};
 
 // ---- logic helpers -------------------------------------------------------------------------------
 
@@ -87,7 +89,9 @@ thread_local! {
 
 /// What the last walk's publish leg received.
 fn published() -> Publish {
-    PUBLISHED.with(|cell| cell.borrow().clone()).expect("the publish leg ran")
+    PUBLISHED
+        .with(|cell| cell.borrow().clone())
+        .expect("the publish leg ran")
 }
 
 /// The legs a walk needs, all recording into one shared log of call names.
@@ -189,7 +193,13 @@ fn walk_with(
     };
     let nearest = |_at: f64| Some(34.0f64);
     // S4's three frames, as the page would hand them over: `frame:<seconds>` entries off the kept footage.
-    let spread = || vec!["frame:5.0".to_string(), "frame:15.0".to_string(), "frame:25.0".to_string()];
+    let spread = || {
+        vec![
+            "frame:5.0".to_string(),
+            "frame:15.0".to_string(),
+            "frame:25.0".to_string(),
+        ]
+    };
     let write_stamp = {
         let rec = rec.clone();
         move |_h: &str| {
@@ -260,7 +270,11 @@ fn publish_with(frames: &[&str], title: &str, prompt: &str) -> Publish {
 /// out \u{2014} this writer is not placing subtitles.
 #[test]
 fn f5_6_s1_the_brief_is_the_finished_video_clip_by_clip_and_carries_marks_and_rate() {
-    let text = up::brief(&clips(2), &[line(0.0, "the first line")], up::BRIEF_MAX_CHARS);
+    let text = up::brief(
+        &clips(2),
+        &[line(0.0, "the first line")],
+        up::BRIEF_MAX_CHARS,
+    );
     assert!(
         text.starts_with("THE FINISHED VIDEO: 2 clips, 00:24 long."),
         "{text}"
@@ -324,7 +338,11 @@ fn f5_6_s1_no_narration_says_so_in_words() {
 
 #[test]
 fn f5_6_s1_a_long_brief_folds_and_points_at_get_lines() {
-    assert_eq!(up::BRIEF_MAX_CHARS, 120_000, "P.machine.briefMaxChars is 120 kB");
+    assert_eq!(
+        up::BRIEF_MAX_CHARS,
+        120_000,
+        "P.machine.briefMaxChars is 120 kB"
+    );
     // Ten thousand chars per event line blows the bound on the first pass.
     let big = "x".repeat(10_000);
     let mut many = clips(20);
@@ -333,7 +351,10 @@ fn f5_6_s1_a_long_brief_folds_and_points_at_get_lines() {
         clip.said = vec![big.clone(); 10];
     }
     let folded = up::brief(&many, &[line(0.0, "a line")], 1_000);
-    assert!(folded.contains("get_lines"), "the fold tells the model where to read more");
+    assert!(
+        folded.contains("get_lines"),
+        "the fold tells the model where to read more"
+    );
     // Folding keeps FOLDED_LINES per side per clip rather than all ten, so the brief sheds most of what it
     // would have carried. The bound itself is only the trigger to fold, not a ceiling on the result: with
     // 10 kB lines kept, a folded brief is still long, and that is the model's problem to read, not the
@@ -346,14 +367,21 @@ fn f5_6_s1_a_long_brief_folds_and_points_at_get_lines() {
     );
     // Each clip kept only FOLDED_LINES of each side.
     let seen_count = folded.matches("SEEN:").count();
-    assert_eq!(seen_count, 20 * up::FOLDED_LINES, "each clip folded to FOLDED_LINES events");
+    assert_eq!(
+        seen_count,
+        20 * up::FOLDED_LINES,
+        "each clip folded to FOLDED_LINES events"
+    );
 }
 
 // ---- S2: the job, the tools, the prose fallback ---------------------------------------------------
 
 #[test]
 fn f5_6_s2_the_system_is_youtube_with_thinking_and_web_tools() {
-    assert!(naivepost::prompts::thinking("youtube"), "the youtube prompt thinks");
+    assert!(
+        naivepost::prompts::thinking("youtube"),
+        "the youtube prompt thinks"
+    );
     assert_eq!(naivepost::prompts::job("youtube"), Some(Job::UploadText));
     let offered: Vec<&str> = naivepost::tools::offered(Job::UploadText)
         .iter()
@@ -387,8 +415,9 @@ fn f5_6_s2_the_prose_reply_peels_three_labelled_lines() {
     let framed = "TITLE: Look at this\nTHUMBNAIL: frame: clip 2 +12\n\nBody text here.";
     let (_, thumb, _) = up::peel(framed);
     let value = thumb.expect("a thumbnail line");
-    let named = naivepost::produce_details::frame_line(value.trim_start_matches("THUMBNAIL: ").trim())
-        .expect("parses as a frame reference");
+    let named =
+        naivepost::produce_details::frame_line(value.trim_start_matches("THUMBNAIL: ").trim())
+            .expect("parses as a frame reference");
     assert_eq!(
         naivepost::produce_details::frame_moment(named, &[0.0, 20.0]),
         Some(32.0),
@@ -399,7 +428,10 @@ fn f5_6_s2_the_prose_reply_peels_three_labelled_lines() {
     let headed = "TITLE: T\nChapters:\n0:00 The start\n0:12 The rest";
     let (_, _, desc) = up::peel(headed);
     let desc = desc.expect("a description");
-    assert!(!desc.starts_with("Chapters:"), "the heading was dropped: {desc}");
+    assert!(
+        !desc.starts_with("Chapters:"),
+        "the heading was dropped: {desc}"
+    );
     assert!(desc.contains("0:00 The start"), "the body survived: {desc}");
 }
 
@@ -411,8 +443,16 @@ fn f5_6_s3_a_picked_frame_is_the_thumbnail_as_it_is() {
     let picked = up::pick_frame(2, 12.0, &[0.0, 20.0], &[1.0, 10.0, 34.0, 40.0]).expect("resolves");
     assert_eq!(picked.asked, 32.0);
     assert_eq!(picked.taken, 34.0, "the frame ACTUALLY taken");
-    assert!((picked.distance - 2.0).abs() < 1e-9, "and how far it is: {}", picked.distance);
-    assert!(picked.answer.contains("nothing is drawn"), "{}", picked.answer);
+    assert!(
+        (picked.distance - 2.0).abs() < 1e-9,
+        "and how far it is: {}",
+        picked.distance
+    );
+    assert!(
+        picked.answer.contains("nothing is drawn"),
+        "{}",
+        picked.answer
+    );
     assert!(picked.own, "a picked frame means the picture is one's own");
     // A frame naming a clip not in the cut names nothing.
     assert!(up::pick_frame(9, 1.0, &[0.0, 20.0], &[1.0]).is_err());
@@ -435,17 +475,37 @@ fn f5_6_s3_an_instruction_after_a_picked_frame_is_refused() {
 #[test]
 fn f5_6_s3_a_title_answers_with_its_fitted_size_or_the_overflow_warning() {
     let band = TitleBox::default();
-    let five = up::set_title(&Publish::default(), "five good words are fine", &band, false);
+    let five = up::set_title(
+        &Publish::default(),
+        "five good words are fine",
+        &band,
+        false,
+    );
     assert_eq!(five.words, 5);
     assert!(!five.overflows, "five words fit the advice");
-    assert!(five.size > 0.0, "the answer carries the fitted size: {}", five.size);
+    assert!(
+        five.size > 0.0,
+        "the answer carries the fitted size: {}",
+        five.size
+    );
     assert!(!five.answer.contains("overflow"), "{}", five.answer);
 
-    let nine = up::set_title(&Publish::default(), "one two three four five six seven eight nine", &band, false);
+    let nine = up::set_title(
+        &Publish::default(),
+        "one two three four five six seven eight nine",
+        &band,
+        false,
+    );
     assert_eq!(nine.words, 9);
-    assert!(nine.overflows, "over seven words warns rather than refusing");
+    assert!(
+        nine.overflows,
+        "over seven words warns rather than refusing"
+    );
     assert!(nine.answer.contains("overflow"), "{}", nine.answer);
-    assert!(nine.size > 0.0, "it still reports a size — the title is KEPT, not dropped");
+    assert!(
+        nine.size > 0.0,
+        "it still reports a size — the title is KEPT, not dropped"
+    );
 }
 
 // ---- S5/S6/S7/S8: the walk ----------------------------------------------------------------------
@@ -460,7 +520,14 @@ fn f5_6_s5_publish_lands_before_any_draw_and_a_failed_draw_keeps_the_thinking() 
         description: Some("the body of the description".into()),
         picked_frame: None,
     };
-    let out = walk_with(&rec, &publish_with(&[], "old", ""), &answers, None, false, false);
+    let out = walk_with(
+        &rec,
+        &publish_with(&[], "old", ""),
+        &answers,
+        None,
+        false,
+        false,
+    );
     assert!(out.published, "publish.json + description.txt landed");
     let published_at = rec.index("publish").expect("publish was called");
     let drew_at = rec.index("draw").expect("the draw ran");
@@ -472,10 +539,20 @@ fn f5_6_s5_publish_lands_before_any_draw_and_a_failed_draw_keeps_the_thinking() 
 
     // A draw that fails keeps the thinking: publish already happened, and the error is reported.
     let rec2 = Recorder::new();
-    let failed = walk_with(&rec2, &publish_with(&[], "old", ""), &answers, None, false, true);
+    let failed = walk_with(
+        &rec2,
+        &publish_with(&[], "old", ""),
+        &answers,
+        None,
+        false,
+        true,
+    );
     assert!(failed.published, "the text survives a failed draw (S5)");
     assert_eq!(failed.error.as_deref(), Some("sd.cpp said no"));
-    assert!(!rec2.took("stamp"), "no stamp for a picture that never arrived");
+    assert!(
+        !rec2.took("stamp"),
+        "no stamp for a picture that never arrived"
+    );
 }
 
 #[test]
@@ -498,9 +575,15 @@ fn f5_6_s5_a_changed_title_reprints_and_a_hand_edited_picture_does_not() {
     // The walk reports the same answer it hands the model, so the two cannot disagree.
     let band = TitleBox::default();
     let answer = up::set_title(&publish_with(&[], "old", ""), "a new title", &band, false);
-    assert!(answer.changed, "set_title says the picture must be reprinted");
+    assert!(
+        answer.changed,
+        "set_title says the picture must be reprinted"
+    );
     let mine = up::set_title(&publish_with(&[], "old", ""), "a new title", &band, true);
-    assert!(!mine.changed, "and says it must not once the picture is theirs");
+    assert!(
+        !mine.changed,
+        "and says it must not once the picture is theirs"
+    );
 }
 
 #[test]
@@ -516,7 +599,9 @@ fn f5_6_s6_the_draw_request_is_the_sd_body_with_the_no_words_tail() {
         "{prompt}"
     );
     assert!(
-        prompt.contains("Do not write any words, letters, titles, logos or captions into the picture."),
+        prompt.contains(
+            "Do not write any words, letters, titles, logos or captions into the picture."
+        ),
         "{prompt}"
     );
 
@@ -560,23 +645,36 @@ fn f5_6_s6_an_empty_instruction_is_refused_with_the_spec_own_sentence() {
     };
     let out = walk_with(&rec, &Publish::default(), &answers, None, false, false);
     assert_eq!(out.error.as_deref(), Some(up::NO_INSTRUCTION));
-    assert!(!rec.took("draw"), "nothing was asked of sd.cpp: {:?}", rec.calls.borrow());
+    assert!(
+        !rec.took("draw"),
+        "nothing was asked of sd.cpp: {:?}",
+        rec.calls.borrow()
+    );
 }
 
 #[test]
 fn f5_6_s6_the_poll_line_names_the_queue_when_there_is_one() {
     assert_eq!(up::poll_line("queued", 0), "drawing (queued)");
-    assert_eq!(up::poll_line("drawing", 3), "drawing (drawing, 3 ahead in the queue)");
+    assert_eq!(
+        up::poll_line("drawing", 3),
+        "drawing (drawing, 3 ahead in the queue)"
+    );
 }
 
 #[test]
 fn f5_6_s6_a_stamp_that_matches_skips_the_draw() {
-    assert!(naivepost::produce_details::already_drawn(true, true), "both files and a match skips");
+    assert!(
+        naivepost::produce_details::already_drawn(true, true),
+        "both files and a match skips"
+    );
     assert!(
         !naivepost::produce_details::already_drawn(false, true),
         "one file is half a picture, so it draws"
     );
-    assert!(!naivepost::produce_details::already_drawn(true, false), "a differing stamp draws");
+    assert!(
+        !naivepost::produce_details::already_drawn(true, false),
+        "a differing stamp draws"
+    );
 
     let base = up::thumbnail_stamp(&["a.jpg".into()], "brighten", "no blur", "16:9", false);
     // One row per stamp input: what changed, and whether the stamp therefore differs from `base`.
@@ -589,11 +687,46 @@ fn f5_6_s6_a_stamp_that_matches_skips_the_draw() {
         own: bool,
     }
     let cases: [StampCase; 5] = [
-        StampCase { what: "instruction", images: vec!["a.jpg".into()], instruction: "darken", negative: "no blur", aspect: "16:9", own: false },
-        StampCase { what: "images", images: vec!["b.jpg".into()], instruction: "brighten", negative: "no blur", aspect: "16:9", own: false },
-        StampCase { what: "negative", images: vec!["a.jpg".into()], instruction: "brighten", negative: "very blurry", aspect: "16:9", own: false },
-        StampCase { what: "aspect", images: vec!["a.jpg".into()], instruction: "brighten", negative: "no blur", aspect: "9:16", own: false },
-        StampCase { what: "own", images: vec!["a.jpg".into()], instruction: "brighten", negative: "no blur", aspect: "16:9", own: true },
+        StampCase {
+            what: "instruction",
+            images: vec!["a.jpg".into()],
+            instruction: "darken",
+            negative: "no blur",
+            aspect: "16:9",
+            own: false,
+        },
+        StampCase {
+            what: "images",
+            images: vec!["b.jpg".into()],
+            instruction: "brighten",
+            negative: "no blur",
+            aspect: "16:9",
+            own: false,
+        },
+        StampCase {
+            what: "negative",
+            images: vec!["a.jpg".into()],
+            instruction: "brighten",
+            negative: "very blurry",
+            aspect: "16:9",
+            own: false,
+        },
+        StampCase {
+            what: "aspect",
+            images: vec!["a.jpg".into()],
+            instruction: "brighten",
+            negative: "no blur",
+            aspect: "9:16",
+            own: false,
+        },
+        StampCase {
+            what: "own",
+            images: vec!["a.jpg".into()],
+            instruction: "brighten",
+            negative: "no blur",
+            aspect: "16:9",
+            own: true,
+        },
     ];
     for case in cases {
         assert_ne!(
@@ -626,7 +759,11 @@ fn f5_6_s6_a_stamp_that_matches_skips_the_draw() {
     let publish = publish_with(&["a.jpg"], "a title", "brighten");
     let current = up::thumbnail_stamp(&publish.frames, "brighten", "", up::DEFAULT_ASPECT, false);
     let out = walk_with(&rec, &publish, &answers, Some(&current), false, false);
-    assert!(!rec.took("draw"), "a matching stamp asks sd.cpp for nothing: {:?}", rec.calls.borrow());
+    assert!(
+        !rec.took("draw"),
+        "a matching stamp asks sd.cpp for nothing: {:?}",
+        rec.calls.borrow()
+    );
     assert!(out.already_drawn, "and the walk says it skipped");
 }
 
@@ -664,14 +801,19 @@ fn f5_6_s7_texts_print_before_the_title_then_the_stamp_lands() {
         "stamp",
     ];
     let got: Vec<&str> = order.iter().map(|c| c.as_str()).collect();
-    assert_eq!(got, want.to_vec(), "the whole half runs in the spec's order");
+    assert_eq!(
+        got,
+        want.to_vec(),
+        "the whole half runs in the spec's order"
+    );
     // Two print calls happened, and they were texts first then title — the order S7 states.
     assert_eq!(PRINTED.with(|p| p.borrow().clone()), vec!["texts", "title"]);
     assert!(out.reprinted, "the title changed, so it printed");
 }
 
 #[test]
-fn f5_6_s8_a_missing_title_or_instruction_keeps_the_previous_value_and_the_description_always_changes() {
+fn f5_6_s8_a_missing_title_or_instruction_keeps_the_previous_value_and_the_description_always_changes(
+) {
     let previous = publish_with(&["a.jpg"], "the old title", "the old instruction");
     // A reply that names neither TITLE nor THUMBNAIL: both keep what they were, the description moves.
     let answers = up::Answers {
@@ -687,7 +829,10 @@ fn f5_6_s8_a_missing_title_or_instruction_keeps_the_previous_value_and_the_descr
         "a blank title is named"
     );
     assert_eq!(up::finish_needs("a title", ""), vec!["description"]);
-    assert_eq!(up::finish_needs("a title", "a description"), Vec::<&str>::new());
+    assert_eq!(
+        up::finish_needs("a title", "a description"),
+        Vec::<&str>::new()
+    );
     // The record itself kept both old values: only the description moved.
     assert_eq!(previous.title, "the old title");
     assert_eq!(previous.prompt, "the old instruction");
@@ -697,7 +842,11 @@ fn f5_6_s8_a_missing_title_or_instruction_keeps_the_previous_value_and_the_descr
 
 static WIRE_FAIL: Mutex<Option<String>> = Mutex::new(None);
 
-fn record(slot: &Mutex<Option<String>>, label: &str, body: impl FnOnce() -> Result<(), String> + std::panic::UnwindSafe) {
+fn record(
+    slot: &Mutex<Option<String>>,
+    label: &str,
+    body: impl FnOnce() -> Result<(), String> + std::panic::UnwindSafe,
+) {
     let outcome = std::panic::catch_unwind(body);
     let failure = match outcome {
         Ok(Ok(())) => None,
@@ -720,12 +869,22 @@ thread_local! {
 }
 
 fn app_in_round() -> adw::Application {
-    CURRENT_APP.with(|held| held.borrow().clone()).expect("run_round published the application")
+    CURRENT_APP
+        .with(|held| held.borrow().clone())
+        .expect("run_round published the application")
 }
 
 fn two_segs() -> Vec<Seg> {
-    let first = Seg { s: 0.0, e: 9.5, ..Default::default() };
-    let second = Seg { s: 10.0, e: 30.0, ..Default::default() };
+    let first = Seg {
+        s: 0.0,
+        e: 9.5,
+        ..Default::default()
+    };
+    let second = Seg {
+        s: 10.0,
+        e: 30.0,
+        ..Default::default()
+    };
     vec![first, second]
 }
 
@@ -819,7 +978,9 @@ fn scripted_draw(tree: Tree) -> ui::produce_languages::DrawSlot {
         let plain = tree.thumbnail_plain_png();
         naivepost::produce_upload_print::flat_png_for_test(&plain, 640, 360, 0.25)
             .map_err(|why| why.to_string())?;
-        Ok(up::DrawnJob { id: "scripted-1".into() })
+        Ok(up::DrawnJob {
+            id: "scripted-1".into(),
+        })
     })
 }
 
@@ -833,7 +994,11 @@ fn assert_letters_landed(tree: &naivepost::layout::Tree) {
         "the print leg copied instead of printing: both files are {} bytes",
         printed.len()
     );
-    assert!(printed.len() > 200, "the printed picture looks truncated: {} bytes", printed.len());
+    assert!(
+        printed.len() > 200,
+        "the printed picture looks truncated: {} bytes",
+        printed.len()
+    );
 }
 
 // ---- the fake LLM: the SERVER the settings point at ----------------------------------------------
@@ -850,7 +1015,10 @@ struct FakeLlm {
 impl FakeLlm {
     fn start(reply: &str) -> FakeLlm {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
-        let address = format!("http://127.0.0.1:{}", listener.local_addr().expect("an address").port());
+        let address = format!(
+            "http://127.0.0.1:{}",
+            listener.local_addr().expect("an address").port()
+        );
         let reply = reply.to_string();
         std::thread::spawn(move || {
             for stream in listener.incoming() {
@@ -875,7 +1043,12 @@ fn serve_one(mut stream: TcpStream, reply: &str) {
     let mut length = 0usize;
     loop {
         let mut line = String::new();
-        if reader.read_line(&mut line).ok().filter(|read| *read > 0).is_none() {
+        if reader
+            .read_line(&mut line)
+            .ok()
+            .filter(|read| *read > 0)
+            .is_none()
+        {
             break;
         }
         if let Some(rest) = line.to_ascii_lowercase().strip_prefix("content-length:") {
@@ -913,7 +1086,8 @@ fn point_settings_at(fake_url: &str) {
         std::env::set_var("XDG_CONFIG_HOME", &config);
         std::env::set_var("XDG_DATA_HOME", &data);
     }
-    let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+    let paths =
+        naivepost::settings::from_environment().expect("settings folder from the pinned env");
     let mut conf = naivepost::settings::Conf::default();
     conf.model = "upload-flow-model".to_string();
     conf.server = fake_url.to_string();
@@ -946,7 +1120,10 @@ fn check_press_writes_the_upload_text(root: &Path) {
         "1.0\t5.0\t/media/room.wav\tsomeone\tthe score went up\n",
     )
     .expect("the transcript line is written");
-    assert!(!tree.publish_json().exists(), "the fixture root starts with no publish folder");
+    assert!(
+        !tree.publish_json().exists(),
+        "the fixture root starts with no publish folder"
+    );
 
     // The model leg gets a SERVER, not a slot: a local fake LLM the settings name, answering with the three
     // labelled lines plus a description — §3.9's prose shape, peeled by the program's own parser.
@@ -961,9 +1138,13 @@ fn check_press_writes_the_upload_text(root: &Path) {
     ui::seed_review_cut(&window, &cut);
     seed_page(&window);
 
-    let button = ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
+    let button =
+        ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
     // The wire this check fires is the run bar's own ▶, found by its stable name and nothing else.
-    assert!(ui::line_step_button(&window, "play-button").is_some(), "the run bar drew its play-button");
+    assert!(
+        ui::line_step_button(&window, "play-button").is_some(),
+        "the run bar drew its play-button"
+    );
     button.emit_by_name::<()>("clicked", &[]);
     settle();
 
@@ -971,10 +1152,18 @@ fn check_press_writes_the_upload_text(root: &Path) {
         .expect("the window has a status line")
         .text()
         .to_string();
-    assert_ne!(said, naivepost::cut::NO_CUT_YET, "the press thought there was no cut: {said:?}");
+    assert_ne!(
+        said,
+        naivepost::cut::NO_CUT_YET,
+        "the press thought there was no cut: {said:?}"
+    );
 
-    let json = std::fs::read_to_string(tree.publish_json())
-        .unwrap_or_else(|_| panic!("publish.json was not written at {}", tree.publish_json().display()));
+    let json = std::fs::read_to_string(tree.publish_json()).unwrap_or_else(|_| {
+        panic!(
+            "publish.json was not written at {}",
+            tree.publish_json().display()
+        )
+    });
     assert!(
         json.contains("The comeback nobody saw coming"),
         "the scripted title landed in publish.json: {json}"
@@ -983,8 +1172,12 @@ fn check_press_writes_the_upload_text(root: &Path) {
         json.contains("brighten the final scoreboard"),
         "and so did the instruction: {json}"
     );
-    let desc = std::fs::read_to_string(tree.description_txt())
-        .unwrap_or_else(|_| panic!("description.txt was not written at {}", tree.description_txt().display()));
+    let desc = std::fs::read_to_string(tree.description_txt()).unwrap_or_else(|_| {
+        panic!(
+            "description.txt was not written at {}",
+            tree.description_txt().display()
+        )
+    });
     assert!(desc.contains("close until the last round"), "{desc}");
 
     assert!(
@@ -997,15 +1190,21 @@ fn check_press_writes_the_upload_text(root: &Path) {
         tree.thumbnail_png().display()
     );
     assert_letters_landed(&tree);
-    let stamp = std::fs::read_to_string(tree.thumbnail_stamp())
-        .unwrap_or_else(|_| panic!("thumbnail.stamp was not written at {}", tree.thumbnail_stamp().display()));
+    let stamp = std::fs::read_to_string(tree.thumbnail_stamp()).unwrap_or_else(|_| {
+        panic!(
+            "thumbnail.stamp was not written at {}",
+            tree.thumbnail_stamp().display()
+        )
+    });
     assert_eq!(stamp.trim().len(), 16, "the stamp is a hash: {stamp}");
 
     let logs = ui::window::window_logs();
     assert!(
         logs.iter().any(|l| l.contains("THE FINISHED VIDEO:")),
         "the run logged the brief: {:?}",
-        logs.iter().filter(|l| l.contains("publish")).collect::<Vec<&String>>()
+        logs.iter()
+            .filter(|l| l.contains("publish"))
+            .collect::<Vec<&String>>()
     );
     assert!(
         !logs.iter().any(|l| l.contains("no image server here")),
@@ -1058,7 +1257,6 @@ fn f5_6_s1_pressing_produce_runs_the_upload_half_through_the_real_button() {
     assert!(failed.is_none(), "{}", failed.unwrap_or_default());
 }
 
-
 #[test]
 fn f5_6_s4_three_frames_from_the_cut_fill_the_row() {
     // S4 is not only a log line: the three frames go INTO the row, because `base_of`/`refs_of` read
@@ -1071,12 +1269,23 @@ fn f5_6_s4_three_frames_from_the_cut_fill_the_row() {
         description: Some("the body".into()),
         picked_frame: None,
     };
-    let out = walk_with(&rec, &publish_with(&[], "old", "draw me"), &answers, None, false, false);
+    let out = walk_with(
+        &rec,
+        &publish_with(&[], "old", "draw me"),
+        &answers,
+        None,
+        false,
+        false,
+    );
     assert!(out.took_three, "S4 says it took three");
     let row = published().frames;
     assert_eq!(
         row,
-        vec!["frame:5.0".to_string(), "frame:15.0".to_string(), "frame:25.0".to_string()],
+        vec![
+            "frame:5.0".to_string(),
+            "frame:15.0".to_string(),
+            "frame:25.0".to_string()
+        ],
         "the row holds the three spread frames before the draw: {row:?}"
     );
     // And the base really comes off that row — the point of filling it at all.
@@ -1108,7 +1317,10 @@ fn f5_6_s4_spread_skips_inserts_and_freezes() {
     );
     // Nothing kept at all: no moments, which is what makes the walk log NO_FRAMES_LOG instead of lying.
     let frozen = vec![common::seg(3.0, 3.0)];
-    assert!(frames::spread_moments(&frozen).is_empty(), "nothing kept, nothing to show");
+    assert!(
+        frames::spread_moments(&frozen).is_empty(),
+        "nothing kept, nothing to show"
+    );
     // The row spelling is the one the model's own `frame:` line uses, and `frame_at` reuses the ONE nearest
     // rule so a spread frame resolves like a picked one.
     assert_eq!(frames::row_entry(12.34), "frame:12.3");
@@ -1127,7 +1339,14 @@ fn f5_6_s4_a_chosen_frame_blocks_the_three() {
         description: Some("the body".into()),
         picked_frame: Some(12.0),
     };
-    let out = walk_with(&rec, &publish_with(&[], "old", "draw me"), &answers, None, false, false);
+    let out = walk_with(
+        &rec,
+        &publish_with(&[], "old", "draw me"),
+        &answers,
+        None,
+        false,
+        false,
+    );
     assert!(out.own, "a picked frame is the user's own picture");
     assert!(!out.took_three, "S4 does not run once a frame was chosen");
     let row = published().frames;
@@ -1156,9 +1375,17 @@ fn f5_6_s4_no_images_chosen_takes_three_from_the_cut() {
     // back what it was given only when there are too few to fill the row — so with an empty extraction the
     // caller has nothing real to send, which is exactly why NO_FRAMES_LOG exists.
     let none = naivepost::produce_details::candidate_frames(&kept, &[]);
-    assert_eq!(none.len(), 3, "the middles are computed whether or not frames exist");
+    assert_eq!(
+        none.len(),
+        3,
+        "the middles are computed whether or not frames exist"
+    );
     let sent = naivepost::produce_details::candidate_frames(&[], &[5.0, 15.0, 25.0]);
-    assert_eq!(sent, vec![5.0, 15.0, 25.0], "with nothing kept, what was extracted is handed back");
+    assert_eq!(
+        sent,
+        vec![5.0, 15.0, 25.0],
+        "with nothing kept, what was extracted is handed back"
+    );
     assert!(
         naivepost::produce_details::NO_FRAMES_LOG.contains("instruction alone"),
         "{}",
@@ -1177,7 +1404,12 @@ fn f5_6_s7_the_title_lands_on_the_picture() {
     let out = root.join("out.png");
     naivepost::produce_upload_print::flat_png_for_test(&plain, 480, 270, 0.2).expect("a flat base");
     let before = std::fs::read(&plain).expect("the base is a PNG");
-    let band = naivepost::project::TitleBox { cx: 0.5, cy: 0.3, wf: 0.9, hf: 0.3 };
+    let band = naivepost::project::TitleBox {
+        cx: 0.5,
+        cy: 0.3,
+        wf: 0.9,
+        hf: 0.3,
+    };
     naivepost::produce_upload_print::print_words(
         &plain,
         &out,
@@ -1186,14 +1418,27 @@ fn f5_6_s7_the_title_lands_on_the_picture() {
     )
     .expect("the print leg drew the title");
     let after = std::fs::read(&out).expect("the printed picture exists");
-    assert!(before != after, "printing letters left the picture byte-identical to the base");
-    assert!(after.len() > 200, "the printed picture looks truncated: {} bytes", after.len());
+    assert!(
+        before != after,
+        "printing letters left the picture byte-identical to the base"
+    );
+    assert!(
+        after.len() > 200,
+        "the printed picture looks truncated: {} bytes",
+        after.len()
+    );
     // An empty word list prints nothing and says so by leaving the base alone rather than erroring.
     let bare = root.join("bare.png");
-    naivepost::produce_upload_print::print_words(&plain, &bare, &[], &band).expect("nothing to print is ok");
+    naivepost::produce_upload_print::print_words(&plain, &bare, &[], &band)
+        .expect("nothing to print is ok");
     // A missing base refuses with the file named, which is where an operator would look first.
-    let why = naivepost::produce_upload_print::print_words(&root.join("nope.png"), &out, &["x".into()], &band)
-        .expect_err("a missing base must refuse");
+    let why = naivepost::produce_upload_print::print_words(
+        &root.join("nope.png"),
+        &out,
+        &["x".into()],
+        &band,
+    )
+    .expect_err("a missing base must refuse");
     assert!(why.contains("nope.png"), "{why}");
     let _ = std::fs::remove_dir_all(&root);
 }

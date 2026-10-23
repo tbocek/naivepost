@@ -53,11 +53,7 @@ pub fn run_ffprobe(ffprobe: &str, args: &[&str]) -> Result<String, String> {
 /// placeholder naming its number, because an untitled lane still has to be distinguishable from its
 /// neighbour. Absent or unparsable `channels` means mono, which is what a stream with no channel layout
 /// plays as.
-pub fn audio_streams(
-    ffprobe: &str,
-    path: &Path,
-    run: &Tool,
-) -> Result<Vec<TrackInfo>, String> {
+pub fn audio_streams(ffprobe: &str, path: &Path, run: &Tool) -> Result<Vec<TrackInfo>, String> {
     let asked = args(path);
     let flags: Vec<&str> = asked.iter().map(String::as_str).collect();
     let answer = run(ffprobe, &flags).map_err(|err| format!("{}: {err}", path.display()))?;
@@ -80,7 +76,10 @@ pub fn streams_of(answer: &str, path: &Path) -> Result<Vec<TrackInfo>, String> {
     for stream in streams {
         // ffprobe's own index, made 1-based for the popover; a stream without one is not a track.
         let Some(index) = stream.get("index").and_then(|index| index.as_i64()) else {
-            return Err(format!("{}: ffprobe reported a stream with no index", path.display()));
+            return Err(format!(
+                "{}: ffprobe reported a stream with no index",
+                path.display()
+            ));
         };
         let tags = stream.get("tags");
         let title = tags

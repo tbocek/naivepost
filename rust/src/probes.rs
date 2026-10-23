@@ -22,7 +22,11 @@ pub struct Key {
 /// A probe key. Named so a caller cannot pass the three fields in the wrong order — a
 /// swapped size and mtime still looks like a number.
 pub fn key(path: &str, size: i64, mtime: i64) -> Key {
-    Key { path: path.to_string(), size, mtime }
+    Key {
+        path: path.to_string(),
+        size,
+        mtime,
+    }
 }
 
 /// One probe line, tab-separated and complete, the way §6's other sidecars are written:
@@ -55,7 +59,9 @@ pub fn duration(
     if let Some(secs) = decoded {
         return Ok((secs, Source::Decoded));
     }
-    Err(format!("{path}: no duration in the header and nothing to decode it from"))
+    Err(format!(
+        "{path}: no duration in the header and nothing to decode it from"
+    ))
 }
 
 /// Durations measured this launch, keyed by [`Key`]. In memory: a duration is cheap to

@@ -93,7 +93,9 @@ impl std::fmt::Display for Failure {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Failure::Gone(why) => out.write_str(why),
-            Failure::Stopped => out.write_str("cancelled while waiting for the server to come back"),
+            Failure::Stopped => {
+                out.write_str("cancelled while waiting for the server to come back")
+            }
             Failure::Status { status, body } => write!(out, "answered {status}: {}", body.trim()),
         }
     }
@@ -283,7 +285,11 @@ fn record_dial(
     };
     // And the page's `reply:` line has to describe that same text: `call_of` reads an answer through the
     // stream parser when the content type says event-stream, and prose handed to it then parses as nothing.
-    let shown_type = if streamed && !streamed_words.is_empty() { "text/plain" } else { content_type };
+    let shown_type = if streamed && !streamed_words.is_empty() {
+        "text/plain"
+    } else {
+        content_type
+    };
     let call = exchange_leg::call_of(
         step,
         model,
@@ -348,17 +354,20 @@ pub fn dial(
             .and_then(|paths| crate::settings::read(&paths).ok())
             .map(|conf| crate::services::llm_slots(&conf))
             .unwrap_or(1);
-        let (slot, waited) = match crate::slot_gate::hold(&endpoint.url, &base.model, slots, step, cancelled) {
-            Ok(got) => got,
-            // ⏹ landed while every slot was busy. Nothing went out, so no patience applies — the same answer
-            // as the check above, reached from inside the wait instead of before it.
-            Err(crate::slot_gate::Wait::Cancelled) => return Err(Failure::Stopped),
-        };
+        let (slot, waited) =
+            match crate::slot_gate::hold(&endpoint.url, &base.model, slots, step, cancelled) {
+                Ok(got) => got,
+                // ⏹ landed while every slot was busy. Nothing went out, so no patience applies — the same answer
+                // as the check above, reached from inside the wait instead of before it.
+                Err(crate::slot_gate::Wait::Cancelled) => return Err(Failure::Stopped),
+            };
         // The prototype's queue line, kept: a step that queued behind ANOTHER step's call says who had it.
         // Its own earlier call is silence — `slot_gate::waited_log`'s caller decides that, because only the
         // holder list can tell the two apart.
         if waited > 0.0 {
-            if let Some(other) = other_holder(step, &crate::slot_gate::holders(&endpoint.url, &base.model)) {
+            if let Some(other) =
+                other_holder(step, &crate::slot_gate::holders(&endpoint.url, &base.model))
+            {
                 log(&crate::slot_gate::waited_log(step, &other));
             }
         }
@@ -400,15 +409,45 @@ pub fn dial(
         match reply {
             Ok(sent) if sent.ok() => {
                 note_answer(&endpoint.url);
-                record_dial(step, tree, &base.model, body, Ok(&sent), started, log, &live);
+                record_dial(
+                    step,
+                    tree,
+                    &base.model,
+                    body,
+                    Ok(&sent),
+                    started,
+                    log,
+                    &live,
+                );
                 Ok(sent)
             }
             Ok(sent) => {
-                record_dial(step, tree, &base.model, body, Ok(&sent), started, log, &live);
-                Err(Failure::Status { status: sent.status, body: sent.body })
+                record_dial(
+                    step,
+                    tree,
+                    &base.model,
+                    body,
+                    Ok(&sent),
+                    started,
+                    log,
+                    &live,
+                );
+                Err(Failure::Status {
+                    status: sent.status,
+                    body: sent.body,
+                })
             }
             Err(why) => {
-                record_dial(step, tree, &base.model, body, Err(why.as_str()), started, log, &live);
+                record_dial(
+                    step,
+                    tree,
+                    &base.model,
+                    body,
+                    Err(why.as_str()),
+                    started,
+                    log,
+                    &live,
+                );
                 Err(Failure::Gone(why))
             }
         }
@@ -426,7 +465,10 @@ pub fn dial(
             Err(Failure::Status { status, body }) => crate::degraded::refused_reason(*status, body),
             _ => unreachable!("only a refused answer reaches here"),
         };
-        return Dialled { answer: Err(why), attempts };
+        return Dialled {
+            answer: Err(why),
+            attempts,
+        };
     }
     // Everything else rides §3's patience: the identical body re-sent after each wait, the ladder for a death,
     // the one short retry for anything the server answered but could not use. `attempts` already counts the dial
@@ -471,14 +513,14 @@ pub fn dial(
         // wording, because that is what its tools-refusal check reads; anything else gets a reason naming the
         // patience that ran out. The lines already logged say what was waited for and why it stopped.
         None => Err(match (outcome.stopped, outcome.last) {
-            (false, Some(Failure::Status { status, body })) => format!(
-                "at {} answered {}: {}",
-                endpoint.url,
-                status,
-                body.trim()
-            ),
+            (false, Some(Failure::Status { status, body })) => {
+                format!("at {} answered {}: {}", endpoint.url, status, body.trim())
+            }
             (true, _) => "cancelled while waiting for the server to come back".to_string(),
-            _ => format!("{last_reason} -- no answer after {} failed attempt(s)", outcome.failures),
+            _ => format!(
+                "{last_reason} -- no answer after {} failed attempt(s)",
+                outcome.failures
+            ),
         }),
     };
     Dialled { answer, attempts }

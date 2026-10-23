@@ -31,7 +31,11 @@ fn speed(t: f64, dur: f64, rate: f64, snd: &str) -> Fx {
 
 /// The footage the line runs over: one scene covering 0..20, heard, so a silence can only come from an effect.
 fn footage() -> Vec<Seg> {
-    vec![Seg { s: 0.0, e: 20.0, ..Default::default() }]
+    vec![Seg {
+        s: 0.0,
+        e: 20.0,
+        ..Default::default()
+    }]
 }
 
 /// One separate recording running the whole time, so "the whole bed" has more than the footage in it.
@@ -50,36 +54,80 @@ fn lanes() -> Vec<Lane> {
 #[test]
 fn sec_06_effects_2_the_lane_and_the_preview_s8_mute_silences_the_preview_mix() {
     let muted = speed(10.0, 4.0, 2.0, "mute");
-    assert!(fx_record::snd_is_known(&muted.snd), "`mute` is one of §1's answers");
+    assert!(
+        fx_record::snd_is_known(&muted.snd),
+        "`mute` is one of §1's answers"
+    );
 
     // The mix runs at the first covering speed's rate (§A.3), so what travels beside the silence is ×2.
-    let inside = cut_hear::mix_at(&footage(), &lanes(), std::slice::from_ref(&muted), 11.0, 1.0);
-    assert_eq!(inside.rate, 2.0, "the picture still runs at ×2 under the silence");
+    let inside = cut_hear::mix_at(
+        &footage(),
+        &lanes(),
+        std::slice::from_ref(&muted),
+        11.0,
+        1.0,
+    );
+    assert_eq!(
+        inside.rate, 2.0,
+        "the picture still runs at ×2 under the silence"
+    );
     // Inside: the whole bed, gain 0, and the mix SAYS which rule did it.
-    assert!(inside.bed_silenced, "a speed asking for silence silences the bed at 11 s");
-    assert_eq!(inside.gain, 0.0, "every pipeline is asked for nothing — footage AND lane together");
+    assert!(
+        inside.bed_silenced,
+        "a speed asking for silence silences the bed at 11 s"
+    );
+    assert_eq!(
+        inside.gain, 0.0,
+        "every pipeline is asked for nothing — footage AND lane together"
+    );
     // The scene's own mute property is NOT borrowed for this (§F2.5 S2 keeps that flag for the scene).
-    assert!(!inside.footage_muted, "the footage was not muted by its scene; a speed answered instead");
+    assert!(
+        !inside.footage_muted,
+        "the footage was not muted by its scene; a speed answered instead"
+    );
     // The lane is still told to start: it is silenced by the gain, exactly as the render's whole-bed
     // `volume=0` expression does it (§9), not by refusing the pipeline.
-    assert_eq!(inside.lane_starts.len(), 1, "the heard lane is still part of the answer");
+    assert_eq!(
+        inside.lane_starts.len(),
+        1,
+        "the heard lane is still part of the answer"
+    );
 
     // Outside on either side the bed plays at the slider again.
     for outside in [9.0, 14.0, 15.0] {
-        let mix = cut_hear::mix_at(&footage(), &lanes(), std::slice::from_ref(&muted), outside, 1.0);
+        let mix = cut_hear::mix_at(
+            &footage(),
+            &lanes(),
+            std::slice::from_ref(&muted),
+            outside,
+            1.0,
+        );
         assert!(!mix.bed_silenced, "nothing covers {outside} s");
-        assert!(mix.gain > 0.0, "{outside} s is not silent: gain {}", mix.gain);
+        assert!(
+            mix.gain > 0.0,
+            "{outside} s is not silent: gain {}",
+            mix.gain
+        );
     }
 
     // Only `mute` silences. The other four answers all leave the bed running: `""` and `pitch` move with the
     // picture's clock, `own`/`scene` are the pair the preview cannot copy (and copying badly beats muting),
     // and no speed at all says nothing about silence.
     for snd in ["", "pitch", "own", "scene"] {
-        let mix = cut_hear::mix_at(&footage(), &lanes(), &[speed(10.0, 4.0, 2.0, snd)], 11.0, 1.0);
+        let mix = cut_hear::mix_at(
+            &footage(),
+            &lanes(),
+            &[speed(10.0, 4.0, 2.0, snd)],
+            11.0,
+            1.0,
+        );
         assert!(!mix.bed_silenced, "`{snd}` is not a request for silence");
         assert!(mix.gain > 0.0, "`{snd}` leaves the bed audible");
     }
-    assert!(!cut_hear::bed_silenced_under(&[], 11.0), "no effect, no silence");
+    assert!(
+        !cut_hear::bed_silenced_under(&[], 11.0),
+        "no effect, no silence"
+    );
 }
 
 /// §06-effects#2 + inventory/effects.md §A.3 (`The earliest covering effect's answer wins`): two speeds over one
@@ -112,9 +160,15 @@ fn sec_06_effects_2_the_lane_and_the_preview_s8_the_first_covering_speed_answers
     // already carrying the answer this walk reads.
     let stop = speed(10.0, 2.0, 0.0, "mute");
     assert!(fx_record::is_stop(&stop), "rate 0 is a stop");
-    assert!(cut_hear::bed_silenced_under(std::slice::from_ref(&stop), 11.0), "and a silent stop silences");
+    assert!(
+        cut_hear::bed_silenced_under(std::slice::from_ref(&stop), 11.0),
+        "and a silent stop silences"
+    );
     let loud_stop = speed(10.0, 2.0, 0.0, "");
-    assert!(!cut_hear::bed_silenced_under(std::slice::from_ref(&loud_stop), 11.0), "a stop that kept its sound is not silence");
+    assert!(
+        !cut_hear::bed_silenced_under(std::slice::from_ref(&loud_stop), 11.0),
+        "a stop that kept its sound is not silence"
+    );
 }
 
 /// §06-effects#2 (`Only "1× to the scene's end" draws the dashed debt tail`), read off the real lane bar: the
@@ -126,7 +180,14 @@ fn sec_06_effects_2_the_lane_and_the_preview_s8_the_first_covering_speed_answers
 fn the_scene_end_sound_wears_the_tail_and_its_neighbour_does_not(app: &adw::Application) {
     let scene_snd = speed(10.0, 5.0, 1.0, "scene");
     let own_snd = speed(20.0, 5.0, 1.0, "own");
-    let mut seeded = Cut { segs: vec![Seg { s: 0.0, e: 60.0, ..Default::default() }], ..Default::default() };
+    let mut seeded = Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     seeded.fx.push(scene_snd);
     seeded.fx.push(own_snd);
     let window = common::cut_page(app, &seeded);
@@ -157,7 +218,10 @@ fn the_scene_end_sound_wears_the_tail_and_its_neighbour_does_not(app: &adw::Appl
 fn sec_06_effects_2_the_lane_and_the_preview_s8_only_the_scene_end_sound_wears_the_tail() {
     run_once();
     assert_eq!(stopped_early(), None, "the activation stopped early");
-    assert!(RAN_TAIL.load(std::sync::atomic::Ordering::SeqCst), "the tail check never finished");
+    assert!(
+        RAN_TAIL.load(std::sync::atomic::Ordering::SeqCst),
+        "the tail check never finished"
+    );
 }
 
 /// §06-effects#2 (`mute mutes the preview`) + §A.6 (`Preview gain applies even paused`): the PAUSED door asks the
@@ -165,8 +229,15 @@ fn sec_06_effects_2_the_lane_and_the_preview_s8_only_the_scene_end_sound_wears_t
 #[test]
 fn sec_06_effects_2_the_lane_and_the_preview_s8_a_parked_line_in_a_silent_stretch_is_silent() {
     let muted = speed(10.0, 4.0, 2.0, "mute");
-    assert_eq!(fx_volume::heard_while_paused(std::slice::from_ref(&muted), 11.0), 0.0, "paused mid-silence");
-    assert!(fx_volume::heard_while_paused(std::slice::from_ref(&muted), 9.0) > 0.0, "paused outside it");
+    assert_eq!(
+        fx_volume::heard_while_paused(std::slice::from_ref(&muted), 11.0),
+        0.0,
+        "paused mid-silence"
+    );
+    assert!(
+        fx_volume::heard_while_paused(std::slice::from_ref(&muted), 9.0) > 0.0,
+        "paused outside it"
+    );
     // Still volume's own rule where no speed asks for silence: the two doors cannot grow separate answers.
     let loud = Fx {
         kind: "volume".into(),
@@ -181,12 +252,22 @@ fn sec_06_effects_2_the_lane_and_the_preview_s8_a_parked_line_in_a_silent_stretc
         "a raised passage is still heard raised"
     );
     // …and a silent speed outranks it over the seconds they share: the bed is the bed.
-    assert_eq!(fx_volume::heard_while_paused(&[loud0(), muted], 13.0), 0.0, "silence over a boost");
+    assert_eq!(
+        fx_volume::heard_while_paused(&[loud0(), muted], 13.0),
+        0.0,
+        "silence over a boost"
+    );
 }
 
 /// A volume effect raised to ×2 over 12..16 — for the last check above, kept out of its assertions.
 fn loud0() -> Fx {
-    Fx { kind: "volume".into(), t: 12.0, dur: 4.0, gain: 2.0, ..Default::default() }
+    Fx {
+        kind: "volume".into(),
+        t: 12.0,
+        dur: 4.0,
+        gain: 2.0,
+        ..Default::default()
+    }
 }
 
 // --- the two 1× sound answers: said about while they are being heard --------------------------------------------
@@ -232,12 +313,24 @@ fn a_two_clock_speed_says_so_in_the_preview(app: &adw::Application) {
     let window = common::cut_page(app, &Cut::default());
     let scene_speed = speed(10.0, 4.0, 2.0, "scene");
     // The mix itself carries the question, which is what lets any door ask it.
-    let asked = cut_hear::mix_at(&footage(), &lanes(), std::slice::from_ref(&scene_speed), 11.0, 1.0);
-    assert!(asked.sound_needs_two_clocks, "a `scene` speed needs a clock the preview does not have");
+    let asked = cut_hear::mix_at(
+        &footage(),
+        &lanes(),
+        std::slice::from_ref(&scene_speed),
+        11.0,
+        1.0,
+    );
+    assert!(
+        asked.sound_needs_two_clocks,
+        "a `scene` speed needs a clock the preview does not have"
+    );
     // §9's sentence, in §9's words, and only for the two answers that need a second clock.
     println!("PREVIEW NOTICE: {}", render_only_sentence());
     assert_eq!(notice_for("scene").as_deref(), Some(render_only_sentence()));
-    assert_eq!(notice_for("own").as_deref(), naivepost::effect_overlap::says_render_only("own"));
+    assert_eq!(
+        notice_for("own").as_deref(),
+        naivepost::effect_overlap::says_render_only("own")
+    );
     for snd in ["", "pitch", "mute"] {
         assert_eq!(notice_for(snd), None, "`{snd}` owes no sentence");
     }
@@ -245,10 +338,22 @@ fn a_two_clock_speed_says_so_in_the_preview(app: &adw::Application) {
     // is what the state the door keeps on the player is FOR, exactly as `report_mute_change`'s twin avoids
     // printing one mute eight times per second.
     ui::apply_mix(&window, &footage(), &lanes(), &[], 9.0);
-    assert!(!ui::preview_sound::sound_clock_noticed(), "9 s is an ordinary stretch");
+    assert!(
+        !ui::preview_sound::sound_clock_noticed(),
+        "9 s is an ordinary stretch"
+    );
     for _ in 0..3 {
-        let mix = ui::apply_mix(&window, &footage(), &lanes(), std::slice::from_ref(&scene_speed), 11.0);
-        assert!(mix.sound_needs_two_clocks, "the tick's own answer carries the question");
+        let mix = ui::apply_mix(
+            &window,
+            &footage(),
+            &lanes(),
+            std::slice::from_ref(&scene_speed),
+            11.0,
+        );
+        assert!(
+            mix.sound_needs_two_clocks,
+            "the tick's own answer carries the question"
+        );
     }
     assert!(
         ui::preview_sound::sound_clock_noticed(),
@@ -256,16 +361,40 @@ fn a_two_clock_speed_says_so_in_the_preview(app: &adw::Application) {
     );
     // Walking out and back in earns it again: a per-entry notice, not a once-per-process one.
     ui::apply_mix(&window, &footage(), &lanes(), &[], 16.0);
-    assert!(!ui::preview_sound::sound_clock_noticed(), "leaving the stretch clears the remembered notice");
-    ui::apply_mix(&window, &footage(), &lanes(), std::slice::from_ref(&scene_speed), 11.0);
-    assert!(ui::preview_sound::sound_clock_noticed(), "re-entering says it again");
+    assert!(
+        !ui::preview_sound::sound_clock_noticed(),
+        "leaving the stretch clears the remembered notice"
+    );
+    ui::apply_mix(
+        &window,
+        &footage(),
+        &lanes(),
+        std::slice::from_ref(&scene_speed),
+        11.0,
+    );
+    assert!(
+        ui::preview_sound::sound_clock_noticed(),
+        "re-entering says it again"
+    );
     // And the answers the preview CAN copy leave that state alone: promising something it is already doing would
     // be worse than silence.
     for snd in ["", "pitch", "mute"] {
         let effect = speed(10.0, 4.0, 2.0, snd);
-        let mix = ui::apply_mix(&window, &footage(), &lanes(), std::slice::from_ref(&effect), 11.0);
-        assert!(!mix.sound_needs_two_clocks, "`{snd}` previews as the render does");
-        assert!(!ui::preview_sound::sound_clock_noticed(), "`{snd}` says nothing about the clock");
+        let mix = ui::apply_mix(
+            &window,
+            &footage(),
+            &lanes(),
+            std::slice::from_ref(&effect),
+            11.0,
+        );
+        assert!(
+            !mix.sound_needs_two_clocks,
+            "`{snd}` previews as the render does"
+        );
+        assert!(
+            !ui::preview_sound::sound_clock_noticed(),
+            "`{snd}` says nothing about the clock"
+        );
     }
     window.close();
     settle();
@@ -275,7 +404,13 @@ fn a_two_clock_speed_says_so_in_the_preview(app: &adw::Application) {
 /// Mark a stretch on the selection ground — the same seam a drag leaves behind — so the Speed form has seconds
 /// to work on. Same call `tests/suite/speed_form_widgets.rs` makes for its own S1.
 fn mark_band(window: &adw::ApplicationWindow, from: f64, to: f64) {
-    let band = ui::draw_selection(window, naivepost::cut_select::Surface::SelectionBand, None, from, to);
+    let band = ui::draw_selection(
+        window,
+        naivepost::cut_select::Surface::SelectionBand,
+        None,
+        from,
+        to,
+    );
     assert!(band.is_some(), "the band was drawn");
     settle();
 }
@@ -313,12 +448,19 @@ fn place_speed_by_click(
 
 /// The one speed record a placed cut carries, or a message naming what it holds instead.
 fn only_speed(cut: &Cut) -> &naivepost::cut::Fx {
-    let speeds: Vec<&naivepost::cut::Fx> = cut.fx.iter().filter(|effect| effect.kind == "speed").collect();
+    let speeds: Vec<&naivepost::cut::Fx> = cut
+        .fx
+        .iter()
+        .filter(|effect| effect.kind == "speed")
+        .collect();
     assert_eq!(
         speeds.len(),
         1,
         "Apply was to place exactly one speed: {:?}",
-        cut.fx.iter().map(|f| (&f.kind, f.t, f.dur)).collect::<Vec<_>>()
+        cut.fx
+            .iter()
+            .map(|f| (&f.kind, f.t, f.dur))
+            .collect::<Vec<_>>()
     );
     speeds[0]
 }
@@ -331,7 +473,10 @@ fn placed_scene_sound_speed_is_said_about_in_the_preview(app: &adw::Application)
     let window = place_speed_by_click(app, 30.0, 34.0, 3, "4");
     let cut = ui::review_cut_of(&window);
     let placed = only_speed(&cut);
-    assert_eq!(placed.snd, "scene", "the row the click chose stored the scene-end answer");
+    assert_eq!(
+        placed.snd, "scene",
+        "the row the click chose stored the scene-end answer"
+    );
     let inside = placed.t + placed.dur / 2.0;
     // The tick's own door, at a second inside what the click placed.
     let mix = ui::apply_mix(&window, &cut.segs, &cut.lanes, &cut.fx, inside);
@@ -341,7 +486,8 @@ fn placed_scene_sound_speed_is_said_about_in_the_preview(app: &adw::Application)
     );
     assert!(
         ui::preview_sound::sound_clock_noticed(),
-        "entering the stretch said §9's sentence once: {}", render_only_sentence()
+        "entering the stretch said §9's sentence once: {}",
+        render_only_sentence()
     );
     // Another tick INSIDE the same stretch says nothing again — the notice is per entry, not per 100 ms.
     for _ in 0..3 {
@@ -351,7 +497,11 @@ fn placed_scene_sound_speed_is_said_about_in_the_preview(app: &adw::Application)
     ui::preview_sound::report_sound_clock_change(true, true, "scene", &|line| {
         lines.borrow_mut().push(line.to_string())
     });
-    assert!(lines.borrow().is_empty(), "already noticed, so a further tick adds no line: {:?}", lines.borrow());
+    assert!(
+        lines.borrow().is_empty(),
+        "already noticed, so a further tick adds no line: {:?}",
+        lines.borrow()
+    );
     println!(
         "CLICK PLACED snd={} at {:.1} for {:.1}s -> {}",
         placed.snd,
@@ -370,11 +520,20 @@ fn placed_silent_speed_silences_the_preview_bed(app: &adw::Application) {
     let window = place_speed_by_click(app, 30.0, 34.0, 4, "4");
     let cut = ui::review_cut_of(&window);
     let placed = only_speed(&cut);
-    assert_eq!(placed.snd, "mute", "the Silent row stores the mute answer (§1's migration spelling)");
+    assert_eq!(
+        placed.snd, "mute",
+        "the Silent row stores the mute answer (§1's migration spelling)"
+    );
     let inside = placed.t + placed.dur / 2.0;
     let mix = ui::apply_mix(&window, &cut.segs, &cut.lanes, &cut.fx, inside);
-    assert!(mix.bed_silenced, "the mix says the bed is silenced under this speed");
-    assert_eq!(mix.gain, 0.0, "every pipeline is asked for nothing — footage AND lane together");
+    assert!(
+        mix.bed_silenced,
+        "the mix says the bed is silenced under this speed"
+    );
+    assert_eq!(
+        mix.gain, 0.0,
+        "every pipeline is asked for nothing — footage AND lane together"
+    );
     assert_eq!(
         ui::paused_preview_gain(&window, inside),
         0.0,
@@ -392,7 +551,8 @@ fn placed_silent_speed_silences_the_preview_bed(app: &adw::Application) {
 
 /// The item's name, carried by the check above: the click path proves the wire, the logic tests prove the rule.
 #[test]
-fn sec_06_effects_2_the_lane_and_the_preview_s5_a_placed_scene_sound_speed_is_said_about_in_the_preview() {
+fn sec_06_effects_2_the_lane_and_the_preview_s5_a_placed_scene_sound_speed_is_said_about_in_the_preview(
+) {
     run_once();
     assert_eq!(stopped_early(), None, "the activation stopped early");
     assert!(
@@ -441,7 +601,8 @@ fn run_once() {
             // uncaught one would abort the process and leave every entry test reporting "never ran".
             for (check, done) in [
                 (
-                    &placed_scene_sound_speed_is_said_about_in_the_preview as &dyn Fn(&adw::Application),
+                    &placed_scene_sound_speed_is_said_about_in_the_preview
+                        as &dyn Fn(&adw::Application),
                     &RAN_SCENE_CLICK,
                 ),
                 (
@@ -449,7 +610,9 @@ fn run_once() {
                     &RAN_MUTE_CLICK,
                 ),
             ] {
-                if let Err(e) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(app))) {
+                if let Err(e) =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(app)))
+                {
                     let reason = format_check_panic(&e);
                     STOP_REASON.lock().unwrap().get_or_insert(reason);
                 } else {
@@ -483,17 +646,24 @@ fn format_check_panic(payload: &(dyn std::any::Any + Send)) -> String {
 }
 
 #[test]
-fn sec_06_effects_2_the_lane_and_the_preview_s8_a_speed_that_needs_two_clocks_says_so_in_the_preview() {
+fn sec_06_effects_2_the_lane_and_the_preview_s8_a_speed_that_needs_two_clocks_says_so_in_the_preview(
+) {
     run_once();
     assert_eq!(stopped_early(), None, "the activation stopped early");
-    assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the wired check never finished");
+    assert!(
+        RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the wired check never finished"
+    );
 }
 
 #[test]
 fn sec_06_effects_2_the_lane_and_the_preview_s8_the_answers_the_preview_can_copy_say_nothing() {
     run_once();
     assert_eq!(stopped_early(), None, "the activation stopped early");
-    assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the wired check never finished");
+    assert!(
+        RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the wired check never finished"
+    );
 }
 
 /// The reason the activation stopped, if it stopped early.
@@ -511,8 +681,15 @@ fn sec_06_effects_2_the_lane_and_the_preview_s8_the_playing_leg_routes_the_same_
         fx: vec![speed(10.0, 4.0, 1.5, "mute")],
         ..Default::default()
     };
-    assert_eq!(cut_play_leg::route(&cut, 11.0, 1.0).gain, 0.0, "routing a silent stretch asks for nothing");
-    assert!(cut_play_leg::route(&cut, 9.0, 1.0).gain > 0.0, "and everything else runs at the slider");
+    assert_eq!(
+        cut_play_leg::route(&cut, 11.0, 1.0).gain,
+        0.0,
+        "routing a silent stretch asks for nothing"
+    );
+    assert!(
+        cut_play_leg::route(&cut, 9.0, 1.0).gain > 0.0,
+        "and everything else runs at the slider"
+    );
     // The rate still travels: silence is a gain question, never a rate one. What is routed is the clip's own
     // played rate — `cut_play::played_rate`, whose answer for a clip with no rate written is [`cut_play::FLAT_RATE`].
     assert_eq!(

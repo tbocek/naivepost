@@ -45,7 +45,9 @@ impl Project_ {
         std::fs::create_dir_all(&dir).expect("create the throwaway project");
         let tree = Tree::new(&dir).expect("a .naivepost folder is a project");
         std::fs::create_dir_all(
-            tree.session_txt().parent().expect("session.txt sits in a folder"),
+            tree.session_txt()
+                .parent()
+                .expect("session.txt sits in a folder"),
         )
         .expect("the transcript folder");
         Project_ { root, tree }
@@ -113,7 +115,12 @@ fn checks(app: &adw::Application) {
     ui::seed_review_cut(
         &window,
         &Cut {
-            segs: vec![Seg { s: 0.0, e: 30.0, cam: 0, ..Default::default() }],
+            segs: vec![Seg {
+                s: 0.0,
+                e: 30.0,
+                cam: 0,
+                ..Default::default()
+            }],
             ..Default::default()
         },
     );

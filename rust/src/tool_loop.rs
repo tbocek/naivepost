@@ -19,8 +19,8 @@ use std::collections::BTreeSet;
 
 use serde_json::{json, Value};
 
-use crate::degraded::{self, ToolsFallback};
 use crate::decision_audit;
+use crate::degraded::{self, ToolsFallback};
 use crate::exchanges::{Message, Part, ToolCall};
 use crate::roles;
 use crate::tools::{self, Tool};
@@ -250,14 +250,20 @@ pub fn call_note(call: &ToolCall) -> String {
 /// The `tool` message carrying one result to the next round. One per call, in the order the model asked for
 /// them, because a reply that names its answers by position reads them wrongly if they arrive shuffled.
 pub fn tool_message(call: &ToolCall) -> Message {
-    Message { role: "tool".to_string(), parts: vec![Part::Text(tool_result(call))] }
+    Message {
+        role: "tool".to_string(),
+        parts: vec![Part::Text(tool_result(call))],
+    }
 }
 
 /// The assistant turn that asked for the calls, so the next request shows what it already asked for. Its text is
 /// whatever the model said alongside the calls — often nothing, and an empty text part is kept rather than
 /// dropped so the turn exists at all.
 pub fn assistant_turn(turn: &Turn) -> Message {
-    Message { role: "assistant".to_string(), parts: vec![Part::Text(turn.content.clone())] }
+    Message {
+        role: "assistant".to_string(),
+        parts: vec![Part::Text(turn.content.clone())],
+    }
 }
 
 // ---- the loop --------------------------------------------------------------------------
@@ -363,13 +369,19 @@ pub fn run(
         // request for nothing, and with the budget spent (§2 S4) it ends as "still calling tools" -- so a round
         // that called `finish` ENDS the run, after its own calls were answered below. The flag on the Turn means
         // the same thing and is honoured too, so a caller may set it either way.
-        let closed = turn.finish || turn.calls.iter().any(|call| call.name == Tool::Finish.name());
+        let closed = turn.finish
+            || turn
+                .calls
+                .iter()
+                .any(|call| call.name == Tool::Finish.name());
 
         if turn.calls.is_empty() {
             // `finish` is the flow's own end and says so here: a model that was nudged and then called it did
             // call it, so the run is not recorded as having needed asking.
             if turn.finish {
-                run.outcome = Outcome::Finished { asked_finish: false };
+                run.outcome = Outcome::Finished {
+                    asked_finish: false,
+                };
                 return run;
             }
             match after_round(&turn.calls, false, silent_rounds) {
@@ -391,7 +403,10 @@ pub fn run(
                     if decision_audit::change_is_announced(finish_home)
                         && finish_home.may_act_in_same_conversation()
                     {
-                        run.messages.push(Message { role: "user".to_string(), parts: vec![Part::Text(FINISH_NUDGE.to_string())] });
+                        run.messages.push(Message {
+                            role: "user".to_string(),
+                            parts: vec![Part::Text(FINISH_NUDGE.to_string())],
+                        });
                         run.logs.push(format!(">>> {step}: {FINISH_NUDGE}"));
                         note_home(&mut run.announced, finish_home);
                     }
@@ -435,7 +450,9 @@ pub fn run(
             // model has said it is done. Its verdict on the WHOLE travelled in that result, so this run did
             // use §1's third home as well as the per-item one.
             note_home(&mut run.announced, decision_audit::Home::FinishAnswer);
-            run.outcome = Outcome::Finished { asked_finish: false };
+            run.outcome = Outcome::Finished {
+                asked_finish: false,
+            };
             return run;
         }
     }
@@ -458,5 +475,7 @@ pub fn note_home(announced: &mut Vec<&'static str>, home: decision_audit::Home) 
 /// A branch the spec does not have. Logged rather than panicked on: a tool loop that dies takes a person's whole
 /// run with it, and an honest line in the log is cheaper than a lost session.
 fn unreachable_run(logs: &mut Vec<String>, where_: &str) {
-    logs.push(format!(">>> tool loop reached a round it should not have: {where_}"));
+    logs.push(format!(
+        ">>> tool loop reached a round it should not have: {where_}"
+    ));
 }

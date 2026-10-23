@@ -92,11 +92,16 @@ pub fn gather(
         cut: cut.clone(),
         // S3's lines: `narrate/narration.json`, in playing order. A session that has never been narrated
         // has no file, which `narration::load` already says is the same state as a narration with no lines.
-        lines: crate::narration::load(tree).map(|n| n.entries).unwrap_or_default(),
+        lines: crate::narration::load(tree)
+            .map(|n| n.entries)
+            .unwrap_or_default(),
         settings: settings.clone(),
         sources: project.sources.clone(),
         // S3's publish state: the PAGE's rows, merged over what a previous step wrote. See [`publish_of`].
-        session_words: crate::word_list::load(tree).ok().flatten().unwrap_or_default(),
+        session_words: crate::word_list::load(tree)
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
         narrator_sources: project
             .sources
             .iter()
@@ -220,7 +225,11 @@ pub fn render_half(
             // narrator's own recordings are excluded there because their words are what the narration
             // replaced.
             words: &|clip| {
-                crate::produce_clip_cues::words_for(clip, &snap.session_words, &snap.narrator_sources)
+                crate::produce_clip_cues::words_for(
+                    clip,
+                    &snap.session_words,
+                    &snap.narrator_sources,
+                )
             },
             translate: &crate::ui::produce_page_rows::translate_leg(),
             // §F5.2 S5's size question, over the real wire: ffprobe beside the configured ffmpeg, read
@@ -250,10 +259,13 @@ pub fn render_half(
                 }
                 // `Seg::insert_asset` is the one path rule of §1; the clip carries the same spelling.
                 Some(
-                    crate::cut::Seg { ins: clip.source.clone(), ..Default::default() }
-                        .insert_asset(&root, &root)
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|| clip.source.clone()),
+                    crate::cut::Seg {
+                        ins: clip.source.clone(),
+                        ..Default::default()
+                    }
+                    .insert_asset(&root, &root)
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| clip.source.clone()),
                 )
             },
             // §6 bullet 1's doors: the filmed spans this snapshot already gathered (the same list

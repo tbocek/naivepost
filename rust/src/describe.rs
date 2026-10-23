@@ -57,7 +57,12 @@ pub fn pick_frames(changes: &[f64], duration: f64, grid: f64, freq: f64) -> Vec<
     }
     // Scene starts: the file's beginning plus every change inside it.
     let mut starts: Vec<f64> = vec![0.0];
-    starts.extend(changes.iter().filter(|at| **at > 0.0 && **at < duration).copied());
+    starts.extend(
+        changes
+            .iter()
+            .filter(|at| **at > 0.0 && **at < duration)
+            .copied(),
+    );
     starts.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut out: Vec<f64> = Vec::new();
@@ -184,7 +189,10 @@ pub fn scaled_name(at: f64) -> String {
 /// its offset, and the log says which offset was used so a description that lines up oddly can be
 /// checked against the number rather than guessed at.
 pub fn hearing_log(video: &str, audio: &str, offset_secs: f64) -> String {
-    format!(">>> [{video}] hearing {audio} alongside it, starting {} s in", trim_seconds(offset_secs))
+    format!(
+        ">>> [{video}] hearing {audio} alongside it, starting {} s in",
+        trim_seconds(offset_secs)
+    )
 }
 
 /// Seconds without a tail of zeroes: `1.5`, not `1.500000`.
@@ -237,7 +245,10 @@ pub fn parse_events(tsv: &str) -> Vec<EventRow> {
             (Ok(_), Some(text)) => text,
             _ => first,
         };
-        out.push(EventRow { at, text: text.to_string() });
+        out.push(EventRow {
+            at,
+            text: text.to_string(),
+        });
     }
     out
 }
@@ -290,7 +301,9 @@ pub fn read_state(tree: &Tree, lane: &str) -> Option<String> {
 
 /// S2: read `events.tsv` if it is there.
 pub fn read_events(tree: &Tree, lane: &str) -> Vec<EventRow> {
-    std::fs::read_to_string(tree.events_tsv(lane)).map(|text| parse_events(&text)).unwrap_or_default()
+    std::fs::read_to_string(tree.events_tsv(lane))
+        .map(|text| parse_events(&text))
+        .unwrap_or_default()
 }
 
 // ---- S3: the message --------------------------------------------------------
@@ -349,7 +362,11 @@ pub fn message(
         out.push_str(&last_events.join(" | "));
         out.push('\n');
     }
-    out.push_str(&describe::speech_block(&speech.before, &speech.during, &speech.after));
+    out.push_str(&describe::speech_block(
+        &speech.before,
+        &speech.during,
+        &speech.after,
+    ));
     let total = stamps.len();
     for (index, stamp) in stamps.iter().enumerate() {
         let label = if stamp.new_scene { ", NEW SCENE" } else { "" };
@@ -393,7 +410,10 @@ pub fn cache_key(content: &str, images: &[Vec<u8>], model: &str) -> String {
         context: "",
         // The bytes exactly as they go on the wire, one part each — §6 names image data URLs, and a
         // re-encoded frame has to miss rather than replay the old picture.
-        images: images.iter().map(|bytes| crate::llm_request::data_url(bytes, "image/jpeg")).collect(),
+        images: images
+            .iter()
+            .map(|bytes| crate::llm_request::data_url(bytes, "image/jpeg"))
+            .collect(),
         run_index: None,
         // §6's rewrite addition: whose answer this was. A model swap must ask again.
         model,
@@ -585,13 +605,19 @@ pub fn requests_for(frames: usize) -> usize {
 pub fn is_new_scene(at: f64, previous: Option<f64>, changes: &[f64]) -> bool {
     match previous {
         None => true,
-        Some(previous) => changes.iter().any(|change| *change > previous && *change <= at + 1e-9),
+        Some(previous) => changes
+            .iter()
+            .any(|change| *change > previous && *change <= at + 1e-9),
     }
 }
 
 /// The stage's opening summary for one footage source: what goes, and therefore what it costs.
 pub fn pick_log(base: &str, frames: &[f64]) -> String {
-    format!(">>> [{base}] describe: {} frames -> {} requests", frames.len(), requests_for(frames.len()))
+    format!(
+        ">>> [{base}] describe: {} frames -> {} requests",
+        frames.len(),
+        requests_for(frames.len())
+    )
 }
 
 /// The stage's entry point: what ▶ prints for one footage source before any request is made.
@@ -626,7 +652,9 @@ pub fn stage_log(
     if frames_on_disk.is_empty() {
         // The sentence is built here rather than through `refuse_missing`, which answers only for an
         // empty LIST and would say nothing about a source that has no folder at all.
-        return vec![format!(">>> [{base}] no frames to describe -- the frames folder is empty")];
+        return vec![format!(
+            ">>> [{base}] no frames to describe -- the frames folder is empty"
+        )];
     }
     let picked = sorted(&pick_frames(changes, duration, grid, freq));
     if let Some(refusal) = refuse_missing(&picked) {
@@ -659,7 +687,14 @@ pub fn stage_log_for(
     let changes = read_changes(tree, lane);
     // Length as the last frame plus one grid step: that is where the extraction stopped.
     let duration = frames.last().copied().unwrap_or(0.0) + GRID;
-    stage_log(base_of_lane(lane), &frames, &changes, duration, freq, alongside)
+    stage_log(
+        base_of_lane(lane),
+        &frames,
+        &changes,
+        duration,
+        freq,
+        alongside,
+    )
 }
 
 /// The name a log line uses for a lane: the lane is the file's base name already, so this only says so.

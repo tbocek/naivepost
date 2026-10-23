@@ -126,7 +126,9 @@ pub fn set_line_position(window: &adw::ApplicationWindow, pos: cut_line::LinePos
 /// owns the rule; this only asks it of THIS window's hand and, on a miss, puts the record down the way Esc does —
 /// clear the hold, redraw the lane without its held outline, and say §A.9's one word.
 pub fn release_held_effect_off_band(window: &adw::ApplicationWindow, line_t: f64) {
-    let Some(held) = ui::held_effect() else { return };
+    let Some(held) = ui::held_effect() else {
+        return;
+    };
     if fx_band::hold_survives(line_t, held.t, held.dur) {
         return;
     }
@@ -140,7 +142,11 @@ pub fn release_held_effect_off_band(window: &adw::ApplicationWindow, line_t: f64
 ///
 /// No project root reaches the page yet (the cut-model round owns it), so there is nowhere to write;
 /// the throttle is still advanced so the rate rule holds the moment a root exists.
-pub fn move_line_and_save(window: &adw::ApplicationWindow, pos: cut_line::LinePos, now_ms: u64) -> bool {
+pub fn move_line_and_save(
+    window: &adw::ApplicationWindow,
+    pos: cut_line::LinePos,
+    now_ms: u64,
+) -> bool {
     // A root DOES reach the page (`line_root`), so a move writes through the writer, which keeps its own
     // one-second rule. With no root the rate rule still holds via the throttle stamp alone.
     let root = line_root(window);
@@ -195,11 +201,20 @@ pub fn place_line_press(
 ) -> cut_line::ClickOutcome {
     // F2.2 S2: a click on the picture is another way in that cannot switch the preview, so an empty
     // cut refuses it here rather than placing a line over nothing (nothing moves, clears or watches).
-    let refused = hit.on_picture && cut_play_leg::other_way_in(&ui::review_cut_of(window)).is_some();
+    let refused =
+        hit.on_picture && cut_play_leg::other_way_in(&ui::review_cut_of(window)).is_some();
     let outcome = if refused {
         cut_line::refused_click(hit.at)
     } else {
-        cut_line::click_outcome_in_row(hit.at, hit.on_picture, hit.on_scene_picture, hit.playing, hit.sources, hit.gutter, hit.row)
+        cut_line::click_outcome_in_row(
+            hit.at,
+            hit.on_picture,
+            hit.on_scene_picture,
+            hit.playing,
+            hit.sources,
+            hit.gutter,
+            hit.row,
+        )
     };
     if outcome.line_moved {
         move_line_and_save(window, cut_line::LinePos { t: outcome.line_at }, now_ms);
@@ -209,13 +224,12 @@ pub fn place_line_press(
     }
     ui::set_watched_row(outcome.watches);
     if outcome.takes_scene {
-        let under = cut_delete::scene_under(&ui::newest_review_cut().segs, outcome.line_at).cloned();
+        let under =
+            cut_delete::scene_under(&ui::newest_review_cut().segs, outcome.line_at).cloned();
         ui::set_held_clip(under);
     }
     outcome
 }
-
-
 
 /// F2.4 S2: ‹f / f› steps one frame (Shift five). With a hold, the HOLD moves; with nothing held the
 /// recording under the line seeks and pauses.
@@ -283,7 +297,9 @@ pub fn space_toggles(window: &adw::ApplicationWindow, text_focus: bool) -> bool 
 
 /// Find one of the four named line-step buttons.
 pub fn line_step_button(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Button> {
-    ui::find_widget_by_name(window.upcast_ref(), name)?.downcast().ok()
+    ui::find_widget_by_name(window.upcast_ref(), name)?
+        .downcast()
+        .ok()
 }
 
 /// This window's key controller for the line (F2.4 S2/S3): ‹‹f ‹f f› ›› step one or five frames,
@@ -356,9 +372,14 @@ pub(crate) fn wire_line_keys(window: &adw::ApplicationWindow) {
         // seconds at the page's fps, and it lands exactly there: `nudge_held_effect` goes through
         // `effect_rules::nudge`, which never consults snap marks, so a nudged band stays precisely one frame
         // off the segment end it was beside. A clip or edge in hand keeps its existing path untouched.
-        if ui::held_effect().is_some() && matches!(key, gtk::gdk::Key::Left | gtk::gdk::Key::Right) {
+        if ui::held_effect().is_some() && matches!(key, gtk::gdk::Key::Left | gtk::gdk::Key::Right)
+        {
             let frames = cut_line::step_frames(shift) as f64 / crate::cut_fps::session_fps(&win);
-            let delta = if key == gtk::gdk::Key::Left { -frames } else { frames };
+            let delta = if key == gtk::gdk::Key::Left {
+                -frames
+            } else {
+                frames
+            };
             let _ = nudge_held_effect(&win, delta);
             return glib::Propagation::Stop;
         }
@@ -382,7 +403,11 @@ pub(crate) fn wire_line_keys(window: &adw::ApplicationWindow) {
         };
         // Every handled key stops the default action; `Still` deliberately does not, so an unheld
         // arrow keeps doing whatever the focused widget would have done.
-        if matches!(response, Step::Still) { glib::Propagation::Proceed } else { glib::Propagation::Stop }
+        if matches!(response, Step::Still) {
+            glib::Propagation::Proceed
+        } else {
+            glib::Propagation::Stop
+        }
     });
     window.add_controller(controller.clone());
     LINE_KEYS.with(|cell| *cell.borrow_mut() = Some(controller));

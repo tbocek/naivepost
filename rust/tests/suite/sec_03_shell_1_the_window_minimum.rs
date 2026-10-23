@@ -48,15 +48,18 @@ static RAN_TABS: AtomicBool = AtomicBool::new(false);
 
 /// The band's drawn height: what the divider's bottom half actually got.
 fn band_px(window: &adw::ApplicationWindow) -> f64 {
-    let (_, _, _, h) = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "bottom-bar")
-        .unwrap_or_else(|| panic!("{ITEM}: the shell draws no bottom band"));
+    let (_, _, _, h) =
+        ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "bottom-bar")
+            .unwrap_or_else(|| panic!("{ITEM}: the shell draws no bottom band"));
     h
 }
 
 /// The shell's page/bottom-bar divider.
 fn divider(window: &adw::ApplicationWindow) -> gtk::Paned {
     ui::find_source_widget(window, "main-divider")
-        .unwrap_or_else(|| panic!("{ITEM}: §1 makes the page and the bottom bar two halves of a divider"))
+        .unwrap_or_else(|| {
+            panic!("{ITEM}: §1 makes the page and the bottom bar two halves of a divider")
+        })
         .downcast::<gtk::Paned>()
         .expect("the shell's divider is a gtk::Paned")
 }
@@ -76,7 +79,10 @@ fn minimum_window(app: &adw::Application, page: &str, footage: bool) -> adw::App
     release_last_window();
     let mut model = naivepost::project::load(&fixture_dir()).expect("the snapshot fixture loads");
     if footage {
-        model.sources.iter_mut().for_each(|source| source.footage = true);
+        model
+            .sources
+            .iter_mut()
+            .for_each(|source| source.footage = true);
         assert!(
             model.sources.iter().any(|source| source.footage),
             "{ITEM}: the fixture must carry a footage row or the Cut tab stays locked"
@@ -135,8 +141,11 @@ fn s1j_every_tab_is_shot_as_the_whole_window(app: &adw::Application) {
         // GTK 4 gives a window an SSD (server-side decoration) of its own: 10 px narrower and shorter than
         // asked on every side here. §1's minimum is what the app ASKS for; the shot is what the window
         // actually got, so the bounds are checked against the real drawn window, printed either way.
-        println!("{ITEM} s1j: {page} window drawn at {win_w:.0}x{win_h:.0} (asked {}x{})",
-            shell::WINDOW_MIN_W, shell::WINDOW_MIN_H);
+        println!(
+            "{ITEM} s1j: {page} window drawn at {win_w:.0}x{win_h:.0} (asked {}x{})",
+            shell::WINDOW_MIN_W,
+            shell::WINDOW_MIN_H
+        );
         // The header bar carries no name of its own (§1 names it but the app names only its widgets), so it
         // is read where the shell puts it: the first child of the window's top box.
         let header = window
@@ -150,7 +159,13 @@ fn s1j_every_tab_is_shot_as_the_whole_window(app: &adw::Application) {
             header_box.is_some(),
             "{ITEM} §1: on {page}, the header bar was given no box, so a shot of this page is not the whole window"
         );
-        for name in ["run-bar", "log-header", "inputs-readout", "outputs-readout", first_control] {
+        for name in [
+            "run-bar",
+            "log-header",
+            "inputs-readout",
+            "outputs-readout",
+            first_control,
+        ] {
             let bounds = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), name);
             assert!(
                 ui::window_shot::is_on_screen_for_test(window.upcast_ref(), name),
@@ -161,7 +176,8 @@ fn s1j_every_tab_is_shot_as_the_whole_window(app: &adw::Application) {
             assert!(
                 y + h <= win_h + 4.0,
                 "{ITEM} §1: on {page}, {name} ends at y={y:.0}..{:.0}, below the bottom of a \
-                 {win_h:.0} px window — the shot loses the run bar / log header", y + h
+                 {win_h:.0} px window — the shot loses the run bar / log header",
+                y + h
             );
             assert!(
                 x >= -4.0 && x + w <= win_w + 4.0,
@@ -171,13 +187,28 @@ fn s1j_every_tab_is_shot_as_the_whole_window(app: &adw::Application) {
         }
         // And the four parts are IN ORDER top to bottom: header, page, run bar, log header.
         let header_y = header_box.expect("just checked").y() as f64;
-        let page_y = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), first_control).unwrap().1;
-        let run_y = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "run-bar").unwrap().1;
-        let log_y = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "log-header").unwrap().1;
+        let page_y = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), first_control)
+            .unwrap()
+            .1;
+        let run_y = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "run-bar")
+            .unwrap()
+            .1;
+        let log_y = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "log-header")
+            .unwrap()
+            .1;
         println!("{ITEM} s1j: {page} header y={header_y:.0} page y={page_y:.0} run y={run_y:.0} log y={log_y:.0}");
-        assert!(header_y <= page_y + 1.0, "{ITEM} §1: the page sits above the header on {page}");
-        assert!(page_y < run_y, "{ITEM} §1: the run bar sits above the page on {page}");
-        assert!(run_y < log_y, "{ITEM} §1: the log header sits above the run bar on {page}");
+        assert!(
+            header_y <= page_y + 1.0,
+            "{ITEM} §1: the page sits above the header on {page}"
+        );
+        assert!(
+            page_y < run_y,
+            "{ITEM} §1: the run bar sits above the page on {page}"
+        );
+        assert!(
+            run_y < log_y,
+            "{ITEM} §1: the log header sits above the run bar on {page}"
+        );
         window.close();
     }
     RAN_TABS.store(true, Ordering::SeqCst);
@@ -191,7 +222,9 @@ fn s1j_every_tab_is_shot_as_the_whole_window(app: &adw::Application) {
 /// it with (§10's 220 px open), and it is MAPPED once the log is opened and unmapped while it is closed. So
 /// "the log got room of its own" is: mapped, and its scroller still asks for those pixels.
 fn body_room(expander: &gtk::Expander) -> (bool, i32) {
-    let Some(body) = expander.child() else { return (false, 0) };
+    let Some(body) = expander.child() else {
+        return (false, 0);
+    };
     let asks = body
         .downcast_ref::<gtk::ScrolledWindow>()
         .map(|scroller| scroller.min_content_height())
@@ -214,7 +247,8 @@ fn log_is_open(window: &adw::ApplicationWindow) -> bool {
 fn s1k_opening_the_log_through_the_expander_moves_the_divider(app: &adw::Application) {
     let window = minimum_window(app, "Prepare", false);
     let paned = divider(&window);
-    let expander = ui::log_expander(&window).expect("§1 badge 16: the shell carries a log expander");
+    let expander =
+        ui::log_expander(&window).expect("§1 badge 16: the shell carries a log expander");
     assert!(
         !expander.is_expanded(),
         "{ITEM} §1: the log starts collapsed, so the band is only its two rows"
@@ -237,10 +271,7 @@ fn s1k_opening_the_log_through_the_expander_moves_the_divider(app: &adw::Applica
     let open_band = band_px(&window);
     let (body_mapped, body_room_px) = body_room(&expander);
     println!("{ITEM} s1k: opened handle {open_handle}, band {open_band:.0} px, log ask {opened} px, room {body_room_px} px mapped {body_mapped}");
-    assert!(
-        expander.is_expanded(),
-        "{ITEM} §1: the log opens"
-    );
+    assert!(expander.is_expanded(), "{ITEM} §1: the log opens");
     assert!(
         open_handle <= rest_handle,
         "{ITEM} §1: opening the log takes its room out of the PAGE, so the handle cannot go down: \
@@ -309,8 +340,9 @@ fn s1l_collapsed_band_counts_only_its_two_rows(app: &adw::Application) {
     let window = minimum_window(app, "Prepare", false);
     let paned = divider(&window);
     let (row_h, header_h) = two_rows_px(&window);
-    let (x, y, w, h) = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "bottom-bar")
-        .expect("the bottom band is drawn");
+    let (x, y, w, h) =
+        ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "bottom-bar")
+            .expect("the bottom band is drawn");
     println!("{ITEM} s1l: band y={y:.0} h={h:.0} in a {} px window (run {row_h:.0} + header {header_h:.0})", window.height());
     assert!(
         (h - (row_h + header_h)).abs() <= 20.0,
@@ -322,13 +354,23 @@ fn s1l_collapsed_band_counts_only_its_two_rows(app: &adw::Application) {
         "{ITEM} §1: no empty space under the collapsed log — the band ends at {:.0} in a {} px window",
         y + h, window.height()
     );
-    assert!(x >= 0.0 && w > 0.0, "{ITEM} §1: the band is a real box: x={x:.0} w={w:.0}");
+    assert!(
+        x >= 0.0 && w > 0.0,
+        "{ITEM} §1: the band is a real box: x={x:.0} w={w:.0}"
+    );
     // "the page takes all the rest of the height": the page half is the handle, to the pixel.
-    let page_h = paned.start_child().expect("the divider has a page half").height();
-    println!("{ITEM} s1l: page half {page_h} px vs handle {}", paned.position());
+    let page_h = paned
+        .start_child()
+        .expect("the divider has a page half")
+        .height();
+    println!(
+        "{ITEM} s1l: page half {page_h} px vs handle {}",
+        paned.position()
+    );
     assert!(
         (page_h - paned.position()).abs() <= 2,
-        "{ITEM} §1: the page half is exactly the divider's position: {page_h} vs {}", paned.position()
+        "{ITEM} §1: the page half is exactly the divider's position: {page_h} vs {}",
+        paned.position()
     );
     window.close();
 }
@@ -344,8 +386,14 @@ fn sec_03_shell_1_the_window_minimum_the_shell_keeps_its_minimum_and_its_shot() 
         s1l_collapsed_band_counts_only_its_two_rows(app);
         RAN_MINIMUM.store(true, Ordering::SeqCst);
     });
-    assert!(RAN_MINIMUM.load(Ordering::SeqCst), "{ITEM}: the widget round never ran");
-    assert!(RAN_TABS.load(Ordering::SeqCst), "{ITEM}: the four-tab shot check never ran");
+    assert!(
+        RAN_MINIMUM.load(Ordering::SeqCst),
+        "{ITEM}: the widget round never ran"
+    );
+    assert!(
+        RAN_TABS.load(Ordering::SeqCst),
+        "{ITEM}: the four-tab shot check never ran"
+    );
 }
 
 /// The divider's arithmetic with no window in sight. `rest_split` forwards `total - band` to
@@ -355,12 +403,32 @@ fn sec_03_shell_1_the_window_minimum_the_shell_keeps_its_minimum_and_its_shot() 
 fn sec_03_shell_1_the_window_m1_the_band_rule_arithmetic() {
     use naivepost::ui::window_shot::rest_position;
     // The normal case: the handle is the page's height, i.e. everything the band does not take.
-    assert_eq!(rest_position(844, 54), 790, "§1: an 844 px divider with a 54 px band gives the page 790");
-    assert_eq!(rest_position(844, 0), 844, "no band at all: the page has the whole divider");
+    assert_eq!(
+        rest_position(844, 54),
+        790,
+        "§1: an 844 px divider with a 54 px band gives the page 790"
+    );
+    assert_eq!(
+        rest_position(844, 0),
+        844,
+        "no band at all: the page has the whole divider"
+    );
     // The two asks a headless window really does produce, both of which would panic inside the paned.
-    assert_eq!(rest_position(5, 274), 0, "a band taller than the divider cannot eat below zero");
-    assert_eq!(rest_position(0, 0), 0, "an unallocated divider has no split to honour");
-    assert_eq!(rest_position(844, 844), 0, "a band the divider's own height leaves the page nothing");
+    assert_eq!(
+        rest_position(5, 274),
+        0,
+        "a band taller than the divider cannot eat below zero"
+    );
+    assert_eq!(
+        rest_position(0, 0),
+        0,
+        "an unallocated divider has no split to honour"
+    );
+    assert_eq!(
+        rest_position(844, 844),
+        0,
+        "a band the divider's own height leaves the page nothing"
+    );
     // And never an answer outside the divider, whichever way the numbers come.
     for (total, band) in [(844, 1), (844, 843), (100, 100), (1, 1), (10, 0)] {
         let handle = rest_position(total, band);

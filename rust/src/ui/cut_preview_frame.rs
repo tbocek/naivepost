@@ -16,12 +16,12 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
-use crate::preview;
 use crate::cut::{self, Cut};
 use crate::fx_lane::{self, PausedScene};
 use crate::fx_svg;
 use crate::fx_text;
 use crate::fx_zoom::{self, Camera};
+use crate::preview;
 
 /// The painted surface's widget name. A test that wants to know the panel is drawn rather than plates-only
 /// finds this; the rules themselves are asserted against `fx_lane`'s view-model, which is what the painter
@@ -123,7 +123,14 @@ pub fn edit_snap_on() -> bool {
 /// they are normalised here — a negative width paints an outline nothing can see.
 pub fn note_box(box_: Option<(f64, f64, f64, f64)>, window: &adw::ApplicationWindow) {
     DRAWN_BOX.with(|slot| {
-        slot.set(box_.map(|(x, y, w, h)| (x.min(x + w), y.min(y + h), w.abs().max(1.0), h.abs().max(1.0))))
+        slot.set(box_.map(|(x, y, w, h)| {
+            (
+                x.min(x + w),
+                y.min(y + h),
+                w.abs().max(1.0),
+                h.abs().max(1.0),
+            )
+        }))
     });
     repaint(window);
 }
@@ -233,9 +240,13 @@ pub fn live_of(window: &adw::ApplicationWindow) -> Option<f64> {
     if !player.transport.playing {
         return None;
     }
-    player
-        .playhead
-        .map(|at| preview::live_clock(at, 0, crate::cut_speed_play::flat_rate_at(&crate::ui::window::newest_review_cut().fx, at)))
+    player.playhead.map(|at| {
+        preview::live_clock(
+            at,
+            0,
+            crate::cut_speed_play::flat_rate_at(&crate::ui::window::newest_review_cut().fx, at),
+        )
+    })
 }
 
 /// What one painted frame needs, gathered at the refresh that asks for the repaint. The page holds every
@@ -326,10 +337,13 @@ pub fn fit_size(source_w: f64, source_h: f64, panel_w: f64, panel_h: f64) -> (f6
 /// A stop's still is the one record that breaks that rule: it is rendered from the scene's OWN camera (§2), so
 /// it has no box of its own and the camera supplies one. [`paint_playing`] asks where that still sits.
 pub fn stop_px(fx: &[crate::cut::Fx], at: f64, fit: (f64, f64)) -> Option<(f64, f64, f64, f64)> {
-    fx.iter().any(|effect| {
-        fx_lane::still_come_from_scene_camera(effect) && effect.spans().0 <= at && at < effect.spans().1
-    })
-    .then(|| camera_rect_px(&fx_zoom::camera_at(fx, at), fit))
+    fx.iter()
+        .any(|effect| {
+            fx_lane::still_come_from_scene_camera(effect)
+                && effect.spans().0 <= at
+                && at < effect.spans().1
+        })
+        .then(|| camera_rect_px(&fx_zoom::camera_at(fx, at), fit))
     // Framed exactly as the frame it stands in: the camera already there, fitted on the footage.
 }
 
@@ -436,13 +450,7 @@ pub fn paint_paused(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
         );
     }
     if let Some((x, y, w, h)) = frame.box_px {
-        draw_box_outline(
-            cr,
-            (x, y, w, h),
-            seen.held.box_dashed,
-            [1.0, 1.0, 1.0],
-            1.0,
-        );
+        draw_box_outline(cr, (x, y, w, h), seen.held.box_dashed, [1.0, 1.0, 1.0], 1.0);
     }
 }
 
@@ -466,7 +474,9 @@ pub fn paint_still(
     let Ok(pixbuf) = gtk::gdk_pixbuf::Pixbuf::from_file(path) else {
         return;
     };
-    let Some(surface) = raster_surface(&pixbuf) else { return };
+    let Some(surface) = raster_surface(&pixbuf) else {
+        return;
+    };
     // Same scaling trick the svg overlay uses: translate/scale so the surface lands exactly on the borrowed box.
     let _ = cr.save();
     cr.translate(x, y);
@@ -556,7 +566,8 @@ fn raster_surface(pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Option<cairo::ImageSurfac
             pixels[at..at + 4].copy_from_slice(&word.to_le_bytes());
         }
     }
-    cairo::ImageSurface::create_for_data(pixels, cairo::Format::ARgb32, w, h, out_stride as i32).ok()
+    cairo::ImageSurface::create_for_data(pixels, cairo::Format::ARgb32, w, h, out_stride as i32)
+        .ok()
 }
 
 /// One overlay: the caption's words or a drawing's file, wherever the record says, at `alpha`.
@@ -627,7 +638,12 @@ fn paint_overlay(cr: &cairo::Context, frame: &Frame, index: usize, alpha: f64, o
     // which is where §06's screenshots put a caption that was typed rather than dragged.
     let cx = effect.cx.unwrap_or(0.5);
     let cy = effect.cy.unwrap_or(0.85);
-    let box_ = (cx * width - width * 0.35, cy * height - 12.0, width * 0.7, 24.0);
+    let box_ = (
+        cx * width - width * 0.35,
+        cy * height - 12.0,
+        width * 0.7,
+        24.0,
+    );
     cr.set_source_rgba(1.0, 1.0, 1.0, alpha);
     cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
     cr.set_font_size(13.0);

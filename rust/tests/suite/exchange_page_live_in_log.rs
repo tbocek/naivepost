@@ -20,8 +20,8 @@ use naivepost::exchange_leg;
 use naivepost::exchanges;
 use naivepost::layout::Tree;
 use naivepost::llm_retry_leg;
-use naivepost::requests::{Outcome, Request};
 use naivepost::requests::Service;
+use naivepost::requests::{Outcome, Request};
 use naivepost::services::Endpoint;
 use naivepost::startup;
 use naivepost::ui;
@@ -37,7 +37,10 @@ fn root() -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "np-exch-page-{}-{}",
         std::process::id(),
-        std::thread::current().name().unwrap_or("round").replace(':', "_")
+        std::thread::current()
+            .name()
+            .unwrap_or("round")
+            .replace(':', "_")
     ));
     std::fs::remove_dir_all(&dir).ok();
     std::fs::create_dir_all(&dir).expect("temp root created");
@@ -140,7 +143,10 @@ impl FakeLlm {
     }
 
     fn endpoint(&self) -> Endpoint {
-        Endpoint { url: self.url.clone(), key: String::new() }
+        Endpoint {
+            url: self.url.clone(),
+            key: String::new(),
+        }
     }
 }
 
@@ -211,7 +217,13 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_live_call_writes_the_page_the_
             // --- the page exists, named MMDD-HHMMSS-Describe.html -----------------------------------
             let pages: Vec<String> = std::fs::read_dir(tree.llm_dir())
                 .expect("the run wrote its llm/ folder")
-                .map(|entry| entry.expect("an entry").file_name().to_string_lossy().to_string())
+                .map(|entry| {
+                    entry
+                        .expect("an entry")
+                        .file_name()
+                        .to_string_lossy()
+                        .to_string()
+                })
                 .collect();
             assert_eq!(pages.len(), 1, "one page for the run: {pages:?}");
             let name = &pages[0];
@@ -219,12 +231,25 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_live_call_writes_the_page_the_
             let stamp = name.trim_end_matches("-Describe.html");
             assert_eq!(stamp.len(), 14, "MMDD-HHMMSS, six digit groups: {name}");
             assert!(stamp.chars().all(|c| c.is_ascii_digit()), "{name}");
-            let html = std::fs::read_to_string(tree.llm_dir().join(name)).expect("the page reads back");
+            let html =
+                std::fs::read_to_string(tree.llm_dir().join(name)).expect("the page reads back");
             assert!(html.contains("<h1>1. Describe</h1>"), "{html}");
-            assert!(html.contains("qwen"), "the meta line names the model: {html}");
-            assert!(html.contains("execute"), "the body's thinking switch is off: {html}");
-            assert!(html.contains("a terminal window"), "the reply is on the page: {html}");
-            assert!(html.contains("You describe frames."), "the request is on the page: {html}");
+            assert!(
+                html.contains("qwen"),
+                "the meta line names the model: {html}"
+            );
+            assert!(
+                html.contains("execute"),
+                "the body's thinking switch is off: {html}"
+            );
+            assert!(
+                html.contains("a terminal window"),
+                "the reply is on the page: {html}"
+            );
+            assert!(
+                html.contains("You describe frames."),
+                "the request is on the page: {html}"
+            );
 
             // --- the log shows this call's lines, last in the buffer ---------------------------------
             // The shell may have logged before the call (the fixture's red line restores one), so the
@@ -242,7 +267,8 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_live_call_writes_the_page_the_
                 "then the verdict line: {said:?}"
             );
             assert!(
-                ui::log_level::body_of(&said[first + 2]).trim_start()
+                ui::log_level::body_of(&said[first + 2])
+                    .trim_start()
                     .starts_with("the reply begins: a terminal window"),
                 "and the preview closes the call: {said:?}"
             );
@@ -255,13 +281,21 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_live_call_writes_the_page_the_
                 .enumerate()
                 .filter_map(|(at, line)| (line == &link).then_some(at))
                 .collect();
-            assert_eq!(links.len(), 1, "once per run, naming the page that exists: {said:?}");
+            assert_eq!(
+                links.len(),
+                1,
+                "once per run, naming the page that exists: {said:?}"
+            );
             let link_line = links[0] as i32;
             assert!(
                 link_line <= first as i32,
                 "the link belongs to this call's own opening, not to some later news: {said:?}"
             );
-            assert_eq!(tagged(&view), vec![link_line], "and exactly that line is the link");
+            assert_eq!(
+                tagged(&view),
+                vec![link_line],
+                "and exactly that line is the link"
+            );
 
             // --- the loop: clicking that line opens the file the call just wrote ---------------------
             let opened = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
@@ -276,11 +310,17 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_live_call_writes_the_page_the_
                 uri.ends_with(&format!("{}/{name}", exchanges::LLM_DIR)),
                 "the link points at the page under the session: {uri}"
             );
-            assert_eq!(*opened.borrow(), vec![uri.clone()], "one activation, one thing opened");
-            let target = std::path::Path::new(
-                uri.strip_prefix("file://").expect("a file:// URI"),
+            assert_eq!(
+                *opened.borrow(),
+                vec![uri.clone()],
+                "one activation, one thing opened"
             );
-            assert!(target.is_file(), "the line the log links to IS the file on disk: {}", target.display());
+            let target = std::path::Path::new(uri.strip_prefix("file://").expect("a file:// URI"));
+            assert!(
+                target.is_file(),
+                "the line the log links to IS the file on disk: {}",
+                target.display()
+            );
             assert_eq!(
                 target,
                 tree.llm_dir().join(name).as_path(),
@@ -295,5 +335,8 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_live_call_writes_the_page_the_
         });
         app.run_with_args::<String>(&[]);
     });
-    assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the widget round never ran");
+    assert!(
+        RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the widget round never ran"
+    );
 }

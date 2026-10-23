@@ -29,11 +29,20 @@ const PPS: f64 = 4.0;
 /// A scene on the camera row named `cam<N>` — the naming `timeline::kept_footage_recordings` uses, which is
 /// what makes a shift entry find the scenes it belongs to.
 fn scene(s: f64, e: f64, cam: i32) -> Seg {
-    Seg { s, e, cam, ..Default::default() }
+    Seg {
+        s,
+        e,
+        cam,
+        ..Default::default()
+    }
 }
 
 fn tape() -> Vec<Recording> {
-    vec![Recording { base: "cam0".into(), start: 0.0, end: 120.0 }]
+    vec![Recording {
+        base: "cam0".into(),
+        start: 0.0,
+        end: 120.0,
+    }]
 }
 
 fn cut_with(shift: Option<f64>) -> cut::Cut {
@@ -77,7 +86,11 @@ fn check_the_conversion_round_trips() {
     // shift_of answers 0.0 for a source nobody slid, and the stored number for one that was.
     let shifted = cut_with(Some(-19.0));
     assert_eq!(timeline::shift_of(&shifted, "cam0"), -19.0);
-    assert_eq!(timeline::shift_of(&shifted, "cam1"), 0.0, "no entry means no correction");
+    assert_eq!(
+        timeline::shift_of(&shifted, "cam1"),
+        0.0,
+        "no entry means no correction"
+    );
     RAN_ROUNDTRIP.store(true, Ordering::SeqCst);
 }
 
@@ -86,7 +99,10 @@ fn check_the_conversion_round_trips() {
 fn check_a_shift_moves_the_coordinates() {
     let flat = naivepost::cut_trim::clip_boxes(&cut_with(None).segs, PPS);
     let shifted = naivepost::cut_trim::clip_boxes(&cut_with(Some(-19.0)).segs, PPS);
-    assert_eq!(flat, shifted, "the raw box rule knows nothing about shifts \u{2014} that is the point");
+    assert_eq!(
+        flat, shifted,
+        "the raw box rule knows nothing about shifts \u{2014} that is the point"
+    );
 
     // The page's own answer: the same list with the corrections applied, as `cut_tracks` paints it.
     let moved = ui::cut_tracks::clip_boxes_shifted(
@@ -97,7 +113,14 @@ fn check_a_shift_moves_the_coordinates() {
     let want = cut_with(Some(-19.0))
         .segs
         .iter()
-        .map(|seg| timeline::session_at(seg.s, 0.0, 0.0, timeline::shift_of(&cut_with(Some(-19.0)), "cam0")) * PPS)
+        .map(|seg| {
+            timeline::session_at(
+                seg.s,
+                0.0,
+                0.0,
+                timeline::shift_of(&cut_with(Some(-19.0)), "cam0"),
+            ) * PPS
+        })
         .collect::<Vec<_>>();
     let got = moved.iter().map(|b| b.x).collect::<Vec<_>>();
     assert_eq!(got, want, "each clip sits where session_at put it");
@@ -158,22 +181,34 @@ fn round() {
 }
 
 #[test]
-fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s1_a_shifted_recording_moves_its_coordinates() {
+fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s1_a_shifted_recording_moves_its_coordinates(
+) {
     common::pin_private_cwd();
     round();
-    assert!(RAN_SHIFTED.load(Ordering::SeqCst), "the shift-moves-coordinates check never ran");
+    assert!(
+        RAN_SHIFTED.load(Ordering::SeqCst),
+        "the shift-moves-coordinates check never ran"
+    );
 }
 
 #[test]
-fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s2_the_conversion_round_trips_around_the_offset() {
+fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s2_the_conversion_round_trips_around_the_offset(
+) {
     common::pin_private_cwd();
     round();
-    assert!(RAN_ROUNDTRIP.load(Ordering::SeqCst), "the round-trip check never ran");
+    assert!(
+        RAN_ROUNDTRIP.load(Ordering::SeqCst),
+        "the round-trip check never ran"
+    );
 }
 
 #[test]
-fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s3_a_slided_recording_shows_at_its_new_place() {
+fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s3_a_slided_recording_shows_at_its_new_place(
+) {
     common::pin_private_cwd();
     round();
-    assert!(RAN_WIRE.load(Ordering::SeqCst), "the seeded-shift widget check never ran");
+    assert!(
+        RAN_WIRE.load(Ordering::SeqCst),
+        "the seeded-shift widget check never ran"
+    );
 }

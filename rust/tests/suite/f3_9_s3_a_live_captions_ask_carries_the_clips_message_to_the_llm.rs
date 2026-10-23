@@ -13,12 +13,33 @@ use naivepost::captions_ask;
 fn f3_9_s3_a_live_captions_ask_carries_the_clips_message_to_the_llm() {
     let fixture = fixture("msg");
     let (clips, words) = two_clips_with_words();
-    let llm = FakeLlm::start(vec![add_captions_json(&[(1, 0.4, 4.4, "The network is live.")])]);
+    let llm = FakeLlm::start(vec![add_captions_json(&[(
+        1,
+        0.4,
+        4.4,
+        "The network is live.",
+    )])]);
     let addr = point_at(&llm.url());
 
-    let asked = captions_ask::ask(&fixture.tree, "Caption every spoken line.", &clips, &words, 1, &|| false);
-    assert!(!asked.failed, "the ask went out and was answered: {:?}", asked.reason);
-    assert_eq!(asked.calls.len(), 1, "one caption came back: {:?}", asked.calls);
+    let asked = captions_ask::ask(
+        &fixture.tree,
+        "Caption every spoken line.",
+        &clips,
+        &words,
+        1,
+        &|| false,
+    );
+    assert!(
+        !asked.failed,
+        "the ask went out and was answered: {:?}",
+        asked.reason
+    );
+    assert_eq!(
+        asked.calls.len(),
+        1,
+        "one caption came back: {:?}",
+        asked.calls
+    );
     assert_eq!(asked.calls[0].clip, 1, "for clip 1");
 
     let seen = llm.next_seen();
@@ -26,7 +47,8 @@ fn f3_9_s3_a_live_captions_ask_carries_the_clips_message_to_the_llm() {
     assert_eq!(seen.path, "/v1/chat/completions", "the LLM's chat path");
     // The message layout §F3.9 spells: header, one CLIP line with its length, offsets inside the clip.
     assert!(
-        seen.body.contains("THE CLIPS, AND WHAT WAS SAID OVER EACH:"),
+        seen.body
+            .contains("THE CLIPS, AND WHAT WAS SAID OVER EACH:"),
         "the clips header rode out to {addr}"
     );
     assert!(
@@ -44,7 +66,8 @@ fn f3_9_s3_a_live_captions_ask_carries_the_clips_message_to_the_llm() {
     );
     // The shipped captions prompt rode in the system message.
     assert!(
-        seen.body.contains("You put words on screen over a cut that has already been chosen"),
+        seen.body
+            .contains("You put words on screen over a cut that has already been chosen"),
         "the shipped captions wording rode out"
     );
     assert!(

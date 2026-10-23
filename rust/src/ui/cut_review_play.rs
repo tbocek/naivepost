@@ -16,8 +16,9 @@ use std::time::Duration;
 
 use adw::prelude::*;
 
+use crate::ui::window::find_status;
 use crate::{cut, cut_play_leg, cut_review, cut_screen, preview, ui};
-use crate::ui::window::find_status;/// §A group 1's shipped label, spelled from the toolbar row so the two cannot drift.
+/// §A group 1's shipped label, spelled from the toolbar row so the two cannot drift.
 pub const PLAY_LABEL: &str = crate::cut_screen::PLAY_GLYPH_REVIEW;
 /// §F2.3's one rule for the three buttons: "each wears ⏸ only while its own thing runs … exactly one is
 /// lit". So the pause face appears here ONLY while a review is the running preview, and ▶/▶✂ give theirs
@@ -62,10 +63,15 @@ pub fn answer_press(
         // S4: the status names which join out of how many is being heard. The review IS the cut preview with
         // one more hand on the line, so its press starts the player and hands the line to the review's tick,
         // which cues each later run-up as it seeks (S3).
-        cut_review::Pressed::Started { status, seek_to, .. } => {
+        cut_review::Pressed::Started {
+            status, seek_to, ..
+        } => {
             // The footage is the session's own files; a test names them through `cue_files` instead.
             let files = ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now());
-            crate::ui::cut_cut_play::cue_files(&files, seek_to.unwrap_or_else(|| playhead_of(window)));
+            crate::ui::cut_cut_play::cue_files(
+                &files,
+                seek_to.unwrap_or_else(|| playhead_of(window)),
+            );
             begin(cut_review::start(cut_, playhead_of(window)));
             status_line.set_text(status)
         }
@@ -102,7 +108,11 @@ pub fn paint(window: &adw::ApplicationWindow) {
             cut_only: player.cut_only,
             reviewing: player.reviewing,
         });
-    button.set_label(if ours_lit && player.transport.playing { PAUSE_LABEL } else { PLAY_LABEL });
+    button.set_label(if ours_lit && player.transport.playing {
+        PAUSE_LABEL
+    } else {
+        PLAY_LABEL
+    });
 }
 
 /// What one review tick did, so a test can assert the outcome without a window or a clock.
@@ -184,7 +194,10 @@ pub fn tick_once(window: &adw::ApplicationWindow) {
                 window,
                 true,
                 false,
-                crate::run::Transport { playing: false, started: true },
+                crate::run::Transport {
+                    playing: false,
+                    started: true,
+                },
             );
             crate::ui::cut_cut_play::pause_media();
             say(window, &status);
@@ -199,7 +212,10 @@ pub fn tick_once(window: &adw::ApplicationWindow) {
                 window,
                 true,
                 false,
-                crate::run::Transport { playing: true, started: true },
+                crate::run::Transport {
+                    playing: true,
+                    started: true,
+                },
             );
             say(window, status);
             paint(window);

@@ -177,7 +177,6 @@ pub fn stage_for_shot(window: &adw::ApplicationWindow) -> usize {
     rows
 }
 
-
 /// Paint §4's own subject — the LEFT column: the list of rows and the frame controls under it — into `out`.
 /// `spec/img/03-sources.png` is that crop, and a whole-window shot cannot be it: at §1's minimum the column is
 /// half the page beside the prompt bench, so its rows read small and the right half is not the subject at all.

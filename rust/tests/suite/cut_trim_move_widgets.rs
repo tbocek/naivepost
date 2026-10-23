@@ -27,7 +27,6 @@ static RAN_SEL_SLIDE: AtomicBool = AtomicBool::new(false);
 static RAN_RIGHT_TRIM: AtomicBool = AtomicBool::new(false);
 static RAN_UNMOVED: AtomicBool = AtomicBool::new(false);
 
-
 /// A window on the Cut page with a three-scene cut seeded, so a slide has neighbours to be bounded by.
 fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
@@ -60,11 +59,7 @@ fn check_a_right_drag_moves_and_never_touches_the_line(app: &adw::Application) {
     let window = cut_window(app);
 
     let strip = ui::track_strip(&window).expect("the Cut page carries track-strip");
-    println!(
-        "STRIP {}x{}",
-        strip.width(),
-        strip.height()
-    );
+    println!("STRIP {}x{}", strip.width(), strip.height());
     let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
     assert!(
         mover
@@ -139,7 +134,11 @@ fn check_a_right_drag_moves_and_never_touches_the_line(app: &adw::Application) {
 
     mover.emit_by_name::<()>("drag-end", &[&40.0f64, &0.0f64]);
     settle();
-    assert_eq!(ui::line_position(&window), line_before, "and still not after release");
+    assert_eq!(
+        ui::line_position(&window),
+        line_before,
+        "and still not after release"
+    );
 
     window.close();
 }
@@ -162,10 +161,7 @@ fn check_an_unmoved_press_is_a_click(app: &adw::Application) {
         segs_before,
         "a click changes no segments"
     );
-    assert!(
-        ui::open_folds(&window).is_empty(),
-        "a click opens no folds"
-    );
+    assert!(ui::open_folds(&window).is_empty(), "a click opens no folds");
 
     // Below the slop is still a click even with distance asked for: the gate is the travel, not d.
     let just_short = ui::press_move(&window, trim::ROW_TRAVEL_PX - 0.5, false, 1.0);
@@ -266,7 +262,11 @@ fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) 
         after[1].e, expected,
         "the dragged end landed where the rule said, not where the pointer did"
     );
-    assert_eq!(after.len(), 3, "a drop half a second clear of the neighbour joins nothing");
+    assert_eq!(
+        after.len(),
+        3,
+        "a drop half a second clear of the neighbour joins nothing"
+    );
     assert_eq!(
         status_text(&window),
         trim::trim_status(2, after[1].s, after[1].e),
@@ -304,7 +304,8 @@ fn check_a_border_drag_on_the_real_strip_trims_the_clip(app: &adw::Application) 
     trimmer.emit_by_name::<()>("drag-end", &[&grab_px, &0.0f64]);
     settle();
     assert_eq!(
-        ui::review_cut_segs(&window)[0].e, before_end,
+        ui::review_cut_segs(&window)[0].e,
+        before_end,
         "a press that went nowhere trimmed nothing"
     );
     assert_eq!(ui::review_cut_segs_count(&window), before_len);
@@ -405,8 +406,15 @@ fn check_a_right_drag_on_a_wave_strip_slides_that_recording(app: &adw::Applicati
     );
     // The same door the drag callback reads, BEFORE any emission: band ground, not the recorders' band.
     let (recorders, wave, on_border) = ui::right_press_took(press_x, wave_y);
-    assert_eq!(wave.as_deref(), Some(WAVE_REC), "the wave strip took that recording");
-    assert_eq!(recorders, None, "and it did NOT come back as the recorders' band");
+    assert_eq!(
+        wave.as_deref(),
+        Some(WAVE_REC),
+        "the wave strip took that recording"
+    );
+    assert_eq!(
+        recorders, None,
+        "and it did NOT come back as the recorders' band"
+    );
     assert!(!on_border, "mid-scene x is not a border");
 
     let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
@@ -451,15 +459,21 @@ fn check_a_right_drag_inside_a_selection_slides_the_selected_scenes(app: &adw::A
     let window = bare_cut_window(app);
     ui::set_press_band(None);
     // A real band over scenes 1 and 2 (10..30 s and 40..70 s are inside it).
-    let band = ui::draw_selection(&window, Surface::PictureRow(0), None, 5.0, 75.0)
-        .expect("a band draws");
-    assert!(band.length() > 1.0, "the band is long enough to be a selection");
+    let band =
+        ui::draw_selection(&window, Surface::PictureRow(0), None, 5.0, 75.0).expect("a band draws");
+    assert!(
+        band.length() > 1.0,
+        "the band is long enough to be a selection"
+    );
 
     // Press at x=90 px (mid-scene 1) and at a NON-band y (the ruler), so the selection is what answers.
     let press_x = 90.0;
     let ruler_y = 4.0;
     let (_, _, on_border) = ui::right_press_took(press_x, ruler_y);
-    assert!(!on_border, "away from a border, so S2 may slide the selection");
+    assert!(
+        !on_border,
+        "away from a border, so S2 may slide the selection"
+    );
 
     let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
     ui::set_press_x(press_x);
@@ -474,7 +488,10 @@ fn check_a_right_drag_inside_a_selection_slides_the_selected_scenes(app: &adw::A
         "a press inside a footage selection slides the SELECTED SCENES: {printed}"
     );
     // The band itself is untouched by the press -- selecting is not clearing.
-    assert!(ui::selection(&window).is_some(), "the selection survived the press");
+    assert!(
+        ui::selection(&window).is_some(),
+        "the selection survived the press"
+    );
     window.close();
 }
 
@@ -495,7 +512,10 @@ fn check_the_right_button_on_a_border_trims_it(app: &adw::Application) {
 
     // The wire's own first question, answered the way the callback answers it.
     let (_, _, on_border) = ui::right_press_took(grab_x, bar_y);
-    assert!(on_border, "x={grab_x} is within EDGE_GRAB_PX of scene 2's start border");
+    assert!(
+        on_border,
+        "x={grab_x} is within EDGE_GRAB_PX of scene 2's start border"
+    );
 
     let mover = ui::move_gesture(&window).expect("the strip carries the move gesture");
     ui::set_press_x(grab_x);
@@ -562,7 +582,11 @@ fn check_an_unmoved_right_press_changes_nothing_through_the_widget(app: &adw::Ap
         segs_before.len(),
         "an unmoved press added or removed no scene"
     );
-    for (i, (before, after)) in segs_before.iter().zip(ui::review_cut_segs(&window).iter()).enumerate() {
+    for (i, (before, after)) in segs_before
+        .iter()
+        .zip(ui::review_cut_segs(&window).iter())
+        .enumerate()
+    {
         assert_eq!(
             (before.s, before.e),
             (after.s, after.e),

@@ -24,10 +24,11 @@ use crate::common;
 
 /// The picture every scripted draw hands back. Any bytes will do for the walk — it writes them and the print
 /// leg reads them — but a PNG header keeps a bad decode visible rather than silent.
-const PNG_BYTES: &[u8] = &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, b'r', b'g', b'b'];
+const PNG_BYTES: &[u8] = &[
+    0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, b'r', b'g', b'b',
+];
 
 // ---- the fake sd.cpp -----------------------------------------------------------------------------
-
 
 struct Fixture {
     root: PathBuf,
@@ -65,7 +66,11 @@ fn fixture(tag: &str, sd_url: &str) -> Fixture {
     conf.sd_server = sd_url.to_string();
     settings::save(&paths, &conf).expect("settings written");
     let tree = Tree::new(&session).expect("a .naivepost folder is a project");
-    Fixture { root, tree, _scenario: scenario }
+    Fixture {
+        root,
+        tree,
+        _scenario: scenario,
+    }
 }
 
 /// One request the fake took: the method and path it was asked for, and the body when it sent one.
@@ -119,7 +124,11 @@ impl FakeSd {
                 std::thread::spawn(move || serve(stream, &serving, &sender));
             }
         });
-        FakeSd { port, received, script }
+        FakeSd {
+            port,
+            received,
+            script,
+        }
     }
 
     fn url(&self) -> String {
@@ -134,9 +143,14 @@ impl FakeSd {
 
     /// Nothing arrived within a short wait — what proves a second walk asked for no draw at all.
     fn expect_silent(&self) {
-        match self.received.recv_timeout(std::time::Duration::from_millis(400)) {
+        match self
+            .received
+            .recv_timeout(std::time::Duration::from_millis(400))
+        {
             Err(mpsc::RecvTimeoutError::Timeout) => (),
-            other => panic!("the drawing server was dialled when nothing should have been: {other:?}"),
+            other => {
+                panic!("the drawing server was dialled when nothing should have been: {other:?}")
+            }
         }
     }
 }
@@ -149,7 +163,11 @@ fn serve(mut stream: TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender
 /// Records the request before it answers: the program's next call follows the answer at once, and a
 /// record sent after the reply let that call's thread report first, so the checks saw the poll before
 /// the submit.
-fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender<Seen>) -> Option<()> {
+fn serve_inner(
+    stream: &mut TcpStream,
+    script: &Arc<Mutex<Script>>,
+    seen: &mpsc::Sender<Seen>,
+) -> Option<()> {
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).ok()?;
@@ -250,26 +268,38 @@ fn walk_once(tree: &Tree, instruction: &str, images: &[String], own: bool) -> Ru
     let ask_draw = {
         let tree = tree.clone();
         move |_body: &serde_json::Value| {
-            mark_draw.lock().expect("call lock").push("draw".to_string());
+            mark_draw
+                .lock()
+                .expect("call lock")
+                .push("draw".to_string());
             draw::submit(&tree, _body)
         }
     };
     let poll = {
         let tree = tree.clone();
         move |job: &up::DrawnJob| {
-            mark_poll.lock().expect("call lock").push("poll".to_string());
+            mark_poll
+                .lock()
+                .expect("call lock")
+                .push("poll".to_string());
             draw::poll(&tree, job)
         }
     };
     let save_picture = {
         let tree = tree.clone();
         move |job: &up::DrawnJob, png: &[u8]| {
-            mark_picture.lock().expect("call lock").push("picture".to_string());
+            mark_picture
+                .lock()
+                .expect("call lock")
+                .push("picture".to_string());
             save_plain(&tree, job, png)
         }
     };
     let print = move |_kind: &str, _words: &[String]| {
-        mark_print.lock().expect("call lock").push("print".to_string());
+        mark_print
+            .lock()
+            .expect("call lock")
+            .push("print".to_string());
         Ok(())
     };
     let nearest = |_at: f64| Some(1.0f64);
@@ -278,7 +308,10 @@ fn walk_once(tree: &Tree, instruction: &str, images: &[String], own: bool) -> Ru
     let write_stamp = {
         let tree = tree.clone();
         move |hash: &str| {
-            mark_stamp.lock().expect("call lock").push("stamp".to_string());
+            mark_stamp
+                .lock()
+                .expect("call lock")
+                .push("stamp".to_string());
             write_picture_stamp(&tree, hash)
         }
     };
@@ -322,7 +355,10 @@ fn walk_once(tree: &Tree, instruction: &str, images: &[String], own: bool) -> Ru
         // The record the model's answers produced: a title is part of every check here, and `finish` refuses a
         // run with none (S8 keeps the previous value, so a record with nothing to keep says so).
         &publish,
-        &up::Answers { title: Some("a title".to_string()), ..Default::default() },
+        &up::Answers {
+            title: Some("a title".to_string()),
+            ..Default::default()
+        },
         &mats,
         |_| {},
     );
@@ -330,7 +366,9 @@ fn walk_once(tree: &Tree, instruction: &str, images: &[String], own: bool) -> Ru
     Run {
         tree,
         calls: match Arc::try_unwrap(recorded) {
-            Ok(owned) => owned.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner()),
+            Ok(owned) => owned
+                .into_inner()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
             Err(shared) => shared.lock().expect("call lock").clone(),
         },
         outcome,
@@ -366,7 +404,13 @@ fn save_plain(tree: &Tree, _job: &up::DrawnJob, png: &[u8]) -> Result<(), String
 
 /// The stamp S6/S7 say this state's picture carries: the hash the walk compares and the hash it writes.
 fn expected_stamp(images: &[String], instruction: &str) -> String {
-    hash_text(&up::thumbnail_stamp_text(images, instruction, "no words", up::DEFAULT_ASPECT, false))
+    hash_text(&up::thumbnail_stamp_text(
+        images,
+        instruction,
+        "no words",
+        up::DEFAULT_ASPECT,
+        false,
+    ))
 }
 
 fn silent(_line: &str) {}
@@ -382,7 +426,11 @@ fn f5_3_s15_the_drawn_picture_lands_and_its_stamp_is_written() {
     let images = vec!["project:produce/publish/frame-1.jpg".to_string()];
     let run = walk_once(&scene.tree, "brighten the room", &images, false);
 
-    assert_eq!(run.outcome.error, None, "the half failed: {:?}", run.outcome.error);
+    assert_eq!(
+        run.outcome.error, None,
+        "the half failed: {:?}",
+        run.outcome.error
+    );
     assert_eq!(
         run.calls.iter().filter(|call| **call == "draw").count(),
         1,
@@ -393,16 +441,26 @@ fn f5_3_s15_the_drawn_picture_lands_and_its_stamp_is_written() {
     assert_eq!(submit.method, "POST");
     assert_eq!(submit.path, "/sdcpp/v1/img_gen", "§3.5's submit path");
     let asked = sd.next();
-    assert_eq!(asked.path, "/sdcpp/v1/jobs/job-9", "the poll asks about the job it was given");
+    assert_eq!(
+        asked.path, "/sdcpp/v1/jobs/job-9",
+        "the poll asks about the job it was given"
+    );
 
     // The bytes the job handed back are the plain picture, byte for byte.
     let plain = std::fs::read(run.tree.thumbnail_plain_png())
         .expect("the drawn picture landed where every re-print starts from");
-    assert_eq!(plain, PNG_BYTES, "the file holds the server's bytes, not a re-encoding");
+    assert_eq!(
+        plain, PNG_BYTES,
+        "the file holds the server's bytes, not a re-encoding"
+    );
 
     // And the stamp now says what was drawn from.
     let stamp = read_picture_stamp(&run.tree).expect("thumbnail.stamp was written");
-    assert_eq!(stamp, expected_stamp(&images, "brighten the room"), "the stamp names this draw");
+    assert_eq!(
+        stamp,
+        expected_stamp(&images, "brighten the room"),
+        "the stamp names this draw"
+    );
 
     // The ORDER the spec draws: submit → poll → picture → the two print passes → stamp. Words go onto bytes
     // that exist, and S7's order is texts first then title.
@@ -412,8 +470,16 @@ fn f5_3_s15_the_drawn_picture_lands_and_its_stamp_is_written() {
         vec!["draw", "poll", "picture", "print", "print", "stamp"],
         "S6→S7's order: {order:?}"
     );
-    assert!(run.outcome.calls.contains(&"picture".to_string()), "{:?}", run.outcome.calls);
-    assert!(run.outcome.calls.contains(&"stamp".to_string()), "{:?}", run.outcome.calls);
+    assert!(
+        run.outcome.calls.contains(&"picture".to_string()),
+        "{:?}",
+        run.outcome.calls
+    );
+    assert!(
+        run.outcome.calls.contains(&"stamp".to_string()),
+        "{:?}",
+        run.outcome.calls
+    );
 }
 
 /// §F5.6 S6's own skip: with the stamp on disk saying these images and this instruction were already drawn,
@@ -431,7 +497,10 @@ fn f5_3_s16_the_picture_stamp_makes_the_second_walk_skip_the_draw() {
 
     let second = walk_once(&scene.tree, "brighten the room", &images, false);
     assert_eq!(second.outcome.error, None, "{:?}", second.outcome.error);
-    assert!(second.outcome.already_drawn, "the stamp says it was drawn, so the walk says it was");
+    assert!(
+        second.outcome.already_drawn,
+        "the stamp says it was drawn, so the walk says it was"
+    );
     assert!(
         !second.calls.contains(&"draw".to_string()) && !second.calls.contains(&"poll".to_string()),
         "a skipped draw dials the server NOTHING: {:?}",
@@ -444,7 +513,12 @@ fn f5_3_s16_the_picture_stamp_makes_the_second_walk_skip_the_draw() {
     );
     // What it does instead is reprint onto the picture that already stands — the plain file is kept, the words
     // are laid again, and the stamp it writes says the same thing it said before.
-    assert_eq!(second.calls, vec!["print", "print", "stamp"], "{:?}", second.calls);
+    assert_eq!(
+        second.calls,
+        vec!["print", "print", "stamp"],
+        "{:?}",
+        second.calls
+    );
     sd.expect_silent();
     // The stamp still holds the first walk's answer, unread and unwritten by the second.
     assert_eq!(
@@ -471,20 +545,32 @@ fn f5_3_s17_a_stamp_that_no_longer_matches_draws_again() {
 
     let again = walk_once(&scene.tree, "and put the ship behind them", &images, false);
     assert_eq!(again.outcome.error, None, "{:?}", again.outcome.error);
-    assert!(!again.outcome.already_drawn, "a different instruction is a different picture");
+    assert!(
+        !again.outcome.already_drawn,
+        "a different instruction is a different picture"
+    );
     assert_eq!(
         again.calls,
         vec!["draw", "poll", "picture", "print", "print", "stamp"],
         "and the whole hand-off runs again: {:?}",
         again.calls
     );
-    assert_eq!(sd.next().path, "/sdcpp/v1/img_gen", "the server was asked again");
+    assert_eq!(
+        sd.next().path,
+        "/sdcpp/v1/img_gen",
+        "the server was asked again"
+    );
     assert_eq!(
         read_picture_stamp(&again.tree).unwrap(),
         expected_stamp(&images, "and put the ship behind them")
     );
-    let plain = std::fs::read(again.tree.thumbnail_plain_png()).expect("the new picture is on disk");
-    assert_eq!(plain, b"second picture bytes".to_vec(), "the newer draw's bytes stand");
+    let plain =
+        std::fs::read(again.tree.thumbnail_plain_png()).expect("the new picture is on disk");
+    assert_eq!(
+        plain,
+        b"second picture bytes".to_vec(),
+        "the newer draw's bytes stand"
+    );
 }
 
 /// The decode is the wire's, not a test's: a base64 blob wrapped at 76 columns — what a proxy in front of
@@ -503,8 +589,15 @@ fn f5_3_s15_a_wrapped_base64_blob_decodes_to_the_same_picture() {
     )
     .expect("the fake's own JSON");
     let state = draw::state_of(&parsed);
-    assert!(state.done, "a job that already handed back its image is done");
-    assert_eq!(state.png, PNG_BYTES.to_vec(), "line breaks are not bytes of the picture");
+    assert!(
+        state.done,
+        "a job that already handed back its image is done"
+    );
+    assert_eq!(
+        state.png,
+        PNG_BYTES.to_vec(),
+        "line breaks are not bytes of the picture"
+    );
 }
 
 /// A job that answers `done` with no image is said, not silently skipped: the alternative is a print leg
@@ -513,18 +606,34 @@ fn f5_3_s15_a_wrapped_base64_blob_decodes_to_the_same_picture() {
 fn f5_3_s15_a_finished_job_with_no_picture_is_named() {
     let sd = FakeSd::start(vec![
         submitted("job-11"),
-        serde_json::json!({ "id": "job-11", "status": "completed", "result": { "images": [] } }).to_string(),
+        serde_json::json!({ "id": "job-11", "status": "completed", "result": { "images": [] } })
+            .to_string(),
     ]);
     let scene = fixture("no-picture", &sd.url());
-    let run = walk_once(&scene.tree, "brighten the room", &["project:produce/publish/frame-1.jpg".to_string()], false);
+    let run = walk_once(
+        &scene.tree,
+        "brighten the room",
+        &["project:produce/publish/frame-1.jpg".to_string()],
+        false,
+    );
     let why = run.outcome.error.unwrap_or_default();
-    assert!(why.contains("no image"), "the reason names what is missing: {why}");
-    assert!(!run.calls.contains(&"picture".to_string()), "{:?}", run.calls);
+    assert!(
+        why.contains("no image"),
+        "the reason names what is missing: {why}"
+    );
+    assert!(
+        !run.calls.contains(&"picture".to_string()),
+        "{:?}",
+        run.calls
+    );
     assert!(
         !scene.tree.thumbnail_plain_png().exists(),
         "nothing was written as the plain picture"
     );
-    assert!(read_picture_stamp(&scene.tree).is_none(), "and no stamp claims a draw that never landed");
+    assert!(
+        read_picture_stamp(&scene.tree).is_none(),
+        "and no stamp claims a draw that never landed"
+    );
     silent("");
 }
 
@@ -536,11 +645,16 @@ fn f5_3_s15_the_settings_file_names_the_server_the_program_dials() {
     let scene = fixture("settings-seam", &sd.url());
     let paths = settings::from_environment().expect("settings folder");
     let conf = settings::read(&paths).expect("settings read back");
-    assert_eq!(conf.sd_server, sd.url(), "the fake is the address the settings hold");
+    assert_eq!(
+        conf.sd_server,
+        sd.url(),
+        "the fake is the address the settings hold"
+    );
     let (_conf, endpoint) = endpoint_of(&conf);
     assert_eq!(endpoint.url, sd.url());
     // And the submit leg, pointed there, takes the job id out of the reply it gets back.
-    let job = draw::submit(&scene.tree, &serde_json::json!({ "prompt": "x" })).expect("the fake answered");
+    let job = draw::submit(&scene.tree, &serde_json::json!({ "prompt": "x" }))
+        .expect("the fake answered");
     assert_eq!(job.id, "job-12");
     let state = draw::poll(&scene.tree, &job).expect("the poll answered");
     assert!(state.done && state.png == PNG_BYTES, "{state:?}");
@@ -561,7 +675,11 @@ fn f5_3_s15_the_picture_and_its_stamp_sit_beside_the_upload_text() {
     std::fs::create_dir_all(root.join("session.naivepost")).unwrap();
     let tree = Tree::new(root.join("session.naivepost")).expect("a project");
     let dir = tree.thumbnail_png().parent().unwrap().to_path_buf();
-    assert_eq!(dir, tree.publish_dir(), "the picture lives with publish.json");
+    assert_eq!(
+        dir,
+        tree.publish_dir(),
+        "the picture lives with publish.json"
+    );
     assert_eq!(tree.thumbnail_stamp().parent().unwrap(), dir);
     let plain_parent = tree.thumbnail_plain_png().parent().unwrap().to_path_buf();
     assert_eq!(plain_parent, dir);

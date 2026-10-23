@@ -66,7 +66,10 @@ pub fn refused_no_file() -> String {
 /// The conversion is a real ffmpeg run (`-ac 1 -vn`, pcm wav) through [`crate::subprocess::run`], the
 /// same leg every other audio step uses, so a machine without ffmpeg gets ffmpeg's reason rather than
 /// a placeholder.
-pub fn add_voice_file(window: &adw::ApplicationWindow, source: &std::path::Path) -> Result<String, String> {
+pub fn add_voice_file(
+    window: &adw::ApplicationWindow,
+    source: &std::path::Path,
+) -> Result<String, String> {
     if !source.exists() {
         return Err(format!(
             "{} is not there \u{2014} nothing was copied",
@@ -100,9 +103,8 @@ pub fn add_voice_file(window: &adw::ApplicationWindow, source: &std::path::Path)
         target.to_string_lossy().into_owned(),
     ];
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-    crate::subprocess::run(&ffmpeg, &borrowed, |_| {}).map_err(|why| {
-        format!("{} could not be copied: {why}", source.display())
-    })?;
+    crate::subprocess::run(&ffmpeg, &borrowed, |_| {})
+        .map_err(|why| format!("{} could not be copied: {why}", source.display()))?;
     // Offer it now: the picker's rows come from the page state, so adding the name and refreshing is
     // what makes the new voice selectable without a restart.
     crate::ui::narrate_page::offer_voice(&name);
@@ -126,7 +128,12 @@ pub fn voices_folder() -> std::path::PathBuf {
     let data_dir = paths
         .map(|paths| paths.data_dir)
         .unwrap_or_else(|| std::path::PathBuf::from("/tmp"));
-    crate::settings::voices_folder(&conf.voices, &legacy, std::env::var("FLATPAK_ID").is_ok(), &data_dir)
+    crate::settings::voices_folder(
+        &conf.voices,
+        &legacy,
+        std::env::var("FLATPAK_ID").is_ok(),
+        &data_dir,
+    )
 }
 
 /// Which ffmpeg to run: the Settings box, else the bare name — the same reading `speak_leg` uses so

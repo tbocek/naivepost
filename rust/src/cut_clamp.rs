@@ -85,7 +85,9 @@ pub fn refused_stops(clamped: &Clamped) -> Vec<f64> {
 /// S5's line, verbatim from §F3.12: `">>> N effect(s) pointed at footage the final cut does not keep — dropped"`.
 /// The separator is an em dash (U+2014), as in every other line this tree logs.
 pub fn log_line(dropped: usize) -> String {
-    format!(">>> {dropped} effect(s) pointed at footage the final cut does not keep \u{2014} dropped")
+    format!(
+        ">>> {dropped} effect(s) pointed at footage the final cut does not keep \u{2014} dropped"
+    )
 }
 
 /// One effect against the scenes: kept as proposed, kept trimmed, or `None` for gone.
@@ -134,7 +136,13 @@ fn clamp_one(fx: &Fx, segs: &[cut::Seg]) -> Option<Fx> {
     kept.dur = nt1 - nt0;
     match fx.effect_kind() {
         // The band is the band; its fades shrink with it below.
-        Some(EffectKind::Zoom | EffectKind::Text | EffectKind::Svg | EffectKind::Volume | EffectKind::Label) => {}
+        Some(
+            EffectKind::Zoom
+            | EffectKind::Text
+            | EffectKind::Svg
+            | EffectKind::Volume
+            | EffectKind::Label,
+        ) => {}
         // S4: a rate has to stay playable over what the cut left. A stop gets none of this — see the module header.
         Some(EffectKind::Speed) => {
             if !fx_record::is_stop(fx) {

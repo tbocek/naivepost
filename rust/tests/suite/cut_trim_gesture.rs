@@ -5,12 +5,11 @@
 
 use std::collections::BTreeMap;
 
+use crate::common;
+use common::clip;
 use naivepost::cut::Seg;
 use naivepost::cut_select;
 use naivepost::cut_trim as trim;
-use crate::common;
-use common::clip;
-
 
 /// The fixture S1's bounds are read against: previous clip ends at 9.5, held runs 10–30, next starts at 40.
 /// The recording itself runs 0–100.
@@ -86,7 +85,11 @@ fn f2_8_s2_the_gesture_opens_at_three_px_of_travel() {
         &sources(&[]),
         false,
     );
-    assert_eq!(just_short, trim::Gesture::Click, "under 3 px nothing was dragged");
+    assert_eq!(
+        just_short,
+        trim::Gesture::Click,
+        "under 3 px nothing was dragged"
+    );
 
     let opened = trim::right_gesture(
         &on_scene(),
@@ -125,11 +128,17 @@ fn f2_8_s2_a_scene_slide_keeps_length_clears_neighbours_and_snaps_flush() {
 
     // Past the next clip: bounded to where the next one starts minus its own length. // layout.snapPx
     let bounded = trim::slide_scene(&segs, 1, 39.0, REC_START, REC_END, PPS);
-    assert_eq!(bounded, 20.0, "the far bound is the next clip's start off the length");
+    assert_eq!(
+        bounded, 20.0,
+        "the far bound is the next clip's start off the length"
+    );
 
     // Within the 8 px reach (0.2 s here) of that bound: snapped flush, not a pixel short.
     let near = trim::slide_scene(&segs, 1, 20.15, REC_START, REC_END, PPS);
-    assert_eq!(near, 20.0, "flush within the snap reach means flush exactly");
+    assert_eq!(
+        near, 20.0,
+        "flush within the snap reach means flush exactly"
+    );
 
     // And the composed gesture reports the same delta it computed, not the hand's raw distance.
     let gesture = trim::right_gesture(
@@ -148,7 +157,10 @@ fn f2_8_s2_a_scene_slide_keeps_length_clears_neighbours_and_snaps_flush() {
     );
     match gesture {
         trim::Gesture::Slid { status, .. } => {
-            assert_eq!(status, "the scene moved +10.00 s", "snapped, so ten seconds not 10.15");
+            assert_eq!(
+                status, "the scene moved +10.00 s",
+                "snapped, so ten seconds not 10.15"
+            );
         }
         trim::Gesture::Click => panic!("a scene that moved 10 s is not a click"),
     }
@@ -227,7 +239,10 @@ fn f2_8_s2_a_row_slide_shifts_every_listed_source_and_nobody_else() {
         } => {
             assert_eq!(what, "the camera row");
             assert_eq!(status, "the camera row moved +1.25 s");
-            assert_eq!(row, None, "a row sliding along the clock is not a row CHANGE");
+            assert_eq!(
+                row, None,
+                "a row sliding along the clock is not a row CHANGE"
+            );
             assert!(open.is_empty(), "no folds were given to open");
             assert_eq!(shift.get("cam A"), Some(&1.25));
             assert_eq!(shift.get("mic"), Some(&2.75));
@@ -262,8 +277,7 @@ fn f2_8_s2_a_row_change_needs_no_travel_and_names_the_row() {
         trim::Gesture::Slid { status, row, .. } => {
             assert_eq!(row, Some(0));
             assert_eq!(
-                status,
-                "the scene moved to row 1 \u{2014} its kept scenes came along",
+                status, "the scene moved to row 1 \u{2014} its kept scenes came along",
                 "rows are counted from 1 in the sentence"
             );
         }
@@ -331,7 +345,11 @@ fn f2_8_s2_a_second_update_that_changes_nothing_is_not_reported_as_a_move() {
         &sources(&[]),
         true,
     );
-    assert_eq!(repeat, trim::Gesture::Click, "already pushed, and nothing new moved");
+    assert_eq!(
+        repeat,
+        trim::Gesture::Click,
+        "already pushed, and nothing new moved"
+    );
     // One Undo per gesture, stated by the rule the gesture leans on.
     assert!(trim::pushes_undo(true, false));
     assert!(!trim::pushes_undo(true, true));
@@ -368,7 +386,10 @@ fn f2_8_s2_only_the_folds_under_the_drag_open() {
     let column = trim::folds_to_open(&folds, 12.5, 0.0);
     assert_eq!(column, vec![1]);
     let elsewhere = trim::folds_to_open(&folds, 0.5, 0.0);
-    assert!(elsewhere.is_empty(), "a fold far from the grab is untouched by this drag");
+    assert!(
+        elsewhere.is_empty(),
+        "a fold far from the grab is untouched by this drag"
+    );
 }
 
 /// S2: the band and the wave strip both take their recording, and the gesture shifts that one column.
@@ -409,7 +430,11 @@ fn f2_8_s2_a_band_or_wave_press_slides_its_own_recording_only() {
                 assert_eq!(what, "the recording");
                 assert_eq!(status, "the recording moved +2.00 s");
                 assert_eq!(shift.get("lecture"), Some(&2.0));
-                assert_eq!(shift.get("other"), Some(&5.0), "another recording is not dragged along");
+                assert_eq!(
+                    shift.get("other"),
+                    Some(&5.0),
+                    "another recording is not dragged along"
+                );
             }
             trim::Gesture::Click => panic!("a band or wave press with travel must slide"),
         }
@@ -454,7 +479,10 @@ fn f2_8_s2_a_footage_selection_slides_its_marked_scenes_together() {
         trim::Gesture::Click => panic!("a marked scene with travel slides"),
     }
     // The scene itself stays put in the list: the gesture reports, the page writes.
-    assert_eq!(segs[1].s, 10.0, "the rule computes, it does not mutate behind the caller");
+    assert_eq!(
+        segs[1].s, 10.0,
+        "the rule computes, it does not mutate behind the caller"
+    );
 }
 
 /// The tooltips the page shows carry the reach and the hands, so a person reads the rule before touching.
@@ -465,5 +493,8 @@ fn f2_8_s1_and_s2_the_tooltips_name_the_reach_and_the_hands() {
     assert!(trim::TRIM_TIP.contains("border"));
     assert!(trim::MOVE_TIP.contains("right-drag"));
     assert!(trim::MOVE_TIP.contains("recording"));
-    assert!(trim::EDGE_GRAB_PX < cut_select::SNAP_PX, "the grab is tighter than the snap");
+    assert!(
+        trim::EDGE_GRAB_PX < cut_select::SNAP_PX,
+        "the grab is tighter than the snap"
+    );
 }

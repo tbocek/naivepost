@@ -45,8 +45,7 @@ pub struct Context<'a> {
 /// panic, never an empty string, and never a silent drop (§3: problems come back as `{"error": …}` and do
 /// not end the flow).
 pub fn dispatch(ctx: &Context, call: &ToolCall) -> Option<String> {
-    let args: serde_json::Value =
-        serde_json::from_str(&call.args).unwrap_or_else(|_| json!({}));
+    let args: serde_json::Value = serde_json::from_str(&call.args).unwrap_or_else(|_| json!({}));
     match call.name.as_str() {
         "get_context" => Some(context_of(ctx)),
         "get_lines" => Some(lines_of(ctx, &args)),
@@ -172,7 +171,11 @@ fn frames_of(ctx: &Context, args: &serde_json::Value) -> String {
     let picked: Vec<f64> = match (number(args, "from"), number(args, "to")) {
         (Some(from), Some(to)) => {
             let (from, to) = if from <= to { (from, to) } else { (to, from) };
-            ctx.frames.iter().copied().filter(|at| *at >= from && *at < to).collect()
+            ctx.frames
+                .iter()
+                .copied()
+                .filter(|at| *at >= from && *at < to)
+                .collect()
         }
         // No range: the whole batch the request was built from.
         _ => ctx.frames.to_vec(),
@@ -189,9 +192,7 @@ fn frames_of(ctx: &Context, args: &serde_json::Value) -> String {
         .iter()
         .enumerate()
         .filter(|(_, at)| picked.contains(at))
-        .map(|(index, at)| {
-            json!({"frame": index + 1, "at": crate::fix_transcripts::stamp(*at)})
-        })
+        .map(|(index, at)| json!({"frame": index + 1, "at": crate::fix_transcripts::stamp(*at)}))
         .collect();
     tools::ok(&json!({"frames": frames, "already_sent": true}))
 }

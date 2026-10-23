@@ -232,15 +232,15 @@ fn copy_in(file: &Path, tree: &Option<Tree>, dir: &Path, sources: &Path) -> Resu
         return Ok(());
     }
 
-    let mut in_ = BufReader::new(File::open(file).map_err(|err| format!("{}: {err}", file.display()))?);
+    let mut in_ =
+        BufReader::new(File::open(file).map_err(|err| format!("{}: {err}", file.display()))?);
     // The `.part` goes beside its destination, from layout when the folder is a project: a copy that
     // dies leaves only that, and the next scan can see it is not a source yet.
     let part = match tree {
         Some(tree) => tree.copy_part(&name.to_string_lossy()),
         None => part_beside(&to),
     };
-    let mut out =
-        File::create(&part).map_err(|err| format!("{}: {err}", part.display()))?;
+    let mut out = File::create(&part).map_err(|err| format!("{}: {err}", part.display()))?;
     // The writer is a scope of its own: `io::copy` must have let go of `out` before the flush and
     // the rename, or the `.part` would still be open when it is moved onto its real name.
     let copied = {

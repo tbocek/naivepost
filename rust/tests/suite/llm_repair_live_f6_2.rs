@@ -43,9 +43,25 @@ fn f6_2_s3_d_a_live_all_reasoning_captions_answer_is_asked_again_repaired_and_la
         add_captions_json(&[(1, 0.4, 1.6, "the network")]),
     ]);
     point_at(&llm.url());
-    let asked = captions_ask::ask(&fixture.tree, "Caption every spoken line.", &clips, &words, 0, &|| false);
-    assert!(!asked.failed, "the repaired answer landed: {}", asked.reason);
-    assert_eq!(asked.calls.len(), 1, "the caption came from the SECOND answer: {:?}", asked.calls);
+    let asked = captions_ask::ask(
+        &fixture.tree,
+        "Caption every spoken line.",
+        &clips,
+        &words,
+        0,
+        &|| false,
+    );
+    assert!(
+        !asked.failed,
+        "the repaired answer landed: {}",
+        asked.reason
+    );
+    assert_eq!(
+        asked.calls.len(),
+        1,
+        "the caption came from the SECOND answer: {:?}",
+        asked.calls
+    );
     assert_eq!(asked.calls[0].text, "the network");
 
     // §3's repair is ONE extra request, and it is the SECOND one on the wire. Its bytes are what a check can
@@ -55,7 +71,12 @@ fn f6_2_s3_d_a_live_all_reasoning_captions_answer_is_asked_again_repaired_and_la
     // blank assistant turn. Before this round the second request was an UNCHANGED resend of the non-answer, so
     // every assertion below fails against the old code.
     let seen = llm.drain();
-    assert_eq!(seen.len(), 2, "one repair, one extra request: {}", seen.len());
+    assert_eq!(
+        seen.len(),
+        2,
+        "one repair, one extra request: {}",
+        seen.len()
+    );
     for one in &seen {
         assert!(
             !one.body.contains("Let me consider"),
@@ -158,7 +179,13 @@ impl ScriptedLlm {
                         break;
                     }
                     if head.to_ascii_lowercase().starts_with("content-length:") {
-                        length = head.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+                        length = head
+                            .split(':')
+                            .nth(1)
+                            .unwrap_or("0")
+                            .trim()
+                            .parse()
+                            .unwrap_or(0);
                     }
                     if head.trim().is_empty() {
                         break;
@@ -175,7 +202,10 @@ impl ScriptedLlm {
                 );
                 let _ = stream.write_all(framed.as_bytes());
                 let _ = stream.flush();
-                recording.lock().expect("seen lock").push((String::from_utf8_lossy(&payload).to_string(), answer));
+                recording
+                    .lock()
+                    .expect("seen lock")
+                    .push((String::from_utf8_lossy(&payload).to_string(), answer));
             }
         });
         ScriptedLlm { port, seen }

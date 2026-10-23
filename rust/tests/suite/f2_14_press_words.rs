@@ -23,7 +23,12 @@ static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(f
 fn round(app: &adw::Application) {
     let f = Fixture::fresh("press-words")
         .with_timeline()
-        .with_words(&[("hello", 2.0), ("there", 6.0), ("half", 20.0), ("end", 26.0)])
+        .with_words(&[
+            ("hello", 2.0),
+            ("there", 6.0),
+            ("half", 20.0),
+            ("end", 26.0),
+        ])
         .with_marks(&[retake(4.0, 5.0)]);
     // §S1's guards read the launch's folder when nothing points elsewhere; a test points it deliberately.
     cut_suggest_land::point_session_at(Some(f.tree.clone()));
@@ -61,7 +66,11 @@ fn round(app: &adw::Application) {
         base.segs,
         on_screen.segs
     );
-    let footage: Vec<&Seg> = on_screen.segs.iter().filter(|seg| !seg.is_insert()).collect();
+    let footage: Vec<&Seg> = on_screen
+        .segs
+        .iter()
+        .filter(|seg| !seg.is_insert())
+        .collect();
     assert!(
         !footage.is_empty(),
         "a words cut leaves footage on the page: {:?}",
@@ -72,8 +81,7 @@ fn round(app: &adw::Application) {
     // working copy beside the cwd, and not the temp tree until a landing has written it.
     let saved = naivepost::cut::load(&f.tree).expect("cut.json was written");
     assert_eq!(
-        saved.segs,
-        on_screen.segs,
+        saved.segs, on_screen.segs,
         "cut.json holds what the page shows, so a re-open shows it too"
     );
     assert!(
@@ -82,7 +90,9 @@ fn round(app: &adw::Application) {
         status_text(&window)
     );
     assert!(
-        ui::window_logs().iter().any(|line| line.starts_with(">>> cut by the words: ")),
+        ui::window_logs()
+            .iter()
+            .any(|line| line.starts_with(">>> cut by the words: ")),
         "the log carries §S2a's line: {:?}",
         ui::window_logs()
     );

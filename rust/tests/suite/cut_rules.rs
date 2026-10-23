@@ -10,9 +10,9 @@ use naivepost::cut_hear;
 use naivepost::cut_line::Held;
 use naivepost::cut_rules::{self, Floor};
 use naivepost::cut_screen;
+use naivepost::cut_select::Selection;
 use naivepost::cut_select::{self, Scope, Surface, ANY_ROW};
 use naivepost::cut_trim::{self, Border};
-use naivepost::cut_select::Selection;
 use naivepost::hand_edit;
 use naivepost::layout::Tree;
 use naivepost::preview;
@@ -21,12 +21,18 @@ use naivepost::timeline::{self, Recording, Span};
 use naivepost::tools::cutpass;
 
 use crate::common;
-use common::{clip};
+use common::clip;
 
 const REC: &str = "2026-09-16 17-26-20";
 
 fn card(s: f64, e: f64, dur: f64) -> Seg {
-    Seg { s, e, ins: "assets/tier.svg".into(), dur, ..Default::default() }
+    Seg {
+        s,
+        e,
+        ins: "assets/tier.svg".into(),
+        dur,
+        ..Default::default()
+    }
 }
 
 // --- bullet 1: one thing held at a time ---------------------------------------------------------------------
@@ -37,7 +43,10 @@ fn card(s: f64, e: f64, dur: f64) -> Seg {
 #[test]
 fn sec_05_cut_7_rules_s1_one_thing_held_and_only_one_undo_per_gesture() {
     // One thing at a time: an edge already in hand makes way for a clip.
-    assert_eq!(cut_rules::pick_up(Some(Held::Edge), Held::Clip), Some(Held::Clip));
+    assert_eq!(
+        cut_rules::pick_up(Some(Held::Edge), Held::Clip),
+        Some(Held::Clip)
+    );
     assert_eq!(cut_rules::pick_up(None, Held::Effect), Some(Held::Effect));
 
     // Picking up is reading: no move, no edit, nothing for ↶ to take back.
@@ -45,15 +54,27 @@ fn sec_05_cut_7_rules_s1_one_thing_held_and_only_one_undo_per_gesture() {
     assert!(cut_rules::picking_up_edits(true));
 
     // One Undo per drag: the first real move pushes, every later tick of the same hold does not.
-    assert!(cut_trim::pushes_undo(true, false), "the gesture's first move");
+    assert!(
+        cut_trim::pushes_undo(true, false),
+        "the gesture's first move"
+    );
     assert!(!cut_trim::pushes_undo(true, true), "and only that one");
-    assert!(!cut_trim::pushes_undo(false, false), "holding still pushes nothing");
+    assert!(
+        !cut_trim::pushes_undo(false, false),
+        "holding still pushes nothing"
+    );
     assert!(!cut_trim::pushes_undo(false, true));
 
     // An unmoved press is a click — unless the hand crossed to another row, which is a move of its own.
     assert!(cut_trim::is_click(0.0, false));
-    assert!(!cut_trim::is_click(0.0, true), "a row change is a gesture at 0 px");
-    assert!(!cut_trim::is_click(cut_trim::ROW_TRAVEL_PX * 2.0, false), "travel past the slop is a drag");
+    assert!(
+        !cut_trim::is_click(0.0, true),
+        "a row change is a gesture at 0 px"
+    );
+    assert!(
+        !cut_trim::is_click(cut_trim::ROW_TRAVEL_PX * 2.0, false),
+        "travel past the slop is a drag"
+    );
 }
 
 // --- bullet 2: borders, buttons and scope --------------------------------------------------------------------
@@ -65,10 +86,22 @@ fn sec_05_cut_7_rules_s1_one_thing_held_and_only_one_undo_per_gesture() {
 fn sec_05_cut_7_rules_s2_a_border_belongs_to_both_buttons() {
     // The same pixel sits inside both clips' grab zones; the nearer edge wins, from either side.
     let (start_px, end_px) = (100.0, 140.0);
-    assert_eq!(cut_trim::grab_border(100.0 + cut_trim::EDGE_GRAB_PX / 2.0, start_px, end_px), Some(Border::Start));
-    assert_eq!(cut_trim::grab_border(100.0 - cut_trim::EDGE_GRAB_PX / 2.0, start_px, end_px), Some(Border::Start));
-    assert_eq!(cut_trim::grab_border(140.0 + cut_trim::EDGE_GRAB_PX / 2.0, start_px, end_px), Some(Border::End));
-    assert_eq!(cut_trim::grab_border(140.0 - cut_trim::EDGE_GRAB_PX / 2.0, start_px, end_px), Some(Border::End));
+    assert_eq!(
+        cut_trim::grab_border(100.0 + cut_trim::EDGE_GRAB_PX / 2.0, start_px, end_px),
+        Some(Border::Start)
+    );
+    assert_eq!(
+        cut_trim::grab_border(100.0 - cut_trim::EDGE_GRAB_PX / 2.0, start_px, end_px),
+        Some(Border::Start)
+    );
+    assert_eq!(
+        cut_trim::grab_border(140.0 + cut_trim::EDGE_GRAB_PX / 2.0, start_px, end_px),
+        Some(Border::End)
+    );
+    assert_eq!(
+        cut_trim::grab_border(140.0 - cut_trim::EDGE_GRAB_PX / 2.0, start_px, end_px),
+        Some(Border::End)
+    );
     // Mid-clip there is no border to grab at all — that press selects or moves instead.
     assert_eq!(cut_trim::grab_border(120.0, start_px, end_px), None);
 
@@ -76,16 +109,26 @@ fn sec_05_cut_7_rules_s2_a_border_belongs_to_both_buttons() {
     assert!(!cut_trim::right_press_moves_line());
 
     // A selection is of what it was drawn on: a row's footage, or one recording's sound.
-    let pictures = cut_select::draw(Surface::PictureRow(1), None, 10.0, 20.0).expect("a row selects its footage");
+    let pictures = cut_select::draw(Surface::PictureRow(1), None, 10.0, 20.0)
+        .expect("a row selects its footage");
     assert_eq!(pictures.scope, Scope::Footage { row: 1 });
-    let sound = cut_select::draw(Surface::WaveStrip, Some(REC), 10.0, 20.0).expect("a strip selects that sound");
-    assert_eq!(sound.scope, Scope::Sound { recording: REC.into() });
+    let sound = cut_select::draw(Surface::WaveStrip, Some(REC), 10.0, 20.0)
+        .expect("a strip selects that sound");
+    assert_eq!(
+        sound.scope,
+        Scope::Sound {
+            recording: REC.into()
+        }
+    );
 
     // Which is what the verbs ask before offering themselves: footage reaches every row of itself, a sound
     // belongs to one recording and to no picture row.
     let whole = Scope::Footage { row: ANY_ROW };
     assert!(cut_select::scoped_to_row(&whole, 0) && cut_select::scoped_to_row(&whole, 3));
-    assert!(!cut_select::scoped_to_row(&sound.scope, 0), "a lane's seconds are nobody's pictures");
+    assert!(
+        !cut_select::scoped_to_row(&sound.scope, 0),
+        "a lane's seconds are nobody's pictures"
+    );
 }
 
 // --- bullet 3: widthless gaps and half-open ranges -----------------------------------------------------------
@@ -96,8 +139,16 @@ fn sec_05_cut_7_rules_s2_a_border_belongs_to_both_buttons() {
 #[test]
 fn sec_05_cut_7_rules_s3_unfilmed_time_has_no_width_and_seams_are_half_open() {
     let recs = vec![
-        Recording { base: "a".into(), start: 0.0, end: 30.0 },
-        Recording { base: "b".into(), start: 50.0, end: 70.0 },
+        Recording {
+            base: "a".into(),
+            start: 0.0,
+            end: 30.0,
+        },
+        Recording {
+            base: "b".into(),
+            start: 50.0,
+            end: 70.0,
+        },
     ];
     let runs = timeline::filmed_runs(&recs);
     let pps = 4.0;
@@ -106,14 +157,27 @@ fn sec_05_cut_7_rules_s3_unfilmed_time_has_no_width_and_seams_are_half_open() {
     // 50 s of unfilmed time between the runs, and no pixels for it: only the filmed seconds are wide.
     let filmed: f64 = runs.iter().map(|(start, end)| end - start).sum();
     assert_eq!(filmed, 50.0);
-    assert!(span.total_px() < (70.0 * pps), "the band is {} px, not the session's {}", span.total_px(), 70.0 * pps);
+    assert!(
+        span.total_px() < (70.0 * pps),
+        "the band is {} px, not the session's {}",
+        span.total_px(),
+        70.0 * pps
+    );
     assert!((span.total_px() - (cut_screen::GUTTER_PX + filmed * pps)).abs() < 1e-9);
 
     // The seam second belongs to the later take: x at a run's end reads as the next run's start.
-    assert_eq!(span.t_at(span.x_of(30.0)), 50.0, "a press on the seam is in the take you can see");
+    assert_eq!(
+        span.t_at(span.x_of(30.0)),
+        50.0,
+        "a press on the seam is in the take you can see"
+    );
     // And preview agrees: standing on a run's last second means standing outside it.
     assert_eq!(preview::walk_on(&runs, 30.0), Some(50.0));
-    assert_eq!(preview::walk_on(&runs, 29.9), Some(29.9), "one frame earlier is still inside");
+    assert_eq!(
+        preview::walk_on(&runs, 29.9),
+        Some(29.9),
+        "one frame earlier is still inside"
+    );
 
     // The same half-open reading between two ranges — touching is not overlapping.
     assert!(!timeline::spans_overlap((0.0, 10.0), (10.0, 20.0)));
@@ -129,32 +193,71 @@ fn sec_05_cut_7_rules_s3_unfilmed_time_has_no_width_and_seams_are_half_open() {
 fn sec_05_cut_7_rules_s4_inserts_are_files_not_footage() {
     // Never trimmed: neither a card laid over the footage nor one spliced between it has an edge to grab.
     assert!(cut_trim::trimmable(&clip(0.0, 30.0)));
-    assert!(!cut_trim::trimmable(&card(10.0, 20.0, 0.0)), "an overwriting card");
-    assert!(!cut_trim::trimmable(&card(10.0, 10.0, 4.0)), "a spliced one");
+    assert!(
+        !cut_trim::trimmable(&card(10.0, 20.0, 0.0)),
+        "an overwriting card"
+    );
+    assert!(
+        !cut_trim::trimmable(&card(10.0, 10.0, 4.0)),
+        "a spliced one"
+    );
 
     // Never merged: a card sitting flush against a clip stays a card.
     let with_card = vec![clip(0.0, 30.0), card(30.0, 30.0, 4.0)];
-    assert_eq!(cut_trim::merge_pair(&with_card, 1), None, "the card finds no partner");
-    assert_eq!(cut_trim::merge_pair(&with_card, 0), None, "and is not one either");
+    assert_eq!(
+        cut_trim::merge_pair(&with_card, 1),
+        None,
+        "the card finds no partner"
+    );
+    assert_eq!(
+        cut_trim::merge_pair(&with_card, 0),
+        None,
+        "and is not one either"
+    );
     let two_clips = vec![clip(0.0, 30.0), clip(30.0, 60.0)];
     assert_eq!(cut_trim::merge_pair(&two_clips, 0), Some(1), "footage does");
 
     // Never a hearing answer: an insert brings its own sound or replaces the lane it was laid in, so its scene's
     // `quiet` list is not its question and reads as not hushed.
-    let insert = Seg { ins: "assets/sting.mp4".into(), quiet: vec![REC.into()], ..Default::default() };
-    assert!(cut_hear::hush(&insert).is_empty(), "its quiet list is not its question");
-    let footage = Seg { s: 0.0, e: 12.0, quiet: vec![REC.into()], ..Default::default() };
-    assert_eq!(cut_hear::hush(&footage), &[REC.to_string()], "footage does answer for itself");
+    let insert = Seg {
+        ins: "assets/sting.mp4".into(),
+        quiet: vec![REC.into()],
+        ..Default::default()
+    };
+    assert!(
+        cut_hear::hush(&insert).is_empty(),
+        "its quiet list is not its question"
+    );
+    let footage = Seg {
+        s: 0.0,
+        e: 12.0,
+        quiet: vec![REC.into()],
+        ..Default::default()
+    };
+    assert_eq!(
+        cut_hear::hush(&footage),
+        &[REC.to_string()],
+        "footage does answer for itself"
+    );
 
     // Costs no session time: a spliced card is not footage, so the stretches of picture under the cut are the
     // same with it as without, while the finished video grows by exactly its `dur`.
-    let without = Cut { segs: vec![clip(0.0, 30.0), clip(40.0, 60.0)], ..Default::default() };
+    let without = Cut {
+        segs: vec![clip(0.0, 30.0), clip(40.0, 60.0)],
+        ..Default::default()
+    };
     let with = Cut {
         segs: vec![clip(0.0, 30.0), card(35.0, 35.0, 4.0), clip(40.0, 60.0)],
         ..Default::default()
     };
-    assert_eq!(footage_stretches(&with, 0.0, 60.0), footage_stretches(&without, 0.0, 60.0));
-    assert_eq!(cut_screen::cut_seconds(&with) - cut_screen::cut_seconds(&without), 4.0);
+    assert_eq!(
+        footage_stretches(&with, 0.0, 60.0),
+        footage_stretches(&without, 0.0, 60.0)
+    );
+    assert_eq!(
+        cut_screen::cut_seconds(&with) - cut_screen::cut_seconds(&without),
+        4.0
+    );
 }
 
 // --- bullet 5: clips stay home, never overlap, Remove is exact -------------------------------------------------
@@ -168,8 +271,14 @@ fn sec_05_cut_7_rules_s5_a_clip_stays_in_its_recording_and_never_overlaps() {
 
     // Alone in a recording, its edges are walls: dragging past either stops at the last filmed second.
     let alone = vec![clip(10.0, 30.0)];
-    assert_eq!(cut_trim::clamp_edge(&alone, 0, Border::End, 200.0, 0.0, 45.0), 45.0);
-    assert_eq!(cut_trim::clamp_edge(&alone, 0, Border::Start, -100.0, 5.0, 120.0), 5.0);
+    assert_eq!(
+        cut_trim::clamp_edge(&alone, 0, Border::End, 200.0, 0.0, 45.0),
+        45.0
+    );
+    assert_eq!(
+        cut_trim::clamp_edge(&alone, 0, Border::Start, -100.0, 5.0, 120.0),
+        5.0
+    );
 
     // With a neighbour, the neighbour clamps first — reaching into it would be an overlap.
     let end = cut_trim::clamp_edge(&segs, 0, Border::End, 200.0, 0.0, 45.0);
@@ -197,7 +306,12 @@ fn sec_05_cut_7_rules_s6_a_suggestion_keeps_the_cards_and_becomes_the_base() {
     let current = vec![
         clip(5.0, 20.0),
         card(22.0, 22.0, 4.0),
-        Seg { s: 50.0, e: 55.0, ins: "assets/sting.wav".into(), ..Default::default() },
+        Seg {
+            s: 50.0,
+            e: 55.0,
+            ins: "assets/sting.wav".into(),
+            ..Default::default()
+        },
     ];
     let kept = cut::keep_inserts(&suggested, &current);
 
@@ -205,7 +319,10 @@ fn sec_05_cut_7_rules_s6_a_suggestion_keeps_the_cards_and_becomes_the_base() {
     assert_eq!(kept.len(), suggested.len() + 2);
     assert!(kept.contains(&suggested[0]) && kept.contains(&suggested[1]));
     assert!(kept.iter().filter(|seg| !seg.ins.is_empty()).count() == 2);
-    assert!(!kept.contains(&current[0]), "the footage half was the model's to replace");
+    assert!(
+        !kept.contains(&current[0]),
+        "the footage half was the model's to replace"
+    );
     // And the page reads them in time order, cards among the clips rather than appended after them.
     let order: Vec<f64> = kept.iter().map(|seg| seg.s).collect();
     let mut sorted = order.clone();
@@ -213,27 +330,54 @@ fn sec_05_cut_7_rules_s6_a_suggestion_keeps_the_cards_and_becomes_the_base() {
     assert_eq!(order, sorted);
 
     // Effects are not carried: they belong to scenes this answer did not choose.
-    let mut old = Cut { segs: current.clone(), ..Default::default() };
-    old.fx.push(Fx { kind: "zoom".into(), t: 8.0, ..Default::default() });
-    let mut fresh = Cut { segs: suggested.clone(), ..Default::default() };
+    let mut old = Cut {
+        segs: current.clone(),
+        ..Default::default()
+    };
+    old.fx.push(Fx {
+        kind: "zoom".into(),
+        t: 8.0,
+        ..Default::default()
+    });
+    let mut fresh = Cut {
+        segs: suggested.clone(),
+        ..Default::default()
+    };
     fresh.fx = vec![];
     assert_eq!(old.fx.len(), 1);
-    assert!(fresh.fx.is_empty(), "the new cut arrives with no effects of the old one");
+    assert!(
+        fresh.fx.is_empty(),
+        "the new cut arrives with no effects of the old one"
+    );
 
     // The base moves with the suggestion, and Revert goes to it rather than to the file.
-    let before = Cut { segs: current.clone(), ..Default::default() };
-    let answer = Cut { segs: kept.clone(), ..Default::default() };
+    let before = Cut {
+        segs: current.clone(),
+        ..Default::default()
+    };
+    let answer = Cut {
+        segs: kept.clone(),
+        ..Default::default()
+    };
     let mut history = cut::History::open(&before);
     history.suggested(&answer);
     let back = history.revert();
-    assert_eq!(back, cut::Snapshot::of(&answer), "the model's answer is the base now");
+    assert_eq!(
+        back,
+        cut::Snapshot::of(&answer),
+        "the model's answer is the base now"
+    );
 
     // Walked back onto the timeline: an edge the model sent 1.5 s from a word edge lands on it, within
     // P.policy.snapToleranceSeconds (5 s) — the same tolerance §6 catalogues.
     assert_eq!(cutpass::SNAP_TOLERANCE_SECONDS, 5.0);
     let mut plan = cutpass::Plan::new(120.0, 30.0).with_snap_points(vec![10.0]);
     plan.add_segment(11.5, 25.0, "the demo");
-    assert_eq!(plan.segments()[0].start, 10.0, "the reply moved onto the timeline");
+    assert_eq!(
+        plan.segments()[0].start,
+        10.0,
+        "the reply moved onto the timeline"
+    );
 }
 
 // --- bullet 7: one writer and the gate ---------------------------------------------------------------------------
@@ -258,13 +402,20 @@ fn sec_05_cut_7_rules_s7_cut_json_exists_once_and_unlocks_the_steps_after_it() {
     // Reading never writes: a load of the file it just wrote leaves the same bytes behind.
     let bytes = std::fs::read_to_string(tree.cut_json()).unwrap();
     let _again = cut::load(&tree).unwrap();
-    assert_eq!(std::fs::read_to_string(tree.cut_json()).unwrap(), bytes, "load is not a writer");
+    assert_eq!(
+        std::fs::read_to_string(tree.cut_json()).unwrap(),
+        bytes,
+        "load is not a writer"
+    );
 
     // And the gate is not a lock: Narrate and Produce are open, refusing in their own voice instead.
     let project = naivepost::project::Project::default();
     assert_eq!(shell::lock(Page::Narrate, &project), None);
     assert_eq!(shell::lock(Page::Produce, &project), None);
-    assert_eq!(cut::NO_CUT_YET, "no cut yet — build one on the Cut step first");
+    assert_eq!(
+        cut::NO_CUT_YET,
+        "no cut yet — build one on the Cut step first"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -276,34 +427,64 @@ fn sec_05_cut_7_rules_s7_cut_json_exists_once_and_unlocks_the_steps_after_it() {
 #[test]
 fn sec_05_cut_7_rules_s8_a_draw_asks_for_a_window_and_never_for_a_frame() {
     // The window the translate puts on screen, in seconds: 100 px at 4 px/s is 25 s of the session.
-    assert_eq!(cut_screen::visible_window(0.0, 100.0, 4.0, 400.0), (0.0, 25.0));
+    assert_eq!(
+        cut_screen::visible_window(0.0, 100.0, 4.0, 400.0),
+        (0.0, 25.0)
+    );
     // Scrolled along, and past the end — which clamps to the tail rather than showing an empty track.
-    assert_eq!(cut_screen::visible_window(80.0, 100.0, 4.0, 400.0), (20.0, 45.0));
-    assert_eq!(cut_screen::visible_window(900.0, 100.0, 4.0, 400.0), (100.0, 100.0));
+    assert_eq!(
+        cut_screen::visible_window(80.0, 100.0, 4.0, 400.0),
+        (20.0, 45.0)
+    );
+    assert_eq!(
+        cut_screen::visible_window(900.0, 100.0, 4.0, 400.0),
+        (100.0, 100.0)
+    );
     // Nothing to lay out answers with nothing, rather than dividing by it.
-    assert_eq!(cut_screen::visible_window(0.0, 100.0, 0.0, 400.0), (0.0, 0.0));
+    assert_eq!(
+        cut_screen::visible_window(0.0, 100.0, 0.0, 400.0),
+        (0.0, 0.0)
+    );
     assert_eq!(cut_screen::visible_window(0.0, 0.0, 4.0, 400.0), (0.0, 0.0));
 
     // The same numbers that size the band pick the window: fitting the filmed length to the view means the whole
     // session is on screen, so the window is the session.
     let pps = cut_screen::fit_pps(100.0, 400.0);
     assert_eq!(pps, 4.0);
-    assert_eq!(cut_screen::visible_window(0.0, 400.0, pps, 100.0 * pps), (0.0, 100.0));
+    assert_eq!(
+        cut_screen::visible_window(0.0, 400.0, pps, 100.0 * pps),
+        (0.0, 100.0)
+    );
 
     // The one thing a draw may start is throttled: at most one scrub per SCRUB_MS.
     assert_eq!(cut_trim::SCRUB_MS, 90);
     assert!(cut_trim::scrubs(None, 1_000), "the first tick asks");
-    assert!(!cut_trim::scrubs(Some(1_000), 1_045), "a redraw inside the throttle does not");
-    assert!(cut_trim::scrubs(Some(1_000), 1_090), "and one after it may again");
+    assert!(
+        !cut_trim::scrubs(Some(1_000), 1_045),
+        "a redraw inside the throttle does not"
+    );
+    assert!(
+        cut_trim::scrubs(Some(1_000), 1_090),
+        "and one after it may again"
+    );
 
     // Rebuild is Prepare's output moving, not the page being redrawn: marks newer than the text is an edit,
     // and a text that never changed stays as drawn however often it is painted.
     use std::time::{Duration, SystemTime};
     let now = SystemTime::now();
     let later = now + Duration::from_secs(2);
-    assert!(hand_edit::edited(Some(later), Some(now)), "the text moved after the marks");
-    assert!(!hand_edit::edited(Some(now), Some(later)), "a redraw is not an edit");
-    assert!(!hand_edit::edited(None, Some(now)), "nothing to compare against");
+    assert!(
+        hand_edit::edited(Some(later), Some(now)),
+        "the text moved after the marks"
+    );
+    assert!(
+        !hand_edit::edited(Some(now), Some(later)),
+        "a redraw is not an edit"
+    );
+    assert!(
+        !hand_edit::edited(None, Some(now)),
+        "nothing to compare against"
+    );
 }
 
 // --- bullet 2b: the two floors, one per verb ------------------------------------------------------------------

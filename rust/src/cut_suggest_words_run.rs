@@ -179,7 +179,10 @@ pub fn run_words(
     // holes or snap edges, because on this path there is no stamped answer to walk back. So the spans it
     // settled on go through the same walk here that `suggest::apply` runs for the model arm, which is the
     // only way hole closing and edge snapping ever happen on a words-mode press.
-    let walked = crate::suggest::walk_back_spans(&made.segs, &crate::ui::cut_suggest_model_run::walk_of(&read));
+    let walked = crate::suggest::walk_back_spans(
+        &made.segs,
+        &crate::ui::cut_suggest_model_run::walk_of(&read),
+    );
     let changed = walked.segs != made.segs;
     if walked.segs.is_empty() {
         // Nothing was kept. `suggest` has no sentence for this and inventing one is not this module's

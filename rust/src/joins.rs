@@ -35,7 +35,7 @@ use crate::prompts;
 use crate::seam_retries;
 use crate::textfmt::{self, Retake};
 use crate::tools::textedit::{
-    self, one_stretch_at_join, seam_snap, Side, Join, JOIN_REACH_WORDS, SEAM_CEIL, SEAM_MAX_WORDS,
+    self, one_stretch_at_join, seam_snap, Join, Side, JOIN_REACH_WORDS, SEAM_CEIL, SEAM_MAX_WORDS,
     SEAM_NOISE_WORDS, SEAM_REACH_WORDS, SEAM_SNAP_WORDS,
 };
 use crate::word_list::{self, Word};
@@ -192,7 +192,12 @@ impl Outcome {
 /// The reply is checked word by word against what was shown, punctuation stripped: the prompt allows
 /// no other words, and one invented word anywhere means the answer describes a video this session does
 /// not contain. That is a refusal naming the word, not a best-effort fit.
-pub fn answer_join(join: &mut Join, reply: &str, shown_before: &[String], shown_after: &[String]) -> Outcome {
+pub fn answer_join(
+    join: &mut Join,
+    reply: &str,
+    shown_before: &[String],
+    shown_after: &[String],
+) -> Outcome {
     let joined = match parse_joined(reply) {
         Some(text) => text,
         None => return Outcome::Refused("no \"joined\" in the answer".to_string()),
@@ -293,7 +298,10 @@ pub fn answer_join(join: &mut Join, reply: &str, shown_before: &[String], shown_
 /// report about the join is not an answer about it.
 pub fn parse_joined(reply: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(reply.trim()).ok()?;
-    value.get("joined")?.as_str().map(|text| text.trim().to_string())
+    value
+        .get("joined")?
+        .as_str()
+        .map(|text| text.trim().to_string())
 }
 
 /// Split an answer into the two parts it says were kept — the end of BEFORE and the start of AFTER —
@@ -346,12 +354,12 @@ fn split_answer(
         if !is_subsequence(&head, shown_before) || !is_subsequence(&tail, shown_after) {
             continue;
         }
-        let removed =
-            (shown_before.len() - head.len()) + (shown_after.len() - tail.len());
+        let removed = (shown_before.len() - head.len()) + (shown_after.len() - tail.len());
         match best {
             Some((best_removed, ref best_parts))
                 if best_removed < removed
-                    || (best_removed == removed && !later_saying_wins(head.len(), best_parts.head.len())) => {}
+                    || (best_removed == removed
+                        && !later_saying_wins(head.len(), best_parts.head.len())) => {}
             _ => best = Some((removed, Parts { head, tail })),
         }
     }
@@ -442,14 +450,22 @@ pub fn ask_slot(base: &str, attempt: u32) -> String {
 pub fn session_lanes(tree: &Tree, words: &[Word]) -> Vec<crate::edges::Lane> {
     let bases = distinct_sources(words);
     let offsets = crate::fix_transcripts::placement(
-        &bases.iter().map(|base| base.as_str()).collect::<Vec<&str>>(),
+        &bases
+            .iter()
+            .map(|base| base.as_str())
+            .collect::<Vec<&str>>(),
     );
     bases
         .iter()
         .zip(offsets)
         .filter_map(|(base, off)| {
             let (size, mtime) = stat_recording(tree, base)?;
-            Some(crate::edges::Lane { key: lane_key(base), off, size, mtime })
+            Some(crate::edges::Lane {
+                key: lane_key(base),
+                off,
+                size,
+                mtime,
+            })
         })
         .collect()
 }
@@ -487,11 +503,7 @@ fn stat_recording(tree: &Tree, stored: &str) -> Option<(i64, i64)> {
 /// Delegated to [`textedit::dedupe_joins`] rather than rewritten: the reach, the longest-match-first
 /// rule and the note's wording are that function's ground. This wrapper exists so the flow names the
 /// step and so the notes land in the flow's log rather than vanishing.
-pub fn dedupe_across(
-    words: &[String],
-    times: &[(f64, f64)],
-    kept: &mut [bool],
-) -> Vec<String> {
+pub fn dedupe_across(words: &[String], times: &[(f64, f64)], kept: &mut [bool]) -> Vec<String> {
     textedit::dedupe_joins(words, times, kept)
 }
 
@@ -536,10 +548,7 @@ pub fn marks_for<'a>(
 ///
 /// `dropped` indexes the same list as `words`; `recording_of` is the caller's map from a word index
 /// to the recording it came off, which the flow holds and this rule does not care how it is built.
-pub fn whole_takes(
-    words: &[Word],
-    dropped: &[bool],
-) -> Vec<(String, f64, f64)> {
+pub fn whole_takes(words: &[Word], dropped: &[bool]) -> Vec<(String, f64, f64)> {
     let mut out: Vec<(String, f64, f64)> = Vec::new();
     for source in distinct_sources(words) {
         let mine: Vec<usize> = words
@@ -554,7 +563,10 @@ pub fn whole_takes(
         // Every word of the recording gone — and gone BY THIS PASS, not folded away by an earlier
         // one. A recording whose words were already absent before the joins ran is not something a
         // join took out, and flagging it would blame the wrong step.
-        if !mine.iter().all(|index| dropped.get(*index).copied().unwrap_or(false)) {
+        if !mine
+            .iter()
+            .all(|index| dropped.get(*index).copied().unwrap_or(false))
+        {
             continue;
         }
         let start = words[mine[0]].start;
@@ -670,7 +682,6 @@ fn joined_recording(sources: &[String], _kept: &[bool], step: usize) -> String {
     String::new()
 }
 
-
 /// S6: the `|cut N|` counts, one per transition where the RECORDING changes.
 ///
 /// A marker sits where a recording changed. Between two words of the same recording there is nothing
@@ -724,7 +735,9 @@ pub fn press_joins(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<Str
     if too_few(&words) {
         // S1: nothing to repair, and both files still owed.
         if let Err(error) = write_pair(tree, &[], &[], &[], &[], &[]) {
-            return vec![format!("!!! text edit: could not write the text files -- {error}")];
+            return vec![format!(
+                "!!! text edit: could not write the text files -- {error}"
+            )];
         }
         return vec![too_few_log(words.len())];
     }
@@ -735,7 +748,9 @@ pub fn press_joins(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<Str
         let written: Vec<String> = words.iter().map(|word| word.written.clone()).collect();
         let kept: Vec<bool> = vec![true; written.len()];
         if let Err(error) = write_pair(tree, &sources, &written, &kept, &[], &[]) {
-            return vec![format!("!!! text edit: could not write the text files -- {error}")];
+            return vec![format!(
+                "!!! text edit: could not write the text files -- {error}"
+            )];
         }
         return vec![no_seam_log()];
     }

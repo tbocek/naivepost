@@ -74,7 +74,11 @@ impl FakeLlm {
                 std::thread::spawn(move || serve(stream, &serving, &sender));
             }
         });
-        FakeLlm { port, received, script }
+        FakeLlm {
+            port,
+            received,
+            script,
+        }
     }
 
     fn url(&self) -> String {
@@ -91,7 +95,10 @@ impl FakeLlm {
 
     #[allow(dead_code)]
     fn expect_silent(&self) {
-        match self.received.recv_timeout(std::time::Duration::from_millis(400)) {
+        match self
+            .received
+            .recv_timeout(std::time::Duration::from_millis(400))
+        {
             Err(mpsc::RecvTimeoutError::Timeout) => (),
             other => panic!("the server was dialled when nothing should have been: {other:?}"),
         }
@@ -112,7 +119,11 @@ fn serve(mut stream: TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender
 
 /// Records the request before it answers: the program's next call follows the answer at once, and a
 /// record sent after the reply let that call's thread report first, out of order.
-fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender<Seen>) -> Option<()> {
+fn serve_inner(
+    stream: &mut TcpStream,
+    script: &Arc<Mutex<Script>>,
+    seen: &mpsc::Sender<Seen>,
+) -> Option<()> {
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).ok()?;
@@ -138,8 +149,11 @@ fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc:
     let _ = seen.send(Seen { body });
     let reply = script.lock().expect("script lock").take();
     // Already a chat envelope (a tool-call reply) goes out as it stands; anything else is content.
-    let framed_reply =
-        if reply.trim_start().starts_with("{\"choices\"") { reply } else { envelope(&reply) };
+    let framed_reply = if reply.trim_start().starts_with("{\"choices\"") {
+        reply
+    } else {
+        envelope(&reply)
+    };
     let framed = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         framed_reply.len(),
@@ -166,11 +180,11 @@ fn tool_calls(calls: &[(&str, serde_json::Value)]) -> String {
             })
         })
         .collect();
-    serde_json::json!({ "choices": [ { "message": { "content": "", "tool_calls": list } } ] }).to_string()
+    serde_json::json!({ "choices": [ { "message": { "content": "", "tool_calls": list } } ] })
+        .to_string()
 }
 
 // ---- the scenario -------------------------------------------------------------------------------
-
 
 /// A scenario's root plus its project tree, with the guard held for the whole check.
 struct Fixture {
@@ -210,7 +224,11 @@ fn fixture(tag: &str, address: &str) -> Fixture {
     conf.sd_server = "http://127.0.0.1:1".to_string();
     settings::save(&paths, &conf).expect("settings written");
     let tree = naivepost::layout::Tree::new(&session).expect("a .naivepost folder is a project");
-    Fixture { root, tree, _scenario: scenario }
+    Fixture {
+        root,
+        tree,
+        _scenario: scenario,
+    }
 }
 
 /// Re-point the settings at another address — the seam §1 says the program re-reads per request.
@@ -244,14 +262,22 @@ fn f5_6_s2_the_youtube_call_offers_thinking_and_the_six_tools() {
     // The title arrives as a TOOL call, which is what §3.9 asks for; the prose fallback is the next check's
     // subject, and mixing the two here would hide which path wrote the record.
     let llm = FakeLlm::start(vec![
-        tool_calls(&[("set_title", serde_json::json!({ "text": "A win nobody expected" }))]),
+        tool_calls(&[(
+            "set_title",
+            serde_json::json!({ "text": "A win nobody expected" }),
+        )]),
         tool_calls(&[("finish", serde_json::json!({}))]),
     ]);
     let scene = fixture("thinking_and_tools", &llm.url());
     let moments = [1.0f64, 2.0, 3.0];
     let starts = [0.0f64, 20.0];
     // 1.0 is a project with no opinion (`Project::default().interval`), matching the moments below.
-    let frames = call::Frames { moments: &moments, starts: &starts, interval: 1.0, lines: &[] };
+    let frames = call::Frames {
+        moments: &moments,
+        starts: &starts,
+        interval: 1.0,
+        lines: &[],
+    };
     let collected = call::call(
         &scene.tree,
         "THE FINISHED VIDEO: 2 clips, 00:24 long.",
@@ -284,7 +310,10 @@ fn f5_6_s2_the_youtube_call_offers_thinking_and_the_six_tools() {
         "get_frames",
         "finish",
     ] {
-        assert!(offered.contains(&want.to_string()), "§3.9 offers {want}: {offered:?}");
+        assert!(
+            offered.contains(&want.to_string()),
+            "§3.9 offers {want}: {offered:?}"
+        );
     }
     let system = seen["messages"][0]["content"][0]["text"]
         .as_str()
@@ -298,8 +327,15 @@ fn f5_6_s2_the_youtube_call_offers_thinking_and_the_six_tools() {
         .as_str()
         .unwrap_or_default()
         .to_string();
-    assert!(user.contains("THE FINISHED VIDEO"), "the brief is the user turn: {user}");
-    assert_eq!(seen["model"].as_str(), Some(MODEL), "the settings' model is what asks");
+    assert!(
+        user.contains("THE FINISHED VIDEO"),
+        "the brief is the user turn: {user}"
+    );
+    assert_eq!(
+        seen["model"].as_str(),
+        Some(MODEL),
+        "the settings' model is what asks"
+    );
     // The prose fallback (§3.9) landed on the record even though no tool ran.
     assert_eq!(collected.publish.thumb_title, "A win nobody expected");
 }
@@ -310,9 +346,18 @@ fn f5_6_s2_the_youtube_call_offers_thinking_and_the_six_tools() {
 fn f5_6_s2_each_tool_answers_as_3_9_promises() {
     let rounds = vec![
         tool_calls(&[
-            ("set_title", serde_json::json!({ "text": "A win nobody expected" })),
-            ("set_description", serde_json::json!({ "text": "the body of the description" })),
-            ("pick_frame", serde_json::json!({ "clip": 2, "offset": 12.0 })),
+            (
+                "set_title",
+                serde_json::json!({ "text": "A win nobody expected" }),
+            ),
+            (
+                "set_description",
+                serde_json::json!({ "text": "the body of the description" }),
+            ),
+            (
+                "pick_frame",
+                serde_json::json!({ "clip": 2, "offset": 12.0 }),
+            ),
         ]),
         // The instruction AFTER a picked frame must be refused, not silently clear the frame (decision 33).
         tool_calls(&[(
@@ -329,9 +374,22 @@ fn f5_6_s2_each_tool_answers_as_3_9_promises() {
     let moments = [1.0f64, 21.0, 34.0, 40.0];
     let starts = [0.0f64, 20.0];
     // 1.0 is a project with no opinion (`Project::default().interval`), matching the moments below.
-    let frames = call::Frames { moments: &moments, starts: &starts, interval: 1.0, lines: &[] };
-    let collected = call::call(&scene.tree, "BRIEF", &empty(), &frames, false, &cancelled(), silent)
-        .expect("the fake answers");
+    let frames = call::Frames {
+        moments: &moments,
+        starts: &starts,
+        interval: 1.0,
+        lines: &[],
+    };
+    let collected = call::call(
+        &scene.tree,
+        "BRIEF",
+        &empty(),
+        &frames,
+        false,
+        &cancelled(),
+        silent,
+    )
+    .expect("the fake answers");
     let said = collected.answers.join("\n");
     // set_title: the size the words take, since decision 35 keeps "four to seven" as advice, not a gate.
     assert!(
@@ -347,10 +405,20 @@ fn f5_6_s2_each_tool_answers_as_3_9_promises() {
         .iter()
         .find(|answer| answer.contains("frame taken at"))
         .expect("pick_frame answered with the frame it took");
-    assert!(picked.contains("nothing is drawn"), "the note belongs in the result: {picked}");
+    assert!(
+        picked.contains("nothing is drawn"),
+        "the note belongs in the result: {picked}"
+    );
     assert!(picked.contains("2"), "the distance is stated: {picked}");
-    assert!(collected.publish.own, "a picked frame is the thumbnail as it is (S3)");
-    assert_eq!(collected.publish.frames.len(), 1, "the row holds that frame only");
+    assert!(
+        collected.publish.own,
+        "a picked frame is the thumbnail as it is (S3)"
+    );
+    assert_eq!(
+        collected.publish.frames.len(),
+        1,
+        "the row holds that frame only"
+    );
     // The instruction after the pick is an error naming why, not a silent clearing.
     assert!(
         collected
@@ -359,16 +427,25 @@ fn f5_6_s2_each_tool_answers_as_3_9_promises() {
             .any(|answer| answer.contains("a frame was already picked")),
         "an instruction after a pick must refuse: {said}"
     );
-    assert!(collected.publish.prompt.is_empty(), "the refused instruction changed nothing");
+    assert!(
+        collected.publish.prompt.is_empty(),
+        "the refused instruction changed nothing"
+    );
     // get_frames: the candidate frames in that clip, so the picture is chosen by looking.
     let listed = collected
         .answers
         .iter()
         .find(|answer| answer.contains("candidate frame(s)"))
         .expect("get_frames listed candidates");
-    assert!(listed.contains("34.0"), "the clip's own frames are shown: {listed}");
+    assert!(
+        listed.contains("34.0"),
+        "the clip's own frames are shown: {listed}"
+    );
     // finish: ok only when a title AND a description exist.
-    assert!(collected.answers.iter().any(|answer| answer == "finished"), "finish accepted: {said}");
+    assert!(
+        collected.answers.iter().any(|answer| answer == "finished"),
+        "finish accepted: {said}"
+    );
     assert_eq!(collected.publish.thumb_title, "A win nobody expected");
     assert_eq!(collected.publish.description, "the body of the description");
 }
@@ -389,16 +466,36 @@ fn f5_6_s2_finish_names_what_is_still_missing() {
     let moments = [1.0f64];
     let starts = [0.0f64];
     // 1.0 is a project with no opinion (`Project::default().interval`), matching the moments below.
-    let frames = call::Frames { moments: &moments, starts: &starts, interval: 1.0, lines: &[] };
+    let frames = call::Frames {
+        moments: &moments,
+        starts: &starts,
+        interval: 1.0,
+        lines: &[],
+    };
     let mut previous = empty();
     previous.description = "last run's description".to_string();
-    let collected = call::call(&scene.tree, "BRIEF", &previous, &frames, false, &cancelled(), silent)
-        .expect("the fake answers");
-    assert_eq!(llm.served(), 2, "the tool round, then the round that called finish");
+    let collected = call::call(
+        &scene.tree,
+        "BRIEF",
+        &previous,
+        &frames,
+        false,
+        &cancelled(),
+        silent,
+    )
+    .expect("the fake answers");
+    assert_eq!(
+        llm.served(),
+        2,
+        "the tool round, then the round that called finish"
+    );
     // The model never called `finish`, so the flow ended by the nudge — and the record shows what is absent:
     // a description this run never got, with last run's still standing under it (S8).
     assert_eq!(collected.publish.thumb_title, "only a title");
-    assert_eq!(collected.publish.description, "last run's description", "S8 keeps the previous value");
+    assert_eq!(
+        collected.publish.description, "last run's description",
+        "S8 keeps the previous value"
+    );
     assert!(
         !naivepost::produce_upload::finish_needs(&collected.publish.thumb_title, "").is_empty(),
         "with no description of its own the record still needs one"
@@ -414,17 +511,37 @@ fn f5_6_s2_the_finish_tool_answers_ok_or_names_what_is_missing() {
     // then dials the second's port and waits on it forever).
     let llm = FakeLlm::start(vec![tool_calls(&[
         ("set_title", serde_json::json!({ "text": "a title" })),
-        ("set_description", serde_json::json!({ "text": "a description" })),
+        (
+            "set_description",
+            serde_json::json!({ "text": "a description" }),
+        ),
         ("finish", serde_json::json!({})),
     ])]);
     let scene = fixture("finish_ok", &llm.url());
     let moments = [1.0f64];
     let starts = [0.0f64];
     // 1.0 is a project with no opinion (`Project::default().interval`), matching the moments below.
-    let frames = call::Frames { moments: &moments, starts: &starts, interval: 1.0, lines: &[] };
-    let collected = call::call(&scene.tree, "BRIEF", &empty(), &frames, false, &cancelled(), silent)
-        .expect("the fake answers");
-    assert!(collected.answers.iter().any(|answer| answer == "finished"), "{:?}", collected.answers);
+    let frames = call::Frames {
+        moments: &moments,
+        starts: &starts,
+        interval: 1.0,
+        lines: &[],
+    };
+    let collected = call::call(
+        &scene.tree,
+        "BRIEF",
+        &empty(),
+        &frames,
+        false,
+        &cancelled(),
+        silent,
+    )
+    .expect("the fake answers");
+    assert!(
+        collected.answers.iter().any(|answer| answer == "finished"),
+        "{:?}",
+        collected.answers
+    );
 
     // Only a title: `finish` says which part is absent instead of shipping last run's under this video.
     // The SAME server now hands out the shorter round list, so nothing else about the scenario changes.
@@ -435,15 +552,24 @@ fn f5_6_s2_the_finish_tool_answers_ok_or_names_what_is_missing() {
         ])],
         served: 0,
     };
-    let second = call::call(&scene.tree, "BRIEF", &empty(), &frames, false, &cancelled(), silent)
-        .expect("the fake answers");
+    let second = call::call(
+        &scene.tree,
+        "BRIEF",
+        &empty(),
+        &frames,
+        false,
+        &cancelled(),
+        silent,
+    )
+    .expect("the fake answers");
     let refusal = second
         .answers
         .iter()
         .find(|answer| answer.starts_with("still missing"))
         .expect("finish names what is absent");
     assert!(refusal.contains("description"), "{refusal}");
-}/// A server that is not there fails the half by NAME, and nothing is written (§Failure is specific).
+}
+/// A server that is not there fails the half by NAME, and nothing is written (§Failure is specific).
 #[test]
 fn f5_6_s2_a_down_llm_is_named() {
     let live = FakeLlm::start(vec![]);
@@ -459,12 +585,32 @@ fn f5_6_s2_a_down_llm_is_named() {
     let moments = [1.0f64];
     let starts = [0.0f64];
     // 1.0 is a project with no opinion (`Project::default().interval`), matching the moments below.
-    let frames = call::Frames { moments: &moments, starts: &starts, interval: 1.0, lines: &[] };
-    let err = call::call(&scene.tree, "BRIEF", &empty(), &frames, false, &cancelled(), silent)
-        .expect_err("nothing listens there");
-    assert!(err.contains(MODEL), "the reason must name the model (§00-principles): {err}");
+    let frames = call::Frames {
+        moments: &moments,
+        starts: &starts,
+        interval: 1.0,
+        lines: &[],
+    };
+    let err = call::call(
+        &scene.tree,
+        "BRIEF",
+        &empty(),
+        &frames,
+        false,
+        &cancelled(),
+        silent,
+    )
+    .expect_err("nothing listens there");
+    assert!(
+        err.contains(MODEL),
+        "the reason must name the model (§00-principles): {err}"
+    );
     assert!(err.contains(call::STEP), "and say which step failed: {err}");
-    assert_eq!(live.served(), 0, "the live fake was never dialled once the address moved");
+    assert_eq!(
+        live.served(),
+        0,
+        "the live fake was never dialled once the address moved"
+    );
     assert!(
         !naivepost::publish::is_written(&scene.tree),
         "a failed call writes no publish.json (S5 keeps the thinking, not the record)"

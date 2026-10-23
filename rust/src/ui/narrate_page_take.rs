@@ -162,8 +162,8 @@ pub fn press_sample_play(window: &adw::ApplicationWindow) -> String {
     // synthesis, so it must not set `busy` — that flag is what makes a later press read as work in    // flight, and a cache hit leaves nothing running.
     if let Some(heard) = sample_heard_if_any(&text) {
         return say(window, &heard);
-    }    // Said BEFORE the leg starts: §6 names this sentence precisely so the bar never reads as done while
-    // the synthesis is out on the wire. The flag goes with it, for the next press.
+    } // Said BEFORE the leg starts: §6 names this sentence precisely so the bar never reads as done while
+      // the synthesis is out on the wire. The flag goes with it, for the next press.
     say(window, said);
     mutate(|s| s.busy = true);
     let outcome = run_sample_leg(window, 0);
@@ -189,8 +189,9 @@ fn run_sample_leg(window: &adw::ApplicationWindow, roll: usize) -> Result<String
         .and_then(|w| w.downcast::<gtk::Entry>().ok())
         .map(|e| e.text().to_string())
         .unwrap_or_default();
-    let tree = crate::ui::window::narrate_session_tree()
-        .ok_or_else(|| "no project folder is open \u{2014} nowhere to keep the sample".to_string())?;
+    let tree = crate::ui::window::narrate_session_tree().ok_or_else(|| {
+        "no project folder is open \u{2014} nowhere to keep the sample".to_string()
+    })?;
     narrate_sample::speak(&tree, &s.voice, s.pitch, &text, roll)
 }
 
@@ -219,7 +220,11 @@ pub fn press_sample_stop(window: &adw::ApplicationWindow) -> String {
     if killed > 0 {
         return say(
             window,
-            &format!("{} \u{2014} {} player(s) stopped", narrate_details::sample_stopped_status(), killed),
+            &format!(
+                "{} \u{2014} {} player(s) stopped",
+                narrate_details::sample_stopped_status(),
+                killed
+            ),
         );
     }
     say(window, narrate_details::sample_stopped_status())

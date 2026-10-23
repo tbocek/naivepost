@@ -14,7 +14,9 @@ use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, narrate_button as button, release_last_window, settle, widget_in};
+use common::{
+    fixture_dir, hold_last_window, narrate_button as button, release_last_window, settle, widget_in,
+};
 
 static RAN_DEBOUNCE: AtomicBool = AtomicBool::new(false);
 static RAN_BUTTON_STILL_NOW: AtomicBool = AtomicBool::new(false);
@@ -23,8 +25,18 @@ static RAN_BUTTON_STILL_NOW: AtomicBool = AtomicBool::new(false);
 /// boundary rather than on the second the bar was dragged to.
 fn bracketing_clips() -> Vec<Seg> {
     vec![
-        Seg { s: 0.0, e: 15.0, cam: 0, ..Default::default() },
-        Seg { s: 25.0, e: 40.0, cam: 0, ..Default::default() },
+        Seg {
+            s: 0.0,
+            e: 15.0,
+            cam: 0,
+            ..Default::default()
+        },
+        Seg {
+            s: 25.0,
+            e: 40.0,
+            cam: 0,
+            ..Default::default()
+        },
     ]
 }
 
@@ -60,7 +72,9 @@ fn state_at(session: f64) -> ui::NarrateState {
 fn narrate_page(app: &adw::Application, state: ui::NarrateState) -> adw::ApplicationWindow {
     release_last_window();
     common::pin_private_cwd();
-    let session = naivepost::startup::session_dir(&std::env::current_dir().expect("a cwd to file the cut in"));
+    let session = naivepost::startup::session_dir(
+        &std::env::current_dir().expect("a cwd to file the cut in"),
+    );
     std::fs::create_dir_all(&session).expect("the session folder exists");
     let tree = naivepost::layout::Tree::new(&session).expect("a .naivepost folder");
     naivepost::cut::save(
@@ -103,7 +117,10 @@ fn wait_until(done: impl Fn() -> bool) {
         }
         context.iteration(true);
     }
-    assert!(done(), "the awaited state never arrived -- a timer did not fire");
+    assert!(
+        done(),
+        "the awaited state never arrived -- a timer did not fire"
+    );
 }
 
 /// The drag: two moves with NO dispatch between them, which is what a finger crossing the bar actually is — a
@@ -181,7 +198,10 @@ fn run_scenario(flag: &std::sync::atomic::AtomicBool) {
         app.connect_activate(run_round);
         app.run_with_args(&["naivepost"]);
     });
-    assert!(flag.load(Ordering::SeqCst), "the scrub-debounce scenario never completed");
+    assert!(
+        flag.load(Ordering::SeqCst),
+        "the scrub-debounce scenario never completed"
+    );
 }
 
 #[test]

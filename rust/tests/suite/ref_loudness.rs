@@ -17,7 +17,7 @@ use naivepost::produce_render;
 use naivepost::transcribe;
 
 use crate::common;
-use common::{all_rows};
+use common::all_rows;
 
 /// A row by id from anywhere in the catalogue. `params::find` only searches `prepare()`, and this item
 /// lives on the Narrate page, so the lookup has to span all five lists.
@@ -59,15 +59,17 @@ fn p_eng_refloudness_s1_the_target_is_i16_tp15_lra7_and_catalogued_once() {
 
     let row = row_for("P.eng.refLoudness");
     assert_eq!(
-        row.from,
-        "narrate_data::REF_LOUDNESS",
+        row.from, "narrate_data::REF_LOUDNESS",
         "a row must name the constant its rule reads (the prototype called it refLoud)"
     );
     // ASCII hyphen-minus, matching how the existing P.eng.loudness row spells its target: the spelling
     // is generated from the filter string, which ffmpeg needs in ASCII anyway. §10 prints a typographic
     // minus, which is presentation only.
     assert_eq!(row.spelled, "I -16, TP -1.5, LRA 7");
-    assert!(!row.spelled.contains('\u{2212}'), "no unicode minus in a generated row");
+    assert!(
+        !row.spelled.contains('\u{2212}'),
+        "no unicode minus in a generated row"
+    );
 
     // §10 files it among the engineering constants, so the prefix answers to Eng.
     assert_eq!(
@@ -78,7 +80,10 @@ fn p_eng_refloudness_s1_the_target_is_i16_tp15_lra7_and_catalogued_once() {
 
     // And exactly one row for it across all five lists -- one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.refLoudness").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.refLoudness")
+            .count(),
         1,
         "P.eng.refLoudness catalogued more than once"
     );
@@ -91,9 +96,21 @@ fn p_eng_refloudness_s2_three_knobs_read_back_out_of_the_constant() {
     // loudness, true peak, and loudness range.
     let parsed = knobs(narrate_data::REF_LOUDNESS);
     assert_eq!(parsed.len(), 3, "exactly three pairs: {parsed:?}");
-    assert_eq!(knob(narrate_data::REF_LOUDNESS, "I"), -16.0, "integrated loudness");
-    assert_eq!(knob(narrate_data::REF_LOUDNESS, "TP"), -1.5, "true peak ceiling");
-    assert_eq!(knob(narrate_data::REF_LOUDNESS, "LRA"), 7.0, "loudness range");
+    assert_eq!(
+        knob(narrate_data::REF_LOUDNESS, "I"),
+        -16.0,
+        "integrated loudness"
+    );
+    assert_eq!(
+        knob(narrate_data::REF_LOUDNESS, "TP"),
+        -1.5,
+        "true peak ceiling"
+    );
+    assert_eq!(
+        knob(narrate_data::REF_LOUDNESS, "LRA"),
+        7.0,
+        "loudness range"
+    );
 
     // The catalogue row says each of them, so a reader gets all three without opening the filter.
     let spelled = row_for("P.eng.refLoudness").spelled;
@@ -152,7 +169,10 @@ fn p_eng_refloudness_s3_two_decibels_quieter_than_the_mix_and_a_tighter_range() 
     // Different homes in the catalogue: the mix's row reads the render's constant, this one the
     // reference's.
     assert_eq!(row_for("P.eng.loudness").from, "produce_render::LOUDNORM");
-    assert_eq!(row_for("P.eng.refLoudness").from, "narrate_data::REF_LOUDNESS");
+    assert_eq!(
+        row_for("P.eng.refLoudness").from,
+        "narrate_data::REF_LOUDNESS"
+    );
     assert_ne!(
         row_for("P.eng.loudness").from,
         row_for("P.eng.refLoudness").from,
@@ -187,8 +207,16 @@ fn p_eng_refloudness_s4_no_rate_work_in_the_filter() {
     // Both constants belong to the same module and are separate rows with separate ids.
     let rate_row = row_for("P.eng.refSampleRate");
     let loud_row = row_for("P.eng.refLoudness");
-    assert!(rate_row.from.starts_with("narrate_data::"), "{}", rate_row.from);
-    assert!(loud_row.from.starts_with("narrate_data::"), "{}", loud_row.from);
+    assert!(
+        rate_row.from.starts_with("narrate_data::"),
+        "{}",
+        rate_row.from
+    );
+    assert!(
+        loud_row.from.starts_with("narrate_data::"),
+        "{}",
+        loud_row.from
+    );
     assert_ne!(rate_row.id, loud_row.id, "different rows");
     assert_ne!(rate_row.from, loud_row.from, "different constants");
 }
@@ -210,8 +238,16 @@ fn p_eng_refloudness_s5_neighbours_by_home_not_by_number() {
         "the limiter sets no loudnorm knobs, so it cannot be confused with a loudness target: {:?}",
         knobs(produce_render::LIMITER)
     );
-    assert_ne!(limiter.from, row_for("P.eng.refLoudness").from, "different homes");
-    assert_ne!(limiter.from, row_for("P.eng.loudness").from, "and different from the mix's");
+    assert_ne!(
+        limiter.from,
+        row_for("P.eng.refLoudness").from,
+        "different homes"
+    );
+    assert_ne!(
+        limiter.from,
+        row_for("P.eng.loudness").from,
+        "and different from the mix's"
+    );
 
     // The two sample rates: transcription quality versus clone quality.
     let asr_rate = row_for("P.eng.asrSampleRate");

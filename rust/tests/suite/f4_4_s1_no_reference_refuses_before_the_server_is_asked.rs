@@ -16,7 +16,9 @@ fn f4_4_s1_no_reference_refuses_before_the_server_is_asked() {
     point_at(&audio.url());
 
     let outcome = speak(&fixture, "calm", "en");
-    let refused = outcome.refused().expect("no voice_ref.wav means nothing can be cloned");
+    let refused = outcome
+        .refused()
+        .expect("no voice_ref.wav means nothing can be cloned");
     assert!(
         refused.contains("voice_ref.wav"),
         "the refusal names the missing reference: {refused}"
@@ -34,6 +36,8 @@ fn f4_4_s1_no_reference_refuses_before_the_server_is_asked() {
         seen.len(),
         0,
         "S1's refusal must not touch the server; it saw {:?}",
-        seen.iter().map(|s| format!("{} {}", s.method, s.path)).collect::<Vec<_>>()
+        seen.iter()
+            .map(|s| format!("{} {}", s.method, s.path))
+            .collect::<Vec<_>>()
     );
 }

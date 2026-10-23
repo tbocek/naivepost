@@ -19,12 +19,12 @@ use std::path::Path;
 
 use crate::edges::{self, AlignedWord};
 use crate::layout::Tree;
+use crate::project::{MarkingPass, Project, Source};
 use crate::roles::RETAKE_RUNS_POOLED;
 use crate::textfmt::{self, Retake};
-use crate::project::{MarkingPass, Project, Source};
 use crate::tools::retakes::{
-    pause_before, Line, Mark, Marks, RETAKE_CEIL, RETAKE_FRAGMENT_SECONDS,
-    RETAKE_MIN_SECONDS, RETAKE_PAUSE_SECONDS,
+    pause_before, Line, Mark, Marks, RETAKE_CEIL, RETAKE_FRAGMENT_SECONDS, RETAKE_MIN_SECONDS,
+    RETAKE_PAUSE_SECONDS,
 };
 
 /// The cache folder name under `cache/llm/<step>/` and the name the progress line uses.
@@ -72,11 +72,7 @@ pub fn brief(lines: &[Line], source_changes: &[u32]) -> String {
         }
         let pause = crate::tools::retakes::pause_before(lines, line.n);
         if pause >= RETAKE_PAUSE_SECONDS {
-            out.push_str(&format!(
-                "{} ({}s pause)\n",
-                line.n,
-                trim_seconds(pause)
-            ));
+            out.push_str(&format!("{} ({}s pause)\n", line.n, trim_seconds(pause)));
         } else {
             out.push_str(&format!("{}\n", line.n));
         }
@@ -502,7 +498,9 @@ pub fn press_marking(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<S
     if too_few(&lines) {
         // S1: nothing to mark, but the file is still owed.
         if let Err(error) = write_marks(tree, &[], &[], &[]).map(|_| ()) {
-            return vec![format!("!!! retakes: could not write the marks file -- {error}")];
+            return vec![format!(
+                "!!! retakes: could not write the marks file -- {error}"
+            )];
         }
         return vec![empty_marks_log()];
     }
@@ -518,9 +516,13 @@ pub fn press_marking(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<S
         Err(reason) => {
             // An unreadable settings file is reported, not guessed past, and the empty file is still
             // owed so Cut can tell this pass ran (§Failure-is-specific).
-            let mut out = vec![format!("!!! retakes: the settings could not be read -- {reason}")];
+            let mut out = vec![format!(
+                "!!! retakes: the settings could not be read -- {reason}"
+            )];
             if let Err(error) = write_marks(tree, &[], &[], &[]) {
-                out.push(format!("!!! retakes: could not write the marks file -- {error}"));
+                out.push(format!(
+                    "!!! retakes: could not write the marks file -- {error}"
+                ));
             }
             return out;
         }
@@ -529,21 +531,26 @@ pub fn press_marking(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<S
     // carries them in order.
     let mut out: Vec<String> = Vec::new();
     let _ = speech;
-    if let Err(reason) =
-        crate::retakes_ask::run_pass(tree, project, &paths, &conf, &mut |line| out.push(line.to_string()))
-    {
+    if let Err(reason) = crate::retakes_ask::run_pass(tree, project, &paths, &conf, &mut |line| {
+        out.push(line.to_string())
+    }) {
         // The flow's own arithmetic failed on disk rather than at the server: say which, and still
         // owe the file that tells Cut the pass ran.
         out.push(format!("!!! retakes: {reason}"));
         if let Err(error) = write_marks(tree, &[], &[], &[]) {
-            out.push(format!("!!! retakes: could not write the marks file -- {error}"));
+            out.push(format!(
+                "!!! retakes: could not write the marks file -- {error}"
+            ));
         }
     }
     out
 }
 
 /// S2 as a log line: how many lines the brief numbers and how many pauses worth drawing it found.
-#[allow(dead_code, reason = "the live leg says this from `retakes_ask::briefing_log`, which also knows the seams")]
+#[allow(
+    dead_code,
+    reason = "the live leg says this from `retakes_ask::briefing_log`, which also knows the seams"
+)]
 fn brief_log(lines: &[Line]) -> String {
     let pauses = lines
         .iter()
@@ -586,7 +593,10 @@ pub fn spoken_lines(tree: &Tree, project: &Project) -> Vec<Line> {
 /// The seconds actually spoken — the sum of the lines' own spans, not the session's wall clock.
 /// Silence cannot be abandoned, so counting it would let a long recording absorb any number of marks.
 pub fn speech_seconds(lines: &[Line]) -> f64 {
-    lines.iter().map(|line| (line.end - line.start).max(0.0)).sum()
+    lines
+        .iter()
+        .map(|line| (line.end - line.start).max(0.0))
+        .sum()
 }
 
 /// The lane a source's files live under: its file name minus the extension.

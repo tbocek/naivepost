@@ -27,7 +27,13 @@ fn turn(slot: u32, from: f64, to: f64) -> Turn {
 /// One voice speaking `seconds` of sound every `every` seconds from `from`.
 fn speaks(slot: u32, from: f64, every: f64, seconds: f64, times: usize) -> Vec<Turn> {
     (0..times)
-        .map(|at| turn(slot, from + at as f64 * every, from + at as f64 * every + seconds))
+        .map(|at| {
+            turn(
+                slot,
+                from + at as f64 * every,
+                from + at as f64 * every + seconds,
+            )
+        })
         .collect()
 }
 
@@ -94,7 +100,10 @@ impl Walk {
 
     /// How many log lines contain `needle` — how a test counts one pass's lines without matching the others.
     fn countains(&self, needle: &str) -> usize {
-        self.lines().iter().filter(|line| line.contains(needle)).count()
+        self.lines()
+            .iter()
+            .filter(|line| line.contains(needle))
+            .count()
     }
 
     fn placements(&self) -> Vec<((f64, f64), f64)> {
@@ -109,7 +118,8 @@ type PlacementAnswer = Result<Vec<Turn>, String>;
 
 /// The two passes' counts, each said once per window of its own pass, with the anchor line between them.
 #[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diarization_is_a_two_pass_anchored_scan() {
+fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diarization_is_a_two_pass_anchored_scan(
+) {
     let walk = Walk::new();
     let rung = diar_scan::run(
         LENGTH,
@@ -134,7 +144,11 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diariza
     for (index, want) in expected.iter().enumerate() {
         assert_eq!(found[index], want, "pass 1's line {}", index + 1);
     }
-    assert_eq!(rung.scan.len(), 10, "ten 90 s windows over 600 s at a two-thirds stride");
+    assert_eq!(
+        rung.scan.len(),
+        10,
+        "ten 90 s windows over 600 s at a two-thirds stride"
+    );
 
     // The anchor line, verbatim, once, after pass 1 and before any placement line.
     let anchor_seconds = 2.0 * diarize::anchor_per(90.0);
@@ -144,7 +158,10 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diariza
         trim(diarize::anchor_per(90.0))
     );
     assert_eq!(
-        lines.iter().filter(|line| line.starts_with(">>> [talk] anchor:")).count(),
+        lines
+            .iter()
+            .filter(|line| line.starts_with(">>> [talk] anchor:"))
+            .count(),
         1,
         "the anchor is cut once: {lines:?}"
     );
@@ -172,7 +189,11 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diariza
         .iter()
         .filter(|line| line.contains("placing speakers"))
         .collect();
-    assert_eq!(placement_lines.len(), 10, "one line per pass-2 span: {lines:?}");
+    assert_eq!(
+        placement_lines.len(),
+        10,
+        "one line per pass-2 span: {lines:?}"
+    );
     for (index, want) in (0..10)
         .map(|index| diarize::placement_log(BASE, index, 10))
         .enumerate()
@@ -204,20 +225,35 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diariza
 /// A slot the anchor reaches keeps that voice's id; a slot it never heard earns a fresh one above every
 /// anchor slot — inventing an id is the only answer that cannot put a stranger's words in a known mouth.
 #[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diarization_names_a_slot_the_anchor_never_heard() {
+fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diarization_names_a_slot_the_anchor_never_heard(
+) {
     // The anchor holds two voices, 12 s each: block 0 occupies the anchor file's 0..12 s, block 1 its 12..24 s.
     let anchor_seconds = 2.0 * diarize::anchor_per(90.0);
     // Slot 0 speaks inside the anchor's first block (a real overlap); slot 5 starts past the whole anchor,
     // so its reach into the reference is nil — well under MIN_ANCHOR_OVERLAP.
-    let answer = vec![turn(0, 1.0, 5.0), turn(5, anchor_seconds + 1.0, anchor_seconds + 4.0)];
+    let answer = vec![
+        turn(0, 1.0, 5.0),
+        turn(5, anchor_seconds + 1.0, anchor_seconds + 4.0),
+    ];
     let walk = Walk::new();
-    let rung = diar_scan::run(LENGTH, MODEL, BASE, walk.scan(two_voices()), walk.place(answer), walk.log())
-        .expect("the top rung plans");
+    let rung = diar_scan::run(
+        LENGTH,
+        MODEL,
+        BASE,
+        walk.scan(two_voices()),
+        walk.place(answer),
+        walk.log(),
+    )
+    .expect("the top rung plans");
 
     // Pass 1's own voices come first (slots 0 and 1 as heard); pass 2's answers follow, renamed.
     let placed = &rung.turns[rung.scan.len() * two_voices().len()..];
     let highest_anchor_slot = 1u32;
-    let known: Vec<u32> = placed.iter().filter(|t| t.speaker_id <= highest_anchor_slot).map(|t| t.speaker_id).collect();
+    let known: Vec<u32> = placed
+        .iter()
+        .filter(|t| t.speaker_id <= highest_anchor_slot)
+        .map(|t| t.speaker_id)
+        .collect();
     assert!(
         known.contains(&0),
         "the slot the anchor recognises keeps voice 0's id: {:?}",
@@ -234,7 +270,8 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diariza
         rung.turns
     );
     assert_eq!(
-        diarize::MIN_ANCHOR_OVERLAP, 0.5,
+        diarize::MIN_ANCHOR_OVERLAP,
+        0.5,
         "the bound the thin claim falls under"
     );
 }
@@ -242,7 +279,8 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diariza
 /// Sound with no voice long enough to anchor on is an ANSWER: the line is said and the turns are empty,
 /// so an absent `turns.json` is never read as a run that did not happen.
 #[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diarization_no_voice_says_so_and_returns_no_turns() {
+fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diarization_no_voice_says_so_and_returns_no_turns(
+) {
     // Two-second flickers: under `diarize::ANCHOR_MIN_SECONDS` (4 s), so no voice qualifies anywhere.
     let flickers = speaks(0, 1.0, 5.0, diarize::ANCHOR_MIN_SECONDS - 2.0, 10);
     let walk = Walk::new();
@@ -280,7 +318,8 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diariza
 /// Every rung refusing fails, naming the model and the LAST rung's numbers — and costing no placement line,
 /// because a refused rung is a rung the run never used.
 #[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diarization_an_anchor_too_long_for_every_rung_refuses_naming_the_last_one() {
+fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diarization_an_anchor_too_long_for_every_rung_refuses_naming_the_last_one(
+) {
     let walk = Walk::new();
     let why = diar_scan::run(
         LENGTH,

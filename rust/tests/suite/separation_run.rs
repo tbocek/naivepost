@@ -23,8 +23,8 @@ use naivepost::project::{Project, Source};
 use naivepost::run::{self, Subprocesses};
 use naivepost::run_stages;
 use naivepost::separate_run;
-use naivepost::settings::{self, Conf, Paths};
 use naivepost::services;
+use naivepost::settings::{self, Conf, Paths};
 
 use crate::common;
 
@@ -105,9 +105,13 @@ impl Scene {
         // decoded audio, so the two have to agree or the row honestly reports having nothing to split.
         // §F1.3 S1's decoded audio is what the split reads; ffprobe is stubbed below, so its bytes are
         // only ever counted, never decoded.
-        std::fs::create_dir_all(session.join(format!("prepare/inputs/{LANE}"))).expect("the input folder");
-        std::fs::write(session.join(format!("prepare/inputs/{LANE}/voice16k.wav")), b"pcm-bytes")
-            .expect("the decoded audio");
+        std::fs::create_dir_all(session.join(format!("prepare/inputs/{LANE}")))
+            .expect("the input folder");
+        std::fs::write(
+            session.join(format!("prepare/inputs/{LANE}/voice16k.wav")),
+            b"pcm-bytes",
+        )
+        .expect("the decoded audio");
         // The recording itself. §F1.2's ▶ decodes from the SOURCE now, so the file the project row names
         // has to exist; the stubs below only ever count it and copy it, never decode it for real.
         std::fs::create_dir_all(session.join("sources")).expect("the sources folder");
@@ -129,8 +133,14 @@ impl Scene {
     }
 
     fn project(&self, sources: Vec<Source>) {
-        naivepost::project::save(&Project { sources, ..Project::default() }, &naivepost::startup::session_dir(&self.root))
-            .expect("the project file");
+        naivepost::project::save(
+            &Project {
+                sources,
+                ..Project::default()
+            },
+            &naivepost::startup::session_dir(&self.root),
+        )
+        .expect("the project file");
     }
 
     /// The session the scene laid out: the same folder the walk resolves, because the test chdir'd to
@@ -159,7 +169,11 @@ impl Scene {
     fn wait_for(&self, path: &str) -> Seen {
         let deadline = std::time::Instant::now() + crate::common::WAIT_LIMIT;
         loop {
-            if let Some(row) = self.mine().into_iter().find(|seen| seen.line.contains(path)) {
+            if let Some(row) = self
+                .mine()
+                .into_iter()
+                .find(|seen| seen.line.contains(path))
+            {
                 return row;
             }
             assert!(
@@ -290,7 +304,13 @@ fn serve(mut stream: TcpStream, answer: &'static str, status: u16) -> Option<See
         }
         let lower = header.to_ascii_lowercase();
         if lower.starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = header
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
         if lower.starts_with("host:") {
             host_seen = header.split(':').nth(1).unwrap_or("").trim().to_string();
@@ -303,7 +323,11 @@ fn serve(mut stream: TcpStream, answer: &'static str, status: u16) -> Option<See
     if length > 0 {
         let _ = reader.read_exact(&mut body);
     }
-    let path = request_line.split_whitespace().nth(1).unwrap_or("/").to_string();
+    let path = request_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("/")
+        .to_string();
     // The order matters: the two management endpoints are matched before the stem reads, because a
     // stem path lives under `/uploads/` like an upload's answer does. Each answers what §1 says it
     // must: the upload names where it put the file, and the model list is what a missing-model refusal
@@ -346,7 +370,13 @@ fn session_folder() -> PathBuf {
 
 /// The `source` a video row carries, in the shape §F1.3 stores it.
 fn source(path: &str, sepvoice: bool) -> Source {
-    Source { path: path.to_string(), footage: false, narrator: 1, sepvoice, tracks: vec![] }
+    Source {
+        path: path.to_string(),
+        footage: false,
+        narrator: 1,
+        sepvoice,
+        tracks: vec![],
+    }
 }
 
 /// The lane of the scene's recording: §F1.3's stem rule, which is what names the decoded audio.
@@ -370,12 +400,29 @@ fn sec_02_services_1_the_four_servers_s1_a_ticked_row_plans_a_separation_dial() 
     split.sources.push(source("sources/lecture.mkv", true));
     let stages = run_stages::plan(run::Step::Prepare, &split);
     let names: Vec<&str> = stages.iter().map(|stage| stage.name).collect();
-    assert!(names.contains(&"separation"), "the tick asked for it: {names:?}");
-    let stage = stages.iter().find(|stage| stage.name == "separation").expect("the stage");
+    assert!(
+        names.contains(&"separation"),
+        "the tick asked for it: {names:?}"
+    );
+    let stage = stages
+        .iter()
+        .find(|stage| stage.name == "separation")
+        .expect("the stage");
     assert_eq!(stage.tasks.len(), 1, "one row, one task");
-    assert_eq!(stage.tasks[0].program, run_stages::AUDIO_TASK, "it is a dial, not a spawn");
-    assert_eq!(stage.tasks[0].args[0], separate_run::SEPARATE_MARK, "the row says which dial");
-    assert_eq!(stage.tasks[0].args[1], "sources/lecture.mkv", "and which recording");
+    assert_eq!(
+        stage.tasks[0].program,
+        run_stages::AUDIO_TASK,
+        "it is a dial, not a spawn"
+    );
+    assert_eq!(
+        stage.tasks[0].args[0],
+        separate_run::SEPARATE_MARK,
+        "the row says which dial"
+    );
+    assert_eq!(
+        stage.tasks[0].args[1], "sources/lecture.mkv",
+        "and which recording"
+    );
     assert_eq!(stage.tasks[0].args[2], "0", "and where that row is");
 
     let mut plain = Project::default();
@@ -395,7 +442,10 @@ fn sec_02_services_1_the_four_servers_s1_the_separation_asks_audio_cpp_and_write
     // The env and the working folder are process-wide, so everything that reads them — including laying the
     // scene's folders out — happens inside the guard. See [`Scene::new`].
     let _guard = ENV.lock().expect("the env lock");
-    let scene = Scene::new("{\"voice\":\"/uploads/lecture/voice.wav\",\"rest\":\"/uploads/lecture/rest.wav\"}", 200);
+    let scene = Scene::new(
+        "{\"voice\":\"/uploads/lecture/voice.wav\",\"rest\":\"/uploads/lecture/rest.wav\"}",
+        200,
+    );
     for name in ["NAIVEPOST_TTS_URL", "AUDIOCPP_SERVER"] {
         std::env::remove_var(name);
     }
@@ -412,9 +462,16 @@ fn sec_02_services_1_the_four_servers_s1_the_separation_asks_audio_cpp_and_write
     // Only the split's own stage: the frames pass belongs to another item and its ffmpeg would need
     // the source file itself. `tools` keeps the probe for its own folder, not a shared one.
     let stages = only_separation(stages);
-    let drive = run_stages::drive_walk(&stages, &mut queue, || false, || false, |line| {
-        log.push(line.to_string());
-    }, &mut procs);
+    let drive = run_stages::drive_walk(
+        &stages,
+        &mut queue,
+        || false,
+        || false,
+        |line| {
+            log.push(line.to_string());
+        },
+        &mut procs,
+    );
     leave();
     drop(_guard);
     assert!(
@@ -427,12 +484,24 @@ fn sec_02_services_1_the_four_servers_s1_the_separation_asks_audio_cpp_and_write
     // `separate` gives the no-voice half the SOURCE's own container, and this row is a video (§F1.2 S5),
     // so the halves are `.wav` and `.mkv` — which is also how a person finds them again.
     let rest = tree.split_novoice(LANE, "mkv");
-    assert_eq!(std::fs::read(&voice).ok().as_deref(), Some("VOICE-BYTES".as_bytes()), "{voice:?}");
-    assert_eq!(std::fs::read(&rest).ok().as_deref(), Some("REST-BYTES".as_bytes()), "{rest:?}");
+    assert_eq!(
+        std::fs::read(&voice).ok().as_deref(),
+        Some("VOICE-BYTES".as_bytes()),
+        "{voice:?}"
+    );
+    assert_eq!(
+        std::fs::read(&rest).ok().as_deref(),
+        Some("REST-BYTES".as_bytes()),
+        "{rest:?}"
+    );
     // S7: the row became two, and the wish is cleared so the next ▶ does not split a voice off a voice.
-    let after = naivepost::project::load(&naivepost::startup::session_dir(&scene.root)).expect("the project");
+    let after = naivepost::project::load(&naivepost::startup::session_dir(&scene.root))
+        .expect("the project");
     assert_eq!(after.sources.len(), 2, "the session now holds both halves");
-    assert!(after.sources.iter().all(|row| !row.sepvoice), "neither half asks again");
+    assert!(
+        after.sources.iter().all(|row| !row.sepvoice),
+        "neither half asks again"
+    );
 
     // The fake's task reply is fixed, so the stems it names get read from the fake by that name. Each leg is
     // awaited by the PATH its assertion reads — upload, task run, then the two stem GETs — never by a count.
@@ -443,14 +512,25 @@ fn sec_02_services_1_the_four_servers_s1_the_separation_asks_audio_cpp_and_write
         "the upload named the recording it carried: {upload:?}"
     );
     let task = scene.wait_for("/v1/tasks/run");
-    assert!(task.line.contains("POST"), "a task run is a POST: {}", task.line);
+    assert!(
+        task.line.contains("POST"),
+        "a task run is a POST: {}",
+        task.line
+    );
     // …and both stems have been fetched before anything on disk is believed.
     let voice_stem = scene.wait_for("/uploads/lecture/voice.wav");
     let rest_stem = scene.wait_for("/uploads/lecture/rest.wav");
-    println!("separation_run: stems fetched at {:?}", [voice_stem.line, rest_stem.line]);
+    println!(
+        "separation_run: stems fetched at {:?}",
+        [voice_stem.line, rest_stem.line]
+    );
     // The envelope §5 confirms: the shipped separation id, and a server path rather than a local one.
     let sent: serde_json::Value = serde_json::from_str(&task.body).expect("a JSON envelope");
-    assert_eq!(sent["model"], services::SEP_MODEL, "the separation model §1 ships");
+    assert_eq!(
+        sent["model"],
+        services::SEP_MODEL,
+        "the separation model §1 ships"
+    );
     assert!(
         sent["request"]["audio"]
             .as_str()
@@ -458,7 +538,8 @@ fn sec_02_services_1_the_four_servers_s1_the_separation_asks_audio_cpp_and_write
         "the task names a server path, not a local one: {sent}"
     );
     assert!(
-        log.iter().any(|line| line.contains("split into lecture.split-novoice.mkv")),
+        log.iter()
+            .any(|line| line.contains("split into lecture.split-novoice.mkv")),
         "the run said what the split produced: {log:?}"
     );
     // §6 names every exchange's step, so a separation is findable in `requests.tsv` by what it was.
@@ -484,7 +565,8 @@ fn sec_02_services_1_the_four_servers_s1_the_separation_asks_audio_cpp_and_write
 /// A shipped default the server does not serve must reach the log with §1's install hint, because that
 /// sentence is the only thing that tells a person what to run.
 #[test]
-fn sec_02_services_1_the_four_servers_s4_a_missing_separation_model_reaches_the_log_with_its_hint() {
+fn sec_02_services_1_the_four_servers_s4_a_missing_separation_model_reaches_the_log_with_its_hint()
+{
     // Scene inside the guard, as in the round-trip test above: see [`Scene::new`].
     let _guard = ENV.lock().expect("the env lock");
     let scene = Scene::new("{\"error\":\"model not found\"}", 404);
@@ -499,17 +581,28 @@ fn sec_02_services_1_the_four_servers_s4_a_missing_separation_model_reaches_the_
     let mut log: Vec<String> = Vec::new();
     let stages = run_stages::plan(
         run::Step::Prepare,
-        &naivepost::project::load(&naivepost::startup::session_dir(&scene.root)).expect("the project"),
+        &naivepost::project::load(&naivepost::startup::session_dir(&scene.root))
+            .expect("the project"),
     );
     let stages = only_separation(stages);
-    let drive = run_stages::drive_walk(&stages, &mut queue, || false, || false, |line| {
-        log.push(line.to_string());
-    }, &mut procs);
+    let drive = run_stages::drive_walk(
+        &stages,
+        &mut queue,
+        || false,
+        || false,
+        |line| {
+            log.push(line.to_string());
+        },
+        &mut procs,
+    );
     leave();
     drop(_guard);
     let error = match drive {
         run_stages::Drive::Failed { stage, error } => {
-            assert_eq!(stage, "separation", "the separation stage is the one that failed");
+            assert_eq!(
+                stage, "separation",
+                "the separation stage is the one that failed"
+            );
             error
         }
         other => panic!("a 404 on the shipped model must fail the walk, got {other:?}"),

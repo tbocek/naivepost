@@ -13,8 +13,8 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
-use crate::{cut_screen, timeline, ui::cut_folds};
 use crate::ui::window::find_widget_by_name;
+use crate::{cut_screen, timeline, ui::cut_folds};
 
 /// One screenful of drag on the scrollbar (§1: "thumb geared at high zoom so one screenful is always
 /// 40 px of drag"). It is a DRAG distance, not the thumb's length: dragging the thumb by its own length
@@ -109,7 +109,11 @@ pub fn extents(surface_width: f64) -> (f64, f64) {
 /// un-laid-out, which is every headless repaint and a test's freshly built window.
 pub fn refresh_scrollbar(bar: &gtk::Scrollbar, surface_width: f64) {
     let measured = f64::from(bar.width());
-    let gear_from = if measured > 0.0 { measured } else { view_px(surface_width).max(0.0) };
+    let gear_from = if measured > 0.0 {
+        measured
+    } else {
+        view_px(surface_width).max(0.0)
+    };
     BAR_WIDTH.with(|cell| cell.set(gear_from));
     let (total, view) = extents(surface_width);
     paint_scrollbar(bar, total, view);
@@ -245,8 +249,13 @@ pub fn zoom_step(inward: bool, runs: &[(f64, f64)], total: f64, view: f64) -> (f
     // does not jump to the start of the session. The anchor has to be read at the OLD zoom, which is why
     // the step is computed before `set_pps` and handed over as a factor.
     let centre = origin() + view / 2.0;
-    let (next, scrolled) =
-        cut_screen::zoom_around(pps(), next_of(pps(), inward, floor) / pps(), centre, origin(), floor);
+    let (next, scrolled) = cut_screen::zoom_around(
+        pps(),
+        next_of(pps(), inward, floor) / pps(),
+        centre,
+        origin(),
+        floor,
+    );
     set_pps(next);
     (next, set_origin(scrolled, total, view))
 }
@@ -354,6 +363,9 @@ pub fn attach_wheel<S>(
     // this call (the band arrives from `cut_tracks::install`) belongs to whoever builds it: naming it here
     // keeps one rule — every ground the page shows gets exactly one controller of its kind.
     let mut grounds: Vec<(&'static str, cut_screen::WheelOver)> = targets.to_vec();
+    // `track-band` is §1's single tracks stack; it is named here as well as in the caller's list because a
+    // widget built later than this call (the band arrives from `cut_tracks::install`) belongs to whoever
+    // builds it. The duplicate is harmless — the loop below skips any widget that already carries one.
     grounds.push(("track-band", cut_screen::WheelOver::Tracks));
     for (name, over) in grounds {
         let (name, over) = (name, over);
@@ -365,7 +377,8 @@ pub fn attach_wheel<S>(
         if carries_scroll_controller(&widget) {
             continue;
         }
-        let controller = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::BOTH_AXES);
+        let controller =
+            gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::BOTH_AXES);
         controller.set_name(Some(&format!("wheel-{name}")));
         let win = window.clone();
         let step = on_step.clone();
@@ -378,7 +391,9 @@ pub fn attach_wheel<S>(
                 .contains(gtk::gdk::ModifierType::SHIFT_MASK);
             let step2 = step.clone();
             let for_step = win.clone();
-            apply_wheel(&win, over, shift, dy, dx, move |frames| step2(&for_step, frames));
+            apply_wheel(&win, over, shift, dy, dx, move |frames| {
+                step2(&for_step, frames)
+            });
             glib::Propagation::Stop
         });
         widget.add_controller(controller);
@@ -446,7 +461,9 @@ pub fn repaint_targets() -> [&'static str; 3] {
 
 /// Redraw what the view changed: the band measures itself at the new zoom, the bar follows it.
 pub fn repaint_page(window: &adw::ApplicationWindow) {
-    let Some(content) = window.content() else { return };
+    let Some(content) = window.content() else {
+        return;
+    };
     // §1's band is a row per camera AND a row per cut lane, and it was sized before the page had a cut, so
     // every redraw asks first whether the scene it is about to paint still fits the surfaces it has.
     crate::ui::cut_tracks::fit_band_height_for_window(window, &band_scene_for(window));
@@ -457,7 +474,11 @@ pub fn repaint_page(window: &adw::ApplicationWindow) {
     }
     if let Some(bar) = find_widget_by_name(&content, "track-scrollbar") {
         if let Ok(bar) = bar.clone().downcast::<gtk::Scrollbar>() {
-            paint_scrollbar(&bar, total_px(filmed_seconds(), pps()), view_px(surface_width(window)));
+            paint_scrollbar(
+                &bar,
+                total_px(filmed_seconds(), pps()),
+                view_px(surface_width(window)),
+            );
         }
     }
 }
@@ -519,7 +540,9 @@ pub fn on_scroll_changed<F: Fn(f64) + 'static>(
 /// bar when everything fits. Looked up in THIS window's tree, never by a search that could land on another
 /// tab's copy (the `fold-all-button` lesson). The door `window.rs` calls after any zoom, scroll or cut.
 pub fn refresh_page_scrollbar(window: &adw::ApplicationWindow) {
-    let Some(content) = window.content() else { return };
+    let Some(content) = window.content() else {
+        return;
+    };
     // Same door as [`repaint_page`]: a zoom or a scroll can change what the scene costs, and the bar beside it
     // is repainted from those same numbers.
     crate::ui::cut_tracks::fit_band_height_for_window(window, &band_scene_for(window));
@@ -548,7 +571,9 @@ pub fn band_scene_for(window: &adw::ApplicationWindow) -> crate::ui::cut_tracks:
         &recordings,
         held.map(|band| (band.start, band.end)),
         crate::ui::window::watched_row(),
-        crate::ui::window::preview_player(window).playhead.unwrap_or(0.0),
+        crate::ui::window::preview_player(window)
+            .playhead
+            .unwrap_or(0.0),
     )
 }
 
@@ -556,7 +581,9 @@ pub fn band_scene_for(window: &adw::ApplicationWindow) -> crate::ui::cut_tracks:
 /// moved. Built here rather than in `window.rs`, which is past its size budget; the widget itself is made
 /// by `cut_tracks::scrollbar`.
 pub fn attach_scrollbar(window: &adw::ApplicationWindow) {
-    let Some(content) = window.content() else { return };
+    let Some(content) = window.content() else {
+        return;
+    };
     let Some(widget) = find_widget_by_name(&content, "track-scrollbar") else {
         return;
     };

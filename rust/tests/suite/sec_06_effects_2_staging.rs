@@ -36,9 +36,18 @@ fn staged_menu_lists_the_app_s_rows(app: &adw::Application) {
         rows.len()
     );
     // Each row is `"<widget name>: <label>"`, so both halves of the proof come off the widget tree.
-    let names: Vec<&str> = rows.iter().map(|row| row.split(": ").next().unwrap()).collect();
-    let wanted: Vec<&str> = naivepost::cut_screen::EFFECT_ITEMS.iter().map(|item| item.name).collect();
-    assert_eq!(names, wanted, "the staged menu is not in the spec's row order");
+    let names: Vec<&str> = rows
+        .iter()
+        .map(|row| row.split(": ").next().unwrap())
+        .collect();
+    let wanted: Vec<&str> = naivepost::cut_screen::EFFECT_ITEMS
+        .iter()
+        .map(|item| item.name)
+        .collect();
+    assert_eq!(
+        names, wanted,
+        "the staged menu is not in the spec's row order"
+    );
     let labels: Vec<String> = rows
         .iter()
         .map(|row| row.split(": ").nth(1).unwrap_or_default().to_string())
@@ -80,5 +89,8 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_staged_menu_lists_the_app_s_
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_MENU_STAGE.load(Ordering::SeqCst), "the menu-staging check never ran");
+    assert!(
+        RAN_MENU_STAGE.load(Ordering::SeqCst),
+        "the menu-staging check never ran"
+    );
 }

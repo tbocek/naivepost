@@ -8,8 +8,8 @@
 //! against a real reply rather than quoted beside an empty one.
 
 use naivepost::{
-    cut::Fx,
-    cut_effects_pass as effects_pass, cut_hear, cut_speed, fx_lane, fx_record, params, render_fx,
+    cut::Fx, cut_effects_pass as effects_pass, cut_hear, cut_speed, fx_lane, fx_record, params,
+    render_fx,
 };
 
 use crate::common;
@@ -48,7 +48,11 @@ fn sec_06_effects_6_parameters_used_s1_lane_height_has_one_owner() {
     );
     // And the number §6 spells is what that owner answers for one row.
     assert_eq!(fx_lane::lane_height_px(1), 26.0);
-    assert_eq!(fx_lane::lane_height_px(3), 78.0, "rows multiply the one number");
+    assert_eq!(
+        fx_lane::lane_height_px(3),
+        78.0,
+        "rows multiply the one number"
+    );
     // An empty lane still costs a row (§2), so the floor is one row, never nought.
     assert_eq!(fx_lane::lane_height_px(0), 26.0);
 }
@@ -79,7 +83,10 @@ fn sec_06_effects_6_parameters_used_s2_the_render_reads_the_staircase() {
     );
     // Every stair sits inside the clip and carries a rate the clamps allow.
     for picture in &long {
-        assert!(picture.from >= seg.s && picture.to <= seg.e, "{picture:?} outside the clip");
+        assert!(
+            picture.from >= seg.s && picture.to <= seg.e,
+            "{picture:?} outside the clip"
+        );
         assert!(
             picture.rate == 0.0
                 || (cut_speed::MIN_RATE..=cut_speed::MAX_RATE).contains(&picture.rate),
@@ -154,7 +161,9 @@ fn sec_06_effects_6_parameters_used_s4_the_cap_is_compared_against_a_reply() {
         })
         .collect();
     assert_eq!(effects_pass::proposed_effect_count(&at_cap), cap);
-    assert!(effects_pass::effect_cap_allows(effects_pass::proposed_effect_count(&at_cap)));
+    assert!(effects_pass::effect_cap_allows(
+        effects_pass::proposed_effect_count(&at_cap)
+    ));
     let over = {
         let mut more = at_cap.clone();
         more.push(Fx {
@@ -165,10 +174,15 @@ fn sec_06_effects_6_parameters_used_s4_the_cap_is_compared_against_a_reply() {
         });
         more
     };
-    assert!(!effects_pass::effect_cap_allows(effects_pass::proposed_effect_count(&over)));
+    assert!(!effects_pass::effect_cap_allows(
+        effects_pass::proposed_effect_count(&over)
+    ));
     // The door the pass walks: a reply over the cap comes back refused, with the reason in hand.
     let verdict = effects_pass::effect_cap_allows_reply(&over);
-    assert!(!verdict.allowed, "a reply past the cap must be refused, not placed");
+    assert!(
+        !verdict.allowed,
+        "a reply past the cap must be refused, not placed"
+    );
     assert!(
         verdict.reason.contains("maxProposedEffects") || verdict.reason.contains("cap"),
         "the refusal says which bound it hit: {:?}",
@@ -186,8 +200,14 @@ fn sec_06_effects_6_parameters_used_s5_each_row_names_the_module_that_reads_it()
         ("P.eng.minClipSeconds", "tools::cutpass::MIN_CLIP_SECONDS"),
         ("P.policy.speedGapSeconds", "cut_speed_pass::GAP_SECONDS"),
         ("P.machine.captionBatch", "cut_captions::BATCH"),
-        ("P.policy.captionMinSeconds", "tools::clips::CAPTION_MIN_SECONDS"),
-        ("P.eng.effectMinSurvivingSeconds", "cut_clamp::MIN_SURVIVING_SECONDS"),
+        (
+            "P.policy.captionMinSeconds",
+            "tools::clips::CAPTION_MIN_SECONDS",
+        ),
+        (
+            "P.eng.effectMinSurvivingSeconds",
+            "cut_clamp::MIN_SURVIVING_SECONDS",
+        ),
         ("P.eng.minRate", "cut_speed::MIN_RATE"),
         ("P.eng.maxRate", "cut_speed::MAX_RATE"),
         ("P.eng.rampStepSeconds", "cut_speed::RAMP_STEP_SECONDS"),
@@ -197,11 +217,17 @@ fn sec_06_effects_6_parameters_used_s5_each_row_names_the_module_that_reads_it()
         ("effects.snapPx", "fx_text::SNAP_PX"),
         ("effects.previewRasterPx", "fx_svg::PREVIEW_RASTER_PX"),
         ("card.bakeFps", "cut_cards::BAKE_FPS"),
-        ("effects.markedBandMinSeconds", "cut_speed::MIN_MARKED_SECONDS"),
+        (
+            "effects.markedBandMinSeconds",
+            "cut_speed::MIN_MARKED_SECONDS",
+        ),
     ];
     for (id, from) in reads {
         let row = anywhere(id);
-        assert_eq!(row.from, *from, "{id} must be catalogued from the rule that reads it");
+        assert_eq!(
+            row.from, *from,
+            "{id} must be catalogued from the rule that reads it"
+        );
     }
     // The values §6 spells outright, read off their owners.
     assert_eq!(anywhere("card.bakeFps").spelled, "25");
@@ -225,27 +251,31 @@ fn sec_06_effects_6_parameters_used_s5_each_row_names_the_module_that_reads_it()
 #[test]
 fn sec_06_effects_6_parameters_used_s6_the_speed_bounds_reach_the_clip_list_the_encoder_gets() {
     use naivepost::cut_speed_split as split;
-    let seg = naivepost::cut::Seg { s: 0.0, e: 40.0, ..Default::default() };
+    let seg = naivepost::cut::Seg {
+        s: 0.0,
+        e: 40.0,
+        ..Default::default()
+    };
 
     // (a) A rate past P.eng.maxRate reaches the clip list INSIDE the bound: `steps_of` clamps before any stair is
     // counted, so no piece can carry the absurd ask onward to `setpts`.
-    let wild = split::sped_segs(
-        std::slice::from_ref(&seg),
-        &[speed(0.0, 20.0, 500.0, 0.0)],
-    );
+    let wild = split::sped_segs(std::slice::from_ref(&seg), &[speed(0.0, 20.0, 500.0, 0.0)]);
     assert!(!wild.is_empty(), "a sped scene still yields clips");
     for piece in &wild {
         if piece.rate > 0.0 {
             assert!(
                 (cut_speed::MIN_RATE..=cut_speed::MAX_RATE).contains(&piece.rate),
-                "piece rate {} escaped P.eng.minRate..=maxRate", piece.rate
+                "piece rate {} escaped P.eng.minRate..=maxRate",
+                piece.rate
             );
         }
     }
     // The clamp really did move this ask, rather than the number being harmless anyway.
     assert!(
-        wild.iter().any(|p| p.rate > 0.0 && p.rate <= cut_speed::MAX_RATE),
-        "the sped pieces carry a clamped rate: {:?}", wild.iter().map(|p| p.rate).collect::<Vec<_>>()
+        wild.iter()
+            .any(|p| p.rate > 0.0 && p.rate <= cut_speed::MAX_RATE),
+        "the sped pieces carry a clamped rate: {:?}",
+        wild.iter().map(|p| p.rate).collect::<Vec<_>>()
     );
 
     // (b) P.eng.rampStepSeconds decides how many constant-rate stretches a ramp becomes: every stair must hold on
@@ -254,11 +284,14 @@ fn sec_06_effects_6_parameters_used_s6_the_speed_bounds_reach_the_clip_list_the_
     let flat = split::sped_segs(std::slice::from_ref(&seg), &[speed(0.0, 30.0, 8.0, 0.0)]);
     assert!(
         ramped.len() > flat.len(),
-        "a ramped speed cuts more clips than a flat one: {} vs {}", ramped.len(), flat.len()
+        "a ramped speed cuts more clips than a flat one: {} vs {}",
+        ramped.len(),
+        flat.len()
     );
     // Each stair is at least RAMP_STEP_SECONDS on screen — that is the rule the count obeys.
     for piece in &ramped {
-        let seconds = (piece.e - piece.s) / cut_speed::applied_rate(piece.rate).max(cut_speed::MIN_RATE);
+        let seconds =
+            (piece.e - piece.s) / cut_speed::applied_rate(piece.rate).max(cut_speed::MIN_RATE);
         assert!(
             seconds + 1e-9 >= cut_speed::RAMP_STEP_SECONDS || piece.rate == 0.0,
             "a stair shorter than P.eng.rampStepSeconds reached the clip list: {piece:?}"
@@ -269,11 +302,16 @@ fn sec_06_effects_6_parameters_used_s6_the_speed_bounds_reach_the_clip_list_the_
     // border is not encoded, and the number that said so is the render's own shortest-clip constant.
     assert_eq!(naivepost::tools::cutpass::MIN_CLIP_SECONDS, 0.5);
     let sliver = split::sped_segs(
-        std::slice::from_ref(&naivepost::cut::Seg { s: 0.0, e: 10.0, ..Default::default() }),
+        std::slice::from_ref(&naivepost::cut::Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        }),
         &[speed(9.8, 0.1, 4.0, 0.0)],
     );
     for piece in &sliver {
-        let on_screen = (piece.e - piece.s) / cut_speed::applied_rate(piece.rate).max(cut_speed::MIN_RATE);
+        let on_screen =
+            (piece.e - piece.s) / cut_speed::applied_rate(piece.rate).max(cut_speed::MIN_RATE);
         assert!(
             on_screen + 1e-9 >= naivepost::tools::cutpass::MIN_CLIP_SECONDS,
             "a piece under P.eng.minClipSeconds survived the split: {piece:?} ({on_screen} s)"
@@ -306,19 +344,34 @@ fn sec_06_effects_6_parameters_used_s7_max_gain_reaches_the_encode_filter() {
     };
     let built = naivepost::produce_fx_chain::for_clip(&clip, &fx, clip.src, &scratch);
     let audio = built.audio.join(",");
-    assert!(audio.contains("volume="), "the clip's audio chain carries the volume filter: {audio}");
+    assert!(
+        audio.contains("volume="),
+        "the clip's audio chain carries the volume filter: {audio}"
+    );
     assert!(
         audio.contains(&format!("{:.4}", fx_record::gain_ceiling() - 1.0)),
         "the multiplier ffmpeg is asked for is the ceiling minus unity: {audio}"
     );
-    assert!(!audio.contains("98.0000"), "an ask over the ceiling must not reach the filter: {audio}");
+    assert!(
+        !audio.contains("98.0000"),
+        "an ask over the ceiling must not reach the filter: {audio}"
+    );
     // Silence stays silence through the same door: 0 is 0, not the floor of a clamp.
     let quiet_fx = vec![volume(0.0, 4.0, 0.0)];
-    let quiet_clip = naivepost::produce_render::Clip { fx: quiet_fx.clone(), ..clip.clone() };
+    let quiet_clip = naivepost::produce_render::Clip {
+        fx: quiet_fx.clone(),
+        ..clip.clone()
+    };
     let quiet = naivepost::produce_fx_chain::for_clip(&quiet_clip, &quiet_fx, clip.src, &scratch);
     let cues = render_fx::all_gain_cues(&quiet_fx, 0.0, 1.0, 4.0);
     assert_eq!(cues.len(), 1, "a hush is still a cue");
-    assert_eq!(cues[0].gain, 0.0, "P.eng.maxGain clamps the top, never the bottom");
-    assert!(!quiet.audio.is_empty(), "the hush reaches the audio chain too");
+    assert_eq!(
+        cues[0].gain, 0.0,
+        "P.eng.maxGain clamps the top, never the bottom"
+    );
+    assert!(
+        !quiet.audio.is_empty(),
+        "the hush reaches the audio chain too"
+    );
     let _ = std::fs::remove_dir_all(&scratch);
 }

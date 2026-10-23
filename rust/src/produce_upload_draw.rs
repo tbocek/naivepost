@@ -80,7 +80,9 @@ fn dialed(
         Err(crate::slot_gate::Wait::Cancelled) => {
             return (
                 base.clone(),
-                Err(format!("{step}: cancelled while waiting for a drawing slot")),
+                Err(format!(
+                    "{step}: cancelled while waiting for a drawing slot"
+                )),
             )
         }
     };
@@ -280,10 +282,26 @@ pub fn state_of(parsed: &serde_json::Value) -> PollState {
     let picture = picture_of(parsed);
     let done = matches!(
         lowered.as_str(),
-        "done" | "completed" | "complete" | "success" | "finished" | "failed" | "error" | "canceled" | "cancelled"
-    ) || parsed.get("images").and_then(|v| v.as_array()).is_some_and(|list| !list.is_empty())
+        "done"
+            | "completed"
+            | "complete"
+            | "success"
+            | "finished"
+            | "failed"
+            | "error"
+            | "canceled"
+            | "cancelled"
+    ) || parsed
+        .get("images")
+        .and_then(|v| v.as_array())
+        .is_some_and(|list| !list.is_empty())
         || !picture.is_empty();
-    PollState { status, ahead, done, png: picture }
+    PollState {
+        status,
+        ahead,
+        done,
+        png: picture,
+    }
 }
 
 /// The drawn picture inside one job answer, decoded: `result.images[0].b64_json`, with the bare
@@ -293,11 +311,21 @@ pub fn state_of(parsed: &serde_json::Value) -> PollState {
 pub fn picture_of(parsed: &serde_json::Value) -> Vec<u8> {
     let found = ["b64_json", "b64", "base64", "image", "data"]
         .iter()
-        .find_map(|key| parsed.get("result").and_then(|r| first_image(r)).and_then(|img| img.get(*key)))
+        .find_map(|key| {
+            parsed
+                .get("result")
+                .and_then(|r| first_image(r))
+                .and_then(|img| img.get(*key))
+        })
         .or_else(|| {
             ["b64_json", "b64", "base64", "image", "data"]
                 .iter()
-                .find_map(|key| parsed.get("images").and_then(|l| l.as_array()?.first()).and_then(|img| img.get(*key)))
+                .find_map(|key| {
+                    parsed
+                        .get("images")
+                        .and_then(|l| l.as_array()?.first())
+                        .and_then(|img| img.get(*key))
+                })
         });
     let encoded = match found {
         Some(value) if value.is_string() => value.as_str().unwrap_or_default().to_string(),
@@ -310,7 +338,9 @@ pub fn picture_of(parsed: &serde_json::Value) -> Vec<u8> {
 
 /// The first entry of a job answer's image list, whether the server spelled it `result.images` or `images`.
 fn first_image(parsed: &serde_json::Value) -> Option<&serde_json::Value> {
-    parsed.get("images").and_then(|list| list.as_array()?.first())
+    parsed
+        .get("images")
+        .and_then(|list| list.as_array()?.first())
 }
 
 /// Standard-alphabet base64, the inverse of [`crate::checks::base64`]: padding and any byte outside the

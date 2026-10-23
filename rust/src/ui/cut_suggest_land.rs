@@ -109,10 +109,9 @@ fn press_model(window: &adw::ApplicationWindow, busy: bool) -> String {
     // decorations, and only those the policy switched on. Their own sentences go to the log as they said them,
     // then §S3's effect line counts what actually landed (the walk-back's clamped effects plus theirs).
     let policy_ = crate::ui::session_policy(window);
-    let pass_lines =
-        crate::cut_suggest_passes::run_after_cut(window, &policy_, |said| {
-            crate::ui::window::log_line(said)
-        });
+    let pass_lines = crate::cut_suggest_passes::run_after_cut(window, &policy_, |said| {
+        crate::ui::window::log_line(said)
+    });
     for line in &pass_lines {
         crate::ui::window::log_line(line);
     }
@@ -258,7 +257,9 @@ pub fn install(read: fn() -> Cut, recorder: Recorder) {
 /// The cut on screen, as the installed door answers it. Falls back to an empty cut only when no window has
 /// been built, which is the state in which nothing can be landed anyway.
 fn screen_cut() -> Cut {
-    READ.with(|slot| slot.get()).map(|read| read()).unwrap_or_default()
+    READ.with(|slot| slot.get())
+        .map(|read| read())
+        .unwrap_or_default()
 }
 
 /// The cut a suggestion lands as: the walk-back's segments, the inserts it kept (hand-placed cards are

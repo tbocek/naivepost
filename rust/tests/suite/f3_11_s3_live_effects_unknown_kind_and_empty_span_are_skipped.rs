@@ -52,14 +52,27 @@ fn f3_11_s3_live_effects_unknown_kind_and_empty_span_are_skipped_and_said() {
 
     let batch = batch();
     let first = effects_ask::ask(&fixture.tree, CTX, &batch, &[], 1, &|| false);
-    assert_eq!(first.calls.len(), 3, "the reader passes all three through: only `place` judges them");
+    assert_eq!(
+        first.calls.len(),
+        3,
+        "the reader passes all three through: only `place` judges them"
+    );
     let reply = cut_effects_pass::place(&batch, &first.calls);
 
     // S3 (`unknown kind or end ≤ start → skipped`): the reply is NOT unusable, so no retry is owed.
-    assert!(reply.usable(), "a bad line skips itself instead of throwing the answer away");
-    assert!(reply.fault.is_none(), "no fault: nothing here is about a clip outside the list");
+    assert!(
+        reply.usable(),
+        "a bad line skips itself instead of throwing the answer away"
+    );
+    assert!(
+        reply.fault.is_none(),
+        "no fault: nothing here is about a clip outside the list"
+    );
     assert_eq!(reply.effects.len(), 1, "only the good stop lands");
-    assert_eq!(reply.effects[0].kind, "speed", "a stop is recorded as a rate-0 speed (§06#1's table has no stop kind)");
+    assert_eq!(
+        reply.effects[0].kind, "speed",
+        "a stop is recorded as a rate-0 speed (§06#1's table has no stop kind)"
+    );
     assert_eq!(reply.effects[0].rate, 0.0, "and its rate says so");
 
     // Each skip is SAID. Dropping them silently would leave the user counting bars on the lane, finding fewer
@@ -72,13 +85,19 @@ fn f3_11_s3_live_effects_unknown_kind_and_empty_span_are_skipped_and_said() {
             _ => None,
         })
         .collect();
-    assert_eq!(said.len(), 2, "both bad lines answer with a reason, got {said:?}");
+    assert_eq!(
+        said.len(),
+        2,
+        "both bad lines answer with a reason, got {said:?}"
+    );
     assert!(
-        said.iter().any(|reason| reason.contains("\"blur\" is not an effect this pass places")),
+        said.iter()
+            .any(|reason| reason.contains("\"blur\" is not an effect this pass places")),
         "the unknown kind names itself: {said:?}"
     );
     assert!(
-        said.iter().any(|reason| reason.contains("the span is empty after clamping it into the clip")),
+        said.iter()
+            .any(|reason| reason.contains("the span is empty after clamping it into the clip")),
         "the empty span says why it is nothing: {said:?}"
     );
 

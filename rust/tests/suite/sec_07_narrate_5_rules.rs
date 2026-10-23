@@ -19,8 +19,8 @@ use gtk4 as gtk;
 use naivepost::cut::{Cut, Seg};
 use naivepost::narrate_off;
 use naivepost::narrate_preview::{self, Failed, Take};
-use naivepost::narrate_preview_media as media;
 use naivepost::narrate_preview_leg as leg;
+use naivepost::narrate_preview_media as media;
 use naivepost::narrate_rules as rules;
 use naivepost::narrate_screen as page;
 use naivepost::narration::Entry;
@@ -51,7 +51,10 @@ fn sec_07_narrate_5_rules_the_bar_follows_the_page_only_once_the_preview_started
     assert!(!run::controls(&None, run::transport_for(Page::Narrate, idle)).stop_sensitive);
 
     // Going: the bar is the preview's, so ▶ is ⏸.
-    let playing = Transport { playing: true, started: true };
+    let playing = Transport {
+        playing: true,
+        started: true,
+    };
     assert!(rules::bar_serves_the_preview(playing));
     assert_eq!(
         run::controls(&None, run::transport_for(Page::Narrate, playing)).icon,
@@ -60,7 +63,10 @@ fn sec_07_narrate_5_rules_the_bar_follows_the_page_only_once_the_preview_started
     );
 
     // Started and paused: still the preview's — ⏸ must be able to resume it and ⏹ to end it.
-    let cued = Transport { playing: false, started: true };
+    let cued = Transport {
+        playing: false,
+        started: true,
+    };
     assert!(rules::bar_serves_the_preview(cued));
     assert!(run::controls(&None, run::transport_for(Page::Narrate, cued)).stop_sensitive);
 }
@@ -73,7 +79,11 @@ fn sec_07_narrate_5_rules_the_bar_follows_the_page_only_once_the_preview_started
 fn sec_07_narrate_5_rules_a_voice_that_is_not_on_offer_has_no_row() {
     // One narrator tagged, no voices folder: the offer is captions + Narrator 1.
     let options = page::voice_options(1, &[]);
-    assert_eq!(options[0].id, page::CAPTIONS, "row 0 is captions-only, which is what a wrong fallback would show");
+    assert_eq!(
+        options[0].id,
+        page::CAPTIONS,
+        "row 0 is captions-only, which is what a wrong fallback would show"
+    );
     assert_eq!(rules::picker_row(&options, "narrator1"), Some(1));
     assert_eq!(
         rules::picker_row(&options, "narrator3"),
@@ -96,12 +106,24 @@ fn sec_07_narrate_5_rules_a_voice_that_is_not_on_offer_has_no_row() {
 #[test]
 fn sec_07_narrate_5_rules_the_mix_reaches_the_bed_and_a_still_second_requeues_nothing() {
     let game = 0.3;
-    let quiet = Cut { segs: vec![clip(0.0, 20.0)], ..Default::default() };
+    let quiet = Cut {
+        segs: vec![clip(0.0, 20.0)],
+        ..Default::default()
+    };
     let silent_second = leg::heard_at(&quiet, 5.0, false, game);
     let spoken_second = leg::heard_at(&quiet, 5.0, true, game);
-    assert_eq!(silent_second.duck, 1.0, "nothing speaking: the bed keeps its own level");
-    assert_eq!(spoken_second.duck, game, "while a line speaks the bed sits at P.policy.gameVolume");
-    assert_ne!(silent_second.duck, spoken_second.duck, "the tick must not read one level for every second");
+    assert_eq!(
+        silent_second.duck, 1.0,
+        "nothing speaking: the bed keeps its own level"
+    );
+    assert_eq!(
+        spoken_second.duck, game,
+        "while a line speaks the bed sits at P.policy.gameVolume"
+    );
+    assert_ne!(
+        silent_second.duck, spoken_second.duck,
+        "the tick must not read one level for every second"
+    );
 
     // The same product the render would mix, through the media layer the players are cued from.
     let idle_gain = media::bed_gain(&quiet, 5.0, false, game, 1.0);
@@ -110,20 +132,38 @@ fn sec_07_narrate_5_rules_the_mix_reaches_the_bed_and_a_still_second_requeues_no
         ducked_gain < idle_gain,
         "the level handed to the player has to drop while the line speaks: {idle_gain} -> {ducked_gain}"
     );
-    assert_eq!(ducked_gain, game, "with the slider at full the bed is exactly the duck");
+    assert_eq!(
+        ducked_gain, game,
+        "with the slider at full the bed is exactly the duck"
+    );
     // A hushed second is mute by property, not a paused stream (§05-cut#8 bullet 1).
     let hushed = Cut {
-        segs: vec![Seg { quiet: vec!["cam0".into()], ..clip(0.0, 20.0) }],
+        segs: vec![Seg {
+            quiet: vec!["cam0".into()],
+            ..clip(0.0, 20.0)
+        }],
         ..Default::default()
     };
     assert_eq!(media::bed_gain(&hushed, 5.0, false, game, 1.0), 0.0);
-    assert_eq!(leg::heard_at(&hushed, 5.0, false, game).hushed, vec!["cam0".to_string()]);
+    assert_eq!(
+        leg::heard_at(&hushed, 5.0, false, game).hushed,
+        vec!["cam0".to_string()]
+    );
 
     // The stamp: asking for the level the bed already runs at answers `false`, so the tick spawns nothing.
     let mut preview = leg::Preview::default();
-    assert!(preview.bed_gain_ask(ducked_gain), "a first answer is always a change");
-    assert!(!preview.bed_gain_ask(ducked_gain), "the same answer twice must not re-cue the bed");
-    assert!(preview.bed_gain_ask(idle_gain), "and a new duck is a change again");
+    assert!(
+        preview.bed_gain_ask(ducked_gain),
+        "a first answer is always a change"
+    );
+    assert!(
+        !preview.bed_gain_ask(ducked_gain),
+        "the same answer twice must not re-cue the bed"
+    );
+    assert!(
+        preview.bed_gain_ask(idle_gain),
+        "and a new duck is a change again"
+    );
 }
 
 /// §5 (`captions-only short-circuits everything that speaks`) + F4.8: the preview asks the ONE seam
@@ -132,12 +172,28 @@ fn sec_07_narrate_5_rules_the_mix_reaches_the_bed_and_a_still_second_requeues_no
 #[test]
 fn sec_07_narrate_5_rules_a_narration_that_is_off_offers_no_line_to_speak() {
     let (_root, tree) = common::tree_in("rules-seams");
-    let spoken = Entry { s: 0.0, e: 10.0, at: 0.5, text: "a written line".into(), ..Default::default() };
-    let blank = Entry { s: 10.0, e: 20.0, at: 0.5, text: String::new(), ..Default::default() };
+    let spoken = Entry {
+        s: 0.0,
+        e: 10.0,
+        at: 0.5,
+        text: "a written line".into(),
+        ..Default::default()
+    };
+    let blank = Entry {
+        s: 10.0,
+        e: 20.0,
+        at: 0.5,
+        text: String::new(),
+        ..Default::default()
+    };
     let entries = vec![spoken.clone(), blank.clone()];
 
     // The seam itself, in both states.
-    assert_eq!(narrate_off::lines_to_speak(true, &entries), Vec::new(), "narration off speaks nothing");
+    assert_eq!(
+        narrate_off::lines_to_speak(true, &entries),
+        Vec::new(),
+        "narration off speaks nothing"
+    );
     assert_eq!(
         narrate_off::lines_to_speak(false, &entries),
         vec![spoken.clone()],
@@ -193,7 +249,10 @@ fn run_scenario(flag: &AtomicBool) {
         app.connect_activate(run_round);
         app.run_with_args(&["naivepost"]);
     });
-    assert!(flag.load(Ordering::SeqCst), "the scenario never reached its last assertion");
+    assert!(
+        flag.load(Ordering::SeqCst),
+        "the scenario never reached its last assertion"
+    );
 }
 
 /// A session folder pinned as the process's cwd, written BEFORE any window is built: the page resolves
@@ -276,7 +335,10 @@ fn narrate_window(
 /// voice that is not on offer must not be shown as a row of its own, and must not be quietly mapped
 /// onto row 0 either.
 fn picker_rows(picker: &gtk::DropDown) -> Vec<String> {
-    let Some(list) = picker.model().and_then(|m| m.downcast::<gtk::StringList>().ok()) else {
+    let Some(list) = picker
+        .model()
+        .and_then(|m| m.downcast::<gtk::StringList>().ok())
+    else {
         return Vec::new();
     };
     (0..list.n_items())
@@ -308,7 +370,9 @@ fn run_picker_empty(app: &adw::Application) {
     // §05's "never empty": the captions-only row stays visible. What §5 pins is that the unoffered
     // voice is not on the list at all, so nothing can be shown for it and nothing maps onto row 0.
     let shown = common::widget(&window, "voice-picker");
-    let picker = shown.downcast_ref::<gtk::DropDown>().expect("`voice-picker` is a dropdown");
+    let picker = shown
+        .downcast_ref::<gtk::DropDown>()
+        .expect("`voice-picker` is a dropdown");
     let rows = picker_rows(picker);
     assert_eq!(
         rows,
@@ -351,7 +415,9 @@ fn run_picker_empty(app: &adw::Application) {
         .position(|option| option.id == "narrator3")
         .expect("three narrators published means row 3 exists");
     let shown = common::widget(&window, "voice-picker");
-    let picker = shown.downcast_ref::<gtk::DropDown>().expect("`voice-picker` is a dropdown");
+    let picker = shown
+        .downcast_ref::<gtk::DropDown>()
+        .expect("`voice-picker` is a dropdown");
     let now = picker_rows(picker);
     assert_eq!(
         now,
@@ -387,12 +453,18 @@ fn run_bar_follows_the_page(app: &adw::Application) {
     // Drive the preview through the real doors, with the cueable footage the picture needs.
     let segs = vec![clip(0.0, 20.0)];
     naivepost::cut::save(
-        &naivepost::cut::Cut { segs: segs.clone(), ..Default::default() },
+        &naivepost::cut::Cut {
+            segs: segs.clone(),
+            ..Default::default()
+        },
         &_tree,
     )
     .expect("cut.json written");
-    std::fs::write(std::env::current_dir().unwrap().join("cam0.mp4"), b"stub footage")
-        .expect("footage on disk");
+    std::fs::write(
+        std::env::current_dir().unwrap().join("cam0.mp4"),
+        b"stub footage",
+    )
+    .expect("footage on disk");
     naivepost::project::save(&footage_project(), _tree.dir()).expect("naivepost.json written");
     // The play seam reads the CUT off disk and the record off the page's state, so the state goes in
     // here (after the cut and the footage exist) — no voice seam can fire on a page with no voice.
@@ -406,7 +478,10 @@ fn run_bar_follows_the_page(app: &adw::Application) {
         ..Default::default()
     }];
     naivepost::narration::save(
-        &naivepost::narration::Narration { entries: playing.entries.clone(), silent: Vec::new() },
+        &naivepost::narration::Narration {
+            entries: playing.entries.clone(),
+            silent: Vec::new(),
+        },
         &_tree,
     )
     .expect("narration.json written");
@@ -415,7 +490,10 @@ fn run_bar_follows_the_page(app: &adw::Application) {
     settle();
     ui::press_narrate_play(&window);
     settle();
-    assert!(ui::read_state().playing, "▶ played the cut (or this check proves nothing)");
+    assert!(
+        ui::read_state().playing,
+        "▶ played the cut (or this check proves nothing)"
+    );
     assert!(
         rules::bar_serves_the_preview(ui::preview_player(&window).transport),
         "once the preview started the bar answers for it"
@@ -450,7 +528,13 @@ fn sec_07_narrate_5_rules_the_bar_serves_the_preview_only_once_it_started() {
 
 /// A kept footage clip off camera 0.
 fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, dur: e - s, cam: 0, ..Default::default() }
+    Seg {
+        s,
+        e,
+        dur: e - s,
+        cam: 0,
+        ..Default::default()
+    }
 }
 
 /// `duck` reaches the bed only through the preview's stamp; a hush is `0.0`. Pinning that `narrate_preview::duck`
@@ -459,7 +543,10 @@ fn clip(s: f64, e: f64) -> Seg {
 fn sec_07_narrate_5_rules_the_duck_rule_is_the_render_s() {
     assert_eq!(narrate_preview::duck(false, 0.3), 1.0);
     assert_eq!(narrate_preview::duck(true, 0.3), 0.3);
-    let quiet = Cut { segs: vec![clip(0.0, 10.0)], ..Default::default() };
+    let quiet = Cut {
+        segs: vec![clip(0.0, 10.0)],
+        ..Default::default()
+    };
     assert_eq!(
         media::bed_gain(&quiet, 4.0, true, 0.0, 1.0),
         0.0,

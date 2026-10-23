@@ -131,9 +131,12 @@ pub fn upload_refused(status: u16, body: &str) -> Option<String> {
     if !matches!(status, 401 | 403 | 405) {
         return None;
     }
-    let mut fix = "the audio.cpp server refuses uploads -- start it with --ui-management".to_string();
+    let mut fix =
+        "the audio.cpp server refuses uploads -- start it with --ui-management".to_string();
     if let Some(folder) = named_path(body) {
-        fix.push_str(&format!(", and mount {folder} into the container so it can read what is uploaded"));
+        fix.push_str(&format!(
+            ", and mount {folder} into the container so it can read what is uploaded"
+        ));
     }
     Some(fix)
 }
@@ -143,7 +146,11 @@ pub fn upload_refused(status: u16, body: &str) -> Option<String> {
 /// survives translation into advice.
 fn named_path(body: &str) -> Option<&str> {
     body.split_whitespace()
-        .map(|word| word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && !matches!(c, '/' | '.' | '_' | '-')))
+        .map(|word| {
+            word.trim_matches(|c: char| {
+                !c.is_ascii_alphanumeric() && !matches!(c, '/' | '.' | '_' | '-')
+            })
+        })
         .find(|word| word.starts_with('/') && word.len() > 1)
 }
 
@@ -238,8 +245,13 @@ impl Kind {
     /// The method this kind is sent with.
     pub fn method(self) -> &'static str {
         match self {
-            Self::Chat | Self::Upload | Self::RunTask | Self::Speech | Self::UnloadAll
-            | Self::SubmitImage | Self::CancelImage => "POST",
+            Self::Chat
+            | Self::Upload
+            | Self::RunTask
+            | Self::Speech
+            | Self::UnloadAll
+            | Self::SubmitImage
+            | Self::CancelImage => "POST",
             Self::ListModels | Self::Health | Self::Capabilities | Self::PollImage => "GET",
         }
     }
@@ -358,11 +370,7 @@ pub fn parse_models(body: &str) -> Vec<AudioModel> {
 /// of the preference: two aligners on one box sorted plainly put the weaker one first because
 /// its name sorts earlier, and the difference shows in how a cut point lands.
 pub fn pick_aligner(configured: &str, models: &[AudioModel]) -> Option<String> {
-    let declared = |id: &str| {
-        models
-            .iter()
-            .any(|m| m.task == "align" && m.id == id)
-    };
+    let declared = |id: &str| models.iter().any(|m| m.task == "align" && m.id == id);
     let wanted = configured.trim();
     if !wanted.is_empty() {
         // A hand-picked id the server does not serve stays a miss: guessing another one would
@@ -410,7 +418,10 @@ pub fn missing_model(
     wanted_id: &str,
     needed: Need<'_>,
 ) -> String {
-    let Need { task: wanted_task, step } = needed;
+    let Need {
+        task: wanted_task,
+        step,
+    } = needed;
     if let Some(model) = models.iter().find(|m| m.id == wanted_id) {
         // Present, declared for something else — the usual cause is a catalog entry copied from
         // another model with its task left as it was.

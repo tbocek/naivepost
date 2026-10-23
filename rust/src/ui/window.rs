@@ -12,36 +12,36 @@ use gtk4 as gtk;
 // F3.5 ▨ SVG: the page half of the drawing flow lives in `cut_svg`; these are the doors this shell calls.
 // F3.3 ⏩ Speed and stop by hand: the page half of that flow lives in `cut_speed_hand`; these are the
 // doors this shell calls.
-use crate::ui::cut_speed_hand::{wire_band_esc, wire_speed_esc};
-use crate::ui::cut_volume_hand::wire_volume_esc;
-use crate::ui::cut_text_hand::wire_text_esc;
-use crate::ui::cut_label_hand::wire_label_esc;
+use crate::ui::cut_cameras::refresh_camera_rows;
 use crate::ui::cut_folds::{
     page_recordings, press_fold_all, push_session_recordings, refresh_fold_badges,
 };
-use crate::ui::cut_cameras::refresh_camera_rows;
 use crate::ui::cut_form_frame;
+use crate::ui::cut_label_hand::wire_label_esc;
 use crate::ui::cut_picture;
+use crate::ui::cut_speed_hand::{wire_band_esc, wire_speed_esc};
+use crate::ui::cut_text_hand::wire_text_esc;
+use crate::ui::cut_volume_hand::wire_volume_esc;
 use crate::ui::save_apply;
 // F3.5 ▨ SVG: the page half of the drawing flow lives in `cut_svg`; these are the doors this shell calls.
-use crate::ui::cut_svg::wire_svg_esc;
 use crate::cut::{self, Cut};
 use crate::cut_hear;
+use crate::cut_line;
 use crate::cut_play_leg;
 use crate::cut_select;
 use crate::cut_verbs;
-use crate::cut_line;
+use crate::exchanges;
 use crate::layout;
-use crate::project::Project;
 use crate::lucky;
+use crate::narration::{self, Narration};
+use crate::policy;
+use crate::project::Project;
 use crate::run;
 use crate::runqueue;
-use crate::exchanges;
-use crate::policy;
-use crate::ui::policy_form;
-use crate::startup;
-use crate::narration::{self, Narration};
 use crate::shell::{Move, Outcome, Page, Refresh, Shell};
+use crate::startup;
+use crate::ui::cut_svg::wire_svg_esc;
+use crate::ui::policy_form;
 
 /// §1's badge **15** is a folder button beside the count; its tooltip names what the button opens.
 /// The page-specific wording §1 mentions lives in `Shell::outputs`' own doc — the button itself is
@@ -82,11 +82,15 @@ pub(crate) use crate::ui::cut_lane_rows::{preview_widget, set_class};
 
 // The §1 bench, tabs and readouts group lives in `window_bench` (window.rs is past its size budget);
 // these are the doors the rest of the page calls, kept at the paths they had.
-pub use crate::ui::window_bench::{label, paint_progress, paint_run_bar, set_bench_open_row};
 pub(crate) use crate::ui::window_bench::{
-    depth, has_label, paint_readouts, paint_readouts_for,
-    paint_tabs, paint_tabs_for, refresh_cut_readouts, tab_buttons, LOG_OPEN_PX,
+    depth, has_label, paint_readouts, paint_readouts_for, paint_tabs, paint_tabs_for,
+    refresh_cut_readouts, tab_buttons, LOG_OPEN_PX,
 };
+pub use crate::ui::window_bench::{label, paint_progress, paint_run_bar, set_bench_open_row};
+
+// The shell's project/session reads live in `window_session` (window.rs is past its size budget); these
+// stay reachable at their old paths, including `window::session_reads()` for `rescan_apply`.
+pub(crate) use crate::ui::window_session::{holder_children_named, session_reads, start_shell};
 
 // The §05-cut selection / held-effect / live-form group lives in `window_selection` (window.rs is past its
 // size budget); these are the doors the rest of the page and the other ui modules call, kept at their paths.
@@ -94,38 +98,38 @@ pub use crate::ui::window_selection::{
     apply_mix, clear_selection, clear_selection_button, drag_held_band, draw_selection,
     live_form_answer_is_undo, live_form_refused, nudge_held_effect, nudge_selection,
     open_effect_form, press_band_esc, press_edit_effect, press_effect_bar, press_fx_lane,
-    preview_playhead, preview_volume, pressed_surface, remove_effect_at, remove_held_effect,
+    pressed_surface, preview_playhead, preview_volume, remove_effect_at, remove_held_effect,
     select_surface, selection, selection_gesture, selection_readout, selection_surface,
     selection_verbs, set_preview_volume,
 };
 pub(crate) use crate::ui::window_selection::{
-    held_narration, refresh_selection_readout, refresh_verb_buttons,
-    HELD_NARRATION, PREVIEW_VOLUMES, SELECT_SURFACES,
-    SELECTED,
+    held_narration, refresh_selection_readout, refresh_verb_buttons, HELD_NARRATION,
+    PREVIEW_VOLUMES, SELECTED, SELECT_SURFACES,
 };
 
 // The §F2.8 trim/move/copy/paste + track-strip group lives in `window_trim_strip` (window.rs is past its
 // size budget); these are the doors the rest of the page and the other ui modules call, kept at their paths.
-pub(crate) use crate::ui::window_trim_strip::{
-    refresh_copy_buttons, wire_copy_esc, wire_delete_keys, wire_track_strip,
-};
 pub use crate::ui::window_trim_strip::{
     copy_esc_controller, copy_hand, delete_key_controller, move_gesture, note_place, open_folds,
-    paste_line, press_band, press_copy, press_lane, press_move, press_move_at,
-    press_paste, press_position, press_row, press_scene, press_trim_border, right_press_took,
-    set_press_band, set_press_scene, set_press_x, track_strip, trim_gesture, TRACK_REC_END,
-    TRACK_STRIP_PPS,
+    paste_line, press_band, press_copy, press_lane, press_move, press_move_at, press_paste,
+    press_position, press_row, press_scene, press_trim_border, right_press_took, set_press_band,
+    set_press_scene, set_press_x, track_strip, trim_gesture, TRACK_REC_END, TRACK_STRIP_PPS,
+};
+pub(crate) use crate::ui::window_trim_strip::{
+    refresh_copy_buttons, wire_copy_esc, wire_delete_keys, wire_track_strip,
 };
 
 // The §02 run-bar presses live in `window_run_press` and the three pass jobs in `cut_pass_gates`
 // (window.rs is past its size budget); these are the doors the rest of the page calls, kept at their paths.
-pub use crate::ui::cut_pass_gates::{
-    CaptionBatch, captions_pass_button, decorations_pass_button, refresh_captions_gate, refresh_decorations_gate,
-    refresh_speeds_gate, run_captions_pass, run_captions_pass_with_reply, speeds_pass_button,
-    set_captions_pass, set_decorations_pass, set_speeds_pass,
-};
 pub use crate::ui::cut_pass_gates::SPEEDS_PASS_LABEL;
-pub(crate) use crate::ui::cut_pass_gates::{wire_captions_pass, wire_decorations_pass, wire_speeds_pass};
+pub use crate::ui::cut_pass_gates::{
+    captions_pass_button, decorations_pass_button, refresh_captions_gate, refresh_decorations_gate,
+    refresh_speeds_gate, run_captions_pass, run_captions_pass_with_reply, set_captions_pass,
+    set_decorations_pass, set_speeds_pass, speeds_pass_button, CaptionBatch,
+};
+pub(crate) use crate::ui::cut_pass_gates::{
+    wire_captions_pass, wire_decorations_pass, wire_speeds_pass,
+};
 pub(crate) use crate::ui::window_run_press::{
     live_transport, wire_lucky, wire_play, wire_play_cut, wire_play_recording, wire_preview_volume,
     wire_stop,
@@ -145,8 +149,11 @@ pub struct UiState {
 }
 
 /// Build the window showing `project`. `page` selects the visible tab.
-pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &str) -> adw::ApplicationWindow {
-
+pub fn build_window(
+    app: &impl IsA<gtk::Application>,
+    project: &Project,
+    page: &str,
+) -> adw::ApplicationWindow {
     let window = adw::ApplicationWindow::new(app);
     // spec/03-shell.md §1: "Its minimum size is 1240×900: it opens at that size and cannot be made
     // smaller." The default is that size, and the size REQUEST is what makes it a floor: GTK 4 refuses to
@@ -178,7 +185,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // F0.7's record of which User Context this window's policy answers to, pushed beside the other
     // per-window slots so `derive_policy` reaches the newest one. Fresh: a window has derived nothing
     // yet, which is exactly what makes the first ▶ ask.
-    POLICY_TRACKERS.with(|trackers| trackers.borrow_mut().push(Rc::new(RefCell::new(policy::Tracker::new()))));
+    POLICY_TRACKERS.with(|trackers| {
+        trackers
+            .borrow_mut()
+            .push(Rc::new(RefCell::new(policy::Tracker::new())))
+    });
     POLICY_WATCH_WINDOW.with(|watch| *watch.borrow_mut() = Some(window.clone()));
 
     // The window is handed an immutable `&Project` and holds no live project yet, so the flows that
@@ -207,7 +218,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // The folder this window has open: the working copy beside its launch root. A rename or an Open
     // moves it afterwards -- that is what `save_target` answers -- but a fresh window always starts on
     // its own root's session, whatever an earlier window in this process left behind.
-    save_apply::set_open_dir(&startup::session_dir(&std::env::current_dir().unwrap_or_default()));
+    save_apply::set_open_dir(&startup::session_dir(
+        &std::env::current_dir().unwrap_or_default(),
+    ));
     // The Cut page's ▶ resolves its session through `cut_suggest_land`'s own slot (§12 §4's walk-back
     // reads the words from there), so a fresh window installs its root's session rather than inheriting
     // whatever an earlier window in this process left behind.
@@ -507,7 +520,10 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // parent moved.
     let run_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     run_row.set_widget_name("run-bar");
-    run_row.append(&super::window_run_scroller::wrap_controls(controls.clone().upcast::<gtk::Widget>()).upcast::<gtk::Widget>());
+    run_row.append(
+        &super::window_run_scroller::wrap_controls(controls.clone().upcast::<gtk::Widget>())
+            .upcast::<gtk::Widget>(),
+    );
     run_row.append(&progress);
 
     wire_play(
@@ -525,16 +541,7 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         project,
     );
     wire_stop(
-        &stop_,
-        &play,
-        &bar,
-        &shell,
-        &status,
-        &progress,
-        &log,
-        &log_view,
-        &queue,
-        &procs,
+        &stop_, &play, &bar, &shell, &status, &progress, &log, &log_view, &queue, &procs,
     );
     wire_lucky(
         &lucky,
@@ -643,7 +650,13 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // §1's draggable divider: the page stack above, the bottom bar below. Built in `window_divider`, which
     // also gives the band its own height ask (`band_px`) — that rule lives there and nowhere else, so a second
     // copy here is what made the two disagree about how tall the band should be.
-    super::window_divider::install(&box_, stack.upcast_ref(), run_row.upcast_ref(), readout_row.upcast_ref(), log.upcast_ref());
+    super::window_divider::install(
+        &box_,
+        stack.upcast_ref(),
+        run_row.upcast_ref(),
+        readout_row.upcast_ref(),
+        log.upcast_ref(),
+    );
     // …and the row is made to fit, in the one order that works (`window_run_fit`).
     super::window_run_fit::fit_into_row(&run_row, &controls, readout_row.upcast_ref());
 
@@ -664,9 +677,9 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // missing widget *is* "not this page", and every window still gets exactly one volume slot.
     if preview_volume_scale(&window).is_some() {
         PREVIEW_VOLUMES.with(|slots| {
-            slots
-                .borrow_mut()
-                .push(Rc::new(std::cell::RefCell::new(cut_hear::PreviewVolume::default())))
+            slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(
+                cut_hear::PreviewVolume::default(),
+            )))
         });
         // §05-cut#8 bullet 2: the stream volume goes to full ONCE, here, before any tick has asked for a
         // gain — through this app's own element, never the sound server's remembered stream volume.
@@ -681,14 +694,14 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // takes the drag's seconds directly so both paths meet in `draw_selection`.
     if select_surface(&window).is_some() {
         SELECTED.with(|slots| {
-            slots
-                .borrow_mut()
-                .push(Rc::new(std::cell::RefCell::new(None::<cut_select::Selection>)))
+            slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(
+                None::<cut_select::Selection>,
+            )))
         });
         SELECT_SURFACES.with(|slots| {
-            slots
-                .borrow_mut()
-                .push(Rc::new(std::cell::RefCell::new(None::<cut_select::Surface>)))
+            slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(
+                None::<cut_select::Surface>,
+            )))
         });
         wire_select_surface(&window);
         // F2.4 S1: the click that places the red line, on the same surface. The drag above selects;
@@ -737,7 +750,11 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
         .as_ref()
         .and_then(|tree| cut::load(tree).ok())
         .unwrap_or_default();
-    REVIEW_CUTS.with(|slots| slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(opened_cut.clone()))));
+    REVIEW_CUTS.with(|slots| {
+        slots
+            .borrow_mut()
+            .push(Rc::new(std::cell::RefCell::new(opened_cut.clone())))
+    });
     // F2.13: this window's edit history, opened on the SAME cut that was just published, so the base
     // Revert returns to is what this page opened with (§2) rather than whatever a previous window left
     // behind. Done through `reopen_history_on` rather than a second push because the history may already
@@ -863,7 +880,10 @@ pub fn build_window(app: &impl IsA<gtk::Application>, project: &Project, page: &
     // F2.9: ⧉ Copy / ⧉ Paste / ⇲ Lane, wired the same way — after `set_content`, so the buttons being
     // wired are the ones inside the realized tree.
     for (name, seam) in [
-        ("copy-button", press_copy as fn(&adw::ApplicationWindow) -> String),
+        (
+            "copy-button",
+            press_copy as fn(&adw::ApplicationWindow) -> String,
+        ),
         ("paste-button", press_paste),
         ("lane-button", press_lane),
     ] {
@@ -987,7 +1007,9 @@ fn wire_fold_all(window: &adw::ApplicationWindow) {
     let button = gtk::Button::new();
     button.set_widget_name("fold-all-button");
     button.set_label("\u{2212}\u{25a4}");
-    button.set_tooltip_text(Some("fold every stretch the cut drops \u{00b7} press again to open them all"));
+    button.set_tooltip_text(Some(
+        "fold every stretch the cut drops \u{00b7} press again to open them all",
+    ));
     let win = window.clone();
     button.connect_clicked(move |_| {
         press_fold_all(&win);
@@ -995,30 +1017,10 @@ fn wire_fold_all(window: &adw::ApplicationWindow) {
     holder.append(&button);
 }
 
-/// Does this holder already own a child with exactly this widget name? Scoped to the holder on purpose —
-/// see [`wire_fold_all`] for what a tree-wide search costs.
-fn holder_children_named(holder: &gtk::Box, name: &str) -> bool {
-    holder
-        .observe_children()
-        .iter::<glib::Object>()
-        .flatten()
-        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
-        .any(|child| child.widget_name() == name)
-}
-
-/// The shell as the window starts: on the page named, or on Prepare for `""` and for a name that is
-/// not one of the four (a page nobody asked for is not a reason to fail to open).
-fn start_shell(page: &str) -> Shell {
-    match Page::all().into_iter().find(|candidate| candidate.label() == page) {
-        Some(page) => Shell { page, help_page: page, ..Shell::default() },
-        None => Shell::default(),
-    }
-}
-
 /// Where a tab click is decided: ask the shell, redraw from what it says, and put the strip back if
 /// it refused. Split out of [`build_window`] so the handler has one job and can be driven directly.
 #[allow(clippy::too_many_arguments)] // one handler needs every tab's own widgets: the switcher, its
-// guard, and the readouts a tab change repaints — none of them belong together in a struct
+                                     // guard, and the readouts a tab change repaints — none of them belong together in a struct
 fn wire_switching(
     stack: &adw::ViewStack,
     switcher: &adw::ViewSwitcher,
@@ -1117,29 +1119,6 @@ fn wire_switching(
     });
 }
 
-/// The folder this window is working on, with its cut and narration read from it.
-///
-/// Read fresh every time rather than remembered: which project is open is the window's business, and
-/// `session_dir` is the same stand-in Rescan, New and Save use, so the flows agree on what "this
-/// project" means. A folder that is not a project leaves `tree` None — §1 wants the page to show
-/// what it has rather than fail to open, so nothing here errors out. Both the tab switch (S3-S5) and
-/// the first paint call this, so the row cannot disagree with itself between them.
-pub(crate) fn session_reads() -> (Option<layout::Tree>, Cut, Narration) {
-    let root = std::env::current_dir().unwrap_or_default();
-    let dir = startup::session_dir(&root);
-    let tree = if dir.join(crate::project::PROJECT_FILE).is_file() {
-        layout::Tree::new(&dir).ok()
-    } else {
-        None
-    };
-    let cut = tree.as_ref().and_then(|tree| cut::load(tree).ok()).unwrap_or_default();
-    let narration = tree
-        .as_ref()
-        .and_then(|tree| narration::load(tree).ok())
-        .unwrap_or_default();
-    (tree, cut, narration)
-}
-
 pub use crate::ui::window_policy::{
     built_window, close_policy_forms, derive_policy, forget_policy_form, main_window,
     open_policy_form, policy_form_open, policy_is_current, press_policy, refresh_policy_form,
@@ -1214,21 +1193,21 @@ thread_local! {
 // The §F2.4 red line + frame stepping group lives in `window_line_step` (window.rs is past its size
 // budget); these are the doors this file and its callers still reach them through.
 pub use crate::ui::window_line_step::{
-    arrow_steps, flush_line_on_close, line_key_controller, line_position, line_root, line_step_button,
-    move_line_and_save, place_line_press, set_line_position, space_toggles, step_frames_of,
-    step_the_line, Step, NO_RECORDING_STATUS,
+    arrow_steps, flush_line_on_close, line_key_controller, line_position, line_root,
+    line_step_button, move_line_and_save, place_line_press, set_line_position, space_toggles,
+    step_frames_of, step_the_line, Step, NO_RECORDING_STATUS,
 };
 pub(crate) use crate::ui::window_line_step::{
-    flush_session_on_close, LINE_ROOTS, LINE_STEP_BUTTONS, SESSION_DIRS,
-    wire_line_keys, wire_line_step,
+    flush_session_on_close, wire_line_keys, wire_line_step, LINE_ROOTS, LINE_STEP_BUTTONS,
+    SESSION_DIRS,
 };
 
 // The drag surface and the line-placing click (their gestures, storage and the ✕ that clears the band)
 // live in `window_surfaces` (window.rs is past its size budget); these are the same names, re-exported
 // under the paths every other module and test already reaches them through.
 pub use crate::ui::window_surfaces::{
-    band_line_gesture_for_test, line_click_gesture, line_now_ms, SELECT_SURFACE_PPS,
-    wire_band_line_press,
+    band_line_gesture_for_test, line_click_gesture, line_now_ms, wire_band_line_press,
+    SELECT_SURFACE_PPS,
 };
 pub(crate) use crate::ui::window_surfaces::{
     store_band_line_gesture, wire_clear_selection, wire_line_click_surface, wire_select_surface,
@@ -1326,15 +1305,13 @@ pub const DECORATIONS_PASS_LABEL: &str = "\u{2728} Decorations";
 // The F4.1 ▶ Write and speak group lives in `window_narrate` (window.rs is past its size budget);
 // these are the doors this file still calls, kept at their paths. Everything else reaches the group
 // through `crate::ui::window_narrate` directly.
+pub(crate) use crate::ui::window_narrate::live_project;
 pub use crate::ui::window_narrate::{
     narrate_pulsed, narrate_script_loaded, narrate_session_tree, narrate_stage, narrate_stages,
-    narrate_wrote,
-    press_narrate_run,
-    pull_half_typed, refuse_narrate_run, refuse_narrate_run_with_busy, set_narrate_script,
-    set_narrate_script_slow,
-    set_status_line, show_narrate_progress, show_narrate_stage,
+    narrate_wrote, press_narrate_run, pull_half_typed, refuse_narrate_run,
+    refuse_narrate_run_with_busy, set_narrate_script, set_narrate_script_slow, set_status_line,
+    show_narrate_progress, show_narrate_stage,
 };
-pub(crate) use crate::ui::window_narrate::live_project;
 
 /// F2.3: the Cut page's ▶✂✂ forwards to [`press_review_cuts`], reading the cut this window holds.
 fn wire_review_cuts(button: &gtk::Button, window: &adw::ApplicationWindow) {
@@ -1350,10 +1327,10 @@ pub(crate) use crate::ui::window_save::wire_save;
 // The window's log (the launch lines held until a window exists, the sink every flow writes into, and
 // the readers a test asserts against) live in `window_logs` (window.rs is past its size budget); these
 // are the same names, re-exported under the paths every other module and test already reaches them through.
+pub(crate) use crate::ui::window_logs::log_line;
 pub use crate::ui::window_logs::{
     clear_logs_for_test, logs_for_test, note_startup, note_unload, window_logs,
 };
-pub(crate) use crate::ui::window_logs::log_line;
 
 thread_local! {
     /// The run bar `build_window` created, published so a test can read the step it holds. Same
@@ -1371,33 +1348,55 @@ thread_local! {
 
 // The §05-cut#1-screen history + zoom group lives in `window_history_zoom` (window.rs is past its
 // size budget); these are the doors this file and its callers still reach them through.
-pub use crate::ui::window_history_zoom::{
-    history_key_controller, note_edit, press_clear_cut, press_redo, press_revert, press_thumb,
-    press_undo, press_zoom, press_zoom_apply, press_zoom_cancel, press_zoom_esc, reopen_history_on,
-    zoom_gesture,
-};
 pub(crate) use crate::ui::window_history_zoom::{
     cut_history, publish_cut, record_edit, refresh_history_buttons, repaint_scrollbar,
     wire_aspect_choice, wire_history_and_zoom, wire_history_keys, wire_wheel_gestures,
     wire_zoom_drag, wire_zoom_esc, zoom_form_owner,
+};
+pub use crate::ui::window_history_zoom::{
+    history_key_controller, note_edit, press_clear_cut, press_redo, press_revert, press_thumb,
+    press_undo, press_zoom, press_zoom_apply, press_zoom_cancel, press_zoom_esc, reopen_history_on,
+    zoom_gesture,
 };
 
 /// F2.2 S5: this window's side of the ▶✂ tick loop, over the SAME player and cut slots the buttons use.
 struct CutPreviewSlot(adw::ApplicationWindow);
 
 impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
-    fn cut_only(&self) -> bool { preview_player(&self.0).cut_only }
-    fn playhead(&self) -> Option<f64> { preview_player(&self.0).playhead }
-    fn set_playhead(&self, at: f64) { set_playhead(&self.0, at) }
-    fn cut(&self) -> Cut { review_cut_of(&self.0) }
-    fn volume(&self) -> f64 { preview_volume(&self.0) }
+    fn cut_only(&self) -> bool {
+        preview_player(&self.0).cut_only
+    }
+    fn playhead(&self) -> Option<f64> {
+        preview_player(&self.0).playhead
+    }
+    fn set_playhead(&self, at: f64) {
+        set_playhead(&self.0, at)
+    }
+    fn cut(&self) -> Cut {
+        review_cut_of(&self.0)
+    }
+    fn volume(&self) -> f64 {
+        preview_volume(&self.0)
+    }
     // S5's six doors forward to `cut_cut_play`, the F2.2 page half: `window.rs` is past its size budget.
-    fn arm_spare_at(&self, at: f64) -> bool { crate::ui::cut_cut_play::preroll_spare(&self.0, at) }
-    fn cross_into_spare(&self) -> bool { crate::ui::cut_cut_play::swap_spare(&self.0) }
-    fn drop_spare(&self) { crate::ui::cut_cut_play::release_spare(); }
-    fn hold_still(&self, hold: bool) -> bool { crate::ui::cut_cut_play::freeze(hold) }
-    fn play_rate(&self, rate: f64, at: f64) -> bool { crate::ui::cut_cut_play::hand_rate(&self.0, rate, at) }
-    fn apply_gain(&self, gain: f64, at_secs: f64) { crate::ui::cut_cut_play::hand_gain(&self.0, gain, at_secs); }
+    fn arm_spare_at(&self, at: f64) -> bool {
+        crate::ui::cut_cut_play::preroll_spare(&self.0, at)
+    }
+    fn cross_into_spare(&self) -> bool {
+        crate::ui::cut_cut_play::swap_spare(&self.0)
+    }
+    fn drop_spare(&self) {
+        crate::ui::cut_cut_play::release_spare();
+    }
+    fn hold_still(&self, hold: bool) -> bool {
+        crate::ui::cut_cut_play::freeze(hold)
+    }
+    fn play_rate(&self, rate: f64, at: f64) -> bool {
+        crate::ui::cut_cut_play::hand_rate(&self.0, rate, at)
+    }
+    fn apply_gain(&self, gain: f64, at_secs: f64) {
+        crate::ui::cut_cut_play::hand_gain(&self.0, gain, at_secs);
+    }
     fn say_clock(&self, clock: f64, ended: bool) {
         if let Some(status) = find_status(self.0.upcast_ref()) {
             status.set_text(&cut_play_leg::clock_line(clock, ended));
@@ -1416,8 +1415,13 @@ pub const CAPTIONS_PASS_LABEL: &str = "\u{2710} Captions";
 // The §1 widget doors live in `window_doors` (window.rs is past its size budget); these are the same names,
 // re-exported under the paths every other module and test already reaches them through.
 pub use crate::ui::window_doors::{
-    state, tab_tooltip, tab_dimmed, tab_button, inputs_readout, outputs_readout, outputs_sentence, outputs_label, outputs_folder_button, tab_info_parts, mark_narration_owed, tab_info_button, save_button, save_tooltip, rescan_button, find_source_widget, open_button, session_handle, session_sources, run_queue, open_tooltip, progress_bar, log_expander, progress_tooltip, rescan_tooltip, add_sources_button, copy_into_project, bench_language, session_freq, running_step, marking_pass, set_marking_pass, new_button, new_tooltip, play_button, stop_button, lucky_button, play_tooltip, find_status, project_title, paint_project_title,
-
+    add_sources_button, bench_language, copy_into_project, find_source_widget, find_status,
+    inputs_readout, log_expander, lucky_button, mark_narration_owed, marking_pass, new_button,
+    new_tooltip, open_button, open_tooltip, outputs_folder_button, outputs_label, outputs_readout,
+    outputs_sentence, paint_project_title, play_button, play_tooltip, progress_bar,
+    progress_tooltip, project_title, rescan_button, rescan_tooltip, run_queue, running_step,
+    save_button, save_tooltip, session_freq, session_handle, session_sources, set_marking_pass,
+    state, stop_button, tab_button, tab_dimmed, tab_info_button, tab_info_parts, tab_tooltip,
 };
 pub(crate) use crate::ui::window_doors::{find_switcher, find_widget_by_name};
 // `view_stack` and `switch_latch` are the same doors, reached by `rescan_apply` as `window::view_stack`
@@ -1428,22 +1432,22 @@ pub use crate::ui::window_doors::{switch_latch, view_stack};
 // (window.rs is past its size budget); these are the same names, re-exported under the paths every
 // other module and test already reaches them through.
 pub use crate::ui::window_project::{
-    add_files, add_chooser_shown_count, last_ask, last_open_ask_for_test, name_chosen,
+    add_chooser_shown_count, add_files, last_ask, last_open_ask_for_test, name_chosen,
     new_project_confirm, new_project_dialog, open_folder, open_from, reset_add_chooser_shown,
 };
 pub(crate) use crate::ui::window_project::{
-    wire_add, wire_new, wire_open, wire_rescan, remember_opened,
-    NEW_TIP, OPEN_TIP, RESCAN_TIP, SAVE_TIP, SETTINGS_TIP,
+    remember_opened, wire_add, wire_new, wire_open, wire_rescan, NEW_TIP, OPEN_TIP, RESCAN_TIP,
+    SAVE_TIP, SETTINGS_TIP,
 };
 
 // The preview player and the review cut (▶ / ▶✂ / ▶✂✂ presses, their widget doors and reads) live in
 // `window_preview` (window.rs is past its size budget); these are the same names, re-exported under
 // the paths every other module and test already reaches them through.
-pub use crate::ui::window_preview::{
-    play_cut_button, play_recording_button,
-    press_play_cut, press_play_recording, press_review_cuts, preview_player, preview_volume_scale,
-    publish_preview_transport, register_preview_player_slot, review_cut_of, review_cut_segs,
-    review_cut_segs_count, review_cut_shift, review_lanes, review_cuts_button, seed_review_cut,
-    set_playhead, set_preview_state,
-};
 pub(crate) use crate::ui::window_preview::{live_player, newest_review_cut};
+pub use crate::ui::window_preview::{
+    play_cut_button, play_recording_button, press_play_cut, press_play_recording,
+    press_review_cuts, preview_player, preview_volume_scale, publish_preview_transport,
+    register_preview_player_slot, review_cut_of, review_cut_segs, review_cut_segs_count,
+    review_cut_shift, review_cuts_button, review_lanes, seed_review_cut, set_playhead,
+    set_preview_state,
+};

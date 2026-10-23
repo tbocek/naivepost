@@ -11,8 +11,8 @@ use std::cell::RefCell;
 use std::io::{Read, Write};
 use std::rc::Rc;
 
-use adw::prelude::*;
 use crate::common;
+use adw::prelude::*;
 use naivepost::project::{Project, Source};
 use naivepost::run::{self, RunBar};
 use naivepost::runqueue::{self, Queue, TRACK_FRAMES};
@@ -107,7 +107,8 @@ fn point_presses_at_the_answering_server() {
     let Some(url) = PRESS_SERVER.with(|slot| slot.borrow().clone()) else {
         return;
     };
-    let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+    let paths =
+        naivepost::settings::from_environment().expect("settings folder from the pinned env");
     let mut conf = naivepost::settings::Conf::default();
     conf.audio_server = url;
     naivepost::settings::save(&paths, &conf).expect("the press dials a server that answers §S5");
@@ -170,13 +171,20 @@ fn single_step_closes(app: &adw::Application) {
     // the main context: wait for `running` to actually go off rather than reading it once, at whatever
     // point the scheduler happened to deliver the emission.
     assert!(
-        wait_until(|| bar.borrow().running.is_none(), "S4: the step's own run closing when the press ended"),
+        wait_until(
+            || bar.borrow().running.is_none(),
+            "S4: the step's own run closing when the press ended"
+        ),
         "S4: the step's own run closed when the press ended"
     );
     // And the audio unload was handed over rather than skipped: `end_run` answers with it every time,
     // so the pair the close hands to `fire_unload` is pinned at the source too.
     let (timeout, best_effort) = runqueue::audio_unload_is_bounded();
-    assert_eq!(timeout, std::time::Duration::from_secs(20), "the unload is bounded");
+    assert_eq!(
+        timeout,
+        std::time::Duration::from_secs(20),
+        "the unload is bounded"
+    );
     assert!(best_effort, "and it never fails the run that made it");
     // A bar with no open run cannot answer the next press as busy: ▶'s S1 pause sentence is impossible.
     // Wait for the row to settle rather than reading it the instant after the emission: on a loaded
@@ -202,7 +210,8 @@ fn line_overwrites(app: &adw::Application) {
     let window = ui::build_window(app, &project, "Prepare");
     window.present();
 
-    let status = ui::find_status(window.upcast_ref()).expect("the log header carries the status line");
+    let status =
+        ui::find_status(window.upcast_ref()).expect("the log header carries the status line");
     status.set_text("something said before the run");
     let queue = ui::run_queue(&window).expect("the window carries a run queue");
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
@@ -215,7 +224,10 @@ fn line_overwrites(app: &adw::Application) {
     );
     report_frames(&queue);
     let joined = queue.borrow().text_and_tip().0;
-    assert!(!joined.is_empty(), "a reported track has a line to show: {joined:?}");
+    assert!(
+        !joined.is_empty(),
+        "a reported track has a line to show: {joined:?}"
+    );
 
     // The program's own close door puts it there: same call the shell makes when a run ends. The log
     // body is read through `ui::log_view`, the shell's own door for it (the expander keeps its body
@@ -225,15 +237,25 @@ fn line_overwrites(app: &adw::Application) {
     use gtk4::prelude::*;
     let view = ui::log_view(&window).expect("the expander holds the log body");
     naivepost::ui::run_close::close_step_run(
-        &bar, &queue, &Rc::new(RefCell::new(naivepost::exchanges::RunLog::new())),
-        &status, &progress, &log, &view, None,
+        &bar,
+        &queue,
+        &Rc::new(RefCell::new(naivepost::exchanges::RunLog::new())),
+        &status,
+        &progress,
+        &log,
+        &view,
+        None,
     );
     assert_eq!(
         ui::state(&window).status,
         joined,
         "§2: the joined track line IS the status line now, sentinel gone"
     );
-    assert_ne!(ui::state(&window).status, "something said before the run", "the run overwrote it");
+    assert_ne!(
+        ui::state(&window).status,
+        "something said before the run",
+        "the run overwrote it"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -298,7 +320,10 @@ fn lucky_moves_on() {
 
     // The chain's END is the other half: no next page, so the run really closes.
     naivepost::ui::run_close::close_chain_step(&handles, None);
-    assert!(bar.borrow().running.is_none(), "S4: with nowhere to move on, the run ends");
+    assert!(
+        bar.borrow().running.is_none(),
+        "S4: with nowhere to move on, the run ends"
+    );
 }
 
 /// §2's idle pulse, also inside the round: arming stands a timer while the run holds nothing
@@ -306,15 +331,24 @@ fn lucky_moves_on() {
 /// pumps the loop between the two reads, so a standing timer can only be the arming's doing.
 fn the_pulse_belongs_to_the_run() {
     let handles = handles();
-    assert!(!ui::shell_beats::pulse_standing_for_test(), "an idle process holds no pulse timer");
+    assert!(
+        !ui::shell_beats::pulse_standing_for_test(),
+        "an idle process holds no pulse timer"
+    );
     ui::shell_beats::arm_pulse(&handles.progress, &handles.bar, &handles.queue);
     assert!(
         ui::shell_beats::pulse_standing_for_test(),
         "§2: a run with nothing countable pulses the bar"
     );
     // The rule the timer runs on, and the close that ends it.
-    assert!(ui::shell_beats::should_pulse(true, 0.0), "a thinking model pulses");
-    assert!(!ui::shell_beats::should_pulse(true, 0.25), "once something counts, the needle owns the bar");
+    assert!(
+        ui::shell_beats::should_pulse(true, 0.0),
+        "a thinking model pulses"
+    );
+    assert!(
+        !ui::shell_beats::should_pulse(true, 0.25),
+        "once something counts, the needle owns the bar"
+    );
     ui::shell_beats::arm_pulse(&handles.progress, &handles.bar, &handles.queue);
     naivepost::ui::run_close::close_chain_step(&handles, None);
     assert!(
@@ -326,7 +360,10 @@ fn the_pulse_belongs_to_the_run() {
 #[test]
 fn f0_5_bookkeeping_reaches_the_shell() {
     window_round();
-    assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the widget rounds never ran");
+    assert!(
+        RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the widget rounds never ran"
+    );
 }
 
 #[test]
@@ -452,12 +489,18 @@ fn single_step_close_dials(app: &adw::Application) {
     // another. The condition is what S4 claims; the deadline keeps a genuinely stuck run loud.
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
     assert!(
-        wait_until(|| bar.borrow().running.is_none(), "S4: the ▶ press closing the run it opened"),
+        wait_until(
+            || bar.borrow().running.is_none(),
+            "S4: the ▶ press closing the run it opened"
+        ),
         "S4: the ▶ press closed the run it opened"
     );
     naivepost::settings_probe::drain_unload(std::time::Duration::from_secs(5));
     assert!(
-        wait_until(|| press_server_hits() > dialled, "the single-step close dialled audio.cpp"),
+        wait_until(
+            || press_server_hits() > dialled,
+            "the single-step close dialled audio.cpp"
+        ),
         "S4: a lone step's close hands the audio unload over too, not only the chain's"
     );
     let said = naivepost::ui::run_close::unload_line_for_test()
@@ -516,7 +559,11 @@ impl FakeAudioCpp {
                     // End the header block at its blank line. The unload is a GET *with* a body, so
                     // stopping here (rather than reading to EOF) is what lets the reply go out before the
                     // client finishes writing — waiting for EOF on a keep-alive connection would hang.
-                    blanks = if byte[0] == b'\r' || byte[0] == b'\n' { blanks + 1 } else { 0 };
+                    blanks = if byte[0] == b'\r' || byte[0] == b'\n' {
+                        blanks + 1
+                    } else {
+                        0
+                    };
                     if blanks >= 2 || request.len() > 64 * 1024 {
                         break;
                     }
@@ -551,7 +598,11 @@ impl FakeAudioCpp {
                 drop(stream);
             }
         });
-        Self { address, hits, last_path }
+        Self {
+            address,
+            hits,
+            last_path,
+        }
     }
 
     /// The address to write into `AUDIOCPP_SERVER`.
@@ -578,7 +629,8 @@ fn point_settings_at(url: &str) {
         std::env::set_var("XDG_CONFIG_HOME", root.join("config"));
         std::env::set_var("XDG_DATA_HOME", root.join("data"));
     }
-    let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+    let paths =
+        naivepost::settings::from_environment().expect("settings folder from the pinned env");
     let mut conf = naivepost::settings::Conf::default();
     conf.audio_server = url.to_string();
     naivepost::settings::save(&paths, &conf).expect("audio address written");

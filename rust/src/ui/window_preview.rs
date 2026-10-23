@@ -110,7 +110,9 @@ pub(crate) fn live_player(window: &adw::ApplicationWindow) -> Option<Rc<RefCell<
 /// transport once its preview has started, and a bar can only paint a slot that exists.
 pub fn register_preview_player_slot() {
     PREVIEW_PLAYERS.with(|slots| {
-        slots.borrow_mut().push(Rc::new(std::cell::RefCell::new(Player::default())))
+        slots
+            .borrow_mut()
+            .push(Rc::new(std::cell::RefCell::new(Player::default())))
     });
 }
 
@@ -235,7 +237,9 @@ pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_pl
         // S4: the toggle needs no sentence — the button's own face carries it. A pause takes the cut's
         // processes back with it (the player and the prerolled spare); a resume re-cues at the second the
         // press snapped to, which `Toggle::Playing` names rather than leaving this seam to guess.
-        cut_play::Pressed::Toggled(cut_play::Toggle::Paused) => crate::ui::cut_cut_play::pause_media(),
+        cut_play::Pressed::Toggled(cut_play::Toggle::Paused) => {
+            crate::ui::cut_cut_play::pause_media()
+        }
         cut_play::Pressed::Toggled(cut_play::Toggle::Playing { from }) => {
             crate::ui::cut_cut_play::cue_running(window, *from);
         }
@@ -258,7 +262,9 @@ pub fn seed_review_cut(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     // A session DECLARED through `set_session_recordings` is never rewritten: its heads, tails and holes are
     // what fold badges and row-emptiness are asked against, and no kept clip can imply them.
     if !crate::ui::cut_folds::session_declared() {
-        crate::ui::cut_folds::set_session_recordings(&crate::ui::cut_session::session_or_kept(cut_));
+        crate::ui::cut_folds::set_session_recordings(&crate::ui::cut_session::session_or_kept(
+            cut_,
+        ));
     }
 }
 

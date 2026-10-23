@@ -15,11 +15,11 @@
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::project::Project;
 use naivepost::ui;
-use crate::common;
 
 const ITEM: &str = "sec_04_prepare_1_screen";
 
@@ -146,7 +146,11 @@ fn check_the_whole_page_is_on_screen_at_the_minimum(window: &adw::ApplicationWin
         .expect("{ITEM} s4: the page keeps its own scroller");
     let adj = scroller.vadjustment();
     let travel = adj.upper() - adj.page_size();
-    println!("SPLIT s4 page-scroll-Prepare travel {travel:.1} px (upper {:.1}, page {:.1})", adj.upper(), adj.page_size());
+    println!(
+        "SPLIT s4 page-scroll-Prepare travel {travel:.1} px (upper {:.1}, page {:.1})",
+        adj.upper(),
+        adj.page_size()
+    );
     assert!(
         travel <= 1.0,
         "{ITEM} s4: at §1's minimum the page still has {travel:.1} px scrolled out of view"
@@ -179,7 +183,10 @@ fn sec_04_prepare_1_screen_s4_at_the_minimum_the_whole_page_is_on_screen() {
 /// The first DRAWN child of a column — §1's "at the top of" is about what is painted first, and a hidden
 /// or zero-height widget paints nothing. Its y comes from its bounds against the window, like every other
 /// number this file reads.
-fn first_drawn_child(window: &adw::ApplicationWindow, column: &gtk::Widget) -> Option<(String, f64)> {
+fn first_drawn_child(
+    window: &adw::ApplicationWindow,
+    column: &gtk::Widget,
+) -> Option<(String, f64)> {
     let mut node = column.first_child();
     while let Some(child) = node {
         if child.height() > 0 {
@@ -199,11 +206,19 @@ fn first_drawn_child(window: &adw::ApplicationWindow, column: &gtk::Widget) -> O
 fn check_each_column_starts_at_its_named_top(window: &adw::ApplicationWindow) {
     let left = widget(window, "prepare-left");
     let right = widget(window, "prepare-right");
-    let (left_name, left_y) = first_drawn_child(window, &left).expect("{ITEM} s5: the left column draws nothing");
-    let (right_name, right_y) = first_drawn_child(window, &right).expect("{ITEM} s5: the right column draws nothing");
+    let (left_name, left_y) =
+        first_drawn_child(window, &left).expect("{ITEM} s5: the left column draws nothing");
+    let (right_name, right_y) =
+        first_drawn_child(window, &right).expect("{ITEM} s5: the right column draws nothing");
     println!("SPLIT s5 column tops: left `{left_name}` y={left_y:.1}, right `{right_name}` y={right_y:.1}");
-    assert_eq!(left_name, "add-sources-row", "{ITEM} s5: the left column does not start at the add row");
-    assert_eq!(right_name, "bench-heading", "{ITEM} s5: the right column does not start at the bench heading");
+    assert_eq!(
+        left_name, "add-sources-row",
+        "{ITEM} s5: the left column does not start at the add row"
+    );
+    assert_eq!(
+        right_name, "bench-heading",
+        "{ITEM} s5: the right column does not start at the bench heading"
+    );
     assert!(
         (left_y - right_y).abs() <= 2.0,
         "{ITEM} s5: the two columns do not begin at the same height: {left_y:.1} vs {right_y:.1}"
@@ -211,7 +226,14 @@ fn check_each_column_starts_at_its_named_top(window: &adw::ApplicationWindow) {
     // "one text box filling the rest of the column": under the heading, inside the window.
     let heading = bounds(window, "bench-heading");
     let text = bounds(window, "bench-text");
-    println!("SPLIT s5 bench heading y={:.1} h={:.1}; text y={:.1} ends {:.1} in a {} tall window", heading.y(), heading.height(), text.y(), text.y() + text.height(), window.height());
+    println!(
+        "SPLIT s5 bench heading y={:.1} h={:.1}; text y={:.1} ends {:.1} in a {} tall window",
+        heading.y(),
+        heading.height(),
+        text.y(),
+        text.y() + text.height(),
+        window.height()
+    );
     assert!(
         text.y() >= heading.y() + heading.height() - 2.0,
         "{ITEM} s5: the text box does not start below the heading ({:.1} vs {:.1})",
@@ -259,9 +281,15 @@ fn check_the_picker_lists_every_prompt_plus_policy(app: &adw::Application) {
         "{ITEM} s3: the last picker row is \"Editing policy\""
     );
     assert!(naivepost::bench::is_policy(naivepost::bench::POLICY_ROW));
-    assert!(!naivepost::bench::is_policy(0), "{ITEM} s3: User Context is not the policy row");
+    assert!(
+        !naivepost::bench::is_policy(0),
+        "{ITEM} s3: User Context is not the policy row"
+    );
     for index in 0..naivepost::bench::ROWS.len() {
-        assert!(!naivepost::bench::is_policy(index), "{ITEM} s3: row {index} is a prompt");
+        assert!(
+            !naivepost::bench::is_policy(index),
+            "{ITEM} s3: row {index} is a prompt"
+        );
     }
 }
 
@@ -322,9 +350,13 @@ fn check_editing_policy_opens_the_form(app: &adw::Application) {
         .expect("the heading is a label")
         .label()
         .to_string();
-    assert_eq!(title_after, title_before, "{ITEM} s3: the bench kept its prompt heading");
+    assert_eq!(
+        title_after, title_before,
+        "{ITEM} s3: the bench kept its prompt heading"
+    );
     assert_ne!(
-        title_after, naivepost::bench::POLICY_TITLE,
+        title_after,
+        naivepost::bench::POLICY_TITLE,
         "{ITEM} s3: the heading must not read the policy row's name"
     );
     // §1's REVIEW line says the row OPENS the form of F0.7 — it is not itself a bench row, so choosing it
@@ -335,7 +367,9 @@ fn check_editing_policy_opens_the_form(app: &adw::Application) {
         "{ITEM} s3: the picker's extra row is spelled \"Editing policy\", as §1 writes it"
     );
     assert!(
-        naivepost::bench::ROWS.iter().all(|row| row.title != naivepost::bench::POLICY_TITLE),
+        naivepost::bench::ROWS
+            .iter()
+            .all(|row| row.title != naivepost::bench::POLICY_TITLE),
         "{ITEM} s3: the policy row is a menu entry, not a fourteenth prompt"
     );
     // Close it again so a later check in this round starts with no form showing.
@@ -441,7 +475,9 @@ fn check_the_mark_and_reset_wake_only_on_an_edit(app: &adw::Application) {
     );
 
     // --- one keystroke: stored for real, and both widgets wake.
-    editor.buffer().set_text(&format!("{shipped}\none line typed here"));
+    editor
+        .buffer()
+        .set_text(&format!("{shipped}\none line typed here"));
     lay_out();
     assert!(
         naivepost::bench::edited(&paths, row),
@@ -470,7 +506,8 @@ fn check_the_mark_and_reset_wake_only_on_an_edit(app: &adw::Application) {
         "{ITEM}: the mark stayed hidden while this machine held an edit"
     );
     assert!(
-        widget(&window, "bench-reset").is_visible() && widget(&window, "bench-reset").is_sensitive(),
+        widget(&window, "bench-reset").is_visible()
+            && widget(&window, "bench-reset").is_sensitive(),
         "{ITEM}: Reset is not live while this machine holds an edit"
     );
 
@@ -641,8 +678,7 @@ fn check_the_picker_switches_rows_and_stores(app: &adw::Application) {
     let (start, end) = buffer.bounds();
     let shown = buffer.text(&start, &end, true).to_string();
     assert_eq!(
-        shown,
-        shipped,
+        shown, shipped,
         "{ITEM} s3: the box shows the shipped Describe wording before any edit"
     );
     // Nothing edited yet: §1's mark and Reset are only "live while this machine holds an edit".
@@ -665,7 +701,8 @@ fn check_the_picker_switches_rows_and_stores(app: &adw::Application) {
         "{ITEM} s3: the stored Describe wording is not what was typed"
     );
     assert!(
-        widget(&window, "bench-reset").is_visible() && widget(&window, "bench-reset").is_sensitive(),
+        widget(&window, "bench-reset").is_visible()
+            && widget(&window, "bench-reset").is_sensitive(),
         "{ITEM} s4: Reset is not live while this machine holds an edit"
     );
     assert!(
@@ -679,7 +716,9 @@ fn check_the_picker_switches_rows_and_stores(app: &adw::Application) {
     let context_text = widget(&window, "bench-text")
         .downcast::<gtk::TextView>()
         .expect("the bench box is a text view");
-    context_text.buffer().set_text("a context typed in this test");
+    context_text
+        .buffer()
+        .set_text("a context typed in this test");
     lay_out();
     assert_eq!(
         naivepost::ui::session_handle(&window).borrow().context,
@@ -754,10 +793,15 @@ fn holds(root: &gtk::Widget, name: &str) -> bool {
     if root.widget_name() == name {
         return true;
     }
-    root.observe_children().iter::<glib::Object>().filter_map(Result::ok).any(|child| {
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { return false };
-        holds(&widget, name)
-    })
+    root.observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+        .any(|child| {
+            let Ok(widget) = child.downcast::<gtk::Widget>() else {
+                return false;
+            };
+            holds(&widget, name)
+        })
 }
 
 /// §1: "split left and right by a draggable divider opened at half: two columns side by side". A
@@ -774,10 +818,22 @@ fn check_the_page_is_split_left_and_right(window: &adw::ApplicationWindow) {
         gtk::Orientation::Horizontal,
         "{ITEM}: the divider splits left and right, not top and bottom"
     );
-    let start = paned.start_child().expect("{ITEM}: the paned has a start child");
-    let end = paned.end_child().expect("{ITEM}: the paned has an end child");
-    assert_eq!(start.widget_name(), "prepare-left", "{ITEM}: the LEFT column is the paned's start half");
-    assert_eq!(end.widget_name(), "prepare-right", "{ITEM}: the RIGHT column is the paned's end half");
+    let start = paned
+        .start_child()
+        .expect("{ITEM}: the paned has a start child");
+    let end = paned
+        .end_child()
+        .expect("{ITEM}: the paned has an end child");
+    assert_eq!(
+        start.widget_name(),
+        "prepare-left",
+        "{ITEM}: the LEFT column is the paned's start half"
+    );
+    assert_eq!(
+        end.widget_name(),
+        "prepare-right",
+        "{ITEM}: the RIGHT column is the paned's end half"
+    );
 
     let left = bounds(window, "prepare-left");
     let right = bounds(window, "prepare-right");
@@ -793,22 +849,36 @@ fn check_the_page_is_split_left_and_right(window: &adw::ApplicationWindow) {
         "{ITEM}: the left column overlaps or follows the right one ({left:?} vs {right:?})"
     );
     // OPENED AT HALF: neither column is a sliver. Half of §1's 1240 px window less margins is ~596 px.
-    assert!(left.width() >= 300.0, "{ITEM}: the left column is only {:.1} px wide", left.width());
-    assert!(right.width() >= 300.0, "{ITEM}: the right column is only {:.1} px wide", right.width());
+    assert!(
+        left.width() >= 300.0,
+        "{ITEM}: the left column is only {:.1} px wide",
+        left.width()
+    );
+    assert!(
+        right.width() >= 300.0,
+        "{ITEM}: the right column is only {:.1} px wide",
+        right.width()
+    );
 }
 
 #[test]
 fn sec_04_prepare_1_screen_s1_the_page_is_split_left_and_right_by_a_draggable_divider() {
     common::pin_private_cwd();
     split_round();
-    assert!(RAN_SPLIT.load(Ordering::SeqCst), "{ITEM} s1: the split check never ran");
+    assert!(
+        RAN_SPLIT.load(Ordering::SeqCst),
+        "{ITEM} s1: the split check never ran"
+    );
 }
 
 /// §1's left column, top to bottom: the add row, the scrolling list, the controls under it.
 fn check_the_left_column_order(window: &adw::ApplicationWindow) {
     let left = widget(window, "prepare-left");
     for name in ["add-sources-row", "sources-scroll", "frame-controls"] {
-        assert!(holds(&left, name), "{ITEM} s1: {name} is not inside the left column");
+        assert!(
+            holds(&left, name),
+            "{ITEM} s1: {name} is not inside the left column"
+        );
     }
     let add = bounds(window, "add-sources-row");
     let scroll = bounds(window, "sources-scroll");
@@ -841,7 +911,10 @@ fn check_the_left_column_order(window: &adw::ApplicationWindow) {
 fn sec_04_prepare_1_screen_s1_the_left_column_is_add_row_then_scrolling_list_then_controls() {
     common::pin_private_cwd();
     split_round();
-    assert!(RAN_LEFT.load(Ordering::SeqCst), "{ITEM} s1: the left-column order check never ran");
+    assert!(
+        RAN_LEFT.load(Ordering::SeqCst),
+        "{ITEM} s1: the left-column order check never ran"
+    );
 }
 
 /// §1's right column: one heading row (title first, then at its right end the row picker), the text
@@ -849,8 +922,16 @@ fn sec_04_prepare_1_screen_s1_the_left_column_is_add_row_then_scrolling_list_the
 /// User Context, and §1 hides mark and Reset on that row — asserting its x would assert a hidden widget.
 fn check_the_bench_heading_order(window: &adw::ApplicationWindow) {
     let right = widget(window, "prepare-right");
-    for name in ["bench-heading", "prepare-title", "bench-picker", "bench-text"] {
-        assert!(holds(&right, name), "{ITEM} s2: {name} is not inside the right column");
+    for name in [
+        "bench-heading",
+        "prepare-title",
+        "bench-picker",
+        "bench-text",
+    ] {
+        assert!(
+            holds(&right, name),
+            "{ITEM} s2: {name} is not inside the right column"
+        );
     }
     let heading = bounds(window, "bench-heading");
     let title = bounds(window, "prepare-title");
@@ -866,14 +947,22 @@ fn check_the_bench_heading_order(window: &adw::ApplicationWindow) {
         "{ITEM} s2: the text box does not line up with the heading ({text:?} vs {heading:?})"
     );
     // "filling the rest of the column": the box is the tall part, not a strip under the heading.
-    assert!(text.height() > 200.0, "{ITEM} s2: the text box is only {:.1} px tall", text.height());
+    assert!(
+        text.height() > 200.0,
+        "{ITEM} s2: the text box is only {:.1} px tall",
+        text.height()
+    );
     // Picker after the title, and at the row's right end.
     assert!(
         picker.x() >= title.x() + title.width(),
         "{ITEM} s2: the row picker sits left of the title ({picker:?} vs {title:?})"
     );
     let room = heading.x() + heading.width() - (picker.x() + picker.width());
-    assert!(room <= 40.0, "{ITEM} s2: the row picker is {:.1} px short of the heading's right end", room);
+    assert!(
+        room <= 40.0,
+        "{ITEM} s2: the row picker is {:.1} px short of the heading's right end",
+        room
+    );
 }
 
 #[test]
@@ -891,13 +980,24 @@ fn sec_04_prepare_1_screen_s2_the_bench_heading_puts_the_picker_and_reset_at_its
 fn check_the_inputs_readout_is_not_on_the_page(window: &adw::ApplicationWindow) {
     let readout = widget(window, "inputs-readout");
     for column in ["prepare-left", "prepare-right"] {
-        assert!(!holds(&readout, column), "{ITEM} s3: {column} contains the Inputs readout");
+        assert!(
+            !holds(&readout, column),
+            "{ITEM} s3: {column} contains the Inputs readout"
+        );
     }
     // Walk up: neither column may be on the readout's path to the top level.
     let mut node = readout.parent();
     while let Some(parent) = node {
-        assert_ne!(parent.widget_name(), "prepare-left", "{ITEM} s3: the readout is inside the left column");
-        assert_ne!(parent.widget_name(), "prepare-right", "{ITEM} s3: the readout is inside the right column");
+        assert_ne!(
+            parent.widget_name(),
+            "prepare-left",
+            "{ITEM} s3: the readout is inside the left column"
+        );
+        assert_ne!(
+            parent.widget_name(),
+            "prepare-right",
+            "{ITEM} s3: the readout is inside the right column"
+        );
         node = parent.parent();
     }
     let split = bounds(window, "prepare-split");
@@ -964,7 +1064,9 @@ fn texts_holding(root: &gtk::Widget, needle: &str) -> Vec<String> {
         } else {
             String::new()
         };
-        let drawn = node.compute_bounds(root).is_some_and(|b| b.height() > 0.0 && b.width() > 0.0);
+        let drawn = node
+            .compute_bounds(root)
+            .is_some_and(|b| b.height() > 0.0 && b.width() > 0.0);
         if drawn && shown.contains(needle) {
             let name = node.widget_name();
             found.push(if name.is_empty() || name == "unknown" {
@@ -973,7 +1075,11 @@ fn texts_holding(root: &gtk::Widget, needle: &str) -> Vec<String> {
                 name.to_string()
             });
         }
-        for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
+        for child in node
+            .observe_children()
+            .iter::<glib::Object>()
+            .filter_map(Result::ok)
+        {
             if let Ok(widget) = child.downcast::<gtk::Widget>() {
                 stack.push(widget);
             }
@@ -1025,7 +1131,10 @@ fn check_the_open_picker_hangs_under_its_button(window: &adw::ApplicationWindow)
         .expect("{ITEM} s6: the Prepare page is split by a paned");
     let split_bounds = bounds(window, "prepare-split");
     let divider_x = split_bounds.x() as f64 + split.position() as f64;
-    println!("SPLIT s6 prepare-split x={:.1} handle at {divider_x:.1}", split_bounds.x());
+    println!(
+        "SPLIT s6 prepare-split x={:.1} handle at {divider_x:.1}",
+        split_bounds.x()
+    );
     // **COMPACT**: the panel is a menu, not a sheet — narrower than the bench column it hangs over, and a slice
     // of the window's width (`spec/QUESTIONS.md` §04 answer 3c's exact complaint was a list filling the canvas).
     assert!(
@@ -1044,7 +1153,8 @@ fn check_the_open_picker_hangs_under_its_button(window: &adw::ApplicationWindow)
     // column only, inside the window — which is what a dropdown does and a sheet does not. The height is NOT
     // capped: §1's caption says the list scrolls ("Translate and Upload text sit below Narration"), so all
     // fourteen rows are drawn and the bottom lands where GTK clamps a real popover, at the window's edge.
-    let heading_x = heading.x() as f64;    assert!(
+    let heading_x = heading.x() as f64;
+    assert!(
         py >= heading.y() as f64 + heading.height() as f64 - 2.0,
         "{ITEM} s6: the open list starts at {py:.1}, over the bench heading that owns the picker \
          (heading {:.1}..{:.1})",
@@ -1085,7 +1195,13 @@ fn check_the_open_picker_hangs_under_its_button(window: &adw::ApplicationWindow)
          ({heading_x:.1}..{heading_right:.1})",
         px + pw
     );
-    for name in ["bench-heading", "bench-text", "prepare-title", "add-sources-row", "sources-scroll"] {
+    for name in [
+        "bench-heading",
+        "bench-text",
+        "prepare-title",
+        "add-sources-row",
+        "sources-scroll",
+    ] {
         // The bounds this file reads everywhere, not `is_on_screen_for_test`: that door compares against
         // `window.width()`, which under a window manager with no WM answers 0 before the first map, and every
         // control would read as "off screen" whatever the picture shows.
@@ -1101,7 +1217,9 @@ fn check_the_open_picker_hangs_under_its_button(window: &adw::ApplicationWindow)
         text.height() > 0.0 && (text.y() as f64) < py + ph,
         "{ITEM} s6: the prompt text box ({:.1}..{:.1}) is not the panel's neighbour any more \
          (panel ends {:.1})",
-        text.y() as f64, (text.y() + text.height()) as f64, py + ph
+        text.y() as f64,
+        (text.y() + text.height()) as f64,
+        py + ph
     );
     // The window shot is the screen now: no sidecar steals `04-prompt-picker.png` from the page.
     assert!(

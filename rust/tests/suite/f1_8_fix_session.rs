@@ -14,13 +14,13 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
+use crate::common;
+use common::temp_dir_tagged;
 use naivepost::layout::Tree;
 use naivepost::project::{MarkingPass, Origin, Project, Source};
 use naivepost::settings::{self, Conf, Paths};
 use naivepost::textfmt::{self, FrameEvent, Line, Retake};
 use naivepost::{fix_transcripts, params, run, run_stages};
-use crate::common;
-use common::temp_dir_tagged;
 
 /// The env and the working folder belong to the PROCESS and cargo runs these tests as threads, so the
 /// tests that move them take them one at a time and put them back before asserting.
@@ -90,7 +90,11 @@ impl Fake {
                 });
             }
         });
-        Fake { url: format!("http://127.0.0.1:{port}"), asks, answer: held }
+        Fake {
+            url: format!("http://127.0.0.1:{port}"),
+            asks,
+            answer: held,
+        }
     }
 
     /// The asks recorded so far; recording happens on the connection's own thread, so callers wait.
@@ -140,13 +144,19 @@ struct Scene {
 impl Scene {
     /// `lines` transcript rows per source, spaced a second apart from each source's own second nought.
     fn new(lines: usize, llm_url: &str) -> Scene {
-        let root = temp_dir_tagged(&format!("f18-run-{}", COUNTER.fetch_add(1, Ordering::SeqCst)));
+        let root = temp_dir_tagged(&format!(
+            "f18-run-{}",
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ));
         let session = naivepost::startup::session_dir(&root);
         std::fs::create_dir_all(session.join("sources")).expect("the sources folder");
         for name in [VIDEO, AUDIO] {
             std::fs::write(session.join("sources").join(name), b"bytes").expect("the recording");
         }
-        let paths = Paths { config_dir: root.join("cfg/naivepost"), data_dir: root.join("data/naivepost") };
+        let paths = Paths {
+            config_dir: root.join("cfg/naivepost"),
+            data_dir: root.join("data/naivepost"),
+        };
         let mut conf = Conf::default();
         conf.server = llm_url.to_string();
         conf.model = "qwen-text".to_string();
@@ -185,8 +195,16 @@ impl Scene {
         }
         // The deck's event log: two picture events, which become EVENT rows on the timeline (S5).
         let events = vec![
-            FrameEvent { start: 1.0, end: 4.0, text: "a slide appears".to_string() },
-            FrameEvent { start: 6.0, end: 8.0, text: "the speaker writes".to_string() },
+            FrameEvent {
+                start: 1.0,
+                end: 4.0,
+                text: "a slide appears".to_string(),
+            },
+            FrameEvent {
+                start: 6.0,
+                end: 8.0,
+                text: "the speaker writes".to_string(),
+            },
         ];
         textfmt::write_events(&events, &tree.events_tsv(DECK)).expect("events.tsv");
         Scene { root, paths, tree }
@@ -235,8 +253,11 @@ impl Scene {
     /// source, merge row — the order §F1.8's flowchart draws.
     fn stages_named(&self, pass: MarkingPass) -> Vec<run_stages::Stage> {
         let mut project = self.project();
-        project.policy.marking_pass =
-            naivepost::project::Field { value: pass, origin: Origin::User, because: None };
+        project.policy.marking_pass = naivepost::project::Field {
+            value: pass,
+            origin: Origin::User,
+            because: None,
+        };
         naivepost::project::save(&project, self.tree.dir()).expect("the pass is set");
         run_stages::plan(run::Step::Prepare, &project)
             .into_iter()
@@ -274,9 +295,16 @@ impl Scene {
         let mut queue = naivepost::runqueue::Queue::new();
         let mut procs = run::Subprocesses::default();
         let mut log: Vec<String> = Vec::new();
-        let drive = run_stages::drive_walk(stages, &mut queue, || false, || false, |line| {
-            log.push(line.to_string());
-        }, &mut procs);
+        let drive = run_stages::drive_walk(
+            stages,
+            &mut queue,
+            || false,
+            || false,
+            |line| {
+                log.push(line.to_string());
+            },
+            &mut procs,
+        );
         run_stages::say_outcome(&drive, |line| log.push(line.to_string()));
         (drive, log)
     }
@@ -327,7 +355,10 @@ fn f1_8_s1_offsets_tsv_is_written_before_any_block() {
     let fake = Fake::start(fix_answer(4));
     let scene = Scene::new(4, &fake.url);
     let (drive, log) = walk(&scene);
-    assert!(matches!(drive, run_stages::Drive::Done { .. }), "the stage walked: {drive:?} / {log:?}");
+    assert!(
+        matches!(drive, run_stages::Drive::Done { .. }),
+        "the stage walked: {drive:?} / {log:?}"
+    );
     let offsets = scene.offsets();
     let rows: Vec<&str> = offsets.lines().filter(|line| !line.is_empty()).collect();
     assert_eq!(rows.len(), 1, "one video against one audio: {offsets}");
@@ -342,12 +373,18 @@ fn f1_8_s1_offsets_tsv_is_written_before_any_block() {
         "the deck starts 90 s BEFORE the mic: {offsets}"
     );
     // Order: the offset sentence lands before the first block's checkpoint.
-    let offset_line = log.iter().position(|line| line.starts_with(">>> offset:")).expect("S1 said the pairing");
+    let offset_line = log
+        .iter()
+        .position(|line| line.starts_with(">>> offset:"))
+        .expect("S1 said the pairing");
     let first_block = log
         .iter()
         .position(|line| line.starts_with(">>> fixing "))
         .expect("a block went out");
-    assert!(offset_line < first_block, "offsets first, blocks after: {log:?}");
+    assert!(
+        offset_line < first_block,
+        "offsets first, blocks after: {log:?}"
+    );
     fake.waited(1);
 }
 
@@ -370,8 +407,15 @@ fn f1_8_s2_a_block_is_25_lines_and_the_message_names_its_context() {
         .into_iter()
         .filter(|ask| ask.body.contains("Transcript lines to clean"))
         .collect();
-    assert_eq!(fix_asks.len(), 3, "the unchanged repeat block costs no fix ask: {log:?}");
-    let blocks: Vec<&String> = log.iter().filter(|line| line.starts_with(">>> fixing ")).collect();
+    assert_eq!(
+        fix_asks.len(),
+        3,
+        "the unchanged repeat block costs no fix ask: {log:?}"
+    );
+    let blocks: Vec<&String> = log
+        .iter()
+        .filter(|line| line.starts_with(">>> fixing "))
+        .collect();
     assert_eq!(blocks.len(), 4, "two blocks per source: {blocks:?}");
     assert!(
         blocks[0].contains("block 1/2") && blocks[1].contains("block 2/2"),
@@ -383,9 +427,14 @@ fn f1_8_s2_a_block_is_25_lines_and_the_message_names_its_context() {
         "the block counts itself out for the model: {}",
         &body[..body.len().min(400)]
     );
-    assert!(body.contains("Context around these lines:"), "and grounds it: {body}");
+    assert!(
+        body.contains("Context around these lines:"),
+        "and grounds it: {body}"
+    );
     assert_eq!(
-        params::find("P.machine.fixBlockLines").expect("the row is catalogued").spelled,
+        params::find("P.machine.fixBlockLines")
+            .expect("the row is catalogued")
+            .spelled,
         "25",
         "P.machine.fixBlockLines"
     );
@@ -408,9 +457,19 @@ fn f1_8_s3_a_fix_lands_on_disk() {
     let (_drive, log) = walk(&scene);
     fake.waited(2);
     let fixed = scene.fixed(DECK);
-    assert_eq!(fixed.len(), 4, "every line survives the fix: {fixed:?} / {log:?}");
-    assert_eq!(fixed[0].text, "respelled line 1", "the model's words are what landed");
-    assert_eq!(fixed[0].speaker, "S1", "the speaker is untouched: {fixed:?}");
+    assert_eq!(
+        fixed.len(),
+        4,
+        "every line survives the fix: {fixed:?} / {log:?}"
+    );
+    assert_eq!(
+        fixed[0].text, "respelled line 1",
+        "the model's words are what landed"
+    );
+    assert_eq!(
+        fixed[0].speaker, "S1",
+        "the speaker is untouched: {fixed:?}"
+    );
     assert_eq!(fixed[0].start, 0.0);
     assert_eq!(fixed[0].end, 0.9);
     assert!(
@@ -436,7 +495,8 @@ fn f1_8_s3_a_refused_block_keeps_the_original_lines() {
     let scene = Scene::new(4, &dead);
     let (_drive, log) = walk(&scene);
     assert!(
-        log.iter().any(|line| line.contains("block 1/1") && line.contains("deck")),
+        log.iter()
+            .any(|line| line.contains("block 1/1") && line.contains("deck")),
         "each source walked its one block: {log:?}"
     );
     let fixed = scene.fixed(DECK);
@@ -446,9 +506,10 @@ fn f1_8_s3_a_refused_block_keeps_the_original_lines() {
         "an unanswered block keeps what the ASR heard: {fixed:?}"
     );
     assert!(
-        !scene.tree.subtitles_srt(DECK).exists() || std::fs::read_to_string(scene.tree.subtitles_srt(DECK))
-            .unwrap_or_default()
-            .contains("mispelled"),
+        !scene.tree.subtitles_srt(DECK).exists()
+            || std::fs::read_to_string(scene.tree.subtitles_srt(DECK))
+                .unwrap_or_default()
+                .contains("mispelled"),
         "and its subtitles show those originals, not an invented fix"
     );
 }
@@ -464,19 +525,36 @@ fn f1_8_s4_a_video_gets_subtitles_and_a_commentator_gets_none() {
     scene.make_narrator();
     let (drive, log) = walk(&scene);
     fake.waited(2);
-    assert!(matches!(drive, run_stages::Drive::Done { .. }), "the stage walked: {drive:?} / {log:?}");
+    assert!(
+        matches!(drive, run_stages::Drive::Done { .. }),
+        "the stage walked: {drive:?} / {log:?}"
+    );
     // The deck: both files, and the srt carries the respelling rather than the ASR's guess.
-    assert!(scene.tree.transcript_fixed_tsv(DECK).exists(), "the video's fixed transcript");
-    let srt = std::fs::read_to_string(scene.tree.subtitles_srt(DECK)).expect("the video's subtitles");
-    assert!(srt.contains("respelled line 1"), "subtitles show the FIXED text: {srt}");
+    assert!(
+        scene.tree.transcript_fixed_tsv(DECK).exists(),
+        "the video's fixed transcript"
+    );
+    let srt =
+        std::fs::read_to_string(scene.tree.subtitles_srt(DECK)).expect("the video's subtitles");
+    assert!(
+        srt.contains("respelled line 1"),
+        "subtitles show the FIXED text: {srt}"
+    );
     assert!(!srt.contains("mispelled"), "not the ASR's words: {srt}");
     // The narrator: commentary instead, and no subtitles at all.
-    assert_eq!(scene.commentary(MIC).len(), 4, "the recorder's words are commentary: {log:?}");
+    assert_eq!(
+        scene.commentary(MIC).len(),
+        4,
+        "the recorder's words are commentary: {log:?}"
+    );
     assert!(
         !scene.tree.transcript_fixed_tsv(MIC).exists(),
         "a commentator does not also get a plain fixed transcript"
     );
-    assert!(!scene.tree.subtitles_srt(MIC).exists(), "and nothing to caption over an audio file");
+    assert!(
+        !scene.tree.subtitles_srt(MIC).exists(),
+        "and nothing to caption over an audio file"
+    );
 }
 
 // ---- S5 ---------------------------------------------------------------------
@@ -504,9 +582,17 @@ fn f1_8_s5_session_tsv_merges_both_sources_and_the_log_counts_them() {
     );
     let events: Vec<&textfmt::SessionLine> = rows.iter().filter(|row| row.who == "EVENT").collect();
     assert_eq!(events.len(), 2, "the picture events are rows too: {rows:?}");
-    assert!(events.iter().all(|row| row.source == DECK), "and come from the deck: {events:?}");
-    let sources: std::collections::BTreeSet<&str> = rows.iter().map(|row| row.source.as_str()).collect();
-    assert_eq!(sources.len(), 2, "both recordings made the timeline: {sources:?}");
+    assert!(
+        events.iter().all(|row| row.source == DECK),
+        "and come from the deck: {events:?}"
+    );
+    let sources: std::collections::BTreeSet<&str> =
+        rows.iter().map(|row| row.source.as_str()).collect();
+    assert_eq!(
+        sources.len(),
+        2,
+        "both recordings made the timeline: {sources:?}"
+    );
     assert!(
         log.contains(&fix_transcripts::timeline_log(rows.len(), sources.len())),
         "the log says what it merged: {log:?}"
@@ -523,14 +609,28 @@ fn f1_8_s6_marking_none_leaves_the_timeline_unmarked() {
     // A mark sitting there unclaimed, written in by hand: `none` means the fold asks for nothing, so it
     // stays unfolded. Planting it is honest here — the case is about the FOLD ignoring a file, and no
     // pass is dialled to have to agree with it.
-    scene.plant_marks(&[Retake { s: 1.0, e: 2.5, again: 0.0, to: 2.5, text: String::new(), whole: String::new() }]);
+    scene.plant_marks(&[Retake {
+        s: 1.0,
+        e: 2.5,
+        again: 0.0,
+        to: 2.5,
+        text: String::new(),
+        whole: String::new(),
+    }]);
     let (_drive, log) = walk_marked(&scene, MarkingPass::None);
     fake.waited(2);
-    assert!(scene.tree.session_tsv().exists(), "the timeline still stands: {log:?}");
-    let text = scene.session_txt();
-    assert!(!text.contains("abandoned attempt"), "nothing is folded: {text}");
     assert!(
-        !log.iter().any(|line| line.contains("the timeline stands unmarked")),
+        scene.tree.session_tsv().exists(),
+        "the timeline still stands: {log:?}"
+    );
+    let text = scene.session_txt();
+    assert!(
+        !text.contains("abandoned attempt"),
+        "nothing is folded: {text}"
+    );
+    assert!(
+        !log.iter()
+            .any(|line| line.contains("the timeline stands unmarked")),
         "`none` is a policy, not a failure: {log:?}"
     );
     assert!(!text.is_empty(), "and the text is still written: {text:?}");
@@ -552,7 +652,10 @@ fn f1_8_s6_a_marking_pass_trouble_never_costs_the_timeline() {
     let (_drive, log) = walk_marked(&scene, MarkingPass::Retakes);
     // The fixes are not lost to a pass that marked nothing, and the pass said so out loud (§S1's own
     // "nothing to mark" sentence).
-    assert!(scene.tree.session_tsv().exists(), "the fixes are not lost to a marking problem: {log:?}");
+    assert!(
+        scene.tree.session_tsv().exists(),
+        "the fixes are not lost to a marking problem: {log:?}"
+    );
     assert!(
         log.iter().any(|line| line.contains("retakes:")),
         "the pass reported itself before the fold: {log:?}"
@@ -576,7 +679,10 @@ fn f1_8_s7_session_txt_is_the_text_the_cut_reads() {
     fake.waited(2);
     let text = scene.session_txt();
     let rows = scene.session_rows();
-    assert!(scene.tree.session_txt().exists(), "the file the cut opens: {log:?}");
+    assert!(
+        scene.tree.session_txt().exists(),
+        "the file the cut opens: {log:?}"
+    );
     assert_eq!(
         text.lines().count(),
         rows.len(),
@@ -584,8 +690,14 @@ fn f1_8_s7_session_txt_is_the_text_the_cut_reads() {
     );
     // Stamped like `labelled`: "[start-end | mm:ss] SPEAKER: text".
     let first = text.lines().next().expect("a first line");
-    assert!(first.contains('[') && first.contains(']') && first.contains(": "), "stamped: {first}");
-    assert!(first.contains("respelled line"), "and carrying the fixed words: {first}");
+    assert!(
+        first.contains('[') && first.contains(']') && first.contains(": "),
+        "stamped: {first}"
+    );
+    assert!(
+        first.contains("respelled line"),
+        "and carrying the fixed words: {first}"
+    );
     assert!(
         text.contains("EVENT: a slide appears"),
         "an event is labelled as one, not as a person: {text}"
@@ -613,8 +725,14 @@ fn f1_8_s7_a_marked_stretch_folds_into_one_line() {
         whole: String::new(),
     }]);
     let folded = fix_transcripts::session_text(&rows, "", &marks);
-    assert!(folded.contains("abandoned attempt"), "the mark is folded into one line: {folded}");
-    assert!(folded.contains("said again at"), "and says where it was said again: {folded}");
+    assert!(
+        folded.contains("abandoned attempt"),
+        "the mark is folded into one line: {folded}"
+    );
+    assert!(
+        folded.contains("said again at"),
+        "and says where it was said again: {folded}"
+    );
     assert!(
         folded.lines().count() < rows.len(),
         "fewer lines than rows, because the marked ones contribute one between them: {folded} / {log:?}"

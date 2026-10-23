@@ -22,11 +22,7 @@ type Changed = Rc<dyn Fn(&str, bool)>;
 /// rebuild must not read as an edit) and `changed` records the tick — both stay the page's own, so this
 /// module touches none of its thread-locals. A tick has no value string and the row holds several
 /// languages at once, which is why the toggle's own state is the answer and `set_setting` is not used.
-pub fn wire_ticks(
-    window: &adw::ApplicationWindow,
-    guarded: Guard,
-    changed: Changed,
-) {
+pub fn wire_ticks(window: &adw::ApplicationWindow, guarded: Guard, changed: Changed) {
     for language in screen::TRANSLATE_LANGUAGES {
         let name = format!("translate-tick-{language}");
         // The ticks are `CheckButton`s; `line_step_button` hands back a plain `Button`, so look the
@@ -81,7 +77,9 @@ pub fn spawn(command: &crate::produce_exec::Command) -> Result<(), String> {
 /// `produce_languages::source_stem`'s rule, kept here so a page leg can list frames from a source path.
 fn stem_of(path: &str) -> String {
     let base = path.rsplit('/').next().unwrap_or(path);
-    base.rsplit_once('.').map_or(base, |(stem, _)| stem).to_string()
+    base.rsplit_once('.')
+        .map_or(base, |(stem, _)| stem)
+        .to_string()
 }
 
 /// The legs the words half drives, built from the run's own snapshot: `tree` for the folders, `run` for the
@@ -89,10 +87,7 @@ fn stem_of(path: &str) -> String {
 /// this module's (`extracted_frames`, `starts_of`, the seams below). The legs are OWNED here and moved into
 /// an [`Owned`] so the walk can be handed one borrowing them, rather than this function returning references
 /// to values that die with it.
-pub fn upload_legs(
-    tree: &crate::layout::Tree,
-    run: &crate::produce_flow::Run,
-) -> Owned {
+pub fn upload_legs(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -> Owned {
     // S6's size question has one answer in the app: the cut's aspect at long side 1280.
     let (wide, high) = crate::produce_upload::frame_size_from_aspect(&run.aspect);
     let publish = publish_of_run(run);
@@ -158,7 +153,10 @@ pub fn upload_legs(
 /// A [`crate::produce_upload::Materials`] borrowing the legs this call built. The one door the words half
 /// uses: `upload_half` builds the legs, hands the walk this view of them, and drops them when the walk ends.
 #[allow(clippy::needless_pass_by_value)] // `run` is read for the cut its legs already copied
-pub fn upload_mats<'a>(legs: &'a Owned, _run: &crate::produce_flow::Run) -> crate::produce_upload::Materials<'a> {
+pub fn upload_mats<'a>(
+    legs: &'a Owned,
+    _run: &crate::produce_flow::Run,
+) -> crate::produce_upload::Materials<'a> {
     crate::produce_upload::Materials {
         save_publish: &legs.save_publish,
         ask_model: &legs.ask_model,
@@ -226,7 +224,10 @@ fn upload_brief_for(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) 
 /// Every extracted JPEG this session has, as `(produced-clock moment, file)` pairs. [`extracted_frames`
 /// already maps the moments; this pairs each with the file behind it, which is what
 /// [`crate::produce_upload_media::entry_file`] resolves a `frame:` entry against.
-pub fn frame_images(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -> Vec<(f64, std::path::PathBuf)> {
+pub fn frame_images(
+    tree: &crate::layout::Tree,
+    run: &crate::produce_flow::Run,
+) -> Vec<(f64, std::path::PathBuf)> {
     let mut out: Vec<(f64, std::path::PathBuf)> = Vec::new();
     let mut at = 0.0;
     for seg in &run.cut.segs {
@@ -276,7 +277,13 @@ pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     let answers = answers_from(&reply, starts_of(run), |at| nearest_frame(&tree, run, at));
     let legs = upload_legs(&tree, run);
     let mats = upload_mats(&legs, run);
-    let outcome = crate::produce_upload::walk(&brief, &publish, &answers, &mats, crate::ui::window::log_line);
+    let outcome = crate::produce_upload::walk(
+        &brief,
+        &publish,
+        &answers,
+        &mats,
+        crate::ui::window::log_line,
+    );
     outcome.error.map_or(Ok(()), Err)
 }
 
@@ -295,7 +302,11 @@ fn starts_of(run: &crate::produce_flow::Run) -> Vec<f64> {
 /// A segment's length in OUTPUT seconds: rate applied once (`narration::output_seconds`' own rule), with
 /// the splice's explicit `dur` winning over the footage span when it has one.
 fn output_length(seg: &crate::cut::Seg) -> f64 {
-    let raw = if seg.dur > 0.0 { seg.dur } else { (seg.e - seg.s).max(0.0) };
+    let raw = if seg.dur > 0.0 {
+        seg.dur
+    } else {
+        (seg.e - seg.s).max(0.0)
+    };
     crate::narration::output_seconds(raw, seg.rate)
 }
 
@@ -365,7 +376,9 @@ fn read_all_events(
 /// and friends key every per-source artefact on this, not on the full path.
 fn source_stem(path: &str) -> String {
     let base = path.rsplit('/').next().unwrap_or(path);
-    base.rsplit_once('.').map_or(base, |(stem, _)| stem).to_string()
+    base.rsplit_once('.')
+        .map_or(base, |(stem, _)| stem)
+        .to_string()
 }
 
 /// Turn the model's reply into the tool answers: tools first if the reply carried them, prose otherwise.
@@ -438,10 +451,14 @@ fn extracted_frames(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) 
         }
         for source in run.sources.footage.iter() {
             let dir = tree.frames_dir(&source_stem(source));
-            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                let Some(seconds) = frame_seconds(&name) else { continue };
+                let Some(seconds) = frame_seconds(&name) else {
+                    continue;
+                };
                 if seconds >= seg.s && seconds < seg.e {
                     out.push(at + (seconds - seg.s));
                 }
@@ -474,13 +491,20 @@ fn frame_seconds(name: &str) -> Option<f64> {
 
 /// The nearest extracted frame to a produced-clock moment (S3 / decision 32), through the ONE nearest rule
 /// [`crate::produce_upload_frames::frame_at`] so a spread frame and a picked frame resolve the same way.
-fn nearest_frame(tree: &crate::layout::Tree, run: &crate::produce_flow::Run, at: f64) -> Option<f64> {
+fn nearest_frame(
+    tree: &crate::layout::Tree,
+    run: &crate::produce_flow::Run,
+    at: f64,
+) -> Option<f64> {
     crate::produce_upload_frames::frame_at(&extracted_frames(tree, run), at)
 }
 
 /// publish.json + description.txt, both through the existing writer so one spelling of each path backs
 /// them. Called BEFORE any draw (S5), which is why a failed draw keeps the thinking.
-pub fn save_publish(tree: &crate::layout::Tree, publish: &crate::project::Publish) -> Result<(), String> {
+pub fn save_publish(
+    tree: &crate::layout::Tree,
+    publish: &crate::project::Publish,
+) -> Result<(), String> {
     crate::publish::save(publish, tree)
 }
 
@@ -523,7 +547,8 @@ fn scripted_png() -> Option<Vec<u8>> {
 }
 
 /// The scripted sd.cpp submit leg.
-pub type DrawSlot = std::rc::Rc<dyn Fn(&serde_json::Value) -> Result<crate::produce_upload::DrawnJob, String>>;
+pub type DrawSlot =
+    std::rc::Rc<dyn Fn(&serde_json::Value) -> Result<crate::produce_upload::DrawnJob, String>>;
 
 /// The scripted draw leg: the script when one is loaded, otherwise the REAL submit at the address the
 /// settings name (§F5.6 S6). A server that is down answers `Err` naming it, which the walk turns into the
@@ -638,7 +663,9 @@ pub fn session_tree() -> crate::layout::Tree {
     crate::layout::Tree::new(crate::startup::session_dir(
         &std::env::current_dir().unwrap_or_default(),
     ))
-    .unwrap_or_else(|_| crate::layout::Tree::new(std::path::Path::new("session.naivepost")).unwrap())
+    .unwrap_or_else(|_| {
+        crate::layout::Tree::new(std::path::Path::new("session.naivepost")).unwrap()
+    })
 }
 
 /// The page's model leg: the REAL `youtube` call, always. Nothing here consults a scripted answer — a test
@@ -702,7 +729,6 @@ fn render_answers(collected: &crate::produce_upload_call::Collected) -> String {
     lines.join("\n")
 }
 
-
 /// F5.7: the six page presses, driven through [`crate::produce_presses`]. Built here rather than in
 /// `produce_page` because that file is at its size budget, and because three of the legs are already this
 /// `produce_page` because that file is at its size budget, and because three of the legs are already this
@@ -749,7 +775,14 @@ pub fn legs(
         }),
         instruction: Box::new(move || crate::ui::produce_page::read_state().instruction),
         // Everything after the base, in order — the same split `publish::references` makes.
-        references: Box::new(move || crate::ui::produce_page::read_state().frames.iter().skip(1).cloned().collect()),
+        references: Box::new(move || {
+            crate::ui::produce_page::read_state()
+                .frames
+                .iter()
+                .skip(1)
+                .cloned()
+                .collect()
+        }),
         // The band the title prints across comes from the record's own box when it has one; 0.25 (the upper
         // third) is the app's default, matching `details::thumbnail_box_without_aspect`.
         title_band: Box::new(|| stored_title_band().cy),
@@ -832,7 +865,9 @@ pub fn jpeg_export(to: &str) -> (Vec<u64>, std::path::PathBuf) {
     // has written a byte into `produce/`, and ffmpeg will not create a folder for its output. Without this
     // every rung fails to write and the press wrongly answers "nothing to export".
     if let Some(dir) = out.parent() {
-        std::fs::create_dir_all(dir).map_err(|why| format!("{}: {why}", dir.display())).ok();
+        std::fs::create_dir_all(dir)
+            .map_err(|why| format!("{}: {why}", dir.display()))
+            .ok();
     }
     let sizes = crate::produce_upload_media::jpeg_ladder(
         &tree.thumbnail_png(),
@@ -870,7 +905,8 @@ pub fn tag_page(settings: &crate::project::Produce) {
         &std::env::current_dir().unwrap_or_default(),
     ))
     .unwrap_or_else(|_| {
-        crate::layout::Tree::new(std::path::Path::new("session.naivepost")).expect("a session folder")
+        crate::layout::Tree::new(std::path::Path::new("session.naivepost"))
+            .expect("a session folder")
     });
     let known = crate::roles::subtitle_languages(
         &crate::settings::from_environment()

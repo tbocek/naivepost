@@ -21,7 +21,7 @@ use naivepost::cut_effects_pass::{self as pass, Call};
 use naivepost::ui;
 
 use crate::common;
-use common::{settle, status_text, widget_in, cut_page};
+use common::{cut_page, settle, status_text, widget_in};
 
 static RAN_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
@@ -74,7 +74,13 @@ fn sibling_row(window: &adw::ApplicationWindow, name: &str) -> Option<i32> {
 /// One `add_effect` call as §3.7's tool receives it: a clip number, a kind, two offsets inside that clip, and
 /// volume's gain when it has one.
 fn call(clip: u32, kind: &str, start: f64, end: f64, gain: Option<f64>) -> Call {
-    Call { clip, kind: kind.to_string(), start, end, gain }
+    Call {
+        clip,
+        kind: kind.to_string(),
+        start,
+        end,
+        gain,
+    }
 }
 
 /// Every fx of `kind` in a cut, so a count can be read without caring where each landed.
@@ -87,15 +93,24 @@ fn kinds<'a>(cut_: &'a Cut, kind: &str) -> Vec<&'a Fx> {
 fn decorations_round(app: &adw::Application) {
     // --- (1) the control is on the run-bar row, labelled, live, in the job order ------------------
     let window = cut_page(app, &common::three_clips_cut());
-    let button = ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
+    let button =
+        ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
     assert_eq!(
-        button.label().expect("✨ Decorations carries a label").as_str(),
+        button
+            .label()
+            .expect("✨ Decorations carries a label")
+            .as_str(),
         naivepost::ui::window::DECORATIONS_PASS_LABEL,
         "the button carries the pass's own label"
     );
-    assert!(button.is_sensitive(), "decorations are on by default, so the control is live");
-    let speed_row = sibling_row(&window, "speeds-pass-button").expect("⏩ Speeds is on the same row");
-    let deco_row = sibling_row(&window, "decorations-pass-button").expect("✨ Decorations is on the same row");
+    assert!(
+        button.is_sensitive(),
+        "decorations are on by default, so the control is live"
+    );
+    let speed_row =
+        sibling_row(&window, "speeds-pass-button").expect("⏩ Speeds is on the same row");
+    let deco_row =
+        sibling_row(&window, "decorations-pass-button").expect("✨ Decorations is on the same row");
     assert_eq!(
         deco_row,
         speed_row + 1,
@@ -116,7 +131,8 @@ fn decorations_round(app: &adw::Application) {
     // belongs to block (6), where a reply actually faults twice.
     let window = cut_page(app, &common::three_clips_cut());
     let before = ui::review_cut_of(&window).fx.len();
-    let button = ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
+    let button =
+        ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
     button.emit_by_name::<()>("clicked", &[]);
     settle();
     assert_eq!(
@@ -151,21 +167,42 @@ fn decorations_round(app: &adw::Application) {
     );
     settle();
     let placed_line = pass::placed(3);
-    assert!(said.starts_with(&placed_line), "three decorations landed and the door said so -- got {said:?}");
+    assert!(
+        said.starts_with(&placed_line),
+        "three decorations landed and the door said so -- got {said:?}"
+    );
     // The skipped calls ride on the SAME line: a user counting bars should see why there are three, not five.
     assert!(
         said.len() > placed_line.len(),
         "the skipped gain-1 / unknown-kind calls are SAID, not silently dropped -- got {said:?}"
     );
     let cut_after = ui::review_cut_of(&window);
-    assert_eq!(cut_after.fx.len(), before + 3, "exactly three fx were written");
+    assert_eq!(
+        cut_after.fx.len(),
+        before + 3,
+        "exactly three fx were written"
+    );
     // S4: a proposed zoom is centred, at ZOOM_HEIGHT of the frame, gliding min(1, d/3).
     let zoom = kinds(&cut_after, "zoom").remove(0);
-    assert_eq!(zoom.cx, Some(0.5), "a proposed zoom is centred horizontally");
+    assert_eq!(
+        zoom.cx,
+        Some(0.5),
+        "a proposed zoom is centred horizontally"
+    );
     assert_eq!(zoom.cy, Some(0.5), "a proposed zoom is centred vertically");
-    assert_eq!(zoom.hf, Some(pass::ZOOM_HEIGHT), "…at the pass's own frame-height share");
-    assert!((zoom.t - 2.0).abs() < 1e-6, "clip 1's offset 2.0 lands at session 2.0");
-    assert!((zoom.dur - 3.0).abs() < 1e-6, "the 3 s span the model asked for");
+    assert_eq!(
+        zoom.hf,
+        Some(pass::ZOOM_HEIGHT),
+        "…at the pass's own frame-height share"
+    );
+    assert!(
+        (zoom.t - 2.0).abs() < 1e-6,
+        "clip 1's offset 2.0 lands at session 2.0"
+    );
+    assert!(
+        (zoom.dur - 3.0).abs() < 1e-6,
+        "the 3 s span the model asked for"
+    );
     assert!(
         (zoom.trans - pass::glide(3.0)).abs() < 1e-9 && (zoom.tout - pass::glide(3.0)).abs() < 1e-9,
         "the zoom carries S4's glide"
@@ -173,16 +210,29 @@ fn decorations_round(app: &adw::Application) {
     // S4: a stop is a speed whose rate is 0, on its clip's own session seconds, faded min(0.3, d/4).
     let stops = kinds(&cut_after, "speed");
     assert_eq!(stops.len(), 1, "the stop became a speed effect");
-    assert_eq!(stops[0].rate, 0.0, "a stop holds the picture still -- rate 0");
-    assert!((stops[0].t - 11.0).abs() < 1e-6, "clip 2 starts at 10.0, offset 1.0 lands at 11.0");
+    assert_eq!(
+        stops[0].rate, 0.0,
+        "a stop holds the picture still -- rate 0"
+    );
+    assert!(
+        (stops[0].t - 11.0).abs() < 1e-6,
+        "clip 2 starts at 10.0, offset 1.0 lands at 11.0"
+    );
     assert!(
         (stops[0].trans - pass::stop_fade(2.0)).abs() < 1e-9,
         "the stop carries S4's fade"
     );
     // S4/S5: the gain the model sent is the gain that lands; gain 1 wrote nothing at all.
     let vols = kinds(&cut_after, "volume");
-    assert_eq!(vols.len(), 1, "only the ducking volume was written -- gain 1 is ignored, not stored");
-    assert_eq!(vols[0].gain, 0.5, "the gain the model sent is the gain that lands");
+    assert_eq!(
+        vols.len(),
+        1,
+        "only the ducking volume was written -- gain 1 is ignored, not stored"
+    );
+    assert_eq!(
+        vols[0].gain, 0.5,
+        "the gain the model sent is the gain that lands"
+    );
     assert!(
         !cut_after.fx.iter().any(|fx| fx.kind == "blur"),
         "an unknown kind never becomes an effect"
@@ -192,7 +242,10 @@ fn decorations_round(app: &adw::Application) {
 
     // --- (4) the lane drew them ---------------------------------------------------------------
     let drawn = lane_bar_names(&window);
-    assert!(!drawn.is_empty(), "the lane drew the placed decorations -- got {drawn:?}");
+    assert!(
+        !drawn.is_empty(),
+        "the lane drew the placed decorations -- got {drawn:?}"
+    );
     RAN_LANE.store(true, Ordering::SeqCst);
     eprintln!("DECO block 4 (lane) done");
     window.close();
@@ -202,8 +255,15 @@ fn decorations_round(app: &adw::Application) {
     let window = cut_page(app, &common::three_clips_cut());
     let said = ui::run_effects_pass_with_reply(&window, &[call(1, "zoom", 2.0, 5.0, None)]);
     settle();
-    assert!(said.starts_with(&pass::placed(1)), "the pass reported its result, got {said:?}");
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 1, "the decoration is on the cut before the undo");
+    assert!(
+        said.starts_with(&pass::placed(1)),
+        "the pass reported its result, got {said:?}"
+    );
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        1,
+        "the decoration is on the cut before the undo"
+    );
     ui::press_undo(&window);
     settle();
     assert_eq!(
@@ -220,28 +280,40 @@ fn decorations_round(app: &adw::Application) {
     let window = cut_page(app, &common::three_clips_cut());
     ui::set_decorations_pass(&window, false);
     naivepost::ui::window::refresh_decorations_gate(&window);
-    let button = ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
+    let button =
+        ui::decorations_pass_button(&window).expect("✨ Decorations is on the run-bar row");
     assert!(
         !button.is_sensitive(),
         "the control greys out when the pass is off -- a grey button always means the pass would refuse"
     );
     let tip = button.tooltip_text().unwrap_or_default();
-    assert!(tip.contains("P.policy.decorationsPass"), "the grey tooltip names the parameter -- got {tip:?}");
+    assert!(
+        tip.contains("P.policy.decorationsPass"),
+        "the grey tooltip names the parameter -- got {tip:?}"
+    );
     let refused = ui::run_effects_pass(&window);
     assert!(
         refused.contains("decorations are off"),
         "the pass itself refuses, not only the paint -- got {refused:?}"
     );
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 0, "a gated pass writes nothing at all");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        0,
+        "a gated pass writes nothing at all"
+    );
     // The gate sits in the shared body, so the scripted-reply door cannot get around it either.
-    let still_refused = ui::run_effects_pass_with_reply(&window, &[call(1, "zoom", 1.0, 4.0, None)]);
+    let still_refused =
+        ui::run_effects_pass_with_reply(&window, &[call(1, "zoom", 1.0, 4.0, None)]);
     assert!(
         still_refused.contains("decorations are off"),
         "nor does the with_reply seam, got {still_refused:?}"
     );
     ui::set_decorations_pass(&window, true);
     naivepost::ui::window::refresh_decorations_gate(&window);
-    assert!(button.is_sensitive(), "switching the policy back on re-enables the control");
+    assert!(
+        button.is_sensitive(),
+        "switching the policy back on re-enables the control"
+    );
     RAN_GATE.store(true, Ordering::SeqCst);
     eprintln!("DECO block 6 (gate) done");
     window.close();
@@ -251,7 +323,10 @@ fn decorations_round(app: &adw::Application) {
     let window = cut_page(app, &common::three_clips_cut());
     let said = ui::run_effects_pass_with_reply(
         &window,
-        &[call(1, "zoom", 1.0, 4.0, None), call(99, "volume", 0.0, 2.0, Some(0.5))],
+        &[
+            call(1, "zoom", 1.0, 4.0, None),
+            call(99, "volume", 0.0, 2.0, Some(0.5)),
+        ],
     );
     settle();
     assert_eq!(
@@ -260,8 +335,7 @@ fn decorations_round(app: &adw::Application) {
         "the second round failed too, so the pass gives up with its own line -- got {said:?}"
     );
     assert_eq!(
-        said,
-        "!!! effects: no usable answer -- the cut stands without them",
+        said, "!!! effects: no usable answer -- the cut stands without them",
         "ASCII -- and all, matching the spec's bytes"
     );
     assert_eq!(
@@ -270,8 +344,14 @@ fn decorations_round(app: &adw::Application) {
         "not even the good clip 1 zoom survived the rejected reply"
     );
     // The retry budget is F3.9's: one rejection owes one retry, a third ask never happens.
-    assert!(pass::rejected("x").starts_with(">>> effects rejected:"), "the between-rounds line exists");
-    assert!(!naivepost::cut_captions::retries(2), "two rounds is the whole budget -- no third is owed");
+    assert!(
+        pass::rejected("x").starts_with(">>> effects rejected:"),
+        "the between-rounds line exists"
+    );
+    assert!(
+        !naivepost::cut_captions::retries(2),
+        "two rounds is the whole budget -- no third is owed"
+    );
     RAN_NO_ANSWER.store(true, Ordering::SeqCst);
     eprintln!("DECO block 7 (no answer) done");
     window.close();
@@ -297,11 +377,26 @@ fn f3_11_widget_the_decorations_button_reaches_the_pass() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_ROW.load(Ordering::SeqCst), "the run-bar row block never ran");
+    assert!(
+        RAN_ROW.load(Ordering::SeqCst),
+        "the run-bar row block never ran"
+    );
     assert!(RAN_CLICK.load(Ordering::SeqCst), "the real click never ran");
-    assert!(RAN_PLACED.load(Ordering::SeqCst), "the scripted-reply placement never ran");
-    assert!(RAN_LANE.load(Ordering::SeqCst), "the effects-lane block never ran");
-    assert!(RAN_UNDO.load(Ordering::SeqCst), "the undo of the pass never ran");
+    assert!(
+        RAN_PLACED.load(Ordering::SeqCst),
+        "the scripted-reply placement never ran"
+    );
+    assert!(
+        RAN_LANE.load(Ordering::SeqCst),
+        "the effects-lane block never ran"
+    );
+    assert!(
+        RAN_UNDO.load(Ordering::SeqCst),
+        "the undo of the pass never ran"
+    );
     assert!(RAN_GATE.load(Ordering::SeqCst), "the gate never ran");
-    assert!(RAN_NO_ANSWER.load(Ordering::SeqCst), "the two-round give-up never ran");
+    assert!(
+        RAN_NO_ANSWER.load(Ordering::SeqCst),
+        "the two-round give-up never ran"
+    );
 }

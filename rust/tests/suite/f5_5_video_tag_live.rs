@@ -36,9 +36,21 @@ fn tree_in(tag_name: &str) -> (PathBuf, Tree) {
 
 fn langs() -> Vec<Language> {
     vec![
-        Language { code: "en".into(), tag: "en-US".into(), name: "English".into() },
-        Language { code: "de".into(), tag: "de-DE".into(), name: "German".into() },
-        Language { code: "fr".into(), tag: "fr-FR".into(), name: "French".into() },
+        Language {
+            code: "en".into(),
+            tag: "en-US".into(),
+            name: "English".into(),
+        },
+        Language {
+            code: "de".into(),
+            tag: "de-DE".into(),
+            name: "German".into(),
+        },
+        Language {
+            code: "fr".into(),
+            tag: "fr-FR".into(),
+            name: "French".into(),
+        },
     ]
 }
 
@@ -52,13 +64,21 @@ fn write_video(tree: &Tree, container: Container) {
     let path = tree.final_video(word);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, b"not really a video, but a file all the same").unwrap();
-    assert!(path.is_file(), "the test's own video landed: {}", path.display());
+    assert!(
+        path.is_file(),
+        "the test's own video landed: {}",
+        path.display()
+    );
 }
 
 fn write_vtt(tree: &Tree, code: Option<&str>) {
     let path = tree.final_vtt(code);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\na caption\n").unwrap();
+    std::fs::write(
+        &path,
+        "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\na caption\n",
+    )
+    .unwrap();
 }
 
 /// A PNG the size header a JPEG conversion would accept, written where each pass of §F5.6 puts its picture.
@@ -177,33 +197,50 @@ fn f5_5_s2_poster_made_from_the_picture_on_disk() {
     let (page, _) = run(&tree, Container::Mp4, Codec::H264, "en", &legs);
     let argv = legs.last();
     assert_eq!(
-        argv.iter().position(|a| a == "-i").map(|i| argv[i + 1].clone()),
+        argv.iter()
+            .position(|a| a == "-i")
+            .map(|i| argv[i + 1].clone()),
         Some(tree.thumbnail_png().display().to_string()),
         "the printed picture is the source when it exists: {argv:?}"
     );
-    assert!(page.poster && tree.final_jpg().is_file(), "and the jpeg is there to point at: {page:?}");
-    assert!(read_html(&tree).contains("poster=\"final.jpg\""), "the tag says so");
+    assert!(
+        page.poster && tree.final_jpg().is_file(),
+        "and the jpeg is there to point at: {page:?}"
+    );
+    assert!(
+        read_html(&tree).contains("poster=\"final.jpg\""),
+        "the tag says so"
+    );
 
     // (b) ONLY the plain draw — the case that used to lose the poster entirely.
     let (_root, tree) = tree_in("poster-plain");
     write_png(&tree.thumbnail_plain_png());
-    assert!(!tree.thumbnail_png().is_file(), "nothing was printed in this session");
+    assert!(
+        !tree.thumbnail_png().is_file(),
+        "nothing was printed in this session"
+    );
     let legs = Legs::default();
     let (page, log) = run(&tree, Container::Mp4, Codec::H264, "en", &legs);
     let argv = legs.last();
     assert_eq!(
-        argv.iter().position(|a| a == "-i").map(|i| argv[i + 1].clone()),
+        argv.iter()
+            .position(|a| a == "-i")
+            .map(|i| argv[i + 1].clone()),
         Some(tree.thumbnail_plain_png().display().to_string()),
         "the plain picture is a legitimate poster source: {argv:?}"
     );
-    assert!(page.poster, "the poster happened without a print pass: {page:?}");
+    assert!(
+        page.poster,
+        "the poster happened without a print pass: {page:?}"
+    );
     assert!(
         read_html(&tree).contains("poster=\"final.jpg\""),
         "so the tag carries one: {}",
         read_html(&tree)
     );
     assert!(
-        !log.iter().any(|line| line.contains(embed::no_poster_reason())),
+        !log.iter()
+            .any(|line| line.contains(embed::no_poster_reason())),
         "nothing is missing, so nothing apologises: {log:?}"
     );
 
@@ -212,12 +249,20 @@ fn f5_5_s2_poster_made_from_the_picture_on_disk() {
     let legs = Legs::default();
     let (page, log) = run(&tree, Container::Mp4, Codec::H264, "en", &legs);
     assert!(!page.poster, "nothing on disk to convert: {page:?}");
-    assert!(legs.calls.borrow().is_empty(), "no job was sent for a missing picture");
     assert!(
-        log.iter().any(|line| line == &embed::no_poster_log(embed::no_poster_reason())),
+        legs.calls.borrow().is_empty(),
+        "no job was sent for a missing picture"
+    );
+    assert!(
+        log.iter()
+            .any(|line| line == &embed::no_poster_log(embed::no_poster_reason())),
         "the reason was said in the program's own words: {log:?}"
     );
-    assert!(!read_html(&tree).contains("poster="), "and the tag omits it: {}", read_html(&tree));
+    assert!(
+        !read_html(&tree).contains("poster="),
+        "and the tag omits it: {}",
+        read_html(&tree)
+    );
 }
 
 /// §F5.5's track rule, off files on disk: the video's own language first and `default`, everything else
@@ -231,13 +276,20 @@ fn f5_5_s3_tracks_from_disk_own_language_first() {
     // Not the video's sidecars: a stranger's vtt and the desktop-player srt a <track> could not read.
     let folder = tree.final_vtt(None).parent().unwrap().to_path_buf();
     std::fs::write(folder.join("other.vtt"), "WEBVTT\n").unwrap();
-    std::fs::write(folder.join("final.srt"), "1\n00:00:00,000 --> 00:00:02,000\nx\n").unwrap();
+    std::fs::write(
+        folder.join("final.srt"),
+        "1\n00:00:00,000 --> 00:00:02,000\nx\n",
+    )
+    .unwrap();
 
     // This video speaks German, so `final.vtt` IS the German track and must lead with `default`.
     let legs = Legs::default();
     let (page, log) = run(&tree, Container::Mp4, Codec::H264, "de", &legs);
     let body = read_html(&tree);
-    assert_eq!(page.tracks, 3, "three of the folder's files are the video's tracks: {page:?}");
+    assert_eq!(
+        page.tracks, 3,
+        "three of the folder's files are the video's tracks: {page:?}"
+    );
     let de = body
         .find("<track src=\"final.vtt\" srclang=\"de\" default>")
         .unwrap_or_else(|| panic!("the own track must lead and be default: {body}"));
@@ -251,8 +303,14 @@ fn f5_5_s3_tracks_from_disk_own_language_first() {
         1,
         "exactly one default, or two caption sets fight: {body}"
     );
-    assert!(!body.contains("other.vtt"), "a stranger's vtt is not this video's: {body}");
-    assert!(!body.contains(".srt"), "a <track> parses WebVTT only: {body}");
+    assert!(
+        !body.contains("other.vtt"),
+        "a stranger's vtt is not this video's: {body}"
+    );
+    assert!(
+        !body.contains(".srt"),
+        "a <track> parses WebVTT only: {body}"
+    );
     assert!(
         log.iter().any(|line| line.contains("file://")),
         "with tracks present the http note is owed: {log:?}"
@@ -276,16 +334,39 @@ fn f5_5_s4_the_page_is_the_bare_tag() {
         "<video poster=\"final.jpg\" controls src=\"final.mp4\" preload=\"none\">",
         "the opening line is §F5.5's, attribute for attribute"
     );
-    assert_eq!(body.lines().filter(|line| line.starts_with("  <track ")).count(), 2);
-    assert_eq!(body.lines().filter(|line| line.starts_with("  <track ")).filter(|l| l.ends_with('>')).count(), 2);
+    assert_eq!(
+        body.lines()
+            .filter(|line| line.starts_with("  <track "))
+            .count(),
+        2
+    );
+    assert_eq!(
+        body.lines()
+            .filter(|line| line.starts_with("  <track "))
+            .filter(|l| l.ends_with('>'))
+            .count(),
+        2
+    );
     assert_eq!(body.lines().last().unwrap(), "</video>");
-    assert_eq!(body.matches("<video").count(), 1, "one tag, nothing wrapped around it: {body}");
+    assert_eq!(
+        body.matches("<video").count(),
+        1,
+        "one tag, nothing wrapped around it: {body}"
+    );
     for banned in ["label=", "kind=", "<html", "<script"] {
-        assert!(!body.contains(banned), "the page stays bare, no {banned}: {body}");
+        assert!(
+            !body.contains(banned),
+            "the page stays bare, no {banned}: {body}"
+        );
     }
-    assert!(page.path.is_file(), "the answer names a file that exists: {:?}", page.path);
     assert!(
-        log.iter().any(|line| *line == embed::wrote_tag_log(&page.path.display().to_string())),
+        page.path.is_file(),
+        "the answer names a file that exists: {:?}",
+        page.path
+    );
+    assert!(
+        log.iter()
+            .any(|line| *line == embed::wrote_tag_log(&page.path.display().to_string())),
         "the log points at the page it wrote: {log:?}"
     );
 }
@@ -306,7 +387,18 @@ fn f5_5_s5_the_poster_argv_is_jpeg_quality_90() {
         .iter()
         .position(|a| a == "-q:v")
         .unwrap_or_else(|| panic!("no -q:v in the poster command: {argv:?}"));
-    assert_eq!(argv[q + 1], embed::POSTER_QSCALE, "the nearest rung to 90 on ffmpeg's ladder");
-    assert_eq!(argv.last().unwrap(), &tree.final_jpg().display().to_string(), "{argv:?}");
-    assert!(page.poster, "and the walk trusts the file, not the exit code: {page:?}");
+    assert_eq!(
+        argv[q + 1],
+        embed::POSTER_QSCALE,
+        "the nearest rung to 90 on ffmpeg's ladder"
+    );
+    assert_eq!(
+        argv.last().unwrap(),
+        &tree.final_jpg().display().to_string(),
+        "{argv:?}"
+    );
+    assert!(
+        page.poster,
+        "and the walk trusts the file, not the exit code: {page:?}"
+    );
 }

@@ -13,7 +13,11 @@ use naivepost::checks::{self, AUDIO_ROWS};
 use naivepost::services::{self, AudioModel};
 
 fn model(id: &str, family: &str, task: &str) -> AudioModel {
-    AudioModel { id: id.to_string(), family: family.to_string(), task: task.to_string() }
+    AudioModel {
+        id: id.to_string(),
+        family: family.to_string(),
+        task: task.to_string(),
+    }
 }
 
 /// S1: the press reads the box, not the file — §5's "reads what is TYPED" — and spins before it has
@@ -24,16 +28,30 @@ fn f0_13_s1_a_test_reads_what_is_typed_and_spins_before_it_answers() {
     row.finish(Ok("the old address was fine".to_string()));
 
     row.press("http://box:8080/v1");
-    assert_eq!(row.typed, "http://box:8080/v1", "S1: the value in the box at the press is the value tested");
+    assert_eq!(
+        row.typed, "http://box:8080/v1",
+        "S1: the value in the box at the press is the value tested"
+    );
     assert!(row.spinning(), "S1: the spinner shows while it waits");
-    assert_eq!(row.mark(), None, "S1: an old ✓ cannot survive a new address");
+    assert_eq!(
+        row.mark(),
+        None,
+        "S1: an old ✓ cannot survive a new address"
+    );
     assert_eq!(row.tooltip(), None);
-    assert_eq!(row.log(), None, "S1: nothing is mirrored until there is a verdict");
+    assert_eq!(
+        row.log(),
+        None,
+        "S1: nothing is mirrored until there is a verdict"
+    );
 
     row.finish(Ok("qwen answered in 1.5 s: \"ok\"".to_string()));
     assert!(!row.spinning());
     assert_eq!(row.mark(), Some('✓'));
-    assert_eq!(row.tooltip().as_deref(), Some("qwen answered in 1.5 s: \"ok\""));
+    assert_eq!(
+        row.tooltip().as_deref(),
+        Some("qwen answered in 1.5 s: \"ok\"")
+    );
     assert!(row.log().unwrap().starts_with(checks::LOG_PREFIX));
 }
 
@@ -47,10 +65,19 @@ fn f0_13_s2_a_failure_is_marked_and_its_verdict_is_the_tooltip() {
 
     assert_eq!(row.mark(), Some('✗'));
     assert_eq!(row.tooltip().as_deref(), Some("not on PATH"));
-    assert_eq!(row.log().as_deref(), Some("settings: ffmpeg -- not on PATH"));
+    assert_eq!(
+        row.log().as_deref(),
+        Some("settings: ffmpeg -- not on PATH")
+    );
 
-    assert_eq!(checks::log_line("LLM", &Ok("ok".to_string())), "settings: LLM: ok");
-    assert_eq!(checks::log_line("LLM", &Err("refused".to_string())), "settings: LLM -- refused");
+    assert_eq!(
+        checks::log_line("LLM", &Ok("ok".to_string())),
+        "settings: LLM: ok"
+    );
+    assert_eq!(
+        checks::log_line("LLM", &Err("refused".to_string())),
+        "settings: LLM -- refused"
+    );
 }
 
 /// S2: the LLM test is one completion of sixteen tokens with thinking off, and its verdict is the
@@ -65,9 +92,15 @@ fn f0_13_s3_the_llm_test_asks_for_one_completion_and_says_so() {
     assert_eq!(body["enable_thinking"], false);
     assert_eq!(body["chat_template_kwargs"]["enable_thinking"], false);
     assert!(body.get("stream").is_none(), "S2: nothing to watch arrive");
-    assert_eq!(body["messages"][0]["content"], "Reply with the single word: ok");
+    assert_eq!(
+        body["messages"][0]["content"],
+        "Reply with the single word: ok"
+    );
 
-    assert_eq!(checks::llm_verdict("qwen", 1.5, "ok"), "qwen answered in 1.5 s: \"ok\"");
+    assert_eq!(
+        checks::llm_verdict("qwen", 1.5, "ok"),
+        "qwen answered in 1.5 s: \"ok\""
+    );
 }
 
 /// S2: the vision test shows a generated 48×48 red square and passes only if the model saw red — a
@@ -78,7 +111,11 @@ fn f0_13_s4_the_vision_test_shows_a_red_square_and_only_passes_on_red() {
 
     let png = checks::red_square_png();
     // The size is in the IHDR body: bytes 16..20 of a PNG are the width, big-endian.
-    assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n", "S2: the probe is a real PNG, not a header");
+    assert_eq!(
+        &png[..8],
+        b"\x89PNG\r\n\x1a\n",
+        "S2: the probe is a real PNG, not a header"
+    );
     assert_eq!(&png[16..20], &48u32.to_be_bytes(), "S2: 48 px across");
     assert_eq!(&png[20..24], &48u32.to_be_bytes(), "S2: 48 px down");
     assert!(checks::vision_probe_url().starts_with("data:image/png;base64,"));
@@ -87,23 +124,34 @@ fn f0_13_s4_the_vision_test_shows_a_red_square_and_only_passes_on_red() {
     assert!(checks::vision_verdict("It is red").is_ok());
     let reason = checks::vision_verdict("blue").unwrap_err();
     // §5's sentence: the model needs a vision model served with its mmproj/vision file.
-    assert!(reason.contains("not seeing the image") && reason.contains("mmproj"), "{reason}");
+    assert!(
+        reason.contains("not seeing the image") && reason.contains("mmproj"),
+        "{reason}"
+    );
 }
 
 /// S2: "Fetch models" is `GET /v1/models` → dropdown, and "Use" copies the id into Model — so the
 /// only question a list answers is whether the configured id is on the server.
 #[test]
 fn f0_13_s5_fetch_models_lists_the_server_and_use_adopts_the_id() {
-    assert_eq!(checks::LIST_MODELS_LLM_USES, ["Fetch models", "sd.cpp fallback probe"]);
+    assert_eq!(
+        checks::LIST_MODELS_LLM_USES,
+        ["Fetch models", "sd.cpp fallback probe"]
+    );
 
     let served = vec!["llama-3".to_string(), "qwen".to_string()];
     assert!(checks::llm_model_listed(&served, "qwen").is_ok());
 
     let reason = checks::llm_model_listed(&served, "gpt").unwrap_err();
-    assert!(reason.contains("llama-3") && reason.contains("qwen"), "S2: the failure names what IS served: {reason}");
+    assert!(
+        reason.contains("llama-3") && reason.contains("qwen"),
+        "S2: the failure names what IS served: {reason}"
+    );
 
     // No default model id exists to fall back to, so an empty box is its own answer.
-    assert!(checks::llm_model_listed(&served, "").unwrap_err().contains("Fetch models"));
+    assert!(checks::llm_model_listed(&served, "")
+        .unwrap_err()
+        .contains("Fetch models"));
 }
 
 /// The ffmpeg listing §5's scan reads: one component per line, name in the second field.
@@ -131,9 +179,20 @@ fn listing(with_rubberband: bool) -> String {
 fn f0_13_s6_ffmpeg_is_checked_as_one_build_that_has_what_the_steps_ask() {
     assert_eq!(
         checks::FF_FILTERS,
-        ["rubberband", "subtitles", "loudnorm", "atempo", "amix", "adelay", "alimiter"]
+        [
+            "rubberband",
+            "subtitles",
+            "loudnorm",
+            "atempo",
+            "amix",
+            "adelay",
+            "alimiter"
+        ]
     );
-    assert_eq!(checks::FF_ENCODERS, ["libx264", "libx265", "aac", "libopus"]);
+    assert_eq!(
+        checks::FF_ENCODERS,
+        ["libx264", "libx265", "aac", "libopus"]
+    );
 
     let encoders = "Encoders:\n V....D libx264\n V....D libx265\n A....D aac\n A....D libopus\n";
     let full = checks::ffmpeg_verdict(
@@ -144,7 +203,10 @@ fn f0_13_s6_ffmpeg_is_checked_as_one_build_that_has_what_the_steps_ask() {
         Some(encoders),
     )
     .expect("a complete build passes");
-    assert!(full.contains("7.1") && full.contains("/usr/bin/ffmpeg"), "{full}");
+    assert!(
+        full.contains("7.1") && full.contains("/usr/bin/ffmpeg"),
+        "{full}"
+    );
 
     // A build missing two components names exactly those two and nothing else.
     let lacking = checks::ffmpeg_verdict(
@@ -155,18 +217,31 @@ fn f0_13_s6_ffmpeg_is_checked_as_one_build_that_has_what_the_steps_ask() {
         Some("Encoders:\n V....D libx264\n A....D aac\n A....D libopus\n"),
     )
     .unwrap_err();
-    assert!(lacking.contains("rubberband") && lacking.contains("libx265"), "{lacking}");
-    assert!(!lacking.contains("libx264") && !lacking.contains("atempo"), "{lacking}");
+    assert!(
+        lacking.contains("rubberband") && lacking.contains("libx265"),
+        "{lacking}"
+    );
+    assert!(
+        !lacking.contains("libx264") && !lacking.contains("atempo"),
+        "{lacking}"
+    );
 
     // The diagnosis order: a missing binary and a missing ffprobe are both fixed outside this app, so
     // neither is reported as a build option.
     let absent = checks::ffmpeg_verdict(None, false, "", None, None).unwrap_err();
     assert!(absent.contains("PATH"), "{absent}");
-    let no_probe = checks::ffmpeg_verdict(Some("/opt/ffmpeg"), false, "7.1", None, None).unwrap_err();
-    assert!(no_probe.contains("ffprobe") && !no_probe.contains("rubberband"), "{no_probe}");
+    let no_probe =
+        checks::ffmpeg_verdict(Some("/opt/ffmpeg"), false, "7.1", None, None).unwrap_err();
+    assert!(
+        no_probe.contains("ffprobe") && !no_probe.contains("rubberband"),
+        "{no_probe}"
+    );
 
     // A listing that was never read counts as nothing having been checked.
-    assert_eq!(checks::ffmpeg_missing("", &["rubberband"]), vec!["rubberband"]);
+    assert_eq!(
+        checks::ffmpeg_missing("", &["rubberband"]),
+        vec!["rubberband"]
+    );
 }
 
 /// S2: firefox "off" is a success — it is the box saying the model gets no search — while a live
@@ -180,10 +255,17 @@ fn f0_13_s7_firefox_off_is_a_pass_and_a_live_firefox_has_to_be_driven() {
 
     let driven = checks::firefox_verdict("/usr/bin/firefox", Some("Firefox 141.0\n"), Some(3))
         .expect("version plus a real search");
-    assert!(driven.contains("Firefox 141.0") && driven.contains('3'), "{driven}");
+    assert!(
+        driven.contains("Firefox 141.0") && driven.contains('3'),
+        "{driven}"
+    );
 
-    let stalled = checks::firefox_verdict("/usr/bin/firefox", Some("Firefox 141.0\n"), None).unwrap_err();
-    assert!(stalled.contains("could not be driven headless"), "{stalled}");
+    let stalled =
+        checks::firefox_verdict("/usr/bin/firefox", Some("Firefox 141.0\n"), None).unwrap_err();
+    assert!(
+        stalled.contains("could not be driven headless"),
+        "{stalled}"
+    );
     assert!(checks::firefox_verdict("/usr/bin/firefox", None, Some(1)).is_err());
 }
 
@@ -193,7 +275,10 @@ fn f0_13_s7_firefox_off_is_a_pass_and_a_live_firefox_has_to_be_driven() {
 fn f0_13_s8_audio_answers_with_its_health_its_catalogue_and_its_aligner() {
     let healthy = checks::audio_health_verdict(12, &[model("indextts2", "index_tts2", "clon")])
         .expect("healthy and able to narrate");
-    assert!(healthy.starts_with("healthy in 12 ms, will narrate with"), "{healthy}");
+    assert!(
+        healthy.starts_with("healthy in 12 ms, will narrate with"),
+        "{healthy}"
+    );
     assert!(healthy.contains("indextts2"), "{healthy}");
     assert_eq!(
         checks::audio_health_verdict(12, &[]).unwrap_err(),
@@ -203,19 +288,54 @@ fn f0_13_s8_audio_answers_with_its_health_its_catalogue_and_its_aligner() {
     // The four model boxes, one task each — the labels are what the dialog lists.
     assert_eq!(
         AUDIO_ROWS,
-        [("TTS model", "clon"), ("ASR", "asr"), ("Diarization", "diar"), ("Separation", "sep")]
+        [
+            ("TTS model", "clon"),
+            ("ASR", "asr"),
+            ("Diarization", "diar"),
+            ("Separation", "sep")
+        ]
     );
-    let catalogue = [model("whisper", "whisper", "asr"), model("punc", "", "diar")];
-    assert!(checks::model_verdict(&catalogue, "whisper", naivepost::services::Need { task: "asr", step: "Prepare" }).is_ok());
+    let catalogue = [
+        model("whisper", "whisper", "asr"),
+        model("punc", "", "diar"),
+    ];
+    assert!(checks::model_verdict(
+        &catalogue,
+        "whisper",
+        naivepost::services::Need {
+            task: "asr",
+            step: "Prepare"
+        }
+    )
+    .is_ok());
     // A wrong task is the interesting failure: a catalogue entry copied from another model.
-    let wrong = checks::model_verdict(&catalogue, "whisper", naivepost::services::Need { task: "clon", step: "Prepare" }).unwrap_err();
+    let wrong = checks::model_verdict(
+        &catalogue,
+        "whisper",
+        naivepost::services::Need {
+            task: "clon",
+            step: "Prepare",
+        },
+    )
+    .unwrap_err();
     assert!(wrong.contains("asr") && wrong.contains("clon"), "{wrong}");
     // A blank declared task passes: many servers list an id with no task at all.
-    assert!(checks::model_verdict(&catalogue, "punc", naivepost::services::Need { task: "diar", step: "Prepare" }).is_ok());
+    assert!(checks::model_verdict(
+        &catalogue,
+        "punc",
+        naivepost::services::Need {
+            task: "diar",
+            step: "Prepare"
+        }
+    )
+    .is_ok());
 
     // No aligner is a working setup, not a failure: the joins fall back to the waveform.
     let none = checks::aligner_verdict("", &[]).expect("none is a success");
-    assert!(none.contains("waveform") && none.contains("breath"), "{none}");
+    assert!(
+        none.contains("waveform") && none.contains("breath"),
+        "{none}"
+    );
 
     // A configured id the server does not serve fails, naming what it does list.
     let missing = checks::aligner_verdict("qwen3-aligner", &[model("whisper", "whisper", "asr")])
@@ -224,21 +344,36 @@ fn f0_13_s8_audio_answers_with_its_health_its_catalogue_and_its_aligner() {
 
     // Several aligners: the preferred one is named, and it is the same choice the run makes — a row
     // that went green while the pipeline used something else would be worse than no row.
-    let several = [model("other-align", "x", "align"), model(services::ALIGN_PREFERENCE, "y", "align")];
+    let several = [
+        model("other-align", "x", "align"),
+        model(services::ALIGN_PREFERENCE, "y", "align"),
+    ];
     let chosen = checks::aligner_verdict("", &several).expect("one of them aligns");
     assert!(chosen.contains(services::ALIGN_PREFERENCE), "{chosen}");
-    assert_eq!(services::pick_aligner("", &several).as_deref(), Some(services::ALIGN_PREFERENCE));
+    assert_eq!(
+        services::pick_aligner("", &several).as_deref(),
+        Some(services::ALIGN_PREFERENCE)
+    );
 }
 
 /// S2: sd.cpp's capabilities say which weights are loaded, and a port that only answers `/v1/models`
 /// is called out as not sd-server.
 #[test]
 fn f0_13_s9_sd_cpp_is_called_out_when_the_port_is_only_openai_shaped() {
-    let caps = checks::SdCaps { weights: "flux".to_string() };
-    assert_eq!(checks::sd_verdict(Ok(&caps)).as_deref(), Ok("flux is loaded and can draw"));
+    let caps = checks::SdCaps {
+        weights: "flux".to_string(),
+    };
+    assert_eq!(
+        checks::sd_verdict(Ok(&caps)).as_deref(),
+        Ok("flux is loaded and can draw")
+    );
 
-    let blank = checks::SdCaps { weights: "   ".into() };
-    assert!(checks::sd_verdict(Ok(&blank)).unwrap_err().contains("no weights"));
+    let blank = checks::SdCaps {
+        weights: "   ".into(),
+    };
+    assert!(checks::sd_verdict(Ok(&blank))
+        .unwrap_err()
+        .contains("no weights"));
 
     // The two failures are fixed differently, so they are not one message.
     let openai = checks::sd_verdict(Err(checks::SdProbe::OpenAiOnly)).unwrap_err();
@@ -258,7 +393,9 @@ fn f0_13_s10_test_all_runs_every_row_and_reports_each() {
     ]);
 
     assert_eq!(
-        rows.iter().map(|row| (row.name.as_str(), row.ok)).collect::<Vec<_>>(),
+        rows.iter()
+            .map(|row| (row.name.as_str(), row.ok))
+            .collect::<Vec<_>>(),
         vec![("LLM", true), ("ffmpeg", false), ("sd.cpp", true)]
     );
     // The failing row's reason survives: the ✓/✗ is the summary, the verdict is the answer.

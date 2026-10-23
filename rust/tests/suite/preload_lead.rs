@@ -47,13 +47,21 @@ fn p_eng_preloadleadseconds_s3_past_the_lead_it_waits() {
     // still three-plus seconds away from the cut.
     assert_eq!(preview::preload_target(RUNS, 8.0), None);
     // Just outside the lead ...
-    assert_eq!(preview::preload_target(RUNS, 8.9), None, "3.1 s ahead is not yet worth opening");
+    assert_eq!(
+        preview::preload_target(RUNS, 8.9),
+        None,
+        "3.1 s ahead is not yet worth opening"
+    );
     // ... and inside it. The offsets are built from the constant so the boundary is exact rather than a
     // decimal that float happens to round one way or the other.
     let lead = preview::PRELOAD_LEAD_SECONDS;
     assert_eq!(preview::preload_target(RUNS, 12.0 - lead), Some(12.0));
     assert_eq!(preview::preload_target(RUNS, 12.0 - (lead + 0.1)), None);
-    assert_eq!(preview::preload_target(RUNS, 10.5), Some(12.0), "1.5 s ahead opens");
+    assert_eq!(
+        preview::preload_target(RUNS, 10.5),
+        Some(12.0),
+        "1.5 s ahead opens"
+    );
     // Past the last run there is nothing ahead to open at all.
     assert_eq!(preview::next_jump_ahead(RUNS, 21.0), None);
     assert_eq!(preview::preload_target(RUNS, 21.0), None);
@@ -75,7 +83,10 @@ fn p_eng_preloadleadseconds_s4_the_tolerance_marks_now() {
     // Exactly at the tolerance is still "now": the bound is strict on the far side.
     assert_eq!(preview::next_jump_ahead(&[(t + tol, 30.0)], t), None);
     // The same second, seen from a run that has not started yet, is ahead of us.
-    assert_eq!(preview::next_jump_ahead(&[(beyond, 30.0)], t).is_some(), true);
+    assert_eq!(
+        preview::next_jump_ahead(&[(beyond, 30.0)], t).is_some(),
+        true
+    );
 }
 
 // --- S5: the same question from the current clip's end ----------------------------------------
@@ -101,7 +112,12 @@ fn p_eng_preloadleadseconds_s6_catalogued_once_in_the_cut_page() {
     const ID: &str = "P.eng.preloadLeadSeconds";
     let rows = params::cut();
     let matching: Vec<&params::Param> = rows.iter().filter(|row| row.id == ID).collect();
-    assert_eq!(matching.len(), 1, "{ID} catalogued {} times in cut()", matching.len());
+    assert_eq!(
+        matching.len(),
+        1,
+        "{ID} catalogued {} times in cut()",
+        matching.len()
+    );
     let row = matching[0];
     // Spelled from the constant rather than retyped, so the row cannot drift from the rule.
     assert_eq!(row.spelled, preview::PRELOAD_LEAD_SECONDS.to_string());

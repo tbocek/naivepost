@@ -13,7 +13,11 @@ pub const SPREAD_COUNT: usize = 3;
 /// the splice's explicit `dur` winning over the footage span when it has one. Same arithmetic the Produce
 /// page uses for clip starts, so a moment here and a moment there mean the same instant.
 fn output_length(seg: &Seg) -> f64 {
-    let raw = if seg.dur > 0.0 { seg.dur } else { (seg.e - seg.s).max(0.0) };
+    let raw = if seg.dur > 0.0 {
+        seg.dur
+    } else {
+        (seg.e - seg.s).max(0.0)
+    };
     crate::narration::output_seconds(raw, seg.rate)
 }
 
@@ -74,14 +78,12 @@ pub fn frame_at(moments: &[f64], at: f64) -> Option<f64> {
 /// ever are, so a window of one interval always holds a neighbour. A fixed stop here would name frames
 /// wider or nearer than the ones this session actually extracted.
 /// An unknown span answers everything rather than nothing: showing no frames would read as an empty video.
-pub fn get_frames(
-    moments: &[f64],
-    from: f64,
-    to: f64,
-    at: Option<f64>,
-    interval: f64,
-) -> Vec<f64> {
-    let inside = moments.iter().copied().filter(|at| *at >= from && *at < to).collect::<Vec<f64>>();
+pub fn get_frames(moments: &[f64], from: f64, to: f64, at: Option<f64>, interval: f64) -> Vec<f64> {
+    let inside = moments
+        .iter()
+        .copied()
+        .filter(|at| *at >= from && *at < to)
+        .collect::<Vec<f64>>();
     let Some(at) = at else {
         return inside;
     };
@@ -90,7 +92,12 @@ pub fn get_frames(
         .into_iter()
         .filter(|moment| (moment - at).abs() <= half)
         .collect::<Vec<f64>>();
-    window.sort_by(|a, b| (a - at).abs().partial_cmp(&(b - at).abs()).unwrap_or(std::cmp::Ordering::Equal));
+    window.sort_by(|a, b| {
+        (a - at)
+            .abs()
+            .partial_cmp(&(b - at).abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     window.truncate(SPREAD_COUNT);
     window
 }
@@ -104,5 +111,8 @@ pub fn row_entry(at: f64) -> String {
 
 /// The three row entries for a cut: [`spread_moments`] rendered through [`row_entry`].
 pub fn spread_rows(segs: &[Seg]) -> Vec<String> {
-    spread_moments(segs).iter().map(|at| row_entry(*at)).collect()
+    spread_moments(segs)
+        .iter()
+        .map(|at| row_entry(*at))
+        .collect()
 }

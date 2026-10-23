@@ -74,7 +74,10 @@ pub fn press(selection: Option<(f64, f64)>, line: Option<f64>) -> Pressed {
         // representable in binary, so the width of a band dragged to exactly the floor can come out one ulp under it
         // and would be thrown away as a click that slipped.
         if to - from > MIN_MARKED_SECONDS || (to - from - MIN_MARKED_SECONDS).abs() < 1e-9 {
-            return Pressed::Stretched { t: from, dur: to - from };
+            return Pressed::Stretched {
+                t: from,
+                dur: to - from,
+            };
         }
     }
     match line {
@@ -113,7 +116,11 @@ pub fn initial(pressed: Pressed) -> Option<Fx> {
 /// F3.3 S2 (`Form "Speed a – b"`): titled by the seconds it is about, since a speed is placed over a stretch and
 /// its form must say which. The dash is §F3.3's en dash, not a hyphen.
 pub fn form_title(t: f64, dur: f64) -> String {
-    format!("Speed {} \u{2013} {}", tools::mm_ss(t), tools::mm_ss(t + dur))
+    format!(
+        "Speed {} \u{2013} {}",
+        tools::mm_ss(t),
+        tools::mm_ss(t + dur)
+    )
 }
 
 /// F3.3 S2 (`Speed × (×0 — stop, …, ×100, Custom…)`; `// effects.speedChoices`): the rates worth a row. A list and
@@ -159,8 +166,14 @@ pub fn rate_index(rate: f64) -> usize {
 
 /// F3.3 S2 (`Speed × · Sound · Length · Fade in · Fade out · Curve`): the fields, in the order the form reads them.
 /// Order is the sentence a person reads, not a layout detail — as in [`crate::fx_zoom::FORM_FIELDS`].
-pub const FORM_FIELDS: [&str; 6] =
-    ["Speed \u{00d7}", "Sound", "Length (s)", "Fade in (s)", "Fade out (s)", "Curve"];
+pub const FORM_FIELDS: [&str; 6] = [
+    "Speed \u{00d7}",
+    "Sound",
+    "Length (s)",
+    "Fade in (s)",
+    "Fade out (s)",
+    "Curve",
+];
 
 /// F3.3 S2 (`Sound (With the picture / With the picture, pitched / 1× to the effect's end / 1× to the scene's end
 /// / Silent)`, inventory/effects.md §A.3): the five answers in the order they are offered. Short, because a
@@ -206,7 +219,8 @@ pub fn fade_in_help() -> String {
 
 /// F3.3 S2: what a stop does with its sound — the sentence for every rate 0, whatever was chosen. The footage under
 /// a held frame runs on at 1× (§F3.3's last clause), so four of the five answers are the same sound.
-const STOP_SOUND_NOTE: &str = "A stop's footage runs on at 1\u{00d7} under the held frame, so every answer but \
+const STOP_SOUND_NOTE: &str =
+    "A stop's footage runs on at 1\u{00d7} under the held frame, so every answer but \
                                Silent sounds the same here.";
 
 /// F3.3 S2 (`a cost note ("N s on screen: the sound ends N s behind the picture, and going back in sync skips those
@@ -350,14 +364,19 @@ pub fn label(fx: &Fx) -> String {
 
 /// F3.3 S4: the two sentences, one per branch — a rate changes the footage's clock and therefore the cut's length;
 /// a stop holds the picture while the clock runs on, so it costs the video nothing.
-const PLAYS_AT_RATE: &str = "the footage plays at that rate there and the cut gets longer or shorter to match";
+const PLAYS_AT_RATE: &str =
+    "the footage plays at that rate there and the cut gets longer or shorter to match";
 const STANDS_STILL: &str = "the picture stands still there while the clock runs";
 
 /// F3.3 S4 (`Status "… — the footage plays at that rate there …; ↶ Undo takes it back" / "… — the picture stands
 /// still there while the clock runs…"`) — the whole line, in §A.2's order: what was placed, what it does, and that
 /// one ↶ undoes it.
 pub fn placed_status(fx: &Fx) -> String {
-    let what = if fx_record::is_stop(fx) { STANDS_STILL } else { PLAYS_AT_RATE };
+    let what = if fx_record::is_stop(fx) {
+        STANDS_STILL
+    } else {
+        PLAYS_AT_RATE
+    };
     format!("{} \u{2014} {what}; \u{21b6} Undo takes it back", label(fx))
 }
 
@@ -444,7 +463,11 @@ pub fn stairs_in(t: f64, dur: f64, rate: f64, inp: f64, out: f64) -> Vec<Span> {
         ramp(&mut steps, t, inp, 1.0, rate);
     }
     if dur - inp - out > 0.0 {
-        steps.push(Span { from: t + inp, to: t + dur - out, rate });
+        steps.push(Span {
+            from: t + inp,
+            to: t + dur - out,
+            rate,
+        });
     }
     if out > 0.0 {
         ramp(&mut steps, t + dur - out, out, rate, 1.0);
@@ -515,7 +538,11 @@ pub fn stairs(rate: f64, dur: f64, trans: f64, tout: f64) -> Vec<Span> {
     }
     let (inp, out) = ramps(rate, dur, trans, tout);
     if inp <= 0.0 && out <= 0.0 {
-        return vec![Span { from: 0.0, to: dur, rate }];
+        return vec![Span {
+            from: 0.0,
+            to: dur,
+            rate,
+        }];
     }
     stairs_in(0.0, dur, rate, inp, out)
 }
@@ -532,7 +559,11 @@ pub fn steps_of(fx: &Fx) -> Vec<Span> {
     }
     let (from, _to) = fx.spans();
     if fx.rate <= 0.0 {
-        return vec![Span { from, to: from + fx.dur, rate: 0.0 }];
+        return vec![Span {
+            from,
+            to: from + fx.dur,
+            rate: 0.0,
+        }];
     }
     let (rate, _) = clamp_speed(fx.rate, fx.dur);
     stairs(rate, fx.dur, fx.trans, fx.tout)
@@ -589,7 +620,11 @@ pub fn rate_spans(fx: &[Fx]) -> Vec<Span> {
             continue; // plain footage between two effects
         }
         let mean = covering.iter().map(|s| s.rate).sum::<f64>() / covering.len() as f64;
-        out.push(Span { from, to, rate: mean });
+        out.push(Span {
+            from,
+            to,
+            rate: mean,
+        });
     }
     heal(join(out))
 }
@@ -615,8 +650,16 @@ fn join(spans: Vec<Span>) -> Vec<Span> {
 /// makes no clip of its own, so it has no length for the render to find too short. This is what keeps a very short
 /// stop from being healed away: on its own it splits nothing.
 fn span_cuts(spans: &[Span], i: usize) -> bool {
-    let left = if i > 0 { applied_rate(spans[i - 1].rate) } else { 1.0 };
-    let right = if i + 1 < spans.len() { applied_rate(spans[i + 1].rate) } else { 1.0 };
+    let left = if i > 0 {
+        applied_rate(spans[i - 1].rate)
+    } else {
+        1.0
+    };
+    let right = if i + 1 < spans.len() {
+        applied_rate(spans[i + 1].rate)
+    } else {
+        1.0
+    };
     let here = applied_rate(spans[i].rate);
     (here - left).abs() > 1e-9 || (here - right).abs() > 1e-9
 }

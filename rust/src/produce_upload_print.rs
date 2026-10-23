@@ -33,7 +33,12 @@ pub fn print_words(
     // The same fit ladder the export uses, measured against THIS picture rather than the 1920×1080 tier: a
     // drawn thumbnail is 1280 on its long side (§F5.6 S6), and reusing the tier's pixel box would print a
     // fifth of the picture too small.
-    let box_ = crate::fx_text::Box_ { cx: band.cx, cy: band.cy, wf: band.wf, hf: band.hf };
+    let box_ = crate::fx_text::Box_ {
+        cx: band.cx,
+        cy: band.cy,
+        wf: band.wf,
+        hf: band.hf,
+    };
     let (x, y, w, h) = box_.to_px(f64::from(wide), f64::from(high));
     let context = cairo::Context::new(&surface).map_err(|why| format!("{why}"))?;
     for (index, line) in words.iter().enumerate() {
@@ -100,7 +105,9 @@ fn write_png(surface: &cairo::ImageSurface, path: &Path) -> Result<(), String> {
     }
     let file = std::fs::File::create(path).map_err(|why| format!("{}: {why}", path.display()))?;
     let mut writer = std::io::BufWriter::new(file);
-    surface.write_to_png(&mut writer).map_err(|why| format!("{}: {why}", path.display()))
+    surface
+        .write_to_png(&mut writer)
+        .map_err(|why| format!("{}: {why}", path.display()))
 }
 
 /// Make a flat picture of the given size — what the drawing step leaves behind before any lettering. TEST
@@ -121,5 +128,8 @@ pub fn flat_png_for_test(path: &Path, wide: u32, high: u32, shade: f64) -> Resul
 /// TEST seam only: every program path that needs a picture's shape goes through cairo or ffprobe itself.
 pub fn png_shape_for_test(path: &Path) -> Option<(u32, u32)> {
     let surface = read_png(path).ok()?;
-    Some((surface.width().max(0) as u32, surface.height().max(0) as u32))
+    Some((
+        surface.width().max(0) as u32,
+        surface.height().max(0) as u32,
+    ))
 }

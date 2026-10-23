@@ -209,7 +209,9 @@ impl Defect {
     pub fn decided_in(self) -> &'static str {
         match self {
             Self::SilentListWipe => "07-narrate.md F4.1 (the silent list is the user's)",
-            Self::PlacementTagTravels => "02-services.md 3.10 (the tag is not the model's to carry)",
+            Self::PlacementTagTravels => {
+                "02-services.md 3.10 (the tag is not the model's to carry)"
+            }
             Self::TitlePrintedOnce => "08-produce.md F5.6 (reprint whenever the text changes)",
             Self::AtThreeReadings => "01-project-and-files.md 4 (the recording's own clock)",
         }
@@ -218,15 +220,23 @@ impl Defect {
     /// The live function that closes it, so a row cannot outlive the code it describes.
     pub fn closed_by(self) -> &'static str {
         match self {
-            Self::SilentListWipe => "audit_gaps::silent_survives_entry_rewrite over \
-                                    narration::Narration.silent, kept by bounds",
-            Self::PlacementTagTravels => "produce_subtitles::placement plus the tag-stripping outbound \
-                                        builder (sent_line / numbered)",
-            Self::TitlePrintedOnce => "audit_gaps::reprint_title_on_change, mirroring \
+            Self::SilentListWipe => {
+                "audit_gaps::silent_survives_entry_rewrite over \
+                                    narration::Narration.silent, kept by bounds"
+            }
+            Self::PlacementTagTravels => {
+                "produce_subtitles::placement plus the tag-stripping outbound \
+                                        builder (sent_line / numbered)"
+            }
+            Self::TitlePrintedOnce => {
+                "audit_gaps::reprint_title_on_change, mirroring \
                                      produce_details::prints_words_first and \
-                                     youtube_title_redraws_picture",
-            Self::AtThreeReadings => "narration::output_seconds, reached through \
-                                    audit_gaps::lands_at",
+                                     youtube_title_redraws_picture"
+            }
+            Self::AtThreeReadings => {
+                "narration::output_seconds, reached through \
+                                    audit_gaps::lands_at"
+            }
         }
     }
 }

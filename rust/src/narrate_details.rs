@@ -134,7 +134,9 @@ pub fn inputs_tooltip(
         rows.push(cut_detail(clips, seconds));
     }
     if !stale_why.is_empty() {
-        rows.push(format!("\u{26a0} {stale_why} \u{2014} \u{25b6} writes the narration again"));
+        rows.push(format!(
+            "\u{26a0} {stale_why} \u{2014} \u{25b6} writes the narration again"
+        ));
     }
     if let Some(row) = timeline_line(transcript_lines) {
         rows.push(row);
@@ -249,7 +251,9 @@ pub fn sample_log(voice: &str, pitch_semitones: f64, take: Option<usize>, text: 
 /// §6: then what came back — the file, its size, and whether the synthesis was just done or heard earlier
 /// from the cache. `spoken_in` is the caller's reading of that: how long it took, or nothing for a cached one.
 pub fn sample_file_log(file: &str, bytes: u64, spoken_in: Option<&str>) -> String {
-    let spoken = spoken_in.map_or("spoken earlier".to_string(), |took| format!("spoken in {took}"));
+    let spoken = spoken_in.map_or("spoken earlier".to_string(), |took| {
+        format!("spoken in {took}")
+    });
     format!("    sample: {file} ({} kB, {spoken})", bytes / 1024)
 }
 

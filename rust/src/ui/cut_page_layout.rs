@@ -21,18 +21,17 @@
 //! The scroll position, zoom and every wire are untouched: a re-parent moves a widget, it does not
 //! reset it.
 
-use gtk4 as gtk;
 use gtk::prelude::*;
+use gtk4 as gtk;
 
 /// The order §A/§1 give the page, below the `Cut` title row and the paned: toolbar, band, strip,
 /// camera rows, fold-all badge, then the scrollbar — the scrollbar LAST so it is the
 /// thing above the run bar and the status line, as badge **31** sits above badge **32**.
 /// The effects lane is NOT here: §06-effects#2 puts it directly beneath the preview frame, so it
 /// travels with the picture in [`PREVIEW_STACK`] instead.
-const BELOW_PANED: [&str; 6] = [
+const BELOW_PANED: [&str; 5] = [
     "cut-toolbar",
     "track-layers",
-    "track-strip",
     "selection-row",
     "camera-rows",
     "fold-all-holder",
@@ -132,10 +131,7 @@ pub fn arrange(page_box: &gtk::Box) {
     // `gtk::Box::remove` only works on a direct child, and everything named here IS one.
     let page = crate::shell::Page::Cut.label();
     let forms = form_names(page);
-    let mut wanted: Vec<String> = vec![
-        "cut-form-frame".to_string(),
-        "track-scrollbar".to_string(),
-    ];
+    let mut wanted: Vec<String> = vec!["cut-form-frame".to_string(), "track-scrollbar".to_string()];
     wanted.extend(PREVIEW_STACK.iter().map(|name| name.to_string()));
     wanted.extend(forms.iter().cloned());
     wanted.extend(BELOW_PANED.iter().map(|name| name.to_string()));
@@ -155,12 +151,21 @@ pub fn arrange(page_box: &gtk::Box) {
     }
 
     // --- the top half: preview | form column, in one horizontal paned (A's "paned (660)") -------
-    let preview = detached.iter().find(|w| w.widget_name() == PREVIEW_STACK[0]).cloned();
-    let lane = detached.iter().find(|w| w.widget_name() == PREVIEW_STACK[1]).cloned();
+    let preview = detached
+        .iter()
+        .find(|w| w.widget_name() == PREVIEW_STACK[0])
+        .cloned();
+    let lane = detached
+        .iter()
+        .find(|w| w.widget_name() == PREVIEW_STACK[1])
+        .cloned();
     // §A's form column is a pinned heading, a scroller and a pinned footer; its scroller vexpands by
     // design, and inside a paned that asks for the whole page's height, which is what pushed the
     // tracks ~750 px below the preview. Both halves of the top row keep their own shape instead.
-    let form_frame = detached.iter().find(|w| w.widget_name() == "cut-form-frame").cloned();
+    let form_frame = detached
+        .iter()
+        .find(|w| w.widget_name() == "cut-form-frame")
+        .cloned();
     if let Some(frame) = &form_frame {
         // §A's form column is a PINNED heading, a scroller and a PINNED footer (§05#1's note on the
         // pin), and only the scroller may stretch: left as built, the frame vexpanded and asked for the
@@ -352,7 +357,11 @@ pub fn arrange(page_box: &gtk::Box) {
             bottom.append(&widget);
         }
     }
-    if let Some(bar) = detached.iter().find(|w| w.widget_name() == "track-scrollbar").cloned() {
+    if let Some(bar) = detached
+        .iter()
+        .find(|w| w.widget_name() == "track-scrollbar")
+        .cloned()
+    {
         bottom.append(&bar);
     }
     // The lower pane used to carry a hard request ([`LOWER_PANE_MIN_H`]) so GTK would settle the divider on

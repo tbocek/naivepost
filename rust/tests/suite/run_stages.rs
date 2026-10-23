@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 
 use naivepost::project::Project;
 use naivepost::run::{self, RunBar, Subprocesses};
-use naivepost::runqueue::{Queue, CHECKPOINT_POLL, TRACK_FRAMES, TRACK_STT};
 use naivepost::run_stages::{self, Stage, Task};
+use naivepost::runqueue::{Queue, CHECKPOINT_POLL, TRACK_FRAMES, TRACK_STT};
 
 /// The counting happens by side effect on the stage's argv: each task writes its own marker file, so
 /// "was this task run?" is answered by the filesystem rather than by trusting the driver's word.
@@ -50,14 +50,7 @@ fn f0_5_s2_drive_runs_job_push_take_prog_done_in_that_order() {
     }];
     let mut queue = Queue::new();
     let mut procs = Subprocesses::default();
-    let drive = run_stages::drive_walk(
-        &stages,
-        &mut queue,
-        || false,
-        || false,
-        |_| {},
-        &mut procs,
-    );
+    let drive = run_stages::drive_walk(&stages, &mut queue, || false, || false, |_| {}, &mut procs);
     assert_eq!(drive, run_stages::Drive::Done { ran: 2, skipped: 0 });
     // Both tasks really ran: their marker files exist.
     assert!(dir.join("one.ran").exists(), "the first task spawned");
@@ -67,7 +60,11 @@ fn f0_5_s2_drive_runs_job_push_take_prog_done_in_that_order() {
     assert_eq!(track.queued, 2, "qPush put both tasks on the track");
     assert_eq!(track.taken, 2, "every task was taken, none skipped");
     assert!(track.done_job, "qDone closed the track");
-    assert_eq!(queue.fraction(), 1.0, "a finished stage fills its half of the bar");
+    assert_eq!(
+        queue.fraction(),
+        1.0,
+        "a finished stage fills its half of the bar"
+    );
 }
 
 /// S2's parenthetical: a task skipped because its output exists is TAKEN anyway, or the bar stalls
@@ -87,18 +84,14 @@ fn f0_5_s2_a_task_skipped_for_existing_output_is_taken_too() {
     }];
     let mut queue = Queue::new();
     let mut procs = Subprocesses::default();
-    let drive = run_stages::drive_walk(
-        &stages,
-        &mut queue,
-        || false,
-        || false,
-        |_| {},
-        &mut procs,
-    );
+    let drive = run_stages::drive_walk(&stages, &mut queue, || false, || false, |_| {}, &mut procs);
     assert_eq!(drive, run_stages::Drive::Done { ran: 1, skipped: 1 });
     let track = queue.track(TRACK_FRAMES);
     assert_eq!(track.queued, 2, "both were pushed");
-    assert_eq!(track.taken, 2, "the already-done task was taken as well — that is the stall fix");
+    assert_eq!(
+        track.taken, 2,
+        "the already-done task was taken as well — that is the stall fix"
+    );
     let _ = &mut first;
 }
 
@@ -133,17 +126,13 @@ fn f0_5_s3_checkpoint_is_asked_between_every_task() {
     };
     let mut queue = Queue::new();
     let mut procs = Subprocesses::default();
-    let drive = run_stages::drive_walk(
-        &stages,
-        &mut queue,
-        || false,
-        stopping,
-        |_| {},
-        &mut procs,
-    );
+    let drive = run_stages::drive_walk(&stages, &mut queue, || false, stopping, |_| {}, &mut procs);
     match drive {
         run_stages::Drive::Stopped { ran, left } => {
-            assert_eq!(ran, 1, "only the task that started before the stop got done");
+            assert_eq!(
+                ran, 1,
+                "only the task that started before the stop got done"
+            );
             assert_eq!(left, 2, "the two later tasks were never begun");
         }
         other => panic!("a stop between tasks must end the walk, got {other:?}"),
@@ -176,14 +165,7 @@ fn f0_5_s3_a_pause_polls_and_then_runs() {
     let mut queue = Queue::new();
     let mut procs = Subprocesses::default();
     let started = Instant::now();
-    let drive = run_stages::drive_walk(
-        &stages,
-        &mut queue,
-        paused,
-        || false,
-        |_| {},
-        &mut procs,
-    );
+    let drive = run_stages::drive_walk(&stages, &mut queue, paused, || false, |_| {}, &mut procs);
     let waited = started.elapsed();
     assert_eq!(drive, run_stages::Drive::Done { ran: 1, skipped: 0 });
     assert!(
@@ -194,7 +176,10 @@ fn f0_5_s3_a_pause_polls_and_then_runs() {
         waited < Duration::from_secs(5),
         "and it did not hang: {waited:?}"
     );
-    assert!(dir.join("paused-then-run.ran").exists(), "the task ran once released");
+    assert!(
+        dir.join("paused-then-run.ran").exists(),
+        "the task ran once released"
+    );
 }
 
 /// S4 / §Failure-is-specific: a task whose program is missing fails with the program's own name in
@@ -215,14 +200,7 @@ fn f0_5_s4_a_failed_task_names_its_program_and_is_not_a_mystery() {
     }];
     let mut queue = Queue::new();
     let mut procs = Subprocesses::default();
-    let drive = run_stages::drive_walk(
-        &stages,
-        &mut queue,
-        || false,
-        || false,
-        |_| {},
-        &mut procs,
-    );
+    let drive = run_stages::drive_walk(&stages, &mut queue, || false, || false, |_| {}, &mut procs);
     match drive {
         run_stages::Drive::Failed { stage, error } => {
             assert_eq!(stage, "speech", "the failing stage is named");
@@ -264,8 +242,15 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
     let stages = run_stages::plan(run::Step::Prepare, &project);
     // §04 S6's order: ingest first (frames on one half of the bar, speech on the other), then the two
     // understanding stages that read what those wrote — describe over the footage row, fix over both.
-    assert_eq!(stages.len(), 4, "frames, speech, describe, fix: one stage each");
-    assert_eq!(stages[0].track, TRACK_FRAMES, "frames ride their own half of the bar");
+    assert_eq!(
+        stages.len(),
+        4,
+        "frames, speech, describe, fix: one stage each"
+    );
+    assert_eq!(
+        stages[0].track, TRACK_FRAMES,
+        "frames ride their own half of the bar"
+    );
     assert_eq!(stages[1].track, TRACK_STT, "speech rides the other half");
     // The frames row is a DIAL of this module, not one spawned command: §F1.6 S2's scene sweep plus one
     // ffmpeg per frame is far more than a single task can carry, and the sweep's scores have to be read
@@ -279,7 +264,10 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
     // And the door's own argv builder is what the sweep will run, unchanged (S2): four frames a second,
     // the throwaway 640-wide scale, and the detector reporting every score.
     let sweep = naivepost::frames::scene_pass_plan(naivepost::frames::SCENE_THRESHOLD).join(" ");
-    assert!(sweep.contains("fps=4") && sweep.contains("scdet"), "the planned sweep is the scene detector: {sweep}");
+    assert!(
+        sweep.contains("fps=4") && sweep.contains("scdet"),
+        "the planned sweep is the scene detector: {sweep}"
+    );
     assert_eq!(
         stages[1].tasks[0].program,
         run_stages::AUDIO_TASK,
@@ -288,7 +276,11 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
     // The fix stage rides after describe. Its rows are the same kind of work -- a chat request -- except
     // for §F1.8's two session rows that bracket them: S1's placement first (offsets before any block
     // goes out) and S5-S7's merge last, both dials of `fix_session` rather than spawns.
-    let fix_programs: Vec<&str> = stages[3].tasks.iter().map(|task| task.program.as_str()).collect();
+    let fix_programs: Vec<&str> = stages[3]
+        .tasks
+        .iter()
+        .map(|task| task.program.as_str())
+        .collect();
     assert_eq!(
         fix_programs.first().copied(),
         Some(naivepost::fix_session::PLACEMENT_TASK),
@@ -339,7 +331,10 @@ fn f0_5_s3_drive_page_reads_the_run_flags_at_each_checkpoint() {
     let drive = run_stages::drive_page(run::Step::Prepare, &project, &queue, &bar, &procs);
     match drive {
         run_stages::Drive::Failed { stage, error } => {
-            assert!(matches!(stage, "frames" | "speech"), "a real stage failed: {stage}");
+            assert!(
+                matches!(stage, "frames" | "speech"),
+                "a real stage failed: {stage}"
+            );
             assert!(
                 error.contains("no decoded audio") || error.contains("ffmpeg"),
                 "it named why the row could not run: {error}"
@@ -351,7 +346,9 @@ fn f0_5_s3_drive_page_reads_the_run_flags_at_each_checkpoint() {
     bar.borrow_mut().stop_flag = true;
     let stopped = run_stages::drive_page(run::Step::Prepare, &project, &queue, &bar, &procs);
     match stopped {
-        run_stages::Drive::Stopped { ran, .. } => assert_eq!(ran, 0, "a stopped run starts nothing"),
+        run_stages::Drive::Stopped { ran, .. } => {
+            assert_eq!(ran, 0, "a stopped run starts nothing")
+        }
         other => panic!("⏹ up must stop the walk, got {other:?}"),
     }
 }

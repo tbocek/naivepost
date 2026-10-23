@@ -183,7 +183,11 @@ pub fn should_pulse(running: bool, fraction: f64) -> bool {
 ///
 /// The id is remembered so [`stop_pulse`] can take the timer down when ⏹ ends the run: a pulse left standing
 /// would outlive the run it belongs to and keep ticking on an idle bar.
-pub fn arm_pulse(progress: &gtk::ProgressBar, bar: &Rc<RefCell<crate::run::RunBar>>, queue: &Rc<RefCell<Queue>>) {
+pub fn arm_pulse(
+    progress: &gtk::ProgressBar,
+    bar: &Rc<RefCell<crate::run::RunBar>>,
+    queue: &Rc<RefCell<Queue>>,
+) {
     let (progress, bar, queue) = (progress.clone(), bar.clone(), queue.clone());
     let id = glib::timeout_add_local(runqueue::PROGRESS_PULSE, move || {
         let running = bar.borrow().running.is_some();

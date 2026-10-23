@@ -12,16 +12,15 @@ use gtk4 as gtk;
 
 use crate::cut;
 use crate::cut_speed;
-use crate::shell::Page;
 use crate::fx_record;
 use crate::fx_svg;
 use crate::fx_text;
 use crate::fx_zoom;
+use crate::shell::Page;
 use crate::ui::window::{
     find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo,
-    live_form_refused, log_line, paste_line, preview_picture_px, record_edit,
-    refresh_effects_lane, review_cut_of, save_insert_cut, selection, trim_seconds, zoom_field_row,
-    INSERT_PLACE_KNOWN,
+    live_form_refused, log_line, paste_line, preview_picture_px, record_edit, refresh_effects_lane,
+    review_cut_of, save_insert_cut, selection, trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
 };
 
 /// F3.5 S1: what pressing ▨ SVG did — ask for the file, or refuse for want of a line. NOTHING is recorded on
@@ -253,11 +252,7 @@ pub fn svg_drag_ended_with_source(
 }
 
 /// The app-side door: same seam, source size read off the pinned preview frame.
-pub fn svg_drag_ended(
-    window: &adw::ApplicationWindow,
-    from: (f64, f64),
-    to: (f64, f64),
-) -> String {
+pub fn svg_drag_ended(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) -> String {
     let source = preview_picture_px(window);
     svg_drag_ended_with_source(window, from, to, source)
 }

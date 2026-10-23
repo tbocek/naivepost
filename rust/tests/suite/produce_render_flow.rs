@@ -8,14 +8,14 @@
 //! `P.eng.narrationMaxExtendSeconds` (4) and `tool:ffmpeg.encode` — the codec, preset and CRF arguments are
 //! ffmpeg's own numbers, which is why they are asserted as strings rather than measured.
 
+use crate::common;
+use common::entry_at as entry;
 use naivepost::cut::{Fx, Lane, Seg};
 use naivepost::narrate_off;
 use naivepost::produce_render as r;
-use naivepost::project::{self, Container, Codec, Produce, Subtitles};
+use naivepost::project::{self, Codec, Container, Produce, Subtitles};
 use naivepost::render_fx;
 use naivepost::tools::cutpass;
-use crate::common;
-use common::entry_at as entry;
 
 const ITEM: &str = "f5_2";
 
@@ -33,7 +33,6 @@ fn seg(s: f64, e: f64) -> Seg {
         ..Default::default()
     }
 }
-
 
 fn lane(name: &str, at: f64, dur: f64) -> Lane {
     let mut row = Lane::default();
@@ -69,10 +68,12 @@ fn f5_2_s1_clears_the_scratch_folder() {
     assert!(dir.is_dir(), "the folder itself survives its own clearing");
 
     // Nothing there yet is not an error: the render creates it when it writes.
-    let missing = std::env::temp_dir().join(format!("np-f5-{}-s1-absent/clips", std::process::id()));
+    let missing =
+        std::env::temp_dir().join(format!("np-f5-{}-s1-absent/clips", std::process::id()));
     assert_eq!(r::clear_scratch(&missing).unwrap(), 0);
     assert!(!missing.exists());
-    std::fs::remove_dir_all(std::env::temp_dir().join(format!("np-f5-{}-s1", std::process::id()))).ok();
+    std::fs::remove_dir_all(std::env::temp_dir().join(format!("np-f5-{}-s1", std::process::id())))
+        .ok();
 }
 
 // ---- S2 ---------------------------------------------------------------------------
@@ -149,7 +150,17 @@ fn f5_2_s3_one_clip_per_segment_and_the_drops() {
     // Footage plans with its own rate; the frame box is render_fx's answer for the aspect.
     let mut fast = seg(0.0, 20.0);
     fast.rate = 2.0;
-    let (clips, logs) = r::plan_clips(&[fast.clone()], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true, naivepost::produce_render::unknown_footage);
+    let (clips, logs) = r::plan_clips(
+        &[fast.clone()],
+        no_fx,
+        "16:9",
+        |_| true,
+        &[],
+        &[],
+        (1920, 1080),
+        true,
+        naivepost::produce_render::unknown_footage,
+    );
     assert!(logs.is_empty(), "{logs:?}");
     assert_eq!(clips.len(), 1);
     assert_eq!(clips[0].no, 1);
@@ -171,11 +182,15 @@ fn f5_2_s3_one_clip_per_segment_and_the_drops() {
         |file| !file.contains("gone"),
         &[],
         &[],
-        (1920, 1080), true,
+        (1920, 1080),
+        true,
         naivepost::produce_render::unknown_footage,
     );
     assert_eq!(clips.len(), 2);
-    assert_eq!(logs, vec!["clip 2: media/gone.mp4 is not there any more \u{2014} skipped"]);
+    assert_eq!(
+        logs,
+        vec!["clip 2: media/gone.mp4 is not there any more \u{2014} skipped"]
+    );
     // The numbers count segments asked for, so "clip 3" still means the third row.
     assert_eq!(clips[1].no, 3);
 
@@ -183,14 +198,34 @@ fn f5_2_s3_one_clip_per_segment_and_the_drops() {
     let mut copy = seg(0.0, 5.0);
     copy.ins = "copy:12.5".to_string();
     copy.dur = 5.0;
-    let (clips, logs) = r::plan_clips(&[copy], no_fx, "source", |_| false, &[], &[], (1920, 1080), true, naivepost::produce_render::unknown_footage);
+    let (clips, logs) = r::plan_clips(
+        &[copy],
+        no_fx,
+        "source",
+        |_| false,
+        &[],
+        &[],
+        (1920, 1080),
+        true,
+        naivepost::produce_render::unknown_footage,
+    );
     assert!(logs.is_empty(), "{logs:?}");
     assert_eq!(clips[0].source, "copy:12.5");
 
     // Under the bound: dropped, and the log names the lines it took with it.
     let short = seg(60.0, 60.4);
     let lost = vec![entry(60.0, 63.0, 0.3, "a line on the dropped clip")];
-    let (clips, logs) = r::plan_clips(&[short], no_fx, "source", |_| true, &[], &lost, (1920, 1080), true, naivepost::produce_render::unknown_footage);
+    let (clips, logs) = r::plan_clips(
+        &[short],
+        no_fx,
+        "source",
+        |_| true,
+        &[],
+        &lost,
+        (1920, 1080),
+        true,
+        naivepost::produce_render::unknown_footage,
+    );
     assert!(clips.is_empty());
     assert_eq!(
         logs,
@@ -199,21 +234,51 @@ fn f5_2_s3_one_clip_per_segment_and_the_drops() {
 
     // Exactly the bound survives — the comparison is `<`, so 0.5 s renders.
     let edge = seg(60.0, 60.5);
-    let (clips, logs) = r::plan_clips(&[edge], no_fx, "source", |_| true, &[], &[], (1920, 1080), true, naivepost::produce_render::unknown_footage);
+    let (clips, logs) = r::plan_clips(
+        &[edge],
+        no_fx,
+        "source",
+        |_| true,
+        &[],
+        &[],
+        (1920, 1080),
+        true,
+        naivepost::produce_render::unknown_footage,
+    );
     assert_eq!(clips.len(), 1);
     assert!(logs.is_empty(), "{logs:?}");
 
     // A stop's rate of nought is not a clock: the footage runs on at 1× under its still.
     let mut stop = seg(0.0, 6.0);
     stop.rate = 0.0;
-    let (clips, _) = r::plan_clips(&[stop], no_fx, "source", |_| true, &[], &[], (1920, 1080), true, naivepost::produce_render::unknown_footage);
+    let (clips, _) = r::plan_clips(
+        &[stop],
+        no_fx,
+        "source",
+        |_| true,
+        &[],
+        &[],
+        (1920, 1080),
+        true,
+        naivepost::produce_render::unknown_footage,
+    );
     assert_eq!(clips[0].rate, 1.0);
 
     // A lane the scene hears is on the clip; one it hushes is not.
     let lanes = vec![lane("Music", 0.0, 30.0), lane("Game", 0.0, 30.0)];
     let mut quiet = seg(0.0, 10.0);
     quiet.quiet = vec!["Game".to_string()];
-    let (clips, _) = r::plan_clips(&[quiet], no_fx, "source", |_| true, &lanes, &[], (1920, 1080), true, naivepost::produce_render::unknown_footage);
+    let (clips, _) = r::plan_clips(
+        &[quiet],
+        no_fx,
+        "source",
+        |_| true,
+        &lanes,
+        &[],
+        (1920, 1080),
+        true,
+        naivepost::produce_render::unknown_footage,
+    );
     assert_eq!(clips[0].lanes, vec!["Music".to_string()]);
 
     assert_eq!(r::no_clip_log(), "no clip could be placed on a recording");
@@ -232,7 +297,10 @@ fn f5_2_s3b_the_fitting_ladder() {
     // Fits as placed: nothing moves and nothing is said.
     let (placed, logs) = r::fit(&[(0, 0.3, 2.0)], 10.0);
     assert!(logs.is_empty(), "{logs:?}");
-    assert_eq!((placed[0].at, placed[0].tempo, placed[0].extend), (0.3, 1.0, 0.0));
+    assert_eq!(
+        (placed[0].at, placed[0].tempo, placed[0].extend),
+        (0.3, 1.0, 0.0)
+    );
 
     // Over the room by less than the ceiling: the clip grows and no log is written — growing is what the
     // render may do quietly. The line needs 6.0 s of speech + 0.2 s tail in 2.0 s, so 4.2 s would be needed
@@ -262,23 +330,38 @@ fn f5_2_s3b_the_fitting_ladder() {
         logs[0],
         "clip 1: the narration does not fit where it was placed \u{2014} moved 3.2 s earlier"
     );
-    assert!(placed[0].at > r::LEAD_SECONDS && placed[0].at < 5.0, "{}", placed[0].at);
+    assert!(
+        placed[0].at > r::LEAD_SECONDS && placed[0].at < 5.0,
+        "{}",
+        placed[0].at
+    );
 
     // Slid all the way to the lead: only when that is what the room asks for.
     let (placed, logs) = r::fit(&[(0, 5.0, 6.0)], 2.0);
     assert_eq!(placed[0].at, r::LEAD_SECONDS);
-    assert!(logs.iter().any(|log| log.contains("moved 4.7 s earlier")), "{logs:?}");
+    assert!(
+        logs.iter().any(|log| log.contains("moved 4.7 s earlier")),
+        "{logs:?}"
+    );
 
     // Too much speech for even a slid, grown clip: sped up by whatever fits, and never past the ceiling.
     let (placed, logs) = r::fit(&[(0, 5.0, 12.0)], 4.0);
-    assert!(placed[0].tempo <= r::MAX_TEMPO + 1e-9, "{}", placed[0].tempo);
+    assert!(
+        placed[0].tempo <= r::MAX_TEMPO + 1e-9,
+        "{}",
+        placed[0].tempo
+    );
     assert!(placed[0].tempo > 1.0, "{:?}", placed[0].tempo);
     let last = logs.last().unwrap();
     assert!(last.starts_with("clip 1: narration "), "{last}");
 
     // A line needing more than the ceiling is still placed at no more than the ceiling.
     let (placed, _) = r::fit(&[(0, 5.0, 60.0)], 4.0);
-    assert!(placed[0].tempo <= r::MAX_TEMPO + 1e-9, "{}", placed[0].tempo);
+    assert!(
+        placed[0].tempo <= r::MAX_TEMPO + 1e-9,
+        "{}",
+        placed[0].tempo
+    );
 
     // The sentence §F4.3 quotes, exactly.
     assert_eq!(
@@ -316,7 +399,10 @@ fn f5_2_s3c_lane_report_and_read_head() {
     assert_eq!(r::LANE_MIN_MIX_SECONDS, 0.1);
 
     // §B step 2's three per-lane sentences.
-    assert_eq!(r::lane_report("Music", 3, 5), "Music is mixed into 3 of the 5 clips");
+    assert_eq!(
+        r::lane_report("Music", 3, 5),
+        "Music is mixed into 3 of the 5 clips"
+    );
     assert_eq!(
         r::lane_left_out("Music"),
         "Music runs under 0 clip(s) and every one of them leaves it out \u{2014} it is not in the render"
@@ -385,9 +471,11 @@ fn f5_2_s4_subtitles_on_the_produced_clock() {
     );
     assert!(names.iter().all(|name| !name.contains('*')), "{names:?}");
     // With no translation ticked there are still exactly two files beside the video.
-    assert_eq!(r::stale_sidecars("final", &[]), vec!["final.srt", "final.vtt"]);
+    assert_eq!(
+        r::stale_sidecars("final", &[]),
+        vec!["final.srt", "final.vtt"]
+    );
 }
-
 
 // ---- S5 ---------------------------------------------------------------------------
 
@@ -411,7 +499,13 @@ fn f5_2_s5_one_encode_command_per_clip() {
     // does not decode 40 minutes first. The picture itself arrives as the first `-i` of the run.
     let mut seeked = clip.clone();
     seeked.seg_s = 12.5;
-    let argv = r::encode_command(&seeked, &settings, &[("picture", Some("media/talk.mkv"))], None, out);
+    let argv = r::encode_command(
+        &seeked,
+        &settings,
+        &[("picture", Some("media/talk.mkv"))],
+        None,
+        out,
+    );
     let ss = argv.iter().position(|a| *a == "-ss").unwrap();
     let input = argv.iter().position(|a| *a == "-i").unwrap();
     assert!(ss < input, "{argv:?}");
@@ -443,7 +537,10 @@ fn f5_2_s5_one_encode_command_per_clip() {
     // A frame rate: named when the row names one, and `source` means ffmpeg is told nothing.
     let argv = r::encode_command(&clip, &settings, &[], None, out);
     assert!(argv.windows(2).any(|w| w == ["-fpsmax", "30"]), "{argv:?}");
-    assert!(argv.windows(2).any(|w| w == ["-fps_mode", "cfr"]), "{argv:?}");
+    assert!(
+        argv.windows(2).any(|w| w == ["-fps_mode", "cfr"]),
+        "{argv:?}"
+    );
     let mut source = settings.clone();
     source.frame_rate = project::FrameRate::Source;
     assert!(!r::encode_command(&clip, &source, &[], None, out)
@@ -461,8 +558,12 @@ fn f5_2_s5_one_encode_command_per_clip() {
     // run below turns that off to keep the question to one filter.
     let mut burned = settings.clone();
     burned.subtitles = Subtitles::BurnedIn;
-    let plain = Produce { blurred_edges: false, ..burned.clone() };
-    let line = r::encode_command(&clip, &plain, &[], Some("produce/clips/final.srt"), out).join(" ");
+    let plain = Produce {
+        blurred_edges: false,
+        ..burned.clone()
+    };
+    let line =
+        r::encode_command(&clip, &plain, &[], Some("produce/clips/final.srt"), out).join(" ");
     assert!(line.contains("subtitles=produce/clips/final.srt"), "{line}");
     // And the cues are printed after the camera and before nothing that could cover them.
     let chain = r::video_chain(&clip, &burned, Some("produce/clips/final.srt"));
@@ -472,14 +573,20 @@ fn f5_2_s5_one_encode_command_per_clip() {
     // Handing the same `.srt` to a run whose filter asks for no cues adds nothing: it is the caller's choice,
     // not something the encoder decides on its own.
     let chain = r::video_chain(&clip, &plain, None);
-    assert!(chain.iter().all(|filter| !filter.contains("subtitles=")), "{chain:?}");
+    assert!(
+        chain.iter().all(|filter| !filter.contains("subtitles=")),
+        "{chain:?}"
+    );
 
     // The clip's stem carries the run's stamp: a leftover c001 of an older cut cannot join into this one.
     assert_eq!(r::clip_stem(1, "abcd"), "c001_abcd");
 
     // Every command is written out verbatim before it runs — the one that hung is the one worth reading.
     let argv = r::encode_command(&clip, &settings, &[], None, out);
-    assert_eq!(r::command_log(3, &argv), format!(">>> clip 3: ffmpeg {}", argv.join(" ")));
+    assert_eq!(
+        r::command_log(3, &argv),
+        format!(">>> clip 3: ffmpeg {}", argv.join(" "))
+    );
 }
 
 // ---- S6 ---------------------------------------------------------------------------
@@ -492,12 +599,18 @@ fn f5_2_s6_the_join_is_a_stream_copy() {
     // byte counts — two clips at one size differ in bytes every time.
     assert_eq!(
         r::join_mismatch((1920, 1080), (1280, 720)),
-        Some("!!! the join is a stream copy and cannot mix sizes, so the video breaks at this clip".to_string())
+        Some(
+            "!!! the join is a stream copy and cannot mix sizes, so the video breaks at this clip"
+                .to_string()
+        )
     );
     assert_eq!(r::join_mismatch((1920, 1080), (1920, 1080)), None);
 
     // The list is the demuxer's own quoting, one line per clip in the order they play.
-    let list = r::concat_list(&["produce/clips/c001_ab.mp4".into(), "produce/clips/c002_ab.mp4".into()]);
+    let list = r::concat_list(&[
+        "produce/clips/c001_ab.mp4".into(),
+        "produce/clips/c002_ab.mp4".into(),
+    ]);
     assert_eq!(
         list,
         "file 'produce/clips/c001_ab.mp4'\nfile 'produce/clips/c002_ab.mp4'"
@@ -605,7 +718,10 @@ fn f5_2_s9_the_sidecars_written_per_language() {
     assert_eq!(ITEM, "f5_2");
     // §F5.2's file list: a .srt and a .vtt per language. The session's own language carries no code — it is
     // the track a player picks by default, so a second copy named after itself would say the same thing twice.
-    assert_eq!(r::sidecar_names("my video", None), ["my video.srt", "my video.vtt"]);
+    assert_eq!(
+        r::sidecar_names("my video", None),
+        ["my video.srt", "my video.vtt"]
+    );
     assert_eq!(
         r::sidecar_names("my video", Some("de")),
         ["my video.de.srt", "my video.de.vtt"]
@@ -623,7 +739,10 @@ fn f5_2_s9_the_sidecars_written_per_language() {
 
     // Stale files go by exact name, never a glob — a `*.de.srt` pattern would delete somebody else's work.
     let names = r::stale_sidecars("final", &["de"]);
-    assert_eq!(names, vec!["final.srt", "final.vtt", "final.de.srt", "final.de.vtt"]);
+    assert_eq!(
+        names,
+        vec!["final.srt", "final.vtt", "final.de.srt", "final.de.vtt"]
+    );
     assert!(names.iter().all(|name| !name.contains('*')), "{names:?}");
 }
 
@@ -634,8 +753,14 @@ fn f5_2_s10_checkpoints_and_the_stamp() {
     assert_eq!(ITEM, "f5_2");
     // The stamp is the resume marker: only the run that wrote the file may promise it is up to date.
     assert!(r::stamp_written(true, false));
-    assert!(!r::stamp_written(false, false), "a run that encoded nothing proved nothing");
-    assert!(!r::stamp_written(true, true), "a failed run writes no promise");
+    assert!(
+        !r::stamp_written(false, false),
+        "a run that encoded nothing proved nothing"
+    );
+    assert!(
+        !r::stamp_written(true, true),
+        "a failed run writes no promise"
+    );
 
     // Five checkpoints, each between subprocesses so a stop never leaves half an ffmpeg command running;
     // the last sits before the model call because that is the one step that costs something unrecoverable.
@@ -647,7 +772,10 @@ fn f5_2_s10_checkpoints_and_the_stamp() {
 
     // How a run ends: the file with its length and weight, or one of the two lines that are not "done".
     assert_eq!(r::STAGE_DONE, "done");
-    assert_eq!(r::finished_log("final.mp4", 12.34, "18 MB"), ">>> final.mp4  (12.3 s, 18 MB)");
+    assert_eq!(
+        r::finished_log("final.mp4", 12.34, "18 MB"),
+        ">>> final.mp4  (12.3 s, 18 MB)"
+    );
     assert_eq!(r::failure_log(), "production failed \u{2014} see log");
     assert_eq!(r::stopped_log(), "production stopped");
 
@@ -665,6 +793,9 @@ fn f5_2_module_runs_nothing() {
     // be tested with no recording and no encoder. What a test can check here is that nothing spawns at all.
     let source = include_str!("../../src/produce_render.rs");
     for forbidden in ["std::process", "Command::new"] {
-        assert!(!source.contains(forbidden), "produce_render must not use {forbidden}");
+        assert!(
+            !source.contains(forbidden),
+            "produce_render must not use {forbidden}"
+        );
     }
 }

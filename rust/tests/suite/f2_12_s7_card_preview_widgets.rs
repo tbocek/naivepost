@@ -25,11 +25,21 @@ static RAN_FOOTAGE: AtomicBool = AtomicBool::new(false);
 
 /// A spliced card: `s == e` with a `dur`, which is what makes it one.
 fn card(at: f64, dur: f64, path: &str) -> Seg {
-    Seg { s: at, e: at, dur, ins: path.to_string(), ..Default::default() }
+    Seg {
+        s: at,
+        e: at,
+        dur,
+        ins: path.to_string(),
+        ..Default::default()
+    }
 }
 
 fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
+    Seg {
+        s,
+        e,
+        ..Default::default()
+    }
 }
 
 /// This program's own copy of the demo project: the card's video and frames are written into it, and
@@ -145,7 +155,11 @@ fn f2_12_s7_the_preview_shows_the_card_and_holds_the_footage() {
             shown_is_the_card(&sting),
             "the frame is the CARD's, not the session's: {frame:?}"
         );
-        assert!(frame.exists(), "ffmpeg really wrote it: {}", frame.display());
+        assert!(
+            frame.exists(),
+            "ffmpeg really wrote it: {}",
+            frame.display()
+        );
         assert!(
             status_text(&window).contains("the footage is held while it plays"),
             "the page says what is happening: {:?}",
@@ -163,6 +177,12 @@ fn f2_12_s7_the_preview_shows_the_card_and_holds_the_footage() {
         app.quit();
     });
     inner.run_with_args::<String>(&[]);
-    assert!(RAN_SPLICED.load(Ordering::SeqCst), "the spliced card's frame reached the panel");
-    assert!(RAN_FOOTAGE.load(Ordering::SeqCst), "footage under the line is not answered by a card");
+    assert!(
+        RAN_SPLICED.load(Ordering::SeqCst),
+        "the spliced card's frame reached the panel"
+    );
+    assert!(
+        RAN_FOOTAGE.load(Ordering::SeqCst),
+        "footage under the line is not answered by a card"
+    );
 }

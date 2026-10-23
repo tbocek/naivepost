@@ -24,14 +24,15 @@ use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{hold_last_window, release_last_window, settle, status_text, widget_in, narrate_button as button};
+use common::{
+    hold_last_window, narrate_button as button, release_last_window, settle, status_text, widget_in,
+};
 
 #[path = "speak_tts_wire_harness.rs"]
 mod harness;
 use harness::{FakeAudio, Script};
 
 static RAN_EDIT_WIRE: AtomicBool = AtomicBool::new(false);
-
 
 fn time_field(window: &adw::ApplicationWindow, index: usize) -> gtk::Entry {
     widget_in(window, &format!("line-time-{index}"))
@@ -97,11 +98,25 @@ fn text_block(app: &adw::Application) {
     let state = ui::NarrateState {
         entries: vec![
             spoken.clone(),
-            Entry { s: 10.0, e: 20.0, at: 1.0, text: "second clip line".into(), ..Default::default() },
+            Entry {
+                s: 10.0,
+                e: 20.0,
+                at: 1.0,
+                text: "second clip line".into(),
+                ..Default::default()
+            },
         ],
         segs: vec![
-            Seg { s: 0.0, e: 10.0, ..Default::default() },
-            Seg { s: 10.0, e: 20.0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 10.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 10.0,
+                e: 20.0,
+                ..Default::default()
+            },
         ],
         takes: vec![],
         voice: "narrator1".into(),
@@ -125,7 +140,11 @@ fn text_block(app: &adw::Application) {
         language: "en".into(),
     };
     release_last_window();
-    let window = ui::build_window(app, &naivepost::project::load(tree.dir()).unwrap_or_default(), "Prepare");
+    let window = ui::build_window(
+        app,
+        &naivepost::project::load(tree.dir()).unwrap_or_default(),
+        "Prepare",
+    );
     hold_last_window(window.clone());
     window.present();
     ui::tab_button(&window, Page::Narrate)
@@ -152,13 +171,20 @@ fn text_block(app: &adw::Application) {
         .cloned()
         .expect("the typed words reached the held entry on the keystroke itself");
     assert_eq!(edited.pos, "top", "the placement landed");
-    assert!(edited.emotion.is_empty(), "a placement CLEARS the emotion -- a caption is read, not spoken");
+    assert!(
+        edited.emotion.is_empty(),
+        "a placement CLEARS the emotion -- a caption is read, not spoken"
+    );
     common::wait_until("the autosave writing the typed caption", || {
         on_disk_has(&tree, |entry| entry.text == "a caption typed in the box")
     });
     let on_disk = saved_line_with(&tree, "a caption typed in the box")
         .expect("after the beat the autosave wrote the line");
-    assert_eq!((on_disk.pos.as_str(), on_disk.emotion.as_str()), ("top", ""), "the file agrees with the row");
+    assert_eq!(
+        (on_disk.pos.as_str(), on_disk.emotion.as_str()),
+        ("top", ""),
+        "the file agrees with the row"
+    );
     assert_eq!(
         box_text(&window, 0),
         naivepost::narrate_screen::write_box(&on_disk),
@@ -172,7 +198,8 @@ fn text_block(app: &adw::Application) {
     common::wait_until("the autosave writing the delivery line", || {
         on_disk_has(&tree, |entry| entry.text == "words with a delivery")
     });
-    let angry = saved_line_with(&tree, "words with a delivery").expect("the delivery line is on disk");
+    let angry =
+        saved_line_with(&tree, "words with a delivery").expect("the delivery line is on disk");
     assert_eq!(angry.emotion, "angry");
     let count_before = ui::read_state().entries.len();
     type_in_box(&window, 0, "");
@@ -189,7 +216,10 @@ fn text_block(app: &adw::Application) {
         .cloned()
         .expect("the emptied line is still the same line");
     assert_eq!(emptied.text, "", "the words went");
-    assert_eq!(emptied.emotion, "angry", "emptying a box keeps the old emotion");
+    assert_eq!(
+        emptied.emotion, "angry",
+        "emptying a box keeps the old emotion"
+    );
 
     // --- (h) a `[tag @N]` inside the clip moves it; one outside is refused and said -------------
     type_in_box(&window, 0, "[calm @6] moved by the tag");
@@ -200,7 +230,11 @@ fn text_block(app: &adw::Application) {
         .find(|entry| entry.text == "moved by the tag")
         .cloned()
         .expect("the tag's words landed");
-    assert_eq!((moved.s, moved.e, moved.at), (0.0, 10.0, 6.0), "the tag moved the line inside its clip");
+    assert_eq!(
+        (moved.s, moved.e, moved.at),
+        (0.0, 10.0, 6.0),
+        "the tag moved the line inside its clip"
+    );
     assert_eq!(moved.emotion, "calm", "and kept its delivery");
     // A second past the clip's last usable second: the line stays and the status says where it stayed.
     let before = ui::read_state()
@@ -242,7 +276,11 @@ fn text_block(app: &adw::Application) {
     assert!(
         saved_line_with(&tree, "half-typed when the tab changed").is_some(),
         "leaving the tab wrote the half-typed line: {:?}",
-        naivepost::narration::load(&tree).map(|r| r.entries.iter().map(|e| e.text.clone()).collect::<Vec<_>>())
+        naivepost::narration::load(&tree).map(|r| r
+            .entries
+            .iter()
+            .map(|e| e.text.clone())
+            .collect::<Vec<_>>())
     );
 
     // --- (j) closing the window flushes too ------------------------------------------------------
@@ -299,7 +337,11 @@ fn refit_block(app: &adw::Application) {
     .expect("the pre-refit record is written");
     naivepost::cut::save(
         &Cut {
-            segs: vec![Seg { s: 12.0, e: 30.0, ..Default::default() }],
+            segs: vec![Seg {
+                s: 12.0,
+                e: 30.0,
+                ..Default::default()
+            }],
             ..Default::default()
         },
         &tree,
@@ -307,7 +349,11 @@ fn refit_block(app: &adw::Application) {
     .expect("the moved cut is what the page will refit against");
 
     release_last_window();
-    let window = ui::build_window(app, &naivepost::project::load(tree.dir()).unwrap_or_default(), "Prepare");
+    let window = ui::build_window(
+        app,
+        &naivepost::project::load(tree.dir()).unwrap_or_default(),
+        "Prepare",
+    );
     hold_last_window(window.clone());
     window.present();
     settle();
@@ -380,8 +426,16 @@ fn run_round(app: &adw::Application) {
     naivepost::project::save(&project, tree.dir()).expect("naivepost.json written");
     let cut = Cut {
         segs: vec![
-            Seg { s: 0.0, e: 10.0, ..Default::default() },
-            Seg { s: 10.0, e: 20.0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 10.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 10.0,
+                e: 20.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
@@ -389,7 +443,8 @@ fn run_round(app: &adw::Application) {
     // F4.4 S1 asks whether a reference exists before dialling; plant one so the re-roll reaches the
     // wire instead of stopping at the missing file.
     let reference = tree.voice_ref_wav();
-    std::fs::create_dir_all(reference.parent().expect("narrate/ has a parent")).expect("narrate/ made");
+    std::fs::create_dir_all(reference.parent().expect("narrate/ has a parent"))
+        .expect("narrate/ made");
     std::fs::write(&reference, b"RIFF fake voice reference").expect("reference written");
 
     release_last_window();
@@ -451,21 +506,36 @@ fn run_round(app: &adw::Application) {
     // ---- (a) ＋ below inserts a NEW row and leaves the clicked row's own second alone ----------
     let before = ui::read_state();
     assert_eq!(before.entries.len(), 2, "two rows to start with");
-    assert_eq!(before.entries[0].at, 2.0, "the clicked row sits at 2.0 s into its clip");
+    assert_eq!(
+        before.entries[0].at, 2.0,
+        "the clicked row sits at 2.0 s into its clip"
+    );
     button(&window, "line-add-below-0").emit_by_name::<()>("clicked", &[]);
     settle();
     let added = ui::read_state();
-    assert_eq!(added.entries.len(), 3, "a third row appeared under the clicked one");
+    assert_eq!(
+        added.entries.len(),
+        3,
+        "a third row appeared under the clicked one"
+    );
     assert_eq!(
         added.entries[0].at, 2.0,
         "＋ below adds a row; it does NOT move the row it was pressed on"
     );
-    assert_eq!(added.entries[1].s, 0.0, "the new row belongs to the same clip");
+    assert_eq!(
+        added.entries[1].s, 0.0,
+        "the new row belongs to the same clip"
+    );
     // audio end 2.0 + the worded gap 0.5 = 2.5 into the clip (§F4.7).
-    assert_eq!(added.entries[1].at, 2.5, "the new row starts half a second after its audio");
+    assert_eq!(
+        added.entries[1].at, 2.5,
+        "the new row starts half a second after its audio"
+    );
     // §F4.7: the row is part of the narration record, so the click writes it — nobody had to type.
     common::wait_until("the added row reaching narration.json", || {
-        naivepost::narration::load(&tree).map(|narration| narration.entries.len() == 3).unwrap_or(false)
+        naivepost::narration::load(&tree)
+            .map(|narration| narration.entries.len() == 3)
+            .unwrap_or(false)
     });
     let below = naivepost::narration::load(&tree)
         .expect("narration.json reads back")
@@ -513,12 +583,16 @@ fn run_round(app: &adw::Application) {
         .cloned()
         .collect::<Vec<_>>();
     assert!(
-        landed.iter().any(|entry| (entry.s, entry.e, entry.at) == (0.0, 10.0, 8.0)),
+        landed
+            .iter()
+            .any(|entry| (entry.s, entry.e, entry.at) == (0.0, 10.0, 8.0)),
         "the new row sits at the playhead second, not the clip's head: {:?}",
         landed.iter().map(|e| (e.s, e.at)).collect::<Vec<_>>()
     );
     common::wait_until("the add reaching narration.json", || {
-        on_disk_has(&tree, |entry| (entry.s, entry.e, entry.at) == (0.0, 10.0, 8.0))
+        on_disk_has(&tree, |entry| {
+            (entry.s, entry.e, entry.at) == (0.0, 10.0, 8.0)
+        })
     });
     let on_disk = naivepost::narration::load(&tree)
         .expect("narration.json reads back")
@@ -569,7 +643,11 @@ fn run_round(app: &adw::Application) {
     ui::set_state(pair);
     ui::refresh(&window);
     settle();
-    assert_eq!(ui::read_state().entries.len(), 2, "both rows present before the delete");
+    assert_eq!(
+        ui::read_state().entries.len(),
+        2,
+        "both rows present before the delete"
+    );
     button(&window, "line-remove-1").emit_by_name::<()>("clicked", &[]);
     settle();
     assert_eq!(ui::read_state().entries.len(), 1, "the row left the list");
@@ -585,11 +663,19 @@ fn run_round(app: &adw::Application) {
         .expect("a spoken line has a take path");
     std::fs::create_dir_all(take.parent().expect("tts/ has a parent")).expect("tts/ made");
     std::fs::write(&take, b"RIFF old take").expect("old take planted");
-    assert_eq!(ui::read_state().entries[0].roll, 0, "the roll starts at zero");
+    assert_eq!(
+        ui::read_state().entries[0].roll,
+        0,
+        "the roll starts at zero"
+    );
     button(&window, "line-reroll-0").emit_by_name::<()>("clicked", &[]);
     settle();
     assert_eq!(ui::read_state().entries[0].roll, 1, "↻ is roll + 1");
-    assert!(take.is_file(), "the previous take stays where it was: {}", take.display());
+    assert!(
+        take.is_file(),
+        "the previous take stays where it was: {}",
+        take.display()
+    );
 
     // ---- (e) the time field: commit into another clip, refuse a gap, write the box back -------
     let field = time_field(&window, 0);
@@ -602,8 +688,15 @@ fn run_round(app: &adw::Application) {
         .find(|entry| entry.text == "a spoken line")
         .cloned()
         .expect("the moved line is still listed");
-    assert_eq!((moved.s, moved.e), (10.0, 20.0), "the line adopted the other clip's bounds");
-    assert_eq!(moved.at, 2.0, "12.0 on the session clock is 2.0 into the 10-20 clip");
+    assert_eq!(
+        (moved.s, moved.e),
+        (10.0, 20.0),
+        "the line adopted the other clip's bounds"
+    );
+    assert_eq!(
+        moved.at, 2.0,
+        "12.0 on the session clock is 2.0 into the 10-20 clip"
+    );
     assert!(
         status_text(&window).starts_with("moved this line to the clip at "),
         "the move says so: {}",
@@ -621,7 +714,11 @@ fn run_round(app: &adw::Application) {
         .find(|entry| entry.text == "a spoken line")
         .cloned()
         .expect("the line is still there");
-    assert_eq!((kept.s, kept.e, kept.at), (10.0, 20.0, 2.0), "a gap refused the move outright");
+    assert_eq!(
+        (kept.s, kept.e, kept.at),
+        (10.0, 20.0, 2.0),
+        "a gap refused the move outright"
+    );
     assert_eq!(
         field.text().as_str(),
         naivepost::narrate_screen::time_field(kept.s + kept.at).as_str(),

@@ -23,7 +23,9 @@ use naivepost::ui;
 
 use crate::common;
 pub use common::find_in;
-use common::{settle, status_text, entry, widget, label_text, click, cut_page_unpainted as cut_page};
+use common::{
+    click, cut_page_unpainted as cut_page, entry, label_text, settle, status_text, widget,
+};
 
 static RAN_BAND: AtomicBool = AtomicBool::new(false);
 static RAN_LINE_STOP: AtomicBool = AtomicBool::new(false);
@@ -45,13 +47,17 @@ fn dropdown(window: &adw::ApplicationWindow, name: &str) -> gtk::DropDown {
 /// here rather than at every call site.
 fn strings_of(drop: &gtk::DropDown) -> Vec<String> {
     let model = drop.model().expect("the dropdown has a model");
-    let list = model.downcast::<gtk::StringList>().expect("a list of strings");
+    let list = model
+        .downcast::<gtk::StringList>()
+        .expect("a list of strings");
     strings(list.as_ref())
 }
 
 /// The strings a `StringList` holds, in order.
 fn strings(model: &glib::Object) -> Vec<String> {
-    let list = model.downcast_ref::<gtk::StringList>().expect("a list of strings");
+    let list = model
+        .downcast_ref::<gtk::StringList>()
+        .expect("a list of strings");
     (0..list.n_items())
         .map(|index| {
             list.item(index)
@@ -73,7 +79,6 @@ fn form_holder(window: &adw::ApplicationWindow) -> gtk::Box {
 fn form_visible(window: &adw::ApplicationWindow) -> bool {
     form_holder(window).get_visible()
 }
-
 
 /// Mark a stretch on the ruler/selection ground — the same seam a drag leaves behind — so S1 has a band.
 fn mark_band(window: &adw::ApplicationWindow, from: f64, to: f64) {
@@ -134,14 +139,21 @@ fn round(app: &adw::Application) {
         ui::note_place(true);
         ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 42.0 });
         click(&window, "effect-item-speed");
-        assert!(form_visible(&window), "a bare line opens the form too -- as a stop");
+        assert!(
+            form_visible(&window),
+            "a bare line opens the form too -- as a stop"
+        );
         let rate = dropdown(&window, "speed-field-rate");
         assert_eq!(
             rate.selected() as usize,
             speed::rate_index(0.0),
             "the rate sits on ×0, which §F3.3 spells `stop`"
         );
-        assert_eq!(strings_of(&rate)[0], "×0 — stop", "and that row says so in words");
+        assert_eq!(
+            strings_of(&rate)[0],
+            "×0 — stop",
+            "and that row says so in words"
+        );
         assert_eq!(
             entry(&window, "speed-field-length").text().trim(),
             trim(speed::STOP_SECONDS),
@@ -241,7 +253,10 @@ fn round(app: &adw::Application) {
         );
         assert_eq!(
             strings_of(&dropdown(&window, "speed-field-sound")),
-            speed::SOUND_CHOICES.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            speed::SOUND_CHOICES
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>(),
             "Sound offers §A.3's five answers in order"
         );
         // The cost note is the arithmetic done for them, compared against the module for the SHOWN values.
@@ -271,7 +286,10 @@ fn round(app: &adw::Application) {
         assert_eq!(cut_.fx.len(), 1, "Apply put exactly one record on the cut");
         let fx = &cut_.fx[0];
         assert_eq!(fx.kind, "speed");
-        assert_eq!(fx.rate, 0.0, "rate 0 stayed 0 -- no rate was invented for a still");
+        assert_eq!(
+            fx.rate, 0.0,
+            "rate 0 stayed 0 -- no rate was invented for a still"
+        );
         assert!(
             fx.dur >= 0.5,
             "// P.eng.minClipSeconds -- the LENGTH floor was taken directly (0.2 -> {:.1}) and `clamp_speed` \
@@ -320,7 +338,11 @@ fn round(app: &adw::Application) {
         mark_band(&window, 60.0, 70.0);
         click(&window, "effect-item-speed");
         click(&window, "speed-apply-button");
-        let stored = ui::review_cut_of(&window).fx.last().cloned().expect("a record was placed");
+        let stored = ui::review_cut_of(&window)
+            .fx
+            .last()
+            .cloned()
+            .expect("a record was placed");
         assert!(stored.rate > 0.0, "this branch is a clock, not a stop");
         assert_eq!(
             status_text(&window),
@@ -339,7 +361,11 @@ fn round(app: &adw::Application) {
         ui::set_line_position(&window2, naivepost::cut_line::LinePos { t: 12.0 });
         click(&window2, "effect-item-speed");
         click(&window2, "speed-apply-button");
-        let placed = ui::review_cut_of(&window2).fx.last().cloned().expect("a stop was placed");
+        let placed = ui::review_cut_of(&window2)
+            .fx
+            .last()
+            .cloned()
+            .expect("a stop was placed");
         assert_eq!(placed.rate, 0.0, "a line with no band places a stop");
         assert_eq!(
             status_text(&window2),
@@ -351,9 +377,18 @@ fn round(app: &adw::Application) {
         // than against a hand-built record, which would prove nothing about what the page said.
         let clock_line = speed::placed_status(&stored);
         let stop_line = status_text(&window2);
-        assert!(clock_line.contains("plays at that rate there"), "the clock's clause: {clock_line}");
-        assert!(stop_line.contains("stands still there while the clock runs"), "the stop's clause: {stop_line}");
-        assert_ne!(clock_line, stop_line, "and they are not the same sentence wearing different numbers");
+        assert!(
+            clock_line.contains("plays at that rate there"),
+            "the clock's clause: {clock_line}"
+        );
+        assert!(
+            stop_line.contains("stands still there while the clock runs"),
+            "the stop's clause: {stop_line}"
+        );
+        assert_ne!(
+            clock_line, stop_line,
+            "and they are not the same sentence wearing different numbers"
+        );
         RAN_STATUS_UNDO.store(true, Ordering::SeqCst);
         window2.close();
     }
@@ -387,11 +422,26 @@ fn f3_3_the_speed_form_is_wired_through_the_real_widgets() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_BAND.load(Ordering::SeqCst), "the S1 band check never ran");
-    assert!(RAN_LINE_STOP.load(Ordering::SeqCst), "the S1 line-stop check never ran");
-    assert!(RAN_REFUSAL.load(Ordering::SeqCst), "the S1 refusal check never ran");
-    assert!(RAN_FIELDS.load(Ordering::SeqCst), "the S2 six-field check never ran");
-    assert!(RAN_STOP_APPLY.load(Ordering::SeqCst), "the S3 stop-apply check never ran");
+    assert!(
+        RAN_BAND.load(Ordering::SeqCst),
+        "the S1 band check never ran"
+    );
+    assert!(
+        RAN_LINE_STOP.load(Ordering::SeqCst),
+        "the S1 line-stop check never ran"
+    );
+    assert!(
+        RAN_REFUSAL.load(Ordering::SeqCst),
+        "the S1 refusal check never ran"
+    );
+    assert!(
+        RAN_FIELDS.load(Ordering::SeqCst),
+        "the S2 six-field check never ran"
+    );
+    assert!(
+        RAN_STOP_APPLY.load(Ordering::SeqCst),
+        "the S3 stop-apply check never ran"
+    );
     assert!(
         RAN_RATE_GIVES_WAY.load(Ordering::SeqCst),
         "the S3 rate-gives-way check never ran"

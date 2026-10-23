@@ -92,13 +92,11 @@ const LINE_HEIGHT: i32 = 24;
 fn entry_of(dialog: &adw::MessageDialog) -> String {
     fn walk(node: &gtk::Widget) -> Option<String> {
         if node.widget_name() == "words-dialog-entry" {
-            return node
-                .downcast_ref::<gtk::TextView>()
-                .map(|view| {
-                    let buffer = view.buffer();
-                    let (start, end) = buffer.bounds();
-                    buffer.text(&start, &end, true).to_string()
-                });
+            return node.downcast_ref::<gtk::TextView>().map(|view| {
+                let buffer = view.buffer();
+                let (start, end) = buffer.bounds();
+                buffer.text(&start, &end, true).to_string()
+            });
         }
         if let Some(child) = node.first_child() {
             let mut cursor = Some(child);

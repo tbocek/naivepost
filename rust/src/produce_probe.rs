@@ -46,7 +46,10 @@ pub fn args_for(file: &Path) -> Vec<String> {
 pub fn parse_sizes(text: &str) -> Option<(i32, i32)> {
     let line = text.trim().lines().next()?;
     let (width, height) = line.trim().split_once(',')?;
-    let (w, h) = (width.trim().parse::<i32>().ok()?, height.trim().parse::<i32>().ok()?);
+    let (w, h) = (
+        width.trim().parse::<i32>().ok()?,
+        height.trim().parse::<i32>().ok()?,
+    );
     // A zero edge is not a frame: a stub or truncated file decodes to something with no size, and calling
     // that a size would blame every other clip for mismatching it.
     (w > 0 && h > 0).then_some((w, h))

@@ -21,7 +21,8 @@ use crate::tools;
 /// §05-cut#8 (`thinking on for the first attempt, off after an all-reasoning reply`): the log line for the
 /// retry that stops asking for reasoning. A model that filled the thinking block and wrote no answer is not
 /// stuck for a reason — it is stuck producing one, so the next call asks for the answer alone.
-pub const THINKING_RETRY_LOG: &str = ">>> suggest: the model spent the whole call thinking and wrote nothing \
+pub const THINKING_RETRY_LOG: &str =
+    ">>> suggest: the model spent the whole call thinking and wrote nothing \
                                       \u{2014} asking again with thinking off";
 
 /// §05-cut#8 (`web tools withdrawn on the first rejection`): the log line for taking them away. They cost a
@@ -60,7 +61,11 @@ pub const PROGRESS_FLOOR_SECONDS: f64 = 0.02;
 
 /// §05-cut#8 (`progress "N moments, at m:ss of m:ss"`): the status line, both stamps in session time.
 pub fn progress(moments: usize, at: f64, total: f64) -> String {
-    format!("{moments} moments, at {} of {}", tools::mm_ss(at), tools::mm_ss(total))
+    format!(
+        "{moments} moments, at {} of {}",
+        tools::mm_ss(at),
+        tools::mm_ss(total)
+    )
 }
 
 /// §05-cut#8 (`placed by the last closed segment's end, never below 0.02 nor backwards`): where the line sits
@@ -126,7 +131,10 @@ pub fn pulses(shown: f64, segments_closed: usize) -> bool {
 /// reads that way.
 pub fn drop_unfilmed(segs: Vec<(f64, f64)>, runs: &[(f64, f64)]) -> (Vec<(f64, f64)>, usize) {
     // A second is filmed when a recording covers it; the point test stands in for "either end of the segment".
-    let filmed = |t: f64| runs.iter().any(|run| timeline::spans_overlap((t, t + 0.001), *run));
+    let filmed = |t: f64| {
+        runs.iter()
+            .any(|run| timeline::spans_overlap((t, t + 0.001), *run))
+    };
     let total = segs.len();
     let kept: Vec<(f64, f64)> = segs
         .into_iter()

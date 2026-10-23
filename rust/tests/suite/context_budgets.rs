@@ -75,7 +75,10 @@ impl FixScene {
         for name in [VIDEO, AUDIO] {
             std::fs::write(session.join("sources").join(name), b"bytes").expect("the recording");
         }
-        let paths = Paths { config_dir: root.join("cfg/naivepost"), data_dir: root.join("data/naivepost") };
+        let paths = Paths {
+            config_dir: root.join("cfg/naivepost"),
+            data_dir: root.join("data/naivepost"),
+        };
         let mut conf = Conf::default();
         conf.server = llm_url.to_string();
         conf.model = "qwen-text".to_string();
@@ -122,7 +125,8 @@ impl FixScene {
                 text: format!("respelled line {index}"),
             })
             .collect();
-        textfmt::write_lines(&done, &tree.transcript_fixed_tsv(DECK)).expect("the deck is already fixed");
+        textfmt::write_lines(&done, &tree.transcript_fixed_tsv(DECK))
+            .expect("the deck is already fixed");
         FixScene { root, tree }
     }
 
@@ -155,8 +159,13 @@ impl FixScene {
             .filter(|stage| stage.name == "fix")
             .map(|mut stage| {
                 let before = stage.tasks.len();
-                stage.tasks.retain(|task| !format!("{:?}", task).contains(MIC));
-                assert!(stage.tasks.len() < before, "the mic had a fix task to remove");
+                stage
+                    .tasks
+                    .retain(|task| !format!("{:?}", task).contains(MIC));
+                assert!(
+                    stage.tasks.len() < before,
+                    "the mic had a fix task to remove"
+                );
                 stage
             })
             .collect()
@@ -166,9 +175,16 @@ impl FixScene {
         let mut queue = naivepost::runqueue::Queue::new();
         let mut procs = run::Subprocesses::default();
         let mut log: Vec<String> = Vec::new();
-        let drive = run_stages::drive_walk(stages, &mut queue, || false, || false, |line| {
-            log.push(line.to_string());
-        }, &mut procs);
+        let drive = run_stages::drive_walk(
+            stages,
+            &mut queue,
+            || false,
+            || false,
+            |line| {
+                log.push(line.to_string());
+            },
+            &mut procs,
+        );
         run_stages::say_outcome(&drive, |line| log.push(line.to_string()));
         (drive, log)
     }
@@ -205,7 +221,11 @@ impl Fake {
                 });
             }
         });
-        Fake { url: format!("http://127.0.0.1:{port}"), asks, answer: held }
+        Fake {
+            url: format!("http://127.0.0.1:{port}"),
+            asks,
+            answer: held,
+        }
     }
 
     /// The bodies recorded so far; recording happens on the connection's own thread, so callers wait.
@@ -223,14 +243,15 @@ impl Fake {
 
 use common::serve_body as serve;
 
-
 /// Messages of `n` ASCII characters: one text part each, so a size is easy to state exactly.
 fn ascii_messages(count: usize, parts_each: usize) -> Vec<Message> {
     let per = count / parts_each.max(1);
     (0..parts_each)
         .map(|i| Message {
             role: "user".to_string(),
-            parts: vec![Part::Text("x".repeat(per + if i == 0 { count - per * parts_each } else { 0 }))],
+            parts: vec![Part::Text(
+                "x".repeat(per + if i == 0 { count - per * parts_each } else { 0 }),
+            )],
         })
         .collect()
 }
@@ -242,9 +263,18 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s1_every_request_is_bounded() {
     // P.machine.promptMaxChars — §10 §1: the most one request may carry.
     assert_eq!(PROMPT_MAX_CHARS, 120_000);
     let row = params::find("P.machine.promptMaxChars").expect("the cap is catalogued");
-    assert_eq!(row.spelled, "120000", "spelled plain, as P.eng.thumbnailJPEGMax spells its cap");
-    assert_eq!(row.from, "llm_budget::PROMPT_MAX_CHARS", "one home for the number");
-    assert_eq!(params::family("P.machine.promptMaxChars"), params::Family::Machine);
+    assert_eq!(
+        row.spelled, "120000",
+        "spelled plain, as P.eng.thumbnailJPEGMax spells its cap"
+    );
+    assert_eq!(
+        row.from, "llm_budget::PROMPT_MAX_CHARS",
+        "one home for the number"
+    );
+    assert_eq!(
+        params::family("P.machine.promptMaxChars"),
+        params::Family::Machine
+    );
 
     // Inclusive boundary: exactly the cap goes, one char more does not.
     assert!(llm_budget::fits(0));
@@ -252,7 +282,10 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s1_every_request_is_bounded() {
     assert!(!llm_budget::fits(PROMPT_MAX_CHARS + 1));
 
     let under = llm_budget::check("Marking", PROMPT_MAX_CHARS);
-    assert!(under.is_ok(), "the cap itself is inside the budget: {under:?}");
+    assert!(
+        under.is_ok(),
+        "the cap itself is inside the budget: {under:?}"
+    );
     let over = llm_budget::check("Marking", PROMPT_MAX_CHARS + 1).unwrap_err();
     // The message names the step that was over, the size, the limit, and both ways out — "too big" with no
     // remedy, or with no name attached, is a dead end for whoever reads the log.
@@ -265,13 +298,19 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s1_every_request_is_bounded() {
     // And the request contract refuses it: body() is where every chat request is built, so a call
     // site cannot forget the cap.
     let too_big = ascii_messages(PROMPT_MAX_CHARS + 1, 1);
-    let refused = naivepost::llm_request::body("Marking", "m", &too_big, Mode::Execute, None, false)
-        .expect_err("a request over the cap is not sent");
-    assert_eq!(refused, over, "body reports the budget's own sentence, step included");
+    let refused =
+        naivepost::llm_request::body("Marking", "m", &too_big, Mode::Execute, None, false)
+            .expect_err("a request over the cap is not sent");
+    assert_eq!(
+        refused, over,
+        "body reports the budget's own sentence, step included"
+    );
 
     // Exactly at the cap still builds.
     let at_cap = ascii_messages(PROMPT_MAX_CHARS, 2);
-    assert!(naivepost::llm_request::body("Marking", "m", &at_cap, Mode::Execute, None, false).is_ok());
+    assert!(
+        naivepost::llm_request::body("Marking", "m", &at_cap, Mode::Execute, None, false).is_ok()
+    );
 }
 
 #[test]
@@ -280,8 +319,15 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s1_chars_counts_characters_not_byt
     // chars so the language costs nothing; the log prints bytes because that is what went on the wire.
     let cyrillic = "я".repeat(1000);
     assert_eq!(cyrillic.len(), 2000, "two bytes per char in UTF-8");
-    let messages = vec![Message { role: "user".into(), parts: vec![Part::Text(cyrillic.clone())] }];
-    assert_eq!(llm_budget::chars(&messages), 1000, "the budget sees 1000 chars");
+    let messages = vec![Message {
+        role: "user".into(),
+        parts: vec![Part::Text(cyrillic.clone())],
+    }];
+    assert_eq!(
+        llm_budget::chars(&messages),
+        1000,
+        "the budget sees 1000 chars"
+    );
 
     let mut call = Call {
         step: "Describe".into(),
@@ -296,13 +342,21 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s1_chars_counts_characters_not_byt
         cut_off: false,
         error: None,
     };
-    assert_eq!(call.sent().0, 2000, "the log figure is bytes, deliberately not the budget's number");
+    assert_eq!(
+        call.sent().0,
+        2000,
+        "the log figure is bytes, deliberately not the budget's number"
+    );
     // An image is no context at all: it cannot push a request over the cap by itself.
     call.messages.push(Message {
         role: "user".into(),
         parts: vec![Part::Image("data:image/png;base64,AAAA".repeat(50_000))],
     });
-    assert_eq!(llm_budget::chars(&call.messages), 1000, "images count zero against the cap");
+    assert_eq!(
+        llm_budget::chars(&call.messages),
+        1000,
+        "images count zero against the cap"
+    );
     assert!(llm_budget::fits(llm_budget::chars(&call.messages)));
 }
 
@@ -312,12 +366,24 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s1_chars_counts_characters_not_byt
 fn sec_09_llm_and_tools_5_context_budgets_new_s2_jobs_over_the_cap_run_in_batches() {
     // Captions: 5 clips per request.
     assert_eq!(cut_captions::BATCH, 5);
-    assert_eq!(params::find("P.machine.captionBatch").expect("catalogued").spelled, "5");
+    assert_eq!(
+        params::find("P.machine.captionBatch")
+            .expect("catalogued")
+            .spelled,
+        "5"
+    );
     let forty = cut_captions::batches(40);
     assert_eq!(forty.len(), 8, "40 clips is eight requests of five");
-    assert!(forty.iter().all(|(first, last)| last - first == 4), "every batch holds five");
+    assert!(
+        forty.iter().all(|(first, last)| last - first == 4),
+        "every batch holds five"
+    );
     let odd = cut_captions::batches(23);
-    assert_eq!(odd.last(), Some(&(21, 23)), "the final batch is short rather than dropped");
+    assert_eq!(
+        odd.last(),
+        Some(&(21, 23)),
+        "the final batch is short rather than dropped"
+    );
 
     // Translation: P.machine.translateBatch lines per request.
     assert_eq!(subs::BATCH, 150);
@@ -329,16 +395,22 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s2_jobs_over_the_cap_run_in_batche
 
     // The prototype's oversized call, reproduced with the real formatter: 778 lines of ~160 chars —
     // §5's "778-line translation call" — is well past the cap as ONE message.
-    let track: Vec<(usize, String)> =
-        (1..=778).map(|n| (n, format!("{n}: {}", "word ".repeat(32)))).collect();
+    let track: Vec<(usize, String)> = (1..=778)
+        .map(|n| (n, format!("{n}: {}", "word ".repeat(32))))
+        .collect();
     let whole = subs::numbered(&track);
-    assert!(whole.chars().count() > PROMPT_MAX_CHARS, "the whole track would be refused");
+    assert!(
+        whole.chars().count() > PROMPT_MAX_CHARS,
+        "the whole track would be refused"
+    );
     assert!(!llm_budget::fits(whole.chars().count()));
 
     // Cut to batches, every request fits and the batches tile the track — nothing is lost by splitting.
     let ranges = subs::batches(track.len());
     assert_eq!(ranges.len(), 6, "778 lines is six requests of at most 150");
-    assert!(ranges.iter().all(|(first, last)| last - first <= subs::BATCH));
+    assert!(ranges
+        .iter()
+        .all(|(first, last)| last - first <= subs::BATCH));
     assert_eq!(ranges.first(), Some(&(0, 150)));
     assert_eq!(ranges.last(), Some(&(750, 778)));
     let covered: usize = ranges.iter().map(|(f, l)| l - f).sum();
@@ -358,25 +430,41 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s2_jobs_over_the_cap_run_in_batche
 fn sec_09_llm_and_tools_5_context_budgets_new_s2_the_cut_brief_is_folded_per_clip() {
     // The cut brief carries one folded line per clip rather than the session's transcript, so its
     // size scales with the number of clips and stays inside the cap whatever was recorded.
-    let many: Vec<(u32, f64, f64)> = (1..=200u32).map(|n| (n, f64::from(n) * 12.0, 12.0)).collect();
+    let many: Vec<(u32, f64, f64)> = (1..=200u32)
+        .map(|n| (n, f64::from(n) * 12.0, 12.0))
+        .collect();
     let clips = Clips::new(&many);
     let brief = cut_speed_pass::brief(&clips, 2400.0);
-    assert!(brief.chars().count() < PROMPT_MAX_CHARS, "a 200-clip brief is {} chars", brief.chars().count());
+    assert!(
+        brief.chars().count() < PROMPT_MAX_CHARS,
+        "a 200-clip brief is {} chars",
+        brief.chars().count()
+    );
 
     // One entry per clip, each naming its own number: the fold is per clip, not one blob.
-    let lines: Vec<&str> = brief.lines().filter(|line| line.starts_with("CLIP ")).collect();
+    let lines: Vec<&str> = brief
+        .lines()
+        .filter(|line| line.starts_with("CLIP "))
+        .collect();
     assert_eq!(lines.len(), 200, "one line per clip");
     assert!(lines[0].starts_with("CLIP 1:"), "{}", lines[0]);
     assert!(lines[199].starts_with("CLIP 200:"), "{}", lines[199]);
     // Plus the header lines above the list (the footage total and the list's own heading).
     let total = brief.lines().count();
-    assert_eq!(total, 200 + 3, "the two headers and a blank line above the clip list");
+    assert_eq!(
+        total,
+        200 + 3,
+        "the two headers and a blank line above the clip list"
+    );
 
     // The effects pass folds the same way: one line per clip, with the speed noted on it.
     let speeds: Vec<(u32, f64)> = (1..=200u32).map(|n| (n, 2.0)).collect();
     let fx_brief = naivepost::cut_effects_pass::brief(&clips, &speeds);
     assert!(fx_brief.chars().count() < PROMPT_MAX_CHARS);
-    let fx_lines: Vec<&str> = fx_brief.lines().filter(|line| line.starts_with("CLIP ")).collect();
+    let fx_lines: Vec<&str> = fx_brief
+        .lines()
+        .filter(|line| line.starts_with("CLIP "))
+        .collect();
     assert_eq!(fx_lines.len(), 200);
     assert!(fx_lines[7].contains("plays at 2x"), "{}", fx_lines[7]);
 }
@@ -391,18 +479,34 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s3_the_rest_is_read_through_tools(
         .into_iter()
         .filter(|job| roles::server(*job) == Server::Llm)
         .collect();
-    assert_eq!(llm_jobs.len(), 9, "four audio jobs go to audio.cpp and the thumbnail to sd.cpp");
+    assert_eq!(
+        llm_jobs.len(),
+        9,
+        "four audio jobs go to audio.cpp and the thumbnail to sd.cpp"
+    );
 
     for job in &llm_jobs {
         let offered = tools::offered(*job);
-        assert!(offered.contains(&Tool::GetEvents), "{job:?} cannot read events: {offered:?}");
+        assert!(
+            offered.contains(&Tool::GetEvents),
+            "{job:?} cannot read events: {offered:?}"
+        );
         if *job == roles::Job::Describe {
             // §3.2's Reads row: a chunk of frames has no transcript lines to read, so get_lines is
             // dropped for it and get_frames stands in. Asserted rather than papered over.
-            assert!(!offered.contains(&Tool::GetLines), "{job:?} has no lines to offer");
-            assert!(offered.contains(&Tool::GetFrames), "{job:?} reads frames instead");
+            assert!(
+                !offered.contains(&Tool::GetLines),
+                "{job:?} has no lines to offer"
+            );
+            assert!(
+                offered.contains(&Tool::GetFrames),
+                "{job:?} reads frames instead"
+            );
         } else {
-            assert!(offered.contains(&Tool::GetLines), "{job:?} cannot read lines: {offered:?}");
+            assert!(
+                offered.contains(&Tool::GetLines),
+                "{job:?} cannot read lines: {offered:?}"
+            );
         }
     }
 }
@@ -414,8 +518,9 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s3_the_rest_is_read_through_tools(
 #[test]
 fn sec_09_llm_and_tools_5_context_budgets_new_s1_the_refusal_names_the_step() {
     let too_big = ascii_messages(PROMPT_MAX_CHARS + 1, 1);
-    let refused = naivepost::llm_request::body("Marking", "qwen", &too_big, Mode::Execute, None, false)
-        .expect_err("a request over the cap is not built, so it cannot be sent");
+    let refused =
+        naivepost::llm_request::body("Marking", "qwen", &too_big, Mode::Execute, None, false)
+            .expect_err("a request over the cap is not built, so it cannot be sent");
     assert!(
         refused.starts_with(&format!(
             ">>> Marking: prompt is over the budget: {} chars against {PROMPT_MAX_CHARS}",
@@ -424,13 +529,17 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s1_the_refusal_names_the_step() {
         "the refusal opens with the step that was over: {refused}"
     );
     // Both numbers and both ways out, spelled from the constant rather than from a literal.
-    assert!(refused.contains(&format!("against {PROMPT_MAX_CHARS}")), "{refused}");
+    assert!(
+        refused.contains(&format!("against {PROMPT_MAX_CHARS}")),
+        "{refused}"
+    );
     assert!(refused.contains("run the job in batches"), "{refused}");
     assert!(refused.contains("get_lines/get_events"), "{refused}");
 
     // A different step gets its own name: the sentence is built per request, not stored once.
-    let other = naivepost::llm_request::body("translate", "qwen", &too_big, Mode::Execute, None, false)
-        .expect_err("the cap does not care which job asks");
+    let other =
+        naivepost::llm_request::body("translate", "qwen", &too_big, Mode::Execute, None, false)
+            .expect_err("the cap does not care which job asks");
     assert!(other.starts_with(">>> translate: "), "{other}");
 
     // Exactly at the cap still builds — the bound is inclusive, so this is not a refusal.
@@ -448,7 +557,8 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s1_the_refusal_names_the_step() {
 /// §5 fixes the size line verbatim as `N kB of text`; below a kilobyte `size_of` used to print `812 B`, a
 /// unit the spec never names. Every size now goes out in kB, one decimal, whatever it is.
 #[test]
-fn sec_09_llm_and_tools_5_context_budgets_new_s1_the_size_line_names_kilobytes_under_one_kilobyte() {
+fn sec_09_llm_and_tools_5_context_budgets_new_s1_the_size_line_names_kilobytes_under_one_kilobyte()
+{
     let call_with = |bytes: usize| Call {
         step: "Describe".into(),
         model: "vision".into(),
@@ -506,10 +616,19 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s2_translation_batches_stay_under_
     assert_eq!(subs::BATCH, 150, "P.machine.translateBatch");
 
     // What the track would be as ONE message — heading plus every numbered cue: refused outright.
-    let original: Vec<(usize, String)> =
-        (1..=cues.len()).map(|n| (n, subs::sent_text(&cues[n - 1]))).collect();
-    let whole = format!("{}\n{}", subs::message(cues.len(), "de"), subs::numbered(&original));
-    assert!(whole.chars().count() > PROMPT_MAX_CHARS, "one message for the track is {} chars", whole.chars().count());
+    let original: Vec<(usize, String)> = (1..=cues.len())
+        .map(|n| (n, subs::sent_text(&cues[n - 1])))
+        .collect();
+    let whole = format!(
+        "{}\n{}",
+        subs::message(cues.len(), "de"),
+        subs::numbered(&original)
+    );
+    assert!(
+        whole.chars().count() > PROMPT_MAX_CHARS,
+        "one message for the track is {} chars",
+        whole.chars().count()
+    );
     assert!(!llm_budget::fits(whole.chars().count()));
 
     // Each request the batching actually sends fits, and every cue is asked about exactly once.
@@ -517,9 +636,16 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s2_translation_batches_stay_under_
     assert!(ranges.len() > 1, "the track has to be split: {ranges:?}");
     let mut asked = 0usize;
     for range in &ranges {
-        assert!(range.1 - range.0 <= subs::BATCH, "batch {range:?} holds more than BATCH lines");
+        assert!(
+            range.1 - range.0 <= subs::BATCH,
+            "batch {range:?} holds more than BATCH lines"
+        );
         let part: Vec<(usize, String)> = original[range.0..range.1].to_vec();
-        let request = format!("{}\n{}", subs::message(part.len(), "de"), subs::numbered(&part));
+        let request = format!(
+            "{}\n{}",
+            subs::message(part.len(), "de"),
+            subs::numbered(&part)
+        );
         assert!(
             llm_budget::fits(request.chars().count()),
             "batch {range:?} is {} chars, past the cap",
@@ -539,7 +665,9 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s2_translation_batches_stay_under_
 /// files and log lines only that walk produces.
 #[test]
 fn sec_09_llm_and_tools_5_context_budgets_new_s2_the_session_fix_walk_runs_in_a_real_run() {
-    let _turn = FIX_ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _turn = FIX_ENV
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     // Only ONE source gets a fixed file planted: the other still owes the fixer, which is what makes the
     // merge row run the session walk instead of skipping it (§S3's resume rule).
     let fake = Fake::start(fix_answer(FIX_LINES));
@@ -549,19 +677,32 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s2_the_session_fix_walk_runs_in_a_
     let (_drive, log) = scene.drive(&stages);
     scene.leave();
 
-    assert!(matches!(_drive, run_stages::Drive::Done { .. }), "the fix stage finished: {_drive:?}");
+    assert!(
+        matches!(_drive, run_stages::Drive::Done { .. }),
+        "the fix stage finished: {_drive:?}"
+    );
     // The source nobody fixed now has its fixed file: only `fix_transcripts::run` writes it in this walk,
     // because its own fix row was the one removed below.
     assert!(
         scene.tree.transcript_fixed_tsv(MIC).exists(),
         "the session walk fixed the source whose own fix row did not run"
     );
-    let fixed = std::fs::read_to_string(scene.tree.transcript_fixed_tsv(MIC)).expect("the fixed file");
-    assert!(fixed.contains("respelled line 1"), "the walk's answers landed: {fixed}");
+    let fixed =
+        std::fs::read_to_string(scene.tree.transcript_fixed_tsv(MIC)).expect("the fixed file");
+    assert!(
+        fixed.contains("respelled line 1"),
+        "the walk's answers landed: {fixed}"
+    );
     // The timeline and its text come after the walk, from the merge row that ran it. `session_txt` is only
     // ever written by that merge, so its presence means the merge — and the walk inside it — really ran.
-    assert!(scene.tree.session_tsv().exists(), "the merge still wrote the timeline");
-    assert!(scene.tree.session_txt().exists(), "and the text the cut reads");
+    assert!(
+        scene.tree.session_tsv().exists(),
+        "the merge still wrote the timeline"
+    );
+    assert!(
+        scene.tree.session_txt().exists(),
+        "and the text the cut reads"
+    );
     // And the walk really dialled the fixer for the blocks it owed: §3.3's message wording is only ever
     // put on the wire by that leg.
     let fix_asks = fake
@@ -570,9 +711,11 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s2_the_session_fix_walk_runs_in_a_
         .filter(|body| body.contains("Transcript lines to clean"))
         .count();
     let _ = &log;
-    assert!(fix_asks >= 1, "the session walk asked the fixer: {fix_asks} asks");
+    assert!(
+        fix_asks >= 1,
+        "the session walk asked the fixer: {fix_asks} asks"
+    );
 }
-
 
 #[test]
 fn sec_09_llm_and_tools_5_context_budgets_new_s4_size_logged_not_on_the_page() {
@@ -588,8 +731,14 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s4_size_logged_not_on_the_page() {
         took_secs: 3,
         thinking_secs: None,
         messages: vec![
-            Message { role: "user".into(), parts: vec![Part::Text(text.clone())] },
-            Message { role: "user".into(), parts: images },
+            Message {
+                role: "user".into(),
+                parts: vec![Part::Text(text.clone())],
+            },
+            Message {
+                role: "user".into(),
+                parts: images,
+            },
         ],
         reply: "an answer".into(),
         reasoning: None,
@@ -600,10 +749,17 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s4_size_logged_not_on_the_page() {
     // The app log gets the size: 1200 bytes of text is 1.2 kB (§5's line names kB for every size), and two
     // pictures.
     let lines = exchanges::log_lines(&call);
-    assert_eq!(lines[0], ">>> Describe: 1.2 kB of text and 2 image(s) went to the LLM");
     assert_eq!(
         lines[0],
-        format!(">>> {}: {} of text and 2 image(s) went to the LLM", call.step, exchanges::kb_of(text.len()))
+        ">>> Describe: 1.2 kB of text and 2 image(s) went to the LLM"
+    );
+    assert_eq!(
+        lines[0],
+        format!(
+            ">>> {}: {} of text and 2 image(s) went to the LLM",
+            call.step,
+            exchanges::kb_of(text.len())
+        )
     );
 
     // The exchange page never says it: §5 puts the size in the log, not on the page.

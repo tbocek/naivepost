@@ -28,7 +28,10 @@ pub struct Reading {
 
 impl Reading {
     /// The 0 = none answer with nothing claimed: no length, nothing to say.
-    pub const NONE: Reading = Reading { seconds: crate::tools::cutpass::NO_TARGET, mentioned: false };
+    pub const NONE: Reading = Reading {
+        seconds: crate::tools::cutpass::NO_TARGET,
+        mentioned: false,
+    };
 }
 
 /// Spelled number words, lower case, as they appear inside a length phrase ("twenty minutes", "two hours").
@@ -87,30 +90,48 @@ pub fn target_length_of(context: &str) -> Reading {
     // Half FIRST, and before any article rule: "half an hour" contains the phrase "an hour", so a reader that
     // looked for `an hour` first would answer 3600 for a stated 1800. §12's own example is this one.
     if let Some(seconds) = read_half(&text) {
-        return Reading { seconds, mentioned: true };
+        return Reading {
+            seconds,
+            mentioned: true,
+        };
     }
     // `an hour`, `a minute` — the indefinite article is a count of one, and nothing else reads it because no
     // digit or spelled number sits before the unit.
     if let Some(seconds) = read_article(&text) {
-        return Reading { seconds, mentioned: true };
+        return Reading {
+            seconds,
+            mentioned: true,
+        };
     }
     // `1h20`: the hour form with minutes glued on. Checked before the general digit arm because the same
     // digits read as `1 h` = 3600 would otherwise swallow the `20`.
     if let Some(seconds) = read_hour_minutes(&text) {
-        return Reading { seconds, mentioned: true };
+        return Reading {
+            seconds,
+            mentioned: true,
+        };
     }
     // A spelled count next to a spelled unit: "twenty minutes", "two hours".
     if let Some(seconds) = read_spelled(&text) {
-        return Reading { seconds, mentioned: true };
+        return Reading {
+            seconds,
+            mentioned: true,
+        };
     }
     // A digit next to a unit, spelled or abbreviated: "45 min", "90 seconds", "2h", "30m".
     if let Some(seconds) = read_digits(&text) {
-        return Reading { seconds, mentioned: true };
+        return Reading {
+            seconds,
+            mentioned: true,
+        };
     }
     // Nothing parseable. Did the text still try to name a length? "a while", "short and punchy", "the length
     // of a train journey" all mention duration without a number this reader can act on, and the log has to
     // say "a length was mentioned and not understood" rather than "no length".
-    Reading { seconds: crate::tools::cutpass::NO_TARGET, mentioned: mentions_length(&text) }
+    Reading {
+        seconds: crate::tools::cutpass::NO_TARGET,
+        mentioned: mentions_length(&text),
+    }
 }
 
 /// `half an hour`, `half hour`, `half-hour`, and `an hour and a half`.
@@ -148,7 +169,11 @@ fn read_hour_minutes(text: &str) -> Option<f64> {
         if hour_start == index {
             continue;
         }
-        let hours: f64 = bytes[hour_start..index].iter().collect::<String>().parse().ok()?;
+        let hours: f64 = bytes[hour_start..index]
+            .iter()
+            .collect::<String>()
+            .parse()
+            .ok()?;
         // ...and up to two digits straight after it are the minutes.
         let mut end = index + 1;
         let mut digits = String::new();
@@ -191,9 +216,14 @@ fn read_spelled(text: &str) -> Option<f64> {
         for suffix in ["s", ""] {
             let word = format!("{unit}{suffix}");
             // Search for the unit as a whole word, then read the word just before it.
-            let Some(at) = find_word(text, &word) else { continue };
+            let Some(at) = find_word(text, &word) else {
+                continue;
+            };
             let before = text[..at].trim_end();
-            let last_word = before.split(|c: char| !c.is_alphabetic()).next_back().unwrap_or("");
+            let last_word = before
+                .split(|c: char| !c.is_alphabetic())
+                .next_back()
+                .unwrap_or("");
             if let Some((_, count)) = SPELLED_NUMBERS.iter().find(|(name, _)| *name == last_word) {
                 return Some(count * seconds_each);
             }
@@ -255,14 +285,28 @@ fn unit_at_start(tail: &str) -> Option<f64> {
 /// they have a length in mind but typed no number. Deliberately narrow: "no length mentioned" has to answer
 /// `false`, or every context that never mentions a duration would be logged as an unread one.
 fn mentions_length(text: &str) -> bool {
-    for word in ["length", "duration", "runtime", "run time", "how long", "too long", "as long as"] {
+    for word in [
+        "length",
+        "duration",
+        "runtime",
+        "run time",
+        "how long",
+        "too long",
+        "as long as",
+    ] {
         if text.contains(word) {
             return true;
         }
     }
     // "a while", "a bit", "ages": indefinite durations. Phrased as a phrase, not a bare word, so "while
     // editing" (a perfectly ordinary clause about workflow) does not read as a mentioned length.
-    for phrase in ["a while", "for ages", "a bit long", "keep it short", "short and"] {
+    for phrase in [
+        "a while",
+        "for ages",
+        "a bit long",
+        "keep it short",
+        "short and",
+    ] {
         if text.contains(phrase) {
             return true;
         }
@@ -272,7 +316,10 @@ fn mentions_length(text: &str) -> bool {
 
 /// The seconds one unit counts, looked up by its singular name.
 fn unit_seconds(unit: &str) -> Option<f64> {
-    UNITS.iter().find(|(name, _)| *name == unit).map(|(_, seconds)| *seconds)
+    UNITS
+        .iter()
+        .find(|(name, _)| *name == unit)
+        .map(|(_, seconds)| *seconds)
 }
 
 /// Position of `word` in `text` when it stands as a whole word (not a piece of a longer one).

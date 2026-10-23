@@ -6,17 +6,19 @@
 
 use std::os::unix::fs::PermissionsExt;
 
-use naivepost::wave::{self, Wave};
 use crate::common;
 use common::project_tree as project;
-
+use naivepost::wave::{self, Wave};
 
 const SIZE: i64 = 4_096_000;
 const MTIME: i64 = 1_758_030_330;
 
 /// A two-channel lane at 200 peaks a second.
 fn stereo() -> Wave {
-    Wave { hz: 200.0, chans: vec![vec![1, 2, 3, 4], vec![9, 8, 7, 6]] }
+    Wave {
+        hz: 200.0,
+        chans: vec![vec![1, 2, 3, 4], vec![9, 8, 7, 6]],
+    }
 }
 
 fn bytes_of(wave: &Wave) -> Vec<u8> {
@@ -37,7 +39,11 @@ fn sec_01_project_and_files_6_text_formats_a_wave_file_opens_with_the_magic_and_
     assert_eq!(head[0], 2, "chans");
     // 200 hertz is c8 00 little-endian, immediately after the channel count.
     assert_eq!(&head[1..3], &[0xc8, 0x00], "hz");
-    assert_eq!(&head[3..7], &[4, 0, 0, 0], "count is the first channel's length");
+    assert_eq!(
+        &head[3..7],
+        &[4, 0, 0, 0],
+        "count is the first channel's length"
+    );
     assert_eq!(&head[7..15], &SIZE.to_le_bytes(), "size");
     assert_eq!(&head[15..23], &MTIME.to_le_bytes(), "mtime");
 
@@ -54,15 +60,27 @@ fn sec_01_project_and_files_6_text_formats_a_cached_wave_round_trips_for_one_or_
 
     // One channel is the common case: a mono recording, or a stereo one whose two sides are
     // the same signal — which is what AWV4's own number means.
-    let mono = Wave { hz: 100.0, chans: vec![vec![5, 6]] };
+    let mono = Wave {
+        hz: 100.0,
+        chans: vec![vec![5, 6]],
+    };
     wave::write(&t, "mic", &mono, SIZE, MTIME).unwrap();
-    assert_eq!(wave::read(&t, "mic", SIZE, MTIME).unwrap(), Some(mono.clone()));
+    assert_eq!(
+        wave::read(&t, "mic", SIZE, MTIME).unwrap(),
+        Some(mono.clone())
+    );
 
     // The rate survives as the whole number the header keeps.
-    assert_eq!(wave::read(&t, "mic", SIZE, MTIME).unwrap().unwrap().hz, 100.0);
+    assert_eq!(
+        wave::read(&t, "mic", SIZE, MTIME).unwrap().unwrap().hz,
+        100.0
+    );
 
     // A recording too short to hold a peak still caches: two empty blocks and a count of 0.
-    let empty = Wave { hz: 200.0, chans: vec![vec![], vec![]] };
+    let empty = Wave {
+        hz: 200.0,
+        chans: vec![vec![], vec![]],
+    };
     wave::write(&t, "blip", &empty, SIZE, MTIME).unwrap();
     assert_eq!(wave::read(&t, "blip", SIZE, MTIME).unwrap(), Some(empty));
 
@@ -78,7 +96,10 @@ fn sec_01_project_and_files_6_text_formats_a_wave_cache_is_written_where_layout_
 
     let path = t.wave("cam");
     assert!(path.exists());
-    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o644);
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o644
+    );
     // §1's spine: the cache/waves directory was made by the write.
     assert!(t.dir().join("cache/waves").is_dir());
 
@@ -136,17 +157,39 @@ fn sec_01_project_and_files_6_text_formats_no_cache_and_a_wave_that_cannot_be_wr
     assert!(wave::read(&t, "cam", SIZE, MTIME).unwrap().is_none());
 
     // Writing our own nonsense is a bug rather than a miss, so it says so.
-    let no_channels = Wave { hz: 200.0, chans: vec![] };
+    let no_channels = Wave {
+        hz: 200.0,
+        chans: vec![],
+    };
     assert!(wave::encode(&no_channels, SIZE, MTIME).is_err());
 
     // Blocks of different lengths could not be read back by anyone: one count covers them
     // all.
-    let ragged = Wave { hz: 200.0, chans: vec![vec![1, 2], vec![3]] };
+    let ragged = Wave {
+        hz: 200.0,
+        chans: vec![vec![1, 2], vec![3]],
+    };
     assert!(wave::encode(&ragged, SIZE, MTIME).is_err());
 
     // A rate the header cannot hold is the writer's mistake too.
-    assert!(wave::encode(&Wave { hz: 0.0, chans: vec![vec![1]] }, SIZE, MTIME).is_err());
-    assert!(wave::encode(&Wave { hz: 70_000.0, chans: vec![vec![1]] }, SIZE, MTIME).is_err());
+    assert!(wave::encode(
+        &Wave {
+            hz: 0.0,
+            chans: vec![vec![1]]
+        },
+        SIZE,
+        MTIME
+    )
+    .is_err());
+    assert!(wave::encode(
+        &Wave {
+            hz: 70_000.0,
+            chans: vec![vec![1]]
+        },
+        SIZE,
+        MTIME
+    )
+    .is_err());
 
     // And a lane whose cache could not be written leaves no half file behind.
     assert!(!t.wave("cam").exists());
@@ -156,7 +199,10 @@ fn sec_01_project_and_files_6_text_formats_no_cache_and_a_wave_that_cannot_be_wr
 fn sec_01_project_and_files_6_text_formats_the_header_offsets_are_what_the_format_says() {
     // Pinned against §6's field list rather than against the writer, so a change to either
     // side of the pair shows up: chans u8, hz u16, count u32, size i64, mtime i64.
-    let bytes = bytes_of(&Wave { hz: 1.0, chans: vec![vec![7; 300]] });
+    let bytes = bytes_of(&Wave {
+        hz: 1.0,
+        chans: vec![vec![7; 300]],
+    });
     let head = &bytes[4..27];
     assert_eq!(head[0], 1);
     assert_eq!(u16::from_le_bytes([head[1], head[2]]), 1);
@@ -167,6 +213,12 @@ fn sec_01_project_and_files_6_text_formats_the_header_offsets_are_what_the_forma
     assert_eq!(&bytes[27..], &[7u8; 300][..]);
 
     // A count over what a u32 holds cannot be written at all.
-    let too_many = Wave { hz: 200.0, chans: vec![vec![0; 0]] };
-    assert!(wave::encode(&too_many, SIZE, MTIME).is_ok(), "an empty lane is fine");
+    let too_many = Wave {
+        hz: 200.0,
+        chans: vec![vec![0; 0]],
+    };
+    assert!(
+        wave::encode(&too_many, SIZE, MTIME).is_ok(),
+        "an empty lane is fine"
+    );
 }

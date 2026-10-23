@@ -9,15 +9,15 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk4 as gtk;
 
+use crate::cut_copy;
+use crate::cut_line;
+use crate::cut_play_leg;
+use crate::cut_screen;
+use crate::cut_select;
+use crate::cut_trim;
 use crate::ui::cut_colours::{
     GROUND, INSERT_VIOLET, KEPT_BORDER, KEPT_TINT, KEPT_TINT_ALPHA, RULER_INK,
 };
-use crate::cut_play_leg;
-use crate::cut_select;
-use crate::cut_screen;
-use crate::cut_copy;
-use crate::cut_line;
-use crate::cut_trim;
 use crate::ui::window as ui;
 
 /// The trim drag in flight, as [`wire_track_strip`] holds it between the press and the release.
@@ -32,7 +32,6 @@ struct TrimDrag {
     /// from the first move that pushed; every later update of the same hold writes state without pushing.
     pushed: bool,
 }
-
 
 /// This window's ⌦ controller, so a test can see it is attached. `None` on a page that drew none.
 pub fn delete_key_controller(window: &adw::ApplicationWindow) -> Option<gtk::EventControllerKey> {
@@ -169,7 +168,12 @@ pub fn set_press_x(x: f64) {
 }
 /// Read side of [`set_press_x`] — the stored press position for the newest window.
 pub fn press_position() -> (f64, f64) {
-    MOVE_PRESSED.with(|cell| cell.borrow().last().map(|s| *s.borrow()).unwrap_or((0.0, 0.0)))
+    MOVE_PRESSED.with(|cell| {
+        cell.borrow()
+            .last()
+            .map(|s| *s.borrow())
+            .unwrap_or((0.0, 0.0))
+    })
 }
 /// F2.8 S2/S3: the older door, seam-only. Kept for callers (and tests) that supply no press position: it
 /// answers with whatever `set_press_band` primed and nothing else — no band, no border — so a call here can
@@ -182,7 +186,13 @@ pub fn press_move(
 ) -> cut_trim::Gesture {
     crate::ui::cut_trim_press::press_move_with_override(
         window,
-        (press_band(), None, false, None, press_position().0 / strip_pps()),
+        (
+            press_band(),
+            None,
+            false,
+            None,
+            press_position().0 / strip_pps(),
+        ),
         travel_px,
         row_change,
         d_seconds,
@@ -196,10 +206,7 @@ pub fn press_move(
 /// hit comes from the press y through `cut_trim::press_targets` over `cut_trim::PLACEHOLDER_STRIP_BANDS`.
 /// That is what makes the flowchart's wave-strip branch reachable from a real right-press with nothing
 /// primed but the name.
-pub fn right_press_took(
-    press_x: f64,
-    press_y: f64,
-) -> (Option<String>, Option<String>, bool) {
+pub fn right_press_took(press_x: f64, press_y: f64) -> (Option<String>, Option<String>, bool) {
     let boxes = trim_boxes_for_strip();
     let seam = press_band();
     crate::ui::cut_trim_press::press_targets_at(
@@ -226,7 +233,13 @@ pub fn press_move_at(
     let (recorders_band, wave_strip, on_border) = right_press_took(press_x, press_y);
     let gesture = crate::ui::cut_trim_press::press_move_with_override(
         window,
-        (recorders_band, wave_strip, on_border, None, press_x / strip_pps()),
+        (
+            recorders_band,
+            wave_strip,
+            on_border,
+            None,
+            press_x / strip_pps(),
+        ),
         travel_px,
         false,
         d_seconds,
@@ -332,10 +345,23 @@ pub fn press_paste(window: &adw::ApplicationWindow) -> String {
     // Session→file seconds for the copied span — see [`cut_copy::file_seconds`].
     let file_seconds = hand
         .as_ref()
-        .map(|h| cut_copy::file_seconds(&ui::newest_review_cut(), &crate::ui::cut_folds::page_recordings(), h))
+        .map(|h| {
+            cut_copy::file_seconds(
+                &ui::newest_review_cut(),
+                &crate::ui::cut_folds::page_recordings(),
+                h,
+            )
+        })
         .unwrap_or(0.0);
     let mut cut_ = ui::newest_review_cut();
-    let outcome = cut_copy::paste(&mut cut_, &mut hand, Some(at), &path, file_seconds, &sources);
+    let outcome = cut_copy::paste(
+        &mut cut_,
+        &mut hand,
+        Some(at),
+        &path,
+        file_seconds,
+        &sources,
+    );
     // Only a paste that landed writes: a refusal left the cut untouched.
     if outcome.is_ok() {
         ui::save_insert_cut(&cut_);
@@ -374,7 +400,12 @@ pub fn press_lane(window: &adw::ApplicationWindow) -> String {
             let source = hand
                 .source_public()
                 .map(|src| src.to_string())
-                .unwrap_or_else(|| ui::session_sources(window).first().cloned().unwrap_or_default());
+                .unwrap_or_else(|| {
+                    ui::session_sources(window)
+                        .first()
+                        .cloned()
+                        .unwrap_or_default()
+                });
             // The FILE second the row windows from — the same conversion the paste asks for.
             let file_seconds =
                 cut_copy::file_seconds(&cut_, &crate::ui::cut_folds::page_recordings(), &hand);
@@ -434,7 +465,9 @@ pub(crate) fn refresh_copy_buttons(window: &adw::ApplicationWindow) {
     }
     // Paste needs a hand (F2.9 S3); Lane also lives with footage to put on a row of its own (§B).
     for name in ["paste-button", "lane-button"] {
-        let live = held || (name == "lane-button" && crate::ui::cut_lane::footage_source_path(window).is_some());
+        let live = held
+            || (name == "lane-button"
+                && crate::ui::cut_lane::footage_source_path(window).is_some());
         if let Some(button) = ui::line_step_button(window, name) {
             button.set_sensitive(live);
         }
@@ -480,19 +513,32 @@ pub fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
     cr.translate(-crate::ui::cut_strip_view::scroll_px(), 0.0);
     cut_play_leg::paint_dimmed(
         cr,
-        &cut_play_leg::dimmed(&cut_, &crate::timeline::filmed_runs(crate::ui::cut_folds::page_recordings().as_slice())),
+        &cut_play_leg::dimmed(
+            &cut_,
+            &crate::timeline::filmed_runs(crate::ui::cut_folds::page_recordings().as_slice()),
+        ),
         cut_trim::RULER_H,
         cut_trim::BAR_H,
         strip_pps(),
     );
     let _ = cr.restore();
     if boxes.is_empty() {
-        cr.select_font_face("Sans", cairo::FontSlant::Normal, gtk::cairo::FontWeight::Normal);
+        cr.select_font_face(
+            "Sans",
+            cairo::FontSlant::Normal,
+            gtk::cairo::FontWeight::Normal,
+        );
         cr.set_font_size(11.0);
         cr.set_source_rgb(0.45, 0.45, 0.45);
         cr.move_to(6.0, cut_trim::RULER_H + cut_trim::BAR_H * 0.6);
         let _ = cr.show_text(cut_trim::STRIP_EMPTY_HINT);
-        crate::ui::cut_trim_press::paint_bands(cr, w, &cut_, &crate::ui::cut_folds::page_recordings(), strip_pps());
+        crate::ui::cut_trim_press::paint_bands(
+            cr,
+            w,
+            &cut_,
+            &crate::ui::cut_folds::page_recordings(),
+            strip_pps(),
+        );
         crate::ui::cut_trim_press::paint_laid_pieces(cr, w, &cut_, strip_pps());
         return;
     }
@@ -529,7 +575,13 @@ pub fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
     // the wave strips and the laid-piece bars all move with the clips above them).
     let _ = cr.save();
     cr.translate(-crate::ui::cut_strip_view::scroll_px(), 0.0);
-    crate::ui::cut_trim_press::paint_bands(cr, w, &cut_, &crate::ui::cut_folds::page_recordings(), strip_pps());
+    crate::ui::cut_trim_press::paint_bands(
+        cr,
+        w,
+        &cut_,
+        &crate::ui::cut_folds::page_recordings(),
+        strip_pps(),
+    );
     crate::ui::cut_trim_press::paint_laid_pieces(cr, w, &cut_, strip_pps());
     let _ = cr.restore();
 }
@@ -557,7 +609,9 @@ pub(crate) fn now_millis() -> u64 {
 /// Registered after `set_content` like every other control here, and kept in thread-locals so a test can
 /// fire them the way GTK does.
 pub(crate) fn wire_track_strip(window: &adw::ApplicationWindow) {
-    let Some(strip) = track_strip(window) else { return };
+    let Some(strip) = track_strip(window) else {
+        return;
+    };
 
     let trimmer = gtk::GestureDrag::new();
     // §7: `A border belongs to both buttons; moving is the right button's verb`. The mover below says
@@ -586,7 +640,9 @@ pub(crate) fn wire_track_strip(window: &adw::ApplicationWindow) {
     let strip_end = strip.clone();
     trimmer.connect_drag_update(move |_g, x, _y| {
         TRIM_DRAGS.with(|cell| {
-            let Some(mut drag) = cell.borrow_mut().take() else { return };
+            let Some(mut drag) = cell.borrow_mut().take() else {
+                return;
+            };
             // §7's `one Undo per drag` is decided HERE, before the scrub gate: the hold's first move spends the
             // single step and every later tick of the same hold writes the edge in place. Read ahead of the
             // gate on purpose — a tick the 90 ms gate swallowed never wrote anything, so it must not be the tick
@@ -605,7 +661,11 @@ pub(crate) fn wire_track_strip(window: &adw::ApplicationWindow) {
             drag.scrubbed_ms = Some(now);
             drag.pushed = true;
             crate::ui::cut_trim_press::press_border_move(
-                &win_upd, drag.index, drag.border, x / strip_pps(), first,
+                &win_upd,
+                drag.index,
+                drag.border,
+                x / strip_pps(),
+                first,
             );
             // S1: the picture follows the border the hand is dragging, at the second the cut now holds.
             let landed = crate::ui::cut_trim_press::edge_second(drag.index, drag.border);
@@ -656,7 +716,10 @@ pub(crate) fn wire_track_strip(window: &adw::ApplicationWindow) {
         // which case the primed value stands -- hence the per-axis 0.0 "not primed" test rather than a
         // whole-pair one: a test can prime x and still let the real y through.
         let (px, py) = *pressed_begin.borrow();
-        *pressed_begin.borrow_mut() = (if px == 0.0 { x } else { px }, if py == 0.0 { y } else { py });
+        *pressed_begin.borrow_mut() = (
+            if px == 0.0 { x } else { px },
+            if py == 0.0 { y } else { py },
+        );
         // F2.8 S2: a new hold starts with no Undo step spent, so the first real move is the one that pushes.
         crate::ui::cut_trim_press::begin_move();
     });

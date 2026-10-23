@@ -261,7 +261,12 @@ fn json_key(field: Field) -> &'static str {
 /// record costs its kind's keys and no others — and why a caption with no box still reads as the lower
 /// third through [`Fx::centre`] instead of being stored there.
 pub fn blank(kind: EffectKind, at: f64, dur: f64) -> Fx {
-    Fx { kind: spell(kind).to_string(), t: at, dur, ..Default::default() }
+    Fx {
+        kind: spell(kind).to_string(),
+        t: at,
+        dur,
+        ..Default::default()
+    }
 }
 
 /// §1's column rule stated as a check: for a freshly recorded effect of this kind, a field the table marks
@@ -280,7 +285,9 @@ pub fn recorded_keys_are_the_kinds_own(kind: EffectKind, dur: f64) -> bool {
         Ok(value) => value,
         Err(_) => return false,
     };
-    let Some(map) = value.as_object() else { return false };
+    let Some(map) = value.as_object() else {
+        return false;
+    };
     // `kind` and `t` are always written: an effect that is no kind or happens at no second is not a record.
     if map.get("kind").and_then(|v| v.as_str()) != Some(spell(kind)) || !map.contains_key("t") {
         return false;
@@ -320,5 +327,8 @@ pub fn record_into(cut: &mut crate::cut::Cut, kind: EffectKind, at: f64, dur: f6
 /// What the page says after recording one. The undo clause is not decoration: recording goes through
 /// `ui::record_edit`, so ↶ does take it back (F2.13).
 pub fn recorded_status(kind: EffectKind) -> String {
-    format!("{} recorded \u{2014} \u{21b6} Undo takes it back", label_of(kind))
+    format!(
+        "{} recorded \u{2014} \u{21b6} Undo takes it back",
+        label_of(kind)
+    )
 }

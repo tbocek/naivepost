@@ -8,13 +8,13 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{cut_window_with_footage as cut_window, settle};
 use gtk4 as gtk;
 use naivepost::cut::{Cut, Fx, Lane, Seg};
 use naivepost::cut_hear::{self, LaneStart};
 use naivepost::ui;
-use crate::common;
-use common::{cut_window_with_footage as cut_window, settle};
 
 static RAN_VOLUME: AtomicBool = AtomicBool::new(false);
 static RAN_MIX: AtomicBool = AtomicBool::new(false);
@@ -30,7 +30,10 @@ fn check_the_volume_slider_hands_one_number_to_every_preview(app: &adw::Applicat
 
     // The real widget, by its stable name — not a value written straight to the seam.
     let scale = ui::preview_volume_scale(&window).expect("the Cut page carries preview-volume");
-    assert!(scale.is_mapped(), "the slider is mapped on the visible Cut page");
+    assert!(
+        scale.is_mapped(),
+        "the slider is mapped on the visible Cut page"
+    );
     println!(
         "LAYOUT preview-volume width={} height={} mapped={}",
         scale.width(),
@@ -61,35 +64,49 @@ fn check_the_volume_slider_hands_one_number_to_every_preview(app: &adw::Applicat
     let row = scale
         .parent()
         .expect("the slider sits in a labelled row, not loose in the page column");
-    let row = row.downcast::<gtk::Box>().expect("the volume row is a horizontal Box");
+    let row = row
+        .downcast::<gtk::Box>()
+        .expect("the volume row is a horizontal Box");
     let label = row
         .first_child()
         .and_then(|c| c.downcast::<gtk::Label>().ok())
         .expect("the first thing in the volume row is the label");
-    println!(
-        "LABEL {} mapped={}",
-        label.text(),
-        label.is_mapped()
-    );
+    println!("LABEL {} mapped={}", label.text(), label.is_mapped());
     assert_eq!(
         label.text().as_str(),
         cut_hear::VOLUME_LABEL,
         "the word beside the slider is the module's own, so the two cannot disagree"
     );
-    assert!(label.is_mapped(), "the label is actually drawn, not just built");
+    assert!(
+        label.is_mapped(),
+        "the label is actually drawn, not just built"
+    );
     println!("ROW height={}", row.height());
     assert!(
         row.height() >= 24,
         "the row holds the 24 px floor so it reads as a control, got {} px",
         row.height()
     );
-    assert_eq!((scale.adjustment().upper(), scale.adjustment().step_increment()), (100.0, 1.0),
-        "0..100 at step 1 — what a slider reads as, while the property under it is 0..1");
+    assert_eq!(
+        (
+            scale.adjustment().upper(),
+            scale.adjustment().step_increment()
+        ),
+        (100.0, 1.0),
+        "0..100 at step 1 — what a slider reads as, while the property under it is 0..1"
+    );
 
     // Untouched means full: an unset control is audible, not mute.
-    assert_eq!(ui::preview_volume(&window), cut_hear::VOLUME_DEFAULT, "an untouched slider reads full");
-    assert_eq!(ui::preview_player(&window).volume, Some(cut_hear::VOLUME_DEFAULT),
-        "and the player starts at that same one number");
+    assert_eq!(
+        ui::preview_volume(&window),
+        cut_hear::VOLUME_DEFAULT,
+        "an untouched slider reads full"
+    );
+    assert_eq!(
+        ui::preview_player(&window).volume,
+        Some(cut_hear::VOLUME_DEFAULT),
+        "and the player starts at that same one number"
+    );
 
     // Drag it to 40 the way a drag does: setting the widget's value fires `value-changed` for real, and
     // the wired handler forwards to `set_preview_volume`.
@@ -114,7 +131,11 @@ fn check_the_volume_slider_hands_one_number_to_every_preview(app: &adw::Applicat
     scale.set_value(100.0);
     settle();
     assert_eq!(ui::preview_volume(&window), 1.0, "full travel is full gain");
-    assert_eq!(ui::preview_player(&window).volume, Some(1.0), "and the player follows again");
+    assert_eq!(
+        ui::preview_player(&window).volume,
+        Some(1.0),
+        "and the player follows again"
+    );
     scale.set_value(-5.0);
     settle();
     assert_eq!(
@@ -122,7 +143,11 @@ fn check_the_volume_slider_hands_one_number_to_every_preview(app: &adw::Applicat
         cut_hear::clamp_volume(-0.05),
         "below nought clamps to silence, never a phase flip"
     );
-    assert_eq!(ui::preview_player(&window).volume, Some(0.0), "silence reaches the player too");
+    assert_eq!(
+        ui::preview_player(&window).volume,
+        Some(0.0),
+        "silence reaches the player too"
+    );
 
     window.close();
 }
@@ -160,13 +185,19 @@ fn check_the_page_seam_refuses_a_silenced_lane_whatever_the_gain(app: &adw::Appl
         &[(hushed.to_string(), LaneStart::Silenced)][..],
         "yet the silenced lane is refused — never started, whatever the gain"
     );
-    assert!(!loud.footage_muted, "the scene leaves its own picture sound on, so it is not muted");
+    assert!(
+        !loud.footage_muted,
+        "the scene leaves its own picture sound on, so it is not muted"
+    );
 
     // Same call, same second, scene mutes its own sound instead: only that flag moves.
     cut.segs[0].quiet.clear();
     cut.segs[0].mute = true;
     let muted = ui::apply_mix(&window, &cut.segs, &lanes, &fx, 40.0);
-    assert!(muted.footage_muted, "S2: the footage's own sound is muted here");
+    assert!(
+        muted.footage_muted,
+        "S2: the footage's own sound is muted here"
+    );
     assert!(
         matches!(muted.lane_starts[0].1, LaneStart::Seek { .. }),
         "and the lane, no longer silenced, is asked to play"
@@ -179,8 +210,14 @@ fn check_the_page_seam_refuses_a_silenced_lane_whatever_the_gain(app: &adw::Appl
 
     // A second outside every scene answers with no new say rather than inventing a silence.
     let nowhere = ui::apply_mix(&window, &cut.segs, &lanes, &fx, 5.0);
-    assert!(nowhere.lane_starts.is_empty(), "no scene decides, so no lane is answered for");
-    assert!(!nowhere.footage_muted, "and nothing is muted by a scene that isn't there");
+    assert!(
+        nowhere.lane_starts.is_empty(),
+        "no scene decides, so no lane is answered for"
+    );
+    assert!(
+        !nowhere.footage_muted,
+        "and nothing is muted by a scene that isn't there"
+    );
 
     window.close();
 }
@@ -198,6 +235,12 @@ fn window_round() {
 fn f2_5_s6_the_preview_volume_control_hands_one_number_to_every_preview() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_VOLUME.load(Ordering::SeqCst), "the slider check never ran");
-    assert!(RAN_MIX.load(Ordering::SeqCst), "the mix-seam check never ran");
+    assert!(
+        RAN_VOLUME.load(Ordering::SeqCst),
+        "the slider check never ran"
+    );
+    assert!(
+        RAN_MIX.load(Ordering::SeqCst),
+        "the mix-seam check never ran"
+    );
 }

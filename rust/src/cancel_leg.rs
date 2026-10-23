@@ -33,7 +33,6 @@ static ANY_STOPPED: AtomicBool = AtomicBool::new(false);
 /// number, and a stop always names a run's own, so the two never match.
 static CURRENT_GEN: AtomicU64 = AtomicU64::new(0);
 
-
 /// Force the current generation to a known number, so the switch and `RunBar::run_epoch` stay one
 /// counter rather than two that can drift. Called by `runqueue::cancel_switch` right after the bar
 /// bumps its own; a stop of generation N then cancels exactly the legs that captured N.
@@ -42,8 +41,6 @@ pub fn reset_to(epoch: u64) {
     CURRENT_GEN.store(epoch, Ordering::SeqCst);
     HOLDING.swap(0, Ordering::SeqCst);
 }
-
-
 
 /// The closure for a call that belongs to no run — a settings probe, a request made before a
 /// project exists — where a later run's ⏹ must not reach back and cancel it.
@@ -124,13 +121,19 @@ pub fn legs_outstanding() -> u64 {
 /// Returns immediately when nothing is outstanding.
 pub fn await_stop(budget: Duration) -> StoppedLegs {
     if !ANY_STOPPED.load(Ordering::SeqCst) || budget.is_zero() {
-        return StoppedLegs { waited: false, legs: legs_outstanding() };
+        return StoppedLegs {
+            waited: false,
+            legs: legs_outstanding(),
+        };
     }
     let started = std::time::Instant::now();
     loop {
         let left = budget.saturating_sub(started.elapsed());
         if legs_outstanding() == 0 || !ANY_STOPPED.load(Ordering::SeqCst) || left.is_zero() {
-            return StoppedLegs { waited: true, legs: legs_outstanding() };
+            return StoppedLegs {
+                waited: true,
+                legs: legs_outstanding(),
+            };
         }
         std::thread::sleep(POLL.min(left));
     }

@@ -139,7 +139,9 @@ fn fit_lane_to_view(window: &adw::ApplicationWindow) {
 /// refresh, where a relayout is the point.
 pub fn note_lane_size(window: &adw::ApplicationWindow) {
     let Some(lane) = lane_of(window) else { return };
-    let Some(seconds) = painted_seconds() else { return };
+    let Some(seconds) = painted_seconds() else {
+        return;
+    };
     let scroller = match crate::ui::window::find_widget_by_name(
         &window.content().expect("the window has content"),
         "take-band-scroller",
@@ -214,7 +216,11 @@ pub fn show_only_with_recording(window: &adw::ApplicationWindow) {
 pub fn recording_shown() -> bool {
     if let Some(tree) = crate::ui::window::narrate_session_tree() {
         if let Ok(project) = crate::project::load(tree.dir()) {
-            if crate::narrate_band_face::recording_exists(&tree, &project, &crate::ui::narrate_page::read_state().voice) {
+            if crate::narrate_band_face::recording_exists(
+                &tree,
+                &project,
+                &crate::ui::narrate_page::read_state().voice,
+            ) {
                 return true;
             }
         }
@@ -230,7 +236,11 @@ pub fn recording_shown() -> bool {
 pub fn painted_seconds() -> Option<f64> {
     let tree = crate::ui::window::narrate_session_tree()?;
     let project = crate::project::load(tree.dir()).ok()?;
-    crate::narrate_band_face::band_seconds(&tree, &project, &crate::ui::narrate_page::read_state().voice)
+    crate::narrate_band_face::band_seconds(
+        &tree,
+        &project,
+        &crate::ui::narrate_page::read_state().voice,
+    )
 }
 
 /// The band's gesture, kept for the test that fires it the way GTK does — the same reason
@@ -276,7 +286,10 @@ thread_local! {
 /// to a short duration (which clamps px/s at `narrate.bandMaxPps`).
 pub fn painted_view_for_test() -> (f64, f64) {
     let (duration, width) = size();
-    (duration, crate::narrate_band::px_per_second(zoom(), duration, width))
+    (
+        duration,
+        crate::narrate_band::px_per_second(zoom(), duration, width),
+    )
 }
 
 /// The lane's last allocated width, as its painter saw it — the viewport `lane_width` is measured
@@ -302,7 +315,8 @@ pub fn painted_plan_for_test(width: f64, height: f64) -> band::Plan {
     // The seconds `paint` measures for THIS width — asked through the painter's own door, so a bar or a
     // take is mapped with the number the ink will use (with no recording on disk that fallback is short,
     // and px/s is then clamped at `narrate.bandMaxPps`, which is exactly what the lane draws).
-    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, 1, 1).expect("a scratch surface");
+    let surface =
+        cairo::ImageSurface::create(cairo::Format::ARgb32, 1, 1).expect("a scratch surface");
     let probe = cairo::Context::new(&surface).expect("a scratch context");
     paint(&probe, width, height.max(1.0));
     // The plan is the one `paint` itself built for this exact width and left in nothing but its own frame,
@@ -540,7 +554,9 @@ pub fn painted_pixels_for_test(
 /// This window's take band.
 fn lane_of(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
     let content = window.content()?;
-    crate::ui::window::find_widget_by_name(&content, "take-band")?.downcast().ok()
+    crate::ui::window::find_widget_by_name(&content, "take-band")?
+        .downcast()
+        .ok()
 }
 
 /// The seconds of the reference recording the band is drawn across: the file the voice is cloned
@@ -565,12 +581,18 @@ pub fn recording_seconds() -> Option<f64> {
 /// lane was never transcribed the band had nothing to draw and printed "reading the recording…" forever.
 /// ffmpeg decides where ffprobe/ffmpeg live, exactly as everywhere else in the app (`""` = this machine has
 /// no settings home, which the decode reports as its own refusal).
-fn envelope(tree: &crate::layout::Tree, lane: &str, source: &std::path::Path) -> Result<Vec<u8>, String> {
+fn envelope(
+    tree: &crate::layout::Tree,
+    lane: &str,
+    source: &std::path::Path,
+) -> Result<Vec<u8>, String> {
     let mut said = Vec::new();
     let configured = crate::settings::from_environment()
         .map(|paths| crate::settings::read(&paths).unwrap_or_default().ffmpeg)
         .unwrap_or_default();
-    crate::decode_audio::ensure(tree, lane, source, &configured, &mut |line| said.push(line.to_string()))?;
+    crate::decode_audio::ensure(tree, lane, source, &configured, &mut |line| {
+        said.push(line.to_string())
+    })?;
     wave_build::ensure(tree, lane, source, &mut |line| said.push(line.to_string()))?;
     let (size, mtime) = stamp(source)?;
     let wave = crate::wave::read(tree, lane, size, mtime)?
@@ -617,7 +639,6 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
     // across a 560 px column stopped two fifths of the way across the plate.
     // The lane's width comes from `note_lane_size`, which the page's refresh calls: a draw func that changes
     // its own widget's size request queues another draw, and the next one changes it again.
-
 
     // The ground, so the plate's CSS colour is under everything even where cairo paints first.
     cr.set_source_rgb(0.11, 0.11, 0.115);
@@ -716,7 +737,12 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
 
     // 5. The faint red bar under the pointer.
     if let Some(x) = plan.pointer_px {
-        cr.set_source_rgba(POINTER_COLOUR.0, POINTER_COLOUR.1, POINTER_COLOUR.2, POINTER_COLOUR.3);
+        cr.set_source_rgba(
+            POINTER_COLOUR.0,
+            POINTER_COLOUR.1,
+            POINTER_COLOUR.2,
+            POINTER_COLOUR.3,
+        );
         cr.rectangle(x, lane_top, 1.0, lane_h);
         let _ = cr.fill();
     }
@@ -749,21 +775,29 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
 /// The door a test asks the envelope question through: the same walk [`paint`] runs, with the refusal kept
 /// instead of folded away. `*_for_test` because the program never calls it — `paint` walks `envelope_attempt`
 /// itself and logs the reason where the user can read it.
-pub fn envelope_report_for_test(state: &crate::ui::narrate_page::NarrateState) -> Result<(f64, Vec<u8>), String> {
+pub fn envelope_report_for_test(
+    state: &crate::ui::narrate_page::NarrateState,
+) -> Result<(f64, Vec<u8>), String> {
     envelope_attempt(state)
 }
 
 /// The envelope walk itself, as `Ok(peaks)` or the `String` saying what stopped it: the reason has to travel
 /// out of here for §00's "failure is specific and local", because every caller used to fold it to `None` and
 /// a lane that drew nothing gave the person no way to find out why.
-fn envelope_attempt(state: &crate::ui::narrate_page::NarrateState) -> Result<(f64, Vec<u8>), String> {
+fn envelope_attempt(
+    state: &crate::ui::narrate_page::NarrateState,
+) -> Result<(f64, Vec<u8>), String> {
     let tree = crate::ui::window::narrate_session_tree().ok_or("no session folder open")?;
     if state.voice == screen::CAPTIONS {
         return Err("the voice is captions only".to_string());
     }
     let mut sources: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(project) = crate::project::load(tree.dir()) {
-        sources.extend(crate::narrate_band_face::recording_path(&tree, &project, &state.voice));
+        sources.extend(crate::narrate_band_face::recording_path(
+            &tree,
+            &project,
+            &state.voice,
+        ));
     }
     sources.push(crate::narrate_data::base_reference(&tree));
     // One lane per SOURCE file, not one per voice slot: `wave_build` keys its cache by (lane, size, mtime),
@@ -788,13 +822,7 @@ fn envelope_attempt(state: &crate::ui::narrate_page::NarrateState) -> Result<(f6
 }
 
 /// Vertical peak bars across the visible window, blue over the ground.
-fn draw_envelope(
-    cr: &cairo::Context,
-    peaks: &[u8],
-    width: f64,
-    lane_top: f64,
-    lane_h: f64,
-) {
+fn draw_envelope(cr: &cairo::Context, peaks: &[u8], width: f64, lane_top: f64, lane_h: f64) {
     let (duration, _) = size();
     let pps = band::px_per_second(zoom(), duration, width);
     let visible = band::visible_peaks(PEAK_HZ, peaks, offset(), pps, width);

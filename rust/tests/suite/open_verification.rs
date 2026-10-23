@@ -6,10 +6,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use naivepost::layout::Tree;
-use naivepost::{migrate, project, startup};
 use crate::common;
 use common::temp_dir_created as temp_dir;
+use naivepost::layout::Tree;
+use naivepost::{migrate, project, startup};
 
 fn folder(dir: &Path, name: &str) -> PathBuf {
     let path = dir.join(name);
@@ -30,8 +30,8 @@ fn read(path: PathBuf) -> String {
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_open_a_path_naming_the_project_file_opens_its_folder()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_open_a_path_naming_the_project_file_opens_its_folder(
+) {
     let root = temp_dir("json");
     let project = project_at(&root.join("show.naivepost"), "{}");
     let handed = project.join(project::PROJECT_FILE);
@@ -45,13 +45,15 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_open_a_pa
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_remembered_project_file_opens_its_folder_too()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_remembered_project_file_opens_its_folder_too(
+) {
     let root = temp_dir("remembered");
     let project = project_at(&root.join("show.naivepost"), "{}");
     let mut conf = naivepost::settings::Conf::default();
-    conf.projects
-        .insert(root.to_string_lossy().to_string(), project.join(project::PROJECT_FILE).display().to_string());
+    conf.projects.insert(
+        root.to_string_lossy().to_string(),
+        project.join(project::PROJECT_FILE).display().to_string(),
+    );
 
     assert_eq!(
         startup::decide(&root, &conf, &[]),
@@ -60,8 +62,8 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_remembe
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_legacy_out_dir_names_both_folders_and_says_the_old_one_is_untouched()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_legacy_out_dir_names_both_folders_and_says_the_old_one_is_untouched(
+) {
     assert_eq!(
         project::out_dir_note("/old/out", "/new/show.naivepost"),
         "!!! this project used to write into /old/out and now writes into /new/show.naivepost -- the old folder is untouched"
@@ -85,15 +87,17 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_legacy_ou
         project_at(&same, &format!(r#"{{"out_dir":"{spelling}"}}"#));
         let (_, report) = project::load_report(&same).unwrap();
         assert!(
-            !report.iter().any(|line| line.contains("used to write into")),
+            !report
+                .iter()
+                .any(|line| line.contains("used to write into")),
             "{spelling}: {report:?}"
         );
     }
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_folder_migration_moves_in_two_passes_and_logs_each_move()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_folder_migration_moves_in_two_passes_and_logs_each_move(
+) {
     let root = temp_dir("two-passes");
     let dir = root.join("show.naivepost");
     fs::create_dir_all(&dir).unwrap();
@@ -157,7 +161,10 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_folder_mi
     for gone in ["step1", "step3", "step4", "step5", "step6"] {
         assert!(!dir.join(gone).exists(), "{gone} is still there");
     }
-    assert!(dir.join("step2/x").is_dir(), "the one failure left its folder in place");
+    assert!(
+        dir.join("step2/x").is_dir(),
+        "the one failure left its folder in place"
+    );
 
     // A second open has nothing left to move and says nothing — even the folder it
     // could not rename is now an empty `step2`, which pass two takes as `inputs/`.
@@ -167,8 +174,8 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_folder_mi
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_folder_migration_leaves_what_it_cannot_move_and_logs_it()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_folder_migration_leaves_what_it_cannot_move_and_logs_it(
+) {
     let root = temp_dir("stuck");
     let dir = root.join("show.naivepost");
     fs::create_dir_all(dir.join("step3")).unwrap();
@@ -194,18 +201,24 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_folder_mi
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_folder_migration_removes_understand_only_when_it_is_empty()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_folder_migration_removes_understand_only_when_it_is_empty(
+) {
     let root = temp_dir("understand");
     let emptied = root.join("a.naivepost");
     fs::create_dir_all(emptied.join("understand/describe")).unwrap();
     migrate::pass_two(&emptied);
-    assert!(!emptied.join("understand").exists(), "the emptied folder is gone");
+    assert!(
+        !emptied.join("understand").exists(),
+        "the emptied folder is gone"
+    );
 
     let stray = root.join("b.naivepost");
     fs::create_dir_all(stray.join("understand/describe")).unwrap();
     fs::write(stray.join("understand/notes.txt"), "not ours").unwrap();
     migrate::pass_two(&stray);
-    assert!(stray.join("understand").is_dir(), "one file left is not empty");
+    assert!(
+        stray.join("understand").is_dir(),
+        "one file left is not empty"
+    );
     assert_eq!(read(stray.join("understand/notes.txt")), "not ours");
 }

@@ -10,8 +10,8 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use adw::prelude::*;
 use crate::common;
+use adw::prelude::*;
 use common::fake_audio_server;
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
@@ -45,7 +45,8 @@ fn serve_audio_for_the_presses(url: &str) {
     unsafe { std::env::set_var("XDG_CONFIG_HOME", &config) };
 }
 
-fn source(path: &str, footage: bool) -> Source {    Source {
+fn source(path: &str, footage: bool) -> Source {
+    Source {
         path: path.to_string(),
         footage,
         narrator: 0,
@@ -104,8 +105,14 @@ fn f1_1_pressing_play_runs_prepare_s_own_start_flow() {
         RAN_NO_SOURCES.load(Ordering::SeqCst),
         "the no-sources check never ran"
     );
-    assert!(RAN_CLASH.load(Ordering::SeqCst), "the clash check never ran");
-    assert!(RAN_BUSY.load(Ordering::SeqCst), "the busy-precedence check never ran");
+    assert!(
+        RAN_CLASH.load(Ordering::SeqCst),
+        "the clash check never ran"
+    );
+    assert!(
+        RAN_BUSY.load(Ordering::SeqCst),
+        "the busy-precedence check never ran"
+    );
     assert!(
         RAN_START.load(Ordering::SeqCst),
         "the save/clear/log check never ran"
@@ -176,7 +183,11 @@ fn check_name_clash_refuses(app: &adw::Application) {
         logs.contains(&naivepost::sources::clash_log(first, second)),
         "the log names the folder the two rows would share: {logs:?}"
     );
-    assert_eq!(naivepost::ui::run_close::last_run_step_for_test(), None, "no run was opened");
+    assert_eq!(
+        naivepost::ui::run_close::last_run_step_for_test(),
+        None,
+        "no run was opened"
+    );
     assert_eq!(
         ui::play_tooltip(&window).as_deref(),
         Some(run::PLAY_TOOLTIP),
@@ -199,9 +210,7 @@ fn stand_a_run_open(window: &adw::ApplicationWindow, model: &naivepost::project:
         naivepost::run::Step::Prepare,
         naivepost::run::snapshot_sources(model),
     );
-    if let (Some(play), Some(stop_)) =
-        (ui::play_button(window), ui::stop_button(window))
-    {
+    if let (Some(play), Some(stop_)) = (ui::play_button(window), ui::stop_button(window)) {
         play.set_tooltip_text(Some(naivepost::run::PAUSE_TOOLTIP));
         stop_.set_sensitive(true);
     }
@@ -311,10 +320,8 @@ fn check_start_clears_and_logs(app: &adw::Application) {
     // this press's own tail rather than searching the whole session, which would find check 3's
     // opening line and read the order backwards.
     let mine = tail_after(&logs, ">>> stopped last time");
-    let notice = naivepost::prepare_run::restart_line(&[
-        "events.tsv".to_string(),
-        "state.txt".to_string(),
-    ]);
+    let notice =
+        naivepost::prepare_run::restart_line(&["events.tsv".to_string(), "state.txt".to_string()]);
     let opening = ">>> prepare: 1 input file(s)";
     let at_notice = mine
         .iter()

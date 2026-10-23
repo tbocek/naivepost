@@ -176,10 +176,14 @@ pub fn pick_window(windows: &[&[Turn]]) -> Option<usize> {
         if held == 0 {
             continue;
         }
-        let quietest = heard.iter().map(|(_, seconds)| *seconds).fold(f64::INFINITY, f64::min);
+        let quietest = heard
+            .iter()
+            .map(|(_, seconds)| *seconds)
+            .fold(f64::INFINITY, f64::min);
         // More voices wins; then the window whose least-represented voice has more of it.
-        if best.is_none_or(|(_, best_held, best_quiet)| held > best_held || (held == best_held && quietest > best_quiet))
-        {
+        if best.is_none_or(|(_, best_held, best_quiet)| {
+            held > best_held || (held == best_held && quietest > best_quiet)
+        }) {
             best = Some((index, held, quietest));
         }
     }
@@ -218,7 +222,10 @@ pub fn plan(duration: f64, window: f64, windows: &[(f64, f64)], per_window: &[Ve
         if seconds <= 0.0 {
             continue;
         }
-        match voices.iter_mut().find(|voice| voice.slot == turn.speaker_id) {
+        match voices
+            .iter_mut()
+            .find(|voice| voice.slot == turn.speaker_id)
+        {
             Some(voice) => {
                 voice.speech += seconds;
                 if end - start >= ANCHOR_CUT_SECONDS {
@@ -228,7 +235,11 @@ pub fn plan(duration: f64, window: f64, windows: &[(f64, f64)], per_window: &[Ve
             None => voices.push(Voice {
                 slot: turn.speaker_id,
                 speech: seconds,
-                cuts: if end - start >= ANCHOR_CUT_SECONDS { vec![(start, end)] } else { Vec::new() },
+                cuts: if end - start >= ANCHOR_CUT_SECONDS {
+                    vec![(start, end)]
+                } else {
+                    Vec::new()
+                },
             }),
         }
     }
@@ -238,13 +249,21 @@ pub fn plan(duration: f64, window: f64, windows: &[(f64, f64)], per_window: &[Ve
     if voices.is_empty() {
         return Scan::NoVoice;
     }
-    voices.sort_by(|a, b| b.speech.partial_cmp(&a.speech).unwrap_or(std::cmp::Ordering::Equal));
+    voices.sort_by(|a, b| {
+        b.speech
+            .partial_cmp(&a.speech)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut slots = Vec::new();
     let mut at = 0.0;
     for voice in voices {
         let mut cuts = voice.cuts;
-        cuts.sort_by(|a, b| (b.1 - b.0).partial_cmp(&(a.1 - a.0)).unwrap_or(std::cmp::Ordering::Equal));
+        cuts.sort_by(|a, b| {
+            (b.1 - b.0)
+                .partial_cmp(&(a.1 - a.0))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let mut taken = 0.0;
         // Where the anchor's piece for this voice starts on the recording's clock. `to` is that start
         // plus what was cut, not the end of the last turn it was cut from — those two differ as soon as
@@ -383,7 +402,11 @@ pub fn match_slots(claims: &[(u32, f64, f64)], anchor: &Anchor) -> Vec<(u32, Opt
     // does not depend on how the sort broke it. The owner is recorded per slot, not per rank — see the
     // `owner` writes below, which is what lets the answer be rewritten in its own order afterwards.
     let mut order: Vec<usize> = (0..claims.len()).collect();
-    order.sort_by(|a, b| strength(claims[*b], anchor).partial_cmp(&strength(claims[*a], anchor)).unwrap_or(std::cmp::Ordering::Equal));
+    order.sort_by(|a, b| {
+        strength(claims[*b], anchor)
+            .partial_cmp(&strength(claims[*a], anchor))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Slot id -> the block it was given. Keyed by slot because a pass-2 answer may name the same slot in
     // more than one turn, and all of its turns are the same voice; keyed by claim as well, since two
@@ -421,12 +444,17 @@ pub fn match_slots(claims: &[(u32, f64, f64)], anchor: &Anchor) -> Vec<(u32, Opt
                 .slots
                 .iter()
                 .enumerate()
-                .max_by(|(_, a), (_, b)| overlap(claim, a).partial_cmp(&overlap(claim, b)).unwrap_or(std::cmp::Ordering::Equal))
+                .max_by(|(_, a), (_, b)| {
+                    overlap(claim, a)
+                        .partial_cmp(&overlap(claim, b))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
                 .filter(|(_, held)| overlap(claim, held) >= MIN_ANCHOR_OVERLAP)
                 .map(|(block, _)| block);
             // A loser is only named after a block that was actually taken; otherwise it is nobody's.
             let named = matched.filter(|block| {
-                winners.iter().any(|(_, won)| won == block) || winners.iter().any(|(id, _)| id == slot)
+                winners.iter().any(|(_, won)| won == block)
+                    || winners.iter().any(|(id, _)| id == slot)
             });
             (*slot, named)
         })

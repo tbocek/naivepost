@@ -46,7 +46,11 @@ pub fn picture_files(tree: &layout::Tree, cut: &Cut) -> Vec<String> {
         .map(|held| held.sources)
         .unwrap_or_default();
     let mut files: Vec<String> = Vec::new();
-    for seg in cut.segs.iter().filter(|seg| !seg.is_insert() && seg.e > seg.s) {
+    for seg in cut
+        .segs
+        .iter()
+        .filter(|seg| !seg.is_insert() && seg.e > seg.s)
+    {
         let Some(path) = footage_path(&root, tree, &sources, seg) else {
             continue;
         };
@@ -84,8 +88,7 @@ fn covering_source(tree: &layout::Tree, cut: &Cut, at: f64) -> Option<String> {
     let covering = cut_hear::scene_at(&cut.segs, at)
         .and_then(|scene| cut.segs.get(scene))
         .filter(|seg| !seg.is_insert() && seg.e > seg.s)?;
-    footage_path(&root, tree, &sources, covering)
-        .map(|path| path.to_string_lossy().into_owned())
+    footage_path(&root, tree, &sources, covering).map(|path| path.to_string_lossy().into_owned())
 }
 
 /// Move `wanted` to the front, keeping the rest in order; unchanged when it is already first or absent.
@@ -141,7 +144,12 @@ fn footage_path(
         // No lane carries this camera's name: only a session that filmed ONE camera can answer, and then its
         // single footage row is this camera whatever it was called. With several rows and no `camN` to read,
         // guessing would play the wrong footage, so nothing is guessed.
-        .or_else(|| footage.first().copied().filter(|_| base == "cam0" && footage.len() == 1));
+        .or_else(|| {
+            footage
+                .first()
+                .copied()
+                .filter(|_| base == "cam0" && footage.len() == 1)
+        });
     let Some(written) = named.map(|source| source.path.clone()) else {
         crate::ui::window::log_line(&preview::playback_failure(
             "Narrate",
@@ -172,7 +180,11 @@ fn source_name(path: &str) -> String {
 /// The folder a stored path was filed under, if it was filed under one.
 fn lane_of(path: &str) -> Option<String> {
     let (parent, _) = path.rsplit_once('/')?;
-    parent.rsplit('/').next().map(str::to_string).filter(|held| !held.is_empty())
+    parent
+        .rsplit('/')
+        .next()
+        .map(str::to_string)
+        .filter(|held| !held.is_empty())
 }
 
 fn file_stem(name: &str) -> String {

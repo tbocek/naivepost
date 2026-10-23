@@ -7,14 +7,13 @@
 //! that many slots · S4 voice-id naming stops at the same number · S5 the cycle visits each slot once
 //! then has none to give · S6 a slot past the bound is stripped on load.
 
-use naivepost::narrate_rules as rules;
-use naivepost::project::Project;
 use crate::common;
 use common::source_row as row;
+use naivepost::narrate_rules as rules;
 use naivepost::params::{self, Family};
+use naivepost::project::Project;
 use naivepost::run::{self, NARRATOR_SLOTS};
 use naivepost::sources;
-
 
 /// One untagged row per slot, plus one extra — the case with no room left.
 fn untagged(count: usize) -> Project {
@@ -62,7 +61,10 @@ fn p_policy_narratorslots_s2_only_these_numbers_are_slots() {
     assert!(!run::is_slot(99));
     // And the index into the snapshot's list follows the same bound.
     assert_eq!(run::slot_index(1), Some(0));
-    assert_eq!(run::slot_index(NARRATOR_SLOTS as u32), Some(NARRATOR_SLOTS - 1));
+    assert_eq!(
+        run::slot_index(NARRATOR_SLOTS as u32),
+        Some(NARRATOR_SLOTS - 1)
+    );
     assert_eq!(run::slot_index(0), None);
     assert_eq!(run::slot_index(NARRATOR_SLOTS as u32 + 1), None);
 }
@@ -112,7 +114,10 @@ fn p_policy_narratorslots_s4_voice_ids_name_no_slot_past_the_bound() {
         Some(NARRATOR_SLOTS)
     );
     // One past it names nothing, which is why the picker goes empty rather than inventing a voice.
-    assert_eq!(rules::narrator_slot(&format!("narrator{}", NARRATOR_SLOTS + 1)), None);
+    assert_eq!(
+        rules::narrator_slot(&format!("narrator{}", NARRATOR_SLOTS + 1)),
+        None
+    );
     assert_eq!(rules::narrator_slot("aria"), None);
 }
 
@@ -129,7 +134,10 @@ fn p_policy_narratorslots_s5_the_cycle_visits_every_slot_once_then_none() {
     assert_eq!(given, expected, "cycling free slots 1..N then none");
     // Nobody was moved to make room: each holder is still the row that was given the slot.
     for slot in 1..=NARRATOR_SLOTS as u32 {
-        assert_eq!(sources::slot_holder(&project, slot), Some((slot - 1) as usize));
+        assert_eq!(
+            sources::slot_holder(&project, slot),
+            Some((slot - 1) as usize)
+        );
     }
     assert_eq!(project.sources[NARRATOR_SLOTS].narrator, 0);
 }

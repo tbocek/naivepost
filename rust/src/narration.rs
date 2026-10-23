@@ -106,12 +106,9 @@ impl Narration {
     /// break it, so both [`load`] and [`save`] put it back.
     pub fn sort(&mut self) {
         self.entries.sort_by(|a, b| {
-            a.s.partial_cmp(&b.s).unwrap_or(std::cmp::Ordering::Equal)
-                .then(
-                    a.at
-                        .partial_cmp(&b.at)
-                        .unwrap_or(std::cmp::Ordering::Equal),
-                )
+            a.s.partial_cmp(&b.s)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.at.partial_cmp(&b.at).unwrap_or(std::cmp::Ordering::Equal))
         });
     }
 
@@ -123,7 +120,9 @@ impl Narration {
     /// Does this clip have a line at all? A silent marker means nothing once a line is
     /// on the clip again, which is what lets the marker become the line.
     pub fn has_line(&self, s: f64, e: f64) -> bool {
-        self.entries.iter().any(|entry| entry.s == s && entry.e == e)
+        self.entries
+            .iter()
+            .any(|entry| entry.s == s && entry.e == e)
     }
 }
 
@@ -152,11 +151,7 @@ pub fn output_seconds(at: f64, rate: f64) -> f64 {
 ///
 /// The named-tag-to-vector mapping itself is 07-narrate's business, not this file's —
 /// that is why the vector arrives as an argument rather than being looked up here.
-pub fn tts_key(
-    entry: &Entry,
-    voice: Option<&str>,
-    emotion_vector: Option<[f64; 8]>,
-) -> String {
+pub fn tts_key(entry: &Entry, voice: Option<&str>, emotion_vector: Option<[f64; 8]>) -> String {
     let emotion = match emotion_vector {
         Some(vector) => format_vector(&vector),
         None => entry.emotion.clone(),
@@ -173,7 +168,11 @@ pub fn tts_key(
 /// the take's identity instead of serving an old performance under a new intent. A bare tag has no vector
 /// and keeps naming itself, which is §4's "deliberately stable across versions".
 pub fn key_for(entry: &Entry, voice: Option<&str>) -> String {
-    tts_key(entry, voice, crate::narrate_tts::emotion_vector(&entry.emotion))
+    tts_key(
+        entry,
+        voice,
+        crate::narrate_tts::emotion_vector(&entry.emotion),
+    )
 }
 
 /// The eight axes the engine mixes, joined as the key wants them. Rounded to three

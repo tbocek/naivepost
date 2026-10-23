@@ -48,7 +48,11 @@ fn bounds_agreed() {
         3,
         "the silence seam was already read at §4's default by something earlier in this process"
     );
-    assert_eq!(naivepost::llm_liveness::heartbeat_seconds(), 1, "the heartbeat must be 1 s here");
+    assert_eq!(
+        naivepost::llm_liveness::heartbeat_seconds(),
+        1,
+        "the heartbeat must be 1 s here"
+    );
 }
 
 /// A listener that reads each request and then writes NOTHING back, holding the socket open. This is §4's worst
@@ -131,7 +135,12 @@ fn fixture(tag: &str, address: &str) -> Fixture {
     let tree = naivepost::layout::Tree::new(&session).expect("a .naivepost folder is a project");
     // Resolved exactly as a flow resolves it, from the settings just written.
     let endpoint = services::llm_endpoint(&conf);
-    Fixture { root, tree, endpoint, _scenario: scenario }
+    Fixture {
+        root,
+        tree,
+        endpoint,
+        _scenario: scenario,
+    }
 }
 
 fn chat_body(text: &str) -> String {
@@ -166,7 +175,10 @@ fn f6_3_s1_live_a_silent_server_is_given_up_over_the_wire() {
     let started = std::time::Instant::now();
     let outcome = ask(&scene, "say something");
     let took = started.elapsed();
-    assert!(took < std::time::Duration::from_secs(25), "the call was waited on for {took:?}, not given up");
+    assert!(
+        took < std::time::Duration::from_secs(25),
+        "the call was waited on for {took:?}, not given up"
+    );
     let why = outcome.expect_err("a server that answers nothing must not come back as an answer");
     // §4's first cancellation sentence, spelled with the bound that ended it. The watch owns silence now (§4): the
     // socket carries no bound of its own, so this is the watch's sentence and nothing else can produce it.
@@ -177,7 +189,12 @@ fn f6_3_s1_live_a_silent_server_is_given_up_over_the_wire() {
             .iter()
             .find(|line| line.starts_with(">>> f63live:") && line.contains("giving up"))
             .cloned()
-            .unwrap_or_else(|| panic!("the give-up belongs in the log the user reads: {:?}", &lines[logs_from..]))
+            .unwrap_or_else(|| {
+                panic!(
+                    "the give-up belongs in the log the user reads: {:?}",
+                    &lines[logs_from..]
+                )
+            })
     };
     assert_eq!(said, ">>> f63live: nothing for 3s \u{2014} giving up");
 }
@@ -200,7 +217,10 @@ fn f6_3_s1_live_the_heartbeat_ticks_while_the_server_is_silent() {
         .filter(|line| line.starts_with(">>> f63live:") && line.contains("nothing yet,"))
         .map(|line| (*line).clone())
         .collect::<Vec<String>>();
-    assert!(heartbeats.len() >= 2, "the guard must tick every minute, not once: {heartbeats:?}");
+    assert!(
+        heartbeats.len() >= 2,
+        "the guard must tick every minute, not once: {heartbeats:?}"
+    );
     // §4's first heartbeat shape, spelled: the elapsed time is the minute count, so a 1-second minute says 1s then
     // 2s. Both lines are what the item is about, so they are asserted whole, not just counted.
     assert_eq!(heartbeats[0], ">>> f63live: nothing yet, 1s in");
@@ -228,7 +248,10 @@ fn f6_3_s1_live_a_stalled_call_is_recorded_in_requests_tsv() {
         .into_iter()
         .filter(|row| row.step == STEP)
         .collect();
-    assert!(!mine.is_empty(), "a call the watch gave up on still left its line: {mine:?}");
+    assert!(
+        !mine.is_empty(),
+        "a call the watch gave up on still left its line: {mine:?}"
+    );
     for row in &mine {
         // §4's give-up is its OWN outcome in the log, not folded into a generic error: the whole reason §10 lists
         // "given up by the stall watch" beside success and failure is so a reader can tell a silent server from a
@@ -250,6 +273,9 @@ fn f6_3_s1_live_a_stalled_call_is_recorded_in_requests_tsv() {
         // and none repeats another's number.
         let numbers: Vec<u32> = mine.iter().map(|row| row.attempt).collect();
         let expected: Vec<u32> = (1..=numbers.len() as u32).collect();
-        assert_eq!(numbers, expected, "each attempt is numbered once, in order: {mine:?}");
+        assert_eq!(
+            numbers, expected,
+            "each attempt is numbered once, in order: {mine:?}"
+        );
     }
 }

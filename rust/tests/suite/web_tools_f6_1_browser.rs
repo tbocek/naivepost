@@ -28,7 +28,10 @@ use crate::common;
 /// A page wide enough to clear `web_tools::MIN_PAGE_CHARS`, so an emptiness refusal can only come from the stub
 /// printing nothing at all and not from the floor being high.
 fn long_page(body: &str) -> String {
-    format!("<html><body><p>{body}</p><p>{}</p></body></html>", "x".repeat(250))
+    format!(
+        "<html><body><p>{body}</p><p>{}</p></body></html>",
+        "x".repeat(250)
+    )
 }
 
 /// The stub browser: a shell script that appends its own pid to `launches` (so "one browser per call" is
@@ -51,7 +54,8 @@ fn write_stub(dir: &Path, dom: &str, sleep_seconds: u64) -> PathBuf {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("stub executable");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("stub executable");
     }
     path
 }
@@ -108,7 +112,10 @@ fn fixture(tag: &str) -> Scenario {
     }
     let paths = settings::from_environment().expect("settings from the pinned env");
     settings::save(&paths, &Conf::default()).expect("settings written");
-    Scenario { root, _scenario: scenario }
+    Scenario {
+        root,
+        _scenario: scenario,
+    }
 }
 
 /// A DuckDuckGo-shaped result page: `<article>` blocks, each with an `<h2><a href>` title and a snippet line.
@@ -136,7 +143,11 @@ fn ddg_page(urls: &[&str]) -> String {
 #[test]
 fn f6_1_web_s5_a_real_search_answers_with_numbered_hits_and_logs_its_ladder() {
     let root = fixture("search");
-    let urls = ["https://one.example/a", "https://two.example/b", "https://one.example/a"];
+    let urls = [
+        "https://one.example/a",
+        "https://two.example/b",
+        "https://one.example/a",
+    ];
     let stub = write_stub(&root, &ddg_page(&urls), 0);
     point_at(&stub);
     let conf = settings::read(&settings::from_environment().unwrap()).unwrap();
@@ -150,17 +161,38 @@ fn f6_1_web_s5_a_real_search_answers_with_numbered_hits_and_logs_its_ladder() {
         "the narrowest rung that found anything is what the header names: {answer}"
     );
     // Deduped by URL and capped at P.eng.searchHits: the repeated URL appears once.
-    assert_eq!(answer.matches("one.example/a").count(), 1, "deduped by URL: {answer}");
-    assert!(answer.contains("1. Result number 1"), "hits are numbered: {answer}");
-    assert!(answer.contains("two.example/b"), "every distinct hit survives: {answer}");
+    assert_eq!(
+        answer.matches("one.example/a").count(),
+        1,
+        "deduped by URL: {answer}"
+    );
+    assert!(
+        answer.contains("1. Result number 1"),
+        "hits are numbered: {answer}"
+    );
+    assert!(
+        answer.contains("two.example/b"),
+        "every distinct hit survives: {answer}"
+    );
     let said = line.expect("a search logs its ladder");
     assert_eq!(
         said,
-        web_tools::searched_log("narrate", "the game", "the game and the thing", "the thing", 2, "the thing"),
+        web_tools::searched_log(
+            "narrate",
+            "the game",
+            "the game and the thing",
+            "the thing",
+            2,
+            "the thing"
+        ),
         "§2's search line verbatim"
     );
     // One browser per QUERY of the ladder that ran, each launched and killed: the stub recorded every launch.
-    assert!(launches(&root) >= 1, "the browser really ran: {}", launches(&root));
+    assert!(
+        launches(&root) >= 1,
+        "the browser really ran: {}",
+        launches(&root)
+    );
 }
 
 /// Eight is the cap (`P.eng.searchHits`): a page with more results still answers eight.
@@ -175,7 +207,11 @@ fn f6_1_web_s5_hits_are_capped_at_eight() {
 
     let ask = web_browser::query_for(&conf.firefox, web_browser::ladder_slice());
     let hits = ask("anything").expect("the stub answered");
-    assert_eq!(hits.len(), tools::WEB_SEARCH_MAX_HITS, "eight hits, not twelve");
+    assert_eq!(
+        hits.len(),
+        tools::WEB_SEARCH_MAX_HITS,
+        "eight hits, not twelve"
+    );
     // And `dedupe` is applied by the leg itself, so a caller cannot forget the cap.
     let deduped = web_tools::dedupe(hits.clone());
     assert_eq!(deduped.len(), tools::WEB_SEARCH_MAX_HITS);
@@ -192,10 +228,19 @@ fn f6_1_web_s5_a_real_read_returns_page_text_and_logs_the_count() {
     let fetch = web_browser::read_page_for(&conf.firefox, web_browser::read_budget());
     let args = r#"{"url":"https://tower.example/height"}"#;
     let (answer, line) = web_tools::read_call("narrate", args, &fetch);
-    assert!(answer.contains("The tower is 634 metres tall."), "the page's words survive: {answer}");
-    assert!(!answer.contains("<p>"), "tags are stripped, not handed to the model: {answer}");
+    assert!(
+        answer.contains("The tower is 634 metres tall."),
+        "the page's words survive: {answer}"
+    );
+    assert!(
+        !answer.contains("<p>"),
+        "tags are stripped, not handed to the model: {answer}"
+    );
     let said = line.expect("a read logs its line");
-    assert!(said.starts_with(">>> narrate: read https://tower.example/height ("), "{said}");
+    assert!(
+        said.starts_with(">>> narrate: read https://tower.example/height ("),
+        "{said}"
+    );
     assert!(said.ends_with(" characters)"), "{said}");
 }
 
@@ -206,7 +251,11 @@ fn f6_1_web_s5_a_long_page_is_clipped_on_a_character_boundary() {
     let root = fixture("clip");
     // Multi-byte characters straddling the 6000th byte are the case that panics a naive slice.
     let body = "\u{e9}".repeat(tools::WEB_READ_MAX_BYTES + 500);
-    let stub = write_stub(&root, &format!("<html><body><p>{body}</p></body></html>"), 0);
+    let stub = write_stub(
+        &root,
+        &format!("<html><body><p>{body}</p></body></html>"),
+        0,
+    );
     point_at(&stub);
     let conf = settings::read(&settings::from_environment().unwrap()).unwrap();
 
@@ -217,7 +266,11 @@ fn f6_1_web_s5_a_long_page_is_clipped_on_a_character_boundary() {
     // cap (`clip_page`'s rule: every byte of the 6000 should be page text).
     assert!(clipped.ends_with('…'), "a clipped page says so");
     let without_marker = clipped.trim_end_matches(" \u{2026}");
-    assert!(without_marker.len() <= tools::WEB_READ_MAX_BYTES, "{} bytes of page", without_marker.len());
+    assert!(
+        without_marker.len() <= tools::WEB_READ_MAX_BYTES,
+        "{} bytes of page",
+        without_marker.len()
+    );
     assert!(
         without_marker.ends_with('\u{e9}'),
         "and it stopped on a whole character: {:?}",
@@ -229,7 +282,11 @@ fn f6_1_web_s5_a_long_page_is_clipped_on_a_character_boundary() {
 #[test]
 fn f6_1_web_s5_a_bot_wall_is_named_not_handed_over() {
     let root = fixture("wall");
-    let stub = write_stub(&root, &long_page("Checking your browser before accessing this site."), 0);
+    let stub = write_stub(
+        &root,
+        &long_page("Checking your browser before accessing this site."),
+        0,
+    );
     point_at(&stub);
     let conf = settings::read(&settings::from_environment().unwrap()).unwrap();
 
@@ -239,7 +296,10 @@ fn f6_1_web_s5_a_bot_wall_is_named_not_handed_over() {
         answer.starts_with("web_read failed: the page is behind a bot wall ("),
         "the wall is refused by name: {answer}"
     );
-    assert!(answer.contains("checking your browser"), "and quoted: {answer}");
+    assert!(
+        answer.contains("checking your browser"),
+        "and quoted: {answer}"
+    );
 }
 
 /// A stub that prints nothing at all: the page had no text, which is a refusal rather than an empty answer.
@@ -272,10 +332,16 @@ fn f6_1_web_s5_a_browser_that_outlives_its_budget_is_killed_and_says_so() {
     let took = started.elapsed();
     let why = outcome.expect_err("a browser asleep past its slice must not answer");
     assert!(why.contains("did not finish within 2 s"), "{why}");
-    assert!(took < std::time::Duration::from_secs(10), "it stopped at the deadline, not at the sleep: {took:?}");
+    assert!(
+        took < std::time::Duration::from_secs(10),
+        "it stopped at the deadline, not at the sleep: {took:?}"
+    );
     // And nothing was left running: the killed stub's children are gone, so a second call still works.
     let again = web_browser::read_page_for(&conf.firefox, std::time::Duration::from_secs(2));
-    assert!(again("https://slow.example").is_err(), "the next call behaves the same way");
+    assert!(
+        again("https://slow.example").is_err(),
+        "the next call behaves the same way"
+    );
 }
 
 /// The browser is found the way §2 says: the settings value first, then PATH, then the usual install paths —
@@ -286,12 +352,17 @@ fn f6_1_web_s5_firefox_is_found_by_setting_then_path_then_install_paths() {
     let stub = write_stub(&root, "", 0);
 
     // The setting wins, even when a real firefox is on PATH: a person who named one meant that one.
-    let found = web_browser::firefox_path(&stub.to_string_lossy()).expect("the named binary is used");
+    let found =
+        web_browser::firefox_path(&stub.to_string_lossy()).expect("the named binary is used");
     assert_eq!(found, stub, "the settings box's own binary");
 
     // Nothing named: PATH order decides, and the container ships firefox-esr where Debian ships firefox.
     let named = web_browser::firefox_path("").expect("something on PATH");
-    let name = named.file_name().expect("a file name").to_string_lossy().to_string();
+    let name = named
+        .file_name()
+        .expect("a file name")
+        .to_string_lossy()
+        .to_string();
     assert!(
         web_browser::PATH_NAMES.contains(&name.as_str()),
         "{name} is one of the names §2 lists"
@@ -307,9 +378,13 @@ fn f6_1_web_s5_firefox_is_found_by_setting_then_path_then_install_paths() {
     assert!(line.contains(&why), "quoting the stat error: {line}");
 
     // `off` is the setting's own word for turning the web away, and gets its own line.
-    let off = web_tools::unavailable_log("narrate", "off", false, false, "").expect("off is explained");
+    let off =
+        web_tools::unavailable_log("narrate", "off", false, false, "").expect("off is explained");
     assert!(off.contains("web search is off"), "{off}");
-    assert!(!web_browser::availability("off").0, "`off` means no web tools");
+    assert!(
+        !web_browser::availability("off").0,
+        "`off` means no web tools"
+    );
 }
 
 /// The offer itself: a machine with no browser gets neither web tool, and says so once — the sentence §2 gives.
@@ -317,16 +392,30 @@ fn f6_1_web_s5_firefox_is_found_by_setting_then_path_then_install_paths() {
 fn f6_1_web_s5_a_step_without_a_browser_drops_the_tools_and_says_why_once() {
     let root = fixture("offer");
     let _ = root;
-    let offered = vec![naivepost::tools::Tool::GetLines, naivepost::tools::Tool::WebSearch, naivepost::tools::Tool::WebRead];
+    let offered = vec![
+        naivepost::tools::Tool::GetLines,
+        naivepost::tools::Tool::WebSearch,
+        naivepost::tools::Tool::WebRead,
+    ];
 
     let (found, reason) = web_browser::availability("/no/such/firefox-either");
     assert!(!found, "nothing to drive");
     let kept = web_tools::filter(&offered, found);
-    assert!(!kept.contains(&naivepost::tools::Tool::WebSearch), "no web_search offered: {kept:?}");
-    assert!(!kept.contains(&naivepost::tools::Tool::WebRead), "no web_read offered: {kept:?}");
-    assert!(kept.contains(&naivepost::tools::Tool::GetLines), "the job's own tools stay");
-    let line = web_tools::unavailable_log("narrate", "/no/such/firefox-either", false, found, &reason)
-        .expect("the reason is said");
+    assert!(
+        !kept.contains(&naivepost::tools::Tool::WebSearch),
+        "no web_search offered: {kept:?}"
+    );
+    assert!(
+        !kept.contains(&naivepost::tools::Tool::WebRead),
+        "no web_read offered: {kept:?}"
+    );
+    assert!(
+        kept.contains(&naivepost::tools::Tool::GetLines),
+        "the job's own tools stay"
+    );
+    let line =
+        web_tools::unavailable_log("narrate", "/no/such/firefox-either", false, found, &reason)
+            .expect("the reason is said");
     assert!(line.starts_with(">>> narrate: no web search"), "{line}");
 }
 
@@ -340,7 +429,8 @@ fn f6_1_web_s5_a_named_browser_is_the_one_that_answers() {
     let marker = "the stub browser answered with this marker";
     let stub = write_stub(&root, &long_page(marker), 0);
     point_at(&stub);
-    let conf = settings::read(&settings::from_environment().unwrap()).expect("the settings the box holds");
+    let conf =
+        settings::read(&settings::from_environment().unwrap()).expect("the settings the box holds");
     assert_eq!(
         conf.firefox,
         stub.to_string_lossy(),
@@ -349,11 +439,18 @@ fn f6_1_web_s5_a_named_browser_is_the_one_that_answers() {
 
     let fetch = web_browser::read_page_for(&conf.firefox, web_browser::read_budget());
     let page = fetch("https://named.example/").expect("the named browser answered");
-    assert!(page.contains(marker), "the stub's own page came back: {page}");
+    assert!(
+        page.contains(marker),
+        "the stub's own page came back: {page}"
+    );
     // A system firefox here reaches nothing and gives an error or an empty document; either way the marker could
     // not appear in what it printed, so this is the difference between the two browsers having answered.
     assert!(!page.trim().is_empty(), "an answer, not an empty document");
-    assert!(launches(&root) >= 1, "and it was the stub that ran: {}", launches(&root));
+    assert!(
+        launches(&root) >= 1,
+        "and it was the stub that ran: {}",
+        launches(&root)
+    );
 }
 
 /// The old DuckDuckGo markup (`result__snippet`, no `<article>`) is still read: engines change this without asking.
@@ -361,10 +458,18 @@ fn f6_1_web_s5_a_named_browser_is_the_one_that_answers() {
 fn f6_1_web_s5_the_older_result_markup_is_still_read() {
     let html = "<html><body><div class=\"result__body\"><a class=\"result__a\" href=\"https://old.example/x\">Old style</a><a class=\"result__snippet\">The snippet lives here.</a></div></body></html>";
     let hits: Vec<Hit> = web_browser::search_hits(html);
-    assert_eq!(hits.len(), 1, "one result found in the older shape: {hits:?}");
+    assert_eq!(
+        hits.len(),
+        1,
+        "one result found in the older shape: {hits:?}"
+    );
     assert_eq!(hits[0].url, "https://old.example/x");
     assert_eq!(hits[0].title, "Old style");
-    assert!(hits[0].snippet.contains("snippet lives here"), "{:?}", hits[0].snippet);
+    assert!(
+        hits[0].snippet.contains("snippet lives here"),
+        "{:?}",
+        hits[0].snippet
+    );
 }
 
 /// Page text keeps paragraph structure and drops scripts: the 200-character floor is meaningless if a whole page
@@ -374,7 +479,16 @@ fn f6_1_web_s5_page_text_keeps_lines_and_drops_scripts() {
     let html = "<html><head><script>var secret = 'do not read me';</script>\
                 <style>.x{color:red}</style></head><body><h1>Heading</h1><p>First line.</p><p>Second line.</p></body></html>";
     let text = web_browser::page_text(html);
-    assert!(!text.contains("do not read me"), "scripts are not content: {text}");
-    assert!(!text.contains("color:red"), "styles are not content: {text}");
-    assert!(text.contains("Heading\nFirst line.\nSecond line."), "blocks become lines: {text:?}");
+    assert!(
+        !text.contains("do not read me"),
+        "scripts are not content: {text}"
+    );
+    assert!(
+        !text.contains("color:red"),
+        "styles are not content: {text}"
+    );
+    assert!(
+        text.contains("Heading\nFirst line.\nSecond line."),
+        "blocks become lines: {text:?}"
+    );
 }

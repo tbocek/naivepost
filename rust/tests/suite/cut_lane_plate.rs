@@ -39,7 +39,11 @@ fn f2_5_s2_the_lane_plate_says_the_channel_layout() {
 #[test]
 fn f2_5_s2_a_stereo_file_on_one_lane_says_l_equals_r() {
     assert_eq!(lanes::channel_layout(2, 1, 0), "L=R");
-    assert_eq!(lanes::channel_layout(6, 1, 0), "L=R", "more than two channels is still ≥ 2");
+    assert_eq!(
+        lanes::channel_layout(6, 1, 0),
+        "L=R",
+        "more than two channels is still ≥ 2"
+    );
 }
 
 /// Badge 2, a 2-channel file drawn on TWO lanes → `L` then `R`, in lane order.
@@ -64,7 +68,10 @@ fn f2_5_s2_the_channel_count_comes_from_ffprobe() {
     // Cloned into the closure, because the seam's type is a `dyn Fn` with no lifetime to borrow against.
     let seen = Rc::clone(&asked);
     let stub = move |program: &str, args: &[&str]| -> Result<String, String> {
-        assert_eq!(program, "ffprobe-stub", "the caller decides which binary is asked");
+        assert_eq!(
+            program, "ffprobe-stub",
+            "the caller decides which binary is asked"
+        );
         *seen.borrow_mut() = args.iter().map(|arg| arg.to_string()).collect();
         Ok("2\n".to_string())
     };
@@ -76,9 +83,18 @@ fn f2_5_s2_the_channel_count_comes_from_ffprobe() {
     );
     let flags = asked.borrow();
     let joined = flags.join(" ");
-    assert!(joined.contains("a:0"), "the FIRST AUDIO stream is what is asked: {joined}");
-    assert!(joined.contains("stream=channels"), "and the field is `channels`: {joined}");
-    assert!(flags.last().is_some_and(|last| last.ends_with("mic.wav")), "of THIS file: {joined}");
+    assert!(
+        joined.contains("a:0"),
+        "the FIRST AUDIO stream is what is asked: {joined}"
+    );
+    assert!(
+        joined.contains("stream=channels"),
+        "and the field is `channels`: {joined}"
+    );
+    assert!(
+        flags.last().is_some_and(|last| last.ends_with("mic.wav")),
+        "of THIS file: {joined}"
+    );
     drop(flags);
 
     // The pure halves, on their own: an empty answer (no audio stream, unreadable file) is no answer.
@@ -99,7 +115,11 @@ fn f2_5_s2_the_channel_count_comes_from_ffprobe() {
 fn f2_5_s2_an_unprobeable_file_leaves_the_plate_a_name() {
     assert_eq!(lanes::parse_channels("N/A\n"), None);
     assert_eq!(lanes::parse_channels("channels = ?\n"), None);
-    assert_eq!(lanes::parse_channels("0\n"), None, "zero channels is not a shape");
+    assert_eq!(
+        lanes::parse_channels("0\n"),
+        None,
+        "zero channels is not a shape"
+    );
     assert_eq!(
         lanes::plate("2026-09-16 17-26-20", None),
         "2026-09-16 17-26-20",
@@ -125,6 +145,14 @@ fn f2_5_s2_the_plate_list_follows_the_lane_list() {
         recorder("project:audio/stereo.wav", "cam-R"),
     ];
     let both = lanes::plates(&two);
-    assert!(both[0].ends_with(" L"), "first lane of the pair: {:?}", both[0]);
-    assert!(both[1].ends_with(" R"), "second lane of the pair: {:?}", both[1]);
+    assert!(
+        both[0].ends_with(" L"),
+        "first lane of the pair: {:?}",
+        both[0]
+    );
+    assert!(
+        both[1].ends_with(" R"),
+        "second lane of the pair: {:?}",
+        both[1]
+    );
 }

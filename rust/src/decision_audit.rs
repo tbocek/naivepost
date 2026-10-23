@@ -134,7 +134,10 @@ pub fn change_is_announced(home: Home) -> bool {
 /// are not §1's fifth home either: they decide how the servers run and how the app behaves, not
 /// what this video becomes.
 pub fn is_number_or_wording(home: decision_homes::Home) -> bool {
-    matches!(home, decision_homes::Home::Policy | decision_homes::Home::Prompt)
+    matches!(
+        home,
+        decision_homes::Home::Policy | decision_homes::Home::Prompt
+    )
 }
 
 /// One of §1's examples, tied to the code path that actually makes it.

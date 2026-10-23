@@ -22,6 +22,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::common;
+use common::temp_dir_created as temp_dir;
+use common::temp_dir_tagged;
 use naivepost::asr;
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
@@ -32,9 +35,6 @@ use naivepost::separate_media as media;
 use naivepost::services;
 use naivepost::settings::{self, Conf, Paths};
 use naivepost::transcribe;
-use crate::common;
-use common::temp_dir_created as temp_dir;
-use common::temp_dir_tagged;
 
 /// The lane of every scene here: the stem of the recording's name, which is what names the decoded
 /// audio and every sidecar (§F1.3 stores under it).
@@ -124,13 +124,23 @@ impl Scene {
         // The fake's thread reads the SAME state this scene writes, through the port-keyed registry: that
         // is what lets a test arm one scene without any other scene's request being answered with it.
         register(port, fakes.clone());
-        let tools = stubs(&format!("{}-{}-{}", std::process::id(), duration, silences.len()), duration, silences);
+        let tools = stubs(
+            &format!("{}-{}-{}", std::process::id(), duration, silences.len()),
+            duration,
+            silences,
+        );
         let mut conf = Conf::default();
         conf.audio_server = url.clone();
         conf.ffmpeg = tools.join("ffmpeg").to_string_lossy().into_owned();
         conf.asr_model = asr_model.to_string();
         settings::save(&paths, &conf).expect("the conf is written");
-        Scene { root, url, tools, seen, fakes }
+        Scene {
+            root,
+            url,
+            tools,
+            seen,
+            fakes,
+        }
     }
 
     /// Answer this scene's first `count` ASR requests with the box having no room.
@@ -140,7 +150,11 @@ impl Scene {
 
     /// Answer this scene's ASR requests with text and NO word times.
     fn arm_asr_without_times(&self) {
-        self.fakes.arms.lock().expect("the arms lock").asr_without_times = true;
+        self.fakes
+            .arms
+            .lock()
+            .expect("the arms lock")
+            .asr_without_times = true;
     }
 
     /// Answer this scene's ASR requests with no text at all, which is what silence on the tape sounds like.
@@ -178,14 +192,14 @@ impl Scene {
     /// (`services::asr_model` → `asr::chunk_limit`). Called after `enter()`, so the walk reads a conf
     /// that already says what the test wants.
     fn set_asr_model(&self, id: &str) {
-    let paths = Paths {
-        config_dir: self.root.join("cfg/naivepost"),
-        data_dir: self.root.join("data/naivepost"),
-    };
-    let mut conf = settings::read(&paths).unwrap_or_default();
-    conf.asr_model = id.to_string();
-    settings::save(&paths, &conf).expect("the conf is rewritten");
-}
+        let paths = Paths {
+            config_dir: self.root.join("cfg/naivepost"),
+            data_dir: self.root.join("data/naivepost"),
+        };
+        let mut conf = settings::read(&paths).unwrap_or_default();
+        conf.asr_model = id.to_string();
+        settings::save(&paths, &conf).expect("the conf is rewritten");
+    }
 
     /// The session's project file: one recording row, nothing ticked (the split belongs to F1.2).
     /// SPEAKS ONLY goes by [`VOICE_ON`] because the F1.4 scenes need the pass to run at all — with the
@@ -199,7 +213,10 @@ impl Scene {
             tracks: vec![],
         };
         naivepost::project::save(
-            &Project { sources: vec![source], ..Project::default() },
+            &Project {
+                sources: vec![source],
+                ..Project::default()
+            },
             &naivepost::startup::session_dir(&self.root),
         )
         .expect("the project file");
@@ -220,7 +237,8 @@ impl Scene {
     /// The speech stage only: frames, describe and fix belong to other items and fail on a one-file
     /// scene, and §Failure-is-specific says the honest answer is to name what they could not read.
     fn stages(&self) -> Vec<run_stages::Stage> {
-        let project = naivepost::project::load(&naivepost::startup::session_dir(&self.root)).expect("the project");
+        let project = naivepost::project::load(&naivepost::startup::session_dir(&self.root))
+            .expect("the project");
         run_stages::plan(run::Step::Prepare, &project)
             .into_iter()
             .filter(|stage| stage.name == "speech")
@@ -230,7 +248,10 @@ impl Scene {
     /// Walk it. Returns the log lines the walk produced, newest last.
     fn walk(&self) -> Vec<String> {
         let (drive, log) = self.walk_drive();
-        assert!(matches!(drive, run_stages::Drive::Done { .. }), "the walk finished: {drive:?} / log {log:?}");
+        assert!(
+            matches!(drive, run_stages::Drive::Done { .. }),
+            "the walk finished: {drive:?} / log {log:?}"
+        );
         log
     }
 
@@ -249,9 +270,16 @@ impl Scene {
         let mut procs = Subprocesses::default();
         let mut log: Vec<String> = Vec::new();
         let stages = self.stages();
-        let drive = run_stages::drive_walk(&stages, &mut queue, || false, || false, |line| {
-            log.push(line.to_string());
-        }, &mut procs);
+        let drive = run_stages::drive_walk(
+            &stages,
+            &mut queue,
+            || false,
+            || false,
+            |line| {
+                log.push(line.to_string());
+            },
+            &mut procs,
+        );
         (drive, log)
     }
 
@@ -262,7 +290,10 @@ impl Scene {
     /// Every `POST /v1/tasks/run` this fake answered, in the order it answered them — the order is
     /// the point of two of the tests below, so it is kept rather than counted.
     fn tasks(&self) -> Vec<Seen> {
-        self.mine().into_iter().filter(|seen| seen.line.contains("/v1/tasks/run")).collect()
+        self.mine()
+            .into_iter()
+            .filter(|seen| seen.line.contains("/v1/tasks/run"))
+            .collect()
     }
 
     /// Which task each request was, in arrival order, by the model id its envelope carries. The
@@ -367,10 +398,13 @@ fn stubs(tag: &str, duration: &str, silences: &[(f64, f64)]) -> PathBuf {
     // have the next scene's `remove_dir_all` delete the stubs a previous scene's conf still names.
     let dir = temp_dir_tagged(&format!("np-f13-tools-{tag}"));
     let probe = dir.join("ffprobe");
-    common::write_script(&probe, format!("#!/bin/sh\necho \"{duration}\"\n")).expect("the probe stub");
+    common::write_script(&probe, format!("#!/bin/sh\necho \"{duration}\"\n"))
+        .expect("the probe stub");
     let report: String = silences
         .iter()
-        .map(|(start, end)| format!("echo \"silence_start: {start}\" >&2\necho \"silence_end: {end}\" >&2\n"))
+        .map(|(start, end)| {
+            format!("echo \"silence_start: {start}\" >&2\necho \"silence_end: {end}\" >&2\n")
+        })
         .collect();
     let ffmpeg = dir.join("ffmpeg");
     // The decode's output is made a REAL (silent) wav rather than a copy of the input: the stub has no
@@ -387,7 +421,8 @@ fn stubs(tag: &str, duration: &str, silences: &[(f64, f64)]) -> PathBuf {
     )
     .expect("the ffmpeg stub");
     for tool in [&probe, &ffmpeg] {
-        std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the stub runs");
+        std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .expect("the stub runs");
     }
     dir
 }
@@ -502,7 +537,13 @@ fn serve(mut stream: TcpStream, port: u16) -> Option<Seen> {
         }
         let lower = header.to_ascii_lowercase();
         if lower.starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = header
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
         if lower.starts_with("x-audiocpp-filename:") {
             filename = header.split(':').nth(1).unwrap_or("").trim().to_string();
@@ -513,7 +554,11 @@ fn serve(mut stream: TcpStream, port: u16) -> Option<Seen> {
         let _ = reader.read_exact(&mut body);
     }
     let text = String::from_utf8_lossy(&body).into_owned();
-    let path = request_line.split_whitespace().nth(1).unwrap_or("/").to_string();
+    let path = request_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("/")
+        .to_string();
     let (code, payload) = route(port, &path, &text);
     let framed = format!(
         "HTTP/1.1 {code} Whatever\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
@@ -522,7 +567,11 @@ fn serve(mut stream: TcpStream, port: u16) -> Option<Seen> {
     let _ = stream.write_all(framed.as_bytes());
     let _ = stream.flush();
     let _ = stream.shutdown(std::net::Shutdown::Both);
-    Some(Seen { line: request_line, filename, body: text })
+    Some(Seen {
+        line: request_line,
+        filename,
+        body: text,
+    })
 }
 
 /// Which reply a request gets. The task kinds are told apart by the model id their envelope names —
@@ -562,14 +611,20 @@ fn route(port: u16, path: &str, body: &str) -> (u16, String) {
         let chunk = fakes.windows.fetch_add(1, Ordering::SeqCst);
         if arms.align_fails {
             // The server's own refusal, in the shape `parse_json`/`align::parse_words` report.
-            return (500, "{\"error\":\"the aligner model is not loaded\"}".to_string());
+            return (
+                500,
+                "{\"error\":\"the aligner model is not loaded\"}".to_string(),
+            );
         }
         return (200, words_aligned(chunk));
     }
     if arms.asr_without_times {
         // Text and no word times at all -- S4's hard branch needs exactly this ASR answer, and nothing
         // else's: an ASR that timed its own words turns the same aligner refusal into a warning.
-        return (200, text_only_chunk(fakes.chunks.fetch_add(1, Ordering::SeqCst)));
+        return (
+            200,
+            text_only_chunk(fakes.chunks.fetch_add(1, Ordering::SeqCst)),
+        );
     }
     // The box saying it has no room, in a shape `asr::retryable` accepts, for the first N asks of THIS
     // scene only: the retry at the halved ceiling must then succeed, or the halving is never seen working.
@@ -586,7 +641,10 @@ fn route(port: u16, path: &str, body: &str) -> (u16, String) {
         // answers it the way a server really does -- empty text, which is an answer, not a fault.
         return (200, "{\"text\":\"\"}".to_string());
     }
-    (200, words_chunk(fakes.chunks.fetch_add(1, Ordering::SeqCst)))
+    (
+        200,
+        words_chunk(fakes.chunks.fetch_add(1, Ordering::SeqCst)),
+    )
 }
 
 /// Per-request answers to the diarizer, read one per ask in the order the ladder reaches its rungs.
@@ -631,8 +689,14 @@ impl SceneFakes {
         for counter in [&self.chunks, &self.windows, &self.asr_asks, &self.diar_asks] {
             counter.store(0, Ordering::SeqCst);
         }
-        self.diar_queue.lock().expect("the reply queue lock").clear();
-        self.diar_replies.lock().expect("the reply log lock").clear();
+        self.diar_queue
+            .lock()
+            .expect("the reply queue lock")
+            .clear();
+        self.diar_replies
+            .lock()
+            .expect("the reply log lock")
+            .clear();
     }
 }
 
@@ -643,9 +707,13 @@ fn register(port: u16, fakes: SceneFakes) {
 }
 
 fn scene_fakes(port: u16) -> Option<SceneFakes> {
-    SCENES.lock().expect("the scene lock").iter().find(|(each, _)| *each == port).map(|(_, fakes)| fakes.clone())
+    SCENES
+        .lock()
+        .expect("the scene lock")
+        .iter()
+        .find(|(each, _)| *each == port)
+        .map(|(_, fakes)| fakes.clone())
 }
-
 
 /// Script the diarizer's NEXT answer, labelled with the word the test used. Queue it through
 /// [`walk_scene_queued`] / [`walk_scene_failing_queued`], never before calling a walker: `reset_pieces`
@@ -660,12 +728,20 @@ fn scene_fakes(port: u16) -> Option<SceneFakes> {
 impl Scene {
     /// Script this scene's diarizer NEXT answer, labelled with the word the test used.
     fn queue_diar(&self, answer: &'static str) {
-        self.fakes.diar_queue.lock().expect("the reply queue lock").push((answer, self.payload_for(answer)));
+        self.fakes
+            .diar_queue
+            .lock()
+            .expect("the reply queue lock")
+            .push((answer, self.payload_for(answer)));
     }
 
     /// What this scene's fake sent for each diarization request, in arrival order.
     fn diar_record(&self) -> Vec<&'static str> {
-        self.fakes.diar_replies.lock().expect("the reply log lock").clone()
+        self.fakes
+            .diar_replies
+            .lock()
+            .expect("the reply log lock")
+            .clone()
     }
 
     /// How many diarization requests this scene's fake answered.
@@ -694,7 +770,6 @@ impl Scene {
 fn walk_scene_asr(scene: &Scene, id: &'static str, fail: bool) -> Vec<String> {
     walk_scene_armed(scene, id, fail, 0, false, false, false)
 }
-
 
 /// `walk_scene_asr` with the switches a test needs armed AFTER `reset_pieces` has cleared them: the
 /// box refusing the aligner, the box having no room, the tape hearing nothing. A walker cannot read
@@ -767,9 +842,9 @@ fn cut_calls(tools: &Path) -> Vec<String> {
     calls(tools)
         .into_iter()
         .filter(|line| {
-            line.split(" -ss ")
-                .nth(1)
-                .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit()) && line.contains("-t "))
+            line.split(" -ss ").nth(1).is_some_and(|rest| {
+                rest.starts_with(|c: char| c.is_ascii_digit()) && line.contains("-t ")
+            })
         })
         .collect()
 }
@@ -821,7 +896,11 @@ fn diar_answer_for(fakes: &SceneFakes, _ask: usize) -> (u16, String) {
             queue.remove(0)
         }
     };
-    fakes.diar_replies.lock().expect("the reply log lock").push(label);
+    fakes
+        .diar_replies
+        .lock()
+        .expect("the reply log lock")
+        .push(label);
     (200, payload)
 }
 
@@ -837,35 +916,61 @@ fn f1_3_s1_the_walk_decodes_then_passes_the_recording_through_the_servers() {
     // own argv rather than asserted about a file that merely exists.
     let argv = calls(&scene.tools);
     assert!(
-        argv.iter().any(|line| line.contains("-ar 16000") && line.contains("-ac 1")),
+        argv.iter()
+            .any(|line| line.contains("-ar 16000") && line.contains("-ac 1")),
         "the decode asked for mono 16 kHz: {argv:?}"
     );
     // And the silencedetect pass went too — S2's chunk edges come from it.
-    assert!(argv.iter().any(|line| line.contains("silencedetect")), "quiet was measured: {argv:?}");
+    assert!(
+        argv.iter().any(|line| line.contains("silencedetect")),
+        "quiet was measured: {argv:?}"
+    );
 
     // All three jobs were asked, and the ASR's chunk went UP first: a task may only name a path an
     // upload handed back (§1), so an upload precedes every ask — and it carried the chunk's own name in
     // `X-Audiocpp-Filename`, which is how §1 says a file is named to the server.
     let mine = scene.mine();
-    let uploads: Vec<&Seen> =
-        mine.iter().filter(|seen| seen.line.contains("/v1/ui/upload")).collect();
+    let uploads: Vec<&Seen> = mine
+        .iter()
+        .filter(|seen| seen.line.contains("/v1/ui/upload"))
+        .collect();
     let tasks = scene.tasks();
-    assert_eq!(uploads.len(), tasks.len(), "every ask had its own upload ahead of it");
+    assert_eq!(
+        uploads.len(),
+        tasks.len(),
+        "every ask had its own upload ahead of it"
+    );
     assert!(
         uploads.iter().any(|seen| seen.filename.starts_with('c')),
         "the upload named the chunk it carried: {:?}",
-        uploads.iter().map(|seen| seen.filename.clone()).collect::<Vec<_>>()
+        uploads
+            .iter()
+            .map(|seen| seen.filename.clone())
+            .collect::<Vec<_>>()
     );
     // The ASR id on the wire is the one the SETTINGS BOX names (services::asr_model reads
     // `conf.asr_model`, defaulting to the shipped id) — the box's model list decides which roles are
     // served, not which id is asked for. So this scene's ask carries the shipped default.
     assert!(
-        tasks.iter().any(|seen| seen.body.contains(services::ASR_MODEL)),
+        tasks
+            .iter()
+            .any(|seen| seen.body.contains(services::ASR_MODEL)),
         "the ASR was asked: {:?}",
-        tasks.iter().map(|seen| seen.body.clone()).collect::<Vec<_>>()
+        tasks
+            .iter()
+            .map(|seen| seen.body.clone())
+            .collect::<Vec<_>>()
     );
-    assert!(tasks.iter().any(|seen| seen.body.contains(SCENE_ALIGNER)), "the aligner was asked");
-    assert!(tasks.iter().any(|seen| seen.body.contains(services::DIAR_MODEL)), "the diarizer was asked");
+    assert!(
+        tasks.iter().any(|seen| seen.body.contains(SCENE_ALIGNER)),
+        "the aligner was asked"
+    );
+    assert!(
+        tasks
+            .iter()
+            .any(|seen| seen.body.contains(services::DIAR_MODEL)),
+        "the diarizer was asked"
+    );
 
     // The five files. Their existence is also the resume marker of each step, so a pass that skipped
     // one would show up here rather than as a silent gap on the next run.
@@ -878,12 +983,20 @@ fn f1_3_s1_the_walk_decodes_then_passes_the_recording_through_the_servers() {
     let tsv = std::fs::read_to_string(tree.transcript_tsv(LANE)).expect("the transcript");
     // The diarizer's two turns are what name the words; a 20.0 s take is ONE chunk whose reply carries
     // one word, so S6 makes one segment and one speaker is all there is to see.
-    assert!(tsv.contains("SPEAKER_00"), "the speaker came from the turns: {tsv}");
+    assert!(
+        tsv.contains("SPEAKER_00"),
+        "the speaker came from the turns: {tsv}"
+    );
 
     // The log says the length it worked from and what it ended with.
-    assert!(log.iter().any(|line| line == ">>> [lecture] 20.0 s of audio"), "S1's line: {log:?}");
     assert!(
-        log.iter().any(|line| line.ends_with(" segments") && line.starts_with(">>> [lecture] ")),
+        log.iter()
+            .any(|line| line == ">>> [lecture] 20.0 s of audio"),
+        "S1's line: {log:?}"
+    );
+    assert!(
+        log.iter()
+            .any(|line| line.ends_with(" segments") && line.starts_with(">>> [lecture] ")),
         "S6's count: {log:?}"
     );
 }
@@ -897,15 +1010,25 @@ fn f1_3_s4_alignment_is_asked_after_the_asr_wrote_its_words() {
     walk_scene(&scene);
 
     let order = scene.task_order();
-    let asr_at = order.iter().position(|kind| *kind == "asr").expect("the ASR was asked");
-    let align_at = order.iter().position(|kind| *kind == "align").expect("the aligner was asked");
+    let asr_at = order
+        .iter()
+        .position(|kind| *kind == "asr")
+        .expect("the ASR was asked");
+    let align_at = order
+        .iter()
+        .position(|kind| *kind == "align")
+        .expect("the aligner was asked");
     assert!(
         asr_at < align_at,
         "the aligner is asked after the ASR, not before: {order:?}"
     );
     // And it was asked with the ASR's OWN text: `{"model","request":{"audio","text","language"}}`,
     // the text being the word this fake's ASR reply answered with.
-    let align = scene.tasks().into_iter().find(|seen| seen.body.contains(SCENE_ALIGNER)).expect("asked");
+    let align = scene
+        .tasks()
+        .into_iter()
+        .find(|seen| seen.body.contains(SCENE_ALIGNER))
+        .expect("asked");
     let sent: serde_json::Value = serde_json::from_str(&align.body).expect("the envelope is JSON");
     assert_eq!(
         sent["request"]["text"].as_str(),
@@ -922,8 +1045,13 @@ fn f1_3_s4_words_aligned_json_is_the_aligners_answer() {
     let scene = Scene::new("20.0", &[], "");
     walk_scene(&scene);
     let tree = scene.tree();
-    assert!(tree.words_aligned_json(LANE).exists(), "the aligner's answer is on disk");
-    let aligned = requests::read_aligned(&tree, LANE).expect("readable").expect("present");
+    assert!(
+        tree.words_aligned_json(LANE).exists(),
+        "the aligner's answer is on disk"
+    );
+    let aligned = requests::read_aligned(&tree, LANE)
+        .expect("readable")
+        .expect("present");
     assert!(!aligned.words.is_empty(), "and it holds words: {aligned:?}");
 }
 
@@ -936,7 +1064,14 @@ fn f1_3_s3_an_existing_words_json_skips_the_asr_request() {
     requests::write_words(
         &tree,
         LANE,
-        &WordsDoc { text: "already here".into(), words: vec![Word { word: "here".into(), start_sample: 1600, end_sample: 3200 }] },
+        &WordsDoc {
+            text: "already here".into(),
+            words: vec![Word {
+                word: "here".into(),
+                start_sample: 1600,
+                end_sample: 3200,
+            }],
+        },
     )
     .expect("words.json");
 
@@ -946,7 +1081,11 @@ fn f1_3_s3_an_existing_words_json_skips_the_asr_request() {
         "the ASR was asked anyway: {:?}",
         scene.task_order()
     );
-    assert!(log.iter().any(|line| line == ">>> [lecture] ASR already done"), "it said why: {log:?}");
+    assert!(
+        log.iter()
+            .any(|line| line == ">>> [lecture] ASR already done"),
+        "it said why: {log:?}"
+    );
 }
 
 /// §F1.11's producer reached through the ▶ door: a Prepare press leaves `cache/waves/<lane>.wave` behind.
@@ -965,18 +1104,29 @@ fn f1_11_s1_a_prepare_press_leaves_a_wave_cache_behind() {
     requests::write_words(
         &tree,
         LANE,
-        &WordsDoc { text: "already here".into(), words: vec![Word { word: "here".into(), start_sample: 1600, end_sample: 3200 }] },
+        &WordsDoc {
+            text: "already here".into(),
+            words: vec![Word {
+                word: "here".into(),
+                start_sample: 1600,
+                end_sample: 3200,
+            }],
+        },
     )
     .expect("words.json");
     // And the decode is already there too (the stub writes it by copying its input), which is the state a
     // second press finds and the only one the envelope can be folded from.
     scene.decode();
 
-    assert!(!tree.wave(LANE).exists(), "nothing measured before the press");
+    assert!(
+        !tree.wave(LANE).exists(),
+        "nothing measured before the press"
+    );
     let log = walk_scene(&scene);
 
     assert!(
-        log.iter().any(|line| line.starts_with(">>> envelope: measuring lecture")),
+        log.iter()
+            .any(|line| line.starts_with(">>> envelope: measuring lecture")),
         "the walk announced the measurement: {log:?}"
     );
     assert!(tree.wave(LANE).exists(), "the press left a wave cache");
@@ -991,7 +1141,11 @@ fn f1_11_s1_a_prepare_press_leaves_a_wave_cache_behind() {
     let read = naivepost::wave::read(&tree, LANE, meta.len() as i64, mtime)
         .expect("readable")
         .expect("stamped against this very recording");
-    assert_eq!(read.hz, naivepost::wave_build::PEAK_HZ, "the rate §01 §6 names");
+    assert_eq!(
+        read.hz,
+        naivepost::wave_build::PEAK_HZ,
+        "the rate §01 §6 names"
+    );
     assert_eq!(read.chans.len(), 1, "folded from the mono decode");
     assert!(!read.chans[0].is_empty(), "and it holds buckets");
 }
@@ -1003,10 +1157,15 @@ fn f1_3_s2_a_take_under_min_take_seconds_asks_no_server() {
     let scene = Scene::new("1.0", &[], "");
     let log = walk_scene(&scene);
     assert!(
-        log.iter().any(|line| line.contains("a start/stop, not a take")),
+        log.iter()
+            .any(|line| line.contains("a start/stop, not a take")),
         "the short take was named: {log:?}"
     );
-    assert!(scene.tasks().is_empty(), "nothing was asked of audio.cpp: {:?}", scene.mine());
+    assert!(
+        scene.tasks().is_empty(),
+        "nothing was asked of audio.cpp: {:?}",
+        scene.mine()
+    );
     // And the silence files exist anyway, so every later step resumes rather than re-asking.
     let tree = scene.tree();
     assert!(tree.words_json(LANE).exists() && tree.turns_json(LANE).exists());
@@ -1032,7 +1191,10 @@ fn f1_3_s3_chunks_cut_at_a_silence_not_on_the_clock() {
 
     let argv = calls(&scene.tools);
     let cuts: Vec<&String> = argv.iter().filter(|line| line.contains("asr/c")).collect();
-    assert!(cuts.len() > 1, "a 200 s take is more than one request: {argv:?}");
+    assert!(
+        cuts.len() > 1,
+        "a 200 s take is more than one request: {argv:?}"
+    );
     assert!(
         cuts.iter().any(|line| line.contains("-ss 40.2")),
         "the cut slid into the silence instead of landing on 40: {cuts:?}"
@@ -1040,7 +1202,11 @@ fn f1_3_s3_chunks_cut_at_a_silence_not_on_the_clock() {
     // More than one chunk went up, each as its own upload and its own ask.
     let tasks = scene.tasks();
     assert!(
-        tasks.iter().filter(|seen| seen.body.contains(QWEN_ASR)).count() > 1,
+        tasks
+            .iter()
+            .filter(|seen| seen.body.contains(QWEN_ASR))
+            .count()
+            > 1,
         "each piece was asked about on its own: {tasks:?}"
     );
     // The join is what the transcripts are built from, so the file carries words from LATER chunks too
@@ -1070,7 +1236,11 @@ fn f1_3_s5_turns_already_on_disk_ask_the_diarizer_nothing() {
         scene.task_order()
     );
     // The ASR still ran: skipping one step is not skipping the pass.
-    assert!(scene.task_order().contains(&"asr"), "the rest of the pass still went: {:?}", scene.task_order());
+    assert!(
+        scene.task_order().contains(&"asr"),
+        "the rest of the pass still went: {:?}",
+        scene.task_order()
+    );
 }
 
 /// S2's folding, on the lines ffmpeg really prints: pairs become spans, a start with no end is
@@ -1088,14 +1258,32 @@ fn f1_3_s5_fold_spans_pairs_the_detector_report() {
     );
     assert_eq!(
         media::fold_spans(report),
-        vec![asr::Silence { start: 59.8, end: 60.2 }, asr::Silence { start: 100.0, end: 101.5 }]
+        vec![
+            asr::Silence {
+                start: 59.8,
+                end: 60.2
+            },
+            asr::Silence {
+                start: 100.0,
+                end: 101.5
+            }
+        ]
     );
     // Out of order arrives sorted: the plan reads spans in the recording's order.
     let shuffled = "silence_start: 10.0\nsilence_end: 11.0\nsilence_start: 2.0\nsilence_end: 3.0\n";
-    assert_eq!(media::fold_spans(shuffled).first().map(|s| s.start), Some(2.0));
+    assert_eq!(
+        media::fold_spans(shuffled).first().map(|s| s.start),
+        Some(2.0)
+    );
     // A lone start is no span, and chatter alone is none either.
-    assert!(media::fold_spans("silence_start: 640\n").is_empty(), "an unmeasured gap is not a silence");
-    assert!(media::fold_spans("frame=  100 fps=30\n").is_empty(), "chatter alone is no silence");
+    assert!(
+        media::fold_spans("silence_start: 640\n").is_empty(),
+        "an unmeasured gap is not a silence"
+    );
+    assert!(
+        media::fold_spans("frame=  100 fps=30\n").is_empty(),
+        "chatter alone is no silence"
+    );
 }
 
 // --- the diarization ladder through the walk -----------------------------------------------------
@@ -1113,7 +1301,9 @@ fn diar_voices(from: f64, to: f64, voices: usize) -> String {
     let start = (from * 16_000.0) as u64;
     let end = (to * 16_000.0) as u64;
     let entries: Vec<String> = (0..voices)
-        .map(|voice| format!("{{\"start_sample\":{start},\"end_sample\":{end},\"speaker_id\":{voice}}}"))
+        .map(|voice| {
+            format!("{{\"start_sample\":{start},\"end_sample\":{end},\"speaker_id\":{voice}}}")
+        })
         .collect();
     format!("{{\"turns\":[{}]}}", entries.join(","))
 }
@@ -1125,7 +1315,12 @@ fn diar_voices(from: f64, to: f64, voices: usize) -> String {
 /// refusal the wrong way. With both voices inside, what a window has left to place
 /// (`w − anchor − 1`, checked against `NEW_AUDIO_MIN_SECONDS`) turns on one number, `anchor_per(w)`.
 fn diar_two_voices(seconds: f64) -> String {
-    let edges = |from: f64| ((from * 16_000.0) as u64, ((from + seconds) * 16_000.0) as u64);
+    let edges = |from: f64| {
+        (
+            (from * 16_000.0) as u64,
+            ((from + seconds) * 16_000.0) as u64,
+        )
+    };
     let (a0, a1) = edges(0.5);
     let (b0, b1) = edges(8.0);
     format!(
@@ -1141,18 +1336,28 @@ fn diar_two_voices(seconds: f64) -> String {
 #[test]
 fn f1_3_s5_two_voices_in_a_25s_window_leave_nothing_to_place() {
     let parse = |reply: String| {
-        naivepost::audio_task::diar_answer(&serde_json::from_str::<serde_json::Value>(&reply).expect("json"))
-            .expect("turns")
+        naivepost::audio_task::diar_answer(
+            &serde_json::from_str::<serde_json::Value>(&reply).expect("json"),
+        )
+        .expect("turns")
     };
     // A 25 s rung of a 30 s take: two windows, both answered with two voices across them.
-    let crowded: Vec<Vec<_>> = vec![parse(diar_voices(0.0, 25.0, 2)), parse(diar_voices(0.0, 25.0, 2))];
+    let crowded: Vec<Vec<_>> = vec![
+        parse(diar_voices(0.0, 25.0, 2)),
+        parse(diar_voices(0.0, 25.0, 2)),
+    ];
     assert!(matches!(
         naivepost::diarize::plan(30.0, 25.0, &[(0.0, 25.0), (16.7, 30.0)], &crowded),
         naivepost::diarize::Scan::AnchorTooLong { .. }
     ));
     // The same two voices in a 45 s window leave room: this is the rung the walk is meant to settle on.
     assert!(matches!(
-        naivepost::diarize::plan(30.0, 45.0, &[(0.0, 30.0)], &[parse(diar_voices(0.0, 30.0, 2))]),
+        naivepost::diarize::plan(
+            30.0,
+            45.0,
+            &[(0.0, 30.0)],
+            &[parse(diar_voices(0.0, 30.0, 2))]
+        ),
         naivepost::diarize::Scan::Planned { .. }
     ));
 }
@@ -1195,15 +1400,20 @@ fn f1_3_s5_the_ladder_stops_at_the_first_rung_that_fits() {
         vec![0, 1, 2, 0],
         "pass 1's two voices first, then pass 2's slots named against the anchor: {turns:?}"
     );
-    assert!(tree.transcript_tsv(LANE).exists(), "and the pass finished: {log:?}");
+    assert!(
+        tree.transcript_tsv(LANE).exists(),
+        "and the pass finished: {log:?}"
+    );
 }
 
 /// The diarizer's reply the rule-level ladder tests hand to [`naivepost::diar_scan::run`], parsed the
 /// way a real reply is: `audio_task::diar_answer` is the same door the walk reads through, so these two
 /// tests exercise the ladder and nothing about the socket.
 fn turns_of(reply: String) -> Vec<naivepost::requests::Turn> {
-    naivepost::audio_task::diar_answer(&serde_json::from_str::<serde_json::Value>(&reply).expect("json"))
-        .expect("a diarizer answer")
+    naivepost::audio_task::diar_answer(
+        &serde_json::from_str::<serde_json::Value>(&reply).expect("json"),
+    )
+    .expect("a diarizer answer")
 }
 
 /// S5's rung-by-rung MOVE, driven at the rule that walks it. A window is never wider than the recording
@@ -1231,7 +1441,10 @@ fn f1_3_s5_the_ladder_asks_the_next_rung_when_one_refuses() {
                     .map(|(from, to)| turns_of(diar_voices(*from, *to, 8)))
                     .collect());
             }
-            Ok(windows.iter().map(|_| turns_of(diar_two_voices(5.6))).collect())
+            Ok(windows
+                .iter()
+                .map(|_| turns_of(diar_two_voices(5.6)))
+                .collect())
         },
         // Pass 2 asks about the serving rung's own spans; which rung served is all this test pins, so its
         // answers are empty here and pinned in `tests/suite/diar_anchored_pass.rs`.
@@ -1240,7 +1453,11 @@ fn f1_3_s5_the_ladder_asks_the_next_rung_when_one_refuses() {
     )
     .expect("a rung plans");
 
-    assert_eq!(asks.get(), 2, "the refused rung was asked, then the next one down");
+    assert_eq!(
+        asks.get(),
+        2,
+        "the refused rung was asked, then the next one down"
+    );
     assert_eq!(rung.window, 45.0, "the walk settled on the 45 s rung");
     // The turns that serve are the SERVING rung's, flattened over its windows -- a 100 s take at a 45 s
     // window is three windows, so each voice comes back once per window it was heard in.
@@ -1304,7 +1521,9 @@ fn f1_3_s5_a_diarization_that_never_fits_fails_the_walk_and_names_the_model() {
     let scene = Scene::new("100.0", &[], "");
     let log = walk_scene_failing_queued(
         &scene,
-        &["many", "many", "many", "many", "many", "many", "many", "many"],
+        &[
+            "many", "many", "many", "many", "many", "many", "many", "many",
+        ],
     );
     let tree = scene.tree();
 
@@ -1324,8 +1543,14 @@ fn f1_3_s5_a_diarization_that_never_fits_fails_the_walk_and_names_the_model() {
         said.contains("anchor"),
         "and says why no rung could answer: {said}"
     );
-    assert!(!tree.transcript_tsv(LANE).exists(), "S5 is fatal before S6 wrote anything");
-    assert!(!tree.turns_json(LANE).exists(), "a failed diarization leaves no resume marker");
+    assert!(
+        !tree.transcript_tsv(LANE).exists(),
+        "S5 is fatal before S6 wrote anything"
+    );
+    assert!(
+        !tree.turns_json(LANE).exists(),
+        "a failed diarization leaves no resume marker"
+    );
 }
 
 /// S4's hard branch through the walk: the ASR answers with text and NO word times, and the aligner
@@ -1346,7 +1571,12 @@ fn f1_3_s4_an_aligner_failure_without_word_times_stops_the_walk() {
         20.0,
         services::ASR_MODEL,
         |_| naivepost::transcribe::Align::Failed("the aligner model is not loaded".to_string()),
-        || Ok(WordsDoc { text: "hello there".to_string(), words: vec![] }),
+        || {
+            Ok(WordsDoc {
+                text: "hello there".to_string(),
+                words: vec![],
+            })
+        },
         || Ok(vec![]),
     );
     let err = pass.expect_err("words nobody can time cannot be transcribed");
@@ -1355,8 +1585,14 @@ fn f1_3_s4_an_aligner_failure_without_word_times_stops_the_walk() {
         err.contains("timed no words") || err.contains("no word times"),
         "and the hard reason, not a warning: {err}"
     );
-    assert!(err.contains(services::ASR_MODEL), "and the model that answered: {err}");
-    assert!(!tree.transcript_tsv(LANE).exists(), "nothing was written from an untimeable transcript");
+    assert!(
+        err.contains(services::ASR_MODEL),
+        "and the model that answered: {err}"
+    );
+    assert!(
+        !tree.transcript_tsv(LANE).exists(),
+        "nothing was written from an untimeable transcript"
+    );
 }
 
 /// S6's other side of the same door: the files the pass writes are the ones §04#4's row counts, read
@@ -1378,10 +1614,15 @@ fn f1_3_s6_what_the_pass_wrote_is_what_prepare_counts() {
         .find(|line| line.ends_with(" segments"))
         .and_then(|line| line.split_whitespace().nth(2))
         .and_then(|n| n.parse::<usize>().ok());
-    assert_eq!(counted, Some(lines), "S6's count is the file's: log {log:?} / file {tsv}");
+    assert_eq!(
+        counted,
+        Some(lines),
+        "S6's count is the file's: log {log:?} / file {tsv}"
+    );
     // The project the row is counted over is the one the walk saved, and `prepare::count` reads the
     // same `transcript.tsv` the pass wrote: zero before a run, exactly the segments after one.
-    let project = naivepost::project::load(&naivepost::startup::session_dir(&scene.root)).expect("project");
+    let project =
+        naivepost::project::load(&naivepost::startup::session_dir(&scene.root)).expect("project");
     assert_eq!(
         naivepost::prepare::count(&tree, &project).lines,
         lines,
@@ -1389,7 +1630,10 @@ fn f1_3_s6_what_the_pass_wrote_is_what_prepare_counts() {
     );
     // And the srt carries one numbered block per segment, so the two files agree.
     let srt = std::fs::read_to_string(tree.transcript_srt(LANE)).expect("transcript.srt");
-    assert!(srt.starts_with("1\n"), "the srt opens with its first block's number: {srt}");
+    assert!(
+        srt.starts_with("1\n"),
+        "the srt opens with its first block's number: {srt}"
+    );
     assert_eq!(
         srt.lines().filter(|line| line.trim() == "1").count(),
         1,
@@ -1478,7 +1722,10 @@ fn f1_4_s1_an_out_of_memory_answer_halves_the_limit_and_retries() {
     // And the retry finished the job: the resume marker is there, which is the only reason the halving
     // was worth doing at all.
     let tree = scene.tree();
-    assert!(tree.words_json(LANE).exists(), "the retry wrote the transcript: {said}");
+    assert!(
+        tree.words_json(LANE).exists(),
+        "the retry wrote the transcript: {said}"
+    );
 }
 
 /// S2: `asr/` is this stage's scratch and its lifetime is the stage's outcome — gone once the answer is
@@ -1520,21 +1767,38 @@ fn f1_4_s2_the_asr_scratch_survives_a_failed_pass_and_goes_with_a_good_one() {
     // only, so nothing can time the words. Both of `align_step`'s branches are pinned here, because the
     // SAME refusal beside an ASR that did send word times is the warning a run walks past — and only the
     // fatal one leaves a scratch behind, which is what the walk below then proves on disk.
-    let heard = WordsDoc { text: "hello there".into(), words: Vec::new() };
+    let heard = WordsDoc {
+        text: "hello there".into(),
+        words: Vec::new(),
+    };
     assert!(
         matches!(
-            transcribe::align_step(LANE, transcribe::Align::Failed("not loaded".into()), &heard, false),
+            transcribe::align_step(
+                LANE,
+                transcribe::Align::Failed("not loaded".into()),
+                &heard,
+                false
+            ),
             transcribe::AlignStep::Stops(_)
         ),
         "text-only ASR plus a refusing aligner stops the pass: {heard:?}"
     );
     let timed = WordsDoc {
         text: "hello there".into(),
-        words: vec![Word { word: "hello".into(), start_sample: 0, end_sample: 8000 }],
+        words: vec![Word {
+            word: "hello".into(),
+            start_sample: 0,
+            end_sample: 8000,
+        }],
     };
     assert!(
         matches!(
-            transcribe::align_step(LANE, transcribe::Align::Failed("not loaded".into()), &timed, false),
+            transcribe::align_step(
+                LANE,
+                transcribe::Align::Failed("not loaded".into()),
+                &timed,
+                false
+            ),
             transcribe::AlignStep::Warns(_)
         ),
         "the same refusal is only a warning when the ASR timed its own words: {timed:?}"
@@ -1606,7 +1870,9 @@ fn f1_4_s3_every_ask_is_preceded_by_its_cut_and_names_audio_and_language() {
     let chunks = requests::read_chunks(&scene.tree(), LANE).expect("asrchunks.json reads back");
 
     // One line per piece, in the bar's wording, for exactly the pieces the walk cut.
-    let steps: Vec<String> = (0..asked.len()).map(|index| asr::progress(index, asked.len())).collect();
+    let steps: Vec<String> = (0..asked.len())
+        .map(|index| asr::progress(index, asked.len()))
+        .collect();
     assert_eq!(
         steps,
         vec![
@@ -1659,7 +1925,10 @@ fn f1_4_s3_every_ask_is_preceded_by_its_cut_and_names_audio_and_language() {
         let sent: serde_json::Value = serde_json::from_str(body).expect("the envelope is JSON");
         let request = sent.get("request").expect("the envelope wraps a request");
         assert!(
-            request.get("audio").and_then(|v| v.as_str()).is_some_and(|audio| !audio.is_empty()),
+            request
+                .get("audio")
+                .and_then(|v| v.as_str())
+                .is_some_and(|audio| !audio.is_empty()),
             "a task may only name a path an upload gave back: {body}"
         );
         assert!(
@@ -1678,12 +1947,21 @@ fn f1_4_s4_the_three_files_and_word_times_on_the_recordings_clock() {
     let log = walk_scene_asr(&scene, QWEN_ASR, false);
     let tree = scene.tree();
 
-    assert!(tree.transcript_txt(LANE).exists(), "transcript.txt: {log:?}");
-    assert!(tree.asrchunks_json(LANE).exists(), "asrchunks.json: {log:?}");
+    assert!(
+        tree.transcript_txt(LANE).exists(),
+        "transcript.txt: {log:?}"
+    );
+    assert!(
+        tree.asrchunks_json(LANE).exists(),
+        "asrchunks.json: {log:?}"
+    );
     assert!(tree.words_json(LANE).exists(), "words.json last: {log:?}");
 
     let chunks = requests::read_chunks(&tree, LANE).expect("asrchunks.json reads back");
-    assert!(chunks.len() > 1, "a 140 s take at a 60 s ceiling is several rows: {chunks:?}");
+    assert!(
+        chunks.len() > 1,
+        "a 140 s take at a 60 s ceiling is several rows: {chunks:?}"
+    );
     // Rows tile the recording: each starts where the last ended, and the last reaches the end.
     for pair in chunks.windows(2) {
         assert_eq!(
@@ -1691,11 +1969,18 @@ fn f1_4_s4_the_three_files_and_word_times_on_the_recordings_clock() {
             "the rows are the recording cut into pieces, not overlapping guesses: {chunks:?}"
         );
     }
-    assert_eq!(chunks.last().expect("a row").e, 140.0, "the last row reaches the end");
+    assert_eq!(
+        chunks.last().expect("a row").e,
+        140.0,
+        "the last row reaches the end"
+    );
 
     let words = requests::read_words(&tree, LANE).expect("words.json reads back");
     let words = words.unwrap_or_default();
-    assert!(!words.words.is_empty(), "the fake answers with word times: {words:?}");
+    assert!(
+        !words.words.is_empty(),
+        "the fake answers with word times: {words:?}"
+    );
     let last_start = chunks.last().expect("a row").s;
     let beyond = words
         .words
@@ -1738,7 +2023,9 @@ fn f1_4_s1_the_halving_is_said_by_a_walk() {
     );
     // And the honest half: the sentence the run SHOULD have said is `asr`'s own, produced by the rule --
     // and absent from the walk. Flip this assertion when `src/` passes the lines through.
-    let halved = asr::halve(LANE, asr::chunk_limit(QWEN_ASR)).log.expect("a halving has a line");
+    let halved = asr::halve(LANE, asr::chunk_limit(QWEN_ASR))
+        .log
+        .expect("a halving has a line");
     assert_eq!(
         halved,
         "!!! [lecture] ASR: no room for that much audio -- trying 30 s at a time"
@@ -1765,7 +2052,11 @@ fn f1_4_s4_nothing_heard_is_an_answer_not_a_failure() {
         tree.asrchunks_json(LANE),
         tree.words_json(LANE),
     ] {
-        assert!(path.exists(), "an empty transcript still writes {}: {said}", path.display());
+        assert!(
+            path.exists(),
+            "an empty transcript still writes {}: {said}",
+            path.display()
+        );
     }
     assert_eq!(
         requests::read_words(&tree, LANE)

@@ -11,7 +11,7 @@ use naivepost::textfmt::Retake;
 use naivepost::wave::{self};
 
 use crate::common;
-use common::{word};
+use common::word;
 
 const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
@@ -27,7 +27,14 @@ fn edges(total: f64, spans: &[(f64, f64, u8)]) -> Edges {
 }
 
 fn mark(s: f64, e: f64, again: f64, to: f64) -> Retake {
-    Retake { s, e, again, to, text: String::new(), whole: String::new() }
+    Retake {
+        s,
+        e,
+        again,
+        to,
+        text: String::new(),
+        whole: String::new(),
+    }
 }
 
 /// No envelope anywhere, and nothing else spoken.
@@ -60,7 +67,11 @@ fn f1_11_s1_a_fence_with_no_width_never_asks_the_sound() {
     // has no width: 72 of the 114 edges measured on the ETH lecture sit exactly on an aligned time.
     let e = edges(8.0, &[(1.0, 2.0, WORD)]);
     assert_eq!(e.end_after(&word("stays", 1.0, 1.5), 1.5), 1.5);
-    assert_eq!(e.end_after(&word("stays", 1.0, 1.5), 1.2), 1.5, "not even past the limit");
+    assert_eq!(
+        e.end_after(&word("stays", 1.0, 1.5), 1.2),
+        1.5,
+        "not even past the limit"
+    );
 }
 
 #[test]
@@ -89,12 +100,13 @@ fn f1_11_s2_nothing_said_between_lets_the_whole_gap_go() {
     let words = [word("first", 5.0, 5.4)];
     let lookup = |_: f64| Some(&e);
 
-    let (marks, notes) =
-        edge::place_edges(vec![mark(1.0, 4.0, 5.0, 4.0)], &words, lookup, &[]);
+    let (marks, notes) = edge::place_edges(vec![mark(1.0, 4.0, 5.0, 4.0)], &words, lookup, &[]);
     assert_eq!(marks[0].to, 4.6, "the quietest moment inside the fence");
     assert_eq!(
         notes,
-        vec![">>> 00:01: the cut resumes at 00:04, just before the retake's first word".to_string()]
+        vec![
+            ">>> 00:01: the cut resumes at 00:04, just before the retake's first word".to_string()
+        ]
     );
 
     // With no envelope the pad off the retake's first word is all there is.
@@ -224,7 +236,10 @@ fn f1_11_s5_the_byte_scale_is_treated_as_a_minus_seventy_dbfs_meter() {
     // ...and something much quieter than the floor is not, however steady it is.
     let faint = Edges::new(wave(12.0, &[(1.0, 7.0, WORD), (7.0, 7.4, 20)]), 0.0);
     assert_eq!(faint.floor(7.2), 24, "the room is the talking's floor");
-    assert!(20 < faint.floor(7.2), "20 bytes of hum is silence to this rule");
+    assert!(
+        20 < faint.floor(7.2),
+        "20 bytes of hum is silence to this rule"
+    );
 }
 
 #[test]
@@ -242,15 +257,15 @@ fn f1_11_s5_one_silent_bucket_at_a_word_s_end_stops_the_tail() {
 
 #[test]
 fn f1_11_s6_both_edges_of_a_mark_land_on_the_sound() {
-    let e = edges(12.0, &[
-        (1.0, 1.5, WORD),
-        (1.5, 1.62, 90),
-        (5.0, 5.4, WORD),
-    ]);
+    let e = edges(12.0, &[(1.0, 1.5, WORD), (1.5, 1.62, 90), (5.0, 5.4, WORD)]);
     let words = [word("stays", 1.0, 1.5), word("again", 5.0, 5.4)];
 
-    let (marks, notes) =
-        edge::place_edges(vec![mark(2.0, 3.0, 5.0, 3.0)], &words, |_: f64| Some(&e), &[]);
+    let (marks, notes) = edge::place_edges(
+        vec![mark(2.0, 3.0, 5.0, 3.0)],
+        &words,
+        |_: f64| Some(&e),
+        &[],
+    );
     assert_eq!((marks[0].s, marks[0].to), (1.62, 4.6));
     assert_eq!(
         notes,
@@ -265,7 +280,10 @@ fn f1_11_s6_both_edges_of_a_mark_land_on_the_sound() {
 fn f1_11_s6_no_envelope_leaves_a_mark_without_word_times_alone() {
     let before = vec![mark(2.0, 3.0, 5.0, 3.0)];
     let (marks, notes) = edge::place_edges(before.clone(), &[], none, &[]);
-    assert_eq!(marks[0].s, 2.0, "nothing to ask, nothing to move the cut's start");
+    assert_eq!(
+        marks[0].s, 2.0,
+        "nothing to ask, nothing to move the cut's start"
+    );
     // With no envelope there is nothing to place the resume edge either, so `again` itself is where it
     // resumes — the retake's own stamp, which is what the mark meant before any of this.
     assert_eq!(marks[0].to, 5.0);
@@ -279,7 +297,10 @@ fn f1_11_s6_no_envelope_leaves_a_mark_without_word_times_alone() {
     let (moved, notes) = edge::place_edges(before, &[], |_: f64| Some(&e), &[]);
     assert!(moved[0].s < 2.0);
     assert_eq!(notes.len(), 2, "both edges moved");
-    assert!(notes[0].contains("where the sound before it stops"), "{notes:?}");
+    assert!(
+        notes[0].contains("where the sound before it stops"),
+        "{notes:?}"
+    );
     assert!(notes[1].contains("where the retake starts to sound"));
 
     // The two branches never use each other's wording.
@@ -290,7 +311,9 @@ fn f1_11_s6_no_envelope_leaves_a_mark_without_word_times_alone() {
         &[],
     );
     assert!(word_notes[0].contains("after the last word that stays"));
-    assert!(!word_notes.iter().any(|n| n.contains("the sound before it stops")));
+    assert!(!word_notes
+        .iter()
+        .any(|n| n.contains("the sound before it stops")));
     // The words fence the edge at the last one that stays, and this envelope has no quiet left inside
     // the fence to choose: the aligner's own moment stands. That is the difference between the branches
     // — the word branch never moves an edge onto a sound the words did not release.
@@ -354,13 +377,30 @@ fn f1_11_s6_a_cached_lane_is_read_and_a_missing_one_is_left_out() {
     let held = edge::load(
         &tree,
         &[
-            Lane { key: "lecture".into(), off: 0.0, size: STAMPED_SIZE, mtime: STAMPED_MTIME },
-            Lane { key: "mic".into(), off: 30.0, size: 1, mtime: 1 },
+            Lane {
+                key: "lecture".into(),
+                off: 0.0,
+                size: STAMPED_SIZE,
+                mtime: STAMPED_MTIME,
+            },
+            Lane {
+                key: "mic".into(),
+                off: 30.0,
+                size: 1,
+                mtime: 1,
+            },
         ],
     );
-    assert_eq!(held.len(), 1, "only the lane with a cache is held: {held:?}");
+    assert_eq!(
+        held.len(),
+        1,
+        "only the lane with a cache is held: {held:?}"
+    );
     assert_eq!(held[0].0.key, "lecture");
-    assert_eq!(held[0].1.off, 0.0, "the lane keeps its own place on the session clock");
+    assert_eq!(
+        held[0].1.off, 0.0,
+        "the lane keeps its own place on the session clock"
+    );
 }
 
 #[test]
@@ -374,9 +414,17 @@ fn f1_11_s6_a_stale_cache_is_no_envelope_at_all() {
     // longer on the track, which is worse than asking nothing.
     let held = edge::load(
         &tree,
-        &[Lane { key: "lecture".into(), off: 0.0, size: STAMPED_SIZE + 1, mtime: STAMPED_MTIME }],
+        &[Lane {
+            key: "lecture".into(),
+            off: 0.0,
+            size: STAMPED_SIZE + 1,
+            mtime: STAMPED_MTIME,
+        }],
     );
-    assert!(held.is_empty(), "a cache stamped against another file is not this recording's");
+    assert!(
+        held.is_empty(),
+        "a cache stamped against another file is not this recording's"
+    );
 
     // And with nothing held, placement lands exactly where the no-envelope case does: P.machine.wordPad
     // = 0.08 s past the last word that stays (1.5 -> 1.58), the same number as the `none` branch above.
@@ -387,8 +435,16 @@ fn f1_11_s6_a_stale_cache_is_no_envelope_at_all() {
         &mut lookup,
         &[],
     );
-    assert_eq!(marks[0].s, 1.58, "the word pad, not the discarded envelope, placed the edge");
-    assert!(!notes.iter().any(|n| n.contains("the sound before it stops")), "{notes:?}");
+    assert_eq!(
+        marks[0].s, 1.58,
+        "the word pad, not the discarded envelope, placed the edge"
+    );
+    assert!(
+        !notes
+            .iter()
+            .any(|n| n.contains("the sound before it stops")),
+        "{notes:?}"
+    );
 }
 
 #[test]
@@ -402,8 +458,18 @@ fn f1_11_s6_the_finder_picks_the_lane_that_is_actually_playing() {
     let held = edge::load(
         &tree,
         &[
-            Lane { key: "cam-a".into(), off: 0.0, size: STAMPED_SIZE, mtime: STAMPED_MTIME },
-            Lane { key: "cam-b".into(), off: 30.0, size: STAMPED_SIZE, mtime: STAMPED_MTIME },
+            Lane {
+                key: "cam-a".into(),
+                off: 0.0,
+                size: STAMPED_SIZE,
+                mtime: STAMPED_MTIME,
+            },
+            Lane {
+                key: "cam-b".into(),
+                off: 30.0,
+                size: STAMPED_SIZE,
+                mtime: STAMPED_MTIME,
+            },
         ],
     );
     assert_eq!(held.len(), 2);
@@ -414,7 +480,11 @@ fn f1_11_s6_the_finder_picks_the_lane_that_is_actually_playing() {
     assert_eq!(at(10.0), Some(0.0), "midway through the first take");
     // The boundary belongs to the take that STARTS then, not the one that started earlier.
     assert_eq!(at(30.0), Some(30.0), "a take beginning at t owns t");
-    assert_eq!(at(31.5), Some(30.0), "and everything after it until the next lane");
+    assert_eq!(
+        at(31.5),
+        Some(30.0),
+        "and everything after it until the next lane"
+    );
     // Before the first take there is no recording playing, so there is nothing to ask.
     assert_eq!(at(-0.5), None);
 }
@@ -431,15 +501,25 @@ fn f1_11_s6_a_live_envelope_moves_the_mark_earlier_through_the_cache() {
 
     let held = edge::load(
         &tree,
-        &[Lane { key: "lecture".into(), off: 0.0, size: STAMPED_SIZE, mtime: STAMPED_MTIME }],
+        &[Lane {
+            key: "lecture".into(),
+            off: 0.0,
+            size: STAMPED_SIZE,
+            mtime: STAMPED_MTIME,
+        }],
     );
     assert_eq!(held.len(), 1);
     let mut lookup = edge::finder(&held);
 
     let (marks, notes) = edge::place_edges(vec![mark(6.4, 7.0, 0.0, 7.0)], &[], &mut lookup, &[]);
-    assert_eq!(marks[0].s, 5.95, "off the last sound bucket plus the edge pad");
+    assert_eq!(
+        marks[0].s, 5.95,
+        "off the last sound bucket plus the edge pad"
+    );
     assert!(
-        notes.iter().any(|n| n.contains("the sound before it stops")),
+        notes
+            .iter()
+            .any(|n| n.contains("the sound before it stops")),
         "the envelope branch says so: {notes:?}"
     );
 }
@@ -458,7 +538,12 @@ fn f1_11_s6_a_live_envelope_moves_the_resume_edge_later_through_the_cache() {
 
     let held = edge::load(
         &tree,
-        &[Lane { key: "lecture".into(), off: 0.0, size: STAMPED_SIZE, mtime: STAMPED_MTIME }],
+        &[Lane {
+            key: "lecture".into(),
+            off: 0.0,
+            size: STAMPED_SIZE,
+            mtime: STAMPED_MTIME,
+        }],
     );
     assert_eq!(held.len(), 1);
     let mut lookup = edge::finder(&held);

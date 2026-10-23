@@ -37,7 +37,10 @@ pub fn run(
     let voice = narrate_data::read_voice(tree);
     let narrator = crate::sources::narrator_of(project, 1).unwrap_or("");
     let paths = crate::settings::from_environment().ok_or_else(|| {
-        format!("{}/narrate: no settings folder to read the address from", crate::narrate_live::STEP)
+        format!(
+            "{}/narrate: no settings folder to read the address from",
+            crate::narrate_live::STEP
+        )
     })?;
     // Both wordings come from `prompt_text` with an empty fallback: that is what the Settings box shows
     // when this machine holds no edit, and a missing file is not a reason to refuse the call.

@@ -163,7 +163,10 @@ pub fn job_label(key: &str) -> Option<&'static str> {
 /// [`is_heading`].
 fn known_head(first_line: &str) -> Option<&'static str> {
     let line = first_line.trim();
-    KNOWN_HEADS.iter().find(|head| line.starts_with(**head)).copied()
+    KNOWN_HEADS
+        .iter()
+        .find(|head| line.starts_with(**head))
+        .copied()
 }
 
 /// Whether a block's first line is a heading at all, known or not.
@@ -182,7 +185,9 @@ pub fn is_heading(first_line: &str) -> bool {
     }
     !line.is_empty()
         && line == line.to_uppercase()
-        && line.chars().all(|c| matches!(c, 'A'..='Z' | ' ' | ',' | '-'))
+        && line
+            .chars()
+            .all(|c| matches!(c, 'A'..='Z' | ' ' | ',' | '-'))
 }
 
 /// The head a block is filed under: a known head, `"?"` for an unknown heading, or `None` when the

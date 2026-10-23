@@ -117,7 +117,9 @@ pub enum Alignment {
 /// words. `err` is `None` when the aligner answered; `asr_has_word_times` is whether the ASR document
 /// carries times of its own; `transcript` is `transcript.txt` as it stands.
 pub fn align_outcome(err: Option<&str>, asr_has_word_times: bool, transcript: &str) -> Alignment {
-    let Some(err) = err else { return Alignment::Aligned };
+    let Some(err) = err else {
+        return Alignment::Aligned;
+    };
     if asr_has_word_times {
         return Alignment::Stood;
     }
@@ -218,7 +220,9 @@ pub fn segments(words: &[Word], turns: &[(f64, f64, String)]) -> Vec<Line> {
         }
         let open = out.last_mut();
         let breaks = open.as_ref().is_some_and(|current| {
-            speaker != current.speaker || start - previous_end > MERGE_GAP || end - current.start > MERGE_MAX_LEN
+            speaker != current.speaker
+                || start - previous_end > MERGE_GAP
+                || end - current.start > MERGE_MAX_LEN
         });
         if breaks {
             out.push(Line {
@@ -425,7 +429,12 @@ where
     // after S3, with the words it will place. A short take asks NOTHING of any server (S2's own words),
     // so the aligner is skipped too — there is no audio worth placing words over.
     let align = if short { Align::None } else { align(&words) };
-    match align_step(source, align, &words, tree.words_aligned_json(source).exists()) {
+    match align_step(
+        source,
+        align,
+        &words,
+        tree.words_aligned_json(source).exists(),
+    ) {
         AlignStep::Warns(warning) => logs.push(warning),
         AlignStep::Stops(err) => return Err(align_failure(model, &err)),
         AlignStep::Quiet | AlignStep::Aligned => {}
@@ -445,7 +454,11 @@ where
 
     // S6: the segments, from the aligner's times when they exist and the ASR's otherwise.
     let aligned = requests::read_aligned(tree, source)?.unwrap_or_default();
-    let timed: &[Word] = if aligned.words.is_empty() { &words.words } else { &aligned.words };
+    let timed: &[Word] = if aligned.words.is_empty() {
+        &words.words
+    } else {
+        &aligned.words
+    };
     let segments = segments(timed, &glue_turns(&turns));
     write_transcript(tree, source, &segments)?;
     logs.push(segments_log(source, segments.len()));
@@ -464,7 +477,9 @@ pub fn align_step(source: &str, align: Align, words: &WordsDoc, already: bool) -
     match outcome {
         Alignment::Aligned => AlignStep::Aligned,
         Alignment::Skipped => AlignStep::Quiet,
-        Alignment::Stood => AlignStep::Warns(align_warning(source, align.err().unwrap_or_default())),
+        Alignment::Stood => {
+            AlignStep::Warns(align_warning(source, align.err().unwrap_or_default()))
+        }
         Alignment::Fatal(err) => AlignStep::Stops(err),
     }
 }

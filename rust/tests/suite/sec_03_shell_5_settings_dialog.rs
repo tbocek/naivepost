@@ -17,14 +17,14 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use gtk4 as gtk;
 use naivepost::checks;
+use naivepost::ui;
 use naivepost::ui::settings::Provider;
 use naivepost::{machine_store, services, settings, slot_gate};
-use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, settle};
 
 const ITEM: &str = "sec_03_shell_5_settings_dialog";
 
@@ -62,11 +62,18 @@ fn sec_03_shell_5_settings_dialog_s1_the_write_is_600ms_after_the_last_keystroke
     // beat has to be armed first -- `on_close` writes only what a keystroke owes (§5: the close lands
     // what is still owed, and an untouched dialog owes nothing).
     let root = pin_config_home("s1");
-    let paths = settings::Paths { config_dir: root.join("cfg").join("naivepost"), data_dir: root.join("data") };
+    let paths = settings::Paths {
+        config_dir: root.join("cfg").join("naivepost"),
+        data_dir: root.join("data"),
+    };
     std::fs::create_dir_all(&paths.config_dir).unwrap();
     let mut store = machine_store::Store::open(&paths).expect("a store over the throwaway conf");
     store.touched(Duration::from_millis(0));
-    assert_eq!(store.due_at(), Some(Duration::from_millis(600)), "one keystroke arms the same beat");
+    assert_eq!(
+        store.due_at(),
+        Some(Duration::from_millis(600)),
+        "one keystroke arms the same beat"
+    );
     // The dialog hands `on_close` EVERY box's current text (its own `typed_all`), not only what changed:
     // the store writes the whole file, so an unrecognised key would be a row that stores nothing.
     let said = store
@@ -79,10 +86,16 @@ fn sec_03_shell_5_settings_dialog_s1_the_write_is_600ms_after_the_last_keystroke
         "{ITEM} s1: the close line names the file it wrote"
     );
     let conf = settings::read(&paths).expect("the conf reads back");
-    assert_eq!(conf.audio_server, "http://127.0.0.1:9001", "and the typed value is in it");
+    assert_eq!(
+        conf.audio_server, "http://127.0.0.1:9001",
+        "and the typed value is in it"
+    );
     // Nothing owed now: closing twice does not say it saved twice.
     assert_eq!(
-        store.on_close(&[]).expect("the second close is fine").map(|_| ()),
+        store
+            .on_close(&[])
+            .expect("the second close is fine")
+            .map(|_| ()),
         None,
         "{ITEM} s1: a close with nothing owed says nothing (§5: only \"if a write is still owed\")"
     );
@@ -110,7 +123,10 @@ fn sec_03_shell_5_settings_dialog_s2_every_section_info_says_what_its_server_mus
     }
     for (i, a) in seen.iter().enumerate() {
         for b in seen.iter().skip(i + 1) {
-            assert_ne!(a, b, "{ITEM} s2: two sections share an explanation, so one of them lies");
+            assert_ne!(
+                a, b,
+                "{ITEM} s2: two sections share an explanation, so one of them lies"
+            );
         }
     }
 
@@ -123,10 +139,15 @@ fn sec_03_shell_5_settings_dialog_s2_every_section_info_says_what_its_server_mus
     );
     let cutting = settings_info::explanation("cutting").unwrap();
     assert!(
-        cutting.contains("ffprobe") && cutting.contains("rubberband") && cutting.contains("libx264"),
+        cutting.contains("ffprobe")
+            && cutting.contains("rubberband")
+            && cutting.contains("libx264"),
         "{ITEM} s2: the cutting ⓘ must name ffprobe and what the build has to carry: {cutting}"
     );
-    assert!(cutting.contains("off"), "{ITEM} s2: firefox \"off\" is a valid answer and must be said: {cutting}");
+    assert!(
+        cutting.contains("off"),
+        "{ITEM} s2: firefox \"off\" is a valid answer and must be said: {cutting}"
+    );
     let audio = settings_info::explanation("audio").unwrap();
     assert!(
         audio.contains("/health") && audio.contains("/v1/models") && audio.contains("task"),
@@ -153,11 +174,23 @@ fn sec_03_shell_5_settings_dialog_s3_seven_model_counts_default_to_one_within_1_
         ["llm", "tts", "asr", "diar", "sep", "aligner", "sd"],
         "{ITEM} s3: one count per model §5 names, and one per model it does not"
     );
-    assert_eq!((machine_store::SLOT_MIN, machine_store::SLOT_MAX), (1, 16), "§5: 1 to 16");
+    assert_eq!(
+        (machine_store::SLOT_MIN, machine_store::SLOT_MAX),
+        (1, 16),
+        "§5: 1 to 16"
+    );
 
     let defaults = settings::Slots::default();
     assert_eq!(
-        (defaults.llm, defaults.asr, defaults.diar, defaults.align, defaults.tts, defaults.sep, defaults.sd),
+        (
+            defaults.llm,
+            defaults.asr,
+            defaults.diar,
+            defaults.align,
+            defaults.tts,
+            defaults.sep,
+            defaults.sd
+        ),
         (1, 1, 1, 1, 1, 1, 1),
         "{ITEM} s3: every count defaults to 1"
     );
@@ -174,7 +207,10 @@ fn sec_03_shell_5_settings_dialog_s3_seven_model_counts_default_to_one_within_1_
     // ceiling a rule rather than a widget property: 99 typed becomes 16 stored, 0 becomes 1.
     let mut conf = settings::Conf::default();
     machine_store::set_field(&mut conf, &machine_store::slot_key("tts"), "99");
-    assert_eq!(conf.slots.tts, 16, "{ITEM} s3: above the ceiling lands on it");
+    assert_eq!(
+        conf.slots.tts, 16,
+        "{ITEM} s3: above the ceiling lands on it"
+    );
     machine_store::set_field(&mut conf, &machine_store::slot_key("tts"), "0");
     assert_eq!(conf.slots.tts, 1, "{ITEM} s3: below the floor lands on it");
 }
@@ -186,7 +222,10 @@ fn sec_03_shell_5_settings_dialog_s3_seven_model_counts_default_to_one_within_1_
 #[test]
 fn sec_03_shell_5_settings_dialog_s4_the_number_written_is_the_number_the_doors_hold() {
     let root = pin_config_home("s4");
-    let paths = settings::Paths { config_dir: root.join("cfg").join("naivepost"), data_dir: root.join("data") };
+    let paths = settings::Paths {
+        config_dir: root.join("cfg").join("naivepost"),
+        data_dir: root.join("data"),
+    };
     std::fs::create_dir_all(&paths.config_dir).unwrap();
     // Written the way the dialog writes it: through the store, under the keys §6 names, with the beat
     // armed because that is what a keystroke does. A slot at its default of 1 is deliberately left out --
@@ -212,13 +251,41 @@ fn sec_03_shell_5_settings_dialog_s4_the_number_written_is_the_number_the_doors_
     );
 
     // The accessors the dial paths call — not a copy of their arithmetic.
-    assert_eq!(services::llm_slots(&conf), 3, "{ITEM} s4: the chat leg holds LLM_SLOTS");
-    assert_eq!(services::slots_for(&conf, services::AudioTask::Asr), 2, "asr");
-    assert_eq!(services::slots_for(&conf, services::AudioTask::Diar), 4, "diar");
-    assert_eq!(services::slots_for(&conf, services::AudioTask::Tts), 5, "tts");
-    assert_eq!(services::slots_for(&conf, services::AudioTask::Sep), 6, "sep");
-    assert_eq!(services::slots_for(&conf, services::AudioTask::Align), 7, "align");
-    assert_eq!(services::image_slots(&conf), 8, "{ITEM} s4: the drawing leg holds SD_SLOTS");
+    assert_eq!(
+        services::llm_slots(&conf),
+        3,
+        "{ITEM} s4: the chat leg holds LLM_SLOTS"
+    );
+    assert_eq!(
+        services::slots_for(&conf, services::AudioTask::Asr),
+        2,
+        "asr"
+    );
+    assert_eq!(
+        services::slots_for(&conf, services::AudioTask::Diar),
+        4,
+        "diar"
+    );
+    assert_eq!(
+        services::slots_for(&conf, services::AudioTask::Tts),
+        5,
+        "tts"
+    );
+    assert_eq!(
+        services::slots_for(&conf, services::AudioTask::Sep),
+        6,
+        "sep"
+    );
+    assert_eq!(
+        services::slots_for(&conf, services::AudioTask::Align),
+        7,
+        "align"
+    );
+    assert_eq!(
+        services::image_slots(&conf),
+        8,
+        "{ITEM} s4: the drawing leg holds SD_SLOTS"
+    );
     // The task WORDS the pipeline passes agree with the enum, so one spin drives both spellings.
     for (word, task) in [
         ("asr", services::AudioTask::Asr),
@@ -260,13 +327,18 @@ fn sec_03_shell_5_settings_dialog_s5_a_request_waits_its_turn_when_every_slot_is
 
     // A free gate hands the slot straight over and reports no wait. Measured, so "no wait" is a tiny
     // number rather than an exact zero a scheduler could miss.
-    let first = slot_gate::hold(&url, model, slots, "describe", &never).expect("a free slot is taken");
+    let first =
+        slot_gate::hold(&url, model, slots, "describe", &never).expect("a free slot is taken");
     assert!(
         first.1 < 0.05,
         "{ITEM} s5: a slot free on arrival means effectively no wait: {}",
         first.1
     );
-    assert_eq!(slot_gate::holders(&url, model).len(), 1, "and the holder is listed while held");
+    assert_eq!(
+        slot_gate::holders(&url, model).len(),
+        1,
+        "and the holder is listed while held"
+    );
 
     let (tx, rx) = std::sync::mpsc::channel::<Ask>();
     std::thread::spawn({
@@ -291,9 +363,14 @@ fn sec_03_shell_5_settings_dialog_s5_a_request_waits_its_turn_when_every_slot_is
     // Give the slot back: the waiter takes it, first come first served, and carries the time it spent.
     drop(first.0);
     let waited = wait_recv(&rx);
-    assert!(waited > 0.0, "{ITEM} s5: the wait is measured, not swallowed: {waited}");
     assert!(
-        slot_gate::holders(&url, model).iter().any(|h| h.starts_with("publish")),
+        waited > 0.0,
+        "{ITEM} s5: the wait is measured, not swallowed: {waited}"
+    );
+    assert!(
+        slot_gate::holders(&url, model)
+            .iter()
+            .any(|h| h.starts_with("publish")),
         "{ITEM} s5: the waiter is now the holder"
     );
 
@@ -429,7 +506,8 @@ static RAN_TEST_ALL: AtomicBool = AtomicBool::new(false);
 /// §5 refuses a completion with no model id, and the dialog seeds its boxes from the file, so it has to
 /// be down BEFORE `open_settings` — same order `four_servers_probe_widgets.rs` uses.
 fn install_live_conf() {
-    let paths = naivepost::settings::from_environment().expect("{ITEM} s7: a pinned XDG_CONFIG_HOME");
+    let paths =
+        naivepost::settings::from_environment().expect("{ITEM} s7: a pinned XDG_CONFIG_HOME");
     let mut conf = naivepost::settings::Conf::default();
     conf.model = "sd-test-model".to_string();
     naivepost::settings::save(&paths, &conf).expect("{ITEM} s7: the conf writes");
@@ -470,7 +548,13 @@ fn bounds(widget: &gtk::Widget, what: &str) -> gtk::graphene::Rect {
     let b = widget
         .compute_bounds(&dialog())
         .unwrap_or_else(|| panic!("{ITEM}: {what} is not laid out"));
-    println!("SETTINGS GRID {what} x={:.1} y={:.1} w={:.1} h={:.1}", b.x(), b.y(), b.width(), b.height());
+    println!(
+        "SETTINGS GRID {what} x={:.1} y={:.1} w={:.1} h={:.1}",
+        b.x(),
+        b.y(),
+        b.width(),
+        b.height()
+    );
     b
 }
 
@@ -494,7 +578,9 @@ fn caption_showing(text: &str) -> gtk::Label {
         }
         for child in root.observe_children().iter::<glib::Object>() {
             let Ok(child) = child else { continue };
-            let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+            let Ok(widget) = child.downcast::<gtk::Widget>() else {
+                continue;
+            };
             if let Some(found) = walk(&widget, text) {
                 return Some(found);
             }
@@ -538,7 +624,9 @@ fn walk(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     }
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if let Some(found) = walk(&widget, name) {
             return Some(found);
         }
@@ -702,23 +790,36 @@ fn check_the_gear_opens_the_dialog(app: &adw::Application) {
 }
 
 fn settings_button(window: &adw::ApplicationWindow) -> gtk::Button {
-    ui::settings::settings_button(window).unwrap_or_else(|| panic!("{ITEM}: the header has no settings-button"))
+    ui::settings::settings_button(window)
+        .unwrap_or_else(|| panic!("{ITEM}: the header has no settings-button"))
 }
 
 /// §5's ⓘ: one per section, in the heading's own row, carrying the paragraph as its tooltip.
 fn check_every_section_has_its_info_button(app: &adw::Application) {
     let window = open_window(app);
     ui::open_settings(&window, silent());
-    assert!(ui::dialog_open(&window), "{ITEM} s2: the dialog did not open");
+    assert!(
+        ui::dialog_open(&window),
+        "{ITEM} s2: the dialog did not open"
+    );
     for (key, title) in naivepost::ui::settings_info::SECTIONS {
         let info = in_dialog(&format!("settings-info-{key}"))
             .unwrap_or_else(|| panic!("{ITEM} s2: no settings-info-{key} on the dialog"))
             .downcast::<gtk::Button>()
             .unwrap_or_else(|_| panic!("{ITEM} s2: settings-info-{key} is not a button"));
         let want = naivepost::ui::settings_info::explanation(key).expect("the section's text");
-        let got = info.tooltip_text().map(|text| text.to_string()).unwrap_or_default();
-        assert_eq!(got, want, "{ITEM} s2: the {key} ⓘ carries its own explanation as its tooltip");
-        assert!(got.chars().count() > 120, "{ITEM} s2: {key}'s ⓘ is at length");
+        let got = info
+            .tooltip_text()
+            .map(|text| text.to_string())
+            .unwrap_or_default();
+        assert_eq!(
+            got, want,
+            "{ITEM} s2: the {key} ⓘ carries its own explanation as its tooltip"
+        );
+        assert!(
+            got.chars().count() > 120,
+            "{ITEM} s2: {key}'s ⓘ is at length"
+        );
 
         // In the heading's row: the box named for the section holds both the title and the ⓘ.
         let head = in_dialog(&format!("settings-section-{key}"))
@@ -747,10 +848,15 @@ fn holds_text(root: &gtk::Widget, text: &str) -> bool {
             return true;
         }
     }
-    root.observe_children().iter::<glib::Object>().filter_map(Result::ok).any(|child| {
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { return false };
-        holds_text(&widget, text)
-    })
+    root.observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+        .any(|child| {
+            let Ok(widget) = child.downcast::<gtk::Widget>() else {
+                return false;
+            };
+            holds_text(&widget, text)
+        })
 }
 
 /// The spin's number, set through the widget, is the number the request side asks the gate for.
@@ -779,21 +885,31 @@ fn check_a_spin_written_here_is_the_number_the_door_holds(app: &adw::Application
 fn sec_03_shell_5_settings_dialog_s1_the_settings_button_opens_the_dialog_that_saves_on_close() {
     common::pin_private_cwd();
     widgets_round();
-    assert!(RAN_OPEN.load(Ordering::SeqCst), "{ITEM} s1: the gear check never ran");
+    assert!(
+        RAN_OPEN.load(Ordering::SeqCst),
+        "{ITEM} s1: the gear check never ran"
+    );
 }
 
 #[test]
-fn sec_03_shell_5_settings_dialog_s2_every_section_carries_an_info_button_that_explains_its_server() {
+fn sec_03_shell_5_settings_dialog_s2_every_section_carries_an_info_button_that_explains_its_server()
+{
     common::pin_private_cwd();
     widgets_round();
-    assert!(RAN_INFO.load(Ordering::SeqCst), "{ITEM} s2: the ⓘ check never ran");
+    assert!(
+        RAN_INFO.load(Ordering::SeqCst),
+        "{ITEM} s2: the ⓘ check never ran"
+    );
 }
 
 #[test]
 fn sec_03_shell_5_settings_dialog_s4_a_spin_written_in_the_dialog_is_the_number_the_door_holds() {
     common::pin_private_cwd();
     widgets_round();
-    assert!(RAN_SPIN.load(Ordering::SeqCst), "{ITEM} s4: the spin check never ran");
+    assert!(
+        RAN_SPIN.load(Ordering::SeqCst),
+        "{ITEM} s4: the spin check never ran"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -826,9 +942,19 @@ fn check_the_sections_are_divided_by_lines(window: &adw::ApplicationWindow) {
             "{ITEM} s6: the {here} divider is horizontal"
         );
         let b = bounds(&line, &format!("separator-{here}"));
-        assert!(b.width() > 400.0, "{ITEM} s6: the {here} divider spans {:.1} px, not the dialog", b.width());
-        let previous = bounds(&need(&format!("settings-section-{before}")), &format!("section-{before}"));
-        let own = bounds(&need(&format!("settings-section-{here}")), &format!("section-{here}"));
+        assert!(
+            b.width() > 400.0,
+            "{ITEM} s6: the {here} divider spans {:.1} px, not the dialog",
+            b.width()
+        );
+        let previous = bounds(
+            &need(&format!("settings-section-{before}")),
+            &format!("section-{before}"),
+        );
+        let own = bounds(
+            &need(&format!("settings-section-{here}")),
+            &format!("section-{here}"),
+        );
         assert!(
             b.y() > previous.y() && b.y() < own.y(),
             "{ITEM} s6: the {here} divider sits between the sections, not at {:.1}",
@@ -841,7 +967,10 @@ fn check_the_sections_are_divided_by_lines(window: &adw::ApplicationWindow) {
 fn sec_03_shell_5_settings_dialog_s6_the_sections_are_divided_by_separator_lines() {
     common::pin_private_cwd();
     widgets_round();
-    assert!(RAN_DIVIDER.load(Ordering::SeqCst), "{ITEM} s6: the divider check never ran");
+    assert!(
+        RAN_DIVIDER.load(Ordering::SeqCst),
+        "{ITEM} s6: the divider check never ran"
+    );
 }
 
 /// §5: the field label column is right-aligned — every caption ends on the same edge.
@@ -862,7 +991,8 @@ fn check_the_field_labels_are_right_aligned(window: &adw::ApplicationWindow) {
     for edge in &edges {
         assert!(
             (widest - edge).abs() <= 1.0,
-            "{ITEM} s6: captions end at {:?} — they do not share one right edge", edges
+            "{ITEM} s6: captions end at {:?} — they do not share one right edge",
+            edges
         );
     }
 }
@@ -871,7 +1001,10 @@ fn check_the_field_labels_are_right_aligned(window: &adw::ApplicationWindow) {
 fn sec_03_shell_5_settings_dialog_s6_the_field_labels_are_right_aligned() {
     common::pin_private_cwd();
     widgets_round();
-    assert!(RAN_LABELS.load(Ordering::SeqCst), "{ITEM} s6: the label check never ran");
+    assert!(
+        RAN_LABELS.load(Ordering::SeqCst),
+        "{ITEM} s6: the label check never ran"
+    );
 }
 
 /// §5's Slots spin goes "right after every model box, between the box and its ✓/✗ badge", and the
@@ -879,9 +1012,18 @@ fn sec_03_shell_5_settings_dialog_s6_the_field_labels_are_right_aligned() {
 fn check_the_spin_sits_between_box_and_badge(window: &adw::ApplicationWindow) {
     let _ = window;
     for key in naivepost::machine_store::SLOT_KEYS {
-        let entry = bounds(need(&format!("entry-{key}")).upcast_ref(), &format!("entry-{key}"));
-        let spin = bounds(need(&format!("slots-{key}")).upcast_ref(), &format!("slots-{key}"));
-        let badge = bounds(need(&format!("badge-{key}")).upcast_ref(), &format!("badge-{key}"));
+        let entry = bounds(
+            need(&format!("entry-{key}")).upcast_ref(),
+            &format!("entry-{key}"),
+        );
+        let spin = bounds(
+            need(&format!("slots-{key}")).upcast_ref(),
+            &format!("slots-{key}"),
+        );
+        let badge = bounds(
+            need(&format!("badge-{key}")).upcast_ref(),
+            &format!("badge-{key}"),
+        );
         let test = bounds(
             need(&format!("test-{key}-button")).upcast_ref(),
             &format!("test-{key}-button"),
@@ -905,7 +1047,10 @@ fn check_the_spin_sits_between_box_and_badge(window: &adw::ApplicationWindow) {
 fn sec_03_shell_5_settings_dialog_s6_the_slots_spin_sits_between_the_box_and_its_badge() {
     common::pin_private_cwd();
     widgets_round();
-    assert!(RAN_BETWEEN.load(Ordering::SeqCst), "{ITEM} s6: the spin-order check never ran");
+    assert!(
+        RAN_BETWEEN.load(Ordering::SeqCst),
+        "{ITEM} s6: the spin-order check never ran"
+    );
 }
 
 /// One grid, so a row without a spin still lands its badge and its Test button where a row with one
@@ -943,7 +1088,10 @@ fn check_the_badges_and_tests_share_one_column(window: &adw::ApplicationWindow) 
 fn sec_03_shell_5_settings_dialog_s6_the_badges_and_the_test_buttons_share_one_column() {
     common::pin_private_cwd();
     widgets_round();
-    assert!(RAN_COLUMN.load(Ordering::SeqCst), "{ITEM} s6: the shared-column check never ran");
+    assert!(
+        RAN_COLUMN.load(Ordering::SeqCst),
+        "{ITEM} s6: the shared-column check never ran"
+    );
 }
 
 /// §5's Writing last line: Fetch models in the label column, the dropdown in the box column, Use in
@@ -954,7 +1102,10 @@ fn check_the_writing_last_line_uses_its_columns(window: &adw::ApplicationWindow)
     // A right-aligned caption starts wherever its text happens to begin; the column's own left edge is
     // the widest thing in it, which here is the Fetch models button (§5 puts that button in this column).
     let label_x = left(caption_showing("Server").upcast_ref(), "caption-Server");
-    let fetch = bounds(need("fetch-models-button").upcast_ref(), "fetch-models-button");
+    let fetch = bounds(
+        need("fetch-models-button").upcast_ref(),
+        "fetch-models-button",
+    );
     let list = bounds(need("model-list").upcast_ref(), "model-list");
     let use_button = bounds(need("use-model-button").upcast_ref(), "use-model-button");
     let test_x = bounds(need("test-llm-button").upcast_ref(), "test-llm-button").x();
@@ -974,7 +1125,8 @@ fn check_the_writing_last_line_uses_its_columns(window: &adw::ApplicationWindow)
 }
 
 #[test]
-fn sec_03_shell_5_settings_dialog_s6_the_writing_last_line_puts_fetch_the_dropdown_and_use_in_their_columns() {
+fn sec_03_shell_5_settings_dialog_s6_the_writing_last_line_puts_fetch_the_dropdown_and_use_in_their_columns(
+) {
     common::pin_private_cwd();
     widgets_round();
     assert!(
@@ -997,7 +1149,10 @@ fn check_test_all_is_bottom_right_and_the_log_is_last(window: &adw::ApplicationW
     );
     let expander = need("settings-log-expander");
     let expander_b = bounds(expander.upcast_ref(), "settings-log-expander");
-    let drawing = bounds(need("settings-section-drawing").upcast_ref(), "section-drawing");
+    let drawing = bounds(
+        need("settings-section-drawing").upcast_ref(),
+        "section-drawing",
+    );
     assert!(
         all_b.y() > drawing.y() && all_b.y() < expander_b.y(),
         "{ITEM} s6: Test All is not between the sections and the log ({} / {} / {})",
@@ -1014,7 +1169,9 @@ fn check_test_all_is_bottom_right_and_the_log_is_last(window: &adw::ApplicationW
         "{ITEM} s6: §5 opens the dialog's log collapsed"
     );
     // Last: the root box's final child is the expander.
-    let root = expander.parent().expect("{ITEM} s6: the expander sits in the dialog's root box");
+    let root = expander
+        .parent()
+        .expect("{ITEM} s6: the expander sits in the dialog's root box");
     assert_eq!(
         root.last_child().as_ref(),
         Some(expander.upcast_ref()),
@@ -1023,7 +1180,8 @@ fn check_test_all_is_bottom_right_and_the_log_is_last(window: &adw::ApplicationW
 }
 
 #[test]
-fn sec_03_shell_5_settings_dialog_s6_test_all_is_at_the_bottom_right_and_the_log_is_last_and_collapsed() {
+fn sec_03_shell_5_settings_dialog_s6_test_all_is_at_the_bottom_right_and_the_log_is_last_and_collapsed(
+) {
     common::pin_private_cwd();
     widgets_round();
     assert!(
@@ -1054,7 +1212,10 @@ fn press_sd(window: &adw::ApplicationWindow, url: &str) -> (String, String) {
         .set_text(url);
     test.emit_clicked();
     let badge = ui::badge(window, "sd").expect("{ITEM} s7: the Drawing row has a badge-sd");
-    (badge.text().to_string(), badge.tooltip_text().unwrap_or_default().to_string())
+    (
+        badge.text().to_string(),
+        badge.tooltip_text().unwrap_or_default().to_string(),
+    )
 }
 
 /// F0.13 through the widget: the Drawing row's Test dials sd-server's OWN capabilities endpoint and
@@ -1071,7 +1232,10 @@ fn check_the_drawing_row_tests_sd_server(window: &adw::ApplicationWindow) {
         vec!["/sdcpp/v1/capabilities".to_string()],
         "{ITEM} s7: the Drawing row probes sd-server's own API and nothing else"
     );
-    assert_eq!(mark, "\u{2713}", "{ITEM} s7: loaded weights mark \u{2713}, got {verdict:?}");
+    assert_eq!(
+        mark, "\u{2713}",
+        "{ITEM} s7: loaded weights mark \u{2713}, got {verdict:?}"
+    );
     assert!(
         verdict.contains("sd-v1.safetensors is loaded and can draw"),
         "{ITEM} s7: the verdict names the weights the server reported: {verdict}"
@@ -1103,7 +1267,10 @@ fn check_a_port_that_is_not_sd_server_is_called_out(window: &adw::ApplicationWin
     // Only the OpenAI-shaped route answers; sd-server's own path comes back 404 from the fake.
     let openai = Live::start(&[("/v1/models", r#"{"data":[{"id":"gpt-ish"}]}"#)]);
     let (mark, verdict) = press_sd(window, &openai.url());
-    assert_eq!(mark, "\u{2717}", "{ITEM} s7: an OpenAI-shaped port is a failure, got {verdict}");
+    assert_eq!(
+        mark, "\u{2717}",
+        "{ITEM} s7: an OpenAI-shaped port is a failure, got {verdict}"
+    );
     assert!(
         verdict.contains("not sd-server"),
         "{ITEM} s7: the reason names what the port actually is: {verdict}"

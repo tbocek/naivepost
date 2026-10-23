@@ -38,15 +38,29 @@ pub fn folder_now() -> Option<std::path::PathBuf> {
 /// place the page→folder ladder is read, so every door and press asks the same question.
 fn folder_in(dir: &std::path::Path) -> Option<std::path::PathBuf> {
     let tree = Tree::new(dir).ok()?;
-    let page = shell_now().map(|shell| shell.borrow().page).unwrap_or(Page::START);
-    Some(Shell { page, ..Shell::default() }.output_dir(&tree))
+    let page = shell_now()
+        .map(|shell| shell.borrow().page)
+        .unwrap_or(Page::START);
+    Some(
+        Shell {
+            page,
+            ..Shell::default()
+        }
+        .output_dir(&tree),
+    )
 }
 
 /// The folder the row names for `page` inside `dir` — the same ladder `window_bench::paint_readouts` drew
 /// the row's tooltip from, so the press and the tooltip cannot disagree about which page they mean.
 pub fn folder_for(dir: &std::path::Path, page: Page) -> Option<std::path::PathBuf> {
     let tree = Tree::new(dir).ok()?;
-    Some(Shell { page, ..Shell::default() }.output_dir(&tree))
+    Some(
+        Shell {
+            page,
+            ..Shell::default()
+        }
+        .output_dir(&tree),
+    )
 }
 
 /// Press: resolve the folder, then hand it to `open`. Nothing to open is a log line, not silence.
@@ -69,8 +83,12 @@ pub fn wire_with(button: &gtk::Button, open: &Opener) {
     let open = std::rc::Rc::clone(open);
     let weak = button.clone().downgrade();
     button.connect_clicked(move |_| {
-        let Some(button) = glib::object::WeakRef::upgrade(&weak) else { return };
-        let Some(button) = button.downcast_ref::<gtk::Button>() else { return };
+        let Some(button) = glib::object::WeakRef::upgrade(&weak) else {
+            return;
+        };
+        let Some(button) = button.downcast_ref::<gtk::Button>() else {
+            return;
+        };
         if !button.is_sensitive() {
             return;
         }
@@ -80,13 +98,20 @@ pub fn wire_with(button: &gtk::Button, open: &Opener) {
 
 /// §1's opener for a folder: the log link's launcher seam over a `file://` URI, its failure a log line.
 pub fn folder_opener() -> Opener {
-    std::rc::Rc::new(|dir: std::path::PathBuf| match glib::filename_to_uri(&dir, None) {
-        Ok(uri) => {
-            if let Err(why) = super::log_link::open(&uri) {
-                let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                super::window_logs::log_line(&format!("!!! could not open {name}: {why}"));
+    std::rc::Rc::new(
+        |dir: std::path::PathBuf| match glib::filename_to_uri(&dir, None) {
+            Ok(uri) => {
+                if let Err(why) = super::log_link::open(&uri) {
+                    let name = dir
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    super::window_logs::log_line(&format!("!!! could not open {name}: {why}"));
+                }
             }
-        }
-        Err(err) => super::window_logs::log_line(&format!("!!! could not open the output folder: {err}")),
-    })
+            Err(err) => super::window_logs::log_line(&format!(
+                "!!! could not open the output folder: {err}"
+            )),
+        },
+    )
 }

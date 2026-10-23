@@ -62,7 +62,10 @@ fn p_policy_narrationrewrite_s2_off_writes_only_clips_without_a_line() {
         entries: vec![entry(A.0, A.1, "a"), entry(B.0, B.1, "b")],
         silent: vec![],
     };
-    assert_eq!(rw::clips_to_write(false, &clips, &all_lined), Vec::<(f64, f64)>::new());
+    assert_eq!(
+        rw::clips_to_write(false, &clips, &all_lined),
+        Vec::<(f64, f64)>::new()
+    );
     assert_eq!(rw::unwritten(&clips, &all_lined), 0);
 }
 
@@ -95,7 +98,10 @@ fn p_policy_narrationrewrite_s4_the_reason_names_the_cause() {
     // Toggle on wins over staleness: the cause is the user's request, not a gap.
     assert_eq!(rw::why(true, &missing, 2, 1, 0), "rewriting every line");
     // Nothing written anywhere: the head of the flow, not a missing clip.
-    assert_eq!(rw::why(false, &[0, 1], 2, 0, 0), "there is no narration yet");
+    assert_eq!(
+        rw::why(false, &[0, 1], 2, 0, 0),
+        "there is no narration yet"
+    );
     // One clip with no line, named where a person can act on it.
     assert_eq!(
         rw::why(false, &missing, 2, 1, 0),
@@ -108,7 +114,10 @@ fn p_policy_narrationrewrite_s4_the_reason_names_the_cause() {
         "the narration has lines for clips the cut no longer has"
     );
     // Every clip lined and nothing off the cut: nothing forces this run, which is what the toggle is for.
-    assert_eq!(rw::why(false, &[], 2, 2, 0), "every clip already has a line");
+    assert_eq!(
+        rw::why(false, &[], 2, 2, 0),
+        "every clip already has a line"
+    );
 
     // The frame around it, in F4.1 S3's shape.
     assert_eq!(
@@ -136,7 +145,10 @@ fn p_policy_narrationrewrite_s5_the_silent_list_is_untouched_either_way() {
     // "this clip plays its own audio" disappeared (audit_gaps' Defect::SilentListWipe, decided in
     // F4.1). Here it cannot happen: nothing in this module writes to a Narration.
     let on = rw::clips_to_write(true, &[A, B], &n);
-    assert_eq!(n, before, "even a rewrite-everything pass leaves the markers alone");
+    assert_eq!(
+        n, before,
+        "even a rewrite-everything pass leaves the markers alone"
+    );
     assert!(rw::silent_kept(&n, B.0, B.1));
     // A silent clip is still written for when it has no line: it needs a caption even with no voice on
     // it, so silence is not a filter on this list.

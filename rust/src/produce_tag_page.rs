@@ -100,7 +100,10 @@ pub fn build_and_write(
     // 2. The tracks: whatever `.vtt` files are beside the video, read off the folder rather than out of
     //    the run, ordered by `embed::tracks` with this video's own language first (and `default`).
     //    `final.vtt`'s parent is the produce folder, since `Tree::produce_dir` is private.
-    let folder = jpg.parent().unwrap_or(std::path::Path::new(".")).to_path_buf();
+    let folder = jpg
+        .parent()
+        .unwrap_or(std::path::Path::new("."))
+        .to_path_buf();
     let tracks = embed::tracks(&embed::list_vtt(&folder), own_language, known);
 
     // 3. The page itself: the bare tag, base names only. `src=` names the video THIS run wrote — `paths`
@@ -116,7 +119,12 @@ pub fn build_and_write(
         // Said and done: the video and its subtitles are on disk either way, and throwing away the page is
         // not worth failing a run that already produced a file.
         log(&embed::unwritable_log(&html.display().to_string()));
-        return TagPage { path: html, written, poster, tracks: tracks.len() };
+        return TagPage {
+            path: html,
+            written,
+            poster,
+            tracks: tracks.len(),
+        };
     }
     log(&embed::wrote_tag_log(&html.display().to_string()));
 
@@ -129,5 +137,10 @@ pub fn build_and_write(
         log(note);
     }
 
-    TagPage { path: html, written, poster, tracks: tracks.len() }
+    TagPage {
+        path: html,
+        written,
+        poster,
+        tracks: tracks.len(),
+    }
 }

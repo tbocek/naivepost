@@ -46,7 +46,8 @@ const RASTER_PX: i32 = 512;
 /// A real png: transparent everywhere except one opaque red block. Cairo writes it, gdk-pixbuf reads it, so the
 /// alpha the preview has to preserve is a real alpha channel and not a description of one.
 fn write_red_png(path: &Path) {
-    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, RASTER_PX, RASTER_PX).expect("surface");
+    let surface =
+        cairo::ImageSurface::create(cairo::Format::ARgb32, RASTER_PX, RASTER_PX).expect("surface");
     {
         let cr = cairo::Context::new(&surface).expect("context");
         // Transparent ground: ARgb32 starts zeroed, and premultiplied zero IS transparent, so nothing is painted
@@ -220,7 +221,8 @@ fn rgb(data: &[u8], stride: usize, x: i32, y: i32) -> (u8, u8, u8) {
 /// Paint this window's OWN cut at the second its red line stands on, into a fresh surface, and hand back the pixels
 /// plus the surface size. Everything the painter needs comes from the live window through `describe`.
 fn paint_window(window: &adw::ApplicationWindow) -> (Vec<u8>, usize) {
-    let mut surface = cairo::ImageSurface::create(cairo::Format::ARgb32, SURF_W, SURF_H).expect("a surface");
+    let mut surface =
+        cairo::ImageSurface::create(cairo::Format::ARgb32, SURF_W, SURF_H).expect("a surface");
     {
         let cr = cairo::Context::new(&surface).expect("a context");
         // White ground so "not drawn" reads as white rather than as the black a fresh surface is cleared to.
@@ -266,11 +268,16 @@ fn round(app: &adw::Application) {
             "the arm still names its drawing: {said}"
         );
         settle();
-        let out = tree
-            .svg_raster_dir()
-            .join(fx_svg::raster_file_name(&file));
-        assert!(out.exists(), "the raster ffmpeg wrote is in the project's cache dir");
-        assert_eq!(calls(&count), 1, "the cold file cost exactly one ffmpeg run");
+        let out = tree.svg_raster_dir().join(fx_svg::raster_file_name(&file));
+        assert!(
+            out.exists(),
+            "the raster ffmpeg wrote is in the project's cache dir"
+        );
+        assert_eq!(
+            calls(&count),
+            1,
+            "the cold file cost exactly one ffmpeg run"
+        );
         assert_eq!(
             ui::svg_raster_state(&file),
             fx_svg::Slot::Ready,
@@ -290,7 +297,10 @@ fn round(app: &adw::Application) {
 
         // A second drawing of the SAME file asks again only if the file differs; the same file placed twice does not.
         let again = ui::svg_chosen(&window, Some(&file));
-        assert!(again.contains(&fx_svg::base(&file)), "re-choosing arms again: {again}");
+        assert!(
+            again.contains(&fx_svg::base(&file)),
+            "re-choosing arms again: {again}"
+        );
         settle();
         assert_eq!(
             calls(&count),
@@ -299,7 +309,11 @@ fn round(app: &adw::Application) {
         );
         let mut cache = fx_svg::Rasters::default();
         cache.done_with(&file, Path::new("x.png"));
-        assert_eq!(cache.len(), 1, "one entry per file, the invariant §A.5 states");
+        assert_eq!(
+            cache.len(),
+            1,
+            "one entry per file, the invariant §A.5 states"
+        );
         RAN_ONCE.store(true, Ordering::SeqCst);
 
         // --- 5: the REAL widget shows the picture. A form opened BEFORE the raster arrived is pushed the picture
@@ -317,9 +331,7 @@ fn round(app: &adw::Application) {
         let picture = widget(&window, "svg-preview-raster")
             .downcast::<gtk::Picture>()
             .expect("`svg-preview-raster` is a Picture");
-        let out = tree
-            .svg_raster_dir()
-            .join(fx_svg::raster_file_name(&file));
+        let out = tree.svg_raster_dir().join(fx_svg::raster_file_name(&file));
         let decodes = gtk::gdk_pixbuf::Pixbuf::from_file(&out).is_ok();
         assert!(
             picture.paintable().is_some(),
@@ -329,8 +341,13 @@ fn round(app: &adw::Application) {
         );
         // The bytes behind it: gdk-pixbuf read the raster the stub copied, and cairo accepted it as a surface —
         // which is the pair of facts "it is a real image" is made of, checked on the same file the row shows.
-        let pixbuf = gtk::gdk_pixbuf::Pixbuf::from_file(&out).expect("the raster decodes as an image");
-        assert_eq!(pixbuf.width(), RASTER_PX, "and is the 512 px copy §S5 asks for");
+        let pixbuf =
+            gtk::gdk_pixbuf::Pixbuf::from_file(&out).expect("the raster decodes as an image");
+        assert_eq!(
+            pixbuf.width(),
+            RASTER_PX,
+            "and is the 512 px copy §S5 asks for"
+        );
         assert!(
             raster_surface_for_test(&out).is_some(),
             "the preview's own rgba conversion accepts the file"
@@ -356,7 +373,12 @@ fn round(app: &adw::Application) {
             .iter()
             .find(|fx| fx.kind == "svg")
             .expect("the placed drawing is on the cut");
-        ui::set_line_position(&window, cut_line::LinePos { t: placed.t + placed.trans + 0.05 });
+        ui::set_line_position(
+            &window,
+            cut_line::LinePos {
+                t: placed.t + placed.trans + 0.05,
+            },
+        );
         settle();
         let (data, stride) = paint_window(&window);
         let box_ = effect_box_px(placed, FIT);
@@ -386,13 +408,19 @@ fn round(app: &adw::Application) {
         let pending = (20.0, 20.0, 100.0, 60.0);
         ui::cut_preview_frame::note_box(Some(pending), &window);
         ui::release_svg_arm_only();
-        let idle = ui::cut_preview_frame::held_frame(&ui::review_cut_of(&window), ui::cut_preview_frame::drawn_box());
+        let idle = ui::cut_preview_frame::held_frame(
+            &ui::review_cut_of(&window),
+            ui::cut_preview_frame::drawn_box(),
+        );
         assert!(
             idle.box_px.is_none(),
             "with no arm up the panel is told there is no box under the hand"
         );
         ui::svg_chosen(&window, Some(&file));
-        let armed = ui::cut_preview_frame::held_frame(&ui::review_cut_of(&window), ui::cut_preview_frame::drawn_box());
+        let armed = ui::cut_preview_frame::held_frame(
+            &ui::review_cut_of(&window),
+            ui::cut_preview_frame::drawn_box(),
+        );
         assert_eq!(
             armed.box_px,
             Some(pending),
@@ -407,8 +435,10 @@ fn round(app: &adw::Application) {
         // Releasing the arm and letting go of the box takes it off the panel: an unfinished box belongs to a hand.
         ui::release_svg_arm_only();
         ui::cut_preview_frame::note_box(None, &window);
-        let released =
-            ui::cut_preview_frame::held_frame(&ui::review_cut_of(&window), ui::cut_preview_frame::drawn_box());
+        let released = ui::cut_preview_frame::held_frame(
+            &ui::review_cut_of(&window),
+            ui::cut_preview_frame::drawn_box(),
+        );
         assert!(
             released.box_px.is_none(),
             "after the hand leaves, no dashed box is claimed"
@@ -468,18 +498,36 @@ fn round(app: &adw::Application) {
         settle();
         let first = ui::window_logs()
             .iter()
-            .filter(|line| line.contains(&format!("the drawing {} cannot be shown:", fx_svg::base(&file))))
+            .filter(|line| {
+                line.contains(&format!(
+                    "the drawing {} cannot be shown:",
+                    fx_svg::base(&file)
+                ))
+            })
             .count();
-        assert_eq!(first, 1, "the failure is said once: {:?}", ui::window_logs());
+        assert_eq!(
+            first,
+            1,
+            "the failure is said once: {:?}",
+            ui::window_logs()
+        );
         // Ask again — a second press for the same broken file stays quiet (§A.5) but still arms.
         ui::svg_chosen(&window, Some(&file));
         settle();
         let second = ui::window_logs()
             .iter()
-            .filter(|line| line.contains(&format!("the drawing {} cannot be shown:", fx_svg::base(&file))))
+            .filter(|line| {
+                line.contains(&format!(
+                    "the drawing {} cannot be shown:",
+                    fx_svg::base(&file)
+                ))
+            })
             .count();
         assert_eq!(second, 1, "the same file never complains twice");
-        assert!(ui::svg_armed(), "a drawing that cannot be previewed is still a drawing");
+        assert!(
+            ui::svg_armed(),
+            "a drawing that cannot be previewed is still a drawing"
+        );
         // And it still places: the box lands, the form opens, Apply writes the record.
         ui::svg_drag_ended(&window, (30.0, 30.0), (140.0, 100.0));
         settle();
@@ -509,12 +557,30 @@ fn f3_5_the_raster_is_made_by_the_program() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_RAN.load(Ordering::SeqCst), "the rasterising check never ran");
-    assert!(RAN_ONCE.load(Ordering::SeqCst), "the one-per-file check never ran");
-    assert!(RAN_ONDISK.load(Ordering::SeqCst), "the already-on-disk check never ran");
-    assert!(RAN_FAILED.load(Ordering::SeqCst), "the said-once failure check never ran");
-    assert!(RAN_PICTURE.load(Ordering::SeqCst), "the form's picture check never ran");
-    assert!(RAN_PAINT.load(Ordering::SeqCst), "the preview paint check never ran");
+    assert!(
+        RAN_RAN.load(Ordering::SeqCst),
+        "the rasterising check never ran"
+    );
+    assert!(
+        RAN_ONCE.load(Ordering::SeqCst),
+        "the one-per-file check never ran"
+    );
+    assert!(
+        RAN_ONDISK.load(Ordering::SeqCst),
+        "the already-on-disk check never ran"
+    );
+    assert!(
+        RAN_FAILED.load(Ordering::SeqCst),
+        "the said-once failure check never ran"
+    );
+    assert!(
+        RAN_PICTURE.load(Ordering::SeqCst),
+        "the form's picture check never ran"
+    );
+    assert!(
+        RAN_PAINT.load(Ordering::SeqCst),
+        "the preview paint check never ran"
+    );
     assert!(
         RAN_DASHED.load(Ordering::SeqCst),
         "the dashed-while-armed check never ran"

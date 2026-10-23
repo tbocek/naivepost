@@ -63,7 +63,11 @@ impl Round {
     /// says what went wrong rides in its `because` (see [`FAULT_FIELD`]). Inventing a policy here would be
     /// the failure this whole item is about: the machine deciding what the model was supposed to say.
     fn failure(reason: String) -> Round {
-        Round { proposals: Vec::new(), failed: true, reason }
+        Round {
+            proposals: Vec::new(),
+            failed: true,
+            reason,
+        }
     }
 }
 
@@ -126,7 +130,11 @@ pub fn answer_at(
         if let Some(cached) = llm_cache::read(tree, STEP, &parts) {
             // §09 §10: the cached answer writes its own `cache` line, with no time on the wire.
             crate::request_timing::record_cached(tree, log_row(&model));
-            return Round { proposals: proposals_of(&cached), failed: false, reason: String::new() };
+            return Round {
+                proposals: proposals_of(&cached),
+                failed: false,
+                reason: String::new(),
+            };
         }
     }
 
@@ -240,16 +248,16 @@ pub fn answer_at(
     };
 
     let messages = vec![
-        Message { role: "system".to_string(), parts: vec![Part::Text(system.clone())] },
-        Message { role: "user".to_string(), parts: vec![Part::Text(user.clone())] },
+        Message {
+            role: "system".to_string(),
+            parts: vec![Part::Text(system.clone())],
+        },
+        Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text(user.clone())],
+        },
     ];
-    let run = tool_loop::run(
-        STEP,
-        messages,
-        &req.tools,
-        &mut ask,
-        &mut run_tool,
-    );
+    let run = tool_loop::run(STEP, messages, &req.tools, &mut ask, &mut run_tool);
     // §2's round lines belong to the user's log: they are what tells a reader why a derivation set
     // nothing, rather than leaving them guessing about a silent status line.
     for line in run.joined().lines() {
@@ -260,7 +268,8 @@ pub fn answer_at(
         // Say which model and what happened rather than letting an empty proposal list stand in for
         // "the server is not there". A reply that came and proposed nothing is NOT this case: S2's prompt
         // says a default is a whole answer, so silence there is silence, not a fault.
-        let reason = wire_failure.unwrap_or_else(|| "the server answered nothing at all".to_string());
+        let reason =
+            wire_failure.unwrap_or_else(|| "the server answered nothing at all".to_string());
         return Round::failure(format!("{STEP} call to {model}: {reason}"));
     }
     // Cache what the model actually said, so an unchanged context costs nothing next time (§6 keys on
@@ -273,7 +282,11 @@ pub fn answer_at(
         }
     }
     let _ = requests;
-    Round { proposals, failed: false, reason: String::new() }
+    Round {
+        proposals,
+        failed: false,
+        reason: String::new(),
+    }
 }
 
 /// The door shaped the way [`crate::policy::derive`] asks to be answered: the request it was built
@@ -427,7 +440,11 @@ fn all_proposals(calls: &[crate::exchanges::ToolCall]) -> bool {
 fn turn_of(sent: &crate::server_leg::Sent) -> Result<Turn, String> {
     let reply = llm_request::reply_from(&sent.content_type, &sent.body)
         .map_err(|why| format!("{STEP}: {why}"))?;
-    Ok(Turn { content: reply.answer().to_string(), calls: reply.tool_calls, finish: false })
+    Ok(Turn {
+        content: reply.answer().to_string(),
+        calls: reply.tool_calls,
+        finish: false,
+    })
 }
 
 /// A `set_policy` call as a proposal: three strings, exactly as the model typed them. A call whose
@@ -443,14 +460,22 @@ fn proposal_of(call: &crate::exchanges::ToolCall) -> Proposal {
             None => String::new(),
         }
     };
-    Proposal { field: field("field"), value: field("value"), because: field("because") }
+    Proposal {
+        field: field("field"),
+        value: field("value"),
+        because: field("because"),
+    }
 }
 
 /// The other of S2's two tools: `get_context` answers with the context the model is reading and the
 /// five fields it may set, spelled as the catalogue spells them. Answering it is what makes a read
 /// round possible — without an answer the model asks for the fields, gets silence, and the round cap
 /// ends the derivation.
-pub fn tool_answer(asked: &crate::exchanges::ToolCall, req: &DerivationRequest, policy: &Policy) -> String {
+pub fn tool_answer(
+    asked: &crate::exchanges::ToolCall,
+    req: &DerivationRequest,
+    policy: &Policy,
+) -> String {
     match asked.name.as_str() {
         "set_policy" => {
             let proposal = proposal_of(asked);

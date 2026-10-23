@@ -14,15 +14,15 @@
 #[path = "captions_wire_harness.rs"]
 mod harness;
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle, wait_until};
 use gtk4 as gtk;
 use harness::fixture as scenario;
 use naivepost::project::{CutMode, MarkingPass, Project};
 use naivepost::{cut_captions, model_calls, prepare, produce_subtitles, roles, run, ui};
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::common;
-use common::{fixture_dir, settle, wait_until};
 
 static RAN_PREPARE_BILL: AtomicBool = AtomicBool::new(false);
 static RAN_CUT_BILL: AtomicBool = AtomicBool::new(false);
@@ -46,8 +46,7 @@ fn set_policy_call(field: &str, value: &str) -> String {
 }
 
 fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
-    ui::line_step_button(window, name)
-        .unwrap_or_else(|| panic!("the shell carries {name}"))
+    ui::line_step_button(window, name).unwrap_or_else(|| panic!("the shell carries {name}"))
 }
 
 /// Point the settings this process reads at a fake audio.cpp. §F1.1's preflight runs before any stage,
@@ -76,7 +75,8 @@ fn serve_audio(url: &str) {
 /// `harness::point_at` writes a whole `Conf::default()` plus the one field, which would silently drop the
 /// audio.cpp this binary's Prepare press needs; this reads the live conf and changes one field.
 fn point_llm(url: &str) {
-    let paths = naivepost::settings::from_environment().expect("the pinned settings folder resolves");
+    let paths =
+        naivepost::settings::from_environment().expect("the pinned settings folder resolves");
     let mut conf = naivepost::settings::read(&paths).expect("the settings read back");
     conf.server = url.to_string();
     naivepost::settings::save(&paths, &conf).expect("the LLM address written");
@@ -112,7 +112,13 @@ impl RecordingLlm {
                         break;
                     }
                     if head.to_ascii_lowercase().starts_with("content-length:") {
-                        length = head.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+                        length = head
+                            .split(':')
+                            .nth(1)
+                            .unwrap_or("0")
+                            .trim()
+                            .parse()
+                            .unwrap_or(0);
                     }
                     if head.trim().is_empty() {
                         break;
@@ -132,7 +138,10 @@ impl RecordingLlm {
                 *counting.lock().expect("the count lock") += 1;
             }
         });
-        RecordingLlm { url: format!("http://127.0.0.1:{port}"), seen }
+        RecordingLlm {
+            url: format!("http://127.0.0.1:{port}"),
+            seen,
+        }
     }
 
     /// How many asks have landed, as of right now.
@@ -152,15 +161,26 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_s1_prepare_divides_by_its_owners_
     let s = model_calls::prepare(frames, lines, MarkingPass::Retakes, 0);
     assert_eq!(s.stage, model_calls::Stage::Prepare);
     let describe = s.of("describe").expect("footage gets described");
-    assert_eq!(describe.calls, prepare::vision_calls(frames), "describe ×(frames/4)");
+    assert_eq!(
+        describe.calls,
+        prepare::vision_calls(frames),
+        "describe ×(frames/4)"
+    );
     assert_eq!(describe.calls, 10, "40 frames four to a call");
     assert!(describe.cached, "§4 marks the Prepare row cached");
     let fix = s.of("fix").expect("lines get fixed");
     assert_eq!(fix.calls, prepare::fixer_calls(lines), "fix ×(lines/25)");
     assert_eq!(fix.calls, 4, "100 lines 25 to a block");
     let retake = s.of("retake").expect("markingPass retakes");
-    assert_eq!(retake.calls, roles::RETAKE_RUNS_POOLED as usize, "retake ×3");
-    assert!(s.of("textedit").is_none(), "the table says \"or\": one marking pass");
+    assert_eq!(
+        retake.calls,
+        roles::RETAKE_RUNS_POOLED as usize,
+        "retake ×3"
+    );
+    assert!(
+        s.of("textedit").is_none(),
+        "the table says \"or\": one marking pass"
+    );
     // The other half of the "or".
     let joined = model_calls::prepare(8, 50, MarkingPass::Joins, 7);
     assert_eq!(joined.of("textedit").expect("joins runs textedit").calls, 7);
@@ -185,7 +205,8 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_s1_prepare_divides_by_its_owners_
 /// S2 Cut: `cut ×1 (+web) · captions ×(clips/5) · speed ×1 · effects ×1`, "cutMode model only", "each
 /// pass only when the policy switches it on".
 #[test]
-fn sec_11_flow_index_4_model_calls_at_a_glance_s2_cut_asks_the_model_only_under_cutmode_and_per_switch() {
+fn sec_11_flow_index_4_model_calls_at_a_glance_s2_cut_asks_the_model_only_under_cutmode_and_per_switch(
+) {
     let clips = 12;
     let all_on = model_calls::cut(clips, CutMode::Model, true, true, true);
     let cut = all_on.of("cut").expect("cutMode model asks the cut model");
@@ -204,15 +225,32 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_s2_cut_asks_the_model_only_under_
 
     // "cutMode model only": under Words the timeline comes from the marked text and nobody is asked.
     let words = model_calls::cut(clips, CutMode::Words, true, true, true);
-    assert!(words.of("cut").is_none(), "no cut model under cutMode words");
-    assert!(words.of("captions").is_some(), "the passes are their own decision");
+    assert!(
+        words.of("cut").is_none(),
+        "no cut model under cutMode words"
+    );
+    assert!(
+        words.of("captions").is_some(),
+        "the passes are their own decision"
+    );
 
     // Each pass only when its switch is on — one row disappears per switch, no more.
-    for (off, model) in [("captionsPass", "captions"), ("speedPass", "speed"), ("decorationsPass", "effects")] {
+    for (off, model) in [
+        ("captionsPass", "captions"),
+        ("speedPass", "speed"),
+        ("decorationsPass", "effects"),
+    ] {
         let (c, s, e) = (model != "captions", model != "speed", model != "effects");
         let one_off = model_calls::cut(clips, CutMode::Model, c, s, e);
-        assert!(one_off.of(model).is_none(), "{off} off leaves no {model} row");
-        assert_eq!(one_off.calls.len(), 3, "{off} off hides exactly its own row");
+        assert!(
+            one_off.of(model).is_none(),
+            "{off} off leaves no {model} row"
+        );
+        assert_eq!(
+            one_off.calls.len(),
+            3,
+            "{off} off hides exactly its own row"
+        );
     }
     RAN_CUT_BILL.store(true, Ordering::SeqCst);
 }
@@ -223,22 +261,51 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_s2_cut_asks_the_model_only_under_
 fn sec_11_flow_index_4_model_calls_at_a_glance_s3_narrate_produce_and_setup_rows() {
     let narrate = model_calls::narrate(6);
     assert_eq!(narrate.of("narrate").expect("narrate \u{d7}1").calls, 1);
-    assert!(narrate.of("narrate").unwrap().web, "§2 gives narrate the web tools");
-    assert_eq!(narrate.of("tts").expect("TTS \u{d7}(lines)").calls, 6, "one voice call per line");
-    assert!(!narrate.of("narrate").unwrap().cached, "a rewrite is not replayed from cache");
+    assert!(
+        narrate.of("narrate").unwrap().web,
+        "§2 gives narrate the web tools"
+    );
+    assert_eq!(
+        narrate.of("tts").expect("TTS \u{d7}(lines)").calls,
+        6,
+        "one voice call per line"
+    );
+    assert!(
+        !narrate.of("narrate").unwrap().cached,
+        "a rewrite is not replayed from cache"
+    );
 
     let produce = model_calls::produce("a bold title card", false, 30, 2);
     assert_eq!(produce.of("youtube").expect("youtube \u{d7}1").calls, 1);
-    assert!(produce.of("youtube").unwrap().web, "the upload text gets the web tools");
-    assert_eq!(produce.of("sd.cpp").expect("an instruction and no frame draws").calls, 1);
+    assert!(
+        produce.of("youtube").unwrap().web,
+        "the upload text gets the web tools"
+    );
+    assert_eq!(
+        produce
+            .of("sd.cpp")
+            .expect("an instruction and no frame draws")
+            .calls,
+        1
+    );
     assert_eq!(
         produce.of("translate").expect("two languages").calls,
         produce_subtitles::batches(30).len() * 2,
         "translate \u{d7}(languages \u{d7} batches)"
     );
     // No instruction, or a named frame instead: nothing to draw (§2's rule, restated nowhere else).
-    assert!(model_calls::produce("", false, 30, 2).of("sd.cpp").is_none(), "no instruction, no draw");
-    assert!(model_calls::produce("card", true, 30, 2).of("sd.cpp").is_none(), "a named frame needs no server");
+    assert!(
+        model_calls::produce("", false, 30, 2)
+            .of("sd.cpp")
+            .is_none(),
+        "no instruction, no draw"
+    );
+    assert!(
+        model_calls::produce("card", true, 30, 2)
+            .of("sd.cpp")
+            .is_none(),
+        "a named frame needs no server"
+    );
     // With no ticked language the translate row carries ZERO calls, and `Call::line` renders a zero row
     // as nothing — so it is absent from what a person reads, which is the claim §4 supports.
     let none = model_calls::produce("card", false, 30, 0);
@@ -247,13 +314,21 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_s3_narrate_produce_and_setup_rows
         Some(0),
         "no language asks for nothing"
     );
-    assert!(!none.one_line().contains("translate"), "{}", none.one_line());
+    assert!(
+        !none.one_line().contains("translate"),
+        "{}",
+        none.one_line()
+    );
 
     let setup = model_calls::setup();
     assert_eq!(setup.calls.len(), 1, "Setup is one row");
     assert_eq!(setup.of("policy").expect("policy \u{d7}1").calls, 1);
     assert_eq!(setup.one_line(), "policy \u{d7}1", "exactly §4's cell");
-    assert_eq!(ui::run_bill::setup_line(), "Setup: policy \u{d7}1", "and the log line wraps it");
+    assert_eq!(
+        ui::run_bill::setup_line(),
+        "Setup: policy \u{d7}1",
+        "and the log line wraps it"
+    );
     RAN_OTHER_ROWS.store(true, Ordering::SeqCst);
 }
 
@@ -302,17 +377,14 @@ fn check_prepare_press_logs_its_bill(app: &adw::Application) {
     let frames = tree.frames_dir(&lane);
     std::fs::create_dir_all(&frames).expect("the frames folder");
     for at in 0..2 {
-        std::fs::write(frames.join(format!("frame-{at}.jpg")), b"jpeg-not-really").expect("a frame");
+        std::fs::write(frames.join(format!("frame-{at}.jpg")), b"jpeg-not-really")
+            .expect("a frame");
     }
     let transcript = tree.transcript_tsv(&lane);
     if let Some(parent) = transcript.parent() {
         std::fs::create_dir_all(parent).ok();
     }
-    std::fs::write(
-        &transcript,
-        vec!["0.0\t1.0\tword\t0\n"; 26].join(""),
-    )
-    .expect("a transcript");
+    std::fs::write(&transcript, vec!["0.0\t1.0\tword\t0\n"; 26].join("")).expect("a transcript");
 
     let window = ui::build_window(app, &project, "Prepare");
     window.present();
@@ -358,7 +430,9 @@ fn check_gear_logs_the_setup_row(app: &adw::Application) {
     ui::set_session_context(&window, "cut on the words, not the model");
     button(&window, "policy-button").emit_by_name::<()>("clicked", &[]);
     wait_until("the Setup bill line reached the log", || {
-        ui::window_logs().iter().any(|line| line.contains("policy \u{d7}1"))
+        ui::window_logs()
+            .iter()
+            .any(|line| line.contains("policy \u{d7}1"))
     });
     // The bill claims ONE policy call. Whether one went out is not guessable from here — the derivation
     // may be answered from `cache/llm` (the same context asked before in this scenario root answers
@@ -367,12 +441,7 @@ fn check_gear_logs_the_setup_row(app: &adw::Application) {
     // last lines, which name any refusal: a wrong claim would show up as 0 with no cache hit to explain
     // it, and the failure message says which.
     let asks = llm.count();
-    let tail: Vec<String> = ui::window_logs()
-        .iter()
-        .rev()
-        .take(4)
-        .cloned()
-        .collect();
+    let tail: Vec<String> = ui::window_logs().iter().rev().take(4).cloned().collect();
     assert!(
         asks <= 1,
         "the Setup row describes at most one policy call; {} arrived",
@@ -403,7 +472,10 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_s4_pressing_play_logs_the_steps_b
         RAN_PREPARE_WIRE.load(Ordering::SeqCst),
         "the Prepare bill-through-the-press check never ran"
     );
-    assert!(RAN_SETUP_WIRE.load(Ordering::SeqCst), "the Setup bill check never ran");
+    assert!(
+        RAN_SETUP_WIRE.load(Ordering::SeqCst),
+        "the Setup bill check never ran"
+    );
 }
 
 /// The three pure row checks need no window, so they run outside the application round.
@@ -416,7 +488,10 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_rows_are_computed_by_the_program_
     assert_eq!(prepare.stage, model_calls::Stage::Prepare);
     // With no session folder there are no frames and no transcript to count, so the only row that can be
     // non-zero is the marking pass — which is why the bill prints nothing rather than "describe ×0".
-    assert_eq!(ui::run_bill::models_of_for_test(prepare).unwrap(), vec!["retake"]);
+    assert_eq!(
+        ui::run_bill::models_of_for_test(prepare).unwrap(),
+        vec!["retake"]
+    );
     assert!(
         ui::run_bill::line_for(run::Step::Prepare).is_none()
             || ui::run_bill::summary_for(run::Step::Prepare).is_some(),
@@ -426,10 +501,16 @@ fn sec_11_flow_index_4_model_calls_at_a_glance_rows_are_computed_by_the_program_
     words_policy.cut_mode.value = CutMode::Words;
     let cut = ui::run_bill::bill_for(
         run::Step::Suggest,
-        &Project { policy: words_policy, ..Default::default() },
+        &Project {
+            policy: words_policy,
+            ..Default::default()
+        },
         None,
     );
-    assert!(cut.of("cut").is_none(), "a Words session bills no cut model");
+    assert!(
+        cut.of("cut").is_none(),
+        "a Words session bills no cut model"
+    );
     assert_eq!(
         ui::run_bill::models_of_for_test(model_calls::narrate(0)).unwrap(),
         vec!["narrate"],

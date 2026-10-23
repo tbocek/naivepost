@@ -4,8 +4,8 @@
 //! those two widgets: both live only while an override is stored, and Reset's tooltip says which of the
 //! two states the row is in.
 
-use gtk4::prelude::*;
 use gtk4 as gtk;
+use gtk4::prelude::*;
 
 use crate::{bench, settings};
 

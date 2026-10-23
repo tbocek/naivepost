@@ -96,7 +96,9 @@ fn find(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     }
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if let Some(found) = find(&widget, name) {
             return Some(found);
         }
@@ -161,7 +163,9 @@ fn visible_insert_form_holder(window: &adw::ApplicationWindow) -> Option<gtk::Wi
         }
         for child in root.observe_children().iter::<glib::Object>() {
             let Ok(child) = child else { continue };
-            let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+            let Ok(widget) = child.downcast::<gtk::Widget>() else {
+                continue;
+            };
             if let Some(found) = walk(&widget) {
                 return Some(found);
             }
@@ -176,13 +180,17 @@ fn visible_insert_form_holder(window: &adw::ApplicationWindow) -> Option<gtk::Wi
 /// footer is the form's SIBLING, one level up. Four tabs each carry one; the window root is still the only
 /// place that finds any of them, which is how every other per-window reader here works.
 fn live_footer(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
-    named(window, "insert-form-footer")?.downcast::<gtk::Box>().ok()
+    named(window, "insert-form-footer")?
+        .downcast::<gtk::Box>()
+        .ok()
 }
 
 /// The column's OWN pinned footer (§A's), inside the frame under its scroller. `frame` keeps it; only the
 /// insert flow takes the separate box `frame_parts` hands out.
 fn column_footer(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
-    named(window, "cut-form-footer")?.downcast::<gtk::Box>().ok()
+    named(window, "cut-form-footer")?
+        .downcast::<gtk::Box>()
+        .ok()
 }
 
 /// Show the heading's title and the footer, or drop back to the idle column. One door so the pinned parts
@@ -210,13 +218,8 @@ pub fn set_pinned(window: &adw::ApplicationWindow, heading: Option<&str>) -> boo
                 if let Some(footer) = column_footer(window) {
                     // Only show a footer that actually holds something: a form that puts no buttons here (zoom,
                     // label, the ✕ path) would otherwise paint a bare 4 px box.
-                    footer.set_visible(
-                        footer
-                            .observe_children()
-                            .iter::<glib::Object>()
-                            .count()
-                            > 0,
-                    );
+                    footer
+                        .set_visible(footer.observe_children().iter::<glib::Object>().count() > 0);
                 }
             }
         }
@@ -296,7 +299,9 @@ pub fn press_close(window: &adw::ApplicationWindow) -> String {
 /// Attach the cross's click. Called from `build_window` after `set_content`, like every other control, so
 /// the button is inside the realized tree and a test's `emit_by_name("clicked")` reaches it.
 pub fn wire_close(window: &adw::ApplicationWindow) {
-    let Some(button) = named(window, "cut-form-close").and_then(|w| w.downcast::<gtk::Button>().ok()) else {
+    let Some(button) =
+        named(window, "cut-form-close").and_then(|w| w.downcast::<gtk::Button>().ok())
+    else {
         return;
     };
     let win = window.clone();

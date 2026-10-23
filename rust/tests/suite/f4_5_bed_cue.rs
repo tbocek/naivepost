@@ -51,7 +51,11 @@ fn f4_5_s3_the_cue_asks_the_player_for_the_footage_second() {
         fx: vec![speed(4.0, 10.0, 2.0)],
         ..Default::default()
     };
-    assert_eq!(media::footage_second(&fast, 9.0), 18.0, "2x covers twice the ground");
+    assert_eq!(
+        media::footage_second(&fast, 9.0),
+        18.0,
+        "2x covers twice the ground"
+    );
     // Outside the effect the clip runs on its own clock again: rate 1 there.
     assert_eq!(media::footage_second(&fast, 2.0), 2.0);
     assert_eq!(media::footage_second(&fast, 18.0), 18.0);
@@ -160,12 +164,19 @@ fn f4_5_s3_the_cue_starts_at_the_recording_that_covers_the_target() {
     // The argv carries both numbers the rules answered: the duck/hush as `--volume`, the footage second as `-s`.
     let args = media::bed_argv(&second, media::footage_second(&cut, 25.0), 0.5);
     assert_eq!(args[0], "--volume=0.500");
-    let position = args.iter().position(|a| a == "-s").expect("the seek flag is there");
+    let position = args
+        .iter()
+        .position(|a| a == "-s")
+        .expect("the seek flag is there");
     assert_eq!(args[position + 1], "10.0");
     assert_eq!(args.last().map(String::as_str), Some(cam0.as_str()));
 
     // A second outside every clip keeps the cut's own order: nothing covers it, so nothing is guessed.
     let outside = media::cue_files(&tree, &cut, 50.0);
-    assert_eq!(outside.len(), 2, "both recordings stay listed for a forward skip to land in");
+    assert_eq!(
+        outside.len(),
+        2,
+        "both recordings stay listed for a forward skip to land in"
+    );
     assert_eq!(outside[0], cam0);
 }

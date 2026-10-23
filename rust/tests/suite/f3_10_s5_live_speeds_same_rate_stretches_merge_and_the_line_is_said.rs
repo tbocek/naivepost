@@ -11,9 +11,9 @@
 #[path = "captions_wire_harness.rs"]
 mod harness;
 
-use harness::*;
 use crate::common;
 use common::three_clips;
+use harness::*;
 use naivepost::cut_speed_pass::{self, Call};
 use naivepost::params;
 use naivepost::speeds_ask;
@@ -41,9 +41,19 @@ fn f3_10_s5_live_speeds_same_rate_stretches_merge_and_the_line_is_said() {
     let llm = FakeLlm::start(vec![speeds_json(&[(1, 2.0), (2, 2.0)])]);
     point_at(&llm.url());
 
-    let asked = speeds_ask::ask(&fixture.tree, "Run the waits fast.", &three_clips(), &captioned(), 1, &|| false);
+    let asked = speeds_ask::ask(
+        &fixture.tree,
+        "Run the waits fast.",
+        &three_clips(),
+        &captioned(),
+        1,
+        &|| false,
+    );
     assert!(!asked.failed, "the ask was answered: {:?}", asked.reason);
-    assert_eq!(asked.calls, vec![Call { clip: 1, rate: 2.0 }, Call { clip: 2, rate: 2.0 }]);
+    assert_eq!(
+        asked.calls,
+        vec![Call { clip: 1, rate: 2.0 }, Call { clip: 2, rate: 2.0 }]
+    );
 
     // The gap the merge will use is the gap §10 catalogues — read from §05 §6, where this section's rows live.
     let gap = params::cut()
@@ -57,28 +67,46 @@ fn f3_10_s5_live_speeds_same_rate_stretches_merge_and_the_line_is_said() {
     let clips = batch();
     let reply = cut_speed_pass::place(&clips, &asked.calls);
     assert!(reply.usable(), "a clean reply is usable: {:?}", reply.fault);
-    assert_eq!(reply.effects.len(), 1, "two same-rate adjoining stretches merged into one, got {:?}", reply.effects);
+    assert_eq!(
+        reply.effects.len(),
+        1,
+        "two same-rate adjoining stretches merged into one, got {:?}",
+        reply.effects
+    );
     let merged = &reply.effects[0];
     assert_eq!(merged.kind, "speed", "a proposed speed is a speed effect");
-    assert_eq!(merged.t, 0.0, "the stretch starts at clip 1's own session second");
+    assert_eq!(
+        merged.t, 0.0,
+        "the stretch starts at clip 1's own session second"
+    );
     assert_eq!(merged.dur, 40.0, "and covers both clips: 20 + 20");
     assert_eq!(merged.rate, 2.0, "at the rate the tool reported applying");
 
     // S5's line: N counts CLIPS running fast, judged at each clip's middle, so a merged stretch still reads
     // as the two clips it sped. Em dash U+2014, spelled by the module rather than copied here.
     let footage = cut_speed_pass::footage_total(&clips);
-    assert_eq!(footage, 60.0, "the footage total is the clips' own seconds before any rate shortens them");
+    assert_eq!(
+        footage, 60.0,
+        "the footage total is the clips' own seconds before any rate shortens them"
+    );
     let said = cut_speed_pass::runs_fast(&clips, &reply.effects, footage);
     assert!(
         said.starts_with(">>> speed: 2 clip(s) run fast \u{2014} "),
         "the success line, em dash and all, got {said:?}"
     );
-    assert!(said.contains("of video from") && said.contains("of footage"), "both clocks are named: {said:?}");
+    assert!(
+        said.contains("of video from") && said.contains("of footage"),
+        "both clocks are named: {said:?}"
+    );
     // The seconds the line claims, derived from the app's own rate rule rather than typed in: each clip's own
     // length divided by the rate covering its middle. Clips 1 and 2 fall under the merged ×2 (10 s on screen
     // each); clip 3 keeps its 20 because no rate was asked for there. 40 s out of 60, padded as §F3.10 prints it.
     let stretched = cut_speed_pass::merge(&reply.effects);
-    assert_eq!(stretched.len(), 1, "one stretch, read back through the merge rule itself");
+    assert_eq!(
+        stretched.len(),
+        1,
+        "one stretch, read back through the merge rule itself"
+    );
     let on_screen: f64 = clips
         .clips()
         .iter()
@@ -87,6 +115,12 @@ fn f3_10_s5_live_speeds_same_rate_stretches_merge_and_the_line_is_said() {
             clip.length / rate
         })
         .sum::<f64>();
-    assert_eq!(on_screen, 40.0, "two sped clips at 10 s each plus the untouched third");
-    assert!(said.contains("00:40") && said.contains("01:00"), "the arithmetic the line reports: {said:?}");
+    assert_eq!(
+        on_screen, 40.0,
+        "two sped clips at 10 s each plus the untouched third"
+    );
+    assert!(
+        said.contains("00:40") && said.contains("01:00"),
+        "the arithmetic the line reports: {said:?}"
+    );
 }

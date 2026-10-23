@@ -50,7 +50,11 @@ fn cut_page(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
     ui::seed_review_cut(
         &window,
         &cut::Cut {
-            segs: vec![Seg { s: 0.0, e: 90.0, ..Default::default() }],
+            segs: vec![Seg {
+                s: 0.0,
+                e: 90.0,
+                ..Default::default()
+            }],
             ..Default::default()
         },
     );
@@ -81,7 +85,6 @@ fn write_timed_card() -> String {
     path.to_string_lossy().to_string()
 }
 
-
 /// Is `needle` somewhere under `hay`? The parent chain is not public, so the search runs downwards instead.
 fn holds(hay: &gtk::Widget, needle: &gtk::Widget) -> bool {
     if std::ptr::eq(hay.as_ptr(), needle.as_ptr()) {
@@ -89,7 +92,9 @@ fn holds(hay: &gtk::Widget, needle: &gtk::Widget) -> bool {
     }
     for child in hay.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if holds(&widget, needle) {
             return true;
         }
@@ -105,7 +110,10 @@ fn open_form(window: &adw::ApplicationWindow) {
     let said = ui::insert_chosen_with_length(window, std::path::Path::new(&card), 20.0, None);
     settle();
     assert!(said.contains("timed.svg"), "{said}");
-    assert!(ui::insert_open(window).is_some(), "the form is open: {said}");
+    assert!(
+        ui::insert_open(window).is_some(),
+        "the form is open: {said}"
+    );
 }
 
 /// This window's cut as a whole, so its segments are read back the way the page measures them.
@@ -121,7 +129,8 @@ fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
 /// form is, and comes back when the form closes.
 fn check_the_form_replaces_the_idle_readings(app: &adw::Application) {
     let window = cut_page(app, "readings");
-    let readings = common::find_named(&window, "cut-form").expect("the idle readings are `cut-form`");
+    let readings =
+        common::find_named(&window, "cut-form").expect("the idle readings are `cut-form`");
     assert!(readings.is_visible(), "an idle column shows its readings");
 
     open_form(&window);
@@ -156,7 +165,8 @@ fn check_the_form_replaces_the_idle_readings(app: &adw::Application) {
 fn check_the_footer_holds_the_buttons_that_place_the_insert(app: &adw::Application) {
     let window = cut_page(app, "footer");
     open_form(&window);
-    let footer = common::find_named(&window, "insert-form-footer").expect("the page pins a footer for the insert");
+    let footer = common::find_named(&window, "insert-form-footer")
+        .expect("the page pins a footer for the insert");
     assert!(
         footer.is_visible(),
         "§05#1: an open form pins its footer, so its buttons are on screen and clickable"
@@ -208,7 +218,11 @@ fn check_clicking_insert_it_places_the_card(app: &adw::Application) {
         "the press said what it did, in cut_insert's own words: {said}"
     );
     let after = cut_of(&window);
-    assert_eq!(after.segs.len(), 2, "a BETWEEN insert splices one more segment: {after:?}");
+    assert_eq!(
+        after.segs.len(),
+        2,
+        "a BETWEEN insert splices one more segment: {after:?}"
+    );
     assert!(
         after.segs.iter().any(|seg| seg.is_insert()),
         "the new segment is the spliced card (s == e with a dur): {after:?}"
@@ -282,8 +296,20 @@ fn f2_12_s4_the_pinned_footer_places_the_insert() {
         println!("CHECK 4 clicking Cancel closes the form and writes nothing");
         check_clicking_cancel_closes_the_form_without_placing(app);
     });
-    assert!(RAN_READINGS.load(Ordering::SeqCst), "the replace-the-readings check never ran");
-    assert!(RAN_FOOTER.load(Ordering::SeqCst), "the pinned-footer check never ran");
-    assert!(RAN_APPLY.load(Ordering::SeqCst), "the apply-click check never ran");
-    assert!(RAN_CANCEL.load(Ordering::SeqCst), "the cancel-click check never ran");
+    assert!(
+        RAN_READINGS.load(Ordering::SeqCst),
+        "the replace-the-readings check never ran"
+    );
+    assert!(
+        RAN_FOOTER.load(Ordering::SeqCst),
+        "the pinned-footer check never ran"
+    );
+    assert!(
+        RAN_APPLY.load(Ordering::SeqCst),
+        "the apply-click check never ran"
+    );
+    assert!(
+        RAN_CANCEL.load(Ordering::SeqCst),
+        "the cancel-click check never ran"
+    );
 }

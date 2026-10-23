@@ -106,10 +106,12 @@ pub fn write_burn_files(
     per_clip
         .iter()
         .enumerate()
-        .map(|(index, cues)| match burn_file_name(index, stamp, settings) {
-            Some(name) => write_burn_file(&name, cues, scratch),
-            None => None,
-        })
+        .map(
+            |(index, cues)| match burn_file_name(index, stamp, settings) {
+                Some(name) => write_burn_file(&name, cues, scratch),
+                None => None,
+            },
+        )
         .collect()
 }
 

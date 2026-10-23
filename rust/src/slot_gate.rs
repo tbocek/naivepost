@@ -49,7 +49,10 @@ struct Guard {
 
 impl Drop for Held {
     fn drop(&mut self) {
-        release(&(self.inner.url.clone(), self.inner.model.clone()), &self.inner.step);
+        release(
+            &(self.inner.url.clone(), self.inner.model.clone()),
+            &self.inner.step,
+        );
     }
 }
 
@@ -94,7 +97,10 @@ pub fn hold(
     // The queue is keyed by step name, so two requests from one step must not share an identity: the
     // second would be told it already holds a slot (it does — the first one's) and go out over count.
     // A per-ask suffix keeps each ask its own holder while leaving the name the gate logs readable.
-    let holder = format!("{holder}#{}", ASK.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+    let holder = format!(
+        "{holder}#{}",
+        ASK.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+    );
     loop {
         match acquire(&(url.to_string(), model.to_string()), slots, &holder) {
             Acquisition::Taken => {
@@ -169,7 +175,9 @@ impl Slot {
 fn acquire(key: &Key, slots: u32, holder: &str) -> Acquisition {
     let gate = {
         let mut map = registry().lock().expect("the gate map");
-        let slot = map.entry(key.clone()).or_insert_with(|| Slot::new(&key.1, slots));
+        let slot = map
+            .entry(key.clone())
+            .or_insert_with(|| Slot::new(&key.1, slots));
         if slot.slots != slots {
             // Rebuilt rather than resized: `Gate` has no resize, and rebuilding keeps its own rules
             // (clamping included) as the single source of truth.

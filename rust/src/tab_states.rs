@@ -46,7 +46,8 @@ pub enum Play {
 /// §2's refusal sentence for Narrate with narration off. F4.8 spells it in a `String` because the
 /// module also builds refusals from project text; here it is one fixed sentence, so it lives as a
 /// constant rather than being leaked at every call.
-pub const NARRATION_OFF: &str = "this video has no narration \u{2014} tick Narration at the top of this page to write one";
+pub const NARRATION_OFF: &str =
+    "this video has no narration \u{2014} tick Narration at the top of this page to write one";
 
 /// Whether the tab opens, `None` meaning it does (§2's second column: "always" for three of them).
 ///
@@ -157,9 +158,13 @@ pub fn preview_lits(preview: &Preview) -> [bool; 3] {
 
 pub fn exactly_one_preview_lit(preview: &Preview) -> bool {
     let recording = !preview.cut_only && !preview.reviewing;
-    [recording, cut_screen::play_cut_lit(preview), cut_screen::review_lit(preview)]
-        .iter()
-        .filter(|lit| **lit)
-        .count()
+    [
+        recording,
+        cut_screen::play_cut_lit(preview),
+        cut_screen::review_lit(preview),
+    ]
+    .iter()
+    .filter(|lit| **lit)
+    .count()
         >= 1
 }

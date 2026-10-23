@@ -38,11 +38,23 @@ fn f3_1_a_press_inside_a_box_takes_the_zoom_in_force() {
     // the camera's own rect fitted into the panel (here the whole panel, because the test's fit IS the panel).
     let fit = (240.0, 135.0);
     let centre = ui::cut_preview_frame::camera_rect_px(&zoom::camera_at(&cut_.fx, 31.0), fit);
-    let under = ui::cut_zoom_hand::box_under_pointer(&cut_, 31.0, fit, (centre.0 + centre.2 / 2.0, centre.1 + centre.3 / 2.0));
-    assert_eq!(under, Some(0), "the press fell clear of the box the frame draws");
+    let under = ui::cut_zoom_hand::box_under_pointer(
+        &cut_,
+        31.0,
+        fit,
+        (centre.0 + centre.2 / 2.0, centre.1 + centre.3 / 2.0),
+    );
+    assert_eq!(
+        under,
+        Some(0),
+        "the press fell clear of the box the frame draws"
+    );
     // A press outside it draws a new rectangle instead.
     let outside = ui::cut_zoom_hand::box_under_pointer(&cut_, 31.0, fit, (2.0, 2.0));
-    assert_eq!(outside, None, "a press clear of every box must not claim the zoom");
+    assert_eq!(
+        outside, None,
+        "a press clear of every box must not claim the zoom"
+    );
     assert!(!cut_.fx.is_empty(), "taking a zoom must not write anything");
 }
 
@@ -55,7 +67,11 @@ fn f3_1_a_press_clear_of_every_box_uses_the_zoom_in_force() {
     // The zoom ran out at 13 s; at 20 s a staying zoom is the settled frame, so the box the next press draws is
     // that framing — asked of the same door the page uses.
     let camera = zoom::camera_at(&cut_.fx, 20.0);
-    assert_eq!(camera, zoom::camera_at(&cut_.fx, 12.0), "a staying zoom is the frame now");
+    assert_eq!(
+        camera,
+        zoom::camera_at(&cut_.fx, 12.0),
+        "a staying zoom is the frame now"
+    );
     // And with NO zoom anywhere, the camera is the centred full-fill slice, which is what §A.1 starts from.
     let bare = Cut::default();
     assert_eq!(zoom::camera_at(&bare.fx, 20.0), zoom::SETTLED);

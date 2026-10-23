@@ -95,7 +95,11 @@ pub fn open_at_start(app: &adw::Application, handed: &[PathBuf]) {
     // Which door answered is the first thing worth recording: it answers "why did THIS open?", and
     // `startup::Opened` is a decision with no widget of its own to show it. It reaches the log through
     // the single `note_startup` at the end, because that sink only exists once a window was built.
-    let door = format!(">>> opening {} ({})", opened.kind(), opened.path().display());
+    let door = format!(
+        ">>> opening {} ({})",
+        opened.kind(),
+        opened.path().display()
+    );
     // §8's [F0.9] bullet: a project with a legacy `out_dir` says so when it opens, and the launch is
     // one of the ways it opens — through `load_report`, which is where that line is produced.
     let (project, load_lines) = match &opened {
@@ -146,7 +150,10 @@ pub fn open_at_start(app: &adw::Application, handed: &[PathBuf]) {
     // (§7's state) -- go in here, after the desktop's, so they read as the launch's own last words.
     startup_lines.insert(0, door);
     if remembered == Some(true) {
-        startup_lines.push(format!(">>> remembered for next time: {}", opened.path().display()));
+        startup_lines.push(format!(
+            ">>> remembered for next time: {}",
+            opened.path().display()
+        ));
     }
     ui::window::note_startup(&startup_lines);
 }

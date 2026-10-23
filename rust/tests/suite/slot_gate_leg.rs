@@ -86,10 +86,7 @@ fn held_server() -> (String, Releaser) {
     });
     (
         format!("http://127.0.0.1:{port}"),
-        Releaser {
-            gate,
-            arrived,
-        },
+        Releaser { gate, arrived },
     )
 }
 
@@ -128,7 +125,13 @@ fn drain(stream: &TcpStream) {
             break;
         }
         if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = header
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
     }
     let mut body = vec![0u8; length];
@@ -161,12 +164,21 @@ fn dial(dirs: &Dirs, step: &str, model: &str) -> Result<String, String> {
 /// these dials block on purpose, and a lock held across one would starve every other test here. Each
 /// test points its own conf at its own fake server; clearing the two audio variables once means nothing
 /// inherited from the shell outranks that box.
-fn dial_at(paths: &Paths, tree: Option<naivepost::layout::Tree>, step: &str, model: &str) -> Result<String, String> {
+fn dial_at(
+    paths: &Paths,
+    tree: Option<naivepost::layout::Tree>,
+    step: &str,
+    model: &str,
+) -> Result<String, String> {
     let audio = ServerPath::from_upload("/uploads/c00.wav").expect("absolute");
     audio_task::dial(
         &tree,
         paths,
-        Ask { step, job: "c00.wav", task: "asr" },
+        Ask {
+            step,
+            job: "c00.wav",
+            task: "asr",
+        },
         model,
         &bodies::asr_body(model, &audio, "en"),
     )
@@ -179,7 +191,11 @@ fn pin_env() {
 }
 
 /// Dial from a thread and report when it finished, so a blocked dial is observable.
-fn dial_async(dirs: &'static Dirs, step: &'static str, model: &'static str) -> std::thread::JoinHandle<bool> {
+fn dial_async(
+    dirs: &'static Dirs,
+    step: &'static str,
+    model: &'static str,
+) -> std::thread::JoinHandle<bool> {
     std::thread::spawn(move || dial(dirs, step, model).is_ok())
 }
 
@@ -209,10 +225,19 @@ fn sec_02_services_1_the_four_servers_s6_one_slot_admits_one_request_at_a_time()
     );
 
     releaser.release();
-    assert!(first.join().expect("the first dial ends"), "the first succeeded");
+    assert!(
+        first.join().expect("the first dial ends"),
+        "the first succeeded"
+    );
     // The hand-off is automatic on release, so the waiter goes in without asking again.
-    wait_until(|| second.is_finished(), "the released slot went to whoever waited");
-    assert!(second.join().expect("the second dial ends"), "the second succeeded after the wait");
+    wait_until(
+        || second.is_finished(),
+        "the released slot went to whoever waited",
+    );
+    assert!(
+        second.join().expect("the second dial ends"),
+        "the second succeeded after the wait"
+    );
     assert!(
         slot_gate::holders(&url, model).is_empty(),
         "both slots came back: {:?}",
@@ -236,7 +261,10 @@ fn sec_02_services_1_the_four_servers_s6_two_slots_admit_two_at_once() {
     );
     let third = dial_async(dirs, "Narrate", model);
     std::thread::sleep(Duration::from_millis(120));
-    assert!(!third.is_finished(), "the third request waits behind two busy slots");
+    assert!(
+        !third.is_finished(),
+        "the third request waits behind two busy slots"
+    );
 
     releaser.release();
     assert!(first.join().expect("first done"));
@@ -252,7 +280,8 @@ fn sec_02_services_1_the_four_servers_s6_a_row_written_after_a_wait_carries_the_
     let (url, releaser) = held_server();
     pin_env();
     let dirs = Dirs::new("s6c", &url, 1);
-    let project = std::env::temp_dir().join(format!("np-svcs6-proj-{}.naivepost", std::process::id()));
+    let project =
+        std::env::temp_dir().join(format!("np-svcs6-proj-{}.naivepost", std::process::id()));
     let _ = std::fs::remove_dir_all(&project);
     std::fs::create_dir_all(&project).expect("the project folder");
     let tree = naivepost::layout::Tree::new(&project).expect("a session tree");
@@ -263,7 +292,10 @@ fn sec_02_services_1_the_four_servers_s6_a_row_written_after_a_wait_carries_the_
         let paths = dirs.paths.clone();
         move || dial_at(&paths, None, "Prepare", model)
     });
-    wait_until(|| !slot_gate::holders(&url, model).is_empty(), "the first dial holds the slot");
+    wait_until(
+        || !slot_gate::holders(&url, model).is_empty(),
+        "the first dial holds the slot",
+    );
     let waited = std::thread::spawn({
         let paths = dirs.paths.clone();
         let timed = tree.clone();
@@ -279,9 +311,17 @@ fn sec_02_services_1_the_four_servers_s6_a_row_written_after_a_wait_carries_the_
     let fields: Vec<&str> = row.split('\t').collect();
     // Column 12 is `wait_s`; empty means "never queued", which would be a lie about this request.
     let wait_field = fields.get(12).copied().unwrap_or_default();
-    assert!(!wait_field.is_empty(), "the waiting row records its wait: {row}");
-    let secs: f64 = wait_field.parse().expect("the wait column parses as seconds");
-    assert!(secs > 0.0, "the wait is a positive number of seconds: {row}");
+    assert!(
+        !wait_field.is_empty(),
+        "the waiting row records its wait: {row}"
+    );
+    let secs: f64 = wait_field
+        .parse()
+        .expect("the wait column parses as seconds");
+    assert!(
+        secs > 0.0,
+        "the wait is a positive number of seconds: {row}"
+    );
 }
 
 /// Poll `check` until it holds, failing loudly rather than hanging the suite when it never does.

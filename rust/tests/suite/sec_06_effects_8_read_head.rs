@@ -32,7 +32,10 @@ fn sec_06_effects_8_details_s4_read_head_opens_only_on_drift() {
     assert_eq!(details::DRIFT_SECONDS, 0.05, "machine.driftSeconds");
     // 30.0 s of footage, 29.95 s on screen: 0.05 s of debt, the floor itself.
     assert!(head::opens(30.0, 29.95, true, true), "0.05 s of debt opens");
-    assert!(head::opens(30.0, 30.05, true, true), "and the same debt the other way");
+    assert!(
+        head::opens(30.0, 30.05, true, true),
+        "and the same debt the other way"
+    );
     // One thousandth short of the floor: nothing to hear, so nothing to dip.
     assert!(!head::opens(30.0, 29.951, true, true), "0.049 s does not");
     assert!(!head::opens(30.0, 30.0, true, true), "no debt, no head");
@@ -54,20 +57,42 @@ fn sec_06_effects_8_details_s4b_a_card_held_frame_or_missing_recording_closes_it
     assert!(!head::opens(30.0, 29.9, false, true), "a card closes it");
     // Ground with no recording under it has no sound to read.
     assert!(!head::opens(30.0, 29.9, true, false), "no tape closes it");
-    assert!(!head::opens(30.0, 29.9, false, false), "both at once still closes");
+    assert!(
+        !head::opens(30.0, 29.9, false, false),
+        "both at once still closes"
+    );
     // The two halves answer as the spec spells them, unchanged.
     assert!(details::run_closes(false, true));
     assert!(details::run_closes(true, false));
     assert!(!details::run_closes(true, true));
     // And the source/tape questions read the segment, not a guess: an `ins` is an insert.
-    let footage = Seg { s: 0.0, e: 30.0, ..Default::default() };
-    let card = Seg { s: 0.0, e: 30.0, ins: "cards/title.svg".into(), ..Default::default() };
+    let footage = Seg {
+        s: 0.0,
+        e: 30.0,
+        ..Default::default()
+    };
+    let card = Seg {
+        s: 0.0,
+        e: 30.0,
+        ins: "cards/title.svg".into(),
+        ..Default::default()
+    };
     assert!(head::source_is_footage(&footage));
     assert!(!head::source_is_footage(&card), "a card is not footage");
     // Tape means the segment overlaps a filmed run; a gap does not.
     let runs = [(0.0, 20.0)];
     assert!(head::on_recording(&footage, &runs));
-    assert!(!head::on_recording(&Seg { s: 25.0, e: 30.0, ..Default::default() }, &runs), "a gap");
+    assert!(
+        !head::on_recording(
+            &Seg {
+                s: 25.0,
+                e: 30.0,
+                ..Default::default()
+            },
+            &runs
+        ),
+        "a gap"
+    );
     assert!(!head::on_recording(&footage, &[]), "no tape named at all");
 }
 
@@ -87,7 +112,12 @@ fn sec_06_effects_8_details_s4c_the_chain_gets_half_a_dip_on_each_side() {
         ..Default::default()
     };
     let own = vec![sped(2.0, "own", 0.0, 10.0)];
-    let built = naivepost::produce_fx_chain::for_clip(&clip, &own, (1920, 1080), std::path::Path::new("/tmp"));
+    let built = naivepost::produce_fx_chain::for_clip(
+        &clip,
+        &own,
+        (1920, 1080),
+        std::path::Path::new("/tmp"),
+    );
     let audio = built.audio.join(" , ");
     assert!(
         audio.contains(&format!("afade=t=in:st=2.000:d={half}")),
@@ -98,19 +128,31 @@ fn sec_06_effects_8_details_s4c_the_chain_gets_half_a_dip_on_each_side() {
         "the outgoing half: {audio}"
     );
     assert_eq!(
-        built.audio.iter().filter(|f| f.starts_with("afade=")).count(),
+        built
+            .audio
+            .iter()
+            .filter(|f| f.starts_with("afade="))
+            .count(),
         2,
         "exactly two fades, one per side: {:?}",
         built.audio
     );
     assert!(
-        !built.audio.iter().any(|f| f.contains(&format!("d={}", fx_lane::SOUND_DIP_SECONDS))),
+        !built
+            .audio
+            .iter()
+            .any(|f| f.contains(&format!("d={}", fx_lane::SOUND_DIP_SECONDS))),
         "the whole dip is never spent on one side: {:?}",
         built.audio
     );
     // A shut head: no fades at all, and the sound simply follows the picture.
     clip.read_head = None;
-    let shut = naivepost::produce_fx_chain::for_clip(&clip, &own, (1920, 1080), std::path::Path::new("/tmp"));
+    let shut = naivepost::produce_fx_chain::for_clip(
+        &clip,
+        &own,
+        (1920, 1080),
+        std::path::Path::new("/tmp"),
+    );
     assert!(
         !shut.audio.iter().any(|f| f.contains("afade")),
         "a closed head dips nothing: {:?}",
@@ -126,7 +168,11 @@ fn sec_06_effects_8_details_s4c_the_chain_gets_half_a_dip_on_each_side() {
             std::path::Path::new("/tmp"),
         );
         assert_eq!(
-            built.audio.iter().filter(|f| f.starts_with("afade=")).count(),
+            built
+                .audio
+                .iter()
+                .filter(|f| f.starts_with("afade="))
+                .count(),
             2,
             "`{snd}` reads the head"
         );
@@ -152,10 +198,25 @@ fn sec_06_effects_8_details_s4c_the_chain_gets_half_a_dip_on_each_side() {
 #[test]
 fn sec_06_effects_8_details_s4d_plan_clips_stores_the_run() {
     let no_fx: &dyn Fn(&Seg) -> Vec<Fx> = &|_| Vec::new();
-    let mut sped_seg = Seg { s: 0.0, e: 20.0, rate: 2.0, ..Default::default() };
+    let mut sped_seg = Seg {
+        s: 0.0,
+        e: 20.0,
+        rate: 2.0,
+        ..Default::default()
+    };
     let fx = vec![sped(2.0, "own", 0.0, 20.0)];
     let fx_for: &dyn Fn(&Seg) -> Vec<Fx> = &|_| fx.clone();
-    let (clips, logs) = render::plan_clips(&[sped_seg.clone()], fx_for, "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
+    let (clips, logs) = render::plan_clips(
+        &[sped_seg.clone()],
+        fx_for,
+        "16:9",
+        |_| true,
+        &[],
+        &[],
+        (1920, 1080),
+        true,
+        render::unknown_footage,
+    );
     assert!(logs.is_empty(), "{logs:?}");
     assert_eq!(
         clips[0].read_head,
@@ -166,23 +227,72 @@ fn sec_06_effects_8_details_s4d_plan_clips_stores_the_run() {
 
     // The same seconds as a card: no tape to read back, so no run stored.
     sped_seg.ins = "cards/title.svg".into();
-    let (cards, _) = render::plan_clips(&[sped_seg.clone()], fx_for, "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
+    let (cards, _) = render::plan_clips(
+        &[sped_seg.clone()],
+        fx_for,
+        "16:9",
+        |_| true,
+        &[],
+        &[],
+        (1920, 1080),
+        true,
+        render::unknown_footage,
+    );
     assert_eq!(cards[0].read_head, None, "a card is not footage");
     assert_eq!(cards[0].source, "cards/title.svg");
 
     // Footage with no recording named for the session: same answer, other reason.
     sped_seg.ins = String::new();
-    let (gap, _) = render::plan_clips(&[sped_seg], fx_for, "16:9", |_| true, &[], &[], (1920, 1080), false, render::unknown_footage);
+    let (gap, _) = render::plan_clips(
+        &[sped_seg],
+        fx_for,
+        "16:9",
+        |_| true,
+        &[],
+        &[],
+        (1920, 1080),
+        false,
+        render::unknown_footage,
+    );
     assert_eq!(gap[0].read_head, None, "no tape closes the head");
 
     // A clip nobody re-timed has no own-clock sound, whatever the tape says.
-    let plain = Seg { s: 0.0, e: 20.0, ..Default::default() };
-    let (still, _) = render::plan_clips(&[plain], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
+    let plain = Seg {
+        s: 0.0,
+        e: 20.0,
+        ..Default::default()
+    };
+    let (still, _) = render::plan_clips(
+        &[plain],
+        no_fx,
+        "16:9",
+        |_| true,
+        &[],
+        &[],
+        (1920, 1080),
+        true,
+        render::unknown_footage,
+    );
     assert_eq!(still[0].read_head, None, "no speed effect, no run");
 
     // A 1.000× stretch shows what it films: no debt, so the head stays shut.
-    let even = Seg { s: 0.0, e: 20.0, rate: 1.0, ..Default::default() };
-    let (flat, _) = render::plan_clips(&[even], fx_for, "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
+    let even = Seg {
+        s: 0.0,
+        e: 20.0,
+        rate: 1.0,
+        ..Default::default()
+    };
+    let (flat, _) = render::plan_clips(
+        &[even],
+        fx_for,
+        "16:9",
+        |_| true,
+        &[],
+        &[],
+        (1920, 1080),
+        true,
+        render::unknown_footage,
+    );
     assert_eq!(flat[0].read_head, None, "no drift means no dip");
     assert!(
         clips[0]

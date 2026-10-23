@@ -24,7 +24,13 @@ const START_PAGE_PX: i32 = 480;
 /// then the Outputs folder button, then the Outputs readout; UNDER that row the log expander" — so the
 /// readouts are part of the run bar's row rather than a strip of their own, and only two children go on
 /// `bottom`.
-pub fn install(into: &gtk::Box, page: &gtk::Widget, run_row: &gtk::Widget, readout_row: &gtk::Widget, log: &gtk::Widget) {
+pub fn install(
+    into: &gtk::Box,
+    page: &gtk::Widget,
+    run_row: &gtk::Widget,
+    readout_row: &gtk::Widget,
+    log: &gtk::Widget,
+) {
     let divider = gtk::Paned::new(gtk::Orientation::Vertical);
     divider.set_widget_name("main-divider");
     divider.set_wide_handle(false);
@@ -41,7 +47,10 @@ pub fn install(into: &gtk::Box, page: &gtk::Widget, run_row: &gtk::Widget, reado
     // band nothing; per-tab, Prepare charges 342 px and the band gets the other ~500 of the 844 px divider.
     // Only the band may be squeezed, and `bottom-bar` carries its own floor (§1's two rows, asked through
     // [`super::window_shot::rest_px`] in `window.rs`) so a squeeze cannot take it below them.
-    let log = log.downcast_ref::<gtk::Expander>().expect("the log is an expander").clone();
+    let log = log
+        .downcast_ref::<gtk::Expander>()
+        .expect("the log is an expander")
+        .clone();
     divider.set_shrink_start_child(false);
     // THE BAND MAY BE SQUEEZED, DOWN TO WHAT IT ASKS FOR and no further: §1 wants the page to be wholly on
     // screen at the minimum (which needs the page half NON-shrinkable, so GTK cannot crush it to 342 px and
@@ -79,7 +88,10 @@ pub fn install(into: &gtk::Box, page: &gtk::Widget, run_row: &gtk::Widget, reado
     // `rest_split` moves to `total − band_px(…)`; the paned clamps that to this minimum, so the ask has to be the
     // small one or the clamp can never come down.
     bottom.set_size_request(-1, super::window_shot::height_ask(run_row, &log));
-    let log = log.downcast_ref::<gtk::Expander>().expect("the log is an expander").clone();
+    let log = log
+        .downcast_ref::<gtk::Expander>()
+        .expect("the log is an expander")
+        .clone();
     // The closures below outlive this call, so they hold their OWN widget references — clones of the two
     // widgets §1 counts, which live as long as the window that owns the divider.
     let run_row_held = run_row.clone();
@@ -175,11 +187,17 @@ fn connect_every_layout(divider: &gtk::Paned) {
 /// default GTK settled on (measured: 342 px of page against 501 px of bottom box in an 844 px divider) is what
 /// a shot would otherwise record. The door a person's drag fires is the same rule.
 pub fn rest_split(divider: &gtk::Paned) {
-    let Some(bottom) = divider.end_child() else { return };
-    let Some(log) = find_in(&bottom, "log-expander").and_then(|w| w.downcast::<gtk::Expander>().ok()) else {
+    let Some(bottom) = divider.end_child() else {
         return;
     };
-    let Some(run_row) = bottom.first_child() else { return };
+    let Some(log) =
+        find_in(&bottom, "log-expander").and_then(|w| w.downcast::<gtk::Expander>().ok())
+    else {
+        return;
+    };
+    let Some(run_row) = bottom.first_child() else {
+        return;
+    };
     // THE BAND CARRIES NO `set_size_request`, and that is the rule: a size request is a FLOOR GTK will not
     // squeeze below, so asking for the OPEN band here (274 px with §10's 220 px log body) held the bottom half
     // at 501 px even with the log closed, where §1 wants only the run-bar row + header (~54 px). The handle
@@ -210,8 +228,15 @@ fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     if node.widget_name() == name {
         return Some(node.clone());
     }
-    for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
-        if let Some(widget) = child.downcast_ref::<gtk::Widget>().and_then(|w| find_in(w, name)) {
+    for child in node
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+    {
+        if let Some(widget) = child
+            .downcast_ref::<gtk::Widget>()
+            .and_then(|w| find_in(w, name))
+        {
             return Some(widget);
         }
     }
@@ -227,7 +252,10 @@ fn connect_band_rest(divider: &gtk::Paned, run_row: &gtk::Widget, log: &gtk::Exp
             // Same widget the closure captured: asking the paned for its own height is the only way to know
             // what room the band has once the window is mapped.
             let total = d.height().max(1);
-            d.set_position(super::window_shot::rest_position(total, super::window_shot::rest_px(&run_row, &log)));
+            d.set_position(super::window_shot::rest_position(
+                total,
+                super::window_shot::rest_px(&run_row, &log),
+            ));
         }
     });
     log.connect_expanded_notify({

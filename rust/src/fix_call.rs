@@ -53,7 +53,11 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
             // owes `subtitles.srt`) and whether its words are the narration rather than content.
             args: vec![
                 source.path.clone(),
-                if source.footage { "video".to_string() } else { "audio".to_string() },
+                if source.footage {
+                    "video".to_string()
+                } else {
+                    "audio".to_string()
+                },
                 source.narrator.to_string(),
             ],
             already_done: false,
@@ -87,16 +91,17 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
 /// Everything the walk's rows do not carry is resolved here from the environment; [`stage_chunk`] is
 /// the same door with those two handed in, which is how a test drives the real path without owning the
 /// process's working folder.
-pub fn run_task(
-    task: &crate::run_stages::Task,
-    log: &mut impl FnMut(&str),
-) -> Result<(), String> {
+pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let paths = settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
     let session = session_dir();
     let tree = Tree::new(&session)
         .map_err(|_| format!("{}: not a project folder to fix into", session.display()))?;
-    let source = task.args.first().cloned().ok_or("the fix row names no source")?;
+    let source = task
+        .args
+        .first()
+        .cloned()
+        .ok_or("the fix row names no source")?;
     let lane = crate::audio_task::source_lane(&source);
     let is_video = task.args.get(1).map(String::as_str) == Some("video");
     // A narrator's words are the narration, so they go to `commentary.fixed.tsv` (§F1.8 S4).
@@ -126,15 +131,20 @@ pub fn stage_chunk(
 ) -> Result<usize, String> {
     let lines = fix_transcripts::load_transcript(tree, lane)?;
     if lines.is_empty() {
-        log(&format!(">>> [{lane}] nothing to fix -- the transcript is empty"));
+        log(&format!(
+            ">>> [{lane}] nothing to fix -- the transcript is empty"
+        ));
         return Ok(0);
     }
     // §F1.8 S2's grounding is ±5 s from EVERY other recording plus this source's own events. This door
     // fixes ONE source per row, so the list carries this lane's own rows tagged with its name; the
     // cross-source half of the window is `crate::fix_session::session_fix`, which runs
     // `fix_transcripts::run` over a whole session and sees every lane at once.
-    let every_line: Vec<(String, Line)> =
-        lines.iter().cloned().map(|line| (lane.to_string(), line)).collect();
+    let every_line: Vec<(String, Line)> = lines
+        .iter()
+        .cloned()
+        .map(|line| (lane.to_string(), line))
+        .collect();
     let every_event: Vec<(String, FrameEvent)> = fix_transcripts::load_events(tree, lane)
         .into_iter()
         .map(|event| (lane.to_string(), event))
@@ -151,8 +161,7 @@ pub fn stage_chunk(
             block.first().map(|line| line.start).unwrap_or(0.0),
             block.last().map(|line| line.end).unwrap_or(0.0),
         );
-        let context =
-            fix_transcripts::context_text(from, to, lane, &[], &every_line, &every_event);
+        let context = fix_transcripts::context_text(from, to, lane, &[], &every_line, &every_event);
         // The message the model is shown is `ask_text`'s, built here so the grounding is part of it;
         // `fix_block` rebuilds the same text from its own rows when it appends a refusal.
         let _message = fix_transcripts::ask_text(&context, &block);
@@ -165,7 +174,10 @@ pub fn stage_chunk(
             }
             None => {
                 asked += 1;
-                fix_transcripts::fix_block(&block, ask_for(tree, paths, conf, &every_event, &block))?
+                fix_transcripts::fix_block(
+                    &block,
+                    ask_for(tree, paths, conf, &every_event, &block),
+                )?
             }
         };
         if !outcome.valid {
@@ -267,8 +279,14 @@ fn ask_once(
         return Ok(calls_of(&reply));
     }
     let messages = vec![
-        Message { role: "system".to_string(), parts: vec![Part::Text(system.clone())] },
-        Message { role: "user".to_string(), parts: vec![Part::Text(message.to_string())] },
+        Message {
+            role: "system".to_string(),
+            parts: vec![Part::Text(system.clone())],
+        },
+        Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text(message.to_string())],
+        },
     ];
     let offered: Vec<Tool> = crate::tools::offered(Job::CleanTranscript);
     let endpoint = services::llm_endpoint(conf);
@@ -319,14 +337,24 @@ fn ask_once(
         // Only the round that ENDED the flow is worth caching, and only if it could be read at all: an
         // unreadable reply must go out again on the retry rather than being replayed from the slot it
         // failed in, and a mid-conversation round holds only part of the answer.
-        if reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name()) {
+        if reply
+            .tool_calls
+            .iter()
+            .any(|call| call.name == Tool::Finish.name())
+        {
             first_body = Some(sent.body.clone());
         }
         // A round that asked for a tool result instead of finishing is the fixer's refusal path: the
         // answer came back unusable and another question is about to be dialled with the refusal in it.
-        refused |= !reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
+        refused |= !reply
+            .tool_calls
+            .iter()
+            .any(|call| call.name == Tool::Finish.name());
         // `finish` closes the flow and the loop reads that off the TURN, not off the call list.
-        let finishing = reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
+        let finishing = reply
+            .tool_calls
+            .iter()
+            .any(|call| call.name == Tool::Finish.name());
         Ok(tool_loop::Turn {
             content: reply.content.clone(),
             calls: reply.tool_calls.clone(),
@@ -338,8 +366,8 @@ fn ask_once(
         if let Some(answer) = reads.and_then(|ctx| tool_reads::dispatch(ctx, asked)) {
             return answer;
         }
-        let args: serde_json::Value = serde_json::from_str(&asked.args)
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let args: serde_json::Value =
+            serde_json::from_str(&asked.args).unwrap_or_else(|_| serde_json::json!({}));
         let number = args.get("n").and_then(|n| n.as_u64()).map(|n| n as u32);
         match asked.name.as_str() {
             // The answer only says the call landed. Whether `n` is IN this block is decided further
@@ -348,7 +376,10 @@ fn ask_once(
             // on the next try, which is where that rule belongs.
             "fix_line" => match (number, args.get("text").and_then(|t| t.as_str())) {
                 (Some(n), Some(text)) => {
-                    fixes.push(Reply::Fix { n, text: text.to_string() });
+                    fixes.push(Reply::Fix {
+                        n,
+                        text: text.to_string(),
+                    });
                     tools::ok(&serde_json::json!({"n": n, "text": text}))
                 }
                 // DROPPED rather than answered with an invented empty respelling: an empty line would
@@ -357,7 +388,10 @@ fn ask_once(
             },
             "flag_line" => match (number, args.get("why").and_then(|w| w.as_str())) {
                 (Some(n), Some(why)) => {
-                    fixes.push(Reply::Flag { n, why: why.to_string() });
+                    fixes.push(Reply::Flag {
+                        n,
+                        why: why.to_string(),
+                    });
                     tools::ok(&serde_json::json!({"n": n, "flagged": true}))
                 }
                 _ => tools::error("flag_line needs \"n\" and the \"why\""),
@@ -399,12 +433,18 @@ fn calls_of(reply: &llm_request::Reply) -> Vec<Reply> {
         match call.name.as_str() {
             "fix_line" => {
                 if let (Some(n), Some(text)) = (line, args.get("text").and_then(|t| t.as_str())) {
-                    out.push(Reply::Fix { n, text: text.to_string() });
+                    out.push(Reply::Fix {
+                        n,
+                        text: text.to_string(),
+                    });
                 }
             }
             "flag_line" => {
                 if let (Some(n), Some(why)) = (line, args.get("why").and_then(|w| w.as_str())) {
-                    out.push(Reply::Flag { n, why: why.to_string() });
+                    out.push(Reply::Flag {
+                        n,
+                        why: why.to_string(),
+                    });
                 }
             }
             _ => out.push(Reply::Done),

@@ -62,8 +62,17 @@ fn cut_page_with_a_bar(app: &adw::Application) -> adw::ApplicationWindow {
 fn pick_up_bar_zero(window: &adw::ApplicationWindow) {
     let width = ui::cut_bar_width_px(10.0);
     let answer = ui::press_effect_bar(window, 0, width / 2.0, width, 8.0, false);
-    assert_eq!(answer, Press::Hold { t: LINE_SECOND, from_end: None });
-    assert!(ui::held_effect().is_some(), "the pick-up put the record in hand");
+    assert_eq!(
+        answer,
+        Press::Hold {
+            t: LINE_SECOND,
+            from_end: None
+        }
+    );
+    assert!(
+        ui::held_effect().is_some(),
+        "the pick-up put the record in hand"
+    );
     settle();
 }
 
@@ -73,7 +82,10 @@ fn arm_zoom(window: &adw::ApplicationWindow) {
     ui::note_zoom_place(true);
     ui::set_line_position(window, LinePos { t: LINE_SECOND });
     let said = ui::press_zoom_item(window);
-    assert!(ui::zoom_armed(), "the dropdown's ⊕ Zoom did not arm -- {said}");
+    assert!(
+        ui::zoom_armed(),
+        "the dropdown's ⊕ Zoom did not arm -- {said}"
+    );
     settle();
 }
 
@@ -108,15 +120,28 @@ fn esc_drops_hold_and_disarms(app: &adw::Application) {
         "S3's bare-disarm word covers both halves"
     );
     assert!(ui::held_effect().is_none(), "S3: the hold dropped");
-    assert!(!ui::zoom_armed(), "S3: and the armed drag disarmed -- this is what used to stay up");
+    assert!(
+        !ui::zoom_armed(),
+        "S3: and the armed drag disarmed -- this is what used to stay up"
+    );
 
     // Repeatable: a second hold + arm, answered the same way (no slot left sticky from the first press).
     pick_up_bar_zero(&window);
     arm_zoom(&window);
-    assert_eq!(ui::press_band_esc(&window).as_deref(), Some(fx_band::CANCELLED));
-    assert!(ui::held_effect().is_none(), "the second Esc dropped its own hold");
+    assert_eq!(
+        ui::press_band_esc(&window).as_deref(),
+        Some(fx_band::CANCELLED)
+    );
+    assert!(
+        ui::held_effect().is_none(),
+        "the second Esc dropped its own hold"
+    );
     assert!(!ui::zoom_armed(), "and its own arm");
-    assert_eq!(ui::press_band_esc(&window), None, "and then has nothing left to claim");
+    assert_eq!(
+        ui::press_band_esc(&window),
+        None,
+        "and then has nothing left to claim"
+    );
 
     RAN_DISARM.store(true, Ordering::SeqCst);
     window.close();
@@ -127,7 +152,8 @@ fn esc_drops_hold_and_disarms(app: &adw::Application) {
 /// row, and drops BOTH the hold and every arm that was up (zoom and caption together).
 fn real_escape_key_drops_hold_and_disarms(app: &adw::Application) {
     let window = cut_page_with_a_bar(app);
-    let controller = ui::band_esc_controller(&window).expect("the page wired a band Esc controller");
+    let controller =
+        ui::band_esc_controller(&window).expect("the page wired a band Esc controller");
 
     pick_up_bar_zero(&window);
     arm_zoom(&window);
@@ -135,14 +161,23 @@ fn real_escape_key_drops_hold_and_disarms(app: &adw::Application) {
     // not just the kind whose controller happens to be wired first.
     ui::note_place(true);
     let said = ui::press_effect_item(&window, EffectKind::Text);
-    assert!(ui::text_armed(), "the dropdown's ❝ Text did not arm -- {said}");
+    assert!(
+        ui::text_armed(),
+        "the dropdown's ❝ Text did not arm -- {said}"
+    );
     settle();
 
     fire_key(&controller, gtk::gdk::Key::Escape);
     // The row is written by the controller's own handler, i.e. on the main context this emission returns into;
     // wait for the word rather than reading it once.
-    common::wait_until("the status row to read cancelled", || status_text(&window) == fx_band::CANCELLED);
-    assert_eq!(status_text(&window), fx_band::CANCELLED, "the key reached the seam and printed");
+    common::wait_until("the status row to read cancelled", || {
+        status_text(&window) == fx_band::CANCELLED
+    });
+    assert_eq!(
+        status_text(&window),
+        fx_band::CANCELLED,
+        "the key reached the seam and printed"
+    );
     assert!(ui::held_effect().is_none(), "and dropped the hold");
     assert!(!ui::zoom_armed(), "and disarmed ⊕ Zoom");
     assert!(!ui::text_armed(), "and disarmed ❝ Text");
@@ -156,11 +191,20 @@ fn real_escape_key_drops_hold_and_disarms(app: &adw::Application) {
 /// the heading's ✕ (which forwards to this same door) does too.
 fn bare_hold_still_answers_cancelled(app: &adw::Application) {
     let window = cut_page_with_a_bar(app);
-    assert!(!ui::zoom_armed() && !ui::text_armed() && !ui::svg_armed(), "nothing armed to start with");
+    assert!(
+        !ui::zoom_armed() && !ui::text_armed() && !ui::svg_armed(),
+        "nothing armed to start with"
+    );
 
     pick_up_bar_zero(&window);
-    assert_eq!(ui::press_band_esc(&window).as_deref(), Some(fx_band::CANCELLED));
-    assert!(ui::held_effect().is_none(), "a bare hold still drops, with no arm to take down");
+    assert_eq!(
+        ui::press_band_esc(&window).as_deref(),
+        Some(fx_band::CANCELLED)
+    );
+    assert!(
+        ui::held_effect().is_none(),
+        "a bare hold still drops, with no arm to take down"
+    );
 
     // And through the cross the pinned heading draws: `cut_form_frame::press_close` forwards a held band to
     // this same door, so the button has to keep working after the reorder.
@@ -168,8 +212,13 @@ fn bare_hold_still_answers_cancelled(app: &adw::Application) {
     let close = widget_in(&window, "cut-form-close").expect("the form column drew its cross");
     close.emit_by_name::<()>("clicked", &[]);
     settle();
-    common::wait_until("the cross's press to drop the hold", || ui::held_effect().is_none());
-    assert!(ui::held_effect().is_none(), "the heading's cross went through the same door");
+    common::wait_until("the cross's press to drop the hold", || {
+        ui::held_effect().is_none()
+    });
+    assert!(
+        ui::held_effect().is_none(),
+        "the heading's cross went through the same door"
+    );
 
     RAN_BARE_HOLD.store(true, Ordering::SeqCst);
     window.close();
@@ -198,7 +247,16 @@ fn run_round() {
 #[test]
 fn f3_8_s3_esc_drops_the_hold_and_disarms() {
     run_round();
-    assert!(RAN_DISARM.load(Ordering::SeqCst), "the hold-and-disarm check never ran");
-    assert!(RAN_REAL_KEY.load(Ordering::SeqCst), "the real-Escape wire check never ran");
-    assert!(RAN_BARE_HOLD.load(Ordering::SeqCst), "the bare-hold / cross check never ran");
+    assert!(
+        RAN_DISARM.load(Ordering::SeqCst),
+        "the hold-and-disarm check never ran"
+    );
+    assert!(
+        RAN_REAL_KEY.load(Ordering::SeqCst),
+        "the real-Escape wire check never ran"
+    );
+    assert!(
+        RAN_BARE_HOLD.load(Ordering::SeqCst),
+        "the bare-hold / cross check never ran"
+    );
 }

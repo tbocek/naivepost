@@ -276,7 +276,11 @@ pub fn project_file_in(dir: &Path) -> PathBuf {
 /// S1 → S3: classify then apply, so the shell calls one thing. `finish` and `remember` stay outside
 /// so each of those steps can be tested on its own — and so a caller that only wants to know whether
 /// a path is openable never triggers a rename on disk.
-pub fn open(picked: &Path, is_file: impl Fn(&Path) -> bool, exists: impl Fn(&Path) -> bool) -> Result<Applied, OpenFailure> {
+pub fn open(
+    picked: &Path,
+    is_file: impl Fn(&Path) -> bool,
+    exists: impl Fn(&Path) -> bool,
+) -> Result<Applied, OpenFailure> {
     match classify(picked, is_file) {
         Choice::NotAFolder { log, status, .. } => Err(OpenFailure { log, status }),
         Choice::Openable(folder) => apply(&folder, exists),

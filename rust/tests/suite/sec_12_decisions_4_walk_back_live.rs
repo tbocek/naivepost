@@ -20,7 +20,8 @@ use naivepost::ui::cut_suggest_land;
 
 #[path = "_f2_14_press_fixture.rs"]
 mod press_fixture;
-#[allow(unused_imports)] // the wire scenario's helpers live in the shared walk-back fixture now
+#[allow(unused_imports)]
+// the wire scenario's helpers live in the shared walk-back fixture now
 use press_fixture::retake;
 
 use crate::common;
@@ -28,7 +29,10 @@ use common::settle;
 
 /// A word edge at each second given, which is the candidate kind the walk trusts most after a shot change.
 fn edges(seconds: &[f64]) -> Vec<(f64, Candidate)> {
-    seconds.iter().map(|at| (*at, Candidate::WordEdge)).collect()
+    seconds
+        .iter()
+        .map(|at| (*at, Candidate::WordEdge))
+        .collect()
 }
 
 /// The pair BOTH live checks start from: two stretches with a 1.2 s hole between them, i.e. under
@@ -64,8 +68,8 @@ use walk_fixture::{base_cut, words_fixture};
 /// Entry 4 / S1: the walk-back as ONE function — hole closed because somebody talked in it, both edges
 /// snapped onto word edges, and an account that says both. Nothing here needs a window or a server.
 #[test]
-fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s1_the_words_reply_runs_the_whole_walk_back()
-{
+fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s1_the_words_reply_runs_the_whole_walk_back(
+) {
     // Two stamped stretches with a spoken hole between them: the 1.2 s gap sits inside the talk span and is
     // under `SEAM_MAX_SECONDS`, so the walk has to join them back together.
     let stamped = stamped_pair();
@@ -85,25 +89,34 @@ fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s1_the_words
         "the mid-word start moved onto the word edge outside it, and the end past the last word edge moved back"
     );
     assert_eq!(
-        walked.closed_len,
-        2,
+        walked.closed_len, 2,
         "`closed_len` counts the stretches LEFT after closing, not the holes shut: {walked:?}"
     );
-    assert_eq!(walked.moved, 2, "both stamped edges moved onto word edges, and the count says so: {walked:?}");
+    assert_eq!(
+        walked.moved, 2,
+        "both stamped edges moved onto word edges, and the count says so: {walked:?}"
+    );
     // §4's "the page shows what it did": the account names the stretch count AND the edge moves.
     let said = suggest::walk_report(walked.closed_len, walked.moved);
-    assert!(said.contains("2 stretch") && said.contains("2 edge(s) moved"), "{said}");
+    assert!(
+        said.contains("2 stretch") && said.contains("2 edge(s) moved"),
+        "{said}"
+    );
     // And a walk that changes nothing says nothing rather than claiming work: `apply` prints its own §S3
     // line unconditionally, but the words door appends this one only when the spans actually moved.
     let still = suggest::walk_back_spans(&[(5.0, 39.0)], &walk);
-    assert_eq!(still.moved, 0, "edges already on candidates do not move: {still:?}");
+    assert_eq!(
+        still.moved, 0,
+        "edges already on candidates do not move: {still:?}"
+    );
     assert_eq!(still.segs, vec![(5.0, 39.0)]);
 }
 
 /// The same rule read off `apply`, so the model arm's behaviour is unchanged by pulling the steps out: the
 /// audit gate still refuses an unseen walk, and the clamp still runs on the walked spans.
 #[test]
-fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s1_apply_and_the_new_door_agree() {
+fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s1_apply_and_the_new_door_agree(
+) {
     let stamped = stamped_pair();
     let walk = spoken_hole_walk();
     let applied = suggest::apply(&stamped, &[], &[], &walk);
@@ -115,8 +128,15 @@ fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s1_apply_and
     // An empty walk has nothing to snap to and nothing to remove: §1's fourth row refuses it, and the
     // refusal is `apply`'s alone — the audit gate stays where the model can be told about it.
     let bare = suggest::apply(&stamped, &[], &[], &Walk::default());
-    assert!(bare.segs.is_empty(), "a walk with no materialisation places nothing: {bare:?}");
-    assert!(bare.log[0].starts_with("!!!"), "and says why: {:?}", bare.log);
+    assert!(
+        bare.segs.is_empty(),
+        "a walk with no materialisation places nothing: {bare:?}"
+    );
+    assert!(
+        bare.log[0].starts_with("!!!"),
+        "and says why: {:?}",
+        bare.log
+    );
 }
 
 /// Entry 4 / S2: the WORDS door itself, on the live path `press_words` uses.

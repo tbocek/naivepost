@@ -15,14 +15,14 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use naivepost::cut::{Cut, Seg};
 use naivepost::cut_select::{self, Part, Scope, Surface};
 use naivepost::shell::Page;
 use naivepost::ui;
 use naivepost::ui::cut_select_press::Geometry;
-use crate::common;
-use common::{fixture_dir, settle};
 
 static RAN_ROWS: AtomicBool = AtomicBool::new(false);
 static RAN_REACH: AtomicBool = AtomicBool::new(false);
@@ -38,7 +38,15 @@ fn row(id: &str) -> naivepost::params::Param {
 
 /// A cut with one row of footage to press on, as long as the F2.6 band test's.
 fn one_cam_cut() -> Cut {
-    Cut { segs: vec![Seg { s: 0.0, e: 70.0, cam: 0, ..Default::default() }], ..Default::default() }
+    Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 70.0,
+            cam: 0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
 }
 
 /// §6's four pixel reaches, each with the value §6 writes and the module whose constant holds it. This is the
@@ -84,14 +92,32 @@ fn check_a_picture_grab_reaches_10_px_where_the_band_reaches_6() {
     // Both agree within the narrower reach, and neither reaches past the wider one. Presses taken from INSIDE
     // the band: a point outside it is `Outside` at any reach (there is no end there to grab), which is what
     // makes the selection-band counter-case below a fresh draw rather than a resize.
-    assert_eq!(cut_select::part_at_reach(105.0, from_px, to_px, cut_select::PIC_GRIP_PX), Part::Start);
-    assert_eq!(cut_select::part_at_reach(105.0, from_px, to_px, cut_select::GRIP_PX), Part::Start);
-    assert_eq!(cut_select::part_at_reach(112.0, from_px, to_px, cut_select::PIC_GRIP_PX), Part::Middle);
-    assert_eq!(cut_select::part_at_reach(112.0, from_px, to_px, cut_select::GRIP_PX), Part::Middle);
+    assert_eq!(
+        cut_select::part_at_reach(105.0, from_px, to_px, cut_select::PIC_GRIP_PX),
+        Part::Start
+    );
+    assert_eq!(
+        cut_select::part_at_reach(105.0, from_px, to_px, cut_select::GRIP_PX),
+        Part::Start
+    );
+    assert_eq!(
+        cut_select::part_at_reach(112.0, from_px, to_px, cut_select::PIC_GRIP_PX),
+        Part::Middle
+    );
+    assert_eq!(
+        cut_select::part_at_reach(112.0, from_px, to_px, cut_select::GRIP_PX),
+        Part::Middle
+    );
     // The right end mirrors it, measured from inside: 6 px off it is within BOTH reaches (the narrow one is
     // "within 6", inclusive), so the split on this side sits at 8 px too.
-    assert_eq!(cut_select::part_at_reach(394.0, from_px, to_px, cut_select::PIC_GRIP_PX), Part::End);
-    assert_eq!(cut_select::part_at_reach(394.0, from_px, to_px, cut_select::GRIP_PX), Part::End);
+    assert_eq!(
+        cut_select::part_at_reach(394.0, from_px, to_px, cut_select::PIC_GRIP_PX),
+        Part::End
+    );
+    assert_eq!(
+        cut_select::part_at_reach(394.0, from_px, to_px, cut_select::GRIP_PX),
+        Part::End
+    );
     assert_eq!(
         cut_select::part_at_reach(392.0, from_px, to_px, cut_select::PIC_GRIP_PX),
         Part::End,
@@ -116,13 +142,29 @@ fn check_a_picture_grab_reaches_10_px_where_the_band_reaches_6() {
     );
 
     // Which surface earns which reach — the mapping the page asks, not a number typed at the call site.
-    assert_eq!(cut_select::grip_px(Surface::PictureRow(0)), 10.0, "a picture row reaches 10 px");
-    assert_eq!(cut_select::grip_px(Surface::PictureRow(3)), 10.0, "whichever row it is");
-    assert_eq!(cut_select::grip_px(Surface::SelectionBand), 6.0, "the selection band stays at 6");
+    assert_eq!(
+        cut_select::grip_px(Surface::PictureRow(0)),
+        10.0,
+        "a picture row reaches 10 px"
+    );
+    assert_eq!(
+        cut_select::grip_px(Surface::PictureRow(3)),
+        10.0,
+        "whichever row it is"
+    );
+    assert_eq!(
+        cut_select::grip_px(Surface::SelectionBand),
+        6.0,
+        "the selection band stays at 6"
+    );
     // DECISION the spec leaves open: the wave strip under a picture row keeps the NARROW grip. §I widens the
     // reach for "the pictures" alone, and that strip is where F2.6's own band is drawn and aimed at, so the
     // end there is already a visible edge rather than something to find through thumbnails.
-    assert_eq!(cut_select::grip_px(Surface::WaveStrip), 6.0, "the wave strip is aimed at, not through");
+    assert_eq!(
+        cut_select::grip_px(Surface::WaveStrip),
+        6.0,
+        "the wave strip is aimed at, not through"
+    );
     assert_eq!(cut_select::grip_px(Surface::Ruler), 6.0);
     assert_eq!(cut_select::grip_px(Surface::Lane), 6.0);
     assert_eq!(cut_select::grip_px(Surface::FxLane), 6.0);
@@ -135,88 +177,115 @@ fn check_a_picture_grab_reaches_10_px_where_the_band_reaches_6() {
         "inside a 8 px-wide band at the wide grip: an end, not the middle"
     );
     // And `part_at` (no reach given) is still the narrow rule, which is what every older caller relies on.
-    assert_eq!(cut_select::part_at(108.0, from_px, to_px), Part::Middle, "part_at kept its 6 px meaning");
+    assert_eq!(
+        cut_select::part_at(108.0, from_px, to_px),
+        Part::Middle,
+        "part_at kept its 6 px meaning"
+    );
     RAN_REACH.store(true, Ordering::SeqCst);
 }
 
 /// The wire: the painted band's own drag grabs a picture-row end 8 px off, and the same offset in the
 /// selection band does not resize anything.
 fn widget_check(app: &adw::Application) {
-        let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-        let window = ui::build_window(app, &model, "Prepare");
-        window.present();
-        ui::tab_button(&window, Page::Cut)
-            .expect("the shell has a Cut tab")
-            .emit_clicked();
-        settle();
-        ui::seed_review_cut(&window, &one_cam_cut());
-        let gesture = ui::band_selection_gesture_for_test(&window)
-            .expect("the painted band carries a selection drag");
-        let geo = Geometry::of(&window);
-        println!(
-            "GRIP pps={} origin={} gutter={} first_picture={} row_height={} wave={} rows={}",
-            geo.pps, geo.origin, geo.gutter, geo.bands.first_picture, geo.bands.row_height,
-            geo.bands.wave_height, geo.row_count
-        );
-        assert!(geo.pps > 0.0 && geo.row_count > 0, "the band is drawn with real rows to press on");
-        let row_y = geo.bands.first_picture + geo.bands.row_height / 2.0;
-        // Lay a band down first: draw from 10 s out to 40 s.
-        gesture.emit_by_name::<()>("drag-begin", &[&geo.px_of(10.0), &row_y]);
-        gesture.emit_by_name::<()>("drag-update", &[&geo.px_of(40.0), &row_y]);
-        gesture.emit_by_name::<()>("drag-end", &[&geo.px_of(40.0), &row_y]);
-        settle();
-        let laid = ui::selection(&window).expect("the drag drew a band");
-        println!("GRIP laid = {}..{}", laid.start, laid.end);
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    ui::tab_button(&window, Page::Cut)
+        .expect("the shell has a Cut tab")
+        .emit_clicked();
+    settle();
+    ui::seed_review_cut(&window, &one_cam_cut());
+    let gesture = ui::band_selection_gesture_for_test(&window)
+        .expect("the painted band carries a selection drag");
+    let geo = Geometry::of(&window);
+    println!(
+        "GRIP pps={} origin={} gutter={} first_picture={} row_height={} wave={} rows={}",
+        geo.pps,
+        geo.origin,
+        geo.gutter,
+        geo.bands.first_picture,
+        geo.bands.row_height,
+        geo.bands.wave_height,
+        geo.row_count
+    );
+    assert!(
+        geo.pps > 0.0 && geo.row_count > 0,
+        "the band is drawn with real rows to press on"
+    );
+    let row_y = geo.bands.first_picture + geo.bands.row_height / 2.0;
+    // Lay a band down first: draw from 10 s out to 40 s.
+    gesture.emit_by_name::<()>("drag-begin", &[&geo.px_of(10.0), &row_y]);
+    gesture.emit_by_name::<()>("drag-update", &[&geo.px_of(40.0), &row_y]);
+    gesture.emit_by_name::<()>("drag-end", &[&geo.px_of(40.0), &row_y]);
+    settle();
+    let laid = ui::selection(&window).expect("the drag drew a band");
+    println!("GRIP laid = {}..{}", laid.start, laid.end);
 
-        // Press 8 px INSIDE the band's drawn end, ON THE PICTURE ROW, and move. At the old 6 px grip this
-        // press was the band's middle and would have MOVED the whole band; at §I's 10 px it is the end and
-        // resizes it, leaving the start where it was. That difference is the whole assertion.
-        let end_px = geo.px_of(laid.end);
-        let before_start = laid.start;
-        gesture.emit_by_name::<()>("drag-begin", &[&(end_px - 8.0), &row_y]);
-        gesture.emit_by_name::<()>("drag-update", &[&(end_px - 8.0 - 6.0 * geo.pps), &row_y]);
-        settle();
-        let resized = ui::selection(&window).expect("the band is still there after the end grab");
-        println!("GRIP resized = {}..{} (was {}..{})", resized.start, resized.end, laid.start, laid.end);
-        assert!(
-            (resized.start - before_start).abs() < 0.5,
-            "an end grab 8 px in resizes the band rather than sliding it: start {before_start} -> {}",
-            resized.start
-        );
-        assert!(resized.end < laid.end, "and the end came inward: {} -> {}", laid.end, resized.end);
-        assert!(
-            matches!(resized.scope, Scope::Footage { .. }),
-            "the band stayed scoped to the footage it was drawn on: {:?}",
-            resized.scope
-        );
+    // Press 8 px INSIDE the band's drawn end, ON THE PICTURE ROW, and move. At the old 6 px grip this
+    // press was the band's middle and would have MOVED the whole band; at §I's 10 px it is the end and
+    // resizes it, leaving the start where it was. That difference is the whole assertion.
+    let end_px = geo.px_of(laid.end);
+    let before_start = laid.start;
+    gesture.emit_by_name::<()>("drag-begin", &[&(end_px - 8.0), &row_y]);
+    gesture.emit_by_name::<()>("drag-update", &[&(end_px - 8.0 - 6.0 * geo.pps), &row_y]);
+    settle();
+    let resized = ui::selection(&window).expect("the band is still there after the end grab");
+    println!(
+        "GRIP resized = {}..{} (was {}..{})",
+        resized.start, resized.end, laid.start, laid.end
+    );
+    assert!(
+        (resized.start - before_start).abs() < 0.5,
+        "an end grab 8 px in resizes the band rather than sliding it: start {before_start} -> {}",
+        resized.start
+    );
+    assert!(
+        resized.end < laid.end,
+        "and the end came inward: {} -> {}",
+        laid.end,
+        resized.end
+    );
+    assert!(
+        matches!(resized.scope, Scope::Footage { .. }),
+        "the band stayed scoped to the footage it was drawn on: {:?}",
+        resized.scope
+    );
 
-        // The counter-case that separates the two reaches: the SAME 8 px offset on the SELECTION BAND's y.
-        // There the narrow grip applies, so the press is outside an end and the page draws a NEW band from
-        // where the hand landed instead of resizing the one on screen.
-        ui::clear_selection(&window);
-        gesture.emit_by_name::<()>("drag-begin", &[&geo.px_of(10.0), &row_y]);
-        gesture.emit_by_name::<()>("drag-update", &[&geo.px_of(40.0), &row_y]);
-        gesture.emit_by_name::<()>("drag-end", &[&geo.px_of(40.0), &row_y]);
-        settle();
-        let again = ui::selection(&window).expect("a second band laid down");
-        let sel_y = (geo.bands.selection.0 + geo.bands.selection.1) / 2.0;
-        let right_edge = geo.px_of(again.end);
-        gesture.emit_by_name::<()>("drag-begin", &[&(right_edge - 8.0), &sel_y]);
-        gesture.emit_by_name::<()>("drag-update", &[&(right_edge - 8.0 - 3.0 * geo.pps), &sel_y]);
-        settle();
-        let redrawn = ui::selection(&window).expect("the press left a band on screen");
-        println!(
-            "GRIP selection-band press: band {}..{} -> {}..{} (press x {})",
-            again.start, again.end, redrawn.start, redrawn.end, right_edge - 8.0
-        );
-        // A resize would have LEFT the start at 10 s and pulled the end in; this press started a NEW band at
-        // the second under the pointer instead, which is only what the narrow grip allows.
-        assert!(
+    // The counter-case that separates the two reaches: the SAME 8 px offset on the SELECTION BAND's y.
+    // There the narrow grip applies, so the press is outside an end and the page draws a NEW band from
+    // where the hand landed instead of resizing the one on screen.
+    ui::clear_selection(&window);
+    gesture.emit_by_name::<()>("drag-begin", &[&geo.px_of(10.0), &row_y]);
+    gesture.emit_by_name::<()>("drag-update", &[&geo.px_of(40.0), &row_y]);
+    gesture.emit_by_name::<()>("drag-end", &[&geo.px_of(40.0), &row_y]);
+    settle();
+    let again = ui::selection(&window).expect("a second band laid down");
+    let sel_y = (geo.bands.selection.0 + geo.bands.selection.1) / 2.0;
+    let right_edge = geo.px_of(again.end);
+    gesture.emit_by_name::<()>("drag-begin", &[&(right_edge - 8.0), &sel_y]);
+    gesture.emit_by_name::<()>(
+        "drag-update",
+        &[&(right_edge - 8.0 - 3.0 * geo.pps), &sel_y],
+    );
+    settle();
+    let redrawn = ui::selection(&window).expect("the press left a band on screen");
+    println!(
+        "GRIP selection-band press: band {}..{} -> {}..{} (press x {})",
+        again.start,
+        again.end,
+        redrawn.start,
+        redrawn.end,
+        right_edge - 8.0
+    );
+    // A resize would have LEFT the start at 10 s and pulled the end in; this press started a NEW band at
+    // the second under the pointer instead, which is only what the narrow grip allows.
+    assert!(
             redrawn.start > again.start + 1.0 && redrawn.end > again.end,
             "at the band's 6 px grip an 8 px-in press is NOT an end grab: the page drew a new band \n             {redrawn:?} instead of resizing {again:?}"
         );
-        RAN_WIRE.store(true, Ordering::SeqCst);
-        window.close();
+    RAN_WIRE.store(true, Ordering::SeqCst);
+    window.close();
 }
 
 fn round() {
@@ -231,8 +300,14 @@ fn round() {
         let log = log.clone();
         app.connect_activate(move |app| {
             for (name, check) in [
-                ("rows", check_the_four_pixel_reaches_are_all_catalogued as fn()),
-                ("reach", check_a_picture_grab_reaches_10_px_where_the_band_reaches_6),
+                (
+                    "rows",
+                    check_the_four_pixel_reaches_are_all_catalogued as fn(),
+                ),
+                (
+                    "reach",
+                    check_a_picture_grab_reaches_10_px_where_the_band_reaches_6,
+                ),
             ] {
                 if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(check)) {
                     let why = panic
@@ -243,9 +318,9 @@ fn round() {
                     log.lock().unwrap().push(format!("{name}: {why}"));
                 }
             }
-            if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                widget_check(app)
-            })) {
+            if let Err(panic) =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| widget_check(app)))
+            {
                 let why = panic
                     .downcast_ref::<String>()
                     .cloned()
@@ -258,7 +333,11 @@ fn round() {
         app.run_with_args::<String>(&[]);
     });
     let failed = failures.lock().unwrap().clone();
-    assert!(failed.is_empty(), "pixel-reach checks failed -> {}", failed.join(" // "));
+    assert!(
+        failed.is_empty(),
+        "pixel-reach checks failed -> {}",
+        failed.join(" // ")
+    );
     for (name, ran) in [
         ("rows", RAN_ROWS.load(Ordering::SeqCst)),
         ("reach", RAN_REACH.load(Ordering::SeqCst)),

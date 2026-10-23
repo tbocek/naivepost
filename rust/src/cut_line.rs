@@ -120,8 +120,23 @@ pub struct Hit {
 /// band ([`click_takes_scene`]) — hence `on_scene_picture`, which says whether the
 /// pointer was on a scene's own picture rather than on the row behind it. A press in
 /// the gutter does neither: it moves no line and touches no selection.
-pub fn click_outcome(at: f64, on_picture: bool, on_scene_picture: bool, playing: bool, sources: bool, gutter: bool) -> ClickOutcome {
-    click_outcome_in_row(at, on_picture, on_scene_picture, playing, sources, gutter, PICTURE_ROW)
+pub fn click_outcome(
+    at: f64,
+    on_picture: bool,
+    on_scene_picture: bool,
+    playing: bool,
+    sources: bool,
+    gutter: bool,
+) -> ClickOutcome {
+    click_outcome_in_row(
+        at,
+        on_picture,
+        on_scene_picture,
+        playing,
+        sources,
+        gutter,
+        PICTURE_ROW,
+    )
 }
 
 /// F2.4 S1 on a named row: the same rule, with the clicked row recorded in `watches`.
@@ -208,7 +223,8 @@ pub fn step_hold(held: Option<Held>) -> Option<&'static str> {
 
 /// F2.4 S2: how many frames one press steps. `f` and ← / → are one frame of the
 /// recording under the line; `Shift` (or ‹‹ / ››) is five.
-pub fn step_frames(shift: bool) -> i64 {    if shift {
+pub fn step_frames(shift: bool) -> i64 {
+    if shift {
         5
     } else {
         1

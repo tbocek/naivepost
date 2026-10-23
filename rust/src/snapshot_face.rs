@@ -20,7 +20,9 @@ pub(crate) fn face_of(window: &adw::ApplicationWindow) -> (String, String, bool)
     (
         play.icon_name().unwrap_or_default().to_string(),
         play.tooltip_text().unwrap_or_default().to_string(),
-        ui::stop_button(window).expect("the run bar has a ⏹").is_sensitive(),
+        ui::stop_button(window)
+            .expect("the run bar has a ⏹")
+            .is_sensitive(),
     )
 }
 
@@ -78,13 +80,16 @@ pub(crate) fn show_the_log(window: &adw::ApplicationWindow) -> Result<(), String
         &expander,
         &view,
         &queue.borrow(),
-        crate::ui::shell_beats::StatusLine { status: &status, owned: false },
+        crate::ui::shell_beats::StatusLine {
+            status: &status,
+            owned: false,
+        },
         true,
     );
     // §1's open-log sentence needs the DIVIDER too, not just the expander: a snapshot window is never dragged,
     // so nothing moves the handle up for the body the line above just opened (`window_shot::opened_px`).
-    if let Some(divider) = ui::find_source_widget(window, "main-divider")
-        .and_then(|w| w.downcast::<gtk::Paned>().ok())
+    if let Some(divider) =
+        ui::find_source_widget(window, "main-divider").and_then(|w| w.downcast::<gtk::Paned>().ok())
     {
         crate::ui::window_shot::opened_px(&divider);
     }
@@ -95,7 +100,9 @@ pub(crate) fn show_the_log(window: &adw::ApplicationWindow) -> Result<(), String
 /// picture to show. PNG bytes under the `.jpg` name `cut_tracks::frame_paths` lists (Prepare's own stamping
 /// rule, `frames.rs` S4): gdk-pixbuf decodes by content, and no JPEG encoder is linked here.
 pub(crate) fn seed_snapshot_frame(dir: &std::path::Path, base: &str, second: f64) {
-    let Ok(tree) = layout::Tree::new(dir) else { return };
+    let Ok(tree) = layout::Tree::new(dir) else {
+        return;
+    };
     let dir = tree.frames_dir(base);
     if std::fs::create_dir_all(&dir).is_err() {
         return;
@@ -109,11 +116,15 @@ pub(crate) fn seed_snapshot_frame(dir: &std::path::Path, base: &str, second: f64
         return;
     };
     {
-        let Ok(cr) = cairo::Context::new(&surface) else { return };
+        let Ok(cr) = cairo::Context::new(&surface) else {
+            return;
+        };
         cr.set_source_rgb(0.08, 0.35, 0.6);
         let _ = cr.paint();
     }
-    let Ok(mut file) = std::fs::File::create(&path) else { return };
+    let Ok(mut file) = std::fs::File::create(&path) else {
+        return;
+    };
     let _ = surface.write_to_png(&mut file);
 }
 
@@ -142,7 +153,11 @@ pub const BLOCK_BRIGHT: (f64, f64, f64) = (0.98, 0.82, 0.2);
 /// and banded, because the `06-preview` screen has to show a stop's STILL, which `cut_preview_frame::stop_px`
 /// frames as the camera's FRACTION of the footage. Over a flat frame that fraction is indistinguishable from the
 /// whole picture, which is how the shot came out claiming a still while showing none.
-pub fn seed_structured_frame(dir: &std::path::Path, base: &str, second: f64) -> Option<std::path::PathBuf> {
+pub fn seed_structured_frame(
+    dir: &std::path::Path,
+    base: &str,
+    second: f64,
+) -> Option<std::path::PathBuf> {
     let tree = layout::Tree::new(dir).ok()?;
     let folder = tree.frames_dir(base);
     std::fs::create_dir_all(&folder).ok()?;
@@ -151,7 +166,12 @@ pub fn seed_structured_frame(dir: &std::path::Path, base: &str, second: f64) -> 
     // page staging above — and it is NOT structured, so a crop of it and all of it are the same pixels and §2's
     // "still fitted on the footage's transform" would be invisible. So unlike that helper, this one OVERWRITES:
     // what makes this frame the still's input is its structure, not its precedence on disk.
-    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, STRUCTURED_FRAME_W, STRUCTURED_FRAME_H).ok()?;
+    let surface = cairo::ImageSurface::create(
+        cairo::Format::ARgb32,
+        STRUCTURED_FRAME_W,
+        STRUCTURED_FRAME_H,
+    )
+    .ok()?;
     {
         let cr = cairo::Context::new(&surface).ok()?;
         let (w, h) = (STRUCTURED_FRAME_W as f64, STRUCTURED_FRAME_H as f64);
@@ -197,7 +217,8 @@ pub(crate) fn asked_shot_wh() -> (i32, i32) {
 }
 
 /// The size `write_png` draws at: the ask above when there was one, else the widget's own box.
-fn shot_size(widget: &gtk::Widget) -> (u32, u32) {    let packed = SHOT_SIZE.load(std::sync::atomic::Ordering::SeqCst);
+fn shot_size(widget: &gtk::Widget) -> (u32, u32) {
+    let packed = SHOT_SIZE.load(std::sync::atomic::Ordering::SeqCst);
     let (width, height) = (packed >> 16, packed & 0xffff);
     if width > 0 && height > 0 {
         return (width as u32, height as u32);
@@ -210,7 +231,11 @@ fn shot_size(widget: &gtk::Widget) -> (u32, u32) {    let packed = SHOT_SIZE.loa
 
 /// Draw one widget into an ARGB surface at `width`x`height` (the same route `snapshot_face::write_png`
 /// takes, kept there because the two surfaces have to be composited before anything reaches disk).
-pub(crate) fn render_surface(widget: &gtk::Widget, width: i32, height: i32) -> Result<cairo::ImageSurface, String> {
+pub(crate) fn render_surface(
+    widget: &gtk::Widget,
+    width: i32,
+    height: i32,
+) -> Result<cairo::ImageSurface, String> {
     let paintable = gtk::WidgetPaintable::new(Some(widget.upcast_ref::<gtk::Widget>()));
     let snapshot = gtk::Snapshot::new();
     paintable.snapshot(&snapshot, width as f64, height as f64);
@@ -239,5 +264,7 @@ pub(crate) fn write_png(widget: &gtk::Widget, out: &Path) -> Result<(), String> 
         unsafe { gsk::ffi::gsk_render_node_draw(node.as_ref().to_glib_none().0, cr.to_raw_none()) };
     }
     let mut file = std::fs::File::create(out).map_err(|err| err.to_string())?;
-    surface.write_to_png(&mut file).map_err(|err| err.to_string())
+    surface
+        .write_to_png(&mut file)
+        .map_err(|err| err.to_string())
 }

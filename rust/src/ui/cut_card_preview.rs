@@ -42,7 +42,15 @@ pub const FFPROBE: &str = "ffprobe";
 pub fn probe_seconds(ffprobe: &str, path: &str) -> Option<f64> {
     let out = subprocess::run(
         ffprobe,
-        &["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+        &[
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+            path,
+        ],
         &mut |_line: &str| {},
     )
     .ok()?;
@@ -94,7 +102,6 @@ pub fn frame_second(path: &Path, fps: f64) -> Option<f64> {
     let index: usize = digits.parse::<usize>().ok()?.checked_sub(1)?;
     (fps > 0.0).then(|| index as f64 / fps)
 }
-
 
 /// The card's frames, rendered for real if they are not there yet.
 ///
@@ -197,7 +204,8 @@ pub fn set_card_snapshot_dir(dir: &std::path::Path) {
 /// which is where a card's frames belong (the project's work product, not the camera's). A window with no
 /// folder open writes beside the temp root instead, because a headless run has no project and must not fail.
 pub fn frame_dir_for(window: &adw::ApplicationWindow, card_path: &str) -> PathBuf {
-    let root = crate::ui::line_root(window).or_else(|| SNAPSHOT_CARDS_DIR.with(|slot| slot.borrow().clone()));
+    let root = crate::ui::line_root(window)
+        .or_else(|| SNAPSHOT_CARDS_DIR.with(|slot| slot.borrow().clone()));
     match root {
         Some(root) => frame_dir(&root, card_path),
         None => std::env::temp_dir().join("naivepost-preview"),
@@ -218,11 +226,7 @@ pub fn probe_card_seconds(window: &adw::ApplicationWindow, path: &str) -> Option
 /// The frames live in the folder [`frame_dir_for`] names: this window's project, or the one a snapshot named,
 /// because a headless render has no project open and must still not fail. A card whose frames cannot be
 /// rendered answers `None`, leaving the panel on the session's frame.
-pub fn show_card_frame(
-    window: &adw::ApplicationWindow,
-    cut_: &Cut,
-    t: f64,
-) -> Option<CardFrame> {
+pub fn show_card_frame(window: &adw::ApplicationWindow, cut_: &Cut, t: f64) -> Option<CardFrame> {
     // A spliced card costs no session time, so the picture stands still while the wall clock runs: worth
     // saying because everywhere else on this page the picture moves when the clock does. `held` is that fact.
     let card = card_under(cut_, t)?;
@@ -241,7 +245,10 @@ pub fn show_card_frame(
     // The nearest of the LADDER this render was asked for, then that ladder's file — never a guess at a frame
     // ffmpeg did not write: the ladder is trimmed to what really landed on disk, and `nearest_rendered` picks
     // from those seconds alone.
-    let seconds: Vec<f64> = rendered.iter().filter_map(|path| frame_second(path, rate)).collect();
+    let seconds: Vec<f64> = rendered
+        .iter()
+        .filter_map(|path| frame_second(path, rate))
+        .collect();
     let want = cut_insert::nearest_rendered(&seconds, inside)?;
     let path = rendered
         .iter()
@@ -250,7 +257,10 @@ pub fn show_card_frame(
     if !crate::ui::cut_picture::show_frame(window, Some(&path)) {
         return None;
     }
-    Some(CardFrame { path, held: card.is_insert() })
+    Some(CardFrame {
+        path,
+        held: card.is_insert(),
+    })
 }
 
 /// What the card pass put on the panel: the frame it showed, and whether the footage is being held under it.
@@ -270,7 +280,10 @@ pub fn card_frame(
 ) -> Option<(PathBuf, Option<String>)> {
     let shown = show_card_frame(window, cut_, t)?;
     let card = card_under(cut_, t)?;
-    Some((shown.path, shown.held.then(|| cut_insert::held_status(&card.ins))))
+    Some((
+        shown.path,
+        shown.held.then(|| cut_insert::held_status(&card.ins)),
+    ))
 }
 
 /// The card's own hearing answer for this second — does it bring a pipeline of its own, and is the
@@ -286,7 +299,10 @@ pub struct CardHearing {
 
 pub fn card_hearing(cut_: &Cut, t: f64) -> Option<CardHearing> {
     let card = card_under(cut_, t)?;
-    Some(CardHearing { own_sound: card_sound(card), footage_held: footage_held_while_card(card) })
+    Some(CardHearing {
+        own_sound: card_sound(card),
+        footage_held: footage_held_while_card(card),
+    })
 }
 
 /// Whether an SVG animates, read off the document: a `@keyframes` block or an `<animate>` tag. Same test
@@ -335,12 +351,7 @@ pub struct CardTick {
     pub own_sound: bool,
 }
 
-pub fn card_tick(
-    cut_: &Cut,
-    t: f64,
-    elapsed: f64,
-    rate: f64,
-) -> Option<CardTick> {
+pub fn card_tick(cut_: &Cut, t: f64, elapsed: f64, rate: f64) -> Option<CardTick> {
     let card = card_under(cut_, t)?;
     let hearing = card_hearing(cut_, t)?;
     Some(CardTick {

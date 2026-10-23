@@ -57,20 +57,25 @@ fn find_named_panic(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget 
         }
         for child in root.observe_children().iter::<glib::Object>() {
             let Ok(child) = child else { continue };
-            let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+            let Ok(widget) = child.downcast::<gtk::Widget>() else {
+                continue;
+            };
             if let Some(found) = walk(&widget, name) {
                 return Some(found);
             }
         }
         None
     }
-    walk(window.upcast_ref(), name).unwrap_or_else(|| panic!("no widget named `{name}` on the page"))
+    walk(window.upcast_ref(), name)
+        .unwrap_or_else(|| panic!("no widget named `{name}` on the page"))
 }
 
 /// A widget's top edge in window coordinates — the one frame every widget on the page shares.
 #[allow(deprecated)] // 4.12's replacement needs a surface node this tree does not hand out
 fn top_edge(widget: &gtk::Widget) -> i32 {
-    let native = widget.native().expect("the page is inside a realized window");
+    let native = widget
+        .native()
+        .expect("the page is inside a realized window");
     let (_, y) = widget
         .translate_coordinates(&native, 0.0, 0.0)
         .expect("the widget is laid out");
@@ -123,7 +128,8 @@ fn check_the_row_plates_run_row_one_at_the_top(app: &adw::Application) {
     let (first, second) = (plate(&window, "watch-row-1"), plate(&window, "watch-row-2"));
     println!("plates top-down: [{first}] [{second}]");
     assert_eq!(
-        first, snapshot_rows::CAM1,
+        first,
+        snapshot_rows::CAM1,
         "badge **1**: the TOP row's plate names camera 1"
     );
     assert!(
@@ -152,8 +158,15 @@ fn check_clicking_the_top_plate_watches_the_top_row(app: &adw::Application) {
         .emit_by_name::<()>("clicked", &[]);
     settle();
     let line = status_text(&window);
-    println!("after clicking watch-row-2: watch={:?} status={line}", ui::preview_row(&window));
-    assert_eq!(ui::preview_row(&window), 1, "the click watched the lower row");
+    println!(
+        "after clicking watch-row-2: watch={:?} status={line}",
+        ui::preview_row(&window)
+    );
+    assert_eq!(
+        ui::preview_row(&window),
+        1,
+        "the click watched the lower row"
+    );
     assert!(
         find_named_panic(&window, "camera-row-2").has_css_class("watched-row"),
         "and the dashed outline moved onto it"
@@ -178,7 +191,10 @@ fn check_clicking_the_top_plate_watches_the_top_row(app: &adw::Application) {
         .emit_by_name::<()>("clicked", &[]);
     settle();
     let after = status_text(&window);
-    println!("after ▶: watch={:?} status={after}", ui::preview_row(&window));
+    println!(
+        "after ▶: watch={:?} status={after}",
+        ui::preview_row(&window)
+    );
     assert_ne!(
         ui::preview_row(&window),
         1,
@@ -205,12 +221,18 @@ fn round() {
 fn f2_10_s1_the_row_plates_run_row_one_at_the_top() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_ORDER.load(Ordering::SeqCst), "the row-order check never ran");
+    assert!(
+        RAN_ORDER.load(Ordering::SeqCst),
+        "the row-order check never ran"
+    );
 }
 
 #[test]
 fn f2_10_s3_clicking_the_top_plate_watches_the_top_row() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_WIRE.load(Ordering::SeqCst), "the watch-the-wire check never ran");
+    assert!(
+        RAN_WIRE.load(Ordering::SeqCst),
+        "the watch-the-wire check never ran"
+    );
 }

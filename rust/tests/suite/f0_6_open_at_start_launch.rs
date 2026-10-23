@@ -15,12 +15,12 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use crate::common;
 use adw::prelude::*;
+use common::temp_dir;
 use naivepost::project::{self, Project, Source};
 use naivepost::settings::{self, Conf, Paths};
 use naivepost::ui;
-use crate::common;
-use common::temp_dir;
 
 /// What one launch left behind, read back by the check that asked for it.
 #[derive(Default, Clone)]
@@ -82,7 +82,9 @@ fn slot(id: usize) -> Slot {
         .clone()
 }
 fn record(id: usize, fill: impl FnOnce(&mut Slot)) {
-    let mut slots = SLOTS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut slots = SLOTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     fill(&mut slots[id - 1]);
 }
 
@@ -104,7 +106,8 @@ fn plant_project(dir: &Path, marker: &str) -> PathBuf {
     // recording survived. `sources/` stays out of S4's untouched-root check, which looks at a blank root.
     let sources = dir.join("sources");
     std::fs::create_dir_all(&sources).expect("sources folder");
-    std::fs::write(sources.join(format!("{marker}.mkv")), "video bytes").expect("recording planted");
+    std::fs::write(sources.join(format!("{marker}.mkv")), "video bytes")
+        .expect("recording planted");
     dir.to_path_buf()
 }
 
@@ -112,7 +115,8 @@ fn plant_project(dir: &Path, marker: &str) -> PathBuf {
 /// whatever the current build writes.
 fn remembering(root: &Path, file: &Path) -> Conf {
     let mut conf = Conf::default();
-    conf.projects.insert(root.display().to_string(), file.display().to_string());
+    conf.projects
+        .insert(root.display().to_string(), file.display().to_string());
     conf
 }
 
@@ -314,7 +318,13 @@ fn scenario_blank(app: &adw::Application) {
     naivepost::ui::launch::open_at_start(app, &[]);
     let left: Vec<String> = std::fs::read_dir(&root)
         .expect("root readable")
-        .map(|entry| entry.expect("an entry").file_name().to_string_lossy().into_owned())
+        .map(|entry| {
+            entry
+                .expect("an entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
         .collect();
     record(4, |slot| slot.root_after_launch = left);
     remember_sources(4, app, &paths);
@@ -350,7 +360,12 @@ fn f0_6_s1_a_handed_folder_opens_and_is_remembered() {
         "the launch remembered what it opened: {:?}",
         got.projects
     );
-    assert_eq!(got.projects.len(), 1, "and nothing else: {:?}", got.projects);
+    assert_eq!(
+        got.projects.len(),
+        1,
+        "and nothing else: {:?}",
+        got.projects
+    );
 }
 
 /// S2: what the LAST launch left in `llm.conf` opens this one, over a working copy that is also sitting
@@ -416,14 +431,25 @@ fn f0_6_s3_the_session_beside_the_root_opens() {
 fn f0_6_s4_nothing_to_open_is_a_blank_session_and_writes_nothing() {
     launch_round();
     let got = slot(4);
-    assert!(got.sources.is_empty(), "a blank session shows no sources (log: {})", got.log);
+    assert!(
+        got.sources.is_empty(),
+        "a blank session shows no sources (log: {})",
+        got.log
+    );
     assert!(
         got.log.contains("a blank session"),
         "the launch says which door answered: {}",
         got.log
     );
-    assert!(got.projects.is_empty(), "nothing was remembered for a path that does not exist: {:?}", got.projects);
-    assert_eq!(got.conf_before, got.conf_after, "and the conf kept its bytes");
+    assert!(
+        got.projects.is_empty(),
+        "nothing was remembered for a path that does not exist: {:?}",
+        got.projects
+    );
+    assert_eq!(
+        got.conf_before, got.conf_after,
+        "and the conf kept its bytes"
+    );
     // S4 is a decision, not a file: the launch itself writes nothing, neither the session folder nor
     // anything else in the folder it happened to start from. The session appears when it is first
     // saved, which the autosave does on its beat, so the folder is read right after the launch.

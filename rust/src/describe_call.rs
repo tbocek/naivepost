@@ -15,6 +15,7 @@
 //! it. Nothing here takes a canned reply.
 
 use crate::describe::{self, Speech, Stamp};
+use crate::describe_scale;
 use crate::exchanges::{Message, Part};
 use crate::layout::Tree;
 use crate::llm_request;
@@ -23,7 +24,6 @@ use crate::services::{self, Server};
 use crate::settings::{self, Paths};
 use crate::textfmt::FrameEvent;
 use crate::tool_reads;
-use crate::describe_scale;
 
 use crate::tools::describe::{Batch, MissingReason};
 use crate::tools::Tool;
@@ -53,7 +53,10 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
         .filter(|source| source.footage)
         .enumerate()
         .map(|(index, source)| crate::run_stages::Task {
-            label: format!("describing {}", crate::audio_task::source_lane(&source.path)),
+            label: format!(
+                "describing {}",
+                crate::audio_task::source_lane(&source.path)
+            ),
             program: crate::run_stages::VISION_TASK.to_string(),
             args: vec![source.path.clone(), index.to_string()],
             already_done: false,
@@ -105,10 +108,18 @@ pub fn stage_chunk(
     // S1: the copies that get sent are made here, by ffmpeg, once each. The frames on disk stay at the
     // video's own size; only these 896-wide copies go on the wire.
     let start = describe_scale::clock_start(project.as_ref(), index);
-    describe_scale::ensure(tree, conf, lane, start, &frames_on_disk, log).map_err(|why| format!("{lane}: {why}"))?;
-    let picked = describe::sorted(&describe::pick_frames(&changes, duration, describe::GRID, freq));
+    describe_scale::ensure(tree, conf, lane, start, &frames_on_disk, log)
+        .map_err(|why| format!("{lane}: {why}"))?;
+    let picked = describe::sorted(&describe::pick_frames(
+        &changes,
+        duration,
+        describe::GRID,
+        freq,
+    ));
     if picked.is_empty() {
-        log(&format!(">>> [{lane}] no frames to describe -- the frames folder is empty"));
+        log(&format!(
+            ">>> [{lane}] no frames to describe -- the frames folder is empty"
+        ));
         return Ok(0);
     }
     let mut answered = 0usize;
@@ -166,7 +177,10 @@ pub fn stage_chunk(
                 .into_iter()
                 .map(|handle| {
                     handle.join().unwrap_or_else(|_| {
-                        (Vec::new(), Err(format!("{lane}: describe: a chunk worker died")))
+                        (
+                            Vec::new(),
+                            Err(format!("{lane}: describe: a chunk worker died")),
+                        )
                     })
                 })
                 .collect::<Vec<_>>()
@@ -191,18 +205,27 @@ pub fn stage_chunk(
 ///
 /// Frame choice, scaling and the interval are read by [`stage_chunk`]; this only resolves the two
 /// environment pieces the walk's rows do not carry.
-pub fn run_task(
-    task: &crate::run_stages::Task,
-    log: &mut impl FnMut(&str),
-) -> Result<(), String> {
+pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let paths = settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
     let session = session_dir();
-    let tree = Tree::new(&session)
-        .map_err(|_| format!("{}: not a project folder to describe into", session.display()))?;
-    let source = task.args.first().cloned().ok_or("the describe row names no source")?;
+    let tree = Tree::new(&session).map_err(|_| {
+        format!(
+            "{}: not a project folder to describe into",
+            session.display()
+        )
+    })?;
+    let source = task
+        .args
+        .first()
+        .cloned()
+        .ok_or("the describe row names no source")?;
     let lane = crate::audio_task::source_lane(&source);
-    let index: usize = task.args.get(1).and_then(|text| text.parse().ok()).unwrap_or(0);
+    let index: usize = task
+        .args
+        .get(1)
+        .and_then(|text| text.parse().ok())
+        .unwrap_or(0);
     let conf = settings::read(&paths).unwrap_or_default();
     stage_chunk(&tree, &paths, &conf, &lane, Some(index), log)?;
     Ok(())
@@ -277,8 +300,10 @@ fn replayed_chunk(
     let cached = describe::cached_reply(tree, stored.key)?;
     crate::request_timing::record_cached(tree, cache_row(stored.model));
     Some(
-        apply_and_write(tree, lane, batch, interval, history, &cached)
-            .map(|missing| ChunkAnswer { cached: true, missing }),
+        apply_and_write(tree, lane, batch, interval, history, &cached).map(|missing| ChunkAnswer {
+            cached: true,
+            missing,
+        }),
     )
 }
 
@@ -304,12 +329,17 @@ fn resume_answer(
     if !describe::starts_already_logged(rows, batch, describe::FRAMES_PER_REQ).contains(&0) {
         return None;
     }
-    Some(match replayed_chunk(tree, stored, lane, batch, interval, history) {
-        Some(answered) => answered,
-        // Nothing is re-asked: the work is on disk, and paying a request to reproduce it would be the
-        // resume rule failing in the other direction.
-        None => Ok(ChunkAnswer { cached: true, missing: 0 }),
-    })
+    Some(
+        match replayed_chunk(tree, stored, lane, batch, interval, history) {
+            Some(answered) => answered,
+            // Nothing is re-asked: the work is on disk, and paying a request to reproduce it would be the
+            // resume rule failing in the other direction.
+            None => Ok(ChunkAnswer {
+                cached: true,
+                missing: 0,
+            }),
+        },
+    )
 }
 
 /// What one chunk came to.
@@ -356,7 +386,10 @@ fn run_chunk(
         // `previous` walks the batch rather than staying `None`: `is_new_scene` answers "is a scene
         // change between this frame and the one before it", and asking with no previous for every
         // frame would mark the whole batch NEW SCENE.
-        stamps.push(Stamp { at: *at, new_scene: describe::is_new_scene(*at, previous, &changes) });
+        stamps.push(Stamp {
+            at: *at,
+            new_scene: describe::is_new_scene(*at, previous, &changes),
+        });
         previous = Some(*at);
     }
     let message = describe::message(user_context, &state, start, end, &history, &speech, &stamps);
@@ -371,7 +404,10 @@ fn run_chunk(
     // a chunk whose START is already in the event log is answered without a request, whether the text
     // comes back from `cache/llm/describe/` or only from what is on disk. Answers `None` when the
     // chunk is still to ask.
-    let stored = StoredChunk { key: &key, model: &conf.model };
+    let stored = StoredChunk {
+        key: &key,
+        model: &conf.model,
+    };
     if let Some(answer) = resume_answer(tree, lane, &rows, batch, interval, &history, &stored) {
         // Said for both shapes of a no-wire answer (see [`resume_answer`]): the words count the chunk,
         // which is what the line has always said, while §10's `cache` row is filed only where the
@@ -385,7 +421,10 @@ fn run_chunk(
             crate::request_timing::record_cached(tree, cache_row(&conf.model));
             let answered = apply_and_write(tree, lane, batch, interval, &history, &cached)?;
             log(&describe::cached_note(1));
-            return Ok(ChunkAnswer { cached: true, missing: answered });
+            return Ok(ChunkAnswer {
+                cached: true,
+                missing: answered,
+            });
         }
         let text = match ask(
             tree,
@@ -416,7 +455,10 @@ fn run_chunk(
             // The §3.2 lenient parse is what reads it, so an ordinary answer still counts.
             let answered = apply_and_write(tree, lane, batch, interval, &history, &reply.content)?;
             describe::store_reply(tree, &key, &reply.content)?;
-            return Ok(ChunkAnswer { cached: false, missing: answered });
+            return Ok(ChunkAnswer {
+                cached: false,
+                missing: answered,
+            });
         }
         let calls = tool_calls_of(&reply);
         let mut held = batch_of(batch, interval, &history);
@@ -455,7 +497,10 @@ fn run_chunk(
             .map_err(|why| format!("tool answer: {why}"))?;
         let answered = write_batch(tree, lane, batch, interval, &history, &held);
         describe::store_reply(tree, &key, &text)?;
-        return Ok(ChunkAnswer { cached: false, missing: answered });
+        return Ok(ChunkAnswer {
+            cached: false,
+            missing: answered,
+        });
     }
     Err(format!(
         "{lane}: describe: the model answered {} attempts without an EVENT for every frame of the chunk starting {start:.1}s",
@@ -507,8 +552,14 @@ fn ask(
     }
     // §8's system half first, then the frames and their stamps as the user turn.
     let messages = vec![
-        Message { role: "system".to_string(), parts: vec![Part::Text(system_message(paths, context))] },
-        Message { role: "user".to_string(), parts },
+        Message {
+            role: "system".to_string(),
+            parts: vec![Part::Text(system_message(paths, context))],
+        },
+        Message {
+            role: "user".to_string(),
+            parts,
+        },
     ];
     let offered: Vec<Tool> = crate::tools::offered(Job::Describe);
     // §4 gives describe thinking OFF; the switch is read from the prompt table
@@ -522,9 +573,7 @@ fn ask(
         true,
     )?
     .to_string();
-    let endpoint = services::llm_endpoint(
-        &settings::read(paths).unwrap_or_default(),
-    );
+    let endpoint = services::llm_endpoint(&settings::read(paths).unwrap_or_default());
     let base = crate::server_leg::base_row(Server::Llm, model, "POST", "", STEP, "describe");
     // §03-shell §7 wants the exchange page even when §F1.7 S4 later finds the reply in its own cache.
     // `chat` takes the tree by value, so the stage hands its own clone to the leg; the page for this
@@ -551,7 +600,10 @@ fn read_images(tree: &Tree, lane: &str, batch: &[f64]) -> Result<Vec<Vec<u8>>, S
             let name = describe::scaled_name(*at);
             let path = dir.join(&name);
             std::fs::read(&path).map_err(|_| {
-                format!("{}: no scaled frame {name} to describe -- the scaling step did not write it", dir.display())
+                format!(
+                    "{}: no scaled frame {name} to describe -- the scaling step did not write it",
+                    dir.display()
+                )
             })
         })
         .collect()
@@ -584,7 +636,11 @@ fn speech_in(tree: &Tree, lane: &str, from: f64, to: f64) -> Speech {
     // hears, and re-deriving that span here would be a second copy of it.
     let batch = Batch::new(from, (to - from).max(0.01), 2);
     let text_of = |line: &crate::tools::describe::Spoken| line.text.clone();
-    let during: Vec<String> = batch.speech_around(from, to, &lines).into_iter().map(text_of).collect();
+    let during: Vec<String> = batch
+        .speech_around(from, to, &lines)
+        .into_iter()
+        .map(text_of)
+        .collect();
     let before: Vec<String> = batch
         .speech_around(from - window, from, &lines)
         .into_iter()
@@ -599,7 +655,11 @@ fn speech_in(tree: &Tree, lane: &str, from: f64, to: f64) -> Speech {
         .take(crate::tools::describe::CTX_SEGS)
         .map(text_of)
         .collect();
-    Speech { before, during, after }
+    Speech {
+        before,
+        during,
+        after,
+    }
 }
 
 /// The batch the answer is recorded against: the frames THIS chunk holds, at their real seconds.
@@ -616,7 +676,11 @@ fn batch_of(batch: &[f64], interval: f64, history: &[String]) -> Batch {
     // Over the whole batch rather than the first step: a short final chunk is one frame, and a
     // one-frame batch's span is what the request said it covered (`to` - `from`), not zero.
     let spread = batch.last().copied().unwrap_or(start) - start;
-    let step = if count > 1 { spread / (count - 1) as f64 } else { interval };
+    let step = if count > 1 {
+        spread / (count - 1) as f64
+    } else {
+        interval
+    };
     let held = Batch::new(start, step, count);
     if history.is_empty() {
         held
@@ -676,7 +740,11 @@ fn read_answer(
             text: row.text.clone(),
         })
         .collect();
-    let asked = crate::exchanges::ToolCall { name: name.to_string(), args: args.to_string(), result: String::new() };
+    let asked = crate::exchanges::ToolCall {
+        name: name.to_string(),
+        args: args.to_string(),
+        result: String::new(),
+    };
     let ctx = tool_reads::Context {
         user_context,
         job: Job::Describe,

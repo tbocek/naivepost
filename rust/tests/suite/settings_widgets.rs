@@ -11,14 +11,14 @@
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use gtk4 as gtk;
 use naivepost::checks;
-use naivepost::ui::settings;
 use naivepost::ui;
+use naivepost::ui::settings;
 use naivepost::ui::settings::Provider;
-use crate::common;
-use common::{fixture_dir, settle};
 
 /// Let the main context run whatever the emissions queued.
 
@@ -106,7 +106,9 @@ fn walk(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     }
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if let Some(found) = walk(&widget, name) {
             return Some(found);
         }
@@ -140,7 +142,10 @@ fn check_press_reads_the_typed_value(app: &adw::Application) {
     // The header bar carries the gear at all — without it there is no way to reach the dialog.
     let gear = ui::settings_button(&window).expect("the header bar has a Settings button");
     gear.emit_clicked();
-    assert!(ui::dialog_open(&window), "clicking the gear opens the dialog");
+    assert!(
+        ui::dialog_open(&window),
+        "clicking the gear opens the dialog"
+    );
 
     // A fresh dialog per check: the accessors resolve against the LAST dialog opened, so each check
     // installs its own provider this way rather than sharing one across all three.
@@ -156,7 +161,8 @@ fn check_press_reads_the_typed_value(app: &adw::Application) {
         .emit_clicked();
     let unwired = last_log();
     assert!(
-        !unwired.contains("✓") && (unwired.contains("nothing wired") || unwired.contains("not on PATH")),
+        !unwired.contains("✓")
+            && (unwired.contains("nothing wired") || unwired.contains("not on PATH")),
         "S1: a probe that cannot answer fails loudly, got {unwired:?}"
     );
 
@@ -172,12 +178,17 @@ fn check_press_reads_the_typed_value(app: &adw::Application) {
         .emit_clicked();
 
     let badge = ui::badge(&window, "ffmpeg").expect("the ffmpeg row has a badge");
-    assert_eq!(badge.text().as_str(), "\u{2713}", "a passing probe marks \u{2713}");
+    assert_eq!(
+        badge.text().as_str(),
+        "\u{2713}",
+        "a passing probe marks \u{2713}"
+    );
     assert_eq!(
         badge.tooltip_text().as_deref(),
         Some(format!("{typed} answered").as_str()),
         "S1: the tooltip is the verdict, and the verdict names the TYPED path"
-    );    assert_eq!(
+    );
+    assert_eq!(
         last_log(),
         format!("{} ffmpeg: {typed} answered", checks::LOG_PREFIX),
         "S1: the verdict is mirrored into the main log under settings'"
@@ -196,7 +207,11 @@ fn check_failure_keeps_its_reason(app: &adw::Application) {
         .emit_clicked();
 
     let badge = ui::badge(&window, "ffmpeg").expect("the ffmpeg row has a badge");
-    assert_eq!(badge.text().as_str(), "\u{2717}", "a failing probe marks \u{2717}");
+    assert_eq!(
+        badge.text().as_str(),
+        "\u{2717}",
+        "a failing probe marks \u{2717}"
+    );
     assert_eq!(
         badge.tooltip_text().as_deref(),
         Some("not on PATH"),
@@ -225,7 +240,10 @@ fn check_test_all_reports_every_kind(app: &adw::Application) {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
-    open_canned(&window, one_failure("llm-vision", "it is not seeing the image"));
+    open_canned(
+        &window,
+        one_failure("llm-vision", "it is not seeing the image"),
+    );
 
     let before = ui::window_logs().len();
     ui::test_button(&window, "all")
@@ -234,7 +252,11 @@ fn check_test_all_reports_every_kind(app: &adw::Application) {
 
     let logs = ui::window_logs();
     let mine: Vec<&str> = logs[before..].iter().map(String::as_str).collect();
-    assert_eq!(mine.len(), 6, "S13: Test All reports all six kinds, got {mine:?}");
+    assert_eq!(
+        mine.len(),
+        6,
+        "S13: Test All reports all six kinds, got {mine:?}"
+    );
     for line in &mine {
         assert!(
             line.starts_with(checks::LOG_PREFIX),
@@ -242,7 +264,14 @@ fn check_test_all_reports_every_kind(app: &adw::Application) {
         );
     }
     let joined = mine.join("\n");
-    let order = ["LLM:", "LLM vision --", "ffmpeg:", "firefox:", "audio.cpp:", "sd.cpp:"];
+    let order = [
+        "LLM:",
+        "LLM vision --",
+        "ffmpeg:",
+        "firefox:",
+        "audio.cpp:",
+        "sd.cpp:",
+    ];
     let mut at = 0usize;
     for marker in order {
         let found = joined[at..]
@@ -291,21 +320,30 @@ fn last_log() -> String {
 fn f0_13_s11_a_press_reads_the_typed_value_and_marks_the_badge_through_the_widgets() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_TYPED.load(Ordering::SeqCst), "the typed-value check never ran");
+    assert!(
+        RAN_TYPED.load(Ordering::SeqCst),
+        "the typed-value check never ran"
+    );
 }
 
 #[test]
 fn f0_13_s12_a_failure_marks_the_cross_keeps_the_reason_and_opens_the_log() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_FAILED.load(Ordering::SeqCst), "the failure check never ran");
+    assert!(
+        RAN_FAILED.load(Ordering::SeqCst),
+        "the failure check never ran"
+    );
 }
 
 #[test]
 fn f0_13_s13_test_all_reports_every_kind_without_short_circuiting() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_ALL.load(Ordering::SeqCst), "the Test All check never ran");
+    assert!(
+        RAN_ALL.load(Ordering::SeqCst),
+        "the Test All check never ran"
+    );
 }
 
 /// S5 through the widgets: Fetch models fills the dropdown from the server's listing and Use copies

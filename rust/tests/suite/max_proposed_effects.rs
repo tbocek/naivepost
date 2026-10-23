@@ -8,12 +8,12 @@
 //! [`naivepost::cut_suggest::exempt_from_decorations_cap`]: a rate the cut asked for decides how long
 //! the segment runs, so it is not decoration and is not charged.
 
+use crate::common;
+use common::fx;
 use naivepost::cut::EffectKind;
 use naivepost::cut_effects_pass as pass;
 use naivepost::cut_suggest;
 use naivepost::params;
-use crate::common;
-use common::fx;
 
 /// Look an id up across every catalogue section and insist on exactly one row.
 fn row(id: &str) -> params::Param {
@@ -67,7 +67,11 @@ fn p_machine_maxproposedeffects_s2_a_whole_segment_rate_is_exempt() {
         EffectKind::Volume,
         EffectKind::Label,
     ] {
-        let expected = if cut_suggest::exempt_from_decorations_cap(kind) { 0 } else { 1 };
+        let expected = if cut_suggest::exempt_from_decorations_cap(kind) {
+            0
+        } else {
+            1
+        };
         assert_eq!(pass::counts_against_effect_cap(kind), expected, "{kind:?}");
     }
 }
@@ -83,7 +87,11 @@ fn p_machine_maxproposedeffects_s3_the_count_ignores_exempt_kinds() {
         fx("volume", 4.0, 3.0),
         fx("label", 5.0, 0.0),
     ];
-    assert_eq!(pass::proposed_effect_count(&mixed), 4, "the speed cost nothing");
+    assert_eq!(
+        pass::proposed_effect_count(&mixed),
+        4,
+        "the speed cost nothing"
+    );
 
     let all_speeds = vec![fx("speed", 1.0, 4.0), fx("speed", 6.0, 2.0)];
     assert_eq!(pass::proposed_effect_count(&all_speeds), 0);
@@ -107,7 +115,9 @@ fn p_machine_maxproposedeffects_s4_a_normal_reply_passes_and_a_runaway_is_bounde
         fx("text", 40.0, 3.0),
         fx("volume", 90.0, 3.0),
     ];
-    assert!(pass::effect_cap_allows(pass::proposed_effect_count(&deliberate)));
+    assert!(pass::effect_cap_allows(pass::proposed_effect_count(
+        &deliberate
+    )));
 
     // Exactly at the cap: allowed. One over: refused. Asserted against the constant, so a retune moves
     // the expectation with the number rather than leaving a stale literal behind.
@@ -116,8 +126,13 @@ fn p_machine_maxproposedeffects_s4_a_normal_reply_passes_and_a_runaway_is_bounde
 
     // A thousand zooms is the largest reply the cap admits; a thousand-and-first is where it stops.
     let at_cap = vec![fx("zoom", 1.0, 1.0); pass::MAX_PROPOSED_EFFECTS];
-    assert_eq!(pass::proposed_effect_count(&at_cap), pass::MAX_PROPOSED_EFFECTS);
-    assert!(pass::effect_cap_allows(pass::proposed_effect_count(&at_cap)));
+    assert_eq!(
+        pass::proposed_effect_count(&at_cap),
+        pass::MAX_PROPOSED_EFFECTS
+    );
+    assert!(pass::effect_cap_allows(pass::proposed_effect_count(
+        &at_cap
+    )));
     let mut over = at_cap;
     over.push(fx("zoom", 2.0, 1.0));
     assert!(!pass::effect_cap_allows(pass::proposed_effect_count(&over)));
@@ -131,7 +146,10 @@ fn p_machine_maxproposedeffects_s5_it_is_catalogued_once_under_its_own_id() {
     assert_eq!(r.spelled, "1000");
     assert_eq!(r.from, "cut_effects_pass::MAX_PROPOSED_EFFECTS");
     // §10 files it under Machine: a bound on the app's reply handling, not a judgement about the video.
-    assert_eq!(params::family("P.machine.maxProposedEffects"), params::Family::Machine);
+    assert_eq!(
+        params::family("P.machine.maxProposedEffects"),
+        params::Family::Machine
+    );
     // And the row spells what the constant holds, so the two cannot be tuned apart.
     assert_eq!(r.spelled, pass::MAX_PROPOSED_EFFECTS.to_string());
 }
@@ -152,6 +170,10 @@ fn p_machine_maxproposedeffects_s6_no_second_home_for_the_same_bound() {
         .iter()
         .filter(|id| id.contains("maxProposedEffects"))
         .collect();
-    assert_eq!(homes.len(), 1, "one bound must have one row, found {homes:?}");
+    assert_eq!(
+        homes.len(),
+        1,
+        "one bound must have one row, found {homes:?}"
+    );
     assert_eq!(homes[0], "P.machine.maxProposedEffects");
 }

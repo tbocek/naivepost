@@ -119,7 +119,10 @@ impl Drop for Session {
 fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_a_take_that_ends_first_leaves_the_picture_playing(
 ) {
     common::pin_private_cwd();
-    assert_eq!(ITEM, "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass");
+    assert_eq!(
+        ITEM,
+        "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass"
+    );
     let session = session("take-ends-first");
     let spawned: Pids = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let entries = vec![entry(0.0, 10.0, "first line")];
@@ -130,10 +133,21 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_a_ta
         &naivepost::narrate_tts::take_path(&session.tree, &key),
         &harness::wav_bytes(4096),
     );
-    let cut = leg::cut_of(vec![Seg { s: 0.0, e: 10.0, dur: 10.0, ..Default::default() }], vec![]);
+    let cut = leg::cut_of(
+        vec![Seg {
+            s: 0.0,
+            e: 10.0,
+            dur: 10.0,
+            ..Default::default()
+        }],
+        vec![],
+    );
     naivepost::cut::save(&cut, &session.tree).expect("cut written");
-    std::fs::write(std::env::current_dir().expect("cwd").join("cam0.mp4"), b"stub footage")
-        .expect("footage on disk");
+    std::fs::write(
+        std::env::current_dir().expect("cwd").join("cam0.mp4"),
+        b"stub footage",
+    )
+    .expect("footage on disk");
     naivepost::project::save(
         &naivepost::project::Project {
             sources: vec![naivepost::project::Source {
@@ -161,7 +175,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_a_ta
         .expect("the preview starts over the session's own footage");
     assert!(said.contains("playing"), "started: {said}");
     let first = leg::tick_loop(&session.tree, &cut, &entries, 0.6, 1.0, 1.0, false, spawn);
-    assert!(matches!(first, leg::Stepped::Speaking { .. }), "the tick entered the line: {first:?}");
+    assert!(
+        matches!(first, leg::Stepped::Speaking { .. }),
+        "the tick entered the line: {first:?}"
+    );
     let pids = leg::running_children();
     assert_eq!(pids.len(), 2, "picture and take are both running: {pids:?}");
     let picture_pid = *pids.first().expect("the picture's pid");
@@ -176,13 +193,19 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_a_ta
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    assert!(!alive(voice_pid), "the take's player is gone: pid {voice_pid}");
+    assert!(
+        !alive(voice_pid),
+        "the take's player is gone: pid {voice_pid}"
+    );
     let stepped = leg::tick_loop(&session.tree, &cut, &entries, 3.0, 1.0, 1.0, false, spawn);
     assert!(
         !matches!(stepped, leg::Stepped::Paused),
         "a take that finished first is not the end of the preview, got {stepped:?}"
     );
-    assert!(alive(picture_pid), "the picture keeps playing: pid {picture_pid} was stopped");
+    assert!(
+        alive(picture_pid),
+        "the picture keeps playing: pid {picture_pid} was stopped"
+    );
     assert!(
         leg::running_children().contains(&picture_pid),
         "and the preview still owns it: {:?}",
@@ -205,11 +228,22 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_the_
         &naivepost::narrate_tts::take_path(&session.tree, &key),
         &harness::wav_bytes(4096),
     );
-    let cut = leg::cut_of(vec![Seg { s: 0.0, e: 10.0, dur: 10.0, ..Default::default() }], vec![]);
+    let cut = leg::cut_of(
+        vec![Seg {
+            s: 0.0,
+            e: 10.0,
+            dur: 10.0,
+            ..Default::default()
+        }],
+        vec![],
+    );
     naivepost::cut::save(&cut, &session.tree).expect("cut written");
     // The picture's cue needs a recording on disk, spelled the way a one-camera session spells it.
-    std::fs::write(std::env::current_dir().expect("cwd").join("cam0.mp4"), b"stub footage")
-        .expect("footage on disk");
+    std::fs::write(
+        std::env::current_dir().expect("cwd").join("cam0.mp4"),
+        b"stub footage",
+    )
+    .expect("footage on disk");
     naivepost::project::save(
         &naivepost::project::Project {
             sources: vec![naivepost::project::Source {
@@ -238,7 +272,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_the_
     assert!(said.contains("playing"), "started: {said}");
     // The take needs the voice player to appear, and it only does once the tick walks into the line.
     let first = leg::tick_loop(&session.tree, &cut, &entries, 0.6, 1.0, 1.0, false, spawn);
-    assert!(matches!(first, leg::Stepped::Speaking { .. }), "the tick entered the line: {first:?}");
+    assert!(
+        matches!(first, leg::Stepped::Speaking { .. }),
+        "the tick entered the line: {first:?}"
+    );
     let pids = leg::running_children();
     assert_eq!(pids.len(), 2, "picture and take are both running: {pids:?}");
     let voice_pid = *pids.last().expect("the take's pid");
@@ -256,7 +293,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_the_
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     let ended = leg::tick_loop(&session.tree, &cut, &entries, 3.0, 1.0, 1.0, false, spawn);
-    assert!(matches!(ended, leg::Stepped::Paused), "the tick reports the ending: {ended:?}");
+    assert!(
+        matches!(ended, leg::Stepped::Paused),
+        "the tick reports the ending: {ended:?}"
+    );
     assert!(
         !alive(voice_pid),
         "§6's `when the picture stops, narration stops too`: pid {voice_pid} outlived it"
@@ -277,7 +317,15 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_a_li
     common::pin_private_cwd();
     let session = session("still-frame");
     // A cut with one clip and nothing on disk to play it: `cue_files` answers empty, which is the case.
-    let cut = leg::cut_of(vec![Seg { s: 0.0, e: 10.0, dur: 10.0, ..Default::default() }], vec![]);
+    let cut = leg::cut_of(
+        vec![Seg {
+            s: 0.0,
+            e: 10.0,
+            dur: 10.0,
+            ..Default::default()
+        }],
+        vec![],
+    );
     let spawned: Pids = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let mut spawn_fn = {
         let recorded = spawned.clone();
@@ -308,7 +356,14 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_a_li
     let (child, cue): (Child, Cue) =
         leg::still_frame(&session.tree, &cut, 4.0, 0.0, spawn).expect("the still frame is cued");
     assert_eq!(cue.pid, child.id(), "the cue names the child it spawned");
-    assert_eq!(proc_state_after_stop(child.id()), 'T', "the frame is held, not played");
-    assert!(alive(child.id()), "a frozen player is still there to be resumed or killed");
+    assert_eq!(
+        proc_state_after_stop(child.id()),
+        'T',
+        "the frame is held, not played"
+    );
+    assert!(
+        alive(child.id()),
+        "a frozen player is still there to be resumed or killed"
+    );
     reap(&spawned);
 }

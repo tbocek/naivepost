@@ -15,11 +15,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use naivepost::cut::Cut;
+use naivepost::cut_suggest_words::WORDS_NEEDED;
 use naivepost::layout::Tree;
+use naivepost::shell::Page;
 use naivepost::suggest;
 use naivepost::textfmt::{self, Retake};
-use naivepost::cut_suggest_words::WORDS_NEEDED;
-use naivepost::shell::Page;
 use naivepost::ui;
 use naivepost::ui::cut_suggest_land;
 
@@ -155,7 +155,10 @@ fn checks(app: &adw::Application) {
     );
 
     // Hand edits next: timeline present, words present, so only the edits answer.
-    let edited = Project::fresh("edits").with_timeline().with_words().with_hand_edits();
+    let edited = Project::fresh("edits")
+        .with_timeline()
+        .with_words()
+        .with_hand_edits();
     cut_suggest_land::point_session_at(Some(edited.tree.clone()));
     assert_eq!(
         refuse(false).as_deref(),
@@ -217,8 +220,14 @@ fn checks(app: &adw::Application) {
 fn f2_14_s1_the_refusals_come_in_the_flowcharts_order() {
     common::pin_private_cwd();
     run_once();
-    assert!(RAN_ORDER.load(Ordering::SeqCst), "the order check never ran");
-    assert!(RAN_PASSES.load(Ordering::SeqCst), "the pass-through check never ran");
+    assert!(
+        RAN_ORDER.load(Ordering::SeqCst),
+        "the order check never ran"
+    );
+    assert!(
+        RAN_PASSES.load(Ordering::SeqCst),
+        "the pass-through check never ran"
+    );
     assert!(
         RAN_REFUSED_PRESS.load(Ordering::SeqCst),
         "the refused-press check never ran"

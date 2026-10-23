@@ -14,14 +14,14 @@
 use crate::common;
 use common::temp_dir_created as temp_dir;
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::sync::mpsc;
-use std::time::Duration;
 use naivepost::exchange_leg;
 use naivepost::layout::Tree;
 use naivepost::llm_retry_leg;
 use naivepost::requests::{Outcome, Request, Service};
 use naivepost::services::Endpoint;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::sync::mpsc;
+use std::time::Duration;
 
 /// A root only this binary touches, so no other check reads these pages.
 fn tree(tag: &str) -> Tree {
@@ -71,14 +71,20 @@ fn ask_stream(prompt: &str) -> String {
 
 /// One SSE `data:` line carrying `piece` as this chunk's words.
 fn sse(piece: &str) -> String {
-    format!("data: {}\r\n", serde_json::json!({"choices": [{"delta": {"content": piece}}]}))
+    format!(
+        "data: {}\r\n",
+        serde_json::json!({"choices": [{"delta": {"content": piece}}]})
+    )
 }
 
 /// The ONE page this run wrote, by name. Bounded: a call that produced no page must fail with a message, not hang.
 fn only_page(dir: &std::path::Path) -> std::path::PathBuf {
     for _ in 0..400 {
         // `read_dir` fails until the program has created `llm/`, which is exactly what the early write does.
-        if let Some(found) = std::fs::read_dir(dir).ok().and_then(|entries| entries.flatten().next()) {
+        if let Some(found) = std::fs::read_dir(dir)
+            .ok()
+            .and_then(|entries| entries.flatten().next())
+        {
             return found.path();
         }
         std::thread::sleep(Duration::from_millis(10));
@@ -142,7 +148,11 @@ impl SilentLlm {
         let (arrived_tx, arrived_rx) = mpsc::channel::<()>();
         let (keep_open, held) = mpsc::channel::<()>();
         std::thread::spawn(move || {
-            let mut stream = listener.incoming().next().expect("one connection").expect("a socket");
+            let mut stream = listener
+                .incoming()
+                .next()
+                .expect("one connection")
+                .expect("a socket");
             let mut reader = BufReader::new(stream.try_clone().expect("a clone of the socket"));
             let mut request_line = String::new();
             let _ = reader.read_line(&mut request_line);
@@ -152,8 +162,9 @@ impl SilentLlm {
                 if reader.read_line(&mut line).unwrap_or(0) == 0 || line.trim().is_empty() {
                     break;
                 }
-                if let Some(value) =
-                    line.strip_prefix("Content-Length:").or_else(|| line.strip_prefix("content-length:"))
+                if let Some(value) = line
+                    .strip_prefix("Content-Length:")
+                    .or_else(|| line.strip_prefix("content-length:"))
                 {
                     length = value.trim().parse().unwrap_or(0);
                 }
@@ -168,11 +179,18 @@ impl SilentLlm {
             let _ = stream.flush();
             let _ = held.recv();
         });
-        SilentLlm { url, arrived: arrived_rx, keep_open }
+        SilentLlm {
+            url,
+            arrived: arrived_rx,
+            keep_open,
+        }
     }
 
     fn endpoint(&self) -> Endpoint {
-        Endpoint { url: self.url.clone(), key: String::new() }
+        Endpoint {
+            url: self.url.clone(),
+            key: String::new(),
+        }
     }
 }
 
@@ -189,7 +207,11 @@ impl StalledLlm {
         let (arrived_tx, arrived_rx) = mpsc::channel::<()>();
         let (first, second, last) = (first.to_string(), second.to_string(), last.to_string());
         std::thread::spawn(move || {
-            let mut stream = listener.incoming().next().expect("one connection").expect("a socket");
+            let mut stream = listener
+                .incoming()
+                .next()
+                .expect("one connection")
+                .expect("a socket");
             let mut reader = BufReader::new(stream.try_clone().expect("a clone of the socket"));
             let mut request_line = String::new();
             let _ = reader.read_line(&mut request_line);
@@ -199,8 +221,9 @@ impl StalledLlm {
                 if reader.read_line(&mut line).unwrap_or(0) == 0 || line.trim().is_empty() {
                     break;
                 }
-                if let Some(value) =
-                    line.strip_prefix("Content-Length:").or_else(|| line.strip_prefix("content-length:"))
+                if let Some(value) = line
+                    .strip_prefix("Content-Length:")
+                    .or_else(|| line.strip_prefix("content-length:"))
                 {
                     length = value.trim().parse().unwrap_or(0);
                 }
@@ -225,7 +248,8 @@ impl StalledLlm {
             let _ = stream.write_all(chunk(&sse(&second)).as_bytes());
             let _ = stream.flush();
             // `[DONE]` rides with the last word, as it does on a server that finishes when it decides it is done.
-            let _ = stream.write_all(chunk(&format!("{}data: [DONE]\r\n\r\n", sse(&last))).as_bytes());
+            let _ =
+                stream.write_all(chunk(&format!("{}data: [DONE]\r\n\r\n", sse(&last))).as_bytes());
             let _ = stream.flush();
             let _ = stream.write_all(b"0\r\n\r\n");
             let _ = stream.flush();
@@ -233,11 +257,20 @@ impl StalledLlm {
             // reset mid-read: what is being measured is WHEN words land, not whether the socket survived.
             let _ = held.recv();
         });
-        StalledLlm { url, continue_on: go_tx, first_landed: land_rx, arrived: arrived_rx, keep_open }
+        StalledLlm {
+            url,
+            continue_on: go_tx,
+            first_landed: land_rx,
+            arrived: arrived_rx,
+            keep_open,
+        }
     }
 
     fn endpoint(&self) -> Endpoint {
-        Endpoint { url: self.url.clone(), key: String::new() }
+        Endpoint {
+            url: self.url.clone(),
+            key: String::new(),
+        }
     }
 }
 
@@ -245,7 +278,8 @@ impl StalledLlm {
 fn sec_09_llm_and_tools_7_exchange_log_s8_the_page_grows_while_the_reply_streams() {
     let tree = tree("grow");
     let fake = StalledLlm::stalled("Split ", "at twelve", " seconds.");
-    let log: std::sync::Arc<std::sync::Mutex<Vec<String>>> = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let thread = std::thread::spawn({
         let tree = tree.clone();
         let endpoint = fake.endpoint();
@@ -267,34 +301,78 @@ fn sec_09_llm_and_tools_7_exchange_log_s8_the_page_grows_while_the_reply_streams
         .recv_timeout(Duration::from_secs(5))
         .expect("the fake took the request");
     let path = only_page(&tree.llm_dir());
-    assert!(path.to_string_lossy().ends_with("-Narrate.html"), "named for its first step: {path:?}");
+    assert!(
+        path.to_string_lossy().ends_with("-Narrate.html"),
+        "named for its first step: {path:?}"
+    );
     // The request half is on disk before any answer: that early write is the whole point of writing early.
     let opened = std::fs::read_to_string(&path).expect("the page exists once the call went out");
-    assert!(opened.contains("You narrate this session."), "the ask is on the page: {opened}");
+    assert!(
+        opened.contains("You narrate this session."),
+        "the ask is on the page: {opened}"
+    );
 
     // Mid-call, with only the first fragment delivered: inside a `<pre>`, the second nowhere, no pending marker.
     fake.first_landed
         .recv_timeout(Duration::from_secs(5))
         .expect("the fake wrote its first chunk");
     let mid = page_until(&path, |page| page.contains("Split"));
-    let open = mid.rfind("<pre>").expect("the streamed reply sits in a pre");
-    let close = mid[open..].find("</pre>").map(|at| open + at).expect("and that pre is closed");
-    assert!(mid[open + "<pre>".len()..close].contains("Split"), "the words are inside the pre:\n{mid}");
-    assert!(!mid.contains("at twelve"), "the second fragment has not been sent yet:\n{mid}");
-    assert!(!mid.contains(naivepost::exchanges::REPLY_PENDING), "words landed, so nothing is pending:\n{mid}");
-    assert!(!mid.contains("came back"), "the call is not over, so no verdict line on the page:\n{mid}");
+    let open = mid
+        .rfind("<pre>")
+        .expect("the streamed reply sits in a pre");
+    let close = mid[open..]
+        .find("</pre>")
+        .map(|at| open + at)
+        .expect("and that pre is closed");
+    assert!(
+        mid[open + "<pre>".len()..close].contains("Split"),
+        "the words are inside the pre:\n{mid}"
+    );
+    assert!(
+        !mid.contains("at twelve"),
+        "the second fragment has not been sent yet:\n{mid}"
+    );
+    assert!(
+        !mid.contains(naivepost::exchanges::REPLY_PENDING),
+        "words landed, so nothing is pending:\n{mid}"
+    );
+    assert!(
+        !mid.contains("came back"),
+        "the call is not over, so no verdict line on the page:\n{mid}"
+    );
 
     // Let the answer finish, on the test's signal rather than on a timer.
-    fake.continue_on.send(()).expect("the fake is still listening");
-    thread.join().expect("the call completes").expect("the fake answered");
+    fake.continue_on
+        .send(())
+        .expect("the fake is still listening");
+    thread
+        .join()
+        .expect("the call completes")
+        .expect("the fake answered");
     drop(fake);
     let whole = std::fs::read_to_string(&path).expect("the finished page");
-    assert!(whole.contains("Split at twelve seconds."), "the rewrite holds the whole reply:\n{whole}");
+    assert!(
+        whole.contains("Split at twelve seconds."),
+        "the rewrite holds the whole reply:\n{whole}"
+    );
     // Replaced, not repeated: the fragment that grew the section appears once in the finished page.
-    assert_eq!(whole.matches("at twelve").count(), 1, "the streamed fragment is replaced, not repeated:\n{whole}");
-    assert!(!whole.contains(naivepost::exchanges::REPLY_PENDING), "closed: {whole}");
-    assert!(!whole.contains("streamed"), "the internal marker never survives to disk: {whole}");
-    assert!(whole.trim_end().ends_with("</html>"), "a whole document: {whole}");
+    assert_eq!(
+        whole.matches("at twelve").count(),
+        1,
+        "the streamed fragment is replaced, not repeated:\n{whole}"
+    );
+    assert!(
+        !whole.contains(naivepost::exchanges::REPLY_PENDING),
+        "closed: {whole}"
+    );
+    assert!(
+        !whole.contains("streamed"),
+        "the internal marker never survives to disk: {whole}"
+    );
+    assert!(
+        whole.trim_end().ends_with("</html>"),
+        "a whole document: {whole}"
+    );
     // The closed section's meta line is the OUTCOME (§7), which is what replaced `reply pending`.
     let meta = whole
         .split("<p class=\"meta\">")
@@ -303,14 +381,27 @@ fn sec_09_llm_and_tools_7_exchange_log_s8_the_page_grows_while_the_reply_streams
         .split("</p>")
         .next()
         .expect("and it closes");
-    assert!(meta.contains("qwen") && meta.contains("execute"), "model and mode: {meta}");
-    assert!(!meta.contains("is not answering"), "the call succeeded, so no failure wording: {meta}");
+    assert!(
+        meta.contains("qwen") && meta.contains("execute"),
+        "model and mode: {meta}"
+    );
+    assert!(
+        !meta.contains("is not answering"),
+        "the call succeeded, so no failure wording: {meta}"
+    );
     // And the log got §7's per-call lines, send first.
     let lines = log.lock().expect("the log").clone();
-    assert!(lines.iter().any(|line| line.contains("went to the LLM")), "{lines:?}");
-    assert!(lines.iter().any(|line| line.contains("came back")), "{lines:?}");
     assert!(
-        lines.iter().position(|l| l.contains("went to the LLM")) < lines.iter().position(|l| l.contains("came back")),
+        lines.iter().any(|line| line.contains("went to the LLM")),
+        "{lines:?}"
+    );
+    assert!(
+        lines.iter().any(|line| line.contains("came back")),
+        "{lines:?}"
+    );
+    assert!(
+        lines.iter().position(|l| l.contains("went to the LLM"))
+            < lines.iter().position(|l| l.contains("came back")),
         "the send line comes before the verdict: {lines:?}"
     );
 }
@@ -322,7 +413,8 @@ fn sec_09_llm_and_tools_7_exchange_log_s8_a_pending_section_is_on_disk_before_an
     // request half and not the exchange. Then the socket dies, and the same page has to carry the reason.
     let tree = tree("silent");
     let fake = SilentLlm::silent();
-    let log: std::sync::Arc<std::sync::Mutex<Vec<String>>> = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let thread = std::thread::spawn({
         let tree = tree.clone();
         let endpoint = fake.endpoint();
@@ -345,23 +437,53 @@ fn sec_09_llm_and_tools_7_exchange_log_s8_a_pending_section_is_on_disk_before_an
         .recv_timeout(Duration::from_secs(5))
         .expect("the silent server took the request");
     let path = only_page(&tree.llm_dir());
-    let pending = page_until(&path, |page| page.contains(naivepost::exchanges::REPLY_PENDING));
-    assert!(pending.contains("say it over"), "the sent prompt is on disk before any answer:\n{pending}");
-    assert!(pending.contains("Narrate"), "the section names its step:\n{pending}");
-    assert!(!pending.contains("came back"), "nothing has come back yet:\n{pending}");
-    assert!(pending.contains("<pre>"), "and the ask itself is readable:\n{pending}");
+    let pending = page_until(&path, |page| {
+        page.contains(naivepost::exchanges::REPLY_PENDING)
+    });
+    assert!(
+        pending.contains("say it over"),
+        "the sent prompt is on disk before any answer:\n{pending}"
+    );
+    assert!(
+        pending.contains("Narrate"),
+        "the section names its step:\n{pending}"
+    );
+    assert!(
+        !pending.contains("came back"),
+        "nothing has come back yet:\n{pending}"
+    );
+    assert!(
+        pending.contains("<pre>"),
+        "and the ask itself is readable:\n{pending}"
+    );
 
     // Release the server: the read dies, so the call ends and the same page must report why it did.
     drop(fake.keep_open);
-    let outcome = thread.join().expect("the call came back with an answer or a reason");
-    assert!(outcome.is_err(), "a server that stops answering must not read as success: {outcome:?}");
+    let outcome = thread
+        .join()
+        .expect("the call came back with an answer or a reason");
+    assert!(
+        outcome.is_err(),
+        "a server that stops answering must not read as success: {outcome:?}"
+    );
     let whole = std::fs::read_to_string(&path).expect("the page after the failure");
-    assert!(!whole.contains(naivepost::exchanges::REPLY_PENDING), "the pending marker is gone: {whole}");
-    assert!(whole.contains("failed") || whole.contains("not answering"), "the page says it failed:\n{whole}");
-    assert!(whole.contains("say it over"), "and keeps the ask it failed on:\n{whole}");
+    assert!(
+        !whole.contains(naivepost::exchanges::REPLY_PENDING),
+        "the pending marker is gone: {whole}"
+    );
+    assert!(
+        whole.contains("failed") || whole.contains("not answering"),
+        "the page says it failed:\n{whole}"
+    );
+    assert!(
+        whole.contains("say it over"),
+        "and keeps the ask it failed on:\n{whole}"
+    );
     let lines = log.lock().expect("the log").clone();
     let send = lines.iter().position(|l| l.contains("went to the LLM"));
-    let verdict = lines.iter().position(|l| !l.contains("went to the LLM") && l.starts_with(">>> Narrate"));
+    let verdict = lines
+        .iter()
+        .position(|l| !l.contains("went to the LLM") && l.starts_with(">>> Narrate"));
     assert!(
         send.is_some_and(|send| verdict.is_some_and(|verdict| send < verdict)),
         "the send line arrived before the verdict: {lines:?}"

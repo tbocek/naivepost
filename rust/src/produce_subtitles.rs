@@ -78,7 +78,9 @@ impl Source {
     pub fn no_cues_reason(self) -> Option<&'static str> {
         match self {
             Source::Footage => None,
-            Source::Insert => Some("an inserted sound or picture says nothing the words of the session said"),
+            Source::Insert => {
+                Some("an inserted sound or picture says nothing the words of the session said")
+            }
             Source::Freeze => Some("a freeze holds one frame and no speech"),
             Source::NoVideo => Some("a clip with no video has no picture to caption"),
         }
@@ -450,7 +452,11 @@ pub struct Batch {
 impl Batch {
     /// The batch for one `[first, last)` range of the track.
     pub fn new(range: (usize, usize)) -> Self {
-        Batch { first: range.0, last: range.1, got: BTreeMap::new() }
+        Batch {
+            first: range.0,
+            last: range.1,
+            got: BTreeMap::new(),
+        }
     }
 
     /// §3.10's `translate_line(n, text)`: ok with the line as it will sit in its cue, or an error naming what
@@ -468,7 +474,9 @@ impl Batch {
 
     /// §3.10's `finish`: the numbers still without an answer, in order.
     pub fn missing(&self) -> Vec<usize> {
-        (self.first + 1..=self.last).filter(|n| !self.got.contains_key(n)).collect()
+        (self.first + 1..=self.last)
+            .filter(|n| !self.got.contains_key(n))
+            .collect()
     }
 
     /// Whether every line of this batch came back — the only answer worth caching ([`cached`]).
@@ -524,8 +532,13 @@ pub fn merge(language: &str, original: &[(usize, String)], got: &BTreeMap<usize,
             }
         }
     }
-    let warning = (!still_missing.is_empty()).then(|| left_in_the_original(language, &still_missing));
-    Merge { lines, still_missing, warning }
+    let warning =
+        (!still_missing.is_empty()).then(|| left_in_the_original(language, &still_missing));
+    Merge {
+        lines,
+        still_missing,
+        warning,
+    }
 }
 
 /// §08 §6's own wording for the numbers that never came back, spelled once so the run's log and the spec say
@@ -552,12 +565,18 @@ pub fn came_back_missing(language: &str, numbers: &[usize]) -> String {
 /// §08 §6's cache line, said when a complete cached track answered instead of the model: the person learns the
 /// minute they expected to wait did not happen, and why.
 pub fn from_cache_log(language: &str) -> String {
-    format!(">>> subtitles: {language} came from the cache -- the same lines were translated before")
+    format!(
+        ">>> subtitles: {language} came from the cache -- the same lines were translated before"
+    )
 }
 
 /// A list of line numbers as §6 writes them inside parentheses: `line 7, 92`.
 fn numbered_inline(numbers: &[usize]) -> String {
-    numbers.iter().map(usize::to_string).collect::<Vec<String>>().join(", ")
+    numbers
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<String>>()
+        .join(", ")
 }
 
 /// S3 (`cached only when complete`): a partial answer cached is a partial answer forever — the next run sees

@@ -20,8 +20,8 @@ pub fn draw_word_chips(window: &adw::ApplicationWindow, s: &ProduceState) {
     }
     // The dashed boxes themselves live over the plate, in their own holder, and are rebuilt by the same
     // door so a removed mark loses its box too.
-    if let Some(boxes) = widget_in_root("thumbnail-word-boxes")
-        .and_then(|w| w.downcast::<gtk::Box>().ok())
+    if let Some(boxes) =
+        widget_in_root("thumbnail-word-boxes").and_then(|w| w.downcast::<gtk::Box>().ok())
     {
         while let Some(child) = boxes.first_child() {
             boxes.remove(&child);

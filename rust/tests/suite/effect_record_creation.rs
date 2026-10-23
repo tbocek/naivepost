@@ -22,7 +22,10 @@ const KINDS: [EffectKind; 6] = [
 /// A throwaway project holding one cut file, written by hand so §1's legacy spellings arrive the way an old
 /// project writes them — through `cut::load`, where the migration happens.
 fn with_cut(tag: &str, text: &str) -> (std::path::PathBuf, Tree) {
-    let root = std::env::temp_dir().join(format!("naivepost-fxrec-create-{}-{tag}", std::process::id()));
+    let root = std::env::temp_dir().join(format!(
+        "naivepost-fxrec-create-{}-{tag}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&root);
     let dir = root.join("demo.naivepost");
     std::fs::create_dir_all(dir.join("cut")).unwrap();
@@ -54,20 +57,35 @@ fn sec_06_effects_1_record_s12_a_blank_record_carries_only_its_kinds_columns() {
     // Spot-checked against the table by hand, so a change to `uses` alone cannot pass both halves.
     let zoom = keys_of(&rec::blank(EffectKind::Zoom, 1.0, 2.0));
     for denied in ["wf", "snd", "gain", "lane", "text", "src"] {
-        assert!(!zoom.iter().any(|k| k == denied), "a zoom has no {denied} row: {zoom:?}");
+        assert!(
+            !zoom.iter().any(|k| k == denied),
+            "a zoom has no {denied} row: {zoom:?}"
+        );
     }
-    assert!(zoom.iter().any(|k| k == "dur"), "and it has the length row: {zoom:?}");
+    assert!(
+        zoom.iter().any(|k| k == "dur"),
+        "and it has the length row: {zoom:?}"
+    );
 
     let volume = keys_of(&rec::blank(EffectKind::Volume, 1.0, 2.0));
     for denied in ["cx", "cy", "hf", "wf", "cam", "stay", "rate", "snd"] {
-        assert!(!volume.iter().any(|k| k == denied), "a volume has no {denied} row: {volume:?}");
+        assert!(
+            !volume.iter().any(|k| k == denied),
+            "a volume has no {denied} row: {volume:?}"
+        );
     }
     assert!(volume.iter().any(|k| k == "dur"));
 
     // A label gets fades nothing at all (§1's `–` across the fade row) but keeps its name.
     let label = keys_of(&rec::blank(EffectKind::Label, 1.0, 2.0));
-    for denied in ["trans", "tout", "ease", "cx", "cy", "hf", "wf", "stay", "rate", "snd", "gain", "src", "cam", "lane"] {
-        assert!(!label.iter().any(|k| k == denied), "a label has no {denied} row: {label:?}");
+    for denied in [
+        "trans", "tout", "ease", "cx", "cy", "hf", "wf", "stay", "rate", "snd", "gain", "src",
+        "cam", "lane",
+    ] {
+        assert!(
+            !label.iter().any(|k| k == denied),
+            "a label has no {denied} row: {label:?}"
+        );
     }
 }
 
@@ -77,14 +95,21 @@ fn sec_06_effects_1_record_s12_a_blank_record_carries_only_its_kinds_columns() {
 fn sec_06_effects_1_record_s13_a_new_record_is_linear_and_holds_no_box() {
     let caption = rec::blank(EffectKind::Text, 5.0, 2.0);
     assert!(rec::ease_is_linear(&caption), "linear is the default");
-    assert!(rec::keeps_the_old_bytes(&caption), "and linear costs no `ease` key");
+    assert!(
+        rec::keeps_the_old_bytes(&caption),
+        "and linear costs no `ease` key"
+    );
     assert!(!caption.has_box(), "nothing was placed, so there is no box");
     // ...which is exactly §1's last clause: a model-proposed caption carries no box and lands in the lower third.
     assert_eq!(caption.centre(), (0.5, 0.78));
 
     let drawing = rec::blank(EffectKind::Svg, 5.0, 2.0);
     assert!(!drawing.has_box());
-    assert_eq!(drawing.centre(), (0.5, 0.5), "a drawing with no box is middle");
+    assert_eq!(
+        drawing.centre(),
+        (0.5, 0.5),
+        "a drawing with no box is middle"
+    );
 
     // A bare zoom pulls back afterwards rather than staying reframed (§1's `stay`: false = pull back).
     let zoom = rec::blank(EffectKind::Zoom, 5.0, 2.0);
@@ -124,11 +149,20 @@ fn sec_06_effects_1_record_s15_a_recorded_zoom_names_the_row_it_was_framed_on() 
     let zoom = rec::blank(EffectKind::Zoom, 3.0, 2.0);
     // Row 0 is a real answer, not "unset": the key is skipped at 0 while the reading still says row 0.
     assert_eq!(rec::camera_row(&zoom), Some(0));
-    assert!(!keys_of(&zoom).iter().any(|k| k == "cam"), "row 0 costs no key");
+    assert!(
+        !keys_of(&zoom).iter().any(|k| k == "cam"),
+        "row 0 costs no key"
+    );
 
-    let second_row = Fx { cam: 1, ..zoom.clone() };
+    let second_row = Fx {
+        cam: 1,
+        ..zoom.clone()
+    };
     assert_eq!(rec::camera_row(&second_row), Some(1));
-    assert!(keys_of(&second_row).iter().any(|k| k == "cam"), "a non-default row is written");
+    assert!(
+        keys_of(&second_row).iter().any(|k| k == "cam"),
+        "a non-default row is written"
+    );
 
     // A caption is not framed on a camera: the field is absent, not zero.
     let caption = rec::blank(EffectKind::Text, 3.0, 2.0);
@@ -154,7 +188,12 @@ fn sec_06_effects_1_record_s16_the_six_kinds_spell_their_way_back() {
     // Never written as "stop": §1 reads a stop as a rate of nought on a speed.
     let speed = rec::blank(EffectKind::Speed, 0.0, 1.0);
     assert_eq!(speed.kind, "speed");
-    let stop_like = Fx { kind: "stop".into(), t: 0.0, dur: 1.0, ..Default::default() };
+    let stop_like = Fx {
+        kind: "stop".into(),
+        t: 0.0,
+        dur: 1.0,
+        ..Default::default()
+    };
     assert_eq!(stop_like.effect_kind(), Some(EffectKind::Speed));
     assert_ne!(speed.kind, "stop");
 }
@@ -173,10 +212,20 @@ fn sec_06_effects_1_record_s17_an_old_record_still_reads_after_the_new_one() {
     assert_eq!(loaded.fx.len(), 2);
 
     let old = &loaded.fx[0];
-    assert_eq!(old.effect_kind(), Some(EffectKind::Zoom), "`view` became a zoom");
+    assert_eq!(
+        old.effect_kind(),
+        Some(EffectKind::Zoom),
+        "`view` became a zoom"
+    );
     assert_eq!(old.snd, "mute", "`mute` became the sound answer");
-    assert!(!old.mute, "and the legacy flag is cleared on the way through");
+    assert!(
+        !old.mute,
+        "and the legacy flag is cleared on the way through"
+    );
 
     let now = &loaded.fx[1];
-    assert_eq!(*now, fresh, "the record written today reads back byte-for-byte the same thing");
+    assert_eq!(
+        *now, fresh,
+        "the record written today reads back byte-for-byte the same thing"
+    );
 }

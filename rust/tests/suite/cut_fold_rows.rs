@@ -3,12 +3,12 @@
 // sits (S1), and the two ✕ that take rows away (S2). Every rule is a plain function in naivepost::cut_fold or
 // naivepost::timeline, so nothing here needs a widget or a display.
 
+use crate::common;
+use common::seg as clip;
 use naivepost::cut::{Cut, Lane, Seg, Snapshot};
 use naivepost::cut_fold as fold;
 use naivepost::cut_screen::GUTTER_PX;
 use naivepost::timeline::{self, filmed_runs, Recording, Span};
-use crate::common;
-use common::{seg as clip};
 
 /// The one camera of the fixture: 0–120 filmed, so `filmed_runs` answers a single run.
 const CAM: &str = "17-25-06";
@@ -19,7 +19,11 @@ const CAM: &str = "17-25-06";
 const PPS: f64 = 4.0;
 
 fn recording(base: &str, start: f64, end: f64) -> Recording {
-    Recording { base: base.to_string(), start, end }
+    Recording {
+        base: base.to_string(),
+        start,
+        end,
+    }
 }
 
 /// One camera that filmed 0–120.
@@ -27,10 +31,15 @@ fn one() -> Vec<Recording> {
     vec![recording(CAM, 0.0, 120.0)]
 }
 
-
 /// A card at `at`: it owns no footage of its own.
 fn card(at: f64) -> Seg {
-    Seg { s: at, e: at, ins: "assets/sting.mp4".into(), dur: 3.0, ..Default::default() }
+    Seg {
+        s: at,
+        e: at,
+        ins: "assets/sting.mp4".into(),
+        dur: 3.0,
+        ..Default::default()
+    }
 }
 
 /// The fixture's cut: two kept clips out of 0–120, which drops a head (0–10), a hole (30–40) and a tail (60–120).
@@ -66,7 +75,10 @@ fn f2_11_s1_a_fold_covers_what_the_cut_drops() {
     assert_eq!(runs, vec![(0.0, 120.0)], "one recording is one run");
 
     let cut = dropped();
-    assert_eq!(fold::dropped_gaps(&runs, &cut.segs), vec![(0.0, 10.0), (30.0, 40.0), (60.0, 120.0)]);
+    assert_eq!(
+        fold::dropped_gaps(&runs, &cut.segs),
+        vec![(0.0, 10.0), (30.0, 40.0), (60.0, 120.0)]
+    );
 }
 
 /// F2.11 (Folds and rows) S1 — `not unfilmed time, which is never laid out`: a fold is offered over seconds the
@@ -79,12 +91,21 @@ fn f2_11_s1_unfilmed_time_is_never_a_gap() {
     cut.segs.push(clip(0.0, 10.0));
     let gaps = fold::dropped_gaps(&runs, &cut.segs);
     assert_eq!(gaps, vec![(10.0, 120.0)]);
-    assert!(gaps.iter().all(|(_, end)| *end <= 120.0), "nothing past the last filmed second: {gaps:?}");
-    assert!(gaps.iter().all(|(start, _)| *start >= 0.0), "and nothing before the first");
+    assert!(
+        gaps.iter().all(|(_, end)| *end <= 120.0),
+        "nothing past the last filmed second: {gaps:?}"
+    );
+    assert!(
+        gaps.iter().all(|(start, _)| *start >= 0.0),
+        "and nothing before the first"
+    );
 
     // Nothing filmed: the page has no tape to fold.
     let empty = filmed_runs(&[]);
-    assert_eq!(fold::dropped_gaps(&empty, &cut.segs), Vec::<(f64, f64)>::new());
+    assert_eq!(
+        fold::dropped_gaps(&empty, &cut.segs),
+        Vec::<(f64, f64)>::new()
+    );
     assert_eq!(fold::dropped_gaps(&[], &[]), Vec::<(f64, f64)>::new());
 }
 
@@ -96,7 +117,11 @@ fn f2_11_s1_a_card_drops_no_footage() {
     let mut cut = Cut::default();
     cut.segs.push(card(50.0));
 
-    assert_eq!(fold::dropped_gaps(&runs, &cut.segs), vec![(0.0, 120.0)], "the whole run is still there to fold");
+    assert_eq!(
+        fold::dropped_gaps(&runs, &cut.segs),
+        vec![(0.0, 120.0)],
+        "the whole run is still there to fold"
+    );
 
     // A card between two kept clips leaves one hole, not a gap on each side of the card.
     let mut both = Cut::default();
@@ -118,16 +143,34 @@ fn f2_11_s1_the_first_badge_folds_a_gap_to_a_seam() {
     let mut cut = dropped();
 
     let said = fold::toggle_fold(&mut cut, (30.0, 40.0));
-    assert_eq!(said, "folded 0:30 \u{2013} 0:40 (10.0 s)", "the page's own reading: unpadded minutes, cut_hear::scene_clock");
-    assert_eq!(cut.folds, vec![[30.0, 40.0]], "and it is stored for the next open");
+    assert_eq!(
+        said, "folded 0:30 \u{2013} 0:40 (10.0 s)",
+        "the page's own reading: unpadded minutes, cut_hear::scene_clock"
+    );
+    assert_eq!(
+        cut.folds,
+        vec![[30.0, 40.0]],
+        "and it is stored for the next open"
+    );
     assert!(fold::is_folded(&cut.folds, (30.0, 40.0)));
 
     // The seam: a folded cell has zero width, so two seconds inside the fold share one x.
     let cells = timeline::cells(&runs, &cut.folds);
-    assert!(cells.iter().any(|cell| cell.folded && is_close(cell.start, 30.0) && is_close(cell.end, 40.0)), "{cells:?}");
+    assert!(
+        cells
+            .iter()
+            .any(|cell| cell.folded && is_close(cell.start, 30.0) && is_close(cell.end, 40.0)),
+        "{cells:?}"
+    );
     let span = band(&cut, &recordings);
-    assert!(is_close(span.x_of(32.0), span.x_of(38.0)), "both seconds are at the seam");
-    assert!(span.x_of(32.0) > span.x_of(29.0), "which is where the footage before it ended");
+    assert!(
+        is_close(span.x_of(32.0), span.x_of(38.0)),
+        "both seconds are at the seam"
+    );
+    assert!(
+        span.x_of(32.0) > span.x_of(29.0),
+        "which is where the footage before it ended"
+    );
 }
 
 /// F2.11 (Folds and rows) S1 — `+ on the seam unfolds`: the same press opens what it closed, says so in the same
@@ -139,10 +182,18 @@ fn f2_11_s1_a_second_press_opens_it_again() {
     let mut cut = dropped();
     fold::toggle_fold(&mut cut, (30.0, 40.0));
 
-    assert_eq!(fold::toggle_fold(&mut cut, (30.0, 40.0)), "unfolded 0:30 \u{2013} 0:40 (10.0 s)");
+    assert_eq!(
+        fold::toggle_fold(&mut cut, (30.0, 40.0)),
+        "unfolded 0:30 \u{2013} 0:40 (10.0 s)"
+    );
     assert!(cut.folds.is_empty(), "nothing left folded");
     assert!(!fold::is_folded(&cut.folds, (30.0, 40.0)));
-    assert!(timeline::cells(&runs, &cut.folds).iter().all(|cell| !cell.folded), "the band lays the gap out again");
+    assert!(
+        timeline::cells(&runs, &cut.folds)
+            .iter()
+            .all(|cell| !cell.folded),
+        "the band lays the gap out again"
+    );
 }
 
 /// F2.11 (Folds and rows) S1 — a fold is matched to its gap BY OVERLAP (`spec/inventory/cut.md` §B): trimming the
@@ -157,12 +208,21 @@ fn f2_11_s1_a_fold_survives_the_gap_moving() {
     trimmed.segs[1] = clip(36.0, 60.0);
     trimmed.folds = cut.folds.clone();
     let runs = filmed_runs(&one());
-    assert_eq!(fold::dropped_gaps(&runs, &trimmed.segs), vec![(0.0, 10.0), (30.0, 36.0), (60.0, 120.0)]);
-    assert!(fold::is_folded(&trimmed.folds, (30.0, 36.0)), "the fold still answers for that hole");
+    assert_eq!(
+        fold::dropped_gaps(&runs, &trimmed.segs),
+        vec![(0.0, 10.0), (30.0, 36.0), (60.0, 120.0)]
+    );
+    assert!(
+        fold::is_folded(&trimmed.folds, (30.0, 36.0)),
+        "the fold still answers for that hole"
+    );
 
     // And a fold does NOT reach a gap it merely touches at one end: 40 is where this fold ends and 45 is another
     // gap's own business.
-    assert!(!fold::is_folded(&[[30.0, 40.0]], (40.0, 50.0)), "touching at a border is not overlapping");
+    assert!(
+        !fold::is_folded(&[[30.0, 40.0]], (40.0, 50.0)),
+        "touching at a border is not overlapping"
+    );
 }
 
 /// F2.11 (Folds and rows) S1 — `A fold is a view, never an edit … but it IS saved`: `folds` survives the file, and
@@ -207,13 +267,22 @@ fn f2_11_s1_a_whole_recording_is_not_a_fold() {
     let runs = filmed_runs(&recordings);
     // Nothing kept out of the recording: its one gap IS the recording.
     let nobody_cut = Cut::default();
-    assert!(fold::whole_run((0.0, 120.0), &runs, &nobody_cut.segs), "the gap is the recording");
+    assert!(
+        fold::whole_run((0.0, 120.0), &runs, &nobody_cut.segs),
+        "the gap is the recording"
+    );
 
     // Covering a run is not enough: a cut's own head and tail cover their run by definition, and refusing to fold
     // those would leave every cut with nothing foldable around its first clip.
     let cut = dropped();
-    assert!(!fold::whole_run((0.0, 10.0), &runs, &cut.segs), "a head beside kept footage is a hole");
-    assert!(!fold::whole_run((60.0, 120.0), &runs, &cut.segs), "and so is a tail");
+    assert!(
+        !fold::whole_run((0.0, 10.0), &runs, &cut.segs),
+        "a head beside kept footage is a hole"
+    );
+    assert!(
+        !fold::whole_run((60.0, 120.0), &runs, &cut.segs),
+        "and so is a tail"
+    );
 
     // So the gutter badge folds nothing and counts zero rather than claiming a seam.
     let mut whole = Cut::default();
@@ -237,25 +306,41 @@ fn f2_11_s1_the_gutter_badge_folds_and_unfolds_everything() {
 
     let segs = dropped().segs;
     let mut cut = dropped();
-    assert_eq!(fold::fold_all(&mut cut, &gaps, &runs, &segs), "folded 3 seams");
+    assert_eq!(
+        fold::fold_all(&mut cut, &gaps, &runs, &segs),
+        "folded 3 seams"
+    );
     assert_eq!(cut.folds.len(), 3);
 
     // Press again: the switch read as ON, so this one opens everything.
-    assert_eq!(fold::fold_all(&mut cut, &gaps, &runs, &segs), "unfolded 3 seams");
+    assert_eq!(
+        fold::fold_all(&mut cut, &gaps, &runs, &segs),
+        "unfolded 3 seams"
+    );
     assert!(cut.folds.is_empty());
 
     // One gap is one seam, not one seams; and a whole recording among them is not counted.
     let one_segs = dropped().segs;
     let mut one_gap = dropped();
-    assert_eq!(fold::fold_all(&mut one_gap, &[(30.0, 40.0)], &runs, &one_segs), "folded 1 seam");
+    assert_eq!(
+        fold::fold_all(&mut one_gap, &[(30.0, 40.0)], &runs, &one_segs),
+        "folded 1 seam"
+    );
 
     // Two cameras: one was cut into, the other nobody touched. The gutter badge folds the holes around the kept
     // clips and leaves the untouched recording alone — that one has its own ways off the page.
-    let two = vec![recording(CAM, 0.0, 120.0), recording("17-25-45", 200.0, 320.0)];
+    let two = vec![
+        recording(CAM, 0.0, 120.0),
+        recording("17-25-45", 200.0, 320.0),
+    ];
     let runs_two = filmed_runs(&two);
     let mut mixed = dropped();
     let gaps = fold::dropped_gaps(&runs_two, &mixed.segs);
-    assert_eq!(gaps.len(), 4, "three holes in the cut camera and the whole of the other");
+    assert_eq!(
+        gaps.len(),
+        4,
+        "three holes in the cut camera and the whole of the other"
+    );
     let mixed_segs = mixed.segs.clone();
     let said = fold::fold_all(&mut mixed, &gaps, &runs_two, &mixed_segs);
     assert_eq!(said, "folded 3 seams", "the untouched recording is skipped");
@@ -277,8 +362,15 @@ fn f2_11_s1_a_gap_with_no_room_gets_no_badge() {
     assert!(is_close(span.x_of(6.5) - span.x_of(0.5), PPS * 6.0));
 
     let tight = fold::badges(&cut.folds, &runs, &cut.segs, &span);
-    assert_eq!(badge_at(&tight, (0.0, 0.5)), None, "a 2 px gap is not offered a badge");
-    assert!(badge_at(&tight, (30.0, 120.0)).is_some(), "the roomy tail still is");
+    assert_eq!(
+        badge_at(&tight, (0.0, 0.5)),
+        None,
+        "a 2 px gap is not offered a badge"
+    );
+    assert!(
+        badge_at(&tight, (30.0, 120.0)).is_some(),
+        "the roomy tail still is"
+    );
 
     // Folded, the same narrow stretch gets its + back — and it sits on the seam.
     let mut folded = cut.clone();
@@ -287,13 +379,20 @@ fn f2_11_s1_a_gap_with_no_room_gets_no_badge() {
     let with_fold = fold::badges(&folded.folds, &runs, &folded.segs, &span_folded);
     let badge = badge_at(&with_fold, (0.0, 0.5)).expect("a folded gap always shows its +");
     assert!(badge.folded);
-    assert!(is_close(badge.x, span_folded.x_of(0.5)), "on the seam, where the footage after it starts");
+    assert!(
+        is_close(badge.x, span_folded.x_of(0.5)),
+        "on the seam, where the footage after it starts"
+    );
 
     // And exactly at the floor there is room: `<` and not `<=`.
     let mut edge = Cut::default();
     edge.segs.push(clip(fold::FOLD_MIN_PX / PPS, 30.0));
     let edge_span = band(&edge, &one());
-    assert!(badge_at(&fold::badges(&edge.folds, &runs, &edge.segs, &edge_span), (0.0, fold::FOLD_MIN_PX / PPS)).is_some());
+    assert!(badge_at(
+        &fold::badges(&edge.folds, &runs, &edge.segs, &edge_span),
+        (0.0, fold::FOLD_MIN_PX / PPS)
+    )
+    .is_some());
 }
 
 /// F2.11 (Folds and rows) S1 — `badges sit just inside the neighbouring bars, not mid-gap`: the gaps that open and
@@ -313,14 +412,24 @@ fn f2_11_s1_a_badge_sits_inside_the_neighbouring_bar() {
     // The head gap (0–10): its badge is inside the clip that starts at 10.
     let head = badge_at(&badges, (0.0, 10.0)).expect("the tape's own head");
     let bar_start = span.x_of(10.0);
-    assert!(head.x > bar_start, "inside the bar, not on its grip: {}", head.x);
-    assert!(is_close(head.x, span.x_of(10.0 + fold::BADGE_INSIDE_PX / PPS)), "a reach into a 20 s clip");
+    assert!(
+        head.x > bar_start,
+        "inside the bar, not on its grip: {}",
+        head.x
+    );
+    assert!(
+        is_close(head.x, span.x_of(10.0 + fold::BADGE_INSIDE_PX / PPS)),
+        "a reach into a 20 s clip"
+    );
 
     // The tail gap (60–120): inside the clip that ends at 60.
     let tail = badge_at(&badges, (60.0, 120.0)).expect("the tape's own tail");
     let bar_end = span.x_of(60.0);
     assert!(tail.x < bar_end, "inside the clip before it: {}", tail.x);
-    assert!(is_close(tail.x, span.x_of(60.0 - fold::BADGE_INSIDE_PX / PPS)), "a reach in from its end");
+    assert!(
+        is_close(tail.x, span.x_of(60.0 - fold::BADGE_INSIDE_PX / PPS)),
+        "a reach in from its end"
+    );
 
     // The interior hole keeps the middle of the SECONDS between the two clips — the one part of a gap a press can
     // only mean one thing on. Asked in seconds and then drawn, so a fold elsewhere in the run moves pixels and not
@@ -329,8 +438,16 @@ fn f2_11_s1_a_badge_sits_inside_the_neighbouring_bar() {
     assert!(is_close(hole.x, span.x_of(35.0)), "mid-gap: {}", hole.x);
 
     for badge in &badges {
-        assert!(badge.x >= fold::BADGE_PLATE_PX, "{} off the front edge", badge.x);
-        assert!(badge.x <= span.total_px() - fold::BADGE_PLATE_PX, "{} off the back edge", badge.x);
+        assert!(
+            badge.x >= fold::BADGE_PLATE_PX,
+            "{} off the front edge",
+            badge.x
+        );
+        assert!(
+            badge.x <= span.total_px() - fold::BADGE_PLATE_PX,
+            "{} off the back edge",
+            badge.x
+        );
     }
 
     // And a fold elsewhere in the run moves every pixel after it without moving this badge off its own middle.
@@ -339,7 +456,11 @@ fn f2_11_s1_a_badge_sits_inside_the_neighbouring_bar() {
     let folded_span = band(&folded_head, &recordings);
     let after = fold::badges(&folded_head.folds, &runs, &folded_head.segs, &folded_span);
     let still = badge_at(&after, (30.0, 40.0)).expect("the hole is still there");
-    assert!(is_close(still.x, folded_span.x_of(35.0)), "still its own middle: {}", still.x);
+    assert!(
+        is_close(still.x, folded_span.x_of(35.0)),
+        "still its own middle: {}",
+        still.x
+    );
 }
 
 /// F2.11 (Folds and rows) S1 — a fold takes width and nothing else: the band gets shorter by exactly the folded
@@ -355,12 +476,18 @@ fn f2_11_s1_a_fold_takes_no_width_and_chooses_nobody() {
     fold::toggle_fold(&mut folded, (30.0, 40.0));
     let closed = band(&folded, &recordings);
 
-    assert!(is_close(open.total_px() - closed.total_px(), 10.0 * PPS), "ten seconds of width, no more");
+    assert!(
+        is_close(open.total_px() - closed.total_px(), 10.0 * PPS),
+        "ten seconds of width, no more"
+    );
     // The second after the seam is footage, and a press there belongs to it — not to the fold that hides nothing
     // of what the person can see.
     let just_after = closed.x_of(41.0);
     let t = closed.t_at(just_after);
-    assert!(t >= 40.0, "a press at the seam reads the later take, got {t}");
+    assert!(
+        t >= 40.0,
+        "a press at the seam reads the later take, got {t}"
+    );
 
     // And nothing a drag measures moved: the fold is a view over the same cut.
     assert_eq!(folded.segs, cut.segs);
@@ -375,7 +502,10 @@ fn two_cameras(nrows: i32) -> (Vec<Recording>, Cut) {
     let mut cut = Cut::default();
     cut.segs.push(clip(5.0, 15.0));
     cut.nrows = nrows;
-    (vec![recording(CAM, 0.0, 60.0), recording("17-25-45", 30.0, 60.0)], cut)
+    (
+        vec![recording(CAM, 0.0, 60.0), recording("17-25-45", 30.0, 60.0)],
+        cut,
+    )
 }
 
 /// F2.11 (Folds and rows) S2 — `An emptied bottom row stays until its ✕` (`spec/inventory/cut.md` §B rule 11:
@@ -388,9 +518,19 @@ fn f2_11_s2_an_emptied_bottom_row_stays_until_its_cross() {
     let rows = timeline::rows_for(&recordings, &cut);
     assert_eq!(rows, vec![0, 1], "two cameras, two rows");
 
-    assert_eq!(fold::bottom_row_survives(&recordings, &cut), 3, "the floor holds a third row open");
-    assert!(fold::row_is_empty(2, &recordings, &rows, &cut.segs), "and that row is empty");
-    assert!(!fold::row_is_empty(0, &recordings, &rows, &cut.segs), "the cameras' rows are not");
+    assert_eq!(
+        fold::bottom_row_survives(&recordings, &cut),
+        3,
+        "the floor holds a third row open"
+    );
+    assert!(
+        fold::row_is_empty(2, &recordings, &rows, &cut.segs),
+        "and that row is empty"
+    );
+    assert!(
+        !fold::row_is_empty(0, &recordings, &rows, &cut.segs),
+        "the cameras' rows are not"
+    );
 }
 
 /// F2.11 (Folds and rows) S2 — the ✕ takes an emptied bottom row away: the count comes down one,
@@ -403,15 +543,25 @@ fn f2_11_s2_the_cross_takes_the_row_and_spends_the_floor() {
     cut.rows.insert("17-25-45".to_string(), 2);
     let rows = timeline::rows_for(&recordings, &cut);
     assert_eq!(rows, vec![0, 2], "the pin is taken literally");
-    assert!(fold::row_is_empty(2, &recordings, &rows, &cut.segs) == false, "the pinned camera is on it");
+    assert!(
+        !fold::row_is_empty(2, &recordings, &rows, &cut.segs),
+        "the pinned camera is on it"
+    );
 
     // Row 1 is the empty one now: nothing coloured and nothing shown from it.
     assert!(fold::row_is_empty(1, &recordings, &rows, &cut.segs));
     let said = fold::kill_row(&mut cut, 1, &recordings, &rows).expect("an empty row has a ✕");
-    assert_eq!(said, "removed the empty row 2", "one-based, as the page numbers rows");
+    assert_eq!(
+        said, "removed the empty row 2",
+        "one-based, as the page numbers rows"
+    );
 
     assert_eq!(cut.nrows, 2, "the floor it was held by is spent");
-    assert_eq!(cut.rows.get("17-25-45"), Some(&1), "and the camera above came down with it");
+    assert_eq!(
+        cut.rows.get("17-25-45"),
+        Some(&1),
+        "and the camera above came down with it"
+    );
     assert_eq!(fold::bottom_row_survives(&recordings, &cut), 2);
 }
 
@@ -425,23 +575,43 @@ fn f2_11_s2_a_row_with_footage_refuses() {
     let (recordings, cut) = two_cameras(3);
     let rows = timeline::rows_for(&recordings, &cut);
     let mut held = cut.clone();
-    assert_eq!(fold::kill_row(&mut held, 0, &recordings, &rows), None, "camera 1 is on it");
-    assert_eq!((held.rows.clone(), held.nrows), (cut.rows.clone(), cut.nrows), "and nothing moved");
+    assert_eq!(
+        fold::kill_row(&mut held, 0, &recordings, &rows),
+        None,
+        "camera 1 is on it"
+    );
+    assert_eq!(
+        (held.rows.clone(), held.nrows),
+        (cut.rows.clone(), cut.nrows),
+        "and nothing moved"
+    );
 
     // A row whose only claim is a scene shown from it — no recording coloured there.
     let mut shot = Cut::default();
-    shot.segs.push(Seg { s: 5.0, e: 15.0, cam: 1, ..Default::default() });
+    shot.segs.push(Seg {
+        s: 5.0,
+        e: 15.0,
+        cam: 1,
+        ..Default::default()
+    });
     shot.nrows = 2;
     let flat = vec![recording(CAM, 0.0, 60.0)];
     let one_row = timeline::rows_for(&flat, &shot);
     assert_eq!(one_row, vec![0]);
-    assert_eq!(fold::kill_row(&mut shot, 1, &flat, &one_row), None, "a scene is shown from row 2");
+    assert_eq!(
+        fold::kill_row(&mut shot, 1, &flat, &one_row),
+        None,
+        "a scene is shown from row 2"
+    );
 
     // A row above every drawn one is not a row the page shows, so it is not this ✕ either: `row_is_empty` only
     // asks whether anything is ON a row, and nothing is on row 8.
     let (recordings, cut) = two_cameras(2);
     let rows = timeline::rows_for(&recordings, &cut);
-    assert!(fold::row_is_empty(7, &recordings, &rows, &cut.segs), "nothing is on it");
+    assert!(
+        fold::row_is_empty(7, &recordings, &rows, &cut.segs),
+        "nothing is on it"
+    );
     let mut beyond = cut.clone();
     let said = fold::kill_row(&mut beyond, 7, &recordings, &rows);
     assert_eq!(said, None, "and a row that is not drawn has no ✕ over it");
@@ -455,11 +625,22 @@ fn f2_11_s2_the_last_row_survives_being_empty() {
     let mut cut = Cut::default();
     cut.nrows = 1;
     let nothing: Vec<Recording> = vec![];
-    assert_eq!(fold::bottom_row_survives(&nothing, &cut), 1, "one row is still drawn");
+    assert_eq!(
+        fold::bottom_row_survives(&nothing, &cut),
+        1,
+        "one row is still drawn"
+    );
 
     let rows = timeline::rows_for(&nothing, &cut);
-    assert!(fold::row_is_empty(0, &nothing, &rows, &cut.segs), "and it is empty");
-    assert_eq!(fold::kill_row(&mut cut, 0, &nothing, &rows), None, "but it is the last row");
+    assert!(
+        fold::row_is_empty(0, &nothing, &rows, &cut.segs),
+        "and it is empty"
+    );
+    assert_eq!(
+        fold::kill_row(&mut cut, 0, &nothing, &rows),
+        None,
+        "but it is the last row"
+    );
     assert_eq!(cut.nrows, 1, "spent by nothing");
 }
 
@@ -472,27 +653,65 @@ fn f2_11_s2_the_last_row_survives_being_empty() {
 fn f2_11_s2_a_lanes_cross_takes_everything_with_it() {
     const LANE: &str = "Second pass";
     let mut cut = Cut::default();
-    cut.lanes.push(Lane { name: LANE.to_string(), src: "project:media/pass.mp4".into(), at: 0.0, off: 0.0, dur: 30.0 });
+    cut.lanes.push(Lane {
+        name: LANE.to_string(),
+        src: "project:media/pass.mp4".into(),
+        at: 0.0,
+        off: 0.0,
+        dur: 30.0,
+    });
     cut.rows.insert(LANE.to_string(), 1);
     cut.shift.insert(LANE.to_string(), -19.0);
     // The lane's picture, its sound laid over footage, and another lane's business.
-    cut.segs.push(Seg { s: 5.0, e: 15.0, ins: "project:media/pass.mp4".into(), dur: 10.0, ..Default::default() });
-    cut.segs.push(Seg { s: 20.0, e: 25.0, lane: LANE.to_string(), quiet: vec![LANE.to_string()], ..Default::default() });
-    cut.segs.push(Seg { s: 40.0, e: 50.0, lane: "Desk mic".to_string(), quiet: vec![LANE.to_string(), "Desk mic".to_string()], ..Default::default() });
+    cut.segs.push(Seg {
+        s: 5.0,
+        e: 15.0,
+        ins: "project:media/pass.mp4".into(),
+        dur: 10.0,
+        ..Default::default()
+    });
+    cut.segs.push(Seg {
+        s: 20.0,
+        e: 25.0,
+        lane: LANE.to_string(),
+        quiet: vec![LANE.to_string()],
+        ..Default::default()
+    });
+    cut.segs.push(Seg {
+        s: 40.0,
+        e: 50.0,
+        lane: "Desk mic".to_string(),
+        quiet: vec![LANE.to_string(), "Desk mic".to_string()],
+        ..Default::default()
+    });
 
-    assert_eq!(fold::remove_lane(&mut cut, LANE), "removed the Second pass lane");
+    assert_eq!(
+        fold::remove_lane(&mut cut, LANE),
+        "removed the Second pass lane"
+    );
     assert!(cut.lanes.is_empty(), "the lane is gone");
     assert!(!cut.rows.contains_key(LANE), "its pin with it");
     assert!(!cut.shift.contains_key(LANE), "and its shift correction");
-    assert_eq!(cut.segs.len(), 1, "its pictures and its sound laid over footage too");
+    assert_eq!(
+        cut.segs.len(),
+        1,
+        "its pictures and its sound laid over footage too"
+    );
 
     let kept = &cut.segs[0];
     assert_eq!(kept.lane, "Desk mic", "another lane's scene stays");
-    assert_eq!(kept.quiet, vec![LANE.to_string(), "Desk mic".to_string()], "and its quiet list is left as saved");
+    assert_eq!(
+        kept.quiet,
+        vec![LANE.to_string(), "Desk mic".to_string()],
+        "and its quiet list is left as saved"
+    );
 
     // A name nothing holds says the same sentence and changes nothing.
     let before = cut.clone();
-    assert_eq!(fold::remove_lane(&mut cut, "Already gone"), "removed the Already gone lane");
+    assert_eq!(
+        fold::remove_lane(&mut cut, "Already gone"),
+        "removed the Already gone lane"
+    );
     assert_eq!(cut.lanes, before.lanes);
     assert_eq!(cut.segs, before.segs);
 }

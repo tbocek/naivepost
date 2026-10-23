@@ -72,7 +72,11 @@ pub fn start_from_line(cut: &Cut, line: f64) -> (usize, Start) {
         }
     }
     // Past the last window, or a cut with no joins at all: start again from the first.
-    let first = if cut.segs.len() >= 2 { window(&cut.segs, 0).from } else { 0.0 };
+    let first = if cut.segs.len() >= 2 {
+        window(&cut.segs, 0).from
+    } else {
+        0.0
+    };
     (0, Start::SeekTo(first))
 }
 
@@ -108,7 +112,10 @@ pub struct Review {
 /// not arrived yet.
 pub fn start(cut: &Cut, line: f64) -> Review {
     let (join, begun) = start_from_line(cut, line);
-    Review { join, armed: matches!(begun, Start::PlayOn) }
+    Review {
+        join,
+        armed: matches!(begun, Start::PlayOn),
+    }
 }
 
 /// What the review does with the line this tick.
@@ -160,7 +167,8 @@ pub fn tick(cut: &Cut, review: &mut Review, line: f64) -> Move {
 }
 
 /// S5's sentence for a hand on the line. The pause needs no sentence of its own — see [`PAUSE_STATUS`].
-pub const LINE_MOVED: &str = "the line was moved \u{2014} the cut review is over; ▶✂✂ starts it again";
+pub const LINE_MOVED: &str =
+    "the line was moved \u{2014} the cut review is over; ▶✂✂ starts it again";
 
 /// What pressing ▶✂✂ while it is the running one answers. §A gives that press a ⏸ face and no status, so
 /// the button's own live tooltip is what it reports: pausing its own preview is not an event worth a
@@ -175,9 +183,15 @@ pub fn reviewed_all(cut: &Cut) -> String {
 /// What one press of ▶✂✂ did.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pressed {
-    PausedAndEnded { status: &'static str },
+    PausedAndEnded {
+        status: &'static str,
+    },
     Refused(&'static str),
-    Started { join: usize, seek_to: Option<f64>, status: String },
+    Started {
+        join: usize,
+        seek_to: Option<f64>,
+        status: String,
+    },
 }
 
 /// ▶✂✂ pressed (S5's first half, then S1 and S2).
@@ -187,7 +201,9 @@ pub fn pressed(player: &mut Player, cut: &Cut) -> Pressed {
     if player.reviewing && player.transport.playing {
         player.transport.playing = false;
         player.reviewing = false;
-        return Pressed::PausedAndEnded { status: PAUSE_STATUS };
+        return Pressed::PausedAndEnded {
+            status: PAUSE_STATUS,
+        };
     }
 
     if let Some(reason) = refused(cut) {
@@ -210,7 +226,11 @@ pub fn pressed(player: &mut Player, cut: &Cut) -> Pressed {
     // A play-on leaves the line where it stands; a seek moves it to the run-up now, so the status and the
     // player agree before the first tick.
     player.playhead = seek_to.or(player.playhead);
-    Pressed::Started { join, seek_to, status: reviewing_status(cut, join) }
+    Pressed::Started {
+        join,
+        seek_to,
+        status: reviewing_status(cut, join),
+    }
 }
 
 /// ▶ or ▶✂ pressed during a review (S5's second half): the review ends and nothing else changes — "each

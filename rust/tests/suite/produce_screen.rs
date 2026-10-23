@@ -18,7 +18,10 @@ use naivepost::publish;
 const ITEM: &str = "sec_08_produce_1_screen";
 
 fn frames(names: &[&str]) -> Vec<String> {
-    names.iter().map(|n| format!("project:produce/publish/{n}.jpg")).collect()
+    names
+        .iter()
+        .map(|n| format!("project:produce/publish/{n}.jpg"))
+        .collect()
 }
 
 // ---- s1: the settings scroller's rows and their option lists ----------------------
@@ -51,10 +54,23 @@ fn sec_08_produce_1_screen_s1_settings_rows_and_options() {
     assert_eq!(ps::options("Codec").unwrap(), &["h264", "h265", "vp9"]);
     assert_eq!(
         ps::options("Preset").unwrap(),
-        &["ultrafast", "veryfast", "fast", "medium", "slow", "veryslow"]
+        &[
+            "ultrafast",
+            "veryfast",
+            "fast",
+            "medium",
+            "slow",
+            "veryslow"
+        ]
     );
-    assert_eq!(ps::options("Resolution").unwrap(), &["720p", "1080p", "original"]);
-    assert_eq!(ps::options("Frame rate").unwrap(), &["source", "60", "30", "24"]);
+    assert_eq!(
+        ps::options("Resolution").unwrap(),
+        &["720p", "1080p", "original"]
+    );
+    assert_eq!(
+        ps::options("Frame rate").unwrap(),
+        &["source", "60", "30", "24"]
+    );
     assert_eq!(ps::options("Audio").unwrap(), &["128", "192", "256", "320"]);
     assert_eq!(
         ps::options("Subtitles").unwrap(),
@@ -75,7 +91,13 @@ fn sec_08_produce_1_screen_s1_settings_rows_and_options() {
     assert_eq!(ps::EDGES_TICK, "blurred");
 
     // A row with no list is a slider or a tick — never a guessed one.
-    for row in ["Game audio", "Quality (CRF)", "Frame timing", "Channels", "Frame edges"] {
+    for row in [
+        "Game audio",
+        "Quality (CRF)",
+        "Frame timing",
+        "Channels",
+        "Frame edges",
+    ] {
         assert_eq!(ps::options(row), None, "{row} has no option list");
     }
     assert_eq!(ps::options("Whatever"), None);
@@ -146,7 +168,11 @@ fn sec_08_produce_1_screen_s3_tooltips_name_the_rule() {
 
     // §A's wording, spot-checked exactly where the sentence carries a rule. tool:ffmpeg.encode: the encode
     // rows' tooltips are the reason for ffmpeg's own choices.
-    assert!(ps::tooltip("Container").contains("webm forces VP9 + Opus"), "{}", ps::tooltip("Container"));
+    assert!(
+        ps::tooltip("Container").contains("webm forces VP9 + Opus"),
+        "{}",
+        ps::tooltip("Container")
+    );
     assert!(ps::tooltip("Resolution").contains("the short side of the frame"));
     assert!(ps::tooltip("Frame rate").contains("a ceiling rather than a target with VFR on"));
     assert!(ps::tooltip("Quality (CRF)").contains("lower is better and bigger"));
@@ -164,8 +190,16 @@ fn sec_08_produce_1_screen_s3_tooltips_name_the_rule() {
         ps::SAVE_VIDEO_TIP,
         "Save the finished video somewhere else — a copy; produce/final stays where it is"
     );
-    assert!(ps::EXPORT_TIP.contains("JPEG") && ps::EXPORT_TIP.contains("2 MB"), "{}", ps::EXPORT_TIP);
-    assert!(ps::REDRAW_TIP.contains("Draw the thumbnail again"), "{}", ps::REDRAW_TIP);
+    assert!(
+        ps::EXPORT_TIP.contains("JPEG") && ps::EXPORT_TIP.contains("2 MB"),
+        "{}",
+        ps::EXPORT_TIP
+    );
+    assert!(
+        ps::REDRAW_TIP.contains("Draw the thumbnail again"),
+        "{}",
+        ps::REDRAW_TIP
+    );
 
     // An unknown row says nothing rather than something wrong.
     assert_eq!(ps::tooltip("Whatever"), "");
@@ -213,7 +247,10 @@ fn sec_08_produce_1_screen_s4_container_forces_and_output() {
     ] {
         assert_eq!(ps::output_name(container), format!("final.{stem}"));
         let path = tree.final_video(stem);
-        assert_eq!(path.file_name().unwrap().to_str().unwrap(), ps::output_name(container));
+        assert_eq!(
+            path.file_name().unwrap().to_str().unwrap(),
+            ps::output_name(container)
+        );
         assert!(path.starts_with(tree.dir().join("produce")), "{path:?}");
     }
     std::fs::remove_dir_all(&root).ok();
@@ -229,7 +266,10 @@ fn sec_08_produce_1_screen_s5_translate_never_offers_own_language() {
     assert_eq!(ps::translate_options("German"), ["English", "French"]);
     assert_eq!(ps::translate_options("French"), ["English", "German"]);
     // A language the app cannot translate into removes nothing, and so does an unset one.
-    assert_eq!(ps::translate_options("Klingonian"), ["English", "German", "French"]);
+    assert_eq!(
+        ps::translate_options("Klingonian"),
+        ["English", "German", "French"]
+    );
     assert_eq!(ps::translate_options(""), ["English", "German", "French"]);
     // The menu is not case-sensitive: the session's language arrives from a settings field.
     assert_eq!(ps::translate_options("english"), ["German", "French"]);
@@ -258,27 +298,44 @@ fn sec_08_produce_1_screen_s6_images_row_eight_slots() {
 
     // Order is the whole answer, and publish.rs answers it: first = base, rest = references.
     let list = frames(&["first", "second", "third"]);
-    assert_eq!(publish::base(&Publish { frames: list.clone(), ..Default::default() }), Some("project:produce/publish/first.jpg"));
-    let with_refs = Publish { frames: list, ..Default::default() };
+    assert_eq!(
+        publish::base(&Publish {
+            frames: list.clone(),
+            ..Default::default()
+        }),
+        Some("project:produce/publish/first.jpg")
+    );
+    let with_refs = Publish {
+        frames: list,
+        ..Default::default()
+    };
     assert_eq!(publish::references(&with_refs).len(), 2);
-    assert_eq!(publish::references(&with_refs)[0], "project:produce/publish/second.jpg");
+    assert_eq!(
+        publish::references(&with_refs)[0],
+        "project:produce/publish/second.jpg"
+    );
 
     // Make base on a reference: it goes to the front and nothing is lost. Never on the base itself.
     let mut list = frames(&["first", "second", "third"]);
     assert!(ps::make_base(&mut list, 2));
-    assert_eq!(
-        list,
-        frames(&["third", "first", "second"])
-    );
+    assert_eq!(list, frames(&["third", "first", "second"]));
     assert!(!ps::make_base(&mut list, 0));
     assert!(!ps::make_base(&mut list, 9));
     assert_eq!(list.len(), 3);
 
     // Change… keeps the slot's place; remove takes it out of the row.
     let mut list = frames(&["first", "second"]);
-    assert!(ps::change_image(&mut list, 1, "project:produce/publish/other.jpg"));
+    assert!(ps::change_image(
+        &mut list,
+        1,
+        "project:produce/publish/other.jpg"
+    ));
     assert_eq!(list[1], "project:produce/publish/other.jpg");
-    assert!(!ps::change_image(&mut list, 5, "project:produce/publish/x.jpg"));
+    assert!(!ps::change_image(
+        &mut list,
+        5,
+        "project:produce/publish/x.jpg"
+    ));
     assert!(ps::remove_image(&mut list, 0));
     assert_eq!(list, vec!["project:produce/publish/other.jpg".to_string()]);
     assert!(!ps::remove_image(&mut list, 4));
@@ -286,12 +343,22 @@ fn sec_08_produce_1_screen_s6_images_row_eight_slots() {
     // A reference offers Make base; the base does not. §1's item 3.
     let base_row = ps::slot_actions(0, 3);
     assert!(!base_row.contains(&"Make base"), "{base_row:?}");
-    assert!(base_row.contains(&"Set Thumbnail") && base_row.contains(&"Change…") && base_row.contains(&"remove"));
+    assert!(
+        base_row.contains(&"Set Thumbnail")
+            && base_row.contains(&"Change…")
+            && base_row.contains(&"remove")
+    );
     let reference = ps::slot_actions(1, 3);
-    assert_eq!(reference, &["Make base", "Set Thumbnail", "Change…", "remove"]);
+    assert_eq!(
+        reference,
+        &["Make base", "Set Thumbnail", "Change…", "remove"]
+    );
 
     // Empty state (§A's own sentence) and the crop box that only a differently-shaped base wears.
-    assert_eq!(ps::EMPTY_IMAGES, "No image — the thumbnail will be drawn from the instruction alone.");
+    assert_eq!(
+        ps::EMPTY_IMAGES,
+        "No image — the thumbnail will be drawn from the instruction alone."
+    );
     assert!(ps::EMPTY_IMAGES_HINT.starts_with("Add image…"));
     assert_eq!(publish::base(&Publish::default()), None);
     assert!(ps::shows_crop_box(Some((1920, 1080)), (1080, 1920)));
@@ -328,9 +395,18 @@ fn sec_08_produce_1_screen_s11b_the_four_fields_are_stored_verbatim() {
         naivepost::ui::produce_page::read_state()
     };
     // Each field takes its own text and nothing else changes.
-    assert_eq!(store("edit-instruction", "  lead with the ship  ").instruction, "  lead with the ship  ");
-    assert_eq!(store("negative-prompt", "\u{0a}no logos\tand no lettering").negative, "\u{0a}no logos\tand no lettering");
-    assert_eq!(store("description-box", "MiXeD CaSe kept").description, "MiXeD CaSe kept");
+    assert_eq!(
+        store("edit-instruction", "  lead with the ship  ").instruction,
+        "  lead with the ship  "
+    );
+    assert_eq!(
+        store("negative-prompt", "\u{0a}no logos\tand no lettering").negative,
+        "\u{0a}no logos\tand no lettering"
+    );
+    assert_eq!(
+        store("description-box", "MiXeD CaSe kept").description,
+        "MiXeD CaSe kept"
+    );
     assert_eq!(store("title-entry", "Pipes: a talk").title, "Pipes: a talk");
     // Whitespace-only is text too: an all-blank instruction is a deliberate state, not an empty one.
     assert_eq!(store("edit-instruction", "   ").instruction, "   ");
@@ -339,8 +415,14 @@ fn sec_08_produce_1_screen_s11b_the_four_fields_are_stored_verbatim() {
     let before = naivepost::ui::produce_page::read_state();
     naivepost::ui::produce_page::set_text_field("setting-codec", "vp9");
     let after = naivepost::ui::produce_page::read_state();
-    assert_eq!(after.codec, before.codec, "a settings row's name is not a text field");
-    assert_eq!(after.title, before.title, "and it does not touch the title either");
+    assert_eq!(
+        after.codec, before.codec,
+        "a settings row's name is not a text field"
+    );
+    assert_eq!(
+        after.title, before.title,
+        "and it does not touch the title either"
+    );
 }
 
 // ---- s7: the thumbnail is a text-overlay editor ----------------------------------
@@ -359,7 +441,10 @@ fn sec_08_produce_1_screen_s7_thumbnail_text_overlay_editor() {
 
     // §A's overlay geometry: 200 px picture, min box 28, snap 10, ✎ chip 22.
     assert_eq!(ps::OVERLAY_EDGE_PX, 200.0);
-    assert_eq!((ps::OVERLAY_MIN_PX, ps::OVERLAY_SNAP_PX, ps::OVERLAY_CHIP_PX), (28.0, 10.0, 22.0));
+    assert_eq!(
+        (ps::OVERLAY_MIN_PX, ps::OVERLAY_SNAP_PX, ps::OVERLAY_CHIP_PX),
+        (28.0, 10.0, 22.0)
+    );
     assert!(ps::box_is_too_small(27.0, 100.0));
     assert!(ps::box_is_too_small(100.0, 27.0));
     assert!(!ps::box_is_too_small(28.0, 28.0));
@@ -400,7 +485,10 @@ fn sec_08_produce_1_screen_s7_thumbnail_text_overlay_editor() {
 fn sec_08_produce_1_screen_s8_title_is_printed_once() {
     assert_eq!(ITEM, "sec_08_produce_1_screen");
     // §1: printed across the thumbnail the first time only; then separate.
-    let mut publish = Publish { title: "A title for the video".to_string(), ..Default::default() };
+    let mut publish = Publish {
+        title: "A title for the video".to_string(),
+        ..Default::default()
+    };
     assert!(ps::seed_title(&mut publish));
     assert_eq!(publish.thumb_title, "A title for the video");
     assert!(publish.title_seeded);
@@ -418,9 +506,17 @@ fn sec_08_produce_1_screen_s8_title_is_printed_once() {
     // The written column's boxes and their sentences (§A).
     assert_eq!(ps::DESCRIPTION_LINES, 8);
     assert_eq!((ps::INSTRUCTION_LINES, ps::NEGATIVE_LINES), (4, 2));
-    assert!(ps::SUGGEST_TIP.contains("the only thing that does"), "{}", ps::SUGGEST_TIP);
+    assert!(
+        ps::SUGGEST_TIP.contains("the only thing that does"),
+        "{}",
+        ps::SUGGEST_TIP
+    );
     assert!(ps::SUGGEST_TIP.contains("fresh title, thumbnail instruction and description"));
-    assert!(ps::TITLE_TIP.contains("Four to seven words"), "{}", ps::TITLE_TIP);
+    assert!(
+        ps::TITLE_TIP.contains("Four to seven words"),
+        "{}",
+        ps::TITLE_TIP
+    );
     assert!(ps::TITLE_PLACEHOLDER.contains("also printed on the thumbnail"));
     assert!(ps::INSTRUCTION_TIP.contains("No words"));
     assert!(ps::NEGATIVE_TIP.contains("watermarks, logos, lettering, extra limbs"));
@@ -432,22 +528,40 @@ fn sec_08_produce_1_screen_s8_title_is_printed_once() {
 fn sec_08_produce_1_screen_s9_inputs_readout() {
     assert_eq!(ITEM, "sec_08_produce_1_screen");
     // §1: "N clip(s) · mm:ss[ · no narration | · N to speak][ · no upload text]".
-    assert_eq!(ps::inputs_line(4, 95.0, false, 3, true), "4 clip(s) \u{b7} 01:35 \u{b7} 3 to speak");
+    assert_eq!(
+        ps::inputs_line(4, 95.0, false, 3, true),
+        "4 clip(s) \u{b7} 01:35 \u{b7} 3 to speak"
+    );
     // The two narration states are alternatives, never both.
-    assert_eq!(ps::inputs_line(4, 95.0, true, 3, true), "4 clip(s) \u{b7} 01:35 \u{b7} no narration");
+    assert_eq!(
+        ps::inputs_line(4, 95.0, true, 3, true),
+        "4 clip(s) \u{b7} 01:35 \u{b7} no narration"
+    );
     // With narration on and nothing to speak, neither clause is a lie.
-    assert_eq!(ps::inputs_line(4, 95.0, false, 0, true), "4 clip(s) \u{b7} 01:35");
+    assert_eq!(
+        ps::inputs_line(4, 95.0, false, 0, true),
+        "4 clip(s) \u{b7} 01:35"
+    );
     assert_eq!(
         ps::inputs_line(4, 95.0, false, 3, false),
         "4 clip(s) \u{b7} 01:35 \u{b7} 3 to speak \u{b7} no upload text"
     );
     // No cut: the page says it in the other pages' words.
     assert_eq!(ps::inputs_line(0, 0.0, false, 0, false), ps::NO_CUT_LINE);
-    assert_eq!(ps::NO_CUT_LINE, "no cut yet \u{2014} build one on the Cut step");
+    assert_eq!(
+        ps::NO_CUT_LINE,
+        "no cut yet \u{2014} build one on the Cut step"
+    );
 
     // The tooltip: what will be spoken first, which recordings are mixed, the voice, publish.json.
     let mixed = vec!["rec-a.mp4".to_string(), "rec-b.mp4".to_string()];
-    let tip = ps::inputs_tooltip("cut/cut.json \u{2014} 4 clips", Some("the first line"), &mixed, Some("Mira"), true);
+    let tip = ps::inputs_tooltip(
+        "cut/cut.json \u{2014} 4 clips",
+        Some("the first line"),
+        &mixed,
+        Some("Mira"),
+        true,
+    );
     let rows: Vec<&str> = tip.split("\n\n").collect();
     assert_eq!(rows[0], "cut/cut.json \u{2014} 4 clips");
     assert_eq!(rows[1], "Spoken first: \u{201c}the first line\u{201d}");
@@ -469,7 +583,10 @@ fn sec_08_produce_1_screen_s9_inputs_readout() {
         "4 clip(s) \u{b7} 01:35"
     );
     let shell_shape = ps::inputs_line(4, 95.0, true, 0, false);
-    assert!(shell_shape.starts_with("4 clip(s) \u{b7} 01:35 \u{b7} no narration"), "{shell_shape}");
+    assert!(
+        shell_shape.starts_with("4 clip(s) \u{b7} 01:35 \u{b7} no narration"),
+        "{shell_shape}"
+    );
     assert!(shell_shape.ends_with("no upload text"), "{shell_shape}");
 }
 

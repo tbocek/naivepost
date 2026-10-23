@@ -8,8 +8,8 @@
 //! Its own file because `narrate_page.rs` is past its size budget; the page calls [`build_row`] where it used
 //! to build the scale itself and [`show_value`] wherever the state changes.
 
-use gtk4::prelude::*;
 use gtk4 as gtk;
+use gtk4::prelude::*;
 
 use crate::narrate_screen;
 

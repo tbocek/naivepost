@@ -8,14 +8,14 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::entry_span_default as entry;
 use naivepost::cut::Seg;
 use naivepost::layout::Tree;
 use naivepost::narration::Entry;
 use naivepost::produce_render;
 use naivepost::produce_stamp as stamp;
 use naivepost::project::{self, Codec, Container, Crop, Preset, Produce, Publish, Subtitles};
-use crate::common;
-use common::entry_span_default as entry;
 
 const ITEM: &str = "F5.3";
 
@@ -70,7 +70,6 @@ fn seg(s: f64, e: f64) -> Seg {
     clip
 }
 
-
 fn source(path: &str, footage: bool) -> project::Source {
     let mut row = project::Source::default();
     row.path = path.to_string();
@@ -99,7 +98,10 @@ impl Case {
         Case {
             settings: Produce::default(),
             segs: vec![seg(0.0, 12.0)],
-            lines: vec![entry(0.0, 4.0, "the first line"), entry(4.0, 8.0, "the second")],
+            lines: vec![
+                entry(0.0, 4.0, "the first line"),
+                entry(4.0, 8.0, "the second"),
+            ],
             sources: vec![source("media/talk.mkv", true)],
             aspect: "16:9".to_string(),
             voice: "1".to_string(),
@@ -131,22 +133,22 @@ impl Case {
     }
 
     fn stamp(&self) -> String {
-        let fake = Fake { facts: self.facts.clone() };
+        let fake = Fake {
+            facts: self.facts.clone(),
+        };
         stamp::stamp(&self.input(), one_wav, fake.facts())
     }
 
     fn parts(&self) -> Vec<(&'static str, String)> {
-        let fake = Fake { facts: self.facts.clone() };
+        let fake = Fake {
+            facts: self.facts.clone(),
+        };
         stamp::parts(&self.input(), one_wav, fake.facts())
     }
 
     /// The same state with one file's facts replaced — what a re-spoken take or a re-recorded source does.
     fn with_facts(mut self, path: &str, size: u64, mtime: u64) -> Self {
-        match self
-            .facts
-            .iter_mut()
-            .find(|(name, _, _)| name == path)
-        {
+        match self.facts.iter_mut().find(|(name, _, _)| name == path) {
             Some(slot) => *slot = (path.to_string(), size, mtime),
             None => self.facts.push((path.to_string(), size, mtime)),
         }
@@ -206,21 +208,29 @@ fn f5_3_s1_every_encoder_setting_moves_the_hash() {
     ];
     for (row, change) in flips {
         let moved = base.clone().with_settings(change);
-        assert_ne!(moved.stamp(), base.stamp(), "{row} must make the render stale");
+        assert_ne!(
+            moved.stamp(),
+            base.stamp(),
+            "{row} must make the render stale"
+        );
         assert_eq!(changed(&base, &moved), vec!["settings"], "{row}");
     }
 
     // The frame rate and what it means are two different files: 30 as a target and 30 as a ceiling.
-    let target = base.clone().with_settings(|s| s.frame_rate = project::FrameRate::F30);
-    let ceiling = target
+    let target = base
         .clone()
-        .with_settings(|s| s.vfr = true);
+        .with_settings(|s| s.frame_rate = project::FrameRate::F30);
+    let ceiling = target.clone().with_settings(|s| s.vfr = true);
     assert_eq!(target.settings.frame_rate, project::FrameRate::F30);
     assert_ne!(ceiling.stamp(), target.stamp());
 
     // The same ticks in another order are the same render — the languages are hashed sorted.
-    let one = base.clone().with_settings(|s| s.translate = vec!["de".into(), "sv".into()]);
-    let other = base.clone().with_settings(|s| s.translate = vec!["sv".into(), "de".into()]);
+    let one = base
+        .clone()
+        .with_settings(|s| s.translate = vec!["de".into(), "sv".into()]);
+    let other = base
+        .clone()
+        .with_settings(|s| s.translate = vec!["sv".into(), "de".into()]);
     assert_eq!(one.stamp(), other.stamp());
 
     // Nothing changed at all: the same hash, twice in a row, so an autosave that rewrote the project costs
@@ -245,7 +255,9 @@ fn f5_3_s2_the_output_path_is_not_in_it() {
 
     // The container *is* a setting, and it is the only thing that decides the name — so switching mp4→webm
     // does make the render stale even though it also changes where the file goes.
-    let webm = base.clone().with_settings(|s| s.container = Container::Webm);
+    let webm = base
+        .clone()
+        .with_settings(|s| s.container = Container::Webm);
     assert_ne!(webm.stamp(), base.stamp());
     assert_eq!(changed(&base, &webm), vec!["settings"]);
 
@@ -316,7 +328,11 @@ fn f5_3_s4_lines_bounds_text_wav_size_and_mtime() {
     // Bounds and words.
     let mut moved = base.clone();
     moved.lines[0].at += 0.5;
-    assert_eq!(moved.stamp(), base.stamp(), "where the line sits in the clip is not hashed twice");
+    assert_eq!(
+        moved.stamp(),
+        base.stamp(),
+        "where the line sits in the clip is not hashed twice"
+    );
     let mut moved = base.clone();
     moved.lines[0].s = 0.5;
     assert_ne!(moved.stamp(), base.stamp());
@@ -339,11 +355,15 @@ fn f5_3_s5_sources_path_size_and_mtime() {
 
     // A re-recorded or replaced recording moves the hash even though every segment still points at the same
     // second of it — the file behind those seconds is a different file now.
-    let longer = base.clone().with_facts("media/talk.mkv", 2_000_000, 1_700_000_000);
+    let longer = base
+        .clone()
+        .with_facts("media/talk.mkv", 2_000_000, 1_700_000_000);
     assert_ne!(longer.stamp(), base.stamp());
     assert_eq!(changed(&base, &longer), vec!["sources"]);
 
-    let touched = base.clone().with_facts("media/talk.mkv", 1_000_000, 1_700_000_600);
+    let touched = base
+        .clone()
+        .with_facts("media/talk.mkv", 1_000_000, 1_700_000_600);
     assert_ne!(touched.stamp(), base.stamp());
     assert_eq!(changed(&base, &touched), vec!["sources"]);
 
@@ -404,7 +424,10 @@ fn f5_3_s7_the_stamp_lives_beside_the_video_named_after_its_stem() {
     // the hash, not a second stamp nobody would ever clear.
     assert_eq!(stamp::STAMP_FILE, "final.stamp");
     assert_eq!(stamp::stamp_path(&tree), tree.final_stamp());
-    assert_eq!(stamp::stamp_path(&tree), root.join("demo.naivepost/produce/final.stamp"));
+    assert_eq!(
+        stamp::stamp_path(&tree),
+        root.join("demo.naivepost/produce/final.stamp")
+    );
     assert_eq!(
         stamp::stamp_path(&tree).parent(),
         tree.final_video("mp4").parent(),
@@ -412,8 +435,7 @@ fn f5_3_s7_the_stamp_lives_beside_the_video_named_after_its_stem() {
     );
 
     // Not in the scratch folder, which every run clears before it encodes anything.
-    assert!(!stamp::stamp_path(&tree)
-        .starts_with(tree.clips_dir()));
+    assert!(!stamp::stamp_path(&tree).starts_with(tree.clips_dir()));
     std::fs::remove_dir_all(&root).ok();
 }
 
@@ -446,9 +468,16 @@ fn f5_3_s8_the_same_hash_skips_the_encode() {
     assert_eq!(stamp::read_stamp(&tree).as_deref(), Some(current.as_str()));
 
     std::fs::write(stamp::stamp_path(&tree), "\n").unwrap();
-    assert_eq!(stamp::read_stamp(&tree), None, "an empty stamp proves nothing");
+    assert_eq!(
+        stamp::read_stamp(&tree),
+        None,
+        "an empty stamp proves nothing"
+    );
     std::fs::remove_file(stamp::stamp_path(&tree)).unwrap();
-    assert!(!stamp::skip_encode(stamp::read_stamp(&tree).as_deref(), &current));
+    assert!(!stamp::skip_encode(
+        stamp::read_stamp(&tree).as_deref(),
+        &current
+    ));
 
     // The other branch has no line of its own: §F5.3 gives the skip a sentence and leaves the encode to
     // F5.1's opening line, so what is asserted here is only that the answer was "encode" — which the two
@@ -466,22 +495,40 @@ fn f5_3_s9_encode_then_write_the_new_stamp() {
 
     // A first run: nothing stored, so encode, then write. The folder does not exist yet and is created.
     assert!(!stamp::stamp_path(&tree).exists());
-    assert!(stamp::stamp_written(true, false), "an encode that returned writes the stamp");
+    assert!(
+        stamp::stamp_written(true, false),
+        "an encode that returned writes the stamp"
+    );
     stamp::write_stamp(&tree, &current).unwrap();
     assert_eq!(stamp::read_stamp(&tree).as_deref(), Some(current.as_str()));
 
     // The next ▶ over the same state skips, and — because a skipped run writes nothing — cannot rewrite it.
-    assert!(stamp::skip_encode(stamp::read_stamp(&tree).as_deref(), &current));
-    assert!(!stamp::stamp_written(false, false), "a run that skipped proves nothing new");
-    assert!(!stamp::stamp_written(true, true), "a failed run writes no promise");
+    assert!(stamp::skip_encode(
+        stamp::read_stamp(&tree).as_deref(),
+        &current
+    ));
+    assert!(
+        !stamp::stamp_written(false, false),
+        "a run that skipped proves nothing new"
+    );
+    assert!(
+        !stamp::stamp_written(true, true),
+        "a failed run writes no promise"
+    );
 
     // A changed state means encode again and the stamp follows the file it describes.
     let moved = base.clone().with_facts(FIRST_WAV, 90_000, 1_700_000_900);
     let next = moved.stamp();
-    assert!(!stamp::skip_encode(stamp::read_stamp(&tree).as_deref(), &next));
+    assert!(!stamp::skip_encode(
+        stamp::read_stamp(&tree).as_deref(),
+        &next
+    ));
     stamp::write_stamp(&tree, &next).unwrap();
     assert_eq!(stamp::read_stamp(&tree).as_deref(), Some(next.as_str()));
-    assert!(stamp::skip_encode(stamp::read_stamp(&tree).as_deref(), &next));
+    assert!(stamp::skip_encode(
+        stamp::read_stamp(&tree).as_deref(),
+        &next
+    ));
 
     // The log names the hash, so a stamp somebody wants to delete is findable by eye.
     assert_eq!(stamp::wrote_stamp_log("0a0b"), ">>> final.stamp: 0a0b");
@@ -527,7 +574,9 @@ fn f5_3_s10_the_upload_text_is_not_in_the_stamp() {
     assert!(!naivepost::publish::is_written(&tree));
 
     // And that gate lives inside `produce/`, beside the video and its stamp.
-    assert!(tree.publish_json().starts_with(stamp::stamp_path(&tree).parent().unwrap().parent().unwrap()));
+    assert!(tree
+        .publish_json()
+        .starts_with(stamp::stamp_path(&tree).parent().unwrap().parent().unwrap()));
     std::fs::remove_dir_all(&root).ok();
 }
 
@@ -541,8 +590,16 @@ fn f5_3_s11_the_stamp_is_ten_named_parts_not_one_blob() {
     assert_eq!(
         names,
         vec![
-            "settings", "segments", "lines", "sources", "aspect", "voice", "narration",
-            "effects", "beds", "frame"
+            "settings",
+            "segments",
+            "lines",
+            "sources",
+            "aspect",
+            "voice",
+            "narration",
+            "effects",
+            "beds",
+            "frame"
         ]
     );
     assert!(parts.iter().all(|(_, hash)| hash.len() == 16), "{parts:?}");
@@ -563,14 +620,30 @@ fn f5_3_s11_the_stamp_is_ten_named_parts_not_one_blob() {
 
     // Nothing changed names nothing, and the whole stamp is the hash of these lines joined.
     assert!(changed(&base, &Case::new()).is_empty());
-    let fake = Fake { facts: base.facts.clone() };
+    let fake = Fake {
+        facts: base.facts.clone(),
+    };
     let joined = stamp::parts(&base.input(), one_wav, fake.facts())
         .iter()
         .map(|(name, hash)| format!("{name}={hash}"))
         .collect::<Vec<String>>()
         .join("\n");
-    assert_eq!(base.input().parts_of(one_wav, Fake { facts: base.facts.clone() }.facts()).join("\n"), joined);
-    assert_eq!(stamp::stamp(&base.input(), one_wav, fake.facts()), base.stamp());
+    assert_eq!(
+        base.input()
+            .parts_of(
+                one_wav,
+                Fake {
+                    facts: base.facts.clone()
+                }
+                .facts()
+            )
+            .join("\n"),
+        joined
+    );
+    assert_eq!(
+        stamp::stamp(&base.input(), one_wav, fake.facts()),
+        base.stamp()
+    );
 }
 
 // ---- what the RENDER reads beside the segments -----------------------------------
@@ -592,7 +665,13 @@ fn zoom_at(t: f64) -> naivepost::cut::Fx {
 
 /// One bed lane over a music file the fake file system knows about.
 fn bed(name: &str, src: &str) -> naivepost::cut::Lane {
-    naivepost::cut::Lane { name: name.to_string(), src: src.to_string(), at: 0.0, off: 0.0, dur: 60.0 }
+    naivepost::cut::Lane {
+        name: name.to_string(),
+        src: src.to_string(),
+        at: 0.0,
+        off: 0.0,
+        dur: 60.0,
+    }
 }
 
 /// A volume effect at gain 0.3 — the record whose gain two tests compare against each other.
@@ -614,13 +693,21 @@ fn f5_3_s12_adding_a_zoom_moves_the_hash_and_names_effects() {
     assert!(base.fx.is_empty());
 
     let with_zoom = base.clone().with_fx(zoom_at(4.0));
-    assert_eq!(changed(&base, &with_zoom), vec!["effects"], "a zoom is a different file");
+    assert_eq!(
+        changed(&base, &with_zoom),
+        vec!["effects"],
+        "a zoom is a different file"
+    );
     assert_ne!(base.stamp(), with_zoom.stamp());
 
     // Moving the SAME zoom is the same group moving again — the time is in the line, not just the kind.
     let moved = base.clone().with_fx(zoom_at(9.0));
     assert_eq!(changed(&base, &moved), vec!["effects"]);
-    assert_ne!(with_zoom.stamp(), moved.stamp(), "a re-timed zoom is not the same render");
+    assert_ne!(
+        with_zoom.stamp(),
+        moved.stamp(),
+        "a re-timed zoom is not the same render"
+    );
 
     // Every field the filter graph reads moves it too: a re-worded text and a re-gained volume are files.
     let words = base.clone().with_fx(naivepost::cut::Fx {
@@ -633,14 +720,24 @@ fn f5_3_s12_adding_a_zoom_moves_the_hash_and_names_effects() {
     assert_eq!(changed(&base, &words), vec!["effects"]);
     let gain = base.clone().with_fx(gain_fx());
     assert_eq!(changed(&base, &gain), vec!["effects"]);
-    let mut louder = naivepost::cut::Fx { gain: 0.6, ..gain_fx() };
+    let mut louder = naivepost::cut::Fx {
+        gain: 0.6,
+        ..gain_fx()
+    };
     louder.gain = 0.6;
     let louder = base.clone().with_fx(louder);
     assert_eq!(changed(&base, &louder), vec!["effects"]);
-    assert_ne!(gain.stamp(), louder.stamp(), "the gain itself, not only its presence");
+    assert_ne!(
+        gain.stamp(),
+        louder.stamp(),
+        "the gain itself, not only its presence"
+    );
 
     // An effect plus a setting names both groups, in the parts' order.
-    let both = base.clone().with_settings(|s| s.crf = 30).with_fx(zoom_at(4.0));
+    let both = base
+        .clone()
+        .with_settings(|s| s.crf = 30)
+        .with_fx(zoom_at(4.0));
     assert_eq!(changed(&base, &both), vec!["settings", "effects"]);
 }
 
@@ -649,7 +746,11 @@ fn f5_3_s13_a_lane_bed_moves_the_hash_and_names_beds() {
     assert_eq!(ITEM, "F5.3");
     let base = Case::new();
     let with_bed = base.clone().with_lane(bed("music", "media/synth.wav"));
-    assert_eq!(changed(&base, &with_bed), vec!["beds"], "a bed mixed under the clips is a different file");
+    assert_eq!(
+        changed(&base, &with_bed),
+        vec!["beds"],
+        "a bed mixed under the clips is a different file"
+    );
     assert_ne!(base.stamp(), with_bed.stamp());
 
     // The bed's OWN file weighs here, not only its name: a replaced recording under the same name is heard
@@ -659,8 +760,16 @@ fn f5_3_s13_a_lane_bed_moves_the_hash_and_names_beds() {
     assert_eq!(changed(&base_bed, &swapped), vec!["beds"]);
     // The bed file's facts weigh only once it is on the lane: with no bed there is nothing to read, so the
     // same touch moves no group at all.
-    assert!(changed(&base, &base.clone().with_facts("media/synth.wav", 99, 2_000_000_000)).is_empty());
-    let touched = base_bed.clone().with_facts("media/synth.wav", 99, 2_000_000_000);
+    assert!(changed(
+        &base,
+        &base
+            .clone()
+            .with_facts("media/synth.wav", 99, 2_000_000_000)
+    )
+    .is_empty());
+    let touched = base_bed
+        .clone()
+        .with_facts("media/synth.wav", 99, 2_000_000_000);
     assert_eq!(
         changed(&base_bed, &touched),
         vec!["beds"],
@@ -668,7 +777,10 @@ fn f5_3_s13_a_lane_bed_moves_the_hash_and_names_beds() {
     );
 
     // Where it sits and how long it runs are in the line too.
-    let later = base.clone().with_lane(naivepost::cut::Lane { at: 12.0, ..bed("music", "media/synth.wav") });
+    let later = base.clone().with_lane(naivepost::cut::Lane {
+        at: 12.0,
+        ..bed("music", "media/synth.wav")
+    });
     assert_eq!(changed(&base, &later), vec!["beds"]);
     assert_ne!(with_bed.stamp(), later.stamp());
 }
@@ -681,17 +793,30 @@ fn f5_3_s14_a_different_footage_shape_moves_the_hash_and_names_frame() {
 
     // A portrait camera is a different picture even with the same aspect string: the frame box is built on
     // this shape whenever the cut names no aspect, so the file differs.
-    let portrait = Case { shape: (1080, 1920), ..base.clone() };
+    let portrait = Case {
+        shape: (1080, 1920),
+        ..base.clone()
+    };
     assert_eq!(changed(&base, &portrait), vec!["frame"]);
     assert_ne!(base.stamp(), portrait.stamp());
 
     // A smaller sensor at the same orientation moves it too — the hash spells both edges.
-    let smaller = Case { shape: (1280, 720), ..base.clone() };
+    let smaller = Case {
+        shape: (1280, 720),
+        ..base.clone()
+    };
     assert_eq!(changed(&base, &smaller), vec!["frame"]);
     assert_ne!(portrait.stamp(), smaller.stamp());
 
     // And the same shape measured twice claims nothing changed.
-    assert!(changed(&base, &Case { shape: (1920, 1080), ..base.clone() }).is_empty());
+    assert!(changed(
+        &base,
+        &Case {
+            shape: (1920, 1080),
+            ..base.clone()
+        }
+    )
+    .is_empty());
 }
 
 #[test]
@@ -704,5 +829,8 @@ fn f5_3_s12_an_unchanged_state_still_skips_the_encode() {
     assert!(changed(&before, &after).is_empty());
     let current = after.stamp();
     assert!(stamp::skip_encode(Some(&current), &before.stamp()));
-    assert!(!stamp::skip_encode(Some(&current), &after.clone().with_fx(zoom_at(1.0)).stamp()));
+    assert!(!stamp::skip_encode(
+        Some(&current),
+        &after.clone().with_fx(zoom_at(1.0)).stamp()
+    ));
 }

@@ -18,7 +18,7 @@ use naivepost::asr::{self, Silence};
 use naivepost::params;
 
 use crate::common;
-use common::{all_rows};
+use common::all_rows;
 
 /// The aligner's own cut over a recording: the ASR's ceiling with the aligner's reach.
 fn cut(duration: f64, silences: &[Silence]) -> Vec<f64> {
@@ -40,10 +40,11 @@ fn p_eng_aligncutseekseconds_s1_the_reach_is_4_and_catalogued_once() {
     let row = params::prepare()
         .into_iter()
         .find(|param| param.id == "P.eng.alignCutSeekSeconds")
-        .expect("the alignment cut's reach must be catalogued for Prepare, whose align pass reads it");
+        .expect(
+            "the alignment cut's reach must be catalogued for Prepare, whose align pass reads it",
+        );
     assert_eq!(
-        row.from,
-        "align::CUT_SEEK",
+        row.from, "align::CUT_SEEK",
         "a row must name the constant its rule reads"
     );
     // num() drops the `.0` on a whole value, which is exactly how §10 spells this one: "4".
@@ -59,7 +60,10 @@ fn p_eng_aligncutseekseconds_s1_the_reach_is_4_and_catalogued_once() {
 
     // And exactly one row for it across all five lists — one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.alignCutSeekSeconds").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.alignCutSeekSeconds")
+            .count(),
         1,
         "P.eng.alignCutSeekSeconds catalogued more than once"
     );
@@ -72,9 +76,23 @@ fn p_eng_aligncutseekseconds_s2_a_silence_inside_the_reach_takes_the_cut() {
     // are 48, 96, 144, 192. The silence [50, 54] has midpoint 52.0, 4.0 past 48 -- but the filter
     // is strict `<`, so that exact distance is NOT taken. Move it to [49, 52]: midpoint 50.5, 2.5
     // away, comfortably inside, and the first interior edge lands there.
-    let edges = cut(240.0, &[Silence { start: 49.0, end: 52.0 }]);
-    assert_eq!(edges.first().copied(), Some(0.0), "the recording starts at zero: {edges:?}");
-    assert_eq!(edges.last().copied(), Some(240.0), "and ends where it was: {edges:?}");
+    let edges = cut(
+        240.0,
+        &[Silence {
+            start: 49.0,
+            end: 52.0,
+        }],
+    );
+    assert_eq!(
+        edges.first().copied(),
+        Some(0.0),
+        "the recording starts at zero: {edges:?}"
+    );
+    assert_eq!(
+        edges.last().copied(),
+        Some(240.0),
+        "and ends where it was: {edges:?}"
+    );
     assert!(
         edges.iter().any(|e| (*e - 50.5).abs() < 1e-9),
         "the cut slid onto the silence midpoint 50.5: {edges:?}"
@@ -95,7 +113,13 @@ fn p_eng_aligncutseekseconds_s2_a_silence_inside_the_reach_takes_the_cut() {
     // The exact boundary, measured: [50, 54] has midpoint 52.0, precisely 4.0 from the nominal 48.0.
     // `cut_points` filters with a strict `<`, so that distance does NOT count and the cut stays at
     // 48.0 -- the reach is "under 4 s", not "up to 4 s".
-    let exact = cut(240.0, &[Silence { start: 50.0, end: 54.0 }]);
+    let exact = cut(
+        240.0,
+        &[Silence {
+            start: 50.0,
+            end: 54.0,
+        }],
+    );
     assert!(
         exact.iter().any(|e| (*e - 48.0).abs() < 1e-9),
         "exactly CUT_SEEK away is outside a strict `<`: {exact:?}"
@@ -112,7 +136,13 @@ fn p_eng_aligncutseekseconds_s2_a_silence_inside_the_reach_takes_the_cut() {
 fn p_eng_aligncutseekseconds_s3_beyond_the_reach_the_nominal_cut_stands() {
     // Same fixture, silence [52.5, 53.5] -> midpoint 53.0, 5.0 past the nominal 48.0: out of reach,
     // so the cut stays at 48.0 and the silence is ignored entirely.
-    let far = cut(240.0, &[Silence { start: 52.5, end: 53.5 }]);
+    let far = cut(
+        240.0,
+        &[Silence {
+            start: 52.5,
+            end: 53.5,
+        }],
+    );
     assert!(
         far.iter().any(|e| (*e - 48.0).abs() < 1e-9),
         "the nominal 48.0 stands when nothing is in reach: {far:?}"
@@ -123,14 +153,31 @@ fn p_eng_aligncutseekseconds_s3_beyond_the_reach_the_nominal_cut_stands() {
     );
 
     // The reachable version of the same fixture does slide, so placement decides.
-    let near = cut(240.0, &[Silence { start: 49.0, end: 52.0 }]);
-    assert_ne!(near, far, "moving the silence 2.5 s decides whether the cut slides");
+    let near = cut(
+        240.0,
+        &[Silence {
+            start: 49.0,
+            end: 52.0,
+        }],
+    );
+    assert_ne!(
+        near, far,
+        "moving the silence 2.5 s decides whether the cut slides"
+    );
 
     // Measured against the chunker's own reach on the same fixture: `asr::SEEK_MAX` (20) trips the
     // walk-past guard at this ceiling (`2*seek >= limit` zeroes the reach), so it cuts dead even at
     // 40.0 steps and never slides toward any silence. That is a third answer, not the aligner's --
     // another reason §10 keeps the two numbers apart rather than sharing one.
-    let borrowed = asr::cut_points(240.0, &[Silence { start: 52.5, end: 53.5 }], align::WINDOW, asr::SEEK_MAX);
+    let borrowed = asr::cut_points(
+        240.0,
+        &[Silence {
+            start: 52.5,
+            end: 53.5,
+        }],
+        align::WINDOW,
+        asr::SEEK_MAX,
+    );
     assert_eq!(
         borrowed,
         vec![0.0, 40.0, 80.0, 120.0, 160.0, 200.0, 240.0],
@@ -140,12 +187,22 @@ fn p_eng_aligncutseekseconds_s3_beyond_the_reach_the_nominal_cut_stands() {
 
     // And the reach really is the bound: ask for 5.0 instead of 4.0 and the very same midpoint that
     // was refused above (53.0, 5.0 past the nominal under CUT_SEEK... strictly inside 5.0) is taken.
-    let wider = cut_reach(240.0, &[Silence { start: 52.5, end: 53.5 }], 5.5);
+    let wider = cut_reach(
+        240.0,
+        &[Silence {
+            start: 52.5,
+            end: 53.5,
+        }],
+        5.5,
+    );
     assert!(
         wider.iter().any(|e| (*e - 53.0).abs() < 1e-9),
         "a 5.5 s reach takes what 4 s leaves alone: {wider:?}"
     );
-    assert_ne!(wider, far, "one and a half seconds of reach decide whether this silence is used");
+    assert_ne!(
+        wider, far,
+        "one and a half seconds of reach decide whether this silence is used"
+    );
 }
 
 /// S4: the ceiling clamps the reach, so on a short window the constant is not what actually applies.
@@ -154,7 +211,15 @@ fn p_eng_aligncutseekseconds_s4_a_short_ceiling_clamps_the_reach_below_the_const
     // `cut_points` trims the reach twice: `seek.min(limit/6.0)` then `seek.min(step/3.0)`. At a 12 s
     // ceiling that first clamp alone cuts 4.0 down to 2.0, so the silence [9,12] with midpoint 10.5
     // sitting 3.0 off the nominal 7.5 is out of reach and the edge stays nominal.
-    let small = asr::cut_points(60.0, &[Silence { start: 9.0, end: 12.0 }], 12.0, align::CUT_SEEK);
+    let small = asr::cut_points(
+        60.0,
+        &[Silence {
+            start: 9.0,
+            end: 12.0,
+        }],
+        12.0,
+        align::CUT_SEEK,
+    );
     assert!(
         small.iter().any(|e| (*e - 7.5).abs() < 1e-9),
         "the nominal 7.5 stands at a 12 s ceiling: {small:?}"
@@ -165,18 +230,31 @@ fn p_eng_aligncutseekseconds_s4_a_short_ceiling_clamps_the_reach_below_the_const
     );
     // Proof the clamp is what stopped it: the same silence IS taken when the requested reach is inside
     // the clamped value.
-    let live = asr::cut_points(60.0, &[Silence { start: 9.0, end: 12.0 }], 12.0, 1.0);
+    let live = asr::cut_points(
+        60.0,
+        &[Silence {
+            start: 9.0,
+            end: 12.0,
+        }],
+        12.0,
+        1.0,
+    );
     assert!(
         live.iter().any(|e| (*e - 10.5).abs() < 1e-9),
         "a 1.0 s reach (under the 2.0 clamp) reaches it: {live:?}"
     );
 
     // At the real ceiling the constant survives both trims untouched, so CUT_SEEK really is the reach.
+    let seek = align::CUT_SEEK;
+    let window = align::WINDOW;
     assert!(
-        align::CUT_SEEK <= align::WINDOW / 6.0,
+        seek <= window / 6.0,
         "4 <= 60/6 = 10: unclamped at the align window"
     );
-    assert!(2.0 * align::CUT_SEEK < align::WINDOW, "and never trips the walk-past guard either");
+    assert!(
+        2.0 * seek < window,
+        "and never trips the walk-past guard either"
+    );
 }
 
 /// S5: the neighbours. Several constants share or nearly share this number; the ids and homes are what
@@ -186,7 +264,8 @@ fn p_eng_aligncutseekseconds_s5_neighbours_by_home_not_by_number() {
     // P.eng.asrCutSeekSeconds (20, `asr::SEEK_MAX`): the chunker's reach. Much wider, because a
     // chunk cut that slides costs only a join, while an alignment cut moves the whole window that a
     // stretch of words is timed against.
-    let asr_seek = params::find("P.eng.asrCutSeekSeconds").expect("asrCutSeekSeconds is catalogued");
+    let asr_seek =
+        params::find("P.eng.asrCutSeekSeconds").expect("asrCutSeekSeconds is catalogued");
     assert_eq!(asr_seek.spelled, "20");
     assert_eq!(asr_seek.from, "asr::SEEK_MAX");
     assert!(
@@ -220,7 +299,11 @@ fn p_eng_aligncutseekseconds_s5_neighbours_by_home_not_by_number() {
     // cut_review::REVIEW_PAD_SECONDS), so nothing is asserted about an id for it -- only that it is
     // not a cut reach.
     assert_eq!(align::PAD, 0.25);
-    assert_ne!(align::CUT_SEEK, align::PAD, "a pad is not a search distance");
+    assert_ne!(
+        align::CUT_SEEK,
+        align::PAD,
+        "a pad is not a search distance"
+    );
 
     // P.eng.sepCutSeekSeconds exists in the spec (20, `sepCutSeek`) but has NO row in params.rs yet,
     // so nothing is asserted about it here -- that item's round will come.

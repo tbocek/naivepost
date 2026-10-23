@@ -15,9 +15,14 @@ use common::{seg, session_row as row};
 /// The transcript's own lane name: what `session.tsv` writes in the source column.
 const MIC: &str = "2026-09-16 17-26-20";
 
-
 fn effect(kind: &str, t: f64, dur: f64, text: &str) -> Fx {
-    Fx { kind: kind.into(), t, dur, text: text.into(), ..Default::default() }
+    Fx {
+        kind: kind.into(),
+        t,
+        dur,
+        text: text.into(),
+        ..Default::default()
+    }
 }
 
 /// P.policy.narrationMinWords, P.policy.narrationMaxWords, P.policy.narrationWordsPerSecond.
@@ -34,12 +39,26 @@ fn f4_2_s1_a_clip_is_offered_under_a_third_of_speaking_rate_between_the_floor_an
 
     // The seconds that count are the on-screen ones: a clip at 2x affords half as many words as its session
     // length, because that is how long the line has to be spoken in.
-    let fast = Seg { s: 20.0, e: 38.0, rate: 2.0, ..Default::default() };
+    let fast = Seg {
+        s: 20.0,
+        e: 38.0,
+        rate: 2.0,
+        ..Default::default()
+    };
     assert_eq!(pass::on_screen(&fast), 9.0);
-    assert_eq!(pass::word_ceiling(pass::on_screen(&fast)), 8, "seven words round down to the floor");
+    assert_eq!(
+        pass::word_ceiling(pass::on_screen(&fast)),
+        8,
+        "seven words round down to the floor"
+    );
 
     // A spliced insert runs for its own `dur` and nothing else.
-    let card = Seg { s: 40.0, e: 40.0, dur: 8.0, ..Default::default() };
+    let card = Seg {
+        s: 40.0,
+        e: 40.0,
+        dur: 8.0,
+        ..Default::default()
+    };
     assert_eq!(pass::on_screen(&card), 8.0);
 }
 
@@ -48,7 +67,12 @@ fn f4_2_s1_a_clip_is_offered_under_a_third_of_speaking_rate_between_the_floor_an
 fn f4_2_s2_a_heading_names_the_bounds_how_long_it_plays_and_the_word_budget() {
     // A clip at 2x: both facts are printed, because a line stamped [+16s] of it arrives eight seconds into
     // what the viewer watches. The dash between the bounds is an en dash (U+2013).
-    let fast = Seg { s: 20.0, e: 38.0, rate: 2.0, ..Default::default() };
+    let fast = Seg {
+        s: 20.0,
+        e: 38.0,
+        rate: 2.0,
+        ..Default::default()
+    };
     assert_eq!(
         pass::clip_heading(7, &fast),
         "CLIP 7: 20.0\u{2013}38.0 (18 s of footage at 2x, 9 s on screen, at most 8 words -- fewer is better, none is fine)"
@@ -61,7 +85,12 @@ fn f4_2_s2_a_heading_names_the_bounds_how_long_it_plays_and_the_word_budget() {
     );
 
     // A rate of exactly 1 is the footage's own clock and is not mentioned either.
-    let own = Seg { s: 0.0, e: 9.0, rate: 1.0, ..Default::default() };
+    let own = Seg {
+        s: 0.0,
+        e: 9.0,
+        rate: 1.0,
+        ..Default::default()
+    };
     assert_eq!(pass::plays(&own), "9 s");
 }
 
@@ -87,14 +116,26 @@ fn f4_2_s3_a_clip_reaches_four_seconds_each_way_for_lines_and_labels_what_it_sho
     ];
     let brief = pass::brief(&clips, &rows, &[], "mic.mkv");
 
-    assert!(brief.contains("  [-10s] SPEAKER: before the clip\n"), "{brief}");
+    assert!(
+        brief.contains("  [-10s] SPEAKER: before the clip\n"),
+        "{brief}"
+    );
     assert!(!brief.contains("on the edge"), "{brief}");
     assert!(!brief.contains("outside"), "{brief}");
-    assert!(brief.contains("  [+6s] NARRATOR: my own voice\n"), "{brief}");
+    assert!(
+        brief.contains("  [+6s] NARRATOR: my own voice\n"),
+        "{brief}"
+    );
     assert!(brief.contains("  [+10s] EVENT: an explosion\n"), "{brief}");
     // Offsets are printed from the clip's own start, with the sign saying which way they run.
-    assert!(brief.contains("  [+18s] SPEAKER: unnamed speaker\n"), "{brief}");
-    assert!(!brief.contains(pass::NO_LINES), "a clip with rows over it says nothing about silence");
+    assert!(
+        brief.contains("  [+18s] SPEAKER: unnamed speaker\n"),
+        "{brief}"
+    );
+    assert!(
+        !brief.contains(pass::NO_LINES),
+        "a clip with rows over it says nothing about silence"
+    );
 
     // The same sentence appears only when nothing qualified — and the row count is what decides, not whether
     // any row exists at all.
@@ -105,16 +146,34 @@ fn f4_2_s3_a_clip_reaches_four_seconds_each_way_for_lines_and_labels_what_it_sho
 /// F4.2 (`inserts described …`): an insert's block is the note and nothing else, query kept.
 #[test]
 fn f4_2_s4_an_insert_is_described_by_its_file_and_parameters_rather_than_by_the_session() {
-    let card = Seg { s: 40.0, e: 40.0, dur: 6.0, ins: "project:tier.svg?S=Dust II".into(), ..Default::default() };
-    let rows = [row(38.0, 42.0, "game.wav", "", "said under what the card covers")];
+    let card = Seg {
+        s: 40.0,
+        e: 40.0,
+        dur: 6.0,
+        ins: "project:tier.svg?S=Dust II".into(),
+        ..Default::default()
+    };
+    let rows = [row(
+        38.0,
+        42.0,
+        "game.wav",
+        "",
+        "said under what the card covers",
+    )];
     let brief = pass::brief(&[card], &rows, &[], MIC);
 
     assert!(brief.contains("\"tier.svg?S=Dust II\""), "{brief}");
-    assert!(brief.contains("not footage: a graphic or clip inserted here"), "{brief}");
+    assert!(
+        brief.contains("not footage: a graphic or clip inserted here"),
+        "{brief}"
+    );
     assert!(brief.contains("Narrate what is ON it, or say nothing -- there is nothing from the session to describe, and inventing one would caption the wrong picture)"), "{brief}");
     // The lines around it are a description of whatever it covered — the one thing the viewer will not be
     // looking at — so none of them ride on the block, not even as the "no lines" sentence.
-    assert!(!brief.contains("said under what the card covers"), "{brief}");
+    assert!(
+        !brief.contains("said under what the card covers"),
+        "{brief}"
+    );
     assert!(!brief.contains(pass::NO_LINES), "{brief}");
 }
 
@@ -130,23 +189,59 @@ fn f4_2_s5_every_effect_kind_is_read_and_a_label_or_caption_keeps_its_word() {
         // \u00a712 #29: these three were invisible to the writer. A moment marked "the reveal" is worth a line,
         // and a mute or a fast stretch changes what the viewer sees and hears.
         effect("zoom", 106.0, 3.0, "the reveal"),
-        Fx { kind: "volume".into(), t: 108.0, dur: 3.0, gain: 0.2, text: "quieter".into(), ..Default::default() },
-        Fx { kind: "speed".into(), t: 110.0, dur: 3.0, rate: 2.0, text: "faster".into(), ..Default::default() },
+        Fx {
+            kind: "volume".into(),
+            t: 108.0,
+            dur: 3.0,
+            gain: 0.2,
+            text: "quieter".into(),
+            ..Default::default()
+        },
+        Fx {
+            kind: "speed".into(),
+            t: 110.0,
+            dur: 3.0,
+            rate: 2.0,
+            text: "faster".into(),
+            ..Default::default()
+        },
         effect("svg", 112.0, 3.0, "a lower-third burns in"),
         // A stop is a speed whose rate is 0, and the writer needs the difference.
-        Fx { kind: "speed".into(), t: 114.0, dur: 3.0, rate: 0.0, text: String::new(), ..Default::default() },
+        Fx {
+            kind: "speed".into(),
+            t: 114.0,
+            dur: 3.0,
+            rate: 0.0,
+            text: String::new(),
+            ..Default::default()
+        },
         // And a label with no word in it is not the editor's word for anything.
         effect("label", 116.0, 3.0, "   "),
     ];
     let brief = pass::brief(&clips, &[], &fx, MIC);
 
     assert!(brief.contains("  [+2s] MARKED: boss fight\n"), "{brief}");
-    assert!(brief.contains("  [+4s] CAPTION: a caption the viewer reads\n"), "{brief}");
+    assert!(
+        brief.contains("  [+4s] CAPTION: a caption the viewer reads\n"),
+        "{brief}"
+    );
     assert!(brief.contains("  [+6s] ZOOM: the reveal\n"), "{brief}");
-    assert!(brief.contains("  [+8s] VOLUME: the sound runs at 0.2x of its own level here"), "{brief}");
-    assert!(brief.contains("  [+10s] SPEED: the footage runs at 2x here"), "{brief}");
-    assert!(brief.contains("  [+12s] GRAPHIC: a lower-third burns in\n"), "{brief}");
-    assert!(brief.contains("  [+14s] STOP: the picture holds here\n"), "{brief}");
+    assert!(
+        brief.contains("  [+8s] VOLUME: the sound runs at 0.2x of its own level here"),
+        "{brief}"
+    );
+    assert!(
+        brief.contains("  [+10s] SPEED: the footage runs at 2x here"),
+        "{brief}"
+    );
+    assert!(
+        brief.contains("  [+12s] GRAPHIC: a lower-third burns in\n"),
+        "{brief}"
+    );
+    assert!(
+        brief.contains("  [+14s] STOP: the picture holds here\n"),
+        "{brief}"
+    );
     // A mark over the clip *before* is not this clip's moment.
     let elsewhere = [effect("label", 90.0, 3.0, "the previous scene")];
     assert!(!pass::brief(&clips, &[], &elsewhere, MIC).contains("previous scene"));
@@ -158,22 +253,46 @@ fn f4_2_s6_speech_is_heard_only_when_a_scene_that_has_a_say_over_it_keeps_its_la
     let spoken = [row(10.0, 12.0, "game.wav", "Ada", "said out loud")];
     let scene = seg(0.0, 20.0);
 
-    assert!(pass::speech_heard(&[scene.clone()], &spoken, ""), "a scene that keeps the lane plays it");
+    assert!(
+        pass::speech_heard(&[scene.clone()], &spoken, ""),
+        "a scene that keeps the lane plays it"
+    );
 
     // A `quiet` entry is a lane name — the recording's basename, which is what `session.tsv` writes in its
     // source column too — so silencing it is what stops the line being heard.
-    let hushed = Seg { quiet: vec!["game.wav".into()], ..scene.clone() };
-    assert!(!pass::speech_heard(&[hushed], &spoken, ""), "a scene that silences the lane plays nothing");
+    let hushed = Seg {
+        quiet: vec!["game.wav".into()],
+        ..scene.clone()
+    };
+    assert!(
+        !pass::speech_heard(&[hushed], &spoken, ""),
+        "a scene that silences the lane plays nothing"
+    );
 
     // An insert hears nothing: it replaces the footage that carried the line.
-    let card = Seg { s: 0.0, e: 0.0, dur: 20.0, ins: "project:tier.svg".into(), ..Default::default() };
-    assert!(!pass::speech_heard(&[card], &spoken, ""), "a card over the line plays nothing");
+    let card = Seg {
+        s: 0.0,
+        e: 0.0,
+        dur: 20.0,
+        ins: "project:tier.svg".into(),
+        ..Default::default()
+    };
+    assert!(
+        !pass::speech_heard(&[card], &spoken, ""),
+        "a card over the line plays nothing"
+    );
 
     // The narrator's own microphone never survives — that is the whole point of having one. The row names it
     // as a path and the project names it by its basename, and either spelling is the same recording.
     let mine = [row(10.0, 12.0, "project:mic.mkv", "Nina", "my own voice")];
-    assert!(!pass::speech_heard(&[scene.clone()], &mine, "mic.mkv"), "the narrator's mic is not speech in the video");
-    assert!(pass::speech_heard(&[scene.clone()], &mine, ""), "with no microphone named it is somebody else's");
+    assert!(
+        !pass::speech_heard(&[scene.clone()], &mine, "mic.mkv"),
+        "the narrator's mic is not speech in the video"
+    );
+    assert!(
+        pass::speech_heard(&[scene.clone()], &mine, ""),
+        "with no microphone named it is somebody else's"
+    );
 
     // A picture event is not somebody talking.
     let event = [row(10.0, 12.0, "game.wav", "EVENT", "an explosion")];
@@ -184,18 +303,37 @@ fn f4_2_s6_speech_is_heard_only_when_a_scene_that_has_a_say_over_it_keeps_its_la
 #[test]
 fn f4_2_s7_the_two_addenda_ride_on_the_prompt_each_on_its_own() {
     let both = pass::system("PROMPT", true, true);
-    assert!(both.starts_with("PROMPT\n\n"), "the prompt is sent as it was given: {both}");
-    assert_eq!(both, format!("PROMPT\n\n{}\n\n{}", pass::SPEECH_ADDENDUM, pass::CAPTIONS_ADDENDUM));
+    assert!(
+        both.starts_with("PROMPT\n\n"),
+        "the prompt is sent as it was given: {both}"
+    );
+    assert_eq!(
+        both,
+        format!(
+            "PROMPT\n\n{}\n\n{}",
+            pass::SPEECH_ADDENDUM,
+            pass::CAPTIONS_ADDENDUM
+        )
+    );
 
-    assert_eq!(pass::system("PROMPT", true, false), format!("PROMPT\n\n{}", pass::SPEECH_ADDENDUM));
-    assert_eq!(pass::system("PROMPT", false, true), format!("PROMPT\n\n{}", pass::CAPTIONS_ADDENDUM));
+    assert_eq!(
+        pass::system("PROMPT", true, false),
+        format!("PROMPT\n\n{}", pass::SPEECH_ADDENDUM)
+    );
+    assert_eq!(
+        pass::system("PROMPT", false, true),
+        format!("PROMPT\n\n{}", pass::CAPTIONS_ADDENDUM)
+    );
     assert_eq!(pass::system("PROMPT", false, false), "PROMPT");
 
     // The sentences F4.2 quotes are in the bytes it says they are.
     assert!(pass::SPEECH_ADDENDUM.starts_with("THIS VIDEO PLAYS WHAT PEOPLE SAID OUT LOUD."));
-    assert!(pass::SPEECH_ADDENDUM.contains("never say one back: set it up before it lands, or react after it"));
+    assert!(pass::SPEECH_ADDENDUM
+        .contains("never say one back: set it up before it lands, or react after it"));
     assert!(pass::CAPTIONS_ADDENDUM.contains("- Write for the eye, not the ear."));
-    assert!(pass::CAPTIONS_ADDENDUM.contains("\"emotion\" means nothing with no voice. Leave it \"\"."));
+    assert!(
+        pass::CAPTIONS_ADDENDUM.contains("\"emotion\" means nothing with no voice. Leave it \"\".")
+    );
     assert!(pass::CAPTIONS_ADDENDUM.contains("a \"pos\": where the caption sits on the picture"));
 }
 
@@ -213,7 +351,10 @@ fn f4_2_s8_the_second_message_is_context_then_the_speech_rule_then_the_clips() {
     assert!(!bare.contains(pass::CTX_SPEECH), "{bare}");
 
     let full = pass::user_message("  keep the swearing  ", &clips, &rows, &[], "");
-    assert!(full.starts_with("USER CONTEXT -- written by the person who made this recording"), "{full}");
+    assert!(
+        full.starts_with("USER CONTEXT -- written by the person who made this recording"),
+        "{full}"
+    );
     // Trimmed: what the person wrote, not the whitespace around it.
     assert!(full.contains("\nkeep the swearing\n\n"), "{full}");
     let order = [
@@ -241,7 +382,10 @@ fn f4_2_s9_write_line_refuses_a_clip_a_placement_and_an_emotion_in_that_order() 
     // The clip first: nothing else about the call matters if it is not one of the ones given.
     let outside = pass::write_line(&clips, 6, 1.0, "text", "", "");
     assert!(outside.contains("\"error\""), "{outside}");
-    assert!(outside.contains("clip 6 is not one of the clips given (1 to 2)"), "{outside}");
+    assert!(
+        outside.contains("clip 6 is not one of the clips given (1 to 2)"),
+        "{outside}"
+    );
 
     // Then the placement, naming the word sent.
     let pos = pass::write_line(&clips, 1, 1.0, "text", "", "left");
@@ -273,8 +417,15 @@ fn f4_2_s9_write_line_refuses_a_clip_a_placement_and_an_emotion_in_that_order() 
 
     // A good call is answered with the line as it will play: where it landed after clamping, how long the
     // clip runs, and the ceiling it must stay under. No packing numbers — those are F4.3's.
-    let answer: serde_json::Value =
-        serde_json::from_str(&pass::write_line(&clips, 2, 30.0, "one two three", "happy", "top")).unwrap();
+    let answer: serde_json::Value = serde_json::from_str(&pass::write_line(
+        &clips,
+        2,
+        30.0,
+        "one two three",
+        "happy",
+        "top",
+    ))
+    .unwrap();
     assert_eq!(answer["clip"], 2);
     // The clip runs 28 s on screen, so an offset in its last second is pulled back to where it can be spoken.
     assert_eq!(answer["at"], 27.0);
@@ -283,7 +434,10 @@ fn f4_2_s9_write_line_refuses_a_clip_a_placement_and_an_emotion_in_that_order() 
     assert_eq!(answer["words"], 3);
     assert_eq!(answer["pos"], "top");
     for packed in ["lead", "gap", "tail", "tempo", "extend"] {
-        assert!(!answer.to_string().contains(packed), "F4.3's arithmetic leaked: {answer}");
+        assert!(
+            !answer.to_string().contains(packed),
+            "F4.3's arithmetic leaked: {answer}"
+        );
     }
 
     // No placement at all is the default, not a refusal: `pos?` is optional in §3.8.
@@ -297,8 +451,16 @@ fn f4_2_s9_write_line_refuses_a_clip_a_placement_and_an_emotion_in_that_order() 
 fn f4_2_s10_an_offset_never_lands_in_the_last_second_and_a_placement_has_five_spellings() {
     assert_eq!(pass::at_offset(-2.0, 10.0), 0.0, "never negative");
     assert_eq!(pass::at_offset(9.4, 10.0), 9.0, "never in the final second");
-    assert_eq!(pass::at_offset(0.4, 0.5), 0.0, "a clip shorter than a second starts at its start");
-    assert_eq!(pass::at_offset(3.0, 10.0), 3.0, "and an offset that fits is not moved");
+    assert_eq!(
+        pass::at_offset(0.4, 0.5),
+        0.0,
+        "a clip shorter than a second starts at its start"
+    );
+    assert_eq!(
+        pass::at_offset(3.0, 10.0),
+        3.0,
+        "and an offset that fits is not moved"
+    );
 
     assert_eq!(pass::normalise_pos("top"), Some("top"));
     assert_eq!(pass::normalise_pos("Center"), Some("center"));
@@ -315,17 +477,38 @@ fn f4_2_s10_an_offset_never_lands_in_the_last_second_and_a_placement_has_five_sp
 /// §3.8's `list_emotions` / the emotion column of `write_line`: the vocabulary, and nothing else.
 #[test]
 fn f4_2_s11_an_emotion_is_a_base_or_one_of_its_kin_and_the_table_shows_both() {
-    assert!(pass::emotion_known(""), "a line with no emotion is what a captions-only project writes");
+    assert!(
+        pass::emotion_known(""),
+        "a line with no emotion is what a captions-only project writes"
+    );
     for base in narrate_screen::EMOTIONS {
         assert!(pass::emotion_known(base), "{base} is one of the eight");
     }
-    assert!(pass::emotion_known("furious"), "someone writing \"furious\" means angry");
-    assert!(pass::emotion_known("DEADPAN"), "and a spelling is not a refusal");
-    assert!(pass::emotion_known("happy=0.8"), "a weight rides on the name");
-    assert!(pass::emotion_known("surprised=0.4, calm=0.2"), "two named bases are one vector");
+    assert!(
+        pass::emotion_known("furious"),
+        "someone writing \"furious\" means angry"
+    );
+    assert!(
+        pass::emotion_known("DEADPAN"),
+        "and a spelling is not a refusal"
+    );
+    assert!(
+        pass::emotion_known("happy=0.8"),
+        "a weight rides on the name"
+    );
+    assert!(
+        pass::emotion_known("surprised=0.4, calm=0.2"),
+        "two named bases are one vector"
+    );
     assert!(!pass::emotion_known("banana"));
-    assert!(!pass::emotion_known("happy=banana"), "a weight that is not a number is not a weight");
-    assert!(!pass::emotion_known("happy, banana"), "one unknown word refuses the tag");
+    assert!(
+        !pass::emotion_known("happy=banana"),
+        "a weight that is not a number is not a weight"
+    );
+    assert!(
+        !pass::emotion_known("happy, banana"),
+        "one unknown word refuses the tag"
+    );
 
     // The eight bases in §1's order, each with its kin.
     let bases: Vec<&str> = pass::EMOTION_KIN.iter().map(|(base, _)| *base).collect();
@@ -336,8 +519,16 @@ fn f4_2_s11_an_emotion_is_a_base_or_one_of_its_kin_and_the_table_shows_both() {
     // tests and the prompt quote a line of this table.
     let bases: Vec<&str> = table.lines().take(8).collect();
     assert_eq!(bases.len(), 8, "{table}");
-    assert!(bases[0].starts_with("happy: ") && bases[0].contains("joyful"), "{}", bases[0]);
-    assert!(bases[7].contains("matter-of-fact") && bases[7].contains("neutral"), "{}", bases[7]);
+    assert!(
+        bases[0].starts_with("happy: ") && bases[0].contains("joyful"),
+        "{}",
+        bases[0]
+    );
+    assert!(
+        bases[7].contains("matter-of-fact") && bases[7].contains("neutral"),
+        "{}",
+        bases[7]
+    );
     // \u00a73.8: the table also carries "the named blends with recipes \u{2014} the table the prototype keeps to
     // itself" (\u00a712 #25): every blend is published, spelled over the base names it is made of.
     assert!(table.contains("named blends"), "{table}");
@@ -346,7 +537,14 @@ fn f4_2_s11_an_emotion_is_a_base_or_one_of_its_kin_and_the_table_shows_both() {
             assert!(table.contains(name), "blend {name} is published");
         }
     }
-    assert!(table.contains("excited / thrilled = happy 1 + surprised 0.55".replace(" / thrilled", "").as_str()) || table.contains("= happy 1 + surprised 0.55"), "{table}");
+    assert!(
+        table.contains(
+            "excited / thrilled = happy 1 + surprised 0.55"
+                .replace(" / thrilled", "")
+                .as_str()
+        ) || table.contains("= happy 1 + surprised 0.55"),
+        "{table}"
+    );
 }
 
 /// F4.2's last paragraph: three attempts, thinking off after a call that wrote nothing, progress only ever
@@ -354,14 +552,30 @@ fn f4_2_s11_an_emotion_is_a_base_or_one_of_its_kin_and_the_table_shows_both() {
 #[test]
 fn f4_2_s12_the_call_runs_three_times_with_thinking_that_stops_and_a_bar_that_only_moves_forward() {
     assert_eq!(pass::attempts(), 3);
-    assert_eq!(pass::attempts(), roles::LLM_ATTEMPTS, "one count for every LLM job");
+    assert_eq!(
+        pass::attempts(),
+        roles::LLM_ATTEMPTS,
+        "one count for every LLM job"
+    );
 
     // Thinking is on to begin with and stops after an attempt that wrote nothing; it never comes back on.
-    assert!(pass::thinking_after(true, true), "a call that wrote something may still think");
-    assert!(!pass::thinking_after(true, false), "a call spent entirely thinking does not get to again");
-    assert!(!pass::thinking_after(false, true), "and once off it stays off");
+    assert!(
+        pass::thinking_after(true, true),
+        "a call that wrote something may still think"
+    );
+    assert!(
+        !pass::thinking_after(true, false),
+        "a call spent entirely thinking does not get to again"
+    );
+    assert!(
+        !pass::thinking_after(false, true),
+        "and once off it stays off"
+    );
     let log = pass::thinking_off_log();
-    assert!(log.contains("wrote nothing \u{2014} asking again with thinking off"), "{log}");
+    assert!(
+        log.contains("wrote nothing \u{2014} asking again with thinking off"),
+        "{log}"
+    );
     assert!(log.starts_with(">>> narrate:"), "{log}");
 
     // Between two attempts the reason is said back, numbered from one.
@@ -372,15 +586,25 @@ fn f4_2_s12_the_call_runs_three_times_with_thinking_that_stops_and_a_bar_that_on
 
     // The bar counts clips as they close, out of the clips asked about — and a retry never moves it back.
     assert_eq!(pass::progress(3, 9), "writing 3/9 clips");
-    assert_eq!(pass::progress_forward(7, 1), 7, "a retry that has written one clip is not work undone");
+    assert_eq!(
+        pass::progress_forward(7, 1),
+        7,
+        "a retry that has written one clip is not work undone"
+    );
     assert_eq!(pass::progress_forward(2, 5), 5);
 
     // Never served from the reply cache: the TTS cache is the cache.
     assert!(!pass::served_from_cache());
 
     // Two rejections that are not about the shape of the reply at all.
-    assert_eq!(pass::no_line_fault(), "every clip came back with no line at all");
-    assert_eq!(pass::missing_clip_fault(3, 20.0, 30.0), "clip 3 (20.0-30.0) got no entry");
+    assert_eq!(
+        pass::no_line_fault(),
+        "every clip came back with no line at all"
+    );
+    assert_eq!(
+        pass::missing_clip_fault(3, 20.0, 30.0),
+        "clip 3 (20.0-30.0) got no entry"
+    );
 
     // `leave_silent` is the answer that silence has to be said: ok, naming the clip and nothing else.
     let silent: serde_json::Value = serde_json::from_str(&pass::leave_silent(4)).unwrap();
@@ -397,7 +621,13 @@ fn f4_2_s13_get_lines_reaches_past_the_brief_s_window() {
     // 96..124. A row at 80 is outside that and appears ONLY through this tool.
     let rows = [
         row(80.0, 84.0, "game.wav", "", "said long before the cut"),
-        row(110.0, 112.0, "game.wav", "", "inside the brief, not this read"),
+        row(
+            110.0,
+            112.0,
+            "game.wav",
+            "",
+            "inside the brief, not this read",
+        ),
         row(130.0, 133.0, "game.wav", "", "said after the clip ends"),
     ];
     // Asked for the window 75..140 anchored at the clip's own start: every row that overlaps it comes
@@ -406,9 +636,18 @@ fn f4_2_s13_get_lines_reaches_past_the_brief_s_window() {
         serde_json::from_str(&pass::get_lines(&rows, 100.0, 75.0, 140.0, MIC)).unwrap();
     let lines = answer["lines"].as_array().expect("a list of lines");
     assert_eq!(lines.len(), 3, "{answer}");
-    assert_eq!(lines[0], "[-20s] SPEAKER: said long before the cut", "{answer}");
-    assert_eq!(lines[1], "[+10s] SPEAKER: inside the brief, not this read", "{answer}");
-    assert_eq!(lines[2], "[+30s] SPEAKER: said after the clip ends", "{answer}");
+    assert_eq!(
+        lines[0], "[-20s] SPEAKER: said long before the cut",
+        "{answer}"
+    );
+    assert_eq!(
+        lines[1], "[+10s] SPEAKER: inside the brief, not this read",
+        "{answer}"
+    );
+    assert_eq!(
+        lines[2], "[+30s] SPEAKER: said after the clip ends",
+        "{answer}"
+    );
     assert_eq!(answer["truncated"], false, "{answer}");
 
     // An empty window says so out loud rather than returning nothing: §12 #9's complaint is exactly
@@ -425,7 +664,15 @@ fn f4_2_s13_get_lines_reaches_past_the_brief_s_window() {
     // The cap: one read never hands back more than GET_LINES_MAX_ROWS, and says when it dropped the tail,
     // so an over-wide request is visible instead of quietly answering less than it asked.
     let many: Vec<SessionLine> = (0..(pass::GET_LINES_MAX_ROWS as u32 + 7))
-        .map(|i| row(200.0 + f64::from(i), 201.0 + f64::from(i), "game.wav", "", "row"))
+        .map(|i| {
+            row(
+                200.0 + f64::from(i),
+                201.0 + f64::from(i),
+                "game.wav",
+                "",
+                "row",
+            )
+        })
         .collect();
     let capped: serde_json::Value =
         serde_json::from_str(&pass::get_lines(&many, 200.0, 199.0, 300.0, MIC)).unwrap();
@@ -470,7 +717,10 @@ fn f4_2_s14_describe_insert_answers_with_the_card_s_parameters_and_length() {
     // A clip number outside the edit says how many there are.
     let none: serde_json::Value =
         serde_json::from_str(&pass::describe_insert(&footage, 9)).unwrap();
-    assert!(none["error"].as_str().unwrap().contains("1 clips"), "{none}");
+    assert!(
+        none["error"].as_str().unwrap().contains("1 clips"),
+        "{none}"
+    );
 }
 
 /// §3.8's `finish`: names the clips with no answer and those whose lines will not fit, and takes entries
@@ -485,21 +735,32 @@ fn f4_2_s15_finish_names_the_unanswered_and_the_unfitted_and_takes_any_order() {
     // A clip that got an answer but will not fit is named once, under the fitting heading; a clip nobody
     // answered is named under its own. Here 1..=4 were asked about: 4 has no line and no silence.
     let missed: serde_json::Value = serde_json::from_str(&pass::finish(&[1, 2, 3], &[4])).unwrap();
-    let err = missed["error"].as_str().expect("a finish that waves nothing through");
-    assert!(err.contains("no line and no silence") && err.contains("4"), "{err}");
+    let err = missed["error"]
+        .as_str()
+        .expect("a finish that waves nothing through");
+    assert!(
+        err.contains("no line and no silence") && err.contains("4"),
+        "{err}"
+    );
 
     // Unfitted only: every clip got an answer, clip 2's is too long for its clip.
     let blank: serde_json::Value =
         serde_json::from_str(&pass::finish(&[1, 2, 3, 4], &[2])).unwrap();
     let err = blank["error"].as_str().unwrap();
-    assert!(err.contains("will not fit") && err.contains("clip(s) 2"), "{err}");
+    assert!(
+        err.contains("will not fit") && err.contains("clip(s) 2"),
+        "{err}"
+    );
     assert!(!err.contains("no line and no silence"), "{err}");
 
     // Any order in, no order complaint out: the lists are sorted for the message alone.
     let shuffled: serde_json::Value =
         serde_json::from_str(&pass::finish(&[3, 1, 5, 2], &[5, 4])).unwrap();
     let err = shuffled["error"].as_str().unwrap();
-    assert!(!err.to_lowercase().contains("order"), "§12 #27: one policy, no order rejection: {err}");
+    assert!(
+        !err.to_lowercase().contains("order"),
+        "§12 #27: one policy, no order rejection: {err}"
+    );
     // And the two unfitted clips read in ascending order whatever came in.
     let four = err.find("4").expect("clip 4 named");
     let five = err.rfind('5').expect("clip 5 named");

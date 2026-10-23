@@ -45,7 +45,12 @@ const RUN_BUTTONS: [&str; 3] = ["play-button", "lucky-button", "stop-button"];
 /// The row's children in §1's order: the scrolling controls, the bar that takes the free width, the job
 /// buttons in their own scroller (`window_run_bar_fit`; the box that holds them is `pass-controls`, inside it),
 /// and the readouts at the right end.
-const ROW_CHILDREN: [&str; 4] = ["run-controls", "run-progress", "pass-scroller", "readout-row"];
+const ROW_CHILDREN: [&str; 4] = [
+    "run-controls",
+    "run-progress",
+    "pass-scroller",
+    "readout-row",
+];
 /// A window on `page` at §1's minimum with the band at rest — the geometry §1 says every shot is taken at.
 fn minimum_window(app: &adw::Application, page: &str) -> adw::ApplicationWindow {
     release_last_window();
@@ -90,7 +95,12 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
             "{ITEM} s1: row child {} exp={} box {:?}",
             child.widget_name(),
             child.hexpands(),
-            b.map(|r| (r.x() as i32, r.y() as i32, r.width() as i32, r.height() as i32))
+            b.map(|r| (
+                r.x() as i32,
+                r.y() as i32,
+                r.width() as i32,
+                r.height() as i32
+            ))
         );
     }
     // The three badges §1 names, left to right inside the scroller.
@@ -103,7 +113,10 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
         // The handle may land somewhere else after a resize, so the row's own box is re-read each time.
         let (x, y, w, h) = drawn(&window, name);
         println!("{ITEM} s1: {name} box x={x:.0} y={y:.0} w={w:.0} h={h:.0}");
-        assert!(w > 0.0 && h > 0.0, "{ITEM} §1 badge: {name} was given an EMPTY box — it is not visible");
+        assert!(
+            w > 0.0 && h > 0.0,
+            "{ITEM} §1 badge: {name} was given an EMPTY box — it is not visible"
+        );
         assert!(
             y >= bar_y - SLACK_PX && y + h <= bar_y + bar_h + SLACK_PX,
             "{ITEM} §1: {name} is drawn at y={y:.0}..{:.0}, outside the run-bar row's y={bar_y:.0}..{:.0}",
@@ -138,7 +151,10 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
     for name in ROW_CHILDREN {
         let (x, y, w, h) = drawn(&window, name);
         println!("{ITEM} s1: {name} box x={x:.0} y={y:.0} w={w:.0} h={h:.0}");
-        assert!(w > 0.0 && h > 0.0, "{ITEM} §1: {name} was given an EMPTY box in the row");
+        assert!(
+            w > 0.0 && h > 0.0,
+            "{ITEM} §1: {name} was given an EMPTY box in the row"
+        );
         assert!(
             y >= bar_y - SLACK_PX && y + h <= bar_y + bar_h + SLACK_PX,
             "{ITEM} §1: {name} is drawn at y={y:.0}..{:.0}, outside the run-bar row's y={bar_y:.0}..{:.0}",
@@ -162,7 +178,12 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
     // order, not the share's width. `prepare_screen_widgets.rs` pins the sentence itself from the text.
     let (row_x, _ry, row_w, _rh) = drawn(&window, "readout-row");
     let mut previous_right = row_x;
-    for name in ["inputs-readout", "outputs-label", "outputs-folder-button", "outputs-readout"] {
+    for name in [
+        "inputs-readout",
+        "outputs-label",
+        "outputs-folder-button",
+        "outputs-readout",
+    ] {
         let (x, _y, w, h) = drawn_or_share(&window, name);
         println!("{ITEM} s1: {name} box x={x:.0} w={w:.0} h={h:.0}");
         assert!(
@@ -227,8 +248,11 @@ fn s1_nothing_is_drawn_between_the_page_and_the_run_bar(app: &adw::Application) 
         split.y() as f64 + split.height() as f64
     };
     let bar_top = bar_y;
-    println!("{ITEM} s1: prepare-split ends at y={split_bottom:.0}, run-bar starts at y={bar_top:.0} \
-              (gap {:.0} px)", bar_top - split_bottom);
+    println!(
+        "{ITEM} s1: prepare-split ends at y={split_bottom:.0}, run-bar starts at y={bar_top:.0} \
+              (gap {:.0} px)",
+        bar_top - split_bottom
+    );
     assert!(
         bar_top >= split_bottom - SLACK_PX,
         "{ITEM} §1: the run bar starts ABOVE the bottom of the page split — the two overlap \
@@ -236,12 +260,25 @@ fn s1_nothing_is_drawn_between_the_page_and_the_run_bar(app: &adw::Application) 
     );
     // Walk every drawn widget and report any whose box falls inside the forbidden strip.
     let mut strays: Vec<String> = Vec::new();
-    fn walk(node: &gtk::Widget, window: &adw::ApplicationWindow, from: f64, to: f64, out: &mut Vec<String>) {
-        if node.widget_name() != "" && node.widget_name() != "main-divider" && node.widget_name() != "bottom-bar" {
+    fn walk(
+        node: &gtk::Widget,
+        window: &adw::ApplicationWindow,
+        from: f64,
+        to: f64,
+        out: &mut Vec<String>,
+    ) {
+        if node.widget_name() != ""
+            && node.widget_name() != "main-divider"
+            && node.widget_name() != "bottom-bar"
+        {
             if let Some(b) = node.compute_bounds(window.upcast_ref::<gtk::Widget>()) {
                 let y = b.y() as f64;
                 let h = b.height() as f64;
-                if h > 0.0 && y >= from + SLACK_PX && y + h <= to - SLACK_PX && to - from > 2.0 * SLACK_PX {
+                if h > 0.0
+                    && y >= from + SLACK_PX
+                    && y + h <= to - SLACK_PX
+                    && to - from > 2.0 * SLACK_PX
+                {
                     out.push(format!("{} y={y:.0} h={h:.0}", node.widget_name(),));
                 }
             }
@@ -261,7 +298,10 @@ fn s1_nothing_is_drawn_between_the_page_and_the_run_bar(app: &adw::Application) 
         bar_top,
         &mut strays,
     );
-    println!("{ITEM} s1: widgets drawn in the strip between the page and the run bar: {:?}", strays);
+    println!(
+        "{ITEM} s1: widgets drawn in the strip between the page and the run bar: {:?}",
+        strays
+    );
     assert!(
         strays.is_empty(),
         "{ITEM} §1: something is drawn between the page and the run bar — §1 puts the page directly above \
@@ -301,7 +341,9 @@ fn s2_the_tab_row_sits_in_the_header_centre(app: &adw::Application) {
         fn find_label(node: &gtk::Widget, word: &str) -> Option<gtk::Label> {
             for child in node.observe_children().iter::<glib::Object>() {
                 let Ok(child) = child else { continue };
-                let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+                let Ok(widget) = child.downcast::<gtk::Widget>() else {
+                    continue;
+                };
                 if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
                     if label.text() == word {
                         return Some(label);
@@ -371,7 +413,10 @@ fn s1_the_pass_buttons_are_still_reachable(app: &adw::Application) {
         );
         let (x, y, w, h) = drawn(&window, name);
         println!("{ITEM} s1: {name} box x={x:.0} y={y:.0} w={w:.0} h={h:.0}");
-        assert!(w > 0.0 && h > 0.0, "{ITEM}: {name} resolves but has an EMPTY box");
+        assert!(
+            w > 0.0 && h > 0.0,
+            "{ITEM}: {name} resolves but has an EMPTY box"
+        );
         assert!(
             y >= bar_y - SLACK_PX && y + h <= bar_y + bar_h + SLACK_PX,
             "{ITEM} §1: {name} is drawn at y={y:.0}..{:.0}, outside the run-bar row y={bar_y:.0}..{:.0}",
@@ -422,7 +467,10 @@ fn sec_03_shell_1_the_window_screen_the_run_bar_row_is_drawn() {
         s1_the_pass_buttons_are_still_reachable(app);
         RAN.store(true, Ordering::SeqCst);
     });
-    assert!(RAN.load(Ordering::SeqCst), "{ITEM}: the widget round never ran");
+    assert!(
+        RAN.load(Ordering::SeqCst),
+        "{ITEM}: the widget round never ran"
+    );
 }
 
 /// §1 badge **13**'s rule, in words a test can check without a window: the bar takes what is left of the row
@@ -447,7 +495,10 @@ fn sec_03_shell_1_the_window_s13_the_progress_bar_leaves_the_badges_their_room()
         squeezed, PROGRESS_MIN_PX,
         "{ITEM} §1 badge 13: a squeezed row must fall back to the bar's floor, not to nothing"
     );
-    assert!(squeezed > 0, "{ITEM}: a zero-width progress bar is invisible");
+    assert!(
+        squeezed > 0,
+        "{ITEM}: a zero-width progress bar is invisible"
+    );
 }
 
 /// The band rule's arithmetic with no window in sight, restated for this item's id so a failure names the
@@ -456,10 +507,26 @@ fn sec_03_shell_1_the_window_s13_the_progress_bar_leaves_the_badges_their_room()
 #[test]
 fn sec_03_shell_1_the_window_s1_band_rule_arithmetic() {
     use naivepost::ui::window_shot::rest_position;
-    assert_eq!(rest_position(844, 54), 790, "§1: an 844 px divider with a 54 px band gives the page 790");
-    assert_eq!(rest_position(844, 0), 844, "no band: the page keeps the whole divider");
-    assert_eq!(rest_position(5, 274), 0, "a band taller than the divider cannot eat below zero");
-    assert_eq!(rest_position(844, 844), 0, "a band the divider's own height leaves the page nothing");
+    assert_eq!(
+        rest_position(844, 54),
+        790,
+        "§1: an 844 px divider with a 54 px band gives the page 790"
+    );
+    assert_eq!(
+        rest_position(844, 0),
+        844,
+        "no band: the page keeps the whole divider"
+    );
+    assert_eq!(
+        rest_position(5, 274),
+        0,
+        "a band taller than the divider cannot eat below zero"
+    );
+    assert_eq!(
+        rest_position(844, 844),
+        0,
+        "a band the divider's own height leaves the page nothing"
+    );
     for (total, band) in [(844, 1), (844, 843), (100, 100), (1, 1), (10, 0)] {
         let handle = rest_position(total, band);
         assert!(

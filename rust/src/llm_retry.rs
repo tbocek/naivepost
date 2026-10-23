@@ -82,7 +82,8 @@ fn leg_says_gone(lower: &str) -> bool {
 /// says what was reset or refused: net/http, Go's h2 transport and Rust's client all write `connection reset` /
 /// `connection refused`, so requiring the pair loses nothing real and keeps "the model refused to answer" out.
 /// `unreachable` is already specific to a socket, so it stands alone.
-const DEATH_CONDITIONS: [(&str, bool); 3] = [("reset", true), ("refused", true), ("unreachable", false)];
+const DEATH_CONDITIONS: [(&str, bool); 3] =
+    [("reset", true), ("refused", true), ("unreachable", false)];
 
 /// §3's NEW rule: a 5xx whose body names a device or memory failure backs off like a transport death rather than
 /// being resent at once. A 500 normally means "the server answered, and will answer the same way in four minutes"
@@ -139,7 +140,9 @@ pub fn device_failure(status: Option<u16>, body: &str) -> bool {
         return false;
     }
     let lower = body.to_lowercase();
-    DEVICE_FAILURE_PHRASES.iter().any(|phrase| contains_word(&lower, phrase))
+    DEVICE_FAILURE_PHRASES
+        .iter()
+        .any(|phrase| contains_word(&lower, phrase))
 }
 
 /// The HTTP status a message names, if it names one.
@@ -160,7 +163,10 @@ pub fn status_of(text: &str) -> Option<u16> {
     let mut at = 0;
     while let Some(offset) = padded[at..].find(digits) {
         let start = at + offset;
-        let end = start + padded[start..].find(|char: char| !digits(char)).unwrap_or(padded.len() - start);
+        let end = start
+            + padded[start..]
+                .find(|char: char| !digits(char))
+                .unwrap_or(padded.len() - start);
         // Exactly three digits, bounded by non-digits on both sides: a port or a byte count is not a status.
         if end - start == 3 {
             return padded[start..end].parse().ok();
@@ -247,7 +253,10 @@ pub fn gone_log(step: &str, reason: &str, seconds: u64, attempt: u32) -> String 
 /// nobody can see is indistinguishable from a call that hung for two seconds, and the difference matters to
 /// whoever reads a stalled run. Shape borrowed from the prototype's `>>>` lines.
 pub fn waited_log(step: &str, reason: &str) -> String {
-    format!(">>> {step}: asked again after {} ({reason})", wait_spelling(RETRY_SECONDS))
+    format!(
+        ">>> {step}: asked again after {} ({reason})",
+        wait_spelling(RETRY_SECONDS)
+    )
 }
 
 // ---- The loop -----------------------------------------------------------------------
@@ -291,7 +300,13 @@ pub fn run<T, E: Display>(
     stopped: &dyn Fn() -> bool,
     died: &dyn Fn(&E) -> bool,
 ) -> Run<T, E> {
-    let mut out = Run { answer: None, logs: Vec::new(), failures: 0, stopped: false, last: None };
+    let mut out = Run {
+        answer: None,
+        logs: Vec::new(),
+        failures: 0,
+        stopped: false,
+        last: None,
+    };
     loop {
         match call() {
             Ok(answer) => {
@@ -389,15 +404,26 @@ pub fn think_again(thinking: bool, reply: &str) -> bool {
 /// history read as though the model had answered with a blank. With tools the correction arrives as a `tool`
 /// result — §3's "with tools these become tool results" — because on that path the model is mid-round and expects
 /// its calls answered, not a new instruction from the user.
-pub fn retry_turn(messages: Vec<Message>, reply: &str, problem: &str, tools_active: bool) -> Vec<Message> {
+pub fn retry_turn(
+    messages: Vec<Message>,
+    reply: &str,
+    problem: &str,
+    tools_active: bool,
+) -> Vec<Message> {
     let mut messages = messages;
     if !reply.trim().is_empty() {
-        messages.push(Message { role: "assistant".to_string(), parts: vec![Part::Text(reply.to_string())] });
+        messages.push(Message {
+            role: "assistant".to_string(),
+            parts: vec![Part::Text(reply.to_string())],
+        });
     }
     let correction =
         format!("Your answer failed validation: {problem}. Return corrected strict JSON only.");
     let role = if tools_active { "tool" } else { "user" };
-    messages.push(Message { role: role.to_string(), parts: vec![Part::Text(correction)] });
+    messages.push(Message {
+        role: role.to_string(),
+        parts: vec![Part::Text(correction)],
+    });
     messages
 }
 

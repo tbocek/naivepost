@@ -19,8 +19,8 @@ use gtk4 as gtk;
 use naivepost::cut::{Cut, EffectKind, Fx, Seg};
 use naivepost::fx_band;
 use naivepost::fx_lane;
-use naivepost::ui::{self, cut_lane_paint as paint};
 use naivepost::timeline::Recording;
+use naivepost::ui::{self, cut_lane_paint as paint};
 
 use crate::common;
 use common::{cut_page_settled_first as cut_page, settle, widget};
@@ -69,11 +69,7 @@ fn painted(view: &paint::BarView) -> (Vec<u8>, usize, i32, i32) {
 /// covered pixel rounds, and a check about colours should not hinge on that rounding.
 fn pixel(bytes: &[u8], stride: usize, x: i32, y: i32) -> (u32, u32, u32) {
     let at = y as usize * stride + x as usize * 4;
-    (
-        bytes[at + 2] as u32,
-        bytes[at + 1] as u32,
-        bytes[at] as u32,
-    )
+    (bytes[at + 2] as u32, bytes[at + 1] as u32, bytes[at] as u32)
 }
 
 /// The wash a bar's fill arrives as ON THE SURFACE. cairo writes an image surface PREMULTIPLIED and BGRA on this
@@ -94,7 +90,14 @@ fn near(a: (u32, u32, u32), b: (u32, u32, u32), within: u32) -> bool {
 
 /// Does any pixel differ from `ground` by more than `by`? That is "ink was laid down here", measured rather than
 /// asserted from the arithmetic that would have drawn it.
-fn has_ink_other_than(bytes: &[u8], stride: usize, w: i32, h: i32, ground: (u32, u32, u32), by: u32) -> bool {
+fn has_ink_other_than(
+    bytes: &[u8],
+    stride: usize,
+    w: i32,
+    h: i32,
+    ground: (u32, u32, u32),
+    by: u32,
+) -> bool {
     (0..h).any(|y| (0..w).any(|x| !near(pixel(bytes, stride, x, y), ground, by)))
 }
 
@@ -139,11 +142,19 @@ fn every_kind_says_its_own_thing() {
 
     let mut stop = fx(EffectKind::Speed, 40.0, 3.0);
     stop.rate = 0.0;
-    assert_eq!(paint::caption_of(&stop), "3.0s", "a stop's news is its seconds, not \u{00d7}0");
+    assert_eq!(
+        paint::caption_of(&stop),
+        "3.0s",
+        "a stop's news is its seconds, not \u{00d7}0"
+    );
 
     let mut flat = fx(EffectKind::Speed, 44.0, 9.0);
     flat.rate = 1.0;
-    assert_eq!(paint::caption_of(&flat), "9.0s", "a rate of 1 did nothing to the clock, so it says its seconds");
+    assert_eq!(
+        paint::caption_of(&flat),
+        "9.0s",
+        "a rate of 1 did nothing to the clock, so it says its seconds"
+    );
 
     let mut words = fx(EffectKind::Text, 50.0, 4.0);
     words.text = "Ethereum\nin one lecture".into();
@@ -158,21 +169,40 @@ fn every_kind_says_its_own_thing() {
     let mut truncation_check = words.clone();
     truncation_check.text = long_words.clone();
     let said = paint::caption_of(&truncation_check);
-    assert_eq!(said.chars().count(), paint::CAPTION_MAX_CHARS, "a long caption is truncated, not wrapped");
+    assert_eq!(
+        said.chars().count(),
+        paint::CAPTION_MAX_CHARS,
+        "a long caption is truncated, not wrapped"
+    );
     assert!(said.ends_with('\u{2026}'), "and says so: {said}");
-    assert!(long.dur > 0.0, "the long record above is only a fixture: {long_words}");
+    assert!(
+        long.dur > 0.0,
+        "the long record above is only a fixture: {long_words}"
+    );
 
     let mut drawing = fx(EffectKind::Svg, 60.0, 5.0);
     drawing.src = "/home/someone/assets/tier.svg".into();
-    assert_eq!(paint::caption_of(&drawing), "tier.svg", "a drawing prints its file's name (§A.5)");
+    assert_eq!(
+        paint::caption_of(&drawing),
+        "tier.svg",
+        "a drawing prints its file's name (§A.5)"
+    );
 
     let mut loud = fx(EffectKind::Volume, 70.0, 6.0);
     loud.gain = 2.0;
-    assert_eq!(paint::caption_of(&loud), "200%", "a volume prints the percentage (§A.6)");
+    assert_eq!(
+        paint::caption_of(&loud),
+        "200%",
+        "a volume prints the percentage (§A.6)"
+    );
 
     let mut tag = fx(EffectKind::Label, 80.0, 6.0);
     tag.text = "boss fight".into();
-    assert_eq!(paint::caption_of(&tag), "boss fight", "a label prints its name (§A.7)");
+    assert_eq!(
+        paint::caption_of(&tag),
+        "boss fight",
+        "a label prints its name (§A.7)"
+    );
     tag.text = "the reveal of the thing".into();
     assert_eq!(
         paint::caption_of(&tag),
@@ -181,17 +211,31 @@ fn every_kind_says_its_own_thing() {
     );
 
     // The marks are per-kind, and a stop gets its own glyph even though its stored kind is still `speed`.
-    assert_eq!(paint::mark_of(&zoom), "\u{2295}", "a zoom is \u{2295}, the dropdown's own glyph");
-    assert_eq!(paint::mark_of(&stop), "\u{23f8}", "a stop is a still, so it wears \u{23f8}");
+    assert_eq!(
+        paint::mark_of(&zoom),
+        "\u{2295}",
+        "a zoom is \u{2295}, the dropdown's own glyph"
+    );
+    assert_eq!(
+        paint::mark_of(&stop),
+        "\u{23f8}",
+        "a stop is a still, so it wears \u{23f8}"
+    );
     assert_eq!(paint::mark_of(&slow), "\u{23e9}", "a clock wears \u{23e9}");
     assert_eq!(paint::mark_of(&tag), "\u{1f3f7}", "a label wears \u{1f3f7}");
     // A view carries the staying flag only when the kind can mean it (§2 gives the second colour to a zoom alone).
     let mut staying_zoom = zoom.clone();
     staying_zoom.stay = true;
-    assert!(paint::view_for(&staying_zoom, WIDE, ROW_H).staying, "a staying zoom knows it");
+    assert!(
+        paint::view_for(&staying_zoom, WIDE, ROW_H).staying,
+        "a staying zoom knows it"
+    );
     let mut stay_caption = words.clone();
     stay_caption.stay = true;
-    assert!(!paint::view_for(&stay_caption, WIDE, ROW_H).staying, "a caption's stray `stay` means nothing");
+    assert!(
+        !paint::view_for(&stay_caption, WIDE, ROW_H).staying,
+        "a caption's stray `stay` means nothing"
+    );
     RAN_WORDS.store(true, Ordering::SeqCst);
 }
 
@@ -225,7 +269,11 @@ fn the_wash_and_the_ink_are_on_the_pixels() {
     let stayed = paint::view_for(&stays, WIDE, ROW_H);
     let (kept_bytes, kept_stride, _, _) = painted(&stayed);
     assert!(
-        near(pixel(&kept_bytes, kept_stride, wash_x, wash_y), expected_wash(EffectKind::Zoom, true), 3),
+        near(
+            pixel(&kept_bytes, kept_stride, wash_x, wash_y),
+            expected_wash(EffectKind::Zoom, true),
+            3
+        ),
         "a staying zoom is the orange bar"
     );
 
@@ -240,7 +288,8 @@ fn the_wash_and_the_ink_are_on_the_pixels() {
     let mid_y = th / 2;
     let ground: (u32, u32, u32) = (0, 0, 0);
     assert!(
-        pixel(&tag_bytes, tag_stride, far_x, mid_y) != ground || pixel(&tag_bytes, tag_stride, far_x, 2) == ground,
+        pixel(&tag_bytes, tag_stride, far_x, mid_y) != ground
+            || pixel(&tag_bytes, tag_stride, far_x, 2) == ground,
         "the label's line reaches across the bar (a tick and a dashed line, §A.7)"
     );
     assert!(
@@ -289,7 +338,11 @@ fn the_page_paints_every_placed_bar(app: &adw::Application) {
     let mut tag = fx(EffectKind::Label, 12.0, 6.0);
     tag.text = "intro".into();
     let mut cut = Cut {
-        segs: vec![Seg { s: 0.0, e: 300.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 300.0,
+            ..Default::default()
+        }],
         fx: vec![zoom, tag],
         ..Default::default()
     };
@@ -297,7 +350,11 @@ fn the_page_paints_every_placed_bar(app: &adw::Application) {
     // it before a window exists borrows a slot that is being built (a `RefCell already borrowed` abort inside
     // GTK's non-unwinding activate). Every lane widget file that names recordings does it in this order.
     let window = cut_page(app, &cut);
-    ui::set_session_recordings(&[Recording { base: "take-a".into(), start: 0.0, end: 300.0 }]);
+    ui::set_session_recordings(&[Recording {
+        base: "take-a".into(),
+        start: 0.0,
+        end: 300.0,
+    }]);
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 5.0 });
     ui::refresh_effects_lane(&window);
     settle();
@@ -321,9 +378,16 @@ fn the_page_paints_every_placed_bar(app: &adw::Application) {
         .observe_children()
         .iter::<glib::Object>()
         .filter_map(|child| child.ok())
-        .filter(|child| child.downcast_ref::<gtk::Widget>().is_some_and(|w| w.widget_name() == "fx-bar-paint-0"))
+        .filter(|child| {
+            child
+                .downcast_ref::<gtk::Widget>()
+                .is_some_and(|w| w.widget_name() == "fx-bar-paint-0")
+        })
         .count();
-    assert_eq!(surfaces, 1, "one painted surface per bar, however many refreshes run");
+    assert_eq!(
+        surfaces, 1,
+        "one painted surface per bar, however many refreshes run"
+    );
 
     // And the ink follows the record: drop the label through the page's own door and its surface goes with it.
     cut.fx.remove(1);
@@ -347,7 +411,10 @@ fn the_page_paints_every_placed_bar(app: &adw::Application) {
 fn sec_06_effects_2_the_lane_and_the_preview_s19_every_bar_carries_what_its_record_says() {
     every_kind_says_its_own_thing();
     assert_eq!(stopped_early(), None, "the activation stopped early");
-    assert!(RAN_WORDS.load(Ordering::SeqCst), "the caption check never ran");
+    assert!(
+        RAN_WORDS.load(Ordering::SeqCst),
+        "the caption check never ran"
+    );
 }
 
 #[test]

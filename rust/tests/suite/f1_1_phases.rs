@@ -125,7 +125,10 @@ fn f1_1_s6_the_stage_names_map_to_phases() {
         names.contains(&"frames") && names.contains(&"speech"),
         "ingest stages are planned for this session: {names:?}"
     );
-    assert!(names.contains(&"separation"), "and 🗣 plans separation: {names:?}");
+    assert!(
+        names.contains(&"separation"),
+        "and 🗣 plans separation: {names:?}"
+    );
     for name in names.clone() {
         assert!(
             run_stages::phase_of_stage(name).is_some(),
@@ -171,7 +174,8 @@ fn f1_1_s6_a_planned_run_gets_one_slice_per_stage_in_order() {
     // Without the tick the same plan starts at ingest's slice, because there is no separation stage.
     let plain = project(vec![source("project:sources/lecture.mkv", true, false)]);
     let plain_stages = run_stages::plan(naivepost::run::Step::Prepare, &plain);
-    let plain_slices = run_stages::phase_slices(&plain_stages, prepare_run::separation_asked(&plain));
+    let plain_slices =
+        run_stages::phase_slices(&plain_stages, prepare_run::separation_asked(&plain));
     assert!(
         !plain_slices.contains(&(0.0, 0.10)),
         "no separation stage means no separation slice: {plain_slices:?}"
@@ -202,7 +206,10 @@ fn f1_1_s6_the_walk_puts_each_stage_in_its_slice() {
         &mut procs,
         &slices,
     );
-    assert_eq!(drive, naivepost::run_stages::Drive::Done { ran: 2, skipped: 0 });
+    assert_eq!(
+        drive,
+        naivepost::run_stages::Drive::Done { ran: 2, skipped: 0 }
+    );
     // The last stage walked was frames, whose slice re-seeded the queue at ingest's base; its own half
     // finished inside that slice, so the bar reads as ingest done — partway up the run, not a full bar.
     let (ingest_base, ingest_share) = prepare_run::share(Phase::Ingest, true);

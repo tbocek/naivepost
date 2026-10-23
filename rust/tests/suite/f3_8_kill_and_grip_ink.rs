@@ -85,7 +85,11 @@ fn any_white_in(data: &[u8], width: i32, row: i32, from: i32, to: i32) -> bool {
 /// when the marks change: the mark is white ink too, and naming it says WHERE the white pixels a narrow bar is
 /// allowed to carry actually are.
 fn mark_of_zoom() -> String {
-    naivepost::ui::cut_lane_paint::mark_of(&Fx { kind: "zoom".into(), ..Default::default() }).to_string()
+    naivepost::ui::cut_lane_paint::mark_of(&Fx {
+        kind: "zoom".into(),
+        ..Default::default()
+    })
+    .to_string()
 }
 
 fn zoom_view(width: f64) -> naivepost::ui::cut_lane_paint::BarView {
@@ -124,7 +128,11 @@ fn f3_8_s3_a_bar_under_killminpx_draws_no_cross() {
     let narrow = fx_band::KILL_MIN_PX - 1.0;
     let view = zoom_view(narrow);
     let (_, width, _) = paint(&view);
-    assert!(!fx_band::kill_open(view.width), "the door opened for a {} px bar", view.width);
+    assert!(
+        !fx_band::kill_open(view.width),
+        "the door opened for a {} px bar",
+        view.width
+    );
     // A bar under the threshold gets no cross of its own. It IS too narrow to print a caption (§A.8 uses
     // `GRIP_MIN_PX`), but its MARK glyph is white ink and on a 31 px bar it reaches past the middle — so what is
     // pinned is measured, not assumed: the same width with NO mark and no text (so nothing but wash and edge) may
@@ -168,8 +176,14 @@ fn f3_8_s1_a_bar_with_grips_shows_two_end_ticks() {
     // A bare bar of the same size carries only its border at those two columns; the marked one must be darker
     // there because the tick sits just inside it.
     let bare_left = min_channel_sum(&bare.0, bare.1, bare.2 / 2, 2, 3);
-    assert!(at_left <= bare_left, "no grip tick at the left end: {at_left} vs bare {bare_left}");
-    assert!(at_right <= bare_left, "no grip tick at the right end: {at_right} vs bare {bare_left}");
+    assert!(
+        at_left <= bare_left,
+        "no grip tick at the left end: {at_left} vs bare {bare_left}"
+    );
+    assert!(
+        at_right <= bare_left,
+        "no grip tick at the right end: {at_right} vs bare {bare_left}"
+    );
     assert!(
         at_left < 400,
         "the left grip column reads as untouched wash: {at_left}"
@@ -223,10 +237,26 @@ fn f3_8_s3_a_label_tag_draws_neither() {
 /// Two records on separate rows: a 50 s zoom (200 px, kill open) and a 5 s speed (20 px, kill closed).
 fn two_records() -> Cut {
     Cut {
-        segs: vec![Seg { s: 0.0, e: 300.0, cam: 0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 300.0,
+            cam: 0,
+            ..Default::default()
+        }],
         fx: vec![
-            Fx { kind: "zoom".into(), t: 0.0, dur: 50.0, ..Default::default() },
-            Fx { kind: "speed".into(), t: 0.0, dur: 5.0, rate: 2.0, ..Default::default() },
+            Fx {
+                kind: "zoom".into(),
+                t: 0.0,
+                dur: 50.0,
+                ..Default::default()
+            },
+            Fx {
+                kind: "speed".into(),
+                t: 0.0,
+                dur: 5.0,
+                rate: 2.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }
@@ -251,7 +281,8 @@ fn f3_8_s3_the_cross_in_a_bar_is_the_button_that_removes_it(app: &adw::Applicati
     );
     // The ink is the bar's main child, so the overlay is exactly as wide as the wash (the ✕ overlaps, never adds).
     assert_eq!(
-        bar.first_child().map(|child| child.widget_name().to_string()),
+        bar.first_child()
+            .map(|child| child.widget_name().to_string()),
         Some("fx-bar-paint-0".to_string()),
         "the bar lost its ink when it became an overlay"
     );
@@ -284,10 +315,22 @@ fn f3_8_s3_the_cross_in_a_bar_is_the_button_that_removes_it(app: &adw::Applicati
     // Press it: the state the logic test checks, not a painted pixel.
     let before = ui::review_cut_of(&window).fx.len();
     common::click(&window, "fx-remove-0");
-    assert_eq!(ui::review_cut_of(&window).fx.len(), before - 1, "the ✕ removed nothing");
-    assert_eq!(status_text(&window), fx_band::removed("Zoom"), "not the kill sentence");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        before - 1,
+        "the ✕ removed nothing"
+    );
+    assert_eq!(
+        status_text(&window),
+        fx_band::removed("Zoom"),
+        "not the kill sentence"
+    );
     common::click(&window, "undo-button");
-    assert_eq!(ui::review_cut_of(&window).fx.len(), before, "one ↶ did not bring it back");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        before,
+        "one ↶ did not bring it back"
+    );
     // And the bar survived the round trip with its ink still its own.
     assert_eq!(
         common::widget(&window, "fx-bar-0")

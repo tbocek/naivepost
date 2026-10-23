@@ -28,14 +28,26 @@ static RAN_LAYOUT: AtomicBool = AtomicBool::new(false);
 /// A two-minute take: at the opening 4 px/s it is 480 px of tape, so its fit is NOT 4 in any ordinary
 /// view — which is what makes this a check of the rule rather than of the constant.
 fn tape() -> Vec<Recording> {
-    vec![Recording { base: "session-tape".into(), start: 0.0, end: 120.0 }]
+    vec![Recording {
+        base: "session-tape".into(),
+        start: 0.0,
+        end: 120.0,
+    }]
 }
 
 fn scenes() -> cut::Cut {
     cut::Cut {
         segs: vec![
-            Seg { s: 0.0, e: 30.0, ..Default::default() },
-            Seg { s: 40.0, e: 60.0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 30.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 40.0,
+                e: 60.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }
@@ -72,7 +84,11 @@ fn check_the_floor_is_the_fit(app: &adw::Application) {
     // is exactly that fit.
     let view = ui::cut_view::view_px(f64::from(ui::window::STRIP_WIDTH));
     let want = timeline::floor_pps(&timeline::filmed_runs(&tape()), view);
-    assert_ne!(want, ui::window::TRACK_STRIP_PPS, "this tape's fit is not the open zoom: {want}");
+    assert_ne!(
+        want,
+        ui::window::TRACK_STRIP_PPS,
+        "this tape's fit is not the open zoom: {want}"
+    );
     // One surface both ways: the ladder floors at the strip's DECLARED width (`press_zoom` passes
     // `STRIP_WIDTH`, not the allocation GTK gave the strip once §05-cut#1's paned let it fill the column),
     // so this check works its fit out from that same declared 480. Asking the window for its realized
@@ -116,7 +132,10 @@ fn check_the_stored_zoom_moves_the_layout(app: &adw::Application) {
     let after = ui::window::strip_pps();
     let boxes_after = ui::window::strip_clip_boxes_for_test();
 
-    assert!(after > before, "+ deepens the stored zoom: {before} -> {after}");
+    assert!(
+        after > before,
+        "+ deepens the stored zoom: {before} -> {after}"
+    );
     assert!(
         boxes_after[0].w > boxes_before[0].w,
         "the first clip's box grew with the zoom: {} -> {}",
@@ -125,8 +144,14 @@ fn check_the_stored_zoom_moves_the_layout(app: &adw::Application) {
     );
     // And the boxes ARE the stored zoom's arithmetic — no second, private pps anywhere on this path.
     let expected = naivepost::cut_trim::clip_boxes(&painted(), ui::cut_view::live_pps(view));
-    assert_eq!(boxes_after, expected, "the page paints what the stored zoom says");
-    assert!(after <= naivepost::cut_screen::ZOOM_MAX, "and never past the 240 px/s ceiling");
+    assert_eq!(
+        boxes_after, expected,
+        "the page paints what the stored zoom says"
+    );
+    assert!(
+        after <= naivepost::cut_screen::ZOOM_MAX,
+        "and never past the 240 px/s ceiling"
+    );
     RAN_LAYOUT.store(true, Ordering::SeqCst);
 }
 
@@ -140,15 +165,23 @@ fn round() {
 }
 
 #[test]
-fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s1_the_zoom_floor_is_the_film_length_fit_not_a_constant() {
+fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s1_the_zoom_floor_is_the_film_length_fit_not_a_constant(
+) {
     common::pin_private_cwd();
     round();
-    assert!(RAN_FLOOR.load(Ordering::SeqCst), "the filmed-length-fit check never ran");
+    assert!(
+        RAN_FLOOR.load(Ordering::SeqCst),
+        "the filmed-length-fit check never ran"
+    );
 }
 
 #[test]
-fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s2_the_stored_zoom_moves_the_band_layout() {
+fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s2_the_stored_zoom_moves_the_band_layout(
+) {
     common::pin_private_cwd();
     round();
-    assert!(RAN_LAYOUT.load(Ordering::SeqCst), "the stored-zoom-drives-the-layout check never ran");
+    assert!(
+        RAN_LAYOUT.load(Ordering::SeqCst),
+        "the stored-zoom-drives-the-layout check never ran"
+    );
 }

@@ -84,11 +84,16 @@ fn f0_2_s1_the_two_readings_land_in_the_bar_status() {
         let mut bar = bar_with_run(run::step(page));
         bar.press(page, Transport::default(), &project);
         assert_eq!(
-            bar.status, run::PAUSING,
+            bar.status,
+            run::PAUSING,
             "the first press on the {page:?} tab says the stage in hand finishes first"
         );
         bar.press(page, Transport::default(), &project);
-        assert_eq!(bar.status, run::RESUMED, "the second press on the {page:?} tab says resumed");
+        assert_eq!(
+            bar.status,
+            run::RESUMED,
+            "the second press on the {page:?} tab says resumed"
+        );
     }
 }
 
@@ -112,7 +117,11 @@ fn f0_2_s1_a_run_under_way_toggles_pause() {
 
     let run = bar.running.as_ref().expect("pausing keeps the run");
     assert!(run.paused, "the first press paused it");
-    assert_eq!(run.step, Step::Prepare, "pausing does not change what is running");
+    assert_eq!(
+        run.step,
+        Step::Prepare,
+        "pausing does not change what is running"
+    );
     assert!(run.log_expanded, "the log stays where the run put it");
 
     let pressed = bar.press(Page::Cut, playing, &project);
@@ -179,7 +188,10 @@ fn f0_2_s2_playing_preview_owns_the_button() {
         &project,
     );
     assert_eq!(pressed, Pressed::ToggledTransport { resume: false });
-    assert!(bar.running.is_none(), "▶ toggled the preview, so no run began");
+    assert!(
+        bar.running.is_none(),
+        "▶ toggled the preview, so no run began"
+    );
 
     // The voice sample on Narrate, parked part way through: ▶ resumes rather than restarts.
     let mut bar = RunBar::default();
@@ -187,7 +199,10 @@ fn f0_2_s2_playing_preview_owns_the_button() {
         playing: false,
         started: true,
     };
-    assert!(cued.cued(), "started and not playing is a cue, not playback");
+    assert!(
+        cued.cued(),
+        "started and not playing is a cue, not playback"
+    );
     let pressed = bar.press(Page::Narrate, cued, &project);
     assert_eq!(pressed, Pressed::ToggledTransport { resume: true });
     assert!(bar.running.is_none());
@@ -382,7 +397,10 @@ fn f0_2_play_tooltip_and_pause_icon() {
     // button beside it, so these are the only tooltips the button ever has.
     let idle: Controls = run::controls(&None, None);
     assert_eq!(idle.icon, run::PLAY_ICON);
-    assert_eq!(idle.tooltip, "Run this step \u{2014} or resume what is paused");
+    assert_eq!(
+        idle.tooltip,
+        "Run this step \u{2014} or resume what is paused"
+    );
     assert_eq!(idle.tooltip, run::PLAY_TOOLTIP);
     assert!(!idle.stop_sensitive, "nothing to stop");
 
@@ -399,7 +417,10 @@ fn f0_2_play_tooltip_and_pause_icon() {
     let drawn = run::controls(&Some(parked), None);
     assert_eq!(drawn.icon, run::PLAY_ICON);
     assert_eq!(drawn.tooltip, run::PLAY_TOOLTIP);
-    assert!(drawn.stop_sensitive, "a paused run still needs a way to end");
+    assert!(
+        drawn.stop_sensitive,
+        "a paused run still needs a way to end"
+    );
 
     // A preview playing with no run under way: the same button pauses it.
     let drawn = run::controls(

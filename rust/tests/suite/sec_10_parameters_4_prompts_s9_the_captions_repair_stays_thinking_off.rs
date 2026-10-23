@@ -50,7 +50,13 @@ impl ScriptedLlm {
                         break;
                     }
                     if head.to_ascii_lowercase().starts_with("content-length:") {
-                        length = head.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+                        length = head
+                            .split(':')
+                            .nth(1)
+                            .unwrap_or("0")
+                            .trim()
+                            .parse()
+                            .unwrap_or(0);
                     }
                     if head.trim().is_empty() {
                         break;
@@ -113,12 +119,33 @@ fn sec_10_parameters_4_prompts_s9_the_captions_repair_stays_thinking_off() {
     ]);
     point_at(&llm.url());
 
-    let asked = captions_ask::ask(&fixture.tree, "Caption every spoken line.", &clips, &words, 2, &|| false);
-    assert!(!asked.failed, "the repaired answer landed: {}", asked.reason);
-    assert_eq!(asked.calls.len(), 1, "the caption came from the SECOND answer: {:?}", asked.calls);
+    let asked = captions_ask::ask(
+        &fixture.tree,
+        "Caption every spoken line.",
+        &clips,
+        &words,
+        2,
+        &|| false,
+    );
+    assert!(
+        !asked.failed,
+        "the repaired answer landed: {}",
+        asked.reason
+    );
+    assert_eq!(
+        asked.calls.len(),
+        1,
+        "the caption came from the SECOND answer: {:?}",
+        asked.calls
+    );
 
     let seen = llm.drain();
-    assert_eq!(seen.len(), 2, "one repair, one extra request: {}", seen.len());
+    assert_eq!(
+        seen.len(),
+        2,
+        "one repair, one extra request: {}",
+        seen.len()
+    );
     for (at, body) in seen.iter().enumerate() {
         let sent: serde_json::Value = serde_json::from_str(body).expect("the request is JSON");
         assert_eq!(

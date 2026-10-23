@@ -4,15 +4,19 @@
 //! INSIDE the mark with a sample beside it. A wrong rule (a colour applied to the wrong span, a band drawn
 //! at the wrong row) changes a number here; a CSS class always parses, so a stylesheet could never tell us.
 
-use gtk4::prelude::*;
-use gtk4 as gtk;
-use std::sync::atomic::{AtomicBool, Ordering};
 use crate::common;
+use gtk4 as gtk;
+use gtk4::prelude::*;
 use naivepost::{
     cut::{Fx, Seg},
-    cut_screen, fx_lane, timeline::Recording,
-    ui::{cut_colours, cut_tracks::{self as tracks, Scene, PICTURE_ROW_EXTRA_PX, SELECTION_BAND_PX}},
+    cut_screen, fx_lane,
+    timeline::Recording,
+    ui::{
+        cut_colours,
+        cut_tracks::{self as tracks, Scene, PICTURE_ROW_EXTRA_PX, SELECTION_BAND_PX},
+    },
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const PPS: f64 = 2.0;
 const WIDTH: i32 = 300;
@@ -34,7 +38,12 @@ fn sec_05_cut_1_screen_the_rows_stack_in_the_order_the_inventory_lists_them() {
     let base = scene();
     let head = naivepost::cut_trim::RULER_H + SELECTION_BAND_PX;
     // One effect row is one row of 26 px, and a second overlapping group is a second row of the same 26.
-    let one_group = Fx { kind: "zoom".into(), t: 10.0, dur: 5.0, ..Default::default() };
+    let one_group = Fx {
+        kind: "zoom".into(),
+        t: 10.0,
+        dur: 5.0,
+        ..Default::default()
+    };
     let mut second_group = one_group.clone();
     second_group.t = 12.0;
     let mut one_row = base.clone();
@@ -43,24 +52,44 @@ fn sec_05_cut_1_screen_the_rows_stack_in_the_order_the_inventory_lists_them() {
     two_rows.fx = vec![one_group.clone(), second_group];
     let h = |scene: &Scene| tracks::band_height_px(scene, cut_screen::THUMB_AT_OPEN);
     assert!(
-        (h(&one_row) - (head + fx_lane::lane_height_px(1) + cut_screen::THUMB_AT_OPEN as f64 + PICTURE_ROW_EXTRA_PX)) < 1.0,
-        "{} px: ruler + selection band + one effect row + one picture row", h(&one_row)
+        (h(&one_row)
+            - (head
+                + fx_lane::lane_height_px(1)
+                + cut_screen::THUMB_AT_OPEN as f64
+                + PICTURE_ROW_EXTRA_PX))
+            < 1.0,
+        "{} px: ruler + selection band + one effect row + one picture row",
+        h(&one_row)
     );
     assert!(
         (h(&two_rows) - h(&one_row) - fx_lane::lane_height_px(1)).abs() < 1.0,
-        "a second overlapping group costs another effect row: {} -> {}", h(&one_row), h(&two_rows)
+        "a second overlapping group costs another effect row: {} -> {}",
+        h(&one_row),
+        h(&two_rows)
     );
     // No effect at all costs no effects lane: the lane is sized by the groups, not by a floor of one.
     assert!(
-        (h(&base) - (head + fx_lane::lane_height_px(fx_lane::row_count(&base.fx)) + cut_screen::THUMB_AT_OPEN as f64 + PICTURE_ROW_EXTRA_PX)).abs() < 1.0,
-        "{} px with the scene's own row count", h(&base)
+        (h(&base)
+            - (head
+                + fx_lane::lane_height_px(fx_lane::row_count(&base.fx))
+                + cut_screen::THUMB_AT_OPEN as f64
+                + PICTURE_ROW_EXTRA_PX))
+            .abs()
+            < 1.0,
+        "{} px with the scene's own row count",
+        h(&base)
     );
     // And a second camera row is another picture row plus its wave strip, which is where §A's "each row's
     // first audio track as a strip below" and its 30 px come out of the height rather than being asserted.
     let mut two_cams = base.clone();
     two_cams.row_count = 2;
     let extra = h(&two_cams) - h(&base);
-    assert!(extra > 0.0, "a second row has to be paid for: {} -> {}", h(&base), h(&two_cams));
+    assert!(
+        extra > 0.0,
+        "a second row has to be paid for: {} -> {}",
+        h(&base),
+        h(&two_cams)
+    );
     assert!(
         extra >= cut_screen::THUMB_AT_OPEN as f64 + PICTURE_ROW_EXTRA_PX,
         "a picture row alone costs {:?} px, so a second row costs at least that: {extra}",
@@ -76,7 +105,11 @@ fn sec_05_cut_1_screen_the_gutter_is_the_first_30_px_of_timeline_space() {
     // window is a pixel of the timeline minus 30. `cut_view` is what turns a window width into the view the
     // zoom floor and the scrollbar's page size are computed from, so the subtraction happens exactly once.
     let surface = 1030.0;
-    assert_eq!(naivepost::ui::cut_view::gutter_px(), cut_screen::GUTTER_PX, "one gutter constant");
+    assert_eq!(
+        naivepost::ui::cut_view::gutter_px(),
+        cut_screen::GUTTER_PX,
+        "one gutter constant"
+    );
     assert_eq!(
         naivepost::ui::cut_view::view_px(surface) + cut_screen::GUTTER_PX,
         surface,
@@ -84,8 +117,14 @@ fn sec_05_cut_1_screen_the_gutter_is_the_first_30_px_of_timeline_space() {
     );
     // And the tape is the gutter plus the filmed seconds, so a session of zero length still costs 30 px
     // of gutter: the band is never completely empty of a place to put the badges.
-    assert_eq!(naivepost::ui::cut_view::total_px(0.0, 4.0), cut_screen::GUTTER_PX);
-    assert_eq!(naivepost::ui::cut_view::total_px(100.0, 4.0), cut_screen::GUTTER_PX + 400.0);
+    assert_eq!(
+        naivepost::ui::cut_view::total_px(0.0, 4.0),
+        cut_screen::GUTTER_PX
+    );
+    assert_eq!(
+        naivepost::ui::cut_view::total_px(100.0, 4.0),
+        cut_screen::GUTTER_PX + 400.0
+    );
 }
 
 #[test]
@@ -124,11 +163,23 @@ fn sec_05_cut_1_screen_the_picture_band_asks_for_frames_at_its_own_zoom_and_posi
     // the wanted stamp, and a file name carries a four-character `.jpg`, so every frame sorts one past its
     // own second and is the answer for a whole second longer than it was extracted for.
     assert_eq!(tracks::frame_near(&paths, 0.0), Some(stamp(0.0)));
-    assert_eq!(tracks::frame_near(&paths, 0.999), Some(stamp(0.0)), "inside a second, its own frame");
-    assert_eq!(tracks::frame_near(&paths, 1.0), Some(stamp(0.0)), "the suffix's one second of slack");
+    assert_eq!(
+        tracks::frame_near(&paths, 0.999),
+        Some(stamp(0.0)),
+        "inside a second, its own frame"
+    );
+    assert_eq!(
+        tracks::frame_near(&paths, 1.0),
+        Some(stamp(0.0)),
+        "the suffix's one second of slack"
+    );
     assert_eq!(tracks::frame_near(&paths, 1.6), Some(stamp(0.0)));
     assert_eq!(tracks::frame_near(&paths, 1.999), Some(stamp(0.0)));
-    assert_eq!(tracks::frame_near(&paths, 2.0), Some(stamp(1.0)), "one frame per second of the tape");
+    assert_eq!(
+        tracks::frame_near(&paths, 2.0),
+        Some(stamp(1.0)),
+        "one frame per second of the tape"
+    );
     assert_eq!(tracks::frame_near(&paths, 3.0), Some(stamp(2.0)));
     // Earlier than every frame there is nothing older to show, so the first one stands in rather than the
     // row going empty — which is what a band scrolled back before the first extracted picture does.
@@ -143,7 +194,10 @@ fn sec_05_cut_1_screen_the_picture_band_asks_for_frames_at_its_own_zoom_and_posi
     let second_at = |pps: f64, origin: f64, x: f64| (origin + x) / pps;
     assert!((second_at(2.0, 0.0, 100.0) - 50.0).abs() < 1e-9);
     assert!((second_at(240.0, 0.0, 100.0) - 0.4166).abs() < 1e-3);
-    assert!((second_at(2.0, 100.0, 0.0) - 50.0).abs() < 1e-9, "scrolling asks for a later second");
+    assert!(
+        (second_at(2.0, 100.0, 0.0) - 50.0).abs() < 1e-9,
+        "scrolling asks for a later second"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -152,9 +206,17 @@ fn scene() -> Scene {
     Scene {
         pps: PPS,
         origin: 0.0,
-        segs: vec![Seg { s: 0.0, e: 20.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 20.0,
+            ..Default::default()
+        }],
         fx: Vec::new(),
-        recordings: vec![Recording { base: "take-a".into(), start: 0.0, end: 50.0 }],
+        recordings: vec![Recording {
+            base: "take-a".into(),
+            start: 0.0,
+            end: 50.0,
+        }],
         folds: Vec::new(),
         selection: None,
         watched_row: None,
@@ -174,7 +236,13 @@ fn painted(scene: &Scene) -> (Vec<u8>, usize, i32) {
         cairo::ImageSurface::create(cairo::Format::ARgb32, WIDTH, height).expect("a surface");
     {
         let cr = cairo::Context::new(&surface).expect("a context");
-        tracks::paint_at(&cr, scene, WIDTH as f64, height as f64, tracks::THUMB_DEFAULT_PX);
+        tracks::paint_at(
+            &cr,
+            scene,
+            WIDTH as f64,
+            height as f64,
+            tracks::THUMB_DEFAULT_PX,
+        );
     }
     let data = {
         let read = surface.data().expect("read the pixels back").to_vec();
@@ -258,7 +326,10 @@ fn sec_05_cut_1_screen_s30_the_page_redraw_moves_the_red_line_layer_too() {
     // And every one of those names is a widget the Cut page really builds — a name in the list that no page
     // contains would pass the rule test while drawing nothing.
     run_widget_round();
-    assert!(LINE_RAN.load(Ordering::SeqCst), "the page-side half of this check never ran");
+    assert!(
+        LINE_RAN.load(Ordering::SeqCst),
+        "the page-side half of this check never ran"
+    );
 }
 
 /// The page half of badge **30**: each name the redraw door queues (but the placeholder strip, which lives
@@ -270,13 +341,15 @@ fn page_redraw_reaches_the_red_line_layer(app: &adw::Application) {
     window.set_default_size(1400, 900);
     window.present();
     common::settle();
-    let layers = common::widget_in(&window, "track-layers").expect("the band's stacked layers exist");
+    let layers =
+        common::widget_in(&window, "track-layers").expect("the band's stacked layers exist");
     for name in naivepost::ui::cut_view::repaint_targets() {
         if name == "track-strip" {
             continue; // F2.8's placeholder, packed beside the stack rather than inside it
         }
-        let found = common::widget_in(&window, name)
-            .unwrap_or_else(|| panic!("the redraw door names {name}, but the page builds no such widget"));
+        let found = common::widget_in(&window, name).unwrap_or_else(|| {
+            panic!("the redraw door names {name}, but the page builds no such widget")
+        });
         assert!(
             found.parent().is_some(),
             "{name} is in the tree but parentless, so nothing lays it out"
@@ -286,7 +359,10 @@ fn page_redraw_reaches_the_red_line_layer(app: &adw::Application) {
             .parent()
             .map(|parent| parent.upcast_ref::<gtk::Widget>() == layers.upcast_ref::<gtk::Widget>())
             .unwrap_or(false);
-        assert!(inside, "{name} sits outside the band's overlay, so the stack does not cover it");
+        assert!(
+            inside,
+            "{name} sits outside the band's overlay, so the stack does not cover it"
+        );
     }
     common::hold_last_window(window);
 }
@@ -313,7 +389,10 @@ fn page_band_spans_the_page(app: &adw::Application) {
         .expect("the line is a drawing area");
     let page = f64::from(window.width());
     let tape = f64::from(band.width());
-    assert!(page > 0.0 && tape > 0.0, "both laid out: page {page}, band {tape}");
+    assert!(
+        page > 0.0 && tape > 0.0,
+        "both laid out: page {page}, band {tape}"
+    );
     assert!(
         tape > f64::from(tracks::BAND_WIDTH_PX),
         "the band outgrew the placeholder's floor: {tape} px over {page} px of window"
@@ -334,7 +413,11 @@ fn page_band_spans_the_page(app: &adw::Application) {
         tracks::BAND_WIDTH_PX
     );
     // §1: the red line is "across both bands", so it is as wide as the tape it lies on.
-    assert_eq!(tape, f64::from(line.width()), "the red line spans what the band spans");
+    assert_eq!(
+        tape,
+        f64::from(line.width()),
+        "the red line spans what the band spans"
+    );
     // And the view the zoom floor, the scrollbar's page size and the wheel are all computed from is this
     // surface's width minus the gutter — one subtraction, in `cut_view`, no second copy.
     let view = naivepost::ui::cut_view::view_px(naivepost::ui::cut_view::surface_width(&window));
@@ -374,7 +457,11 @@ fn sec_05_cut_1_screen_s1_a_bar_at_the_tape_edge_is_cut_there() {
     // And a scene that WOULD run past it (its seconds reach the last filmed second) is cut there rather than
     // extrapolated over the empty ground: same green, same stop.
     let to_the_end = Scene {
-        segs: vec![Seg { s: 0.0, e: 50.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 50.0,
+            ..Default::default()
+        }],
         ..scene()
     };
     let over = painted(&to_the_end);
@@ -392,14 +479,20 @@ fn sec_05_cut_1_screen_s1_a_bar_at_the_tape_edge_is_cut_there() {
 fn sec_05_cut_1_screen_s16_the_band_spans_the_page_width() {
     common::pin_private_cwd();
     run_widget_round();
-    assert!(SPAN_RAN.load(Ordering::SeqCst), "the page-width check never ran");
+    assert!(
+        SPAN_RAN.load(Ordering::SeqCst),
+        "the page-width check never ran"
+    );
 }
 
 #[test]
 fn sec_05_cut_1_screen_an_added_lane_grows_the_drawn_band() {
     common::pin_private_cwd();
     run_widget_round();
-    assert!(GROWTH_RAN.load(Ordering::SeqCst), "the band-growth check never ran");
+    assert!(
+        GROWTH_RAN.load(Ordering::SeqCst),
+        "the band-growth check never ran"
+    );
 }
 
 #[test]
@@ -448,9 +541,11 @@ fn page_hangs_band_and_red_line_on_two_layers(app: &adw::Application) {
     window.present();
     common::settle();
     let band = common::widget_in(&window, "track-band").expect("the Cut page draws the track band");
-    let line =
-        common::widget_in(&window, "track-playhead").expect("the Cut page draws the playhead layer");
-    let band_area = band.downcast::<gtk::DrawingArea>().expect("the band is a drawing area");
+    let line = common::widget_in(&window, "track-playhead")
+        .expect("the Cut page draws the playhead layer");
+    let band_area = band
+        .downcast::<gtk::DrawingArea>()
+        .expect("the band is a drawing area");
     let line_area = line
         .clone()
         .downcast::<gtk::DrawingArea>()
@@ -467,7 +562,11 @@ fn page_hangs_band_and_red_line_on_two_layers(app: &adw::Application) {
         "the two layers are stacked, not side by side ({})",
         parent.upcast_ref::<gtk::Widget>().type_()
     );
-    assert_eq!(band_area.width(), line_area.width(), "both layers span the same width");
+    assert_eq!(
+        band_area.width(),
+        line_area.width(),
+        "both layers span the same width"
+    );
     common::hold_last_window(window);
 }
 
@@ -486,7 +585,11 @@ fn page_band_grows_for_a_lane(app: &adw::Application) {
     // One lane, on the cut the page actually paints from. Two, so "it grew" is a comparison the page can
     // not answer by coincidence: one lane could already fit inside the height the page opened with.
     let with_lane = naivepost::cut::Cut {
-        segs: vec![naivepost::cut::Seg { s: 0.0, e: 20.0, ..Default::default() }],
+        segs: vec![naivepost::cut::Seg {
+            s: 0.0,
+            e: 20.0,
+            ..Default::default()
+        }],
         lanes: vec![
             naivepost::cut::Lane {
                 name: "mic-lav".to_string(),
@@ -574,8 +677,16 @@ fn sec_05_cut_1_screen_a_folded_gap_is_greyer_than_the_kept_bar_beside_it() {
     let mut scene = scene();
     // Keep 0..10 and 20..50: 10..20 is dropped inside filmed material, so it must show as a gap.
     scene.segs = vec![
-        Seg { s: 0.0, e: 10.0, ..Default::default() },
-        Seg { s: 20.0, e: 50.0, ..Default::default() },
+        Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        },
+        Seg {
+            s: 20.0,
+            e: 50.0,
+            ..Default::default()
+        },
     ];
     let painted = painted(&scene);
     let band = head_px(&scene) / 2;
@@ -600,7 +711,10 @@ fn sec_05_cut_1_screen_a_folded_gap_is_greyer_than_the_kept_bar_beside_it() {
         !column_differs(&painted, kept_mid, band, band + 1, kept),
         "the kept bar runs unbroken across the seconds a scene covers"
     );
-    assert!(kept.1 > kept.0 && kept.1 > kept.2, "kept footage is the green bar, got {kept:?}");
+    assert!(
+        kept.1 > kept.0 && kept.1 > kept.2,
+        "kept footage is the green bar, got {kept:?}"
+    );
     assert!(
         gap.0 == gap.1 && gap.1 == gap.2 && gap.0 > 200,
         "a dropped stretch inside filmed material is a grey gap, got {gap:?}"
@@ -625,7 +739,9 @@ fn sec_05_cut_1_screen_the_gutter_is_painted_down_the_bands_left_edge() {
     for (y, where_) in samples {
         let rail = rgb(&painted.0, painted.1, 10, y);
         let tape = rgb(&painted.0, painted.1, WIDTH / 2, y);
-        println!("GUTTER y={y} ({where_}): rail {rail:?} vs tape {tape:?}, ground sums to {ground_sum}");
+        println!(
+            "GUTTER y={y} ({where_}): rail {rail:?} vs tape {tape:?}, ground sums to {ground_sum}"
+        );
         let sum = |c: (u8, u8, u8)| c.0 as u32 + c.1 as u32 + c.2 as u32;
         assert!(
             sum(rail) < sum(tape),
@@ -650,25 +766,58 @@ fn sec_05_cut_1_screen_a_wide_kept_bar_wears_a_cross() {
     let kept_green = |c: (u8, u8, u8)| c.1 > c.0 + 40 && c.1 > c.2 + 40;
     let near_white = |c: (u8, u8, u8)| c.0 >= 200 && c.1 >= 200 && c.2 >= 200;
     let mut wide = scene();
-    wide.segs = vec![Seg { s: 5.0, e: 40.0, ..Default::default() }];
+    wide.segs = vec![Seg {
+        s: 5.0,
+        e: 40.0,
+        ..Default::default()
+    }];
     let (wx, ww) = tracks::band_span_px(&wide, 5.0, 40.0);
-    assert!(ww >= tracks::CROSS_MIN_PX, "fixture: the wide bar is {} px", ww);
+    assert!(
+        ww >= tracks::CROSS_MIN_PX,
+        "fixture: the wide bar is {} px",
+        ww
+    );
     let wide_painted = painted(&wide);
     let mid_x = (wx + ww / 2.0).round() as i32;
-    let on_wide = rgb(&wide_painted.0, wide_painted.1, mid_x, centre_y.round() as i32);
+    let on_wide = rgb(
+        &wide_painted.0,
+        wide_painted.1,
+        mid_x,
+        centre_y.round() as i32,
+    );
     let mut narrow = scene();
     // The gutter is inked over the band's first 30 px (§B), so the narrow bar has to sit clear of it or the
     // sample would read the rail instead of the bar.
-    narrow.segs = vec![Seg { s: 40.0, e: 55.0, ..Default::default() }];
+    narrow.segs = vec![Seg {
+        s: 40.0,
+        e: 55.0,
+        ..Default::default()
+    }];
     let (nx, nw) = tracks::band_span_px(&narrow, 40.0, 55.0);
-    assert!(nw < tracks::CROSS_MIN_PX, "fixture: the narrow bar is {} px", nw);
-    assert!(nx > cut_screen::GUTTER_PX, "fixture: the narrow bar starts past the gutter at x={nx:.0}");
+    assert!(
+        nw < tracks::CROSS_MIN_PX,
+        "fixture: the narrow bar is {} px",
+        nw
+    );
+    assert!(
+        nx > cut_screen::GUTTER_PX,
+        "fixture: the narrow bar starts past the gutter at x={nx:.0}"
+    );
     let narrow_painted = painted(&narrow);
-    let on_narrow = rgb(&narrow_painted.0, narrow_painted.1, (nx + nw / 2.0).round() as i32, centre_y.round() as i32);
+    let on_narrow = rgb(
+        &narrow_painted.0,
+        narrow_painted.1,
+        (nx + nw / 2.0).round() as i32,
+        centre_y.round() as i32,
+    );
     println!(
         "CROSS wide {ww:.0}px centre x={mid_x} -> {on_wide:?}; narrow {nw:.0}px -> {on_narrow:?}"
     );
-    assert!(near_white(on_wide), "a bar ≥ {:.0} px wears the white \u{2715}: {on_wide:?}", tracks::CROSS_MIN_PX);
+    assert!(
+        near_white(on_wide),
+        "a bar ≥ {:.0} px wears the white \u{2715}: {on_wide:?}",
+        tracks::CROSS_MIN_PX
+    );
     assert!(
         kept_green(on_narrow),
         "a narrower bar shows its own green with no glyph on it: {on_narrow:?}"
@@ -683,20 +832,35 @@ fn sec_05_cut_1_screen_a_selection_is_blue_and_only_where_it_is() {
     let painted = painted(&scene);
     let band = head_px(&scene) / 2;
     let inside = rgb(&painted.0, painted.1, 60, band);
-    assert!(inside.2 > inside.0 + 20, "the selection is blue, got {inside:?}");
+    assert!(
+        inside.2 > inside.0 + 20,
+        "the selection is blue, got {inside:?}"
+    );
     let outside = rgb(&painted.0, painted.1, 10, band);
-    assert!(outside.2 < inside.2, "the blue stops where the selection stops: {outside:?} vs {inside:?}");
+    assert!(
+        outside.2 < inside.2,
+        "the blue stops where the selection stops: {outside:?} vs {inside:?}"
+    );
 }
 
 #[test]
 fn sec_05_cut_1_screen_an_insert_bands_violet_across_the_picture_rows() {
     common::pin_private_cwd();
     let mut scene = scene();
-    scene.segs.push(Seg { s: 60.0, e: 60.0, dur: 3.0, ins: "/cards/ending.png".into(), ..Default::default() });
+    scene.segs.push(Seg {
+        s: 60.0,
+        e: 60.0,
+        dur: 3.0,
+        ins: "/cards/ending.png".into(),
+        ..Default::default()
+    });
     let painted = painted(&scene);
     let row_y = head_px(&scene) + 10;
     let card = rgb(&painted.0, painted.1, 125, row_y);
-    assert!(card.2 > card.1 && card.0 > card.1, "an insert is a violet band over the rows, got {card:?}");
+    assert!(
+        card.2 > card.1 && card.0 > card.1,
+        "an insert is a violet band over the rows, got {card:?}"
+    );
 }
 
 #[test]
@@ -709,8 +873,14 @@ fn sec_05_cut_1_screen_the_in_and_out_marks_are_green_then_red() {
     let y = head_px(&scene) + 30;
     let left = rgb(&painted.0, painted.1, 40, y);
     let right = rgb(&painted.0, painted.1, 120, y);
-    assert!(left.1 > left.0 && left.1 > left.2, "the in mark is green, got {left:?}");
-    assert!(right.0 > right.1 && right.0 > right.2, "the out mark is red, got {right:?}");
+    assert!(
+        left.1 > left.0 && left.1 > left.2,
+        "the in mark is green, got {left:?}"
+    );
+    assert!(
+        right.0 > right.1 && right.0 > right.2,
+        "the out mark is red, got {right:?}"
+    );
 }
 
 #[test]
@@ -757,7 +927,8 @@ fn sec_05_cut_1_screen_the_watched_row_wears_a_dashed_outline() {
 #[test]
 fn sec_05_cut_1_screen_the_playhead_is_a_two_px_red_line_on_its_own_layer() {
     common::pin_private_cwd();
-    let mut surface = cairo::ImageSurface::create(cairo::Format::ARgb32, WIDTH, 120).expect("surface");
+    let mut surface =
+        cairo::ImageSurface::create(cairo::Format::ARgb32, WIDTH, 120).expect("surface");
     {
         let cr = cairo::Context::new(&surface).expect("a context");
         cr.set_source_rgb(1.0, 1.0, 1.0);
@@ -771,7 +942,10 @@ fn sec_05_cut_1_screen_the_playhead_is_a_two_px_red_line_on_its_own_layer() {
         (data[base + 2], data[base + 1], data[base])
     };
     let line = at(100);
-    assert!(line.0 > 150 && line.1 < 100 && line.2 < 100, "the playhead is red, got {line:?}");
+    assert!(
+        line.0 > 150 && line.1 < 100 && line.2 < 100,
+        "the playhead is red, got {line:?}"
+    );
     assert_eq!(at(98), (255, 255, 255), "the line is 2 px, not a band");
     assert_eq!(at(102), (255, 255, 255), "the line is 2 px, not a band");
 }
@@ -789,13 +963,17 @@ fn sec_05_cut_1_screen_a_name_plate_names_the_row_its_window_and_its_correction(
         off: 0.0,
         dur: 10.0,
     }];
-    scene
-        .shift
-        .insert("take-a".to_string(), 1.234);
+    scene.shift.insert("take-a".to_string(), 1.234);
     let words = tracks::plates(&scene, &scene.recordings[0].clone());
-    assert_eq!(words[0], "take-a", "the plate starts with the recording's base name");
+    assert_eq!(
+        words[0], "take-a",
+        "the plate starts with the recording's base name"
+    );
     assert_eq!(words[1], "from 01:15", "a lane is spelled `from m:ss`");
-    assert_eq!(words[2], "+1.23 s", "a hand correction is spelled to two decimals");
+    assert_eq!(
+        words[2], "+1.23 s",
+        "a hand correction is spelled to two decimals"
+    );
 }
 
 /// §1's Pictures: the band shows Prepare's extracted frames, and it shows the one nearest the second at
@@ -810,7 +988,12 @@ fn sec_05_cut_1_screen_the_band_lists_prepare_frames_and_shows_the_one_it_picks(
     std::fs::create_dir_all(&frames).expect("frames folder");
     // Three seconds of grid, named exactly as `frames::extract_plan` names them.
     let names: Vec<String> = (0..3)
-        .map(|second| format!("{}.jpg", naivepost::clock::frame_name(1704067200.0 + second as f64)))
+        .map(|second| {
+            format!(
+                "{}.jpg",
+                naivepost::clock::frame_name(1704067200.0 + second as f64)
+            )
+        })
         .collect();
     for name in &names {
         std::fs::write(frames.join(name), b"not really a jpeg").expect("a frame file");
@@ -820,8 +1003,11 @@ fn sec_05_cut_1_screen_the_band_lists_prepare_frames_and_shows_the_one_it_picks(
     assert_eq!(paths.len(), 3, "the page lists what Prepare wrote");
     let picked = tracks::frame_near(&paths, 1704067203.0)
         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()));
-    assert_eq!(picked.as_deref(), Some(names[2].as_str()), "the frame shown is the one nearest the second at the view's left edge");
+    assert_eq!(
+        picked.as_deref(),
+        Some(names[2].as_str()),
+        "the frame shown is the one nearest the second at the view's left edge"
+    );
     // And an absent folder answers empty, which draws no pictures rather than inventing black (§1).
     assert!(tracks::frame_paths(&tree, "no-such-take").is_empty());
 }
-

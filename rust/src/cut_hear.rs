@@ -111,7 +111,10 @@ pub fn lane_start(lane: &Lane, scene: &Seg, t: f64) -> LaneStart {
     if !lane_covers(lane, from, t) {
         return LaneStart::Nothing;
     }
-    LaneStart::Seek { from, stop: stop_at_boundary(scene, lane, t) }
+    LaneStart::Seek {
+        from,
+        stop: stop_at_boundary(scene, lane, t),
+    }
 }
 
 /// F2.5 S4 (`a lane started under a scene boundary is seeked, with a stop at the boundary`): where a
@@ -221,16 +224,16 @@ pub fn rate_under(fx: &[Fx], t: f64) -> f64 {
 /// covering effect's answer wins").
 fn first_covering_speed(fx: &[Fx], t: f64) -> Option<&Fx> {
     fx.iter().find(|effect| {
-        effect.effect_kind() == Some(crate::cut::EffectKind::Speed)
-            && {
-                let (from, to) = effect.spans();
-                t >= from && t < to
-            }
+        effect.effect_kind() == Some(crate::cut::EffectKind::Speed) && {
+            let (from, to) = effect.spans();
+            t >= from && t < to
+        }
     })
 }
 
 pub fn bed_silenced_under(fx: &[Fx], t: f64) -> bool {
-    first_covering_speed(fx, t).is_some_and(|effect| crate::fx_lane::mute_silences_the_preview(&effect.snd))
+    first_covering_speed(fx, t)
+        .is_some_and(|effect| crate::fx_lane::mute_silences_the_preview(&effect.snd))
 }
 
 /// §06-effects#2-the-lane-and-the-preview (`the two 1× sound answers cannot be previewed`; `spec/06-effects.md`
@@ -240,7 +243,8 @@ pub fn bed_silenced_under(fx: &[Fx], t: f64) -> bool {
 /// it is faking rather than play sped-up sound quietly. Same first-covering walk as [`rate_under`]; with no
 /// covering Speed the preview has nothing to apologise for.
 pub fn sound_needs_two_clocks_under(fx: &[Fx], t: f64) -> bool {
-    first_covering_speed(fx, t).is_some_and(|effect| !crate::fx_lane::previewable_sound(&effect.snd))
+    first_covering_speed(fx, t)
+        .is_some_and(|effect| !crate::fx_lane::previewable_sound(&effect.snd))
 }
 
 // --- S6: one preview volume, shared by every preview ---------------------------------------------------
@@ -284,7 +288,9 @@ impl Default for PreviewVolume {
 impl PreviewVolume {
     /// The setting nobody has touched.
     pub fn new() -> Self {
-        PreviewVolume { value: VOLUME_DEFAULT }
+        PreviewVolume {
+            value: VOLUME_DEFAULT,
+        }
     }
 
     /// A slider's value — 0..100, step 1 — written as the one number. Every other slider mirrors this
@@ -430,7 +436,11 @@ pub fn toggle_heard(cut: &mut Cut, scene: usize, lane: &str) -> Option<String> {
     }
     let heard = !seg.hears(lane);
     // A fresh slice, built from what is still silent: the pressed lane in or out, everything else as it was.
-    let silenced: Vec<String> = if heard { vec![] } else { vec![lane.to_string()] };
+    let silenced: Vec<String> = if heard {
+        vec![]
+    } else {
+        vec![lane.to_string()]
+    };
     let quiet: Vec<String> = seg
         .quiet
         .iter()
@@ -450,7 +460,10 @@ pub fn all_silent(cut: &Cut, lanes: &[&str]) -> bool {
     // Every kept scene has to LIST every one of the row's recordings. A scene that says nothing about a lane
     // hears it, so silence is only ever what was written down — which is also why a recording no scene was cut
     // with reads as heard rather than silent: nothing lists it.
-    !speaks.is_empty() && lanes.iter().all(|lane| speaks.iter().all(|seg| !seg.hears(lane)))
+    !speaks.is_empty()
+        && lanes
+            .iter()
+            .all(|lane| speaks.iter().all(|seg| !seg.hears(lane)))
 }
 
 /// F2.10 S2 (`the gutter switch toggles a lane for the whole cut`): does ANY scene still hear any of these
@@ -492,7 +505,11 @@ pub fn toggle_lane_all(cut: &mut Cut, lanes: &[&str], name: &str) -> String {
         }
         // A fresh slice again (rule 10), and only the row's own lanes move: another camera keeps its say.
         // Pressing an ON switch silences the row; pressing an OFF one clears it back to hearing everything.
-        let silenced: Vec<String> = if on { lanes.iter().map(|lane| lane.to_string()).collect() } else { vec![] };
+        let silenced: Vec<String> = if on {
+            lanes.iter().map(|lane| lane.to_string()).collect()
+        } else {
+            vec![]
+        };
         let quiet: Vec<String> = seg
             .quiet
             .iter()

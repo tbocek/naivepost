@@ -305,7 +305,8 @@ pub fn add_file_tip() -> String {
 
 /// §1's default sample sentence. Spoken in the selected voice, it is the shortest test that shows whether a
 /// cloned voice will be listenable for minutes rather than seconds.
-pub const DEFAULT_SAMPLE: &str = "This is the voice the narration will be spoken in. It should stay clear and \
+pub const DEFAULT_SAMPLE: &str =
+    "This is the voice the narration will be spoken in. It should stay clear and \
                                   easy to follow for a couple of minutes.";
 
 // --- The transport's clock (§1's number 5) ---------------------------------------------------------------
@@ -354,7 +355,12 @@ pub struct BoxText {
 /// caption should not have to remember which of the four spellings this app chose.
 pub fn parse_box(text: &str) -> BoxText {
     let trimmed = text.trim_start();
-    let mut parsed = BoxText { body: text.to_string(), tag: String::new(), at: None, role: BoxRole::None };
+    let mut parsed = BoxText {
+        body: text.to_string(),
+        tag: String::new(),
+        at: None,
+        role: BoxRole::None,
+    };
     if !trimmed.starts_with('[') {
         return parsed;
     }
@@ -379,7 +385,10 @@ pub fn parse_box(text: &str) -> BoxText {
     parsed.at = at;
 
     let first = tag.split('=').next().unwrap_or("").trim().to_lowercase();
-    let placement = matches!(first.as_str(), "top" | "center" | "centre" | "middle" | "bottom");
+    let placement = matches!(
+        first.as_str(),
+        "top" | "center" | "centre" | "middle" | "bottom"
+    );
     // §1 / F4.7: a placement is a caption and clears the emotion, so an entry never carries both.
     if placement {
         parsed.role = BoxRole::Caption;
@@ -504,8 +513,15 @@ pub fn status_line(status: RowStatus) -> String {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Fit {
     Fits,
-    Tight { speech: f64, before: f64, next_line: bool },
-    Overruns { past: f64, sped_up: bool },
+    Tight {
+        speech: f64,
+        before: f64,
+        next_line: bool,
+    },
+    Overruns {
+        past: f64,
+        sped_up: bool,
+    },
 }
 
 /// §1's `⚠ ~N s of speech, M s before the clip ends|the next line` and
@@ -513,8 +529,16 @@ pub enum Fit {
 pub fn fit_warning(fit: Fit) -> Option<String> {
     match fit {
         Fit::Fits => None,
-        Fit::Tight { speech, before, next_line } => {
-            let edge = if next_line { "the next line" } else { "the clip ends" };
+        Fit::Tight {
+            speech,
+            before,
+            next_line,
+        } => {
+            let edge = if next_line {
+                "the next line"
+            } else {
+                "the clip ends"
+            };
             Some(format!(
                 "\u{26a0} ~{speech:.0} s of speech, {before:.0} s before {edge}"
             ))
@@ -608,7 +632,9 @@ pub fn mirror_fit(clip_len: f64, lines: &[(usize, f64, f64)]) -> Fit {
     let (placed, logs) = crate::produce_render::fit(lines, clip_len);
     // The tempo rung also logs the slide, so check it first: its presence means the run went past sliding.
     let sped_up = logs.iter().any(|line| line.contains("sped up"));
-    let slid = logs.iter().any(|line| line.contains("moved") && line.contains("earlier"));
+    let slid = logs
+        .iter()
+        .any(|line| line.contains("moved") && line.contains("earlier"));
     if sped_up || slid {
         return Fit::Overruns {
             // The shortfall is read off the very placements `fit` settled on, below.
@@ -649,7 +675,10 @@ pub fn mirror_fit(clip_len: f64, lines: &[(usize, f64, f64)]) -> Fit {
 /// to the lead, so what remains over the clip's length is exactly the shortfall that rung could not remove —
 /// the spec's "what still overruns is cut by the clip's end". Re-derived from `fit`'s returned placements
 /// rather than from a fresh model of the ladder, so it cannot drift from what the render actually did.
-fn overrun_after<'a>(placed: impl Iterator<Item = &'a crate::produce_render::Placed>, clip_len: f64) -> f64 {
+fn overrun_after<'a>(
+    placed: impl Iterator<Item = &'a crate::produce_render::Placed>,
+    clip_len: f64,
+) -> f64 {
     placed
         .map(|line| line.at + line.speech / line.tempo.max(1.0))
         .fold(0.0_f64, f64::max)
@@ -714,7 +743,9 @@ pub fn audition(
         );
     }
     (
-        Audition::Speak { from: (at - AUDITION_LEAD_SECONDS).max(prev_speaks_at) },
+        Audition::Speak {
+            from: (at - AUDITION_LEAD_SECONDS).max(prev_speaks_at),
+        },
         None,
     )
 }
@@ -756,9 +787,7 @@ pub fn speaking_line() -> String {
 
 /// §1 (`"entry N — no recording covers this clip, so the line plays on its own"`).
 pub fn spoken_alone(entry_no: usize) -> String {
-    format!(
-        "entry {entry_no} \u{2014} no recording covers this clip, so the line plays on its own"
-    )
+    format!("entry {entry_no} \u{2014} no recording covers this clip, so the line plays on its own")
 }
 
 /// §1 (`failure "synthesis failed — see log"`): named and local, per spec/00-principles.md. The log has the
@@ -773,7 +802,15 @@ pub fn synthesis_failed() -> &'static str {
 /// time, `(~)` and warnings (15, 21), then ▶ speak this line (16), ↻ re-roll (17), ＋ add below (18), 🗑 remove (19) —
 /// the four buttons right-aligned on the row's head — with the text box (20) below them. The shot draws exactly this,
 /// in this order, on every one of its four rows.
-pub const ROW_CONTROLS: [&str; 7] = ["time", "status", "speak", "re-roll", "add-below", "remove", "text"];
+pub const ROW_CONTROLS: [&str; 7] = [
+    "time",
+    "status",
+    "speak",
+    "re-roll",
+    "add-below",
+    "remove",
+    "text",
+];
 
 /// §1 / inventory C.5 (`within 1 s of an existing line → jump to it`): a press that close to a line means the
 /// same line, not a second one on top of it. One second is roughly the shortest gap two lines can usefully have.
@@ -835,7 +872,10 @@ fn line_end(entries: &[Entry], entry: &Entry) -> f64 {
     // The next line's second bounds this one's window. Entries arrive sorted, but a hand-edited file need not be, so
     // it is the minimum over the later ones rather than the first one found.
     for other in entries.iter().filter(|other| {
-        other.s == entry.s && other.e == entry.e && other.s + other.at > started && !other.text.is_empty()
+        other.s == entry.s
+            && other.e == entry.e
+            && other.s + other.at > started
+            && !other.text.is_empty()
     }) {
         end = end.min(other.s + other.at);
     }
@@ -847,7 +887,8 @@ fn line_end(entries: &[Entry], entry: &Entry) -> f64 {
 pub fn add_at_playhead(at: f64, segs: &[Seg], entries: &[Entry]) -> Result<f64, String> {
     let Some(clip) = clip_at(segs, at) else {
         return Err(
-            "the playhead is between clips \u{2014} the cut has nothing to narrate here".to_string(),
+            "the playhead is between clips \u{2014} the cut has nothing to narrate here"
+                .to_string(),
         );
     };
     if let Some(start) = near_line_start(at, entries) {

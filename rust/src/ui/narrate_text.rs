@@ -32,7 +32,9 @@ fn write_owed() -> bool {
 
 /// Settle the flag once the bytes are out, so a later door does not write them twice.
 fn clear_owed() {
-    if let Some(shell) = crate::ui::window::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()) {
+    if let Some(shell) =
+        crate::ui::window::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned())
+    {
         shell.borrow_mut().narration_pending.flush();
     }
 }

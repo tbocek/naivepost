@@ -19,7 +19,8 @@ const MISSING: &str = "/definitely/not/a/browser/naivepost-test-firefox";
 fn f6_1_s1_web_offer_reason_is_said_once_per_step() {
     // A step that has never been told hears the reason; the same step asking again (narrate's second attempt,
     // the cut's next round) hears nothing, while a DIFFERENT step still gets its own line.
-    let first = llm_web_offer::unavailable_log("f6_1_once_narrate", MISSING).expect("the first ask explains");
+    let first = llm_web_offer::unavailable_log("f6_1_once_narrate", MISSING)
+        .expect("the first ask explains");
     assert!(
         first.starts_with(">>> f6_1_once_narrate: no web search (firefox:"),
         "§2 quotes the filesystem's reason: {first}"
@@ -34,9 +35,16 @@ fn f6_1_s1_web_offer_reason_is_said_once_per_step() {
         None,
         "and keeps saying nothing on every later ask"
     );
-    let other = llm_web_offer::unavailable_log("f6_1_once_publish", MISSING).expect("another step is told too");
-    assert!(other.starts_with(">>> f6_1_once_publish: "), "one line per step: {other}");
-    assert!(llm_web_offer::told("f6_1_once_narrate"), "the step is marked as told");
+    let other = llm_web_offer::unavailable_log("f6_1_once_publish", MISSING)
+        .expect("another step is told too");
+    assert!(
+        other.starts_with(">>> f6_1_once_publish: "),
+        "one line per step: {other}"
+    );
+    assert!(
+        llm_web_offer::told("f6_1_once_narrate"),
+        "the step is marked as told"
+    );
 }
 
 #[test]
@@ -51,10 +59,20 @@ fn f6_1_s1_web_tools_drop_when_no_browser_and_the_step_says_why() {
         line.expect("the step is told why two of its tools are gone"),
         ">>> f6_1_s1_dropped_offer: no web search (firefox: No such file or directory (os error 2))"
     );
-    assert!(!filtered.contains(&Tool::WebSearch), "web_search is not promised: {filtered:?}");
-    assert!(!filtered.contains(&Tool::WebRead), "web_read is not promised: {filtered:?}");
+    assert!(
+        !filtered.contains(&Tool::WebSearch),
+        "web_search is not promised: {filtered:?}"
+    );
+    assert!(
+        !filtered.contains(&Tool::WebRead),
+        "web_read is not promised: {filtered:?}"
+    );
     // The job's OWN tools survive, in the catalogue's order — only the two web rows went.
-    let kept: Vec<Tool> = offered.iter().copied().filter(|t| !tools::is_web_tool(*t)).collect();
+    let kept: Vec<Tool> = offered
+        .iter()
+        .copied()
+        .filter(|t| !tools::is_web_tool(*t))
+        .collect();
     assert_eq!(filtered, kept, "exactly the web pair is missing");
     // And a second ask from the same step gets the same filtered list with no repeated line.
     let (again, repeat) = llm_web_offer::offer("f6_1_s1_dropped_offer", MISSING, &offered);
@@ -77,7 +95,10 @@ fn f6_1_s1_the_four_reasons_come_out_in_s2_words() {
     );
     assert_eq!(
         llm_web_offer::unavailable_log("f6_1_s1_missing", MISSING),
-        Some(">>> f6_1_s1_missing: no web search (firefox: No such file or directory (os error 2))".to_string())
+        Some(
+            ">>> f6_1_s1_missing: no web search (firefox: No such file or directory (os error 2))"
+                .to_string()
+        )
     );
     // Nothing named AND nothing on PATH is §2's "name one in the settings" line; a machine that does have a
     // firefox answers nothing, which is why the empty box defers to the lookup.
@@ -106,8 +127,17 @@ fn f6_1_s1_the_cut_step_reports_why_it_has_no_web() {
         !offered.iter().any(|tool| tools::is_web_tool(*tool)),
         "no browser means no web tools offered: {offered:?}"
     );
-    assert_eq!(withdrawn, None, "nothing was withdrawn, so §8's line is not said");
-    for name in ["add_segment", "remove_segment", "set_speed", "cut_status", "finish_cut"] {
+    assert_eq!(
+        withdrawn, None,
+        "nothing was withdrawn, so §8's line is not said"
+    );
+    for name in [
+        "add_segment",
+        "remove_segment",
+        "set_speed",
+        "cut_status",
+        "finish_cut",
+    ] {
         assert!(
             offered.iter().any(|tool| tool.name() == name),
             "{name} survives: the model must still be able to build a cut"
@@ -115,6 +145,13 @@ fn f6_1_s1_the_cut_step_reports_why_it_has_no_web() {
     }
     // The step's own reason line, through the door `run_model` calls: once, in §2's words, for the step `cut`.
     let line = llm_web_offer::unavailable_log("cut", MISSING).expect("the cut step says why");
-    assert_eq!(line, ">>> cut: no web search (firefox: No such file or directory (os error 2))");
-    assert_eq!(llm_web_offer::unavailable_log("cut", MISSING), None, "once per step");
+    assert_eq!(
+        line,
+        ">>> cut: no web search (firefox: No such file or directory (os error 2))"
+    );
+    assert_eq!(
+        llm_web_offer::unavailable_log("cut", MISSING),
+        None,
+        "once per step"
+    );
 }

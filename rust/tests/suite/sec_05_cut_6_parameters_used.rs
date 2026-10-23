@@ -77,7 +77,11 @@ fn sec_05_cut_6_parameters_used_s2_the_rate_door_refuses_without_a_player() {
         !cut_play_back::set_rate(&[], 1.0, 0.0, &asked),
         "with no player running a rate change cannot happen"
     );
-    assert_eq!(logged.get(), 0, "the refusal is silent — nothing was attempted");
+    assert_eq!(
+        logged.get(),
+        0,
+        "the refusal is silent — nothing was attempted"
+    );
 }
 /// `P.eng.talkPadSeconds` — "how close to a word still counts as inside it". The walk-back asks this of every
 /// hole the model left: speech in it means the hole was a mistake and gets closed, silence means it stands.
@@ -118,16 +122,27 @@ fn sec_05_cut_6_parameters_used_s4_the_band_reads_six_frame_names_at_a_time() {
     let batch = cut_tracks::THUMB_BATCH;
     assert_eq!(row("preview.thumbBatch"), "6");
     assert_eq!(batch, 6);
-    let paths: Vec<std::path::PathBuf> = (0..14).map(|i| std::path::PathBuf::from(format!("f{i}.jpg"))).collect();
+    let paths: Vec<std::path::PathBuf> = (0..14)
+        .map(|i| std::path::PathBuf::from(format!("f{i}.jpg")))
+        .collect();
     assert_eq!(cut_tracks::batch_of(&paths, 0).len(), 6);
     assert_eq!(cut_tracks::batch_of(&paths, 6).len(), 6);
-    assert_eq!(cut_tracks::batch_of(&paths, 12).len(), 2, "the last batch is the tail");
-    assert!(cut_tracks::batch_of(&paths, 14).is_empty(), "past the end is nothing");
+    assert_eq!(
+        cut_tracks::batch_of(&paths, 12).len(),
+        2,
+        "the last batch is the tail"
+    );
+    assert!(
+        cut_tracks::batch_of(&paths, 14).is_empty(),
+        "past the end is nothing"
+    );
     assert!(cut_tracks::batch_of(&[], 0).is_empty());
     // The window is a real window: the band's own picker finds the frame nearest a second inside it and not
     // one the pass never looked at.
     let stamped: Vec<std::path::PathBuf> = (0..20)
-        .map(|i| std::path::PathBuf::from(format!("frame_{}", naivepost::clock::frame_name(i as f64))))
+        .map(|i| {
+            std::path::PathBuf::from(format!("frame_{}", naivepost::clock::frame_name(i as f64)))
+        })
         .collect();
     let window = cut_tracks::batch_of(&stamped, 4);
     assert_eq!(window.len(), 6);
@@ -150,7 +165,11 @@ fn sec_05_cut_6_parameters_used_s5_the_spare_arms_at_the_leads_cadence() {
     // Inside the lead the line keeps crawling toward the same jump and nothing new is built.
     assert!(!cut_play::worth_arming(Some(lead - 1), None, Some(12.0)));
     // The second already held is never worth a process, however long it has been.
-    assert!(!cut_play::worth_arming(Some(lead * 10), Some(12.0), Some(12.0)));
+    assert!(!cut_play::worth_arming(
+        Some(lead * 10),
+        Some(12.0),
+        Some(12.0)
+    ));
     // A new jump is, and no jump asked means nothing to arm.
     assert!(cut_play::worth_arming(Some(lead), Some(12.0), Some(30.0)));
     assert!(!cut_play::worth_arming(None, None, None));
@@ -170,11 +189,17 @@ fn sec_05_cut_6_parameters_used_s5_the_spare_arms_at_the_leads_cadence() {
 fn sec_05_cut_6_parameters_used_s6_the_press_asks_the_policy_for_its_target() {
     assert_eq!(row("P.policy.targetLengthSeconds"), "0 (none)");
     let policy = naivepost::project::Policy::default();
-    assert_eq!(naivepost::ui::cut_suggest_model_run::target_length_seconds(&policy), 0.0);
+    assert_eq!(
+        naivepost::ui::cut_suggest_model_run::target_length_seconds(&policy),
+        0.0
+    );
     // A hand-set target reaches the prompt through the same door, with no rewiring.
     let mut aimed = policy.clone();
     aimed.target_length_seconds.value = 600.0;
-    assert_eq!(naivepost::ui::cut_suggest_model_run::target_length_seconds(&aimed), 600.0);
+    assert_eq!(
+        naivepost::ui::cut_suggest_model_run::target_length_seconds(&aimed),
+        600.0
+    );
     // And that is the number that decides what the prompt says: aimed at ten minutes it gives the accepted
     // window, a policy with no target says so in words instead.
     assert!(
@@ -183,7 +208,10 @@ fn sec_05_cut_6_parameters_used_s6_the_press_asks_the_policy_for_its_target() {
         suggest::target_block(600.0)
     );
     assert!(
-        suggest::target_block(naivepost::ui::cut_suggest_model_run::target_length_seconds(&policy)).contains("NO TARGET"),
+        suggest::target_block(naivepost::ui::cut_suggest_model_run::target_length_seconds(
+            &policy
+        ))
+        .contains("NO TARGET"),
         "a policy with no target says so"
     );
 }
@@ -196,7 +224,10 @@ fn sec_05_cut_6_parameters_used_s6_the_press_asks_the_policy_for_its_target() {
 /// arithmetic §10 spells, which is the same row the prompt is built from.
 #[test]
 fn sec_05_cut_6_parameters_used_s7_every_id_6_names_has_a_row_with_6s_number() {
-    let listed: Vec<String> = params::cut().into_iter().map(|p| p.id.to_string()).collect();
+    let listed: Vec<String> = params::cut()
+        .into_iter()
+        .map(|p| p.id.to_string())
+        .collect();
     let number_rows: [(&str, f64); 20] = [
         ("P.policy.minSceneSeconds", 1.0),
         ("P.eng.minPieceSeconds", 0.04),
@@ -220,14 +251,20 @@ fn sec_05_cut_6_parameters_used_s7_every_id_6_names_has_a_row_with_6s_number() {
         ("layout.waveLanePx", 30.0),
     ];
     for (id, want) in number_rows {
-        assert!(listed.iter().any(|have| have == id), "{id} has no row at all");
+        assert!(
+            listed.iter().any(|have| have == id),
+            "{id} has no row at all"
+        );
         let spelled = row(id);
         let got: f64 = spelled
             .trim_end_matches(" ms")
             .trim_end_matches(" (none)")
             .parse()
             .unwrap_or_else(|_| panic!("{id} spells {spelled}, not a number"));
-        assert!((got - want).abs() < 1e-9, "{id} reads {got}, §6 says {want}");
+        assert!(
+            (got - want).abs() < 1e-9,
+            "{id} reads {got}, §6 says {want}"
+        );
     }
     // The rows §6 names without a number of their own.
     assert_eq!(row("P.policy.targetLengthSeconds"), "0 (none)");
@@ -246,11 +283,18 @@ fn sec_05_cut_6_parameters_used_s7_every_id_6_names_has_a_row_with_6s_number() {
     // The two formulas, checked as the arithmetic §10 spells rather than as a copy of the row's text.
     assert_eq!(cut_pass_min_segments(600.0), 4);
     assert_eq!(cut_pass_max_segments(600.0), 120);
-    assert_eq!(row("P.machine.suggestMinSegments"), "min(1 + ⌊target/30⌋, 4)");
+    assert_eq!(
+        row("P.machine.suggestMinSegments"),
+        "min(1 + ⌊target/30⌋, 4)"
+    );
     assert_eq!(row("P.machine.suggestMaxSegments"), "max(⌊target/5⌋, 40)");
     // And §6's colour list: a row per tint, at least the eight §D names.
     assert!(
-        listed.iter().filter(|id| id.starts_with("cut.colour.")).count() >= 8,
+        listed
+            .iter()
+            .filter(|id| id.starts_with("cut.colour."))
+            .count()
+            >= 8,
         "§6's colours are not all catalogued"
     );
 }
@@ -278,10 +322,24 @@ fn sec_05_cut_6_parameters_used_s8_the_catalogued_tints_are_the_ones_painted() {
     // A scene with something of every tint in it: a kept bar, a selection (whose marks are its two ends:
     // green in, red out), a recording running to its own end (the amber edge), and a speed effect (rose).
     let scene = tracks::scene_of(
-        &[cut::Seg { s: 2.0, e: 10.0, ..Default::default() }],
-        &[cut::Fx { kind: "speed".into(), t: 3.0, dur: 4.0, rate: 2.0, ..Default::default() }],
+        &[cut::Seg {
+            s: 2.0,
+            e: 10.0,
+            ..Default::default()
+        }],
+        &[cut::Fx {
+            kind: "speed".into(),
+            t: 3.0,
+            dur: 4.0,
+            rate: 2.0,
+            ..Default::default()
+        }],
         &[],
-        &[naivepost::timeline::Recording { base: "take-a".into(), start: 0.0, end: 20.0 }],
+        &[naivepost::timeline::Recording {
+            base: "take-a".into(),
+            start: 0.0,
+            end: 20.0,
+        }],
         Some((4.0, 8.0)),
         None,
         1,
@@ -293,10 +351,17 @@ fn sec_05_cut_6_parameters_used_s8_the_catalogued_tints_are_the_ones_painted() {
     );
     let height = tracks::band_height_px(&scene, tracks::THUMB_DEFAULT_PX).ceil() as i32;
     let width = 120i32;
-    let mut surface = cairo::ImageSurface::create(cairo::Format::ARgb32, width, height).expect("surface");
+    let mut surface =
+        cairo::ImageSurface::create(cairo::Format::ARgb32, width, height).expect("surface");
     {
         let cr = cairo::Context::new(&surface).expect("context");
-        tracks::paint_at(&cr, &scene, width as f64, height as f64, tracks::THUMB_DEFAULT_PX);
+        tracks::paint_at(
+            &cr,
+            &scene,
+            width as f64,
+            height as f64,
+            tracks::THUMB_DEFAULT_PX,
+        );
     }
     let data = surface.data().expect("read back").to_vec();
     let stride = surface.stride() as usize;
@@ -319,13 +384,20 @@ fn sec_05_cut_6_parameters_used_s8_the_catalogued_tints_are_the_ones_painted() {
             .map(|(got, want)| (*got as i32 - *want as i32).abs())
             .max()
             .unwrap_or(0);
-        assert!(worst <= 3, "{what}: painted {got:?}, catalogue says {want:?}");
+        assert!(
+            worst <= 3,
+            "{what}: painted {got:?}, catalogue says {want:?}"
+        );
     };
     let y_selection = (naivepost::cut_trim::RULER_H + 6.0) as i32;
     // The kept bar at x = 6 s (inside the 2..10 s scene, outside the 4..8 s selection). MEASURED from the
     // pixel, the fact the row stands for is that the same rgba appears in three of §D's rows, so one row per
     // surface would be three rows for one number: over the band's ground it lands here.
-    close(at((6.0 * pps) as i32, y_selection), KEEPING_OVER_GROUND, "the kept bar's green");
+    close(
+        at((6.0 * pps) as i32, y_selection),
+        KEEPING_OVER_GROUND,
+        "the kept bar's green",
+    );
     // The selection's two ends are the marks themselves: the rule paints a one-pixel column of its own at
     // each end, over whatever row they cross. Those are §D's `selection.in` green and `selection.out` red.
     let y_pictures = (naivepost::cut_trim::RULER_H
@@ -335,7 +407,10 @@ fn sec_05_cut_6_parameters_used_s8_the_catalogued_tints_are_the_ones_painted() {
     // The effect lane is its own band, `layout.effectRowPx` tall, between the selection band and the first
     // picture row — so it exists in the painted surface at a y of its own, which is where its wash has to be.
     let y_effects = (naivepost::cut_trim::RULER_H
-        + row("layout.selBandPx").trim_end_matches(" px").parse::<f64>().unwrap()
+        + row("layout.selBandPx")
+            .trim_end_matches(" px")
+            .parse::<f64>()
+            .unwrap()
         + 4.0) as i32;
     close(
         at((4.0 * pps) as i32, y_pictures),
@@ -347,10 +422,18 @@ fn sec_05_cut_6_parameters_used_s8_the_catalogued_tints_are_the_ones_painted() {
         over(colours::MARK_OUT_RED, 1.0, colours::LANE_GROUND),
         "the out mark's red",
     );
-    close(at((5.0 * pps) as i32, y_effects), SPEED_WASH_ON_EFFECT_ROW, "the speed's rose wash");
+    close(
+        at((5.0 * pps) as i32, y_effects),
+        SPEED_WASH_ON_EFFECT_ROW,
+        "the speed's rose wash",
+    );
     // And away from every joint, stripe and wash, the picture row shows the lane's own grey plate: the row
     // has a ground of its own, which is what every tint above is composited on.
-    close(at((19.0 * pps) as i32, y_pictures), THUMB_PLACEHOLDER, "the lane's grey plate, uninked");
+    close(
+        at((19.0 * pps) as i32, y_pictures),
+        THUMB_PLACEHOLDER,
+        "the lane's grey plate, uninked",
+    );
 }
 
 /// The speed bar's rose as it lands on the effect lane, printed from the painted surface: §D writes
@@ -373,8 +456,6 @@ const SPEED_WASH_ON_EFFECT_ROW: (u8, u8, u8) = (
 /// is why no §6 tint reaches this pixel and why every one of them fails to match its own rgba above: they are
 /// all composited on this.
 const THUMB_PLACEHOLDER: (u8, u8, u8) = (38, 179, 64);
-
-
 
 /// The pixel [`cut_colours::KEPT_TINT`] leaves on the band's ground: the inventory's rgba(0.2,0.8,0.3,0.3)
 /// composited at its OWN 0.3 over the near-white plate — §6 spells that one colour for three of §D's rows

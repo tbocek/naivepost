@@ -14,8 +14,8 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::sync::mpsc;
 use std::rc::Rc;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use naivepost::layout::Tree;
@@ -51,7 +51,7 @@ struct FakeServer {
 }
 
 impl FakeServer {
-/// Answer every request with `status` and `body`, sleeping `delay` first.
+    /// Answer every request with `status` and `body`, sleeping `delay` first.
     ///
     /// One thread per connection so a test that makes several calls in a row gets each one
     /// recorded in order, and a slow-reply test does not block the caller's other probes.
@@ -186,7 +186,12 @@ fn never() -> bool {
 fn sec_02_services_1_the_four_servers_s15_a_real_request_over_the_wire_is_timed_and_recorded() {
     // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
     crate::common::pin_private_cwd();
-    let server = FakeServer::start("chat", 200, r#"{"data":[{"id":"gpt-test"}]}"#.to_string(), Duration::ZERO);
+    let server = FakeServer::start(
+        "chat",
+        200,
+        r#"{"data":[{"id":"gpt-test"}]}"#.to_string(),
+        Duration::ZERO,
+    );
     let tree = Tree::new(project_dir("s15")).expect("a project folder");
     let endpoint = endpoint_at(&server.url(), "");
     // The body's byte count is a column the CALLER fills: `finish_row` copies it from the base row
@@ -211,10 +216,12 @@ fn sec_02_services_1_the_four_servers_s15_a_real_request_over_the_wire_is_timed_
     // What the SERVER saw, reported back from its own thread — not the client's own claim.
     let seen = server.next_seen();
     assert_eq!(seen.method, "POST", "the chat kind posts");
-    assert_eq!(seen.path, "/v1/chat/completions", "to completions' own path");
     assert_eq!(
-        seen.body,
-        r#"{"model":"gpt-test"}"#,
+        seen.path, "/v1/chat/completions",
+        "to completions' own path"
+    );
+    assert_eq!(
+        seen.body, r#"{"model":"gpt-test"}"#,
         "the body arrived as sent, unframed"
     );
 
@@ -248,7 +255,11 @@ fn sec_02_services_1_the_four_servers_s15_a_real_request_over_the_wire_is_timed_
         written.received_bytes
     );
     assert_eq!(reply.body.len(), 28, "the body came off the socket intact");
-    assert_eq!(row.outcome, Outcome::Ok, "the row handed back matches the file's");
+    assert_eq!(
+        row.outcome,
+        Outcome::Ok,
+        "the row handed back matches the file's"
+    );
 }
 
 /// S16: nothing listening gives an error naming the server and the address — and still leaves its row.
@@ -276,7 +287,10 @@ fn sec_02_services_1_the_four_servers_s16_a_down_server_gives_an_error_and_still
 
     let reason = match result {
         Err(reason) => reason,
-        Ok(reply) => panic!("nothing listens at {url}, yet the call said {}", reply.status),
+        Ok(reply) => panic!(
+            "nothing listens at {url}, yet the call said {}",
+            reply.status
+        ),
     };
     // Named: which server, and which address was tried.
     assert!(
@@ -307,7 +321,12 @@ fn sec_02_services_1_the_four_servers_s16_a_down_server_gives_an_error_and_still
 #[test]
 fn sec_02_services_1_the_four_servers_s17_the_upload_leg_sends_the_filename_header() {
     crate::common::pin_private_cwd();
-    let server = FakeServer::start("upload", 200, r#"{"path":"/tmp/ref.wav"}"#.to_string(), Duration::ZERO);
+    let server = FakeServer::start(
+        "upload",
+        200,
+        r#"{"path":"/tmp/ref.wav"}"#.to_string(),
+        Duration::ZERO,
+    );
     let tree = Tree::new(project_dir("s17")).expect("a project folder");
     let endpoint = endpoint_at(&server.url(), "");
     let base = server_leg::base_row(Server::Audio, "reference", "upload", "", "settings", "");
@@ -342,10 +361,7 @@ fn sec_02_services_1_the_four_servers_s17_the_upload_leg_sends_the_filename_head
         Some("voice-ref.wav"),
         "the file names itself in the header the spec names"
     );
-    assert_eq!(
-        seen.body, payload,
-        "the body is the file's own bytes, raw"
-    );
+    assert_eq!(seen.body, payload, "the body is the file's own bytes, raw");
     let content_type = seen.header("Content-Type").unwrap_or_default();
     assert!(
         !content_type.contains("multipart"),
@@ -451,7 +467,15 @@ fn sec_02_services_1_the_four_servers_s19_a_sdcpp_job_submit_poll_and_cancel_are
             url: server.url(),
             key: String::new(),
         };
-        let sent = server_leg::send_named(Server::Image, &endpoint, kind, Some("job-42"), body, None, &never);
+        let sent = server_leg::send_named(
+            Server::Image,
+            &endpoint,
+            kind,
+            Some("job-42"),
+            body,
+            None,
+            &never,
+        );
         let reply = sent.unwrap_or_else(|why| panic!("{label} did not reach the server: {why}"));
         assert_eq!(reply.status, 200, "{label}");
 
@@ -484,14 +508,23 @@ fn sec_02_services_1_the_four_servers_s19_a_sdcpp_job_submit_poll_and_cancel_are
 #[test]
 fn sec_02_services_1_the_four_servers_s24_a_live_provider_delegates_the_rows_it_does_not_dial() {
     crate::common::pin_private_cwd();
-    let canned: Provider =
-        Rc::new(|key, typed| Ok(format!("canned {key}={typed}")));
+    let canned: Provider = Rc::new(|key, typed| Ok(format!("canned {key}={typed}")));
     let provider = settings_probe::live_over(canned);
 
     // A dialled key answers from the wire or not at all, never from the injected provider. The address is
     // port 1 on loopback: nothing listens there, so the attempt fails on a refused connection immediately
     // instead of waiting out a DNS lookup or a request timeout.
-    for key in ["llm", "llm-vision", "tts", "asr", "diar", "sep", "aligner", "audio", "sd"] {
+    for key in [
+        "llm",
+        "llm-vision",
+        "tts",
+        "asr",
+        "diar",
+        "sep",
+        "aligner",
+        "audio",
+        "sd",
+    ] {
         let answer = provider(key, "127.0.0.1:1");
         assert!(
             !answer.as_ref().is_ok_and(|text| text == &format!("canned {key}=127.0.0.1:1")),
@@ -502,7 +535,9 @@ fn sec_02_services_1_the_four_servers_s24_a_live_provider_delegates_the_rows_it_
     // worth a press if `GET /v1/models` actually goes out.
     let listed = provider(naivepost::ui::settings::FETCH_KEY, "http://127.0.0.1:1");
     assert!(
-        !listed.as_ref().is_ok_and(|text| text.starts_with("canned ")),
+        !listed
+            .as_ref()
+            .is_ok_and(|text| text.starts_with("canned ")),
         "Fetch models dials the server, so its answer cannot come from the fallback: {listed:?}"
     );
 

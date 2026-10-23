@@ -75,21 +75,25 @@ fn assistant_content(reply: &llm_request::Reply) -> String {
 /// One dialled response as the tool loop reads it. Shared by the ordinary leg and S5's resend-without-tools leg
 /// so both shapes of answer are read the same way; `last_answer` is kept where it was because only the ordinary
 /// leg needs it (the resend replaces the round that failed).
-fn turn_of(
-    sent: &crate::server_leg::Sent,
-    last_answer: &mut String,
-) -> Result<Turn, String> {
+fn turn_of(sent: &crate::server_leg::Sent, last_answer: &mut String) -> Result<Turn, String> {
     let reply = llm_request::reply_from(&sent.content_type, &sent.body)
         .map_err(|why| format!("{STEP}: {why}"))?;
     // `finish` closes the flow, and `tool_loop` reads it off the TURN, not off the call list — so
     // the leg says it here when the writer called it. Detected on the call NAMES rather than by
     // running them, so the closing round is not counted as one that wrote a line.
-    let finishing = reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
+    let finishing = reply
+        .tool_calls
+        .iter()
+        .any(|call| call.name == Tool::Finish.name());
     let answer = assistant_content(&reply);
     if !answer.is_empty() {
         *last_answer = answer.clone();
     }
-    Ok(Turn { content: answer, calls: reply.tool_calls, finish: finishing })
+    Ok(Turn {
+        content: answer,
+        calls: reply.tool_calls,
+        finish: finishing,
+    })
 }
 
 /// One round of the narration call, live. `attempt` rides into the log so a retry reads as a retry,
@@ -132,8 +136,14 @@ pub fn ask_round(
     // Shape of the first round: the two messages, thinking as told, tools offered. Later rounds grow
     // inside the tool loop, which pushes assistant and tool turns onto this same list.
     let messages = vec![
-        Message { role: "system".into(), parts: vec![Part::Text(request.system.clone())] },
-        Message { role: "user".into(), parts: vec![Part::Text(request.user.clone())] },
+        Message {
+            role: "system".into(),
+            parts: vec![Part::Text(request.system.clone())],
+        },
+        Message {
+            role: "user".into(),
+            parts: vec![Part::Text(request.user.clone())],
+        },
     ];
 
     // The loop's `ask` closure: build the body, dial, read one turn. Each dial writes its own timed
@@ -147,12 +157,17 @@ pub fn ask_round(
     let mut last_answer = String::new();
     let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<Turn, String> {
         requests += 1;
-        let mode = if thinking { Mode::Thinking } else { Mode::Execute };
+        let mode = if thinking {
+            Mode::Thinking
+        } else {
+            Mode::Execute
+        };
         // S5: a server that already refused the `tools` field is asked without it and nothing more is said.
         let offered = crate::llm_tools_offer::tools_for(&endpoint.url, tools);
         // §4: every chat call is streamed; the reply is read by response content type
         // (`llm_request::reply_from`), so a plain-JSON fake still answers correctly.
-        let body = llm_request::body(STEP, &model, conversation, mode, offered.as_deref(), true)?.to_string();
+        let body = llm_request::body(STEP, &model, conversation, mode, offered.as_deref(), true)?
+            .to_string();
         let base = base_row(&model, attempt);
         let reply = crate::llm_retry_leg::dial(
             STEP,
@@ -176,7 +191,8 @@ pub fn ask_round(
                 {
                     crate::ui::window::log_line(&tool_loop::refused_log(STEP, &why));
                     requests += 1;
-                    let bare = llm_request::body(STEP, &model, conversation, mode, None, true)?.to_string();
+                    let bare = llm_request::body(STEP, &model, conversation, mode, None, true)?
+                        .to_string();
                     let bare_reply = crate::llm_retry_leg::dial(
                         STEP,
                         tree,
@@ -212,7 +228,8 @@ pub fn ask_round(
             {
                 crate::ui::window::log_line(&tool_loop::refused_log(STEP, &why));
                 requests += 1;
-                let bare = llm_request::body(STEP, &model, conversation, mode, None, true)?.to_string();
+                let bare =
+                    llm_request::body(STEP, &model, conversation, mode, None, true)?.to_string();
                 let bare_reply = crate::llm_retry_leg::dial(
                     STEP,
                     tree,
@@ -342,15 +359,20 @@ fn run_narrate_tool(
     narrator: &str,
     collected: &mut Vec<Picked>,
 ) -> String {
-    let args: serde_json::Value =
-        serde_json::from_str(&asked.args).unwrap_or_else(|_| json!({}));
+    let args: serde_json::Value = serde_json::from_str(&asked.args).unwrap_or_else(|_| json!({}));
     let number = |key: &str, fallback: f64| -> f64 {
         args.get(key)
-            .and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok())))
+            .and_then(|v| {
+                v.as_f64()
+                    .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+            })
             .unwrap_or(fallback)
     };
     let text = |key: &str| -> String {
-        args.get(key).and_then(|v| v.as_str()).unwrap_or_default().to_string()
+        args.get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
     };
 
     match asked.name.as_str() {
@@ -379,7 +401,12 @@ fn run_narrate_tool(
             let clip = number("clip", 0.0) as u32;
             let answer = narrate_pass::leave_silent(clip);
             if answer_is_ok(&answer) {
-                collected.push(Picked { clip, at: 0.0, text: String::new(), emotion: String::new() });
+                collected.push(Picked {
+                    clip,
+                    at: 0.0,
+                    text: String::new(),
+                    emotion: String::new(),
+                });
             }
             answer
         }
@@ -388,7 +415,9 @@ fn run_narrate_tool(
             // `from`/`to` are seconds relative to the clip the writer is working on; with no clip
             // named there is no anchor to read them against, and saying so is better than assuming 0.
             let Some(index) = (number("clip", 0.0) as usize).checked_sub(1) else {
-                return crate::tools::error("get_lines needs the clip whose surroundings you want -- say \"clip\"");
+                return crate::tools::error(
+                    "get_lines needs the clip whose surroundings you want -- say \"clip\"",
+                );
             };
             let Some(seg) = clips.get(index) else {
                 return crate::tools::error(
@@ -439,7 +468,8 @@ fn entries_of(picked: &[Picked], clips: &[Seg]) -> Result<String, String> {
     let entries: Vec<serde_json::Value> = ordered
         .iter()
         .map(|p| {
-            let index = (p.clip as usize).checked_sub(1)
+            let index = (p.clip as usize)
+                .checked_sub(1)
                 .ok_or_else(|| format!("clip {} is not one of this edit's clips", p.clip))?;
             let seg = clips
                 .get(index)

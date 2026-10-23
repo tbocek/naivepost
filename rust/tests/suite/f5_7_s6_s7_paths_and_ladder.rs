@@ -21,15 +21,16 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use crate::common;
 use adw::prelude::*;
+use common::{
+    fixture_dir, hold_last_window, pin_private_cwd, release_last_window,
+    session_tree_of as session, settle,
+};
 use naivepost::cut::Cut;
 use naivepost::project::Container;
 use naivepost::shell::Page;
 use naivepost::{produce_runs as runs, ui};
-use crate::common;
-use common::{
-    fixture_dir, hold_last_window, pin_private_cwd, release_last_window, session_tree_of as session, settle,
-};
 
 /// One slot per check, holding that block's failure text.
 static NAME_FAIL: Mutex<Option<String>> = Mutex::new(None);
@@ -101,7 +102,8 @@ fn seed_live_cut(window: &adw::ApplicationWindow) {
         e: 30.0,
         ..Default::default()
     };
-    ui::seed_review_cut(        window,
+    ui::seed_review_cut(
+        window,
         &Cut {
             segs: vec![first, second],
             aspect: "16:9".to_string(),
@@ -131,7 +133,8 @@ fn press(window: &adw::ApplicationWindow, name: &str) -> String {
 /// A PNG with real high-frequency content: a flat block compresses to a few hundred bytes at every quality,
 /// which would make "which rung did the ladder stop at?" unanswerable from the file.
 fn noisy_png(path: &Path, wide: u32, high: u32) {
-    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, wide as i32, high as i32).expect("surface");
+    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, wide as i32, high as i32)
+        .expect("surface");
     {
         let context = cairo::Context::new(&surface).expect("context");
         let mut seed: u32 = 0x2545_F491;
@@ -161,7 +164,8 @@ fn count_ffmpeg_calls(root: &Path, log: &Path) {
         ),
     )
     .expect("the stub is written");
-    std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the stub runs");
+    std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("the stub runs");
     std::env::set_var("NAIVEPOST_FFMPEG", &stub);
 }
 
@@ -176,7 +180,9 @@ fn rung_count(log: &Path) -> usize {
 #[allow(dead_code)]
 fn quoted_bytes(line: &str) -> u64 {
     let inside = line.rsplit('(').next().expect("the line carries a weight");
-    let inside = inside.strip_suffix(')').expect("the weight closes its bracket");
+    let inside = inside
+        .strip_suffix(')')
+        .expect("the weight closes its bracket");
     let mib: f64 = inside
         .trim_end_matches(" MiB")
         .trim()
@@ -191,7 +197,11 @@ fn quoted_bytes(line: &str) -> u64 {
 /// the export's default name is the project's own.
 fn check_names() {
     assert_eq!(runs::force_suffix("pic.png", ".jpg"), "pic.jpg");
-    assert_eq!(runs::force_suffix("pic", ".jpg"), "pic.jpg", "no extension to replace");
+    assert_eq!(
+        runs::force_suffix("pic", ".jpg"),
+        "pic.jpg",
+        "no extension to replace"
+    );
     assert_eq!(
         runs::force_suffix("final.v2.png", ".jpg"),
         "final.v2.jpg",
@@ -232,7 +242,11 @@ fn check_ladder_stops(root: &Path) {
         written <= runs::JPEG_MAX_BYTES,
         "the rung it stopped on fits 2 MiB: {written} bytes"
     );
-    assert_eq!(runs::jpeg_rung(&sizes), Some(sizes.len() - 1), "and that rung is the one chosen");
+    assert_eq!(
+        runs::jpeg_rung(&sizes),
+        Some(sizes.len() - 1),
+        "and that rung is the one chosen"
+    );
     std::env::remove_var("NAIVEPOST_FFMPEG");
 }
 
@@ -254,7 +268,8 @@ fn check_last_attempt_written(root: &Path) {
         ),
     )
     .expect("the stub is written");
-    std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the stub runs");
+    std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("the stub runs");
     std::env::set_var("NAIVEPOST_FFMPEG", &stub);
 
     let log = root.join("over-calls.log");
@@ -271,9 +286,18 @@ fn check_last_attempt_written(root: &Path) {
         runs::JPEG_QUALITIES.len(),
         "nothing fits, so every rung is tried: {sizes:?}"
     );
-    let written = std::fs::metadata(&out).expect("the last attempt is still written").len();
-    assert!(written > runs::JPEG_MAX_BYTES, "and it is the over-cap file: {written}");
-    assert_eq!(runs::jpeg_rung(&sizes), Some(sizes.len() - 1), "the last attempt is the chosen rung");
+    let written = std::fs::metadata(&out)
+        .expect("the last attempt is still written")
+        .len();
+    assert!(
+        written > runs::JPEG_MAX_BYTES,
+        "and it is the over-cap file: {written}"
+    );
+    assert_eq!(
+        runs::jpeg_rung(&sizes),
+        Some(sizes.len() - 1),
+        "the last attempt is the chosen rung"
+    );
     let reason = runs::jpeg_target(written).expect_err("over the cap, so the bound has a reason");
     assert!(
         reason.contains("2 MiB after 92/85/75"),
@@ -301,7 +325,11 @@ fn check_export_button(_root: &Path) {
     let window = produce_window(&app_in_round());
     seed_live_cut(&window);
     let said = press(&window, "thumbnail-export");
-    assert_eq!(said, runs::EXPORT_NO_PICTURE, "no picture, its own sentence: {said:?}");
+    assert_eq!(
+        said,
+        runs::EXPORT_NO_PICTURE,
+        "no picture, its own sentence: {said:?}"
+    );
     window.close();
     settle();
 }
@@ -330,7 +358,10 @@ fn check_save_uses_the_door(root: &Path) {
     );
     let copy = std::fs::metadata(&chosen).expect("the copy exists where it was told");
     assert_eq!(copy.len(), 9000, "and it is the render's bytes");
-    assert!(video.is_file(), "the render's own output stays where ▶ wrote it");
+    assert!(
+        video.is_file(),
+        "the render's own output stays where ▶ wrote it"
+    );
     ui::produce_press_wiring::answer_path(None);
     window.close();
     settle();
@@ -354,9 +385,15 @@ fn check_save_default_name(root: &Path) {
     );
     let said = ui::produce_page::press_save_video_from_button(&window);
     assert!(said.starts_with("saved "), "{said:?}");
-    assert!(said.contains("session.mp4"), "named after the project: {said:?}");
+    assert!(
+        said.contains("session.mp4"),
+        "named after the project: {said:?}"
+    );
     let landed = tree.produce_dir().join("session.mp4");
-    assert!(landed.is_file(), "under the offer, in the produce folder: {said:?}");
+    assert!(
+        landed.is_file(),
+        "under the offer, in the produce folder: {said:?}"
+    );
     window.close();
     settle();
 }

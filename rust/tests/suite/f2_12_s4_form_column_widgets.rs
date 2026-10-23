@@ -50,7 +50,11 @@ fn cut_page(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
     ui::seed_review_cut(
         &window,
         &cut::Cut {
-            segs: vec![Seg { s: 0.0, e: 90.0, ..Default::default() }],
+            segs: vec![Seg {
+                s: 0.0,
+                e: 90.0,
+                ..Default::default()
+            }],
             ..Default::default()
         },
     );
@@ -76,7 +80,6 @@ fn write_card(name: &str) -> String {
     path.to_string_lossy().to_string()
 }
 
-
 /// Is `needle` somewhere under `hay`? The parent chain is not public, so the search runs downwards instead.
 fn holds(hay: &gtk::Widget, needle: &gtk::Widget) -> bool {
     if std::ptr::eq(hay.as_ptr(), needle.as_ptr()) {
@@ -84,7 +87,9 @@ fn holds(hay: &gtk::Widget, needle: &gtk::Widget) -> bool {
     }
     for child in hay.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if holds(&widget, needle) {
             return true;
         }
@@ -110,17 +115,25 @@ fn open_form(window: &adw::ApplicationWindow) {
         words.contains("column-card.svg"),
         "the heading names the file being placed: {words:?}"
     );
-    assert_eq!(words, "insert column-card.svg", "in the frame's own wording");
+    assert_eq!(
+        words, "insert column-card.svg",
+        "in the frame's own wording"
+    );
 }
 
 /// S4: an open form sits IN THE COLUMN, IN PLACE OF the idle readings, inside its scroller.
 fn check_the_form_replaces_the_idle_readings(app: &adw::Application) {
     let window = cut_page(app, "replaces");
     // Idle first: no heading, and the eight readings visible.
-    let heading = common::find_named(&window, "cut-form-heading").expect("the column pins a heading");
+    let heading =
+        common::find_named(&window, "cut-form-heading").expect("the column pins a heading");
     let footer = common::find_named(&window, "cut-form-footer").expect("the column pins a footer");
-    let readings = common::find_named(&window, "cut-form").expect("the idle readings are `cut-form`");
-    assert!(!heading.is_visible(), "an idle column shows no heading (§1)");
+    let readings =
+        common::find_named(&window, "cut-form").expect("the idle readings are `cut-form`");
+    assert!(
+        !heading.is_visible(),
+        "an idle column shows no heading (§1)"
+    );
     assert!(!footer.is_visible(), "and no footer");
     assert!(readings.is_visible(), "an idle column shows its readings");
 
@@ -198,7 +211,10 @@ fn check_the_form_rows_run_in_the_specs_order(app: &adw::Application) {
         "the radios come next, in §G's order, above the sound tick: {between}/{over}/{tick}"
     );
     if tick != usize::MAX {
-        assert!(tick < seconds, "the tick sits above Seconds (§S4): {tick} vs {seconds}");
+        assert!(
+            tick < seconds,
+            "the tick sits above Seconds (§S4): {tick} vs {seconds}"
+        );
     }
     assert!(
         over < seconds,
@@ -217,8 +233,8 @@ fn check_the_buttons_are_the_forms_own_and_in_order(app: &adw::Application) {
     // The column still pins a footer (§1); for an INSERT the buttons go into the insert's own footer below the
     // frame, so the frame's is what §A's idle column keeps hidden while this form is open.
     let footer = common::find_named(&window, "cut-form-footer").expect("the column pins a footer");
-    let insert_footer =
-        common::find_named(&window, "insert-form-footer").expect("the insert has its own pinned footer");
+    let insert_footer = common::find_named(&window, "insert-form-footer")
+        .expect("the insert has its own pinned footer");
     assert!(
         footer.is_visible() || insert_footer.is_visible(),
         "an open form pins the footer its buttons sit in"
@@ -234,7 +250,10 @@ fn check_the_buttons_are_the_forms_own_and_in_order(app: &adw::Application) {
     // so it cannot finish it). `proves` them here only that they are the form's pair and in §1's order;
     // `f2_12_s4_footer_widgets.rs` is where the footer's own wiring is pinned.
     let form = common::find_named(&window, "insert-form").expect("the form holder");
-    assert!(form.is_visible(), "the form that owns these buttons is open");
+    assert!(
+        form.is_visible(),
+        "the form that owns these buttons is open"
+    );
     assert!(apply.is_visible(), "\"Insert it\" is drawn with the form");
     assert!(cancel.is_visible(), "and \"Cancel\" beside it");
     let order: Vec<String> = insert_footer
@@ -280,8 +299,14 @@ fn check_the_cross_goes_back_to_the_readings(app: &adw::Application) {
         .expect("the heading carries a cross")
         .emit_by_name::<()>("clicked", &[]);
     settle();
-    assert!(ui::insert_open(&window).is_none(), "the cross closed the form");
-    assert!(readings.is_visible(), "with nothing open the idle readings show again");
+    assert!(
+        ui::insert_open(&window).is_none(),
+        "the cross closed the form"
+    );
+    assert!(
+        readings.is_visible(),
+        "with nothing open the idle readings show again"
+    );
     assert!(
         !common::find_named(&window, "cut-form-heading")
             .expect("the heading")
@@ -310,8 +335,20 @@ fn f2_12_s4_the_form_column_holds_the_form_in_order() {
         println!("CHECK 4 the pinned cross closes the form and brings the readings back");
         check_the_cross_goes_back_to_the_readings(app);
     });
-    assert!(RAN_REPLACES.load(Ordering::SeqCst), "the replace-the-readings check never ran");
-    assert!(RAN_ORDER.load(Ordering::SeqCst), "the form-order check never ran");
-    assert!(RAN_BUTTONS.load(Ordering::SeqCst), "the footer-buttons check never ran");
-    assert!(RAN_CROSS.load(Ordering::SeqCst), "the cross check never ran");
+    assert!(
+        RAN_REPLACES.load(Ordering::SeqCst),
+        "the replace-the-readings check never ran"
+    );
+    assert!(
+        RAN_ORDER.load(Ordering::SeqCst),
+        "the form-order check never ran"
+    );
+    assert!(
+        RAN_BUTTONS.load(Ordering::SeqCst),
+        "the footer-buttons check never ran"
+    );
+    assert!(
+        RAN_CROSS.load(Ordering::SeqCst),
+        "the cross check never ran"
+    );
 }

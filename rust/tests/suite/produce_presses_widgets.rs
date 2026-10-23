@@ -24,15 +24,17 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
+use crate::common;
 use adw::prelude::*;
+use common::{
+    fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle,
+};
 use gtk4 as gtk;
 use naivepost::cut::Cut;
 use naivepost::layout::Tree;
 use naivepost::project::{Publish, TextMark};
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle};
 
 /// One slot per check, holding that block's failure text if it failed.
 static REDRAW_FAIL: Mutex<Option<String>> = Mutex::new(None);
@@ -65,7 +67,9 @@ fn slot_widget(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widge
         }
         for child in node.observe_children().iter::<glib::Object>() {
             let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
+            let Some(child) = child.downcast_ref::<gtk::Widget>() else {
+                continue;
+            };
             if let Some(found) = walk(child, name) {
                 return Some(found);
             }
@@ -78,7 +82,9 @@ fn slot_widget(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widge
 /// The buttons of every slot THIS window drew, counted per slot: `{"image-slot-0": 3, "image-slot-1": 4, ..}`.
 /// `screen::slot_actions` gives the base three buttons and a reference four, so the count IS the claim "this
 /// slot is / is not the base", read off the tree rather than off a state field.
-fn slot_button_counts(_window: &adw::ApplicationWindow) -> std::collections::BTreeMap<String, usize> {
+fn slot_button_counts(
+    _window: &adw::ApplicationWindow,
+) -> std::collections::BTreeMap<String, usize> {
     // The page is built ONCE per process and embedded in every window (see `ROOT`'s own comment), so the rows
     // live in that one shared tree — which is also where `draw_into` repaints them. Walking from the page's root
     // therefore counts exactly the rows a press changes; walking from a window found an earlier check's copy.
@@ -92,7 +98,9 @@ fn slot_button_counts(_window: &adw::ApplicationWindow) -> std::collections::BTr
         }
         for child in node.observe_children().iter::<glib::Object>() {
             let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
+            let Some(child) = child.downcast_ref::<gtk::Widget>() else {
+                continue;
+            };
             walk(child, rows);
         }
     }
@@ -125,8 +133,13 @@ fn seed_row(window: &adw::ApplicationWindow, tree: &Tree, moments: &[f64]) -> Ve
     let mut entries = Vec::new();
     for (index, seconds) in moments.iter().enumerate() {
         let path = dir.join(format!("{}.jpg", naivepost::clock::frame_name(*seconds)));
-        naivepost::produce_upload_print::flat_png_for_test(&path, 320, 180, 0.25 + 0.05 * index as f64)
-            .expect("a frame on disk");
+        naivepost::produce_upload_print::flat_png_for_test(
+            &path,
+            320,
+            180,
+            0.25 + 0.05 * index as f64,
+        )
+        .expect("a frame on disk");
         entries.push(format!("frame:{seconds:.3}"));
     }
     let mut page = ui::produce_page::read_state();
@@ -149,7 +162,9 @@ fn seed_row(window: &adw::ApplicationWindow, tree: &Tree, moments: &[f64]) -> Ve
 
 /// The name each slot's label carries, `{"image-slot-0": "frame-3.jpg", ..}` — the row's own witness that a
 /// picture moved, since the buttons and tags key on the index and cannot show it.
-fn slot_picture_names(_window: &adw::ApplicationWindow) -> std::collections::BTreeMap<String, String> {
+fn slot_picture_names(
+    _window: &adw::ApplicationWindow,
+) -> std::collections::BTreeMap<String, String> {
     let images = match ui::produce_page::page_image_box_for_test() {
         Some(box_widget) => box_widget,
         None => return std::collections::BTreeMap::new(),
@@ -160,7 +175,9 @@ fn slot_picture_names(_window: &adw::ApplicationWindow) -> std::collections::BTr
         }
         for child in node.observe_children().iter::<glib::Object>() {
             let Ok(child) = child else { continue };
-            let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
+            let Some(child) = child.downcast_ref::<gtk::Widget>() else {
+                continue;
+            };
             walk(child, rows);
         }
     }
@@ -170,7 +187,9 @@ fn slot_picture_names(_window: &adw::ApplicationWindow) -> std::collections::BTr
     for row in rows {
         for child in row.observe_children().iter::<glib::Object>() {
             let Ok(child) = child else { continue };
-            let Some(label) = child.downcast_ref::<gtk::Label>() else { continue };
+            let Some(label) = child.downcast_ref::<gtk::Label>() else {
+                continue;
+            };
             let text = label.text().to_string();
             // The tag says `base` or `reference`; the picture's own name is the other label on the row.
             if !text.is_empty() && text != "base" && text != "reference" {
@@ -352,7 +371,8 @@ fn lay_plain_picture() {
     std::fs::create_dir_all(plain.parent().unwrap()).ok();
     // A real PNG: the print leg reads this file back and letters it, so a token string would make every
     // press that prints fail on the base rather than on anything it is being tested for.
-    naivepost::produce_upload_print::flat_png_for_test(&plain, 320, 180, 0.3).expect("a flat base to print onto");
+    naivepost::produce_upload_print::flat_png_for_test(&plain, 320, 180, 0.3)
+        .expect("a flat base to print onto");
 }
 
 /// The newest extracted frame this session holds, as `<seconds, path>` — the shape `listed_frames` answers
@@ -362,7 +382,9 @@ fn newest_frame() -> Option<(f64, PathBuf)> {
     let tree = session_tree();
     let mut newest: Option<(f64, PathBuf)> = None;
     for stem in stems {
-        for (seconds, path) in naivepost::produce_upload_media::listed_frames(&tree.frames_dir(&stem)) {
+        for (seconds, path) in
+            naivepost::produce_upload_media::listed_frames(&tree.frames_dir(&stem))
+        {
             if newest.as_ref().is_none_or(|(at, _)| seconds >= *at) {
                 newest = Some((seconds, path));
             }
@@ -382,7 +404,10 @@ struct FakeLlm {
 impl FakeLlm {
     fn start(reply: &str) -> FakeLlm {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
-        let address = format!("http://127.0.0.1:{}", listener.local_addr().expect("an address").port());
+        let address = format!(
+            "http://127.0.0.1:{}",
+            listener.local_addr().expect("an address").port()
+        );
         let reply = reply.to_string();
         std::thread::spawn(move || {
             for stream in listener.incoming() {
@@ -408,7 +433,12 @@ fn serve_one(mut stream: std::net::TcpStream, reply: &str) {
     let mut length = 0usize;
     loop {
         let mut line = String::new();
-        if reader.read_line(&mut line).ok().filter(|read| *read > 0).is_none() {
+        if reader
+            .read_line(&mut line)
+            .ok()
+            .filter(|read| *read > 0)
+            .is_none()
+        {
             break;
         }
         if let Some(rest) = line.to_ascii_lowercase().strip_prefix("content-length:") {
@@ -445,7 +475,8 @@ fn point_settings_at(url: &str) {
         std::env::set_var("XDG_CONFIG_HOME", &config);
         std::env::set_var("XDG_DATA_HOME", &data);
     }
-    let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+    let paths =
+        naivepost::settings::from_environment().expect("settings folder from the pinned env");
     let mut conf = naivepost::settings::Conf::default();
     conf.model = "presses-model".to_string();
     conf.server = url.to_string();
@@ -461,7 +492,9 @@ fn script_legs() -> FakeLlm {
     ui::produce_languages::set_draw_for_test(std::rc::Rc::new(|_body| {
         DRAWS.fetch_add(1, Ordering::SeqCst);
         lay_plain_picture();
-        Ok(naivepost::produce_upload::DrawnJob { id: "job-1".to_string() })
+        Ok(naivepost::produce_upload::DrawnJob {
+            id: "job-1".to_string(),
+        })
     }));
     // The model: a local fake the settings name, whose reply's three answers the walk keeps whether or not it
     // also draws.
@@ -502,9 +535,6 @@ fn log_mark() -> usize {
     ui::window_logs().len()
 }
 
-
-
-
 /// The rung ⤓ chose is the rung `jpeg_rung` picks over the weights the ENCODER produced, and the weight the
 /// sentence quotes is read back off the file on disk — not a number a widget handed over. ffmpeg is present in
 /// this container, so the ladder really encodes five JPEGs here. The base picture is made BIG (a 1920x1080
@@ -519,17 +549,34 @@ fn check_export_measured(root: &Path) {
     std::fs::create_dir_all(tree.thumbnail_png().parent().unwrap()).ok();
     make_noisy_png(&tree.thumbnail_png(), 1920, 1080);
     let source = std::fs::read(tree.thumbnail_png()).expect("the picture reads back");
-    assert!(source.len() > 100_000, "the base is a busy PNG: {} bytes", source.len());
+    assert!(
+        source.len() > 100_000,
+        "the base is a busy PNG: {} bytes",
+        source.len()
+    );
 
     let said = press(&window, "thumbnail-export");
-    assert!(said.starts_with(">>> exported "), "§F5.7's own line: {said:?}");
+    assert!(
+        said.starts_with(">>> exported "),
+        "§F5.7's own line: {said:?}"
+    );
     // The file the ladder wrote is the one the sentence NAMES — `export_name` gives a bare name and the leg
     // writes it where the process was standing, so the path to measure is the one in the line itself.
-    let out = PathBuf::from(said.trim_start_matches(">>> exported ").split(" (").next().unwrap_or(""));
+    let out = PathBuf::from(
+        said.trim_start_matches(">>> exported ")
+            .split(" (")
+            .next()
+            .unwrap_or(""),
+    );
     let written = std::fs::metadata(&out)
         .unwrap_or_else(|why| panic!("the ladder wrote {} : {why}", out.display()));
-    assert!(written.len() > 100_000, "a busy picture must not export as nothing: {} bytes", written.len());
-    let quoted = quoted_bytes(&said).unwrap_or_else(|| panic!("the line carries a weight: {said:?}"));
+    assert!(
+        written.len() > 100_000,
+        "a busy picture must not export as nothing: {} bytes",
+        written.len()
+    );
+    let quoted =
+        quoted_bytes(&said).unwrap_or_else(|| panic!("the line carries a weight: {said:?}"));
     // `human_size` prints MiB to one decimal, so the sentence and the file agree within that rounding — which
     // is only observable because the ladder really encoded the JPEG whose length this is.
     assert!(
@@ -541,7 +588,10 @@ fn check_export_measured(root: &Path) {
     // first, else the last attempt.
     let sizes = vec![written.len(); naivepost::produce_runs::JPEG_QUALITIES.len()];
     let chosen = naivepost::produce_runs::jpeg_rung(&sizes).expect("five rungs always answer");
-    assert!(chosen < naivepost::produce_runs::JPEG_QUALITIES.len(), "a real rung was chosen");
+    assert!(
+        chosen < naivepost::produce_runs::JPEG_QUALITIES.len(),
+        "a real rung was chosen"
+    );
     window.close();
     settle();
 }
@@ -568,14 +618,16 @@ fn point_ffmpeg_at_fake_crop() {
          ffmpeg -y -loglevel error -f lavfi -i \"color=c=0x4060a0:s=${wide}x${high}:d=1\" -frames:v 1 \"$out\"\n",
     )
     .expect("the ffmpeg stub is written");
-    std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the stub runs");
+    std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("the stub runs");
     std::env::set_var("NAIVEPOST_FFMPEG", &stub);
 }
 
 /// A PNG with enough high-frequency content that JPEG quality actually changes its size: cairo draws random
 /// pixels, which no encoder can compress into a few hundred bytes.
 fn make_noisy_png(path: &Path, wide: u32, high: u32) {
-    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, wide as i32, high as i32).expect("surface");
+    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, wide as i32, high as i32)
+        .expect("surface");
     {
         let context = cairo::Context::new(&surface).expect("context");
         let mut seed: u32 = 0x2545_F491;
@@ -596,7 +648,8 @@ fn make_noisy_png(path: &Path, wide: u32, high: u32) {
 /// A small real PNG, for a press whose leg hands the file to ffmpeg and needs it to decode.
 #[allow(dead_code)]
 fn flat_picture(path: &Path, wide: u32, high: u32) {
-    naivepost::produce_upload_print::flat_png_for_test(path, wide, high, 0.4).expect("a real PNG on disk");
+    naivepost::produce_upload_print::flat_png_for_test(path, wide, high, 0.4)
+        .expect("a real PNG on disk");
 }
 
 /// Pull the byte count out of `>>> exported <path> (X.Y MiB)` by turning the human size back into bytes.
@@ -628,7 +681,10 @@ fn check_set_thumbnail_marks_own(root: &Path) {
     settle();
     let before = ui::produce_page::read_state().frames.len();
     let said = press(&window, "image-set-thumbnail-2");
-    assert!(said.starts_with("thumbnail taken from"), "names the picture: {said:?}");
+    assert!(
+        said.starts_with("thumbnail taken from"),
+        "names the picture: {said:?}"
+    );
     let after = ui::produce_page::read_state();
     assert!(after.own, "the press records the picture as one's own");
     assert_eq!(before, 3, "the scenario started with three slots");
@@ -637,7 +693,11 @@ fn check_set_thumbnail_marks_own(root: &Path) {
         3,
         "§A: the row is the person's own \u{2014} Set Thumbnail picks the thumbnail, it does not delete their images"
     );
-    assert_eq!(DRAWS.load(Ordering::SeqCst), 0, "a chosen frame draws nothing");
+    assert_eq!(
+        DRAWS.load(Ordering::SeqCst),
+        0,
+        "a chosen frame draws nothing"
+    );
     window.close();
     settle();
 }
@@ -673,7 +733,10 @@ fn check_picked_frame_sole_entry(root: &Path) {
     page.own = true;
     ui::produce_page::set_state(page);
     let read = ui::produce_page::read_state();
-    assert_eq!(read.frames, outcome, "the row the page holds is the picked one");
+    assert_eq!(
+        read.frames, outcome,
+        "the row the page holds is the picked one"
+    );
     assert!(read.own, "and it says the picture is one's own");
 }
 
@@ -689,7 +752,8 @@ fn check_add_image_is_a_real_frame(root: &Path) {
         .frames_dir("cam0")
         .join(format!("{}.jpg", naivepost::clock::frame_name(seconds)));
     std::fs::create_dir_all(frame.parent().unwrap()).expect("frame folder");
-    naivepost::produce_upload_print::flat_png_for_test(&frame, 320, 180, 0.5).expect("a frame on disk");
+    naivepost::produce_upload_print::flat_png_for_test(&frame, 320, 180, 0.5)
+        .expect("a frame on disk");
     let window = produce_window(&app_in_round());
     seed_live_cut(&window);
     let mut page = ui::produce_page::read_state();
@@ -699,11 +763,22 @@ fn check_add_image_is_a_real_frame(root: &Path) {
     settle();
 
     let said = press(&window, "add-image-button");
-    assert!(said.starts_with("image added:"), "the press confirms: {said:?}");
+    assert!(
+        said.starts_with("image added:"),
+        "the press confirms: {said:?}"
+    );
     let state = ui::produce_page::read_state();
-    assert_eq!(state.frames.len(), 1, "one entry landed: {:?}", state.frames);
+    assert_eq!(
+        state.frames.len(),
+        1,
+        "one entry landed: {:?}",
+        state.frames
+    );
     let entry = state.frames[0].clone();
-    assert!(entry.starts_with("frame:"), "a moment entry, not a made-up path: {entry}");
+    assert!(
+        entry.starts_with("frame:"),
+        "a moment entry, not a made-up path: {entry}"
+    );
     let newest = newest_frame().expect("the session holds the frame the press just took");
     assert!(
         frame.is_file(),
@@ -769,7 +844,8 @@ fn check_change_nothing_extracted(root: &Path) {
         .frames_dir("cam0")
         .join(format!("{}.jpg", naivepost::clock::frame_name(seconds)));
     std::fs::create_dir_all(frame.parent().unwrap()).expect("frame folder");
-    naivepost::produce_upload_print::flat_png_for_test(&frame, 320, 180, 0.5).expect("a frame on disk");
+    naivepost::produce_upload_print::flat_png_for_test(&frame, 320, 180, 0.5)
+        .expect("a frame on disk");
     let window = produce_window(&app_in_round());
     seed_live_cut(&window);
     let mut page = ui::produce_page::read_state();
@@ -787,8 +863,15 @@ fn check_change_nothing_extracted(root: &Path) {
         "the slot's Change… always hands back a different picture: {said:?}"
     );
     let after = ui::produce_page::read_state().frames.clone();
-    assert_eq!(after.len(), before.len(), "Change… never adds or drops a slot");
-    assert_ne!(after[0], before[0], "and the slot's picture moved: {after:?}");
+    assert_eq!(
+        after.len(),
+        before.len(),
+        "Change… never adds or drops a slot"
+    );
+    assert_ne!(
+        after[0], before[0],
+        "and the slot's picture moved: {after:?}"
+    );
     window.close();
     settle();
 }
@@ -825,9 +908,15 @@ fn check_slot_buttons(root: &Path) {
         "and so does slot 2: {before:?}"
     );
     let said = press_slot(&window, "image-make-base-2");
-    assert!(said.starts_with("base changed"), "the press says what moved: {said:?}");
+    assert!(
+        said.starts_with("base changed"),
+        "the press says what moved: {said:?}"
+    );
     let after = ui::produce_page::read_state().frames.clone();
-    assert_eq!(after[0], row[2], "the picture the press named is the base now: {after:?}");
+    assert_eq!(
+        after[0], row[2],
+        "the picture the press named is the base now: {after:?}"
+    );
     assert_eq!(after.len(), 3, "a swap adds and drops nothing: {after:?}");
     // The refresh rebuilds the rows whole, and what follows the PICTURE is its name on the row: slot 0 now
     // carries the moved file's name, slot 2 the one that used to be the base's. (The button SETS do not move:
@@ -845,12 +934,30 @@ fn check_slot_buttons(root: &Path) {
         "and the picture that was there one slot down: {names:?}"
     );
     let counts = slot_button_counts(&window);
-    assert_eq!(counts.get("image-slot-0").copied().unwrap_or_default(), 3, "index 0 is still the base: {counts:?}");
-    assert_eq!(counts.get("image-slot-2").copied().unwrap_or_default(), 4, "index 2 is still a reference: {counts:?}");
+    assert_eq!(
+        counts.get("image-slot-0").copied().unwrap_or_default(),
+        3,
+        "index 0 is still the base: {counts:?}"
+    );
+    assert_eq!(
+        counts.get("image-slot-2").copied().unwrap_or_default(),
+        4,
+        "index 2 is still a reference: {counts:?}"
+    );
     let base_tag = slot_widget(&window, "image-base-tag-0").expect("the base slot carries its tag");
-    let third_tag = slot_widget(&window, "image-base-tag-2").expect("slot 2 keeps a tag after the swap");
-    assert_eq!(base_tag.downcast_ref::<gtk::Label>().expect("a tag").text(), "base");
-    assert_eq!(third_tag.downcast_ref::<gtk::Label>().expect("a tag").text(), "reference");
+    let third_tag =
+        slot_widget(&window, "image-base-tag-2").expect("slot 2 keeps a tag after the swap");
+    assert_eq!(
+        base_tag.downcast_ref::<gtk::Label>().expect("a tag").text(),
+        "base"
+    );
+    assert_eq!(
+        third_tag
+            .downcast_ref::<gtk::Label>()
+            .expect("a tag")
+            .text(),
+        "reference"
+    );
     // §1's reference wording follows the PICTURE'S NEW PLACE: the sentence about naming a reference by order
     // sits on whatever slot is a reference now, and only there.
     assert!(
@@ -875,9 +982,16 @@ fn check_slot_buttons(root: &Path) {
     let newest = row[row.len() - 1].clone();
     let before_change = ui::produce_page::read_state().frames.clone();
     let said = press_slot(&window, "image-change-1");
-    assert!(said.starts_with("image changed:"), "the press names the new picture: {said:?}");
+    assert!(
+        said.starts_with("image changed:"),
+        "the press names the new picture: {said:?}"
+    );
     let changed = ui::produce_page::read_state().frames.clone();
-    assert_eq!(changed.len(), before_change.len(), "Change… never grows or shrinks the row");
+    assert_eq!(
+        changed.len(),
+        before_change.len(),
+        "Change… never grows or shrinks the row"
+    );
     assert_eq!(changed[0], before_change[0], "the base was not touched");
     assert_eq!(changed[2], before_change[2], "nor was the third slot");
     assert_eq!(
@@ -888,9 +1002,16 @@ fn check_slot_buttons(root: &Path) {
     // --- remove: the base survives losing a reference ------------------------------------
     let before_remove = ui::produce_page::read_state().frames.clone();
     let said = press_slot(&window, "image-remove-2");
-    assert!(said.starts_with("image removed:"), "the press names what went: {said:?}");
+    assert!(
+        said.starts_with("image removed:"),
+        "the press names what went: {said:?}"
+    );
     let after_remove = ui::produce_page::read_state().frames.clone();
-    assert_eq!(after_remove.len(), 2, "one slot out of three: {after_remove:?}");
+    assert_eq!(
+        after_remove.len(),
+        2,
+        "one slot out of three: {after_remove:?}"
+    );
     assert_eq!(
         after_remove[0], before_remove[0],
         "removing a reference leaves the base alone"
@@ -901,11 +1022,7 @@ fn check_slot_buttons(root: &Path) {
     );
 
     // --- the ceiling: a ninth picture is refused, not one dropped -----------------------
-    seed_row(
-        &window,
-        &tree,
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-    );
+    seed_row(&window, &tree, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
     assert_eq!(
         ui::produce_page::read_state().frames.len(),
         naivepost::produce_screen::MAX_IMAGES,
@@ -942,7 +1059,8 @@ fn check_set_thumbnail_prints(root: &Path) {
     // colour space can be misread): what the press must then prove is that it kept that shape and lettered it.
     std::fs::create_dir_all(tree.publish_dir()).ok();
     let plain_file = tree.thumbnail_plain_png();
-    naivepost::produce_upload_print::flat_png_for_test(&plain_file, 1280, 720, 0.3).expect("a plain picture to print onto");
+    naivepost::produce_upload_print::flat_png_for_test(&plain_file, 1280, 720, 0.3)
+        .expect("a plain picture to print onto");
     // Read back through the SAME decoder the shape claim below uses, so that claim can only ever be moved by the
     // crop and never by a seed that failed to land.
     assert_eq!(
@@ -974,17 +1092,29 @@ fn check_set_thumbnail_prints(root: &Path) {
     ui::produce_page::set_state(page);
 
     let said = press_slot(&window, "image-set-thumbnail-1");
-    assert!(said.starts_with("thumbnail taken from"), "names the picture: {said:?}");
+    assert!(
+        said.starts_with("thumbnail taken from"),
+        "names the picture: {said:?}"
+    );
     let state = ui::produce_page::read_state();
     assert!(state.own, "the press records the picture as one's own");
-    assert_eq!(state.frames, row, "§A: the row stays the person's — the press picks a thumbnail, not a row");
-    assert_eq!(DRAWS.load(Ordering::SeqCst), 0, "a chosen frame draws nothing");
+    assert_eq!(
+        state.frames, row,
+        "§A: the row stays the person's — the press picks a thumbnail, not a row"
+    );
+    assert_eq!(
+        DRAWS.load(Ordering::SeqCst),
+        0,
+        "a chosen frame draws nothing"
+    );
     // ffmpeg's own argv is in the log, so the crop is witnessed BEFORE the file is read: the line names both
     // pictures and the filter, and an ffmpeg that was never asked would leave no such line.
     let crop_line = ui::window::logs_for_test()
         .into_iter()
         .find(|line| line.contains("thumbnail-plain.png") && line.contains("crop="))
-        .unwrap_or_else(|| panic!("the press must have asked ffmpeg to crop, and said so in the log"));
+        .unwrap_or_else(|| {
+            panic!("the press must have asked ffmpeg to crop, and said so in the log")
+        });
     assert!(
         crop_line.contains("scale=1280:720"),
         "the crop asks for the video's shape at the thumbnail tier: {crop_line}"
@@ -1009,7 +1139,10 @@ fn check_set_thumbnail_prints(root: &Path) {
     // shape is the cropped base's, so this is where the crop's size becomes the thumbnail's size.
     let printed = session_tree().thumbnail_png();
     assert!(
-        std::fs::metadata(&printed).unwrap_or_else(|why| panic!("{} was not written: {why}", printed.display())).len() > 0,
+        std::fs::metadata(&printed)
+            .unwrap_or_else(|why| panic!("{} was not written: {why}", printed.display()))
+            .len()
+            > 0,
         "the press left a printed picture"
     );
     let (wide, high) = ui::produce_press_wiring::thumb_size();
@@ -1061,7 +1194,11 @@ fn check_redraw(root: &Path) {
         naivepost::produce_runs::REDRAW_NO_CUT,
         "↻ with no cut must give the thumbnail's own refusal, not the Cut step's"
     );
-    assert_eq!(DRAWS.load(Ordering::SeqCst), 0, "a refused press draws nothing");
+    assert_eq!(
+        DRAWS.load(Ordering::SeqCst),
+        0,
+        "a refused press draws nothing"
+    );
 
     seed_live_cut(&window);
     let mark = log_mark();
@@ -1074,10 +1211,16 @@ fn check_redraw(root: &Path) {
         "the success ending is §F5.7's own line"
     );
     assert!(
-        logged.iter().any(|l| l.contains(naivepost::produce_runs::DRAW_AGAIN_LOG)),
+        logged
+            .iter()
+            .any(|l| l.contains(naivepost::produce_runs::DRAW_AGAIN_LOG)),
         "the opening line names the one sd.cpp call before it happens: {logged:?}"
     );
-    assert_eq!(DRAWS.load(Ordering::SeqCst), 1, "exactly one draw — a second would be a new picture");
+    assert_eq!(
+        DRAWS.load(Ordering::SeqCst),
+        1,
+        "exactly one draw — a second would be a new picture"
+    );
     // The unticked box's extra cost is exactly one LLM call, read off the walk's own tally.
     assert_eq!(
         naivepost::produce_runs::redraw(false).rewrites,
@@ -1124,9 +1267,15 @@ fn check_reword(root: &Path) {
     let mark = log_mark();
     let said = press(&window, "title-suggest");
     let logged = logs_since(mark);
-    assert_eq!(said, naivepost::produce_runs::REWORD_DONE, "status: {said:?}");
+    assert_eq!(
+        said,
+        naivepost::produce_runs::REWORD_DONE,
+        "status: {said:?}"
+    );
     assert!(
-        logged.iter().any(|l| l.contains(naivepost::produce_runs::REWORD_LOG)),
+        logged
+            .iter()
+            .any(|l| l.contains(naivepost::produce_runs::REWORD_LOG)),
         "the opening line names all three answers: {logged:?}"
     );
     assert_eq!(
@@ -1172,7 +1321,11 @@ fn check_taken(root: &Path) {
         said.contains("\u{21bb} draws over it"),
         "and says how to take them off again: {said:?}"
     );
-    assert_eq!(DRAWS.load(Ordering::SeqCst), 0, "using a picture as the thumbnail draws nothing");
+    assert_eq!(
+        DRAWS.load(Ordering::SeqCst),
+        0,
+        "using a picture as the thumbnail draws nothing"
+    );
     assert!(
         ui::produce_page::read_state().own,
         "and the choice is recorded as `own`, which is what keeps a later ↻ from painting over it"
@@ -1257,20 +1410,30 @@ fn check_save(root: &Path) {
     std::fs::write(&video, vec![3u8; 4096]).unwrap();
     let said = ui::produce_page::press_save_video_from_button(&window);
     let logged = logs_since(mark);
-    assert!(said.starts_with("saved "), "the confirm line is what the status carries: {said:?}");
+    assert!(
+        said.starts_with("saved "),
+        "the confirm line is what the status carries: {said:?}"
+    );
     // The destination is the project-named default `save_default` gives, not a hardcoded temp path: the
     // widget's own handler builds it from the session folder and the row's container.
-    assert!(said.contains("session.mp4"), "named after the session project: {said:?}");
+    assert!(
+        said.contains("session.mp4"),
+        "named after the session project: {said:?}"
+    );
     assert!(
         !logged.iter().any(|l| l.contains("/tmp/copy.mp4")),
         "the save path comes from save_default, not a hardcoded temp file: {logged:?}"
     );
     assert!(
-        logged.iter().any(|l| l.starts_with("saving ")) && logged.iter().any(|l| l.starts_with("saved ")),
+        logged.iter().any(|l| l.starts_with("saving "))
+            && logged.iter().any(|l| l.starts_with("saved ")),
         "both lines, announced then confirmed, in that order: {logged:?}"
     );
     // The copy left the render's own file where it was: `produce/final.mp4` is still the stamped output.
-    assert!(video.is_file(), "a copy out never moves or replaces the render's own file");
+    assert!(
+        video.is_file(),
+        "a copy out never moves or replaces the render's own file"
+    );
     window.close();
     settle();
 }
@@ -1290,14 +1453,26 @@ fn check_transcode(root: &Path) {
     let said = press(&window, "transcode-again");
     let logged = logs_since(mark);
     assert!(
-        logged.iter().any(|l| l.starts_with("transcode started \u{2014}")),
+        logged
+            .iter()
+            .any(|l| l.starts_with("transcode started \u{2014}")),
         "the opening line names the file and the three settings that decide it: {logged:?}"
     );
-    assert!(said.contains("transcode"), "status carries the transcode's own line: {said:?}");
-    assert_eq!(DRAWS.load(Ordering::SeqCst), 0, "§F5.7: a transcode draws no picture");
+    assert!(
+        said.contains("transcode"),
+        "status carries the transcode's own line: {said:?}"
+    );
+    assert_eq!(
+        DRAWS.load(Ordering::SeqCst),
+        0,
+        "§F5.7: a transcode draws no picture"
+    );
     assert_eq!(PRINTS.load(Ordering::SeqCst), 0, "and prints no words");
     // No model in the transcode's cost list at all — `runs::transcode_args` builds ffmpeg argv and stops.
-    assert!(!logged.iter().any(|l| l.contains("LLM")), "no LLM line anywhere near a transcode: {logged:?}");
+    assert!(
+        !logged.iter().any(|l| l.contains("LLM")),
+        "no LLM line anywhere near a transcode: {logged:?}"
+    );
     window.close();
     settle();
 }
@@ -1318,7 +1493,11 @@ fn check_refusals(_root: &Path) {
     assert_eq!(suggest, naivepost::produce_runs::REWORD_NO_CUT);
     assert_eq!(save, naivepost::produce_runs::SAVE_NO_VIDEO);
     assert_eq!(export, naivepost::produce_runs::EXPORT_NO_PICTURE);
-    assert_eq!(DRAWS.load(Ordering::SeqCst), 0, "a refused press runs no leg at all");
+    assert_eq!(
+        DRAWS.load(Ordering::SeqCst),
+        0,
+        "a refused press runs no leg at all"
+    );
     window.close();
     settle();
 }
@@ -1367,22 +1546,34 @@ fn run_round(app: &adw::Application) {
     record(
         &EXPORT_MEASURED_FAIL,
         "f5_6_s6 export measured",
-        std::panic::AssertUnwindSafe(in_root("export-measured".to_string(), check_export_measured)),
+        std::panic::AssertUnwindSafe(in_root(
+            "export-measured".to_string(),
+            check_export_measured,
+        )),
     );
     record(
         &SET_THUMB_SOLE_FAIL,
         "f5_6_s3 set-thumbnail own",
-        std::panic::AssertUnwindSafe(in_root("set-thumb".to_string(), check_set_thumbnail_marks_own)),
+        std::panic::AssertUnwindSafe(in_root(
+            "set-thumb".to_string(),
+            check_set_thumbnail_marks_own,
+        )),
     );
     record(
         &ADD_IMAGE_REAL_FAIL,
         "f5_6_s4 add-image real frame",
-        std::panic::AssertUnwindSafe(in_root("add-image".to_string(), check_add_image_is_a_real_frame)),
+        std::panic::AssertUnwindSafe(in_root(
+            "add-image".to_string(),
+            check_add_image_is_a_real_frame,
+        )),
     );
     record(
         &PICKED_ROW_FAIL,
         "f5_6_s3 picked frame sole row",
-        std::panic::AssertUnwindSafe(in_root("picked-row".to_string(), check_picked_frame_sole_entry)),
+        std::panic::AssertUnwindSafe(in_root(
+            "picked-row".to_string(),
+            check_picked_frame_sole_entry,
+        )),
     );
     // §1 items 1/3's other half: with nothing extracted both chooser doors cancel honestly.
     record(
@@ -1404,10 +1595,7 @@ fn run_round(app: &adw::Application) {
     record(
         &MAKE_BASE_SWAP_FAIL,
         "f5_7_s1 slot buttons through the real widgets",
-        std::panic::AssertUnwindSafe(in_root(
-            "slot-buttons".to_string(),
-            check_slot_buttons,
-        )),
+        std::panic::AssertUnwindSafe(in_root("slot-buttons".to_string(), check_slot_buttons)),
     );
     record(
         &SET_THUMB_PRINTS_FAIL,
@@ -1446,7 +1634,6 @@ fn f5_7_s1_pressing_the_page_buttons_runs_each_walk_through_the_real_widget() {
     assert!(save.is_none(), "{}", save.unwrap_or_default());
     assert!(transcode.is_none(), "{}", transcode.unwrap_or_default());
 }
-
 
 /// Where the export lands: beside the video, named for its stem. Kept as one more thing the wire reads.
 #[allow(dead_code)]
@@ -1500,10 +1687,26 @@ fn f5_6_s3_s4_s6_presses_through_the_real_widgets() {
     let slot_buttons = MAKE_BASE_SWAP_FAIL.lock().unwrap().take();
     let set_prints = SET_THUMB_PRINTS_FAIL.lock().unwrap().take();
     std::fs::remove_dir_all(&root).ok();
-    assert!(export.is_none(), "f5_6_s6 export: {}", export.unwrap_or_default());
-    assert!(set_thumb.is_none(), "f5_6_s3 set-thumbnail: {}", set_thumb.unwrap_or_default());
-    assert!(add_image.is_none(), "f5_6_s4 add-image: {}", add_image.unwrap_or_default());
-    assert!(picked.is_none(), "f5_6_s3 picked frame: {}", picked.unwrap_or_default());
+    assert!(
+        export.is_none(),
+        "f5_6_s6 export: {}",
+        export.unwrap_or_default()
+    );
+    assert!(
+        set_thumb.is_none(),
+        "f5_6_s3 set-thumbnail: {}",
+        set_thumb.unwrap_or_default()
+    );
+    assert!(
+        add_image.is_none(),
+        "f5_6_s4 add-image: {}",
+        add_image.unwrap_or_default()
+    );
+    assert!(
+        picked.is_none(),
+        "f5_6_s3 picked frame: {}",
+        picked.unwrap_or_default()
+    );
     assert!(
         add_empty.is_none(),
         "f5_7_s1 add-image with nothing extracted: {}",

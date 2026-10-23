@@ -20,8 +20,8 @@ use std::sync::Mutex;
 use naivepost::audio_task::{self, Ask};
 use naivepost::bodies::{self, ServerPath};
 use naivepost::layout::Tree;
-use naivepost::settings::{self, Conf, Paths};
 use naivepost::services;
+use naivepost::settings::{self, Conf, Paths};
 
 use crate::common;
 
@@ -80,7 +80,8 @@ impl Dirs {
         // The conf already exists by the time a test asks for this (every test points its audio server
         // first), so the box is appended through the same parse/render pair the settings dialog uses —
         // writing a fresh `Conf` here would erase that endpoint.
-        let mut conf = crate::suite::audio_task_dial::settings::read(&self.paths).unwrap_or_default();
+        let mut conf =
+            crate::suite::audio_task_dial::settings::read(&self.paths).unwrap_or_default();
         conf.ffmpeg = stub.to_string_lossy().into_owned();
         settings::save(&self.paths, &conf).expect("the conf is written");
         (stub, log)
@@ -133,7 +134,12 @@ fn recorded() -> Vec<Seen> {
 /// the environment belongs to the whole process: cargo runs these tests as threads of one binary, so
 /// without this no two tests may resolve an endpoint at the same moment. Every test points its own
 /// conf at its own fake server (the seam §1 names) and dials through here.
-fn dial_here(dirs: &Dirs, ask: Ask<'_>, model: &str, envelope: &serde_json::Value) -> Result<String, String> {
+fn dial_here(
+    dirs: &Dirs,
+    ask: Ask<'_>,
+    model: &str,
+    envelope: &serde_json::Value,
+) -> Result<String, String> {
     let _guard = ENV.lock().expect("the env lock");
     for name in ["NAIVEPOST_TTS_URL", "AUDIOCPP_SERVER"] {
         std::env::remove_var(name);
@@ -179,7 +185,8 @@ fn handle(stream: TcpStream, answer: &str, models: &str) -> Seen {
 fn filename_of(headers: &[String]) -> Option<String> {
     headers.iter().find_map(|header| {
         let (name, value) = header.split_once(':')?;
-        name.trim().eq_ignore_ascii_case("x-audiocpp-filename")
+        name.trim()
+            .eq_ignore_ascii_case("x-audiocpp-filename")
             .then(|| value.trim().to_string())
     })
 }
@@ -200,7 +207,13 @@ fn handle_with(stream: TcpStream, status: u16, answer: &str, models: &str) -> Se
             break;
         }
         if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = header
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
         headers.push(header.trim_end().to_string());
     }
@@ -216,7 +229,10 @@ fn handle_with(stream: TcpStream, status: u16, answer: &str, models: &str) -> Se
         answer
     };
     let seen = answer_with(stream, &request_line, &headers, &body, payload, status);
-    Seen { outcome: seen.outcome, ..seen }
+    Seen {
+        outcome: seen.outcome,
+        ..seen
+    }
 }
 
 /// Write `payload` back and describe the request that was read — the shared tail of every fake here, so
@@ -229,7 +245,11 @@ fn answer_with(
     payload: &str,
     status: u16,
 ) -> Seen {
-    let code = if request_line.contains("/v1/models") { 200 } else { status };
+    let code = if request_line.contains("/v1/models") {
+        200
+    } else {
+        status
+    };
     let reason = if code == 200 { "OK" } else { "Not Found" };
     let framed = format!(
         "HTTP/1.1 {code} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
@@ -243,7 +263,8 @@ fn answer_with(
         body: String::from_utf8_lossy(body).into_owned(),
         auth: headers.iter().find_map(|header| {
             let (name, value) = header.split_once(':')?;
-            name.trim().eq_ignore_ascii_case("authorization")
+            name.trim()
+                .eq_ignore_ascii_case("authorization")
                 .then(|| value.trim().to_string())
         }),
         filename: filename_of(headers),
@@ -252,7 +273,8 @@ fn answer_with(
             .iter()
             .find_map(|header| {
                 let (name, value) = header.split_once(':')?;
-                name.trim().eq_ignore_ascii_case("host")
+                name.trim()
+                    .eq_ignore_ascii_case("host")
                     .then(|| value.trim().to_string())
             })
             .unwrap_or_default(),
@@ -372,7 +394,12 @@ fn server_answering_uploads(upload: &'static str, answer: &str, models: &str) ->
 /// The headers and the raw body are read HERE, on this reader, and handed to [`answer_and_record`]: a
 /// second `BufReader` over a clone of the socket would re-read from the kernel buffer that this one has
 /// already drained, and the door would wait forever for an answer that was never written.
-fn handle_upload_or_task(stream: TcpStream, upload: &'static str, answer: &str, models: &str) -> Seen {
+fn handle_upload_or_task(
+    stream: TcpStream,
+    upload: &'static str,
+    answer: &str,
+    models: &str,
+) -> Seen {
     let mut reader = std::io::BufReader::new(stream.try_clone().expect("clone the socket"));
     let mut line = String::new();
     let _ = reader.read_line(&mut line);
@@ -385,7 +412,13 @@ fn handle_upload_or_task(stream: TcpStream, upload: &'static str, answer: &str, 
             break;
         }
         if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = header
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
         headers.push(header.trim_end().to_string());
     }
@@ -417,7 +450,11 @@ fn sec_02_services_1_the_four_servers_s1_a_task_run_is_posted_to_the_task_endpoi
 
     let reply = dial_here(
         &dirs,
-        Ask { step: "Prepare", job: "c00.wav", task: "asr" },
+        Ask {
+            step: "Prepare",
+            job: "c00.wav",
+            task: "asr",
+        },
         services::ASR_MODEL,
         &envelope,
     )
@@ -425,17 +462,33 @@ fn sec_02_services_1_the_four_servers_s1_a_task_run_is_posted_to_the_task_endpoi
 
     assert_eq!(reply, r#"{"text":"hello there","words":[]}"#);
     let run = wait_for_recorded_at(&url, "/v1/tasks/run", services::ASR_MODEL);
-    assert!(run.line.starts_with("POST "), "a task run is a POST: {}", run.line);
-    assert!(run.line.contains("/v1/tasks/run"), "the path §1 names: {}", run.line);
+    assert!(
+        run.line.starts_with("POST "),
+        "a task run is a POST: {}",
+        run.line
+    );
+    assert!(
+        run.line.contains("/v1/tasks/run"),
+        "the path §1 names: {}",
+        run.line
+    );
     let sent: serde_json::Value = serde_json::from_str(&run.body).expect("a JSON envelope");
-    assert_eq!(sent["model"], services::ASR_MODEL, "the model id rides in the envelope");
+    assert_eq!(
+        sent["model"],
+        services::ASR_MODEL,
+        "the model id rides in the envelope"
+    );
     assert_eq!(sent["request"]["audio"], "/uploads/c00.wav");
     assert_eq!(sent["request"]["language"], "en");
     // No key box means no Authorization header at all — not an empty bearer (§1, pinned again here on
     // the task leg because the task leg is the one that carries real work). Scoped to this test's own
     // fake: another test dials the same model WITH a key, and an unscoped search would read that one.
     let run = wait_for_recorded_at(&url, "/v1/tasks/run", services::ASR_MODEL);
-    assert_eq!(run.header("authorization"), None, "an empty key box sends no credential");
+    assert_eq!(
+        run.header("authorization"),
+        None,
+        "an empty key box sends no credential"
+    );
 }
 
 /// Diarization and alignment ride the same endpoint with their own requests, so one door covers the
@@ -449,20 +502,32 @@ fn sec_02_services_1_the_four_servers_s1_diarization_and_alignment_ride_the_same
     );
     dirs.point_audio_at(&url);
     let audio = ServerPath::from_upload("/uploads/lecture.wav").expect("absolute");
-    let ask = Ask { step: "Prepare", job: "lecture.wav", task: "diarize" };
+    let ask = Ask {
+        step: "Prepare",
+        job: "lecture.wav",
+        task: "diarize",
+    };
 
-    let body = dial_here(&dirs, ask, services::DIAR_MODEL, &bodies::diar_body(services::DIAR_MODEL, &audio))
-        .expect("the diarizer answers");
+    let body = dial_here(
+        &dirs,
+        ask,
+        services::DIAR_MODEL,
+        &bodies::diar_body(services::DIAR_MODEL, &audio),
+    )
+    .expect("the diarizer answers");
     // The turns come back through the same reading `diar_ask` applies on its way into
     // `transcribe::run`, so what is checked is the reply this dial actually got.
-    let turns = audio_task::diar_answer(
-        &serde_json::from_str::<serde_json::Value>(&body).expect("JSON"),
-    )
-    .expect("the turns read");
+    let turns =
+        audio_task::diar_answer(&serde_json::from_str::<serde_json::Value>(&body).expect("JSON"))
+            .expect("the turns read");
     assert_eq!(turns.len(), 1);
     assert_eq!(turns[0].speaker_id, 1);
 
-    let align = Ask { step: "Prepare", job: "w000001500.wav", task: "align" };
+    let align = Ask {
+        step: "Prepare",
+        job: "w000001500.wav",
+        task: "align",
+    };
     let envelope = bodies::align_body("qwen3-aligner", &audio, "hello there", "en");
     // The dial is what is under test here — that alignment rides the same endpoint with its own body —
     // so the reply itself is only checked to have arrived.
@@ -472,8 +537,10 @@ fn sec_02_services_1_the_four_servers_s1_diarization_and_alignment_ride_the_same
     // second copy of it. This fake answers every task with the diarizer's turns, so what is proven here
     // is that an align reply is readable as words once the stage gets it.
     let words = naivepost::align::parse_words(
-        &serde_json::from_str::<serde_json::Value>(r#"{"words":[{"word":"hello","start":0.0,"end":0.4}]}"#)
-            .expect("JSON"),
+        &serde_json::from_str::<serde_json::Value>(
+            r#"{"words":[{"word":"hello","start":0.0,"end":0.4}]}"#,
+        )
+        .expect("JSON"),
     )
     .expect("word times read");
     assert_eq!(words.len(), 1);
@@ -491,9 +558,14 @@ fn sec_02_services_1_the_four_servers_s1_diarization_and_alignment_ride_the_same
                 && (seen.body.contains(services::DIAR_MODEL) || seen.body.contains("hello there"))
         })
         .collect();
-    assert_eq!(runs.len(), 2, "both kinds were dialed, once each: {runs:#?}");
+    assert_eq!(
+        runs.len(),
+        2,
+        "both kinds were dialed, once each: {runs:#?}"
+    );
     assert!(
-        runs.iter().any(|seen| seen.body.contains("qwen3-aligner") && seen.body.contains("hello there")),
+        runs.iter()
+            .any(|seen| seen.body.contains("qwen3-aligner") && seen.body.contains("hello there")),
         "the aligner's request carries the text to place"
     );
 }
@@ -506,7 +578,8 @@ fn sec_02_services_1_the_four_servers_s1_the_task_run_leaves_its_row_in_requests
     let dirs = Dirs::new("s1c");
     let url = server_answering(r#"{"text":"hello there"}"#, CATALOGUE);
     dirs.point_audio_at(&url);
-    let project = std::env::temp_dir().join(format!("np-svcs1-proj-{}.naivepost", std::process::id()));
+    let project =
+        std::env::temp_dir().join(format!("np-svcs1-proj-{}.naivepost", std::process::id()));
     let _ = std::fs::remove_dir_all(&project);
     std::fs::create_dir_all(&project).expect("the project folder");
     let tree = Tree::new(&project).expect("a session tree");
@@ -519,7 +592,11 @@ fn sec_02_services_1_the_four_servers_s1_the_task_run_leaves_its_row_in_requests
     audio_task::dial(
         &Some(tree.clone()),
         &dirs.paths,
-        Ask { step: "Prepare", job: "c00.wav", task: "asr" },
+        Ask {
+            step: "Prepare",
+            job: "c00.wav",
+            task: "asr",
+        },
         services::ASR_MODEL,
         &bodies::asr_body(services::ASR_MODEL, &audio, "en"),
     )
@@ -528,10 +605,23 @@ fn sec_02_services_1_the_four_servers_s1_the_task_run_leaves_its_row_in_requests
     let rows = std::fs::read_to_string(tree.requests_tsv()).expect("requests.tsv was written");
     let row = rows.lines().last().expect("one row");
     let fields: Vec<&str> = row.split('\t').collect();
-    assert_eq!(fields[4], "audio", "the service column names audio.cpp: {row}");
-    assert_eq!(fields[5], services::ASR_MODEL, "the model column says which model: {row}");
-    assert_eq!(fields[2], "Prepare", "the step column says who asked: {row}");
-    assert_eq!(fields[3], "c00.wav", "the job column names the chunk: {row}");
+    assert_eq!(
+        fields[4], "audio",
+        "the service column names audio.cpp: {row}"
+    );
+    assert_eq!(
+        fields[5],
+        services::ASR_MODEL,
+        "the model column says which model: {row}"
+    );
+    assert_eq!(
+        fields[2], "Prepare",
+        "the step column says who asked: {row}"
+    );
+    assert_eq!(
+        fields[3], "c00.wav",
+        "the job column names the chunk: {row}"
+    );
     assert_eq!(fields[16], "ok", "the outcome is recorded: {row}");
 }
 
@@ -553,7 +643,8 @@ fn sec_02_services_1_the_four_servers_s1_asr_is_asked_per_chunk_with_its_own_cut
     // The cut runs the tool Settings names, so this test names a stub instead of needing ffmpeg installed:
     // it records its argv and writes its output file, which is all the door asks of the real tool.
     let (_stub, argv_log) = dirs.ffmpeg_stub();
-    let project = std::env::temp_dir().join(format!("np-svcs1-chunk-{}.naivepost", std::process::id()));
+    let project =
+        std::env::temp_dir().join(format!("np-svcs1-chunk-{}.naivepost", std::process::id()));
     let _ = std::fs::remove_dir_all(&project);
     std::fs::create_dir_all(&project).expect("the project folder");
     let tree = Tree::new(&project).expect("a session tree");
@@ -617,7 +708,11 @@ fn sec_02_services_1_the_four_servers_s1_asr_is_asked_per_chunk_with_its_own_cut
     }
     let seen: Vec<Seen> = recorded().into_iter().filter(mine).collect();
     let uploads: Vec<&Seen> = seen.iter().collect();
-    assert_eq!(uploads.len(), 1, "the second chunk went up on its own, not inside one whole-take ask");
+    assert_eq!(
+        uploads.len(),
+        1,
+        "the second chunk went up on its own, not inside one whole-take ask"
+    );
     // Every chunk got its OWN ffmpeg cut, at its own span. The stub's log is this test's alone (its folder
     // name is unique), so the `-ss` values it recorded are exactly the cuts this door made — and they differ,
     // which is only possible if the take was split rather than asked about whole.
@@ -645,7 +740,11 @@ fn sec_02_services_1_the_four_servers_s1_asr_is_asked_per_chunk_with_its_own_cut
         .iter()
         .map(|seen| seen.filename.as_deref().unwrap_or_default())
         .collect();
-    assert_eq!(names, vec!["c01.wav"], "the upload names the chunk it carries");
+    assert_eq!(
+        names,
+        vec!["c01.wav"],
+        "the upload names the chunk it carries"
+    );
 }
 
 /// A shipped default the server does not serve comes back with §1's install hint, and the door pays
@@ -660,19 +759,32 @@ fn sec_02_services_1_the_four_servers_s2_a_missing_shipped_model_carries_its_ins
 
     let err = dial_here(
         &dirs,
-        Ask { step: "Prepare", job: "lecture.wav", task: "diarize" },
+        Ask {
+            step: "Prepare",
+            job: "lecture.wav",
+            task: "diarize",
+        },
         services::DIAR_MODEL,
         &bodies::diar_body(services::DIAR_MODEL, &audio),
     )
     .expect_err("a server without the model refuses the ask");
 
-    assert!(err.contains("sortformer_diar_4spk_v1_q8_0"), "the shipped default names its package: {err}");
+    assert!(
+        err.contains("sortformer_diar_4spk_v1_q8_0"),
+        "the shipped default names its package: {err}"
+    );
     assert!(
         err.contains("docker compose exec audio python3 tools/model_manager_v2.py install"),
         "the hint is §1's own wording: {err}"
     );
-    assert!(err.contains("--models-root models"), "the hint ends as §1 spells it: {err}");
-    assert!(err.contains("add it on that server"), "the refusal says what to do about it: {err}");
+    assert!(
+        err.contains("--models-root models"),
+        "the hint ends as §1 spells it: {err}"
+    );
+    assert!(
+        err.contains("add it on that server"),
+        "the refusal says what to do about it: {err}"
+    );
 }
 
 /// A hand-picked id gets no install hint: for an id this build does not ship, the weights would be a
@@ -686,14 +798,24 @@ fn sec_02_services_1_the_four_servers_s2_a_hand_picked_model_is_named_without_a_
 
     let err = dial_here(
         &dirs,
-        Ask { step: "Prepare", job: "lecture.wav", task: "diarize" },
+        Ask {
+            step: "Prepare",
+            job: "lecture.wav",
+            task: "diarize",
+        },
         "my-own-diarizer",
         &bodies::diar_body("my-own-diarizer", &audio),
     )
     .expect_err("a server without the model refuses the ask");
 
-    assert!(err.contains("my-own-diarizer"), "the refusal names what was asked for: {err}");
-    assert!(!err.contains("model_manager_v2.py"), "no install guess for a hand-picked id: {err}");
+    assert!(
+        err.contains("my-own-diarizer"),
+        "the refusal names what was asked for: {err}"
+    );
+    assert!(
+        !err.contains("model_manager_v2.py"),
+        "no install guess for a hand-picked id: {err}"
+    );
 }
 
 /// Any other failure names the model, the status and the server's own sentence, and is not dressed up
@@ -707,16 +829,29 @@ fn sec_02_services_1_the_four_servers_s2_an_ordinary_failure_keeps_the_servers_o
 
     let err = dial_here(
         &dirs,
-        Ask { step: "Prepare", job: "c00.wav", task: "asr" },
+        Ask {
+            step: "Prepare",
+            job: "c00.wav",
+            task: "asr",
+        },
         services::ASR_MODEL,
         &bodies::asr_body(services::ASR_MODEL, &audio, "en"),
     )
     .expect_err("a 500 is a failure");
 
     assert!(err.contains("500"), "the status is in the sentence: {err}");
-    assert!(err.contains("gpu is busy"), "so is the server's own reason: {err}");
-    assert!(err.contains("nemotron-asr"), "and which model was dialled: {err}");
-    assert!(!err.contains("model_manager_v2"), "an ordinary failure is not an install hint: {err}");
+    assert!(
+        err.contains("gpu is busy"),
+        "so is the server's own reason: {err}"
+    );
+    assert!(
+        err.contains("nemotron-asr"),
+        "and which model was dialled: {err}"
+    );
+    assert!(
+        !err.contains("model_manager_v2"),
+        "an ordinary failure is not an install hint: {err}"
+    );
 }
 
 /// §1's install hint reaches a LOG, not only the caller's `Err`: the ▶ Prepare stage turns a failed audio
@@ -732,7 +867,11 @@ fn sec_02_services_1_the_four_servers_s4_a_missing_model_reaches_the_stages_fail
 
     let err = dial_here(
         &dirs,
-        Ask { step: "Prepare", job: "lecture.wav", task: "diarize" },
+        Ask {
+            step: "Prepare",
+            job: "lecture.wav",
+            task: "diarize",
+        },
         services::DIAR_MODEL,
         &bodies::diar_body(services::DIAR_MODEL, &audio),
     )
@@ -762,7 +901,11 @@ fn sec_02_services_1_the_four_servers_s3_a_key_goes_as_a_bearer_and_nothing_else
     let audio = ServerPath::from_upload("/uploads/c00.wav").expect("absolute");
     dial_here(
         &dirs,
-        Ask { step: "Prepare", job: "c00.wav", task: "asr" },
+        Ask {
+            step: "Prepare",
+            job: "c00.wav",
+            task: "asr",
+        },
         services::ASR_MODEL,
         &bodies::asr_body(services::ASR_MODEL, &audio, "en"),
     )
@@ -770,7 +913,9 @@ fn sec_02_services_1_the_four_servers_s3_a_key_goes_as_a_bearer_and_nothing_else
 
     let last = wait_for_recorded_at(&url, "/v1/tasks/run", services::ASR_MODEL);
     assert_eq!(
-        last.header("authorization").as_deref().map(|value| value.to_ascii_lowercase()),
+        last.header("authorization")
+            .as_deref()
+            .map(|value| value.to_ascii_lowercase()),
         Some("bearer sk-audio".to_string()),
         "the key is trimmed into a bearer"
     );
@@ -790,13 +935,20 @@ fn sec_02_services_1_the_four_servers_s1_an_upload_carries_the_bytes_and_its_nam
 
     let upload = wait_for_recorded_at(&url, "/v1/ui/upload", "fake wav bytes");
 
-    assert!(upload.line.starts_with("POST "), "the upload is a POST: {}", upload.line);
+    assert!(
+        upload.line.starts_with("POST "),
+        "the upload is a POST: {}",
+        upload.line
+    );
     assert_eq!(
         upload.header("x-audiocpp-filename").as_deref(),
         Some("c00.wav"),
         "the name rides the header §1 names"
     );
-    assert_eq!(upload.body, "fake wav bytes", "the body is the raw file, not a multipart envelope");
+    assert_eq!(
+        upload.body, "fake wav bytes",
+        "the body is the raw file, not a multipart envelope"
+    );
 }
 
 /// A server that refuses uploads answers with the fix rather than the status (§1's management-API
@@ -809,7 +961,10 @@ fn sec_02_services_1_the_four_servers_s1_an_upload_refusal_names_the_start_up_fl
 
     let err = audio_task::upload_bytes(&None, &dirs.paths, "c00.wav", b"x")
         .expect_err("a 403 is a refusal");
-    assert!(err.contains("--ui-management"), "the refusal says what to change: {err}");
+    assert!(
+        err.contains("--ui-management"),
+        "the refusal says what to change: {err}"
+    );
 }
 
 /// Separation's reply names two stems by server path; a reply missing one says which is missing rather
@@ -817,13 +972,18 @@ fn sec_02_services_1_the_four_servers_s1_an_upload_refusal_names_the_start_up_fl
 #[test]
 fn sec_02_services_1_the_four_servers_s1_a_separation_reply_names_both_stems() {
     let both: serde_json::Value =
-        serde_json::from_str(r#"{"voice":"/uploads/voice.wav","rest":"/uploads/rest.wav"}"#).expect("JSON");
+        serde_json::from_str(r#"{"voice":"/uploads/voice.wav","rest":"/uploads/rest.wav"}"#)
+            .expect("JSON");
     let (kind, voice, rest) = audio_task::stem_paths(&both).expect("both stems read");
     assert_eq!(kind, audio_task::Stems::Both);
     assert_eq!(voice.as_str(), "/uploads/voice.wav");
     assert_eq!(rest.as_str(), "/uploads/rest.wav");
 
-    let one: serde_json::Value = serde_json::from_str(r#"{"voice":"/uploads/voice.wav"}"#).expect("JSON");
+    let one: serde_json::Value =
+        serde_json::from_str(r#"{"voice":"/uploads/voice.wav"}"#).expect("JSON");
     let err = audio_task::stem_paths(&one).expect_err("a reply with one stem is not a split");
-    assert!(err.contains("accompaniment"), "the refusal says which half is missing: {err}");
+    assert!(
+        err.contains("accompaniment"),
+        "the refusal says which half is missing: {err}"
+    );
 }

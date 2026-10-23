@@ -14,13 +14,13 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, hold_last_window, release_last_window, settle, widget_in};
 use gtk4 as gtk;
 use naivepost::produce_screen as ps;
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, widget_in};
 
 static RAN_PLATE: AtomicBool = AtomicBool::new(false);
 static RAN_SETTINGS: AtomicBool = AtomicBool::new(false);
@@ -38,21 +38,21 @@ static RAN_SESSION_OFF: AtomicBool = AtomicBool::new(false);
 /// §A's fifteen, by the name a test finds each one by. The item id is spelled in every entry's comment
 /// so the gate log shows which of the fifteen each check was about.
 const WIDGETS: [&str; 15] = [
-    "add-image-button",         // **1**  ＋ Add image…              sec_08_produce_1_screen S1
-    "publish-images",          // **2**  the eight slots            sec_08_produce_1_screen S1
-    "edit-instruction",        // **3**  Edit instruction           sec_08_produce_1_screen S1
-    "negative-prompt",         // **4**  Negative prompt            sec_08_produce_1_screen S1
-    "thumbnail-export",        // **5**  ⤓ export                   sec_08_produce_1_screen S1
-    "thumbnail-redraw",        // **6**  ↻ redraw                   sec_08_produce_1_screen S1
-    "thumbnail-picture",       // **7**  the picture + overlay editor  sec_08_produce_1_screen S1
-    "title-entry",             // **8**  Title                      sec_08_produce_1_screen S1
-    "title-suggest",           // **8b** ↻ suggest                  sec_08_produce_1_screen S1
-    "description-box",         // **9**  YouTube description        sec_08_produce_1_screen S1
-    "encoder-settings",       // **10** the thirteen rows in a scroller  sec_08_produce_1_screen S2
-    "transcode-save",         // **11** ⤓ save video                sec_08_produce_1_screen S1
-    "transcode-again",        // **12** ↻ encode again              sec_08_produce_1_screen S1
-    "produce-inputs",         // **13** Inputs readout              sec_08_produce_1_screen S4
-    "produce-outputs",        // **14** Outputs count + folder     sec_08_produce_1_screen S4
+    "add-image-button", // **1**  ＋ Add image…              sec_08_produce_1_screen S1
+    "publish-images",   // **2**  the eight slots            sec_08_produce_1_screen S1
+    "edit-instruction", // **3**  Edit instruction           sec_08_produce_1_screen S1
+    "negative-prompt",  // **4**  Negative prompt            sec_08_produce_1_screen S1
+    "thumbnail-export", // **5**  ⤓ export                   sec_08_produce_1_screen S1
+    "thumbnail-redraw", // **6**  ↻ redraw                   sec_08_produce_1_screen S1
+    "thumbnail-picture", // **7**  the picture + overlay editor  sec_08_produce_1_screen S1
+    "title-entry",      // **8**  Title                      sec_08_produce_1_screen S1
+    "title-suggest",    // **8b** ↻ suggest                  sec_08_produce_1_screen S1
+    "description-box",  // **9**  YouTube description        sec_08_produce_1_screen S1
+    "encoder-settings", // **10** the thirteen rows in a scroller  sec_08_produce_1_screen S2
+    "transcode-save",   // **11** ⤓ save video                sec_08_produce_1_screen S1
+    "transcode-again",  // **12** ↻ encode again              sec_08_produce_1_screen S1
+    "produce-inputs",   // **13** Inputs readout              sec_08_produce_1_screen S4
+    "produce-outputs",  // **14** Outputs count + folder     sec_08_produce_1_screen S4
 ];
 
 /// A widget somewhere in THIS window's tree, found from the window itself rather than from any global
@@ -147,7 +147,10 @@ fn produce_round(_app: &adw::Application) {
     }
     // The picture is a plate with the page's own ground, so it is not a hole in the layout.
     let picture = widget_in(&window, "thumbnail-picture").expect("the thumbnail plate exists");
-    assert!(picture.has_css_class("produce-plate"), "and wears the plate class");
+    assert!(
+        picture.has_css_class("produce-plate"),
+        "and wears the plate class"
+    );
     // §A: the written column has a 360 px minimum so the paned cannot starve it. The plate now floats in
     // its own overlay, so the climb to the paned is one step longer than it was with a bare plate.
     let right = picture
@@ -155,7 +158,11 @@ fn produce_round(_app: &adw::Application) {
         .and_then(|slot| slot.parent())
         .and_then(|left| left.parent())
         .expect("the paned holds the two columns");
-    assert_eq!(right.widget_name(), "produce-split", "the split is the page's named paned");
+    assert_eq!(
+        right.widget_name(),
+        "produce-split",
+        "the split is the page's named paned"
+    );
     RAN_PLATE.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -318,7 +325,8 @@ fn produce_round(_app: &adw::Application) {
         "webm's forcing arrived through notify::selected, with no set_setting call in this test"
     );
     assert_eq!(
-        forced.subtitles, ps::SUBTITLE_CHOICES[2],
+        forced.subtitles,
+        ps::SUBTITLE_CHOICES[2],
         "and the subtitle track went with it"
     );
     // A tick goes through `set_toggle` the same way.
@@ -375,8 +383,12 @@ fn produce_round(_app: &adw::Application) {
     click(&window, "words-chip-0");
     // The dialog is its own top-level window rather than a child of the page, so it is found through the
     // module that opened it instead of by walking this window's content tree.
-    let dialog = naivepost::ui::produce_words::open_dialog().expect("the chip opens the reword dialog");
-    assert!(dialog.widget_name() == "words-dialog", "and it is the named dialog");
+    let dialog =
+        naivepost::ui::produce_words::open_dialog().expect("the chip opens the reword dialog");
+    assert!(
+        dialog.widget_name() == "words-dialog",
+        "and it is the named dialog"
+    );
     let entry = dialog
         .extra_child()
         .and_then(|child| child.downcast::<gtk::Frame>().ok())
@@ -394,12 +406,14 @@ fn produce_round(_app: &adw::Application) {
     dialog.response("save");
     settle();
     assert_eq!(
-        ui::produce_page::read_state().texts[0].text, "rewritten band",
+        ui::produce_page::read_state().texts[0].text,
+        "rewritten band",
         "Save went through press_words_reword"
     );
     // Re-open and remove. The dialog must come up filled with the NEW words, not the ones first seeded.
     click(&window, "words-chip-0");
-    let again = naivepost::ui::produce_words::open_dialog().expect("the chip opens the dialog again");
+    let again =
+        naivepost::ui::produce_words::open_dialog().expect("the chip opens the dialog again");
     assert_eq!(
         again
             .extra_child()
@@ -518,9 +532,15 @@ fn produce_round(_app: &adw::Application) {
     ui::produce_page::set_state(published());
     ui::produce_page::refresh(&window);
     for (name, said) in [
-        ("edit-instruction", "put the ship on the water, keep the sky calm"),
+        (
+            "edit-instruction",
+            "put the ship on the water, keep the sky calm",
+        ),
         ("negative-prompt", "no logos, no lettering"),
-        ("description-box", "a talk about pipes, recorded in one take"),
+        (
+            "description-box",
+            "a talk about pipes, recorded in one take",
+        ),
     ] {
         let view = widget_in(&window, name)
             .and_then(|w| w.downcast::<gtk::TextView>().ok())
@@ -537,17 +557,32 @@ fn produce_round(_app: &adw::Application) {
     title.emit_by_name::<()>("changed", &[]);
     settle();
     let typed = ui::produce_page::read_state();
-    assert_eq!(typed.instruction, "put the ship on the water, keep the sky calm");
+    assert_eq!(
+        typed.instruction,
+        "put the ship on the water, keep the sky calm"
+    );
     assert_eq!(typed.negative, "no logos, no lettering");
-    assert_eq!(typed.description, "a talk about pipes, recorded in one take");
+    assert_eq!(
+        typed.description,
+        "a talk about pipes, recorded in one take"
+    );
     assert_eq!(typed.title, "pipes, from first to last");
     // A repaint must not clobber what was typed: the state is the source of truth, and the guard keeps
     // the page's own `set_text` from coming back as an edit.
     ui::produce_page::refresh(&window);
     let after_repaint = ui::produce_page::read_state();
-    assert_eq!(after_repaint.instruction, typed.instruction, "refresh kept the instruction");
-    assert_eq!(after_repaint.negative, typed.negative, "refresh kept the negative prompt");
-    assert_eq!(after_repaint.description, typed.description, "refresh kept the description");
+    assert_eq!(
+        after_repaint.instruction, typed.instruction,
+        "refresh kept the instruction"
+    );
+    assert_eq!(
+        after_repaint.negative, typed.negative,
+        "refresh kept the negative prompt"
+    );
+    assert_eq!(
+        after_repaint.description, typed.description,
+        "refresh kept the description"
+    );
     assert_eq!(after_repaint.title, typed.title, "refresh kept the title");
     // The guard came back clean: a button on another part of the page still answers.
     click(&window, "add-image-button");
@@ -570,7 +605,9 @@ fn produce_round(_app: &adw::Application) {
 /// half is `held || publish.json` and a record left by a neighbour check would make "written" true no
 /// matter what the page held.
 fn empty_session_tree() -> naivepost::layout::Tree {
-    let dir = naivepost::startup::session_dir(&std::env::current_dir().expect("cwd pinned before the run"));
+    let dir = naivepost::startup::session_dir(
+        &std::env::current_dir().expect("cwd pinned before the run"),
+    );
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("session folder created");
     naivepost::layout::Tree::new(dir).expect("the session folder is a project tree")
@@ -604,18 +641,25 @@ fn check_inputs_read_the_session(_app: &adw::Application) {
         line(9.0, 12.0, "the third thing said"),
     ];
     naivepost::narration::save(
-        &naivepost::narration::Narration { entries: lines.clone(), silent: Vec::new() },
+        &naivepost::narration::Narration {
+            entries: lines.clone(),
+            silent: Vec::new(),
+        },
         &tree,
     )
     .expect("narration.json written");
     // One of the three HAS a take, written where `wav_of` says it lives, so the count is a count of what
     // is missing rather than of everything the narration holds.
-    let spoken = naivepost::produce_stamp::wav_of(&tree, &lines[1], None, 0).expect("a spoken line has a path");
+    let spoken = naivepost::produce_stamp::wav_of(&tree, &lines[1], None, 0)
+        .expect("a spoken line has a path");
     std::fs::create_dir_all(spoken.parent().unwrap()).unwrap();
     std::fs::write(&spoken, vec![3u8; 64]).unwrap();
     // No `publish.json`, so the third clause is the missing-upload-text one. Asserted rather than assumed:
     // an earlier check that ran a ▶ shares this cwd, and a written record would move the clause.
-    assert!(!naivepost::publish::is_written(&tree), "this session has no upload text yet");
+    assert!(
+        !naivepost::publish::is_written(&tree),
+        "this session has no upload text yet"
+    );
     let mut state = published();
     state.publish_written = false;
     let window = produce_page(_app);
@@ -627,8 +671,7 @@ fn check_inputs_read_the_session(_app: &adw::Application) {
     ui::produce_page::refresh(&window);
     let said = inputs_text(&window);
     assert_eq!(
-        said,
-        "7 clip(s) \u{b7} 04:14 \u{b7} 2 to speak \u{b7} no upload text",
+        said, "7 clip(s) \u{b7} 04:14 \u{b7} 2 to speak \u{b7} no upload text",
         "\u{a7}15 counts the session's files, not the state it was handed: {said}"
     );
 
@@ -637,12 +680,16 @@ fn check_inputs_read_the_session(_app: &adw::Application) {
     // so the override has to be written back with `set_state` for the publish half to be tested at all: the
     // rule is `held || file_exists`, and `false || true` is the only pair that proves the file was read.
     for entry in [&lines[0], &lines[2]] {
-        let wav = naivepost::produce_stamp::wav_of(&tree, entry, None, 0).expect("a line with words has a path");
+        let wav = naivepost::produce_stamp::wav_of(&tree, entry, None, 0)
+            .expect("a line with words has a path");
         std::fs::create_dir_all(wav.parent().unwrap()).unwrap();
         std::fs::write(&wav, vec![3u8; 64]).unwrap();
     }
     naivepost::publish::save(
-        &naivepost::project::Publish { title: "a talk about pipes".into(), ..Default::default() },
+        &naivepost::project::Publish {
+            title: "a talk about pipes".into(),
+            ..Default::default()
+        },
         &tree,
     )
     .expect("publish.json written");
@@ -683,12 +730,18 @@ fn check_game_audio_follows_the_project(_app: &adw::Application) {
     };
     let lines = vec![line(1.0, 4.0), line(5.0, 8.0), line(9.0, 12.0)];
     naivepost::narration::save(
-        &naivepost::narration::Narration { entries: lines.clone(), silent: Vec::new() },
+        &naivepost::narration::Narration {
+            entries: lines.clone(),
+            silent: Vec::new(),
+        },
         &tree,
     )
     .expect("narration.json written");
     naivepost::publish::save(
-        &naivepost::project::Publish { title: "a talk about pipes".into(), ..Default::default() },
+        &naivepost::project::Publish {
+            title: "a talk about pipes".into(),
+            ..Default::default()
+        },
         &tree,
     )
     .expect("publish.json written");
@@ -808,16 +861,34 @@ fn sec_08_produce_1_screen_s1_s4_plate_rows_forcing_and_images_wire_the_named_wi
     std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
     run_app_round();
 
-    assert!(RAN_PLATE.load(Ordering::SeqCst), "the fifteen-widget check never ran");
-    assert!(RAN_SETTINGS.load(Ordering::SeqCst), "the rows check never ran");
-    assert!(RAN_FORCED.load(Ordering::SeqCst), "the forcing check never ran");
-    assert!(RAN_IMAGES.load(Ordering::SeqCst), "the images-row check never ran");
-    assert!(RAN_CHANGE.load(Ordering::SeqCst), "the Change… door check never ran");
+    assert!(
+        RAN_PLATE.load(Ordering::SeqCst),
+        "the fifteen-widget check never ran"
+    );
+    assert!(
+        RAN_SETTINGS.load(Ordering::SeqCst),
+        "the rows check never ran"
+    );
+    assert!(
+        RAN_FORCED.load(Ordering::SeqCst),
+        "the forcing check never ran"
+    );
+    assert!(
+        RAN_IMAGES.load(Ordering::SeqCst),
+        "the images-row check never ran"
+    );
+    assert!(
+        RAN_CHANGE.load(Ordering::SeqCst),
+        "the Change… door check never ran"
+    );
     assert!(
         RAN_SETTINGS_WIRE.load(Ordering::SeqCst),
         "the settings-signal check never ran"
     );
-    assert!(RAN_WORDS.load(Ordering::SeqCst), "the word-chip / dialog check never ran");
+    assert!(
+        RAN_WORDS.load(Ordering::SeqCst),
+        "the word-chip / dialog check never ran"
+    );
     assert!(
         RAN_SLOTS.load(Ordering::SeqCst),
         "the slot picture / base tag / crop box check never ran"

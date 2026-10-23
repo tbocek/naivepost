@@ -97,9 +97,8 @@ impl Geometry {
         // (picture + wave strip), not the picture half alone: with a split row a wave-strip press would
         // otherwise read as unnamed ground and a click there would clear the selection instead of leaving
         // F2.4's line click to place the line.
-        y_px
-            <= self.bands.first_picture
-                + self.row_count as f64 * (self.bands.row_height + self.bands.wave_height)
+        y_px <= self.bands.first_picture
+            + self.row_count as f64 * (self.bands.row_height + self.bands.wave_height)
     }
 
     /// S2: which part of the band already drawn this press lands on. `Outside` when there is no band.
@@ -139,11 +138,19 @@ pub enum Press {
 
 /// S1/S2: what the press at `(x_px, y_px)` means, given the band (if any) that was on screen when the hand
 /// went down.
-pub fn press_at(geo: &Geometry, x_px: f64, y_px: f64, held_band: Option<&cut_select::Selection>) -> Press {
+pub fn press_at(
+    geo: &Geometry,
+    x_px: f64,
+    y_px: f64,
+    held_band: Option<&cut_select::Selection>,
+) -> Press {
     // S1's one refusal: the effects lane never takes a selection, whatever the y next says.
     let surface = geo.surface_at(y_px);
     if surface == Surface::FxLane {
-        return Press::Draws { from: geo.second_at(x_px), surface };
+        return Press::Draws {
+            from: geo.second_at(x_px),
+            surface,
+        };
     }
     // S2 before S1: a hand that lands on the band is adjusting it, not drawing over it.
     if let Some(band) = held_band {
@@ -152,7 +159,10 @@ pub fn press_at(geo: &Geometry, x_px: f64, y_px: f64, held_band: Option<&cut_sel
             return Press::Adjusts { part };
         }
     }
-    Press::Draws { from: geo.second_at(x_px), surface }
+    Press::Draws {
+        from: geo.second_at(x_px),
+        surface,
+    }
 }
 
 /// S1: which camera the wave strip under row `row` belongs to — §B's `cam<N>` spelling, the same one
@@ -190,7 +200,11 @@ pub fn sound_scope(geo: &Geometry, surface: Surface, cut_: &Cut, y_px: f64) -> O
         Surface::Lane => {
             // `lanes.len()` may be 0 (a session with nothing laid down still draws the lane box): saturate
             // rather than subtract, or a lane press on an empty lane crashes the page.
-            let index = cut_.lanes.len().saturating_sub(1).min(lane_row_at(geo, y_px));
+            let index = cut_
+                .lanes
+                .len()
+                .saturating_sub(1)
+                .min(lane_row_at(geo, y_px));
             cut_.lanes.get(index).map(|lane| lane.name.clone())
         }
         _ => None,
@@ -369,11 +383,15 @@ pub fn recording_for_surface(
 /// only: the right button belongs to trim/move (F2.8), and a click on the same widget is F2.4's line press
 /// (`cut_line_press::attach`), which this module deliberately does not consume.
 pub fn attach(window: &adw::ApplicationWindow) {
-    let Some(content) = window.content() else { return };
+    let Some(content) = window.content() else {
+        return;
+    };
     let Some(found) = crate::ui::window::find_widget_by_name(&content, "track-band") else {
         return;
     };
-    let Ok(band) = found.downcast::<gtk::DrawingArea>() else { return };
+    let Ok(band) = found.downcast::<gtk::DrawingArea>() else {
+        return;
+    };
     let gesture = gtk::GestureDrag::new();
     gesture.set_button(1);
     let win = window.clone();
@@ -402,7 +420,9 @@ thread_local! {
 /// The PAINTED band's selection gesture ([`attach`]), for a test that fires it the way GTK does. Test-only
 /// reader: the page attaches the gesture and never asks for it back, so a name saying so keeps the program
 /// path honest about what calls this.
-pub fn band_selection_gesture_for_test(window: &adw::ApplicationWindow) -> Option<gtk::GestureDrag> {
+pub fn band_selection_gesture_for_test(
+    window: &adw::ApplicationWindow,
+) -> Option<gtk::GestureDrag> {
     let _ = window;
     BAND_SELECT_GESTURES.with(|cell| cell.borrow().clone())
 }

@@ -74,27 +74,96 @@ pub struct Blend {
 
 /// The 21 blends, in the order the prototype lists them (gui/narrate_tts.go's `emoBlends`).
 pub const BLENDS: [Blend; 21] = [
-    Blend { names: &["excited", "thrilled", "exhilarated", "eager", "enthusiastic"], weights: mix(&[(0, 1.0), (6, 0.55)]) },
-    Blend { names: &["ecstatic", "overjoyed", "elated", "jubilant"], weights: mix(&[(0, 1.0), (6, 0.8)]) },
-    Blend { names: &["playful", "amused", "teasing", "cheeky"], weights: mix(&[(0, 1.0), (6, 0.3), (7, 0.35)]) },
-    Blend { names: &["proud", "triumphant", "victorious"], weights: mix(&[(0, 1.0), (7, 0.4)]) },
-    Blend { names: &["relieved", "reassured"], weights: mix(&[(0, 0.6), (7, 1.0)]) },
-    Blend { names: &["hopeful", "encouraging", "optimistic"], weights: mix(&[(0, 0.7), (7, 1.0)]) },
-    Blend { names: &["tender", "warm", "affectionate", "gentle", "fond"], weights: mix(&[(0, 0.5), (7, 1.0)]) },
-    Blend { names: &["nostalgic", "bittersweet", "reminiscent"], weights: mix(&[(0, 0.4), (5, 1.0)]) },
-    Blend { names: &["solemn", "grave", "reverent", "serious"], weights: mix(&[(1, 0.3), (5, 0.45), (7, 1.0)]) },
-    Blend { names: &["awed", "awestruck", "breathless", "wonder"], weights: mix(&[(0, 0.5), (3, 0.25), (6, 1.0)]) },
-    Blend { names: &["alarmed", "urgent", "frantic"], weights: mix(&[(3, 0.85), (6, 1.0)]) },
-    Blend { names: &["horrified", "appalled", "aghast"], weights: mix(&[(3, 1.0), (4, 0.7), (6, 0.5)]) },
-    Blend { names: &["desperate", "pleading", "begging"], weights: mix(&[(2, 0.7), (3, 1.0)]) },
-    Blend { names: &["confused", "puzzled", "baffled", "bewildered", "perplexed"], weights: mix(&[(3, 0.3), (6, 1.0), (7, 0.4)]) },
-    Blend { names: &["frustrated", "exasperated"], weights: mix(&[(1, 1.0), (4, 0.35), (5, 0.5)]) },
-    Blend { names: &["bitter", "resentful", "sullen"], weights: mix(&[(1, 0.7), (4, 0.4), (5, 1.0)]) },
-    Blend { names: &["contemptuous", "scornful", "sneering", "dismissive"], weights: mix(&[(1, 0.6), (4, 1.0)]) },
-    Blend { names: &["dismayed", "crestfallen", "disappointed"], weights: mix(&[(2, 1.0), (6, 0.5)]) },
-    Blend { names: &["heartbroken", "devastated", "grief", "anguished"], weights: mix(&[(2, 1.0), (5, 0.8)]) },
-    Blend { names: &["ominous", "foreboding", "menacing"], weights: mix(&[(1, 0.3), (3, 0.5), (7, 1.0)]) },
-    Blend { names: &["tense", "suspenseful", "wary"], weights: mix(&[(3, 0.7), (6, 0.35), (7, 1.0)]) },
+    Blend {
+        names: &[
+            "excited",
+            "thrilled",
+            "exhilarated",
+            "eager",
+            "enthusiastic",
+        ],
+        weights: mix(&[(0, 1.0), (6, 0.55)]),
+    },
+    Blend {
+        names: &["ecstatic", "overjoyed", "elated", "jubilant"],
+        weights: mix(&[(0, 1.0), (6, 0.8)]),
+    },
+    Blend {
+        names: &["playful", "amused", "teasing", "cheeky"],
+        weights: mix(&[(0, 1.0), (6, 0.3), (7, 0.35)]),
+    },
+    Blend {
+        names: &["proud", "triumphant", "victorious"],
+        weights: mix(&[(0, 1.0), (7, 0.4)]),
+    },
+    Blend {
+        names: &["relieved", "reassured"],
+        weights: mix(&[(0, 0.6), (7, 1.0)]),
+    },
+    Blend {
+        names: &["hopeful", "encouraging", "optimistic"],
+        weights: mix(&[(0, 0.7), (7, 1.0)]),
+    },
+    Blend {
+        names: &["tender", "warm", "affectionate", "gentle", "fond"],
+        weights: mix(&[(0, 0.5), (7, 1.0)]),
+    },
+    Blend {
+        names: &["nostalgic", "bittersweet", "reminiscent"],
+        weights: mix(&[(0, 0.4), (5, 1.0)]),
+    },
+    Blend {
+        names: &["solemn", "grave", "reverent", "serious"],
+        weights: mix(&[(1, 0.3), (5, 0.45), (7, 1.0)]),
+    },
+    Blend {
+        names: &["awed", "awestruck", "breathless", "wonder"],
+        weights: mix(&[(0, 0.5), (3, 0.25), (6, 1.0)]),
+    },
+    Blend {
+        names: &["alarmed", "urgent", "frantic"],
+        weights: mix(&[(3, 0.85), (6, 1.0)]),
+    },
+    Blend {
+        names: &["horrified", "appalled", "aghast"],
+        weights: mix(&[(3, 1.0), (4, 0.7), (6, 0.5)]),
+    },
+    Blend {
+        names: &["desperate", "pleading", "begging"],
+        weights: mix(&[(2, 0.7), (3, 1.0)]),
+    },
+    Blend {
+        names: &["confused", "puzzled", "baffled", "bewildered", "perplexed"],
+        weights: mix(&[(3, 0.3), (6, 1.0), (7, 0.4)]),
+    },
+    Blend {
+        names: &["frustrated", "exasperated"],
+        weights: mix(&[(1, 1.0), (4, 0.35), (5, 0.5)]),
+    },
+    Blend {
+        names: &["bitter", "resentful", "sullen"],
+        weights: mix(&[(1, 0.7), (4, 0.4), (5, 1.0)]),
+    },
+    Blend {
+        names: &["contemptuous", "scornful", "sneering", "dismissive"],
+        weights: mix(&[(1, 0.6), (4, 1.0)]),
+    },
+    Blend {
+        names: &["dismayed", "crestfallen", "disappointed"],
+        weights: mix(&[(2, 1.0), (6, 0.5)]),
+    },
+    Blend {
+        names: &["heartbroken", "devastated", "grief", "anguished"],
+        weights: mix(&[(2, 1.0), (5, 0.8)]),
+    },
+    Blend {
+        names: &["ominous", "foreboding", "menacing"],
+        weights: mix(&[(1, 0.3), (3, 0.5), (7, 1.0)]),
+    },
+    Blend {
+        names: &["tense", "suspenseful", "wary"],
+        weights: mix(&[(3, 0.7), (6, 0.35), (7, 1.0)]),
+    },
 ];
 
 /// A recipe with these axes lit and every other one silent. `const fn` so [`BLENDS`] is data, not work done

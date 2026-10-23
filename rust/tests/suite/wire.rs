@@ -28,7 +28,11 @@ fn server_answering(content_type: &str, body: &str) -> String {
     let header = content_type.to_string();
     let payload = body.to_string();
     std::thread::spawn(move || {
-        let stream = match listener.incoming().next().map(|r| r.map_err(std::io::Error::other)) {
+        let stream = match listener
+            .incoming()
+            .next()
+            .map(|r| r.map_err(std::io::Error::other))
+        {
             Some(Ok(stream)) => stream,
             _ => return,
         };
@@ -47,8 +51,17 @@ fn server_answering(content_type: &str, body: &str) -> String {
             if header_line.trim().is_empty() {
                 break;
             }
-            if header_line.to_ascii_lowercase().starts_with("content-length:") {
-                length = header_line.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            if header_line
+                .to_ascii_lowercase()
+                .starts_with("content-length:")
+            {
+                length = header_line
+                    .split(':')
+                    .nth(1)
+                    .unwrap_or("0")
+                    .trim()
+                    .parse()
+                    .unwrap_or(0);
             }
         }
         let mut payload_bytes = vec![0u8; length];
@@ -101,10 +114,22 @@ fn dial_and_read(url: &str, tag: &str) -> (naivepost::llm_request::Reply, String
         ..Default::default()
     };
     let body = serde_json::json!({ "model": "contract-model", "messages": [] }).to_string();
-    let (_row, sent) = server_leg::call(&tree, &base, Server::Llm, &endpoint, Kind::Chat, None, Some(&body), &never);
+    let (_row, sent) = server_leg::call(
+        &tree,
+        &base,
+        Server::Llm,
+        &endpoint,
+        Kind::Chat,
+        None,
+        Some(&body),
+        &never,
+    );
     let sent = sent.expect("the fake server answered over the wire");
     let content_type = sent.content_type.clone();
-    (llm::reply_from(&content_type, &sent.body).expect("the answer reads"), content_type)
+    (
+        llm::reply_from(&content_type, &sent.body).expect("the answer reads"),
+        content_type,
+    )
 }
 
 /// S3: a server that answers `application/json` is read as ONE envelope — content, reasoning kept apart,
@@ -125,10 +150,20 @@ fn sec_09_llm_and_tools_1_request_contract_s3_json_answer_over_the_wire() {
     });
     let url = server_answering("application/json", &envelope.to_string());
     let (reply, content_type) = dial_and_read(&url, "json");
-    assert_eq!(content_type, "application/json", "the wire's own header reached the door");
+    assert_eq!(
+        content_type, "application/json",
+        "the wire's own header reached the door"
+    );
     assert_eq!(reply.answer(), "the title writes itself");
-    assert_eq!(reply.reasoning, "let me weigh three titles first", "kept, but not as the answer");
-    assert_ne!(reply.answer(), reply.reasoning, "§1: reasoning is never the answer");
+    assert_eq!(
+        reply.reasoning, "let me weigh three titles first",
+        "kept, but not as the answer"
+    );
+    assert_ne!(
+        reply.answer(),
+        reply.reasoning,
+        "§1: reasoning is never the answer"
+    );
     assert_eq!(reply.tool_calls.len(), 1);
     assert_eq!(reply.tool_calls[0].name, "set_title");
     assert_eq!(reply.tool_calls[0].args, "{\"text\":\"a title\"}");
@@ -152,19 +187,45 @@ fn sec_09_llm_and_tools_1_request_contract_s3_event_stream_answer_over_the_wire(
     .join("\n");
     let url = server_answering("text/event-stream; charset=utf-8", &chunks);
     let (reply, content_type) = dial_and_read(&url, "stream");
-    assert!(llm::is_event_stream(&content_type), "the header says stream: {content_type}");
-    assert_eq!(reply.answer(), "A win nobody expected", "content joined across chunks");
-    assert_eq!(reply.reasoning, "thinking first", "reasoning kept apart from the answer");
-    assert_eq!(reply.tool_calls.len(), 1, "one call, reassembled by index across chunks");
+    assert!(
+        llm::is_event_stream(&content_type),
+        "the header says stream: {content_type}"
+    );
+    assert_eq!(
+        reply.answer(),
+        "A win nobody expected",
+        "content joined across chunks"
+    );
+    assert_eq!(
+        reply.reasoning, "thinking first",
+        "reasoning kept apart from the answer"
+    );
+    assert_eq!(
+        reply.tool_calls.len(),
+        1,
+        "one call, reassembled by index across chunks"
+    );
     assert_eq!(reply.tool_calls[0].name, "set_title");
-    assert_eq!(reply.tool_calls[0].args, "{\"text\":\"a title\"}", "the pieces joined in arrival order");
+    assert_eq!(
+        reply.tool_calls[0].args, "{\"text\":\"a title\"}",
+        "the pieces joined in arrival order"
+    );
     assert_eq!(reply.finish_reason, "tool_calls");
     // The framing rule again, from the same door: a JSON body is NEVER framed, and a stream body is never
     // parsed as one object. Both would otherwise answer nothing.
-    assert!(llm::reply_from("application/json", &chunks).is_err(), "framed lines are not one JSON object");
-    let json_envelope = serde_json::json!({ "choices": [{ "message": { "content": "plain" } }] }).to_string();
-    let streamed = llm::reply_from("text/event-stream", &json_envelope).expect("a stream answers, even with nothing in it");
-    assert_eq!(streamed.answer(), "", "no `data:` line, no content — routing is by header, not by guesswork");
+    assert!(
+        llm::reply_from("application/json", &chunks).is_err(),
+        "framed lines are not one JSON object"
+    );
+    let json_envelope =
+        serde_json::json!({ "choices": [{ "message": { "content": "plain" } }] }).to_string();
+    let streamed = llm::reply_from("text/event-stream", &json_envelope)
+        .expect("a stream answers, even with nothing in it");
+    assert_eq!(
+        streamed.answer(),
+        "",
+        "no `data:` line, no content — routing is by header, not by guesswork"
+    );
 }
 
 /// S3's last streaming clause over the wire: the connection closes without `[DONE]`, and what arrived IS the
@@ -174,13 +235,24 @@ fn sec_09_llm_and_tools_1_request_contract_s3_eof_without_done_keeps_what_arrive
     let half = "data: {\"choices\":[{\"delta\":{\"content\":\"the first half of an \"}}]}\ndata: {\"choices\":[{\"delta\":{\"content\":\"answer that got cut\"}}]}\n";
     let url = server_answering("text/event-stream", half);
     let (reply, _) = dial_and_read(&url, "eof");
-    assert_eq!(reply.answer(), "the first half of an answer that got cut", "EOF keeps what arrived");
+    assert_eq!(
+        reply.answer(),
+        "the first half of an answer that got cut",
+        "EOF keeps what arrived"
+    );
     // The door hands back a Reply, so ended-ness is the stream's own question, asserted where the framing lives.
     let lines: Vec<&str> = half.lines().collect();
     let streamed = llm::from_events(&lines);
-    assert!(!streamed.complete(), "no [DONE], so the answer is known to be a partial");
+    assert!(
+        !streamed.complete(),
+        "no [DONE], so the answer is known to be a partial"
+    );
     assert_eq!(streamed.ended, llm::Ended::Eof);
-    assert_eq!(streamed.reply.answer(), reply.answer(), "the same text the wire got");
+    assert_eq!(
+        streamed.reply.answer(),
+        reply.answer(),
+        "the same text the wire got"
+    );
     // And a body that is neither JSON nor framed says so by name — the reason every caller still pins.
     assert_eq!(
         llm::reply_from("application/json", "i am plain text").unwrap_err(),

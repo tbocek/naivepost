@@ -22,12 +22,18 @@ pub const SESSION_TASK: &str = "naivepost:fix-session";
 /// The placement row, but only when the session has sources to place — an empty session has no clock to
 /// place, and writing an empty `session.tsv` would claim a run happened when nothing could have.
 pub fn placement_rows(project: &Project) -> Vec<run_stages::Task> {
-    (!project.sources.is_empty()).then(placement_row).into_iter().collect()
+    (!project.sources.is_empty())
+        .then(placement_row)
+        .into_iter()
+        .collect()
 }
 
 /// The merge row, under the same gate: no sources, no timeline to merge.
 pub fn merge_rows(project: &Project) -> Vec<run_stages::Task> {
-    (!project.sources.is_empty()).then(merge_row).into_iter().collect()
+    (!project.sources.is_empty())
+        .then(merge_row)
+        .into_iter()
+        .collect()
 }
 
 /// S1's row: place every source and write `offsets.tsv`.
@@ -53,7 +59,10 @@ pub fn merge_row() -> run_stages::Task {
 }
 
 /// The walk's door for the placement row: S1 for the whole session.
-pub fn run_placement(_task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
+pub fn run_placement(
+    _task: &crate::run_stages::Task,
+    log: &mut impl FnMut(&str),
+) -> Result<(), String> {
     let tree = session_tree()?;
     let project = crate::project::load(tree.dir()).unwrap_or_default();
     place_and_write(&tree, &project, log)?;
@@ -68,7 +77,10 @@ pub fn run_placement(_task: &crate::run_stages::Task, log: &mut impl FnMut(&str)
 /// which is §S3's resume rule, and a run that already fixed this session re-asks nothing. A session with
 /// no settings folder (nothing to dial: no server, no model) skips the step and keeps the honest timeline
 /// out of whatever transcripts are on disk.
-pub fn run_session(_task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
+pub fn run_session(
+    _task: &crate::run_stages::Task,
+    log: &mut impl FnMut(&str),
+) -> Result<(), String> {
     let tree = session_tree()?;
     let project = crate::project::load(tree.dir()).unwrap_or_default();
     // §S3's resume rule decides whether anything is left to ask. A source whose FIXED file is already on
@@ -76,7 +88,10 @@ pub fn run_session(_task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) 
     // resumed run, a fix row that failed or was skipped) still owes the fixer its blocks, and a session with
     // any such source gets the whole-session walk, over EVERY recording at once.
     let placed = placed_sources(&project);
-    if placed.iter().any(|source| fix_transcripts::owes_the_fixer(&tree, source)) {
+    if placed
+        .iter()
+        .any(|source| fix_transcripts::owes_the_fixer(&tree, source))
+    {
         session_fix(&tree, &project, log)?;
     }
     merge_mark_write(&tree, &project, log)
@@ -86,7 +101,11 @@ pub fn run_session(_task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) 
 /// fixed files. Its `ask` is [`crate::fix_call::ask_block`], the one door the clean-transcript job dials
 /// through, so §3.1's `get_lines`/`get_events` reads stay answerable and §09 §5's bound is applied by
 /// `llm_request::body` to each block. S5–S7 are [`merge_mark_write`]'s, on the files this walk wrote.
-pub fn session_fix(tree: &Tree, project: &Project, log: &mut impl FnMut(&str)) -> Result<(), String> {
+pub fn session_fix(
+    tree: &Tree,
+    project: &Project,
+    log: &mut impl FnMut(&str),
+) -> Result<(), String> {
     let Some(paths) = crate::settings::from_environment() else {
         // No settings folder means nothing to dial. The merge still owes a timeline from whatever
         // transcripts are on disk, so this is a silent skip rather than a failure.
@@ -111,7 +130,8 @@ pub fn session_fix(tree: &Tree, project: &Project, log: &mut impl FnMut(&str)) -
 /// Resolve the session folder the way every other dial does (§1's re-read-per-request seams).
 fn session_tree() -> Result<Tree, String> {
     let session = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
-    Tree::new(&session).map_err(|_| format!("{}: not a project folder to fix into", session.display()))
+    Tree::new(&session)
+        .map_err(|_| format!("{}: not a project folder to fix into", session.display()))
 }
 
 /// Every source as this step sees it: its lane, its stamped name, and which kind of recording it is.
@@ -216,13 +236,14 @@ pub fn merge_mark_write(
     // S6: the pass P.policy.markingPass names. Its failure is a sentence, not this row's end: the
     // timeline on disk is usable, and losing the fixes to a marking refusal would be the worse error.
     let pass = crate::policy::marking_pass_of(&project.policy);
-    let marks = match fix_transcripts::marks_for(pass, || run_marking_pass(tree, project, pass, log)) {
-        Ok(marks) => marks,
-        Err(err) => {
-            log(&fix_transcripts::marking_log(&err, pass));
-            Vec::new()
-        }
-    };
+    let marks =
+        match fix_transcripts::marks_for(pass, || run_marking_pass(tree, project, pass, log)) {
+            Ok(marks) => marks,
+            Err(err) => {
+                log(&fix_transcripts::marking_log(&err, pass));
+                Vec::new()
+            }
+        };
 
     // S7: the text the cut model reads, which is also the text the person opens.
     let narrator = narrator_of(project);

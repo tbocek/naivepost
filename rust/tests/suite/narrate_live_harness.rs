@@ -19,10 +19,10 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use naivepost::cut::{Cut, Seg};
 use crate::common;
 use common::seg;
 pub use common::{serve, Seen};
+use naivepost::cut::{Cut, Seg};
 
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
@@ -193,7 +193,11 @@ pub fn fixture(tag: &str) -> Fixture {
         footage: true,
         ..Default::default()
     }];
-    Fixture { root, tree, project }
+    Fixture {
+        root,
+        tree,
+        project,
+    }
 }
 
 /// The transcript the brief reads: two spoken lines over the first clip's seconds.
@@ -264,7 +268,14 @@ pub fn ask_one(
     let (segs, transcript, narrator) = material(fixture);
     let request = build_request(fixture);
     naivepost::narrate_live::ask_round(
-        &fixture.tree, &request, &segs, &transcript, &narrator, attempt, thinking, cancelled,
+        &fixture.tree,
+        &request,
+        &segs,
+        &transcript,
+        &narrator,
+        attempt,
+        thinking,
+        cancelled,
     )
 }
 
@@ -273,6 +284,8 @@ pub fn material(fixture: &Fixture) -> (Vec<Seg>, Vec<naivepost::textfmt::Session
     let cut = naivepost::cut::load(&fixture.tree).expect("cut read back");
     let rows = naivepost::textfmt::read_session(&fixture.tree.session_tsv())
         .expect("session.tsv read back");
-    let narrator = naivepost::sources::narrator_of(&fixture.project, 1).unwrap_or("").to_string();
+    let narrator = naivepost::sources::narrator_of(&fixture.project, 1)
+        .unwrap_or("")
+        .to_string();
     (cut.segs, rows, narrator)
 }

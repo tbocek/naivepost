@@ -48,8 +48,16 @@ fn scratch_root(tag: &str) -> std::path::PathBuf {
 fn base_state() -> ui::NarrateState {
     ui::NarrateState {
         segs: vec![
-            naivepost::cut::Seg { s: 0.0, e: 30.0, ..Default::default() },
-            naivepost::cut::Seg { s: 30.0, e: 60.0, ..Default::default() },
+            naivepost::cut::Seg {
+                s: 0.0,
+                e: 30.0,
+                ..Default::default()
+            },
+            naivepost::cut::Seg {
+                s: 30.0,
+                e: 60.0,
+                ..Default::default()
+            },
         ],
         voice: "narrator1".into(),
         session: 5.0,
@@ -98,7 +106,8 @@ fn narrate_page(app: &adw::Application, width: i32) -> adw::ApplicationWindow {
 }
 
 fn found(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget {
-    ui::find_source_widget(window, name).unwrap_or_else(|| panic!("the Narrate page drew no `{name}`"))
+    ui::find_source_widget(window, name)
+        .unwrap_or_else(|| panic!("the Narrate page drew no `{name}`"))
 }
 
 /// A widget's bounds in the window's own coordinates.
@@ -139,15 +148,26 @@ fn check_the_second_divider(app: &adw::Application) {
         gtk::Orientation::Vertical,
         "§A.1: the LEFT column is split TOP AND BOTTOM by this divider"
     );
-    assert!(paned.is_wide_handle(), "the handle is wide enough to grab, like every other divider here");
+    assert!(
+        paned.is_wide_handle(),
+        "the handle is wide enough to grab, like every other divider here"
+    );
     let start = paned
         .start_child()
         .expect("the second divider has an upper half");
     let end = paned
         .end_child()
         .expect("the second divider has a lower half");
-    assert_eq!(start.widget_name(), "narrate-upper", "the UPPER half is the paned's start child");
-    assert_eq!(end.widget_name(), "narrate-lower", "the LOWER half is the paned's end child");
+    assert_eq!(
+        start.widget_name(),
+        "narrate-upper",
+        "the UPPER half is the paned's start child"
+    );
+    assert_eq!(
+        end.widget_name(),
+        "narrate-lower",
+        "the LOWER half is the paned's end child"
+    );
     // §A.1's opening: the handle sits at the bottom of the upper half, just under the transport row. The page builds
     // that opening from the rows it must clear (tick + gap + the 16:9 frame + gap + transport = 392) instead of
     // typing 420, because a headless window never reaches 420 px of room for the left column; read off the widget
@@ -164,7 +184,10 @@ fn check_the_second_divider(app: &adw::Application) {
         paned.position(),
         upper.height()
     );
-    assert!(upper.height() > 300.0, "the upper half holds more than the preview alone");
+    assert!(
+        upper.height() > 300.0,
+        "the upper half holds more than the preview alone"
+    );
     // Above it, top to bottom: the Narration tick, the preview, the transport row.
     for name in ["narration-tick", "narrate-preview", "narrate-transport"] {
         assert!(
@@ -355,7 +378,10 @@ fn sec_07_narrate_1_screen_the_page_splits_left_right_and_top_bottom() {
     // `adw::Application::run` returns when the last window closes and each check closes its own; never call
     // `quit()` from inside `activate` — it fires before the main loop starts.
     app.run_with_args::<&str>(&[]);
-    assert!(RAN_SPLIT.load(Ordering::SeqCst), "the second-divider check never ran");
+    assert!(
+        RAN_SPLIT.load(Ordering::SeqCst),
+        "the second-divider check never ran"
+    );
     assert!(
         RAN_TRANSPORT.load(Ordering::SeqCst),
         "the one-row transport check never ran"

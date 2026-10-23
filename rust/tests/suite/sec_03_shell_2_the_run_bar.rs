@@ -8,14 +8,16 @@
 
 use std::rc::Rc;
 
+use crate::common;
 use adw::prelude::*;
+use common::{fake_audio_server, fixture_dir};
 use gtk4 as gtk;
 use naivepost::lucky;
 use naivepost::run;
-use naivepost::runqueue::{self, Queue, TRACK_DESCRIBE, TRACK_FIX, TRACK_FRAMES, TRACK_STT, STANDING_TIP, TRACK_JOIN};
+use naivepost::runqueue::{
+    self, Queue, STANDING_TIP, TRACK_DESCRIBE, TRACK_FIX, TRACK_FRAMES, TRACK_JOIN, TRACK_STT,
+};
 use naivepost::ui;
-use crate::common;
-use common::{fake_audio_server, fixture_dir};
 
 // ---------------------------------------------------------------------------
 // bullet: "the tracks' lines, joined by \"  ·  \"" — the joiner's exact bytes.
@@ -26,8 +28,7 @@ fn sec_03_shell_2_the_run_bar_s1_the_two_track_lines_join_with_a_spaced_middle_d
     // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
     common::pin_private_cwd();
     assert_eq!(
-        TRACK_JOIN,
-        "  \u{00B7}  ",
+        TRACK_JOIN, "  \u{00B7}  ",
         "§2: the joiner is a middle dot with TWO spaces on each side"
     );
     let mut q = Queue::new();
@@ -53,7 +54,10 @@ fn sec_03_shell_2_the_run_bar_s1_the_two_track_lines_join_with_a_spaced_middle_d
         format!("describe 1/2: chunk 4/12{TRACK_JOIN}speech done"),
         "§2's two lines, joined by the spaced middle dot"
     );
-    assert!(text.contains(TRACK_JOIN), "the joined line carries the joiner itself: {text:?}");
+    assert!(
+        text.contains(TRACK_JOIN),
+        "the joined line carries the joiner itself: {text:?}"
+    );
     // Read the two spaces back out of the joined line: splitting on §2's joiner must leave exactly the
     // two tracks' lines and nothing else.
     let joined: Vec<&str> = text.split(TRACK_JOIN).collect();
@@ -77,14 +81,23 @@ fn sec_03_shell_2_the_run_bar_s1_each_track_tips_its_own_counting() {
     q.push(TRACK_STT, 12, "chunk");
     q.take(TRACK_STT);
     q.prog(TRACK_STT, 4.0 / 12.0, "chunk 4/12");
-    assert_eq!(q.track(TRACK_STT).tip(), "describe: task 1 of 12, 11 waiting");
-    assert!(q.track(TRACK_FRAMES).tip().is_empty(), "a track with no job tips nothing");
+    assert_eq!(
+        q.track(TRACK_STT).tip(),
+        "describe: task 1 of 12, 11 waiting"
+    );
+    assert!(
+        q.track(TRACK_FRAMES).tip().is_empty(),
+        "a track with no job tips nothing"
+    );
 
     // Nothing left waiting: the last task is taken and nothing is queued behind it.
     q.prog(TRACK_STT, 1.0, "");
     q.take(TRACK_STT);
     q.push(TRACK_STT, 0, "");
-    assert_eq!(q.track(TRACK_STT).tip(), "describe: task 2 of 12, 10 waiting");
+    assert_eq!(
+        q.track(TRACK_STT).tip(),
+        "describe: task 2 of 12, 10 waiting"
+    );
     {
         // A queue emptied of its own work reads "none waiting".
         let mut q = Queue::new();
@@ -93,7 +106,10 @@ fn sec_03_shell_2_the_run_bar_s1_each_track_tips_its_own_counting() {
         q.take(TRACK_STT);
         q.take(TRACK_STT);
         q.prog(TRACK_STT, 1.0, "");
-        assert_eq!(q.track(TRACK_STT).tip(), "describe: task 2 of 2, none waiting");
+        assert_eq!(
+            q.track(TRACK_STT).tip(),
+            "describe: task 2 of 2, none waiting"
+        );
     }
 
     // A finished job counts everything it took.
@@ -115,12 +131,15 @@ fn sec_03_shell_2_the_run_bar_s1_each_track_tips_its_own_counting() {
 fn sec_03_shell_2_the_run_bar_s1_nothing_queued_leaves_the_standing_tooltip() {
     common::pin_private_cwd();
     assert_eq!(
-        STANDING_TIP,
-        "The run: the job, which of the run's jobs it is, and the task it is on",
+        STANDING_TIP, "The run: the job, which of the run's jobs it is, and the task it is on",
         "§2's standing tooltip, in the spec's own words"
     );
     let q = Queue::new();
-    assert_eq!(q.text_and_tip().1, "", "an empty queue has no counting to replace the standing text");
+    assert_eq!(
+        q.text_and_tip().1,
+        "",
+        "an empty queue has no counting to replace the standing text"
+    );
     assert_eq!(q.text(), "", "and no words for the status line either");
 }
 
@@ -134,10 +153,19 @@ fn sec_03_shell_2_the_run_bar_s1_idle_bar_runs_this_step_and_lets_the_gears_go()
     let drawn = run::controls(&None, None);
     assert_eq!(drawn.icon, run::PLAY_ICON);
     assert_eq!(drawn.tooltip, run::PLAY_TOOLTIP);
-    assert_eq!(drawn.tooltip, "Run this step \u{2014} or resume what is paused");
+    assert_eq!(
+        drawn.tooltip,
+        "Run this step \u{2014} or resume what is paused"
+    );
     assert!(!drawn.stop_sensitive, "nothing to end yet");
-    assert!(drawn.lucky_sensitive, "an idle bar leaves I'm feeling lucky pressable");
-    assert!(!drawn.gears_turning, "§2: the gears are still when the bar is idle");
+    assert!(
+        drawn.lucky_sensitive,
+        "an idle bar leaves I'm feeling lucky pressable"
+    );
+    assert!(
+        !drawn.gears_turning,
+        "§2: the gears are still when the bar is idle"
+    );
 }
 
 #[test]
@@ -150,10 +178,17 @@ fn sec_03_shell_2_the_run_bar_s1_a_busy_bar_turns_play_into_pause_and_greys_the_
         sources: run::Snapshot::default(),
     });
     let drawn = run::controls(&running, None);
-    assert_eq!(drawn.icon, run::PAUSE_ICON, "§2: while a run is busy \u{25b6} shows \u{23f8}");
+    assert_eq!(
+        drawn.icon,
+        run::PAUSE_ICON,
+        "§2: while a run is busy \u{25b6} shows \u{23f8}"
+    );
     assert_eq!(drawn.tooltip, run::PAUSE_TOOLTIP);
     assert!(drawn.stop_sensitive, "\u{23f9} has the run to end");
-    assert!(!drawn.lucky_sensitive, "§2: the gears are insensitive while a run is busy");
+    assert!(
+        !drawn.lucky_sensitive,
+        "§2: the gears are insensitive while a run is busy"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -172,8 +207,14 @@ fn sec_03_shell_2_the_run_bar_s2_the_gears_turn_while_a_single_step_runs() {
         sources: run::Snapshot::default(),
     });
     let drawn = run::controls(&running, None);
-    assert!(drawn.gears_turning, "§2: a single step's run turns the gears");
-    assert!(!drawn.lucky_sensitive, "and they stay out of reach for as long as it runs");
+    assert!(
+        drawn.gears_turning,
+        "§2: a single step's run turns the gears"
+    );
+    assert!(
+        !drawn.lucky_sensitive,
+        "and they stay out of reach for as long as it runs"
+    );
 
     // A parked run still stands — ⏸ parks it, it does not finish it — so the gears keep turning.
     let paused = Some(run::Run {
@@ -188,7 +229,10 @@ fn sec_03_shell_2_the_run_bar_s2_the_gears_turn_while_a_single_step_runs() {
     );
 
     // A page transport playing counts as a run computing, with no run standing at all.
-    let playing = run::Transport { playing: true, started: true };
+    let playing = run::Transport {
+        playing: true,
+        started: true,
+    };
     assert!(
         run::controls(&None, Some(playing)).gears_turning,
         "§2: the bar shows work going on for a playing preview too"
@@ -209,30 +253,65 @@ fn sec_03_shell_2_the_run_bar_s1_a_paused_run_still_greys_the_gears() {
         sources: run::Snapshot::default(),
     });
     let drawn = run::controls(&paused, None);
-    assert_eq!(drawn.icon, run::PLAY_ICON, "a parked run means \u{25b6} resumes it");
-    assert!(drawn.stop_sensitive, "\u{23f9} still has the parked run to end");
-    assert!(!drawn.lucky_sensitive, "a paused run is still a run: the gears stay grey");
+    assert_eq!(
+        drawn.icon,
+        run::PLAY_ICON,
+        "a parked run means \u{25b6} resumes it"
+    );
+    assert!(
+        drawn.stop_sensitive,
+        "\u{23f9} still has the parked run to end"
+    );
+    assert!(
+        !drawn.lucky_sensitive,
+        "a paused run is still a run: the gears stay grey"
+    );
 }
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_the_pages_transport_owns_the_bar_too() {
     common::pin_private_cwd();
-    let playing = run::Transport { playing: true, started: true };
+    let playing = run::Transport {
+        playing: true,
+        started: true,
+    };
     let drawn = run::controls(&None, Some(playing));
-    assert_eq!(drawn.icon, run::PAUSE_ICON, "a playing preview is busy as far as the bar reads it");
+    assert_eq!(
+        drawn.icon,
+        run::PAUSE_ICON,
+        "a playing preview is busy as far as the bar reads it"
+    );
     assert!(!drawn.lucky_sensitive, "and the gears wait for it too");
     assert!(drawn.stop_sensitive, "\u{23f9} stops the playback (§2)");
 
     // Started but parked: nothing plays, so \u{25b6} is \u{25b6} again — but \u{23f9} still owes the ending.
-    let cued = run::Transport { playing: false, started: true };
+    let cued = run::Transport {
+        playing: false,
+        started: true,
+    };
     let drawn = run::controls(&None, Some(cued));
     assert_eq!(drawn.icon, run::PLAY_ICON);
-    assert!(drawn.stop_sensitive, "a preview parked part way through still needs ending");
-    assert!(drawn.lucky_sensitive, "and with no run and nothing playing the gears may go");
+    assert!(
+        drawn.stop_sensitive,
+        "a preview parked part way through still needs ending"
+    );
+    assert!(
+        drawn.lucky_sensitive,
+        "and with no run and nothing playing the gears may go"
+    );
 
     // Prepare and Produce have no preview of their own, so a playing transport is not theirs.
-    assert_eq!(run::transport_for(naivepost::shell::Page::Prepare, playing), None);
-    assert!(run::controls(&None, run::transport_for(naivepost::shell::Page::Prepare, playing)).lucky_sensitive);
+    assert_eq!(
+        run::transport_for(naivepost::shell::Page::Prepare, playing),
+        None
+    );
+    assert!(
+        run::controls(
+            &None,
+            run::transport_for(naivepost::shell::Page::Prepare, playing)
+        )
+        .lucky_sensitive
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -242,7 +321,11 @@ fn sec_03_shell_2_the_run_bar_s1_the_pages_transport_owns_the_bar_too() {
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_the_bar_is_the_two_tracks_summed_and_draws_no_words() {
     common::pin_private_cwd();
-    assert_eq!((TRACK_STT, TRACK_FRAMES), (0, 1), "§2: 0 = speech/describe, 1 = frames/fix");
+    assert_eq!(
+        (TRACK_STT, TRACK_FRAMES),
+        (0, 1),
+        "§2: 0 = speech/describe, 1 = frames/fix"
+    );
     assert_eq!((TRACK_DESCRIBE, TRACK_FIX), (TRACK_STT, TRACK_FRAMES));
 
     let mut q = Queue::new();
@@ -250,12 +333,22 @@ fn sec_03_shell_2_the_run_bar_s1_the_bar_is_the_two_tracks_summed_and_draws_no_w
     q.job(TRACK_FRAMES, "frames", 0, 0);
     q.prog(TRACK_STT, 0.25, "recognising 1/3");
     q.prog(TRACK_FRAMES, 0.25, "scening 4/16");
-    assert!((q.fraction() - 0.5).abs() < 1e-9, "the bar is both halves summed: {}", q.fraction());
+    assert!(
+        (q.fraction() - 0.5).abs() < 1e-9,
+        "the bar is both halves summed: {}",
+        q.fraction()
+    );
     q.prog(TRACK_STT, 0.9, "");
     q.prog(TRACK_FRAMES, 0.9, "");
-    assert!((q.fraction() - 1.0).abs() < 1e-9, "and it cannot pass the end");
+    assert!(
+        (q.fraction() - 1.0).abs() < 1e-9,
+        "and it cannot pass the end"
+    );
     q.prog(TRACK_STT, 1.4, "");
-    assert!((q.fraction() - 1.0).abs() < 1e-9, "clamped to what a bar can show");
+    assert!(
+        (q.fraction() - 1.0).abs() < 1e-9,
+        "clamped to what a bar can show"
+    );
 
     // The words are the status line's, never the bar's own: §2 draws no text of its own.
     let mut q = Queue::new();
@@ -263,15 +356,28 @@ fn sec_03_shell_2_the_run_bar_s1_the_bar_is_the_two_tracks_summed_and_draws_no_w
     q.push(TRACK_DESCRIBE, 12, "chunk");
     q.take(TRACK_DESCRIBE);
     q.prog(TRACK_DESCRIBE, 1.0 / 12.0, "chunk 1/12");
-    assert_eq!(q.text(), "describe 1/2: chunk 1/12", "the line goes to the status row");
+    assert_eq!(
+        q.text(),
+        "describe 1/2: chunk 1/12",
+        "the line goes to the status row"
+    );
 }
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s1_a_thinking_model_pulses_the_bar() {
     common::pin_private_cwd();
-    assert!(ui::should_pulse(true, 0.0), "a run with nothing countable pulses");
-    assert!(!ui::should_pulse(true, 0.25), "once something is countable the needle takes over");
-    assert!(!ui::should_pulse(false, 0.0), "with no run there is nothing to pulse");
+    assert!(
+        ui::should_pulse(true, 0.0),
+        "a run with nothing countable pulses"
+    );
+    assert!(
+        !ui::should_pulse(true, 0.25),
+        "once something is countable the needle takes over"
+    );
+    assert!(
+        !ui::should_pulse(false, 0.0),
+        "with no run there is nothing to pulse"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -297,7 +403,10 @@ fn sec_03_shell_2_the_run_bar_s1_an_older_run_steps_key_is_ignored_and_never_wri
 
     naivepost::project::save(&p, tree.dir()).unwrap();
     let text = common::read_tree(&tree);
-    assert!(!text.contains("run_steps"), "run_steps was written back\n{text}");
+    assert!(
+        !text.contains("run_steps"),
+        "run_steps was written back\n{text}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -413,7 +522,9 @@ fn check_the_press_gates_the_gears(app: &adw::Application) {
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
     // A run left open by another check would make this press a pause toggle rather than a start.
-    ui::stop_button(&window).expect("the run bar has a \u{23f9}").emit_by_name::<()>("clicked", &[]);
+    ui::stop_button(&window)
+        .expect("the run bar has a \u{23f9}")
+        .emit_by_name::<()>("clicked", &[]);
 
     let play = ui::play_button(&window).expect("the run bar has a \u{25b6}");
     let gears = ui::lucky_button(&window).expect("the run bar carries the gears");
@@ -437,7 +548,10 @@ fn check_the_press_gates_the_gears(app: &adw::Application) {
         bar.borrow().running.is_some(),
         "the press opened a run, so the bar is busy"
     );
-    assert!(!gears.is_sensitive(), "§2: the gears go insensitive while a run is busy");
+    assert!(
+        !gears.is_sensitive(),
+        "§2: the gears go insensitive while a run is busy"
+    );
     // A run with nothing queued yet, drawn the way the handlers draw it: `paint_progress` keeps the
     // standing text whenever no track has counting of its own (§2). The window's own queue already
     // carries the frames work the real press reported, so this paint runs over a fresh queue holding
@@ -452,7 +566,10 @@ fn check_the_press_gates_the_gears(app: &adw::Application) {
         &log,
         &view,
         &idle_queue,
-        naivepost::ui::shell_beats::StatusLine { status: &status, owned: true },
+        naivepost::ui::shell_beats::StatusLine {
+            status: &status,
+            owned: true,
+        },
         false,
     );
     assert_eq!(
@@ -478,7 +595,10 @@ fn check_the_press_gates_the_gears(app: &adw::Application) {
         &log,
         &view,
         &queue.borrow(),
-        naivepost::ui::shell_beats::StatusLine { status: &status, owned: true },
+        naivepost::ui::shell_beats::StatusLine {
+            status: &status,
+            owned: true,
+        },
         false,
     );
     assert_eq!(
@@ -495,12 +615,21 @@ fn check_the_press_gates_the_gears(app: &adw::Application) {
     // ⏹ ends the run. A run whose flow has not cleared the stop flag keeps the bar until it does
     // (F0.3 S3), which a headless run started through `start_run` never does — so the end is closed the
     // way a real run's end closes it, and the repaint then hands the gears back.
-    ui::stop_button(&window).expect("the run bar has a \u{23f9}").emit_by_name::<()>("clicked", &[]);
-    assert_eq!(ui::state(&window).status, run::STOPPING, "S1: the press says what it is doing");
+    ui::stop_button(&window)
+        .expect("the run bar has a \u{23f9}")
+        .emit_by_name::<()>("clicked", &[]);
+    assert_eq!(
+        ui::state(&window).status,
+        run::STOPPING,
+        "S1: the press says what it is doing"
+    );
     bar.borrow_mut().stop_flag = false;
     bar.borrow_mut().running = None;
     repaint(&window, &bar);
-    assert!(gears.is_sensitive(), "§2: with no run left the gears are pressable again");
+    assert!(
+        gears.is_sensitive(),
+        "§2: with no run left the gears are pressable again"
+    );
     window.close();
 }
 
@@ -559,7 +688,9 @@ fn check_the_bar_carries_its_words(app: &adw::Application) {
         "§2: \"\u{25b6} (suggested-action)\""
     );
     assert!(
-        ui::progress_bar(&window).expect("the run bar carries a progress bar").hexpands(),
+        ui::progress_bar(&window)
+            .expect("the run bar carries a progress bar")
+            .hexpands(),
         "§2: the progress bar takes the row's free width"
     );
     window.close();
@@ -584,7 +715,10 @@ fn sec_03_shell_2_the_run_bar_s2_only_the_gears_turn() {
     common::pin_private_cwd();
     let css = naivepost::ui::lucky_run::gears_css();
     assert!(
-        !css.contains(&format!(".{} {{ animation", naivepost::ui::lucky_run::RUNNING_CLASS)),
+        !css.contains(&format!(
+            ".{} {{ animation",
+            naivepost::ui::lucky_run::RUNNING_CLASS
+        )),
         "the button node must not rotate, or the label next to the gears rotates with it: {css}"
     );
 }
@@ -610,14 +744,20 @@ fn repaint(window: &adw::ApplicationWindow, bar: &Rc<std::cell::RefCell<run::Run
 fn sec_03_shell_2_the_run_bar_s2_the_bar_reads_play_lucky_stop_and_carries_the_standing_tooltip() {
     common::pin_private_cwd();
     widgets_round();
-    assert!(RAN_ORDER.load(std::sync::atomic::Ordering::SeqCst), "the order check never ran");
+    assert!(
+        RAN_ORDER.load(std::sync::atomic::Ordering::SeqCst),
+        "the order check never ran"
+    );
 }
 
 #[test]
 fn sec_03_shell_2_the_run_bar_s2_a_run_busy_greys_the_gears_and_keeps_the_standing_tooltip() {
     common::pin_private_cwd();
     widgets_round();
-    assert!(RAN_GATE.load(std::sync::atomic::Ordering::SeqCst), "the gears-gate check never ran");
+    assert!(
+        RAN_GATE.load(std::sync::atomic::Ordering::SeqCst),
+        "the gears-gate check never ran"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -646,7 +786,9 @@ fn check_the_gears_turn_for_a_bare_run(app: &adw::Application) {
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
     // A run left open by another check would already be turning the gears; start from an idle bar.
-    ui::stop_button(&window).expect("the run bar has a \u{23f9}").emit_by_name::<()>("clicked", &[]);
+    ui::stop_button(&window)
+        .expect("the run bar has a \u{23f9}")
+        .emit_by_name::<()>("clicked", &[]);
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
     let gears = ui::lucky_button(&window).expect("the run bar carries the gears");
     assert!(
@@ -682,7 +824,9 @@ fn check_the_stop_press_stops_the_turning(app: &adw::Application) {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
-    ui::stop_button(&window).expect("the run bar has a \u{23f9}").emit_by_name::<()>("clicked", &[]);
+    ui::stop_button(&window)
+        .expect("the run bar has a \u{23f9}")
+        .emit_by_name::<()>("clicked", &[]);
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
     let gears = ui::lucky_button(&window).expect("the run bar carries the gears");
 
@@ -692,8 +836,14 @@ fn check_the_stop_press_stops_the_turning(app: &adw::Application) {
         "the run stands, so the gears turn before the press"
     );
 
-    ui::stop_button(&window).expect("the run bar has a \u{23f9}").emit_by_name::<()>("clicked", &[]);
-    assert_eq!(ui::state(&window).status, run::STOPPING, "S1: the press says what it is doing");
+    ui::stop_button(&window)
+        .expect("the run bar has a \u{23f9}")
+        .emit_by_name::<()>("clicked", &[]);
+    assert_eq!(
+        ui::state(&window).status,
+        run::STOPPING,
+        "S1: the press says what it is doing"
+    );
     // A headless run's flow never clears its own stop flag, so the end is cleared the way a real run's
     // end clears it, and the repaint after it is what the run's close performs.
     bar.borrow_mut().stop_flag = false;
@@ -726,4 +876,3 @@ fn sec_03_shell_2_the_run_bar_s4_the_stop_press_stops_the_gears_turning() {
         "the ⏹-stops-the-turning check never ran"
     );
 }
-

@@ -15,12 +15,12 @@ use crate::common::fit_geometry as fit_checks;
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use crate::common;
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::project::Project;
 use naivepost::shell;
 use naivepost::ui;
-use crate::common;
 
 const ITEM: &str = "all_pages_fit";
 

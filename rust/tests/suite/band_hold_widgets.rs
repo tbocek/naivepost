@@ -120,7 +120,13 @@ fn place_line_at(window: &adw::ApplicationWindow, t: f64) {
 fn pick_up_bar_zero(window: &adw::ApplicationWindow) {
     let width = ui::cut_bar_width_px(10.0);
     let answer = ui::press_effect_bar(window, 0, width / 2.0, width, 8.0, false);
-    assert_eq!(answer, Press::Hold { t: 20.0, from_end: None });
+    assert_eq!(
+        answer,
+        Press::Hold {
+            t: 20.0,
+            from_end: None
+        }
+    );
     settle();
 }
 
@@ -146,7 +152,11 @@ fn band_hold_round(app: &adw::Application) {
     let seeded = two_records();
     let window = cut_page(app, &seeded);
     let clicked = ui::press_effect_bar(&window, 0, 20.0, 40.0, 2.0, false);
-    assert_eq!(clicked, Press::ClickForm, "2 px of travel on a band is a click");
+    assert_eq!(
+        clicked,
+        Press::ClickForm,
+        "2 px of travel on a band is a click"
+    );
     assert!(
         ui::zoom_form_open().is_some(),
         "the click opened the ZOOM form: `open_effect_form` dispatched on the record's kind"
@@ -166,7 +176,14 @@ fn band_hold_round(app: &adw::Application) {
     let window = cut_page(app, &two_records());
     let width = ui::cut_bar_width_px(10.0);
     let answer = ui::press_effect_bar(&window, 0, width / 2.0, width, 8.0, false);
-    assert_eq!(answer, Press::Hold { t: 20.0, from_end: None }, "past the slop the band is picked up");
+    assert_eq!(
+        answer,
+        Press::Hold {
+            t: 20.0,
+            from_end: None
+        },
+        "past the slop the band is picked up"
+    );
     let held = ui::held_effect().expect("the press put the record in hand");
     assert_eq!(held.t, 20.0, "the thing in hand is bar 0's record");
     assert_eq!(
@@ -175,14 +192,19 @@ fn band_hold_round(app: &adw::Application) {
         "the status reads §A.9's sentence byte-exact"
     );
     // §A.9: "Insert becomes ✎ Edit" while something is held. Read off the real button.
-    let insert = ui::line_step_button(&window, "insert-button").expect("the page has an Insert button");
+    let insert =
+        ui::line_step_button(&window, "insert-button").expect("the page has an Insert button");
     assert_eq!(
         insert.label().unwrap_or_default().as_str(),
         naivepost::cut_insert::edit_verb(true),
         "the held band turned ⧉ Insert into Edit"
     );
     // And the line landed on the band's start, which is what S1 says picking something up means.
-    assert_eq!(ui::line_position(&window).t, 20.0, "the line moved to the band's start");
+    assert_eq!(
+        ui::line_position(&window).t,
+        20.0,
+        "the line moved to the band's start"
+    );
     RAN_PICK_UP.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -190,17 +212,41 @@ fn band_hold_round(app: &adw::Application) {
     // --- (3) S1: where the hand grabbed decides grip or middle -----------------------------------
     let window = cut_page(app, &two_records());
     let left_edge = ui::press_effect_bar(&window, 0, 0.0, 40.0, 8.0, false);
-    assert_eq!(left_edge, Press::Hold { t: 20.0, from_end: Some(true) }, "x=0 grabs the START");
+    assert_eq!(
+        left_edge,
+        Press::Hold {
+            t: 20.0,
+            from_end: Some(true)
+        },
+        "x=0 grabs the START"
+    );
     let right_edge = ui::press_effect_bar(&window, 0, 39.0, 40.0, 8.0, false);
-    assert_eq!(right_edge, Press::Hold { t: 20.0, from_end: Some(false) }, "x=39 grabs the END");
+    assert_eq!(
+        right_edge,
+        Press::Hold {
+            t: 20.0,
+            from_end: Some(false)
+        },
+        "x=39 grabs the END"
+    );
     let middle = ui::press_effect_bar(&window, 0, 20.0, 40.0, 8.0, false);
-    assert_eq!(middle, Press::Hold { t: 20.0, from_end: None }, "the middle slides");
+    assert_eq!(
+        middle,
+        Press::Hold {
+            t: 20.0,
+            from_end: None
+        },
+        "the middle slides"
+    );
     // Below GRIP_MIN_PX there are no grips at all: every x on the 20 px bar moves it.
     for x in [0.0, 6.0, 10.0, 17.0, 19.0] {
         let answer = ui::press_effect_bar(&window, 1, x, 20.0, 8.0, false);
         assert_eq!(
             answer,
-            Press::Hold { t: 40.0, from_end: None },
+            Press::Hold {
+                t: 40.0,
+                from_end: None
+            },
             "{x} px on a 20 px bar is NOT a grip"
         );
     }
@@ -210,20 +256,39 @@ fn band_hold_round(app: &adw::Application) {
 
     // --- (4) S3: the ✕ removes the record, and ONE ↶ puts it back --------------------------------
     let window = cut_page(app, &two_records());
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 2, "two records before the kill");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        2,
+        "two records before the kill"
+    );
     click(&window, "fx-remove-0");
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 1, "the ✕ took one record out");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        1,
+        "the ✕ took one record out"
+    );
     assert_eq!(
         status_text(&window),
         fx_band::removed("Zoom"),
         "the kill sentence, whole \u{2014} it promises ↶ and this test collects that promise"
     );
-    assert!(ui::held_effect().is_none(), "nothing stays in hand after its record is gone");
+    assert!(
+        ui::held_effect().is_none(),
+        "nothing stays in hand after its record is gone"
+    );
     // The promise: the SAME undo seam F2.13's tests use. This only works because removal went through
     // `record_edit`; a `seed_review_cut` would leave nothing to take back.
     click(&window, "undo-button");
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 2, "one ↶ restored the killed record");
-    assert_eq!(ui::review_cut_of(&window).fx[0].kind, "zoom", "and it is the zoom, not the label");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        2,
+        "one ↶ restored the killed record"
+    );
+    assert_eq!(
+        ui::review_cut_of(&window).fx[0].kind,
+        "zoom",
+        "and it is the zoom, not the label"
+    );
     RAN_KILL_UNDO.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -245,14 +310,21 @@ fn band_hold_round(app: &adw::Application) {
     // --- (6) S3: ⌦ with an effect held removes the EFFECT; with none it keeps deleting ------------
     let window = cut_page(app, &two_records());
     pick_up_bar_zero(&window);
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 2, "holding changes nothing yet");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        2,
+        "holding changes nothing yet"
+    );
     fire_key(&delete_controller(&window), gtk::gdk::Key::Delete);
     assert_eq!(
         ui::review_cut_of(&window).fx.len(),
         1,
         "\u{2326} with an effect in hand removed THAT effect"
     );
-    assert!(ui::held_effect().is_none(), "and the hand is empty afterwards");
+    assert!(
+        ui::held_effect().is_none(),
+        "and the hand is empty afterwards"
+    );
     // With NOTHING held the same key must still reach the selection-delete path: the effect count cannot
     // drop again (there is no effect selected), so the branch that ran is the old one.
     let before = ui::review_cut_of(&window).fx.len();
@@ -273,16 +345,27 @@ fn band_hold_round(app: &adw::Application) {
     let said = ui::drag_held_band(&window, 30.0, &[], pps, 100.0, None);
     assert_eq!(said, fx_band::moved("Zoom"), "a slide reports 'moved'");
     let moved = &ui::review_cut_of(&window).fx[0];
-    assert_eq!(moved.t, 30.0, "the whole band slid to where the hand left it");
+    assert_eq!(
+        moved.t, 30.0,
+        "the whole band slid to where the hand left it"
+    );
     assert_eq!(moved.dur, 10.0, "a slide never changes the length");
     let resized_said = ui::drag_held_band(&window, 36.0, &[], pps, 100.0, Some(false));
-    assert_eq!(resized_said, fx_band::resized("Zoom"), "an end reports 'resized'");
+    assert_eq!(
+        resized_said,
+        fx_band::resized("Zoom"),
+        "an end reports 'resized'"
+    );
     let resized = &ui::review_cut_of(&window).fx[0];
     // `end = false` is the LEADING end, so the start is what moves and the stop is what holds: 30 + 10 =
     // 40 stays 40, and the band is 36 → 40. The rule lives in `fx_lane::drag_end`, clamped from the
     // stationary end so a crossing stop cannot invert the band.
     assert_eq!(resized.t, 36.0, "the dragged end moved");
-    assert_eq!(resized.t + resized.dur, 40.0, "the untouched end stayed at its old stop");
+    assert_eq!(
+        resized.t + resized.dur,
+        40.0,
+        "the untouched end stayed at its old stop"
+    );
     // Floor: dragging the end far past the start stops AT 0.1 s rather than through it.
     ui::drag_held_band(&window, 5.0, &[], pps, 100.0, Some(true));
     let floored = &ui::review_cut_of(&window).fx[0];
@@ -303,8 +386,15 @@ fn band_hold_round(app: &adw::Application) {
     let said = ui::nudge_held_effect(&window, -1.0 / 25.0);
     assert_eq!(said, fx_band::moved("Zoom"));
     let nudged = &ui::review_cut_of(&window).fx[0];
-    assert_eq!(nudged.t, 20.0 - 1.0 / 25.0, "exactly one frame off, unsnapped");
-    assert_eq!(nudged.dur, 10.0, "the keyboard moves a band, it does not stretch one");
+    assert_eq!(
+        nudged.t,
+        20.0 - 1.0 / 25.0,
+        "exactly one frame off, unsnapped"
+    );
+    assert_eq!(
+        nudged.dur, 10.0,
+        "the keyboard moves a band, it does not stretch one"
+    );
     RAN_NUDGE.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -325,7 +415,11 @@ fn band_hold_round(app: &adw::Application) {
         "the edit line carries the live-form note: {said}"
     );
     let shown = ui::held_effect().expect("Edit kept the record in hand");
-    assert_eq!(shown.cx, Some(0.4), "the box came off the LIVE record, not the snapshot");
+    assert_eq!(
+        shown.cx,
+        Some(0.4),
+        "the box came off the LIVE record, not the snapshot"
+    );
     assert_eq!(shown.cy, Some(0.6));
     assert_eq!(shown.wf, Some(0.5));
     assert_eq!(shown.hf, Some(0.4));
@@ -338,7 +432,11 @@ fn band_hold_round(app: &adw::Application) {
     ui::remove_effect_at(&window, 0);
     ui::set_held_effect(Some(wide_zoom(20.0)));
     let gone = ui::press_edit_effect(&window);
-    assert_eq!(gone, fx_band::GONE, "a record that is not there says so, whole");
+    assert_eq!(
+        gone,
+        fx_band::GONE,
+        "a record that is not there says so, whole"
+    );
     assert_eq!(
         ui::review_cut_of(&window).fx.len(),
         before.fx.len() - 1,
@@ -361,11 +459,15 @@ fn band_hold_round(app: &adw::Application) {
     // Through the real controller too: every Esc listener on this window runs, and with no form open and no
     // arm the band's own controller is the one left to answer (§A.9: Esc drops the hold).
     pick_up_bar_zero(&window);
-    for controller in [ui::band_esc_controller(&window).expect("the page wired a band Esc controller")] {
-        fire_key(&controller, gtk::gdk::Key::Escape);
-    }
+    let controller =
+        ui::band_esc_controller(&window).expect("the page wired a band Esc controller");
+    fire_key(&controller, gtk::gdk::Key::Escape);
     settle();
-    assert_eq!(status_text(&window), "cancelled", "the key reached the seam and printed");
+    assert_eq!(
+        status_text(&window),
+        "cancelled",
+        "the key reached the seam and printed"
+    );
     assert!(ui::held_effect().is_none(), "and dropped the hold");
     RAN_ESC.store(true, Ordering::SeqCst);
     window.close();
@@ -376,17 +478,28 @@ fn band_hold_round(app: &adw::Application) {
     place_line_at(&window, 21.0);
     click(&window, "effect-item-volume");
     let footer = widget_in(&window, "volume-form-footer").expect("the volume form drew its footer");
-    let footer = footer.downcast::<gtk::Label>().expect("the footer is a Label");
+    let footer = footer
+        .downcast::<gtk::Label>()
+        .expect("the footer is a Label");
     assert_eq!(
         footer.text().as_str(),
         fx_band::KEPT_AS_YOU_TYPE,
         "the note the forms print IS the module's live-form sentence"
     );
     // The visit's single entry: true once, false after, and given back by a refusal.
-    assert!(ui::live_form_answer_is_undo(&window), "the first accepted answer owns the entry");
-    assert!(!ui::live_form_answer_is_undo(&window), "later changes ride on that same entry");
+    assert!(
+        ui::live_form_answer_is_undo(&window),
+        "the first accepted answer owns the entry"
+    );
+    assert!(
+        !ui::live_form_answer_is_undo(&window),
+        "later changes ride on that same entry"
+    );
     ui::live_form_refused();
-    assert!(ui::live_form_answer_is_undo(&window), "a refusal gave the entry back");
+    assert!(
+        ui::live_form_answer_is_undo(&window),
+        "a refusal gave the entry back"
+    );
     RAN_LIVE_FORM.store(true, Ordering::SeqCst);
 
     // --- (10) S1/S3: the bar's DRAWN width is the width the thresholds measure -----------------
@@ -421,16 +534,40 @@ fn band_hold_round(app: &adw::Application) {
         // And the grips are read against that same drawn width: left 6 px / right 6 px are edges, the middle
         // is a handle for moving. Below GRIP_MIN_PX nothing is an edge at all.
         if fx_band::grips_open(drawn) {
-            assert_eq!(fx_band::grab_at(0.0, drawn), Some(true), "left end is a grip");
-            assert_eq!(fx_band::grab_at(drawn, drawn), Some(false), "right end is a grip");
-            assert_eq!(fx_band::grab_at(drawn / 2.0, drawn), None, "the middle moves, never resizes");
+            assert_eq!(
+                fx_band::grab_at(0.0, drawn),
+                Some(true),
+                "left end is a grip"
+            );
+            assert_eq!(
+                fx_band::grab_at(drawn, drawn),
+                Some(false),
+                "right end is a grip"
+            );
+            assert_eq!(
+                fx_band::grab_at(drawn / 2.0, drawn),
+                None,
+                "the middle moves, never resizes"
+            );
         } else {
             // A bar under `GRIP_MIN_PX` offers no edge ANYWHERE in it, not even at its own ends: below the
             // threshold every pixel is a handle for moving, which is what stops a 20 px label from being
             // resized by a grab that meant to move it (`fx_band::grab_at`'s own reason).
-            assert_eq!(fx_band::grab_at(0.0, drawn), None, "no left edge below the grip floor");
-            assert_eq!(fx_band::grab_at(drawn, drawn), None, "no right edge below the grip floor");
-            assert_eq!(fx_band::grab_at(drawn / 2.0, drawn), None, "the middle moves");
+            assert_eq!(
+                fx_band::grab_at(0.0, drawn),
+                None,
+                "no left edge below the grip floor"
+            );
+            assert_eq!(
+                fx_band::grab_at(drawn, drawn),
+                None,
+                "no right edge below the grip floor"
+            );
+            assert_eq!(
+                fx_band::grab_at(drawn / 2.0, drawn),
+                None,
+                "the middle moves"
+            );
         }
         assert!(rules_width > 0.0 && pps > 0.0, "the pixel rate is real");
     }
@@ -457,16 +594,49 @@ fn f3_8_widget_the_lane_wires_hold_move_resize_edit_and_remove() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_CLICK_FORM.load(Ordering::SeqCst), "S1 click-opens-form never ran");
+    assert!(
+        RAN_CLICK_FORM.load(Ordering::SeqCst),
+        "S1 click-opens-form never ran"
+    );
     assert!(RAN_PICK_UP.load(Ordering::SeqCst), "S1 pick-up never ran");
-    assert!(RAN_GRIP.load(Ordering::SeqCst), "S1 grip position never ran");
-    assert!(RAN_KILL_UNDO.load(Ordering::SeqCst), "S3 kill-and-undo never ran");
-    assert!(RAN_KILL_ABSENT.load(Ordering::SeqCst), "S3 narrow-bar-no-cross never ran");
-    assert!(RAN_DELETE_KEY.load(Ordering::SeqCst), "S3 delete-key never ran");
-    assert!(RAN_DRAG_BAND.load(Ordering::SeqCst), "S2 drag/resize never ran");
-    assert!(RAN_NUDGE.load(Ordering::SeqCst), "S2 unsnapped nudge never ran");
-    assert!(RAN_EDIT_REFIND.load(Ordering::SeqCst), "S4 edit-refind never ran");
-    assert!(RAN_ESC.load(Ordering::SeqCst), "S3 esc-drops-hold never ran");
-    assert!(RAN_LIVE_FORM.load(Ordering::SeqCst), "S5 live-form note/entry never ran");
-    assert!(RAN_DRAWN_WIDTH.load(Ordering::SeqCst), "S1/S3 drawn-bar-width never ran");
+    assert!(
+        RAN_GRIP.load(Ordering::SeqCst),
+        "S1 grip position never ran"
+    );
+    assert!(
+        RAN_KILL_UNDO.load(Ordering::SeqCst),
+        "S3 kill-and-undo never ran"
+    );
+    assert!(
+        RAN_KILL_ABSENT.load(Ordering::SeqCst),
+        "S3 narrow-bar-no-cross never ran"
+    );
+    assert!(
+        RAN_DELETE_KEY.load(Ordering::SeqCst),
+        "S3 delete-key never ran"
+    );
+    assert!(
+        RAN_DRAG_BAND.load(Ordering::SeqCst),
+        "S2 drag/resize never ran"
+    );
+    assert!(
+        RAN_NUDGE.load(Ordering::SeqCst),
+        "S2 unsnapped nudge never ran"
+    );
+    assert!(
+        RAN_EDIT_REFIND.load(Ordering::SeqCst),
+        "S4 edit-refind never ran"
+    );
+    assert!(
+        RAN_ESC.load(Ordering::SeqCst),
+        "S3 esc-drops-hold never ran"
+    );
+    assert!(
+        RAN_LIVE_FORM.load(Ordering::SeqCst),
+        "S5 live-form note/entry never ran"
+    );
+    assert!(
+        RAN_DRAWN_WIDTH.load(Ordering::SeqCst),
+        "S1/S3 drawn-bar-width never ran"
+    );
 }

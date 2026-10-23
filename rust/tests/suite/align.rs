@@ -11,14 +11,14 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 
+use crate::common;
+use common::temp_dir_created as temp_dir;
 use naivepost::align::{self, Span, MIN_PIECE, PAD, WINDOW};
 use naivepost::asr::{self, Silence};
 use naivepost::layout::Tree;
 use naivepost::requests::{self, Chunk, Word};
-use naivepost::transcribe::seconds;
 use naivepost::services::AudioModel;
-use crate::common;
-use common::temp_dir_created as temp_dir;
+use naivepost::transcribe::seconds;
 
 const SOURCE: &str = "mic.wav";
 const URL: &str = "http://box:8000/v1";
@@ -207,7 +207,9 @@ fn f1_5_s1_an_empty_box_offers_every_align_model_preferencing_qwen3() {
         ]
     );
     // Nothing declared for `align` is nothing to try.
-    assert!(align::aligners("", URL, &[model("whisper", "asr")]).unwrap().is_empty());
+    assert!(align::aligners("", URL, &[model("whisper", "asr")])
+        .unwrap()
+        .is_empty());
 }
 
 /// S1: the first aligner to answer serves the rest of the run — a catalog entry is a claim rather than
@@ -220,8 +222,16 @@ fn f1_5_s1_the_first_to_answer_serves_the_rest_of_the_run() {
     let all = vec!["mms-aligner".to_string(), "qwen3-aligner".to_string()];
     // Two windows: 60 s apart, so neither is over the limit and nothing splits.
     let chunks = vec![
-        Chunk { s: 0.0, e: 60.0, text: "one two three".into() },
-        Chunk { s: 60.0, e: 120.0, text: "four five six".into() },
+        Chunk {
+            s: 0.0,
+            e: 60.0,
+            text: "one two three".into(),
+        },
+        Chunk {
+            s: 60.0,
+            e: 120.0,
+            text: "four five six".into(),
+        },
     ];
     let outcome = align::run(
         &tree,
@@ -242,15 +252,21 @@ fn f1_5_s1_the_first_to_answer_serves_the_rest_of_the_run() {
     // asks for two 60 s pieces: F1.4's ceiling is 300 s, so its chunks are re-cut at this flow's.
     assert_eq!(calls.len(), 4, "{calls:?}");
     assert_eq!(calls[0].0, "mms-aligner");
-    assert!(calls[1..]
-        .iter()
-        .all(|(model, _, _)| model == "qwen3-aligner"), "{calls:?}");
+    assert!(
+        calls[1..]
+            .iter()
+            .all(|(model, _, _)| model == "qwen3-aligner"),
+        "{calls:?}"
+    );
     let log = outcome
         .logs
         .iter()
         .find(|line| line.contains("answers where"))
         .expect("which aligner served the run is worth knowing");
-    assert!(log.ends_with("-- using it for the rest of the run"), "{log}");
+    assert!(
+        log.ends_with("-- using it for the rest of the run"),
+        "{log}"
+    );
     assert!(log.contains("mms-aligner"), "{log}");
     assert_eq!(outcome.model, "qwen3-aligner");
     // The refusal of the model that could not do it is in the log too.
@@ -265,8 +281,16 @@ fn f1_5_s1_the_first_to_answer_serves_the_rest_of_the_run() {
 #[test]
 fn f1_5_s2_pieces_are_the_asrs_own_chunks_when_the_word_counts_agree() {
     let chunks = vec![
-        Chunk { s: 0.0, e: 60.0, text: "one two three".into() },
-        Chunk { s: 60.0, e: 120.0, text: "four five".into() },
+        Chunk {
+            s: 0.0,
+            e: 60.0,
+            text: "one two three".into(),
+        },
+        Chunk {
+            s: 60.0,
+            e: 120.0,
+            text: "four five".into(),
+        },
     ];
     let timed = |secs: &[f64]| -> Vec<Word> {
         secs.iter()
@@ -277,9 +301,15 @@ fn f1_5_s2_pieces_are_the_asrs_own_chunks_when_the_word_counts_agree() {
             })
             .collect()
     };
-    assert!(align::counts_agree(&chunks, &timed(&[1.0, 20.0, 40.0, 70.0, 100.0])));
+    assert!(align::counts_agree(
+        &chunks,
+        &timed(&[1.0, 20.0, 40.0, 70.0, 100.0])
+    ));
     // One word's time landing in the wrong chunk is enough: the pieces would misplace text.
-    assert!(!align::counts_agree(&chunks, &timed(&[1.0, 20.0, 40.0, 59.0, 100.0])));
+    assert!(!align::counts_agree(
+        &chunks,
+        &timed(&[1.0, 20.0, 40.0, 59.0, 100.0])
+    ));
     // So is a total that does not add up — an ASR with no word times at all.
     assert!(!align::counts_agree(&chunks, &timed(&[])));
     assert!(!align::counts_agree(&[], &timed(&[1.0])));
@@ -296,7 +326,10 @@ fn f1_5_s2_pieces_are_the_asrs_own_chunks_when_the_word_counts_agree() {
 #[test]
 fn f1_5_s2_otherwise_windows_are_cut_at_silences_and_text_shared_by_voiced_seconds() {
     let duration = 640.0;
-    let silence = Silence { start: 200.0, end: 210.0 };
+    let silence = Silence {
+        start: 200.0,
+        end: 210.0,
+    };
     let silences = [silence];
     // No word times means no agreement, so the windows are derived here.
     let pieces = align::pieces(&[], &[], duration, &silences, WINDOW);
@@ -307,7 +340,10 @@ fn f1_5_s2_otherwise_windows_are_cut_at_silences_and_text_shared_by_voiced_secon
     // chunker's 20 s. Compared like with like: the same cutter, the same limit, the align reach.
     let asr_edges = asr::cut_points(duration, &silences, asr::CHUNK_QWEN, align::CUT_SEEK);
     for pair in asr_edges.windows(2) {
-        assert!(pieces.contains(&(pair[0], pair[1])), "{pieces:?} vs {asr_edges:?}");
+        assert!(
+            pieces.contains(&(pair[0], pair[1])),
+            "{pieces:?} vs {asr_edges:?}"
+        );
     }
     for (from, to) in &pieces {
         assert!(to > from, "no empty piece: {pieces:?}");
@@ -369,7 +405,10 @@ fn f1_5_s2_otherwise_windows_are_cut_at_silences_and_text_shared_by_voiced_secon
 /// S3: how much of a stretch has sound in it, and the part of a window that is worth sending.
 #[test]
 fn f1_5_s3_a_window_is_trimmed_to_its_sound_plus_a_quarter_second() {
-    let silences = [Silence { start: 10.0, end: 20.0 }];
+    let silences = [Silence {
+        start: 10.0,
+        end: 20.0,
+    }];
     assert_eq!(align::voiced(&silences, 0.0, 30.0), 20.0);
     assert_eq!(align::voiced(&silences, 12.0, 15.0), 0.0);
     // A silence only partly inside the stretch counts for the part that is.
@@ -385,7 +424,11 @@ fn f1_5_s3_a_window_is_trimmed_to_its_sound_plus_a_quarter_second() {
     assert_eq!(inside, (9.5, 20.5));
     // The pad is exactly PAD on each side of the sound.
     assert!((PAD - 0.25).abs() < 1e-12);
-    assert_eq!(align::trim((10.0, 20.0), &silences), None, "all quiet asks nothing");
+    assert_eq!(
+        align::trim((10.0, 20.0), &silences),
+        None,
+        "all quiet asks nothing"
+    );
 }
 
 /// S3: over the limit and longer than [`MIN_PIECE`] a window is cut at the quietest moment nearest its
@@ -399,13 +442,25 @@ fn f1_5_s3_an_over_long_window_is_cut_at_the_quietest_moment_nearest_the_middle(
     };
     // Two silences: one near the middle and one near an edge that is not a candidate at all.
     let silences = [
-        Silence { start: 58.0, end: 62.0 },
-        Silence { start: 2.0, end: 40.0 },
+        Silence {
+            start: 58.0,
+            end: 62.0,
+        },
+        Silence {
+            start: 2.0,
+            end: 40.0,
+        },
     ];
     let (left, right) = align::split_at(&span, &silences);
     let cut = left.to;
-    assert!(cut > 30.0 && cut < 90.0, "inside the middle three quarters: {cut}");
-    assert!((cut - 60.0).abs() < 1e-9, "the quietest moment nearest the middle: {cut}");
+    assert!(
+        cut > 30.0 && cut < 90.0,
+        "inside the middle three quarters: {cut}"
+    );
+    assert!(
+        (cut - 60.0).abs() < 1e-9,
+        "the quietest moment nearest the middle: {cut}"
+    );
     assert!(left.to - left.from < span.to - span.from);
     assert!(right.to - right.from < span.to - span.from);
     // The words follow the sound: both halves keep some and none are lost.
@@ -444,7 +499,10 @@ fn f1_5_s3_an_over_long_window_is_cut_at_the_quietest_moment_nearest_the_middle(
     assert_eq!(clips[0], 0.0);
     // The pieces are the recording's own edges, and a clip starts where its sound does — an edge
     // reached back into the quiet by exactly PAD, except at the recording's own start.
-    let silence = Silence { start: 48.0, end: 52.0 };
+    let silence = Silence {
+        start: 48.0,
+        end: 52.0,
+    };
     // The reference edges are the ones `pieces` actually built with: the aligner's own reach, not the
     // chunker's. Same cutter, same limit, same seek -- so this stays a like-for-like check that every
     // clip starts on a real edge of the recording.
@@ -460,7 +518,11 @@ fn f1_5_s3_an_over_long_window_is_cut_at_the_quietest_moment_nearest_the_middle(
     // its first stretch starts there and pads back to 51.75. Under the borrowed wider reach there was
     // a middle piece sitting over the silence, which is why this used to read as clips == edges.
     assert_eq!(clips.len(), edges.len() - 1, "{clips:?} vs {edges:?}");
-    assert_eq!(clips[0], as_ms(edges[0]), "the first clip starts at the recording's start");
+    assert_eq!(
+        clips[0],
+        as_ms(edges[0]),
+        "the first clip starts at the recording's start"
+    );
     assert!(
         clips[1] > edges[1],
         "the second clip starts past its piece edge, where the sound resumes: {clips:?} vs {edges:?}"
@@ -472,7 +534,10 @@ fn f1_5_s3_an_over_long_window_is_cut_at_the_quietest_moment_nearest_the_middle(
     assert_eq!(halved.log, None, "the retry loop ends here");
     let halved = align::halve(SOURCE, 30.0);
     assert_eq!(halved.window, 15.0);
-    assert!(halved.log.expect("said out loud").contains("15 s at a time"));
+    assert!(halved
+        .log
+        .expect("said out loud")
+        .contains("15 s at a time"));
 }
 
 /// S3: an out-of-memory answer halves the window and asks again; at the floor there is nothing left to
@@ -537,7 +602,10 @@ fn f1_5_s3_out_of_memory_halves_the_window_and_never_goes_under_fifteen_seconds(
     )
     .expect_err("nothing left to halve");
     assert_eq!(err, "CUDA out of memory");
-    assert!(tries >= 2, "{tries} asks: the floor is reached, not skipped");
+    assert!(
+        tries >= 2,
+        "{tries} asks: the floor is reached, not skipped"
+    );
 }
 
 /// S5: `words.aligned.json` is written whole at the end, never per window — a half-written file would
@@ -585,7 +653,11 @@ fn f1_5_s5_the_aligned_words_are_written_whole_at_the_end() {
         .unwrap()
         .expect("written whole");
     let placed: Vec<&str> = saved.words.iter().map(|word| word.word.as_str()).collect();
-    assert_eq!(placed, vec!["one", "two"], "every word of every piece, in piece order");
+    assert_eq!(
+        placed,
+        vec!["one", "two"],
+        "every word of every piece, in piece order"
+    );
     let starts: Vec<f64> = saved
         .words
         .iter()
@@ -611,13 +683,22 @@ fn f1_5_s4_the_request_carries_audio_text_and_language_and_times_are_read_four_w
     // `-ss` before the caller's own `-i`, as in F1.4: on the pcm this stage wrote that seek is exact.
     let plan = align::clip_plan(33.333, 60.0);
     assert_eq!(plan[0], "-ss");
-    assert!(!plan.contains(&"-i".to_string()), "the caller appends its own input: {plan:?}");
+    assert!(
+        !plan.contains(&"-i".to_string()),
+        "the caller appends its own input: {plan:?}"
+    );
 
     // Each of the five places a server puts its words is read.
     for (key, value) in [
         ("words", json!({"word": "hello", "start": 1.0, "end": 2.0})),
-        ("alignment", json!({"word": "hello", "start": 1.0, "end": 2.0})),
-        ("segments", json!({"word": "hello", "start": 1.0, "end": 2.0})),
+        (
+            "alignment",
+            json!({"word": "hello", "start": 1.0, "end": 2.0}),
+        ),
+        (
+            "segments",
+            json!({"word": "hello", "start": 1.0, "end": 2.0}),
+        ),
     ] {
         let found = align::parse_words(&json!({key: [value]})).expect(key);
         assert_eq!(found.len(), 1, "{key}");
@@ -656,7 +737,10 @@ fn f1_5_s4_the_request_carries_audio_text_and_language_and_times_are_read_four_w
     let err = align::parse_words(&empty).unwrap_err();
     assert_eq!(err, "no words in the answer");
     let log = align::unreadable_log(&err, &empty.to_string());
-    assert!(log.starts_with("!!! align: no words in the answer -- the answer began: "), "{log}");
+    assert!(
+        log.starts_with("!!! align: no words in the answer -- the answer began: "),
+        "{log}"
+    );
     assert!(log.contains("not what this expected"), "{log}");
 
     // Through the driver: that log line is what the run leaves behind when nothing can be placed.
@@ -683,10 +767,22 @@ fn f1_5_s4_the_request_carries_audio_text_and_language_and_times_are_read_four_w
 fn f1_5_s6_bare_voiced_seconds_are_warned_about_once() {
     // Both bounds are needed: ten bare seconds of a four-hour session is rounding, and ten bare
     // seconds of a twenty-second clip is the whole clip.
-    assert!(!align::bare_warns(9.0, 10.0), "under ten seconds is rounding");
-    assert!(!align::bare_warns(9.9, 9.9), "and under ten seconds even at every second spoken");
-    assert!(!align::bare_warns(10.0, 200.0), "ten of two hundred is five percent");
-    assert!(align::bare_warns(16.0, 200.0), "eight percent and sixteen seconds");
+    assert!(
+        !align::bare_warns(9.0, 10.0),
+        "under ten seconds is rounding"
+    );
+    assert!(
+        !align::bare_warns(9.9, 9.9),
+        "and under ten seconds even at every second spoken"
+    );
+    assert!(
+        !align::bare_warns(10.0, 200.0),
+        "ten of two hundred is five percent"
+    );
+    assert!(
+        align::bare_warns(16.0, 200.0),
+        "eight percent and sixteen seconds"
+    );
     assert!(align::bare_warns(10.0, 100.0));
 
     assert_eq!(

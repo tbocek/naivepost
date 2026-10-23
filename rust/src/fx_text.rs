@@ -33,7 +33,12 @@ pub struct Box_ {
 /// otherwise — most of the width, low on the frame. [`crate::cut::Fx::centre`] already answers `{0.5, 0.78}` for a
 /// text with no stored box; this is the same box with its size spelled, so a caption placed by click and a caption
 /// read back from a file cannot diverge.
-pub const LOWER_THIRD: Box_ = Box_ { cx: 0.5, cy: 0.78, wf: 0.8, hf: 0.16 };
+pub const LOWER_THIRD: Box_ = Box_ {
+    cx: 0.5,
+    cy: 0.78,
+    wf: 0.8,
+    hf: 0.16,
+};
 
 /// `// effects.boxMinWidthFraction` and `// effects.boxMinHeightFraction` — §10 gives these no `P.` row, so they
 /// take the bare prefix of the rule that uses them. The floor a box may be shrunk to is what makes it wide and tall
@@ -54,14 +59,24 @@ impl Box_ {
         // Fractions are already a frame of one, so the corners come straight out of them.
         let x = (self.cx - self.wf / 2.0).clamp(0.0, 1.0 - wf);
         let y = (self.cy - self.hf / 2.0).clamp(0.0, 1.0 - hf);
-        Box_ { cx: x + wf / 2.0, cy: y + hf / 2.0, wf, hf }
+        Box_ {
+            cx: x + wf / 2.0,
+            cy: y + hf / 2.0,
+            wf,
+            hf,
+        }
     }
 
     /// The box in the pixels of a `frame_w × frame_h` finished frame: corner, width and height. The one place either
     /// side works this geometry out, which is what lets the preview and the render put the words in the same place.
     pub fn to_px(self, frame_w: f64, frame_h: f64) -> (f64, f64, f64, f64) {
         let (w, h) = (self.wf * frame_w, self.hf * frame_h);
-        (self.cx * frame_w - w / 2.0, self.cy * frame_h - h / 2.0, w, h)
+        (
+            self.cx * frame_w - w / 2.0,
+            self.cy * frame_h - h / 2.0,
+            w,
+            h,
+        )
     }
 
     /// Pixels back to fractions — the drag's way in. Not clamped here: [`Box_::clamp`] is a separate call so a
@@ -88,7 +103,8 @@ impl Box_ {
 /// F3.4 S1 (`"Drag the box the words go in — anywhere on the picture, any shape. A click puts one across the lower
 /// third."`): verbatim, and the trailing space is the join with [`fx_zoom::arm_tail`] — the same second half every
 /// armed effect shows, so "3 s" is written down once for all of them.
-pub const ARM_WORDS: &str = "Drag the box the words go in \u{2014} anywhere on the picture, any shape. \
+pub const ARM_WORDS: &str =
+    "Drag the box the words go in \u{2014} anywhere on the picture, any shape. \
                              A click puts one across the lower third. ";
 
 /// F3.4 S1: the arm's whole paragraph — this flow's gesture, then where it will start and for how long. The tail is
@@ -159,7 +175,9 @@ pub fn place(
     let on = match choice {
         BoxChoice::Click => LOWER_THIRD,
         // A press that did not travel is a click wherever it landed.
-        BoxChoice::Dragged { w, h, .. } if w < fx_zoom::DRAG_MIN_PX || h < fx_zoom::DRAG_MIN_PX => LOWER_THIRD,
+        BoxChoice::Dragged { w, h, .. } if w < fx_zoom::DRAG_MIN_PX || h < fx_zoom::DRAG_MIN_PX => {
+            LOWER_THIRD
+        }
         BoxChoice::Dragged { x, y, w, h } => Box_::from_px(x, y, w, h, frame.0, frame.1).clamp(),
     };
     let (t, dur) = match (selection, line) {
@@ -195,12 +213,18 @@ pub fn form_title(t: f64) -> String {
 /// the form reads them. Order is the sentence a person reads, not a layout detail — as in
 /// [`crate::fx_zoom::FORM_FIELDS`] and [`crate::cut_speed::FORM_FIELDS`]. The words come first because they are what
 /// the caption is: nothing else on this form can make one.
-pub const FORM_FIELDS: [&str; 5] =
-    ["Words", "Length (s)", "Fade in (s)", "Fade out (s)", "Curve"];
+pub const FORM_FIELDS: [&str; 5] = [
+    "Words",
+    "Length (s)",
+    "Fade in (s)",
+    "Fade out (s)",
+    "Curve",
+];
 
 /// F3.4 S3: the words field's help, verbatim — it says both what is fitted to what and where Enter goes, which is
 /// the one thing a person cannot guess from a text box.
-pub const WORDS_HELP: &str = "what is written over the picture. The words are fitted to the box you drew \u{2014} \
+pub const WORDS_HELP: &str =
+    "what is written over the picture. The words are fitted to the box you drew \u{2014} \
                               a longer line comes out smaller, and Enter starts a new line.";
 
 /// F3.4 S3 (`Fade in/out (s) ("0 cuts them straight on|off")`): one sentence serves both fades, which is why it is
@@ -578,8 +602,7 @@ pub fn grab_edge(box_px: (f64, f64, f64, f64), at_px: (f64, f64)) -> Option<Edge
         ((Edge::Top), (at_px.1 - y).abs()),
         ((Edge::Bottom), (at_px.1 - (y + h)).abs()),
     ];
-    gaps
-        .iter()
+    gaps.iter()
         .filter(|(_, gap)| *gap <= EDGE_GRIP_PX)
         .min_by(|(_, a), (_, b)| a.total_cmp(b))
         .map(|(edge, _)| *edge)

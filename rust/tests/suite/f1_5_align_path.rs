@@ -19,6 +19,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::common;
+use common::temp_dir_tagged;
 use naivepost::align;
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
@@ -26,8 +28,6 @@ use naivepost::run::{self, Subprocesses};
 use naivepost::run_stages;
 use naivepost::services;
 use naivepost::settings::{self, Conf, Paths};
-use crate::common;
-use common::temp_dir_tagged;
 
 /// The lane of both scenes: the stem of the recording's name, which names the decoded audio and every
 /// sidecar (§F1.3 stores under it).
@@ -51,7 +51,7 @@ static COUNTER: AtomicUsize = AtomicUsize::new(0);
 /// request arrived on — a process-wide switch would let another test's walk be answered with this
 /// scene's refusal and send the suite flaky under `just test`'s thread count.
 #[allow(dead_code)] // `paths` is the scene's own settings folder, read by the program's own legs rather
-// than by a test, so nothing here calls it; `port` is used to key the fake.
+                    // than by a test, so nothing here calls it; `port` is used to key the fake.
 struct Scene {
     root: PathBuf,
     /// This scene's fake address, as the conf holds it: §F1.5 S1's line names the server that refused,
@@ -117,14 +117,28 @@ impl Scene {
         let (url, port, seen) = fake_audio();
         let fakes = SceneFakes::default();
         *fakes.align_model.lock().expect("the arms lock") = align_model.to_string();
-        SCENES.lock().expect("the scene lock").push((port, fakes.clone()));
-        let tools = stubs(&format!("{}-{}", std::process::id(), port), duration, silences);
+        SCENES
+            .lock()
+            .expect("the scene lock")
+            .push((port, fakes.clone()));
+        let tools = stubs(
+            &format!("{}-{}", std::process::id(), port),
+            duration,
+            silences,
+        );
         let mut conf = Conf::default();
         conf.audio_server = url.clone();
         conf.ffmpeg = tools.join("ffmpeg").to_string_lossy().into_owned();
         conf.align_model = align_model.to_string();
         settings::save(&paths, &conf).expect("the conf is written");
-        Scene { root, url, port, paths, seen, fakes }
+        Scene {
+            root,
+            url,
+            port,
+            paths,
+            seen,
+            fakes,
+        }
     }
 
     /// Make this scene's box declare `REFUSED_ALIGNER` instead of the configured id.
@@ -136,13 +150,21 @@ impl Scene {
 
     /// Answer every aligner window with its word placed at 0.2 s of the window.
     fn aligner_places_everything_at_the_start(&self) {
-        *self.fakes.words_in_first_second.lock().expect("the arms lock") = true;
+        *self
+            .fakes
+            .words_in_first_second
+            .lock()
+            .expect("the arms lock") = true;
     }
 
     /// Refuse the first-listed aligner's every ask with an out-of-memory answer, so the picker walks on
     /// to the next one and S1's picker line is produced by the walk rather than asserted about a closure.
     fn aligner_has_no_room_once(&self) {
-        *self.fakes.align_refuses_first.lock().expect("the arms lock") = true;
+        *self
+            .fakes
+            .align_refuses_first
+            .lock()
+            .expect("the arms lock") = true;
     }
 
     /// The project file: one recording row with SPEAKS ONLY ticked, which is what makes the walk have a
@@ -199,7 +221,8 @@ impl Scene {
 
     /// The speech stage only: frames, describe and fix belong to other items.
     fn stages(&self) -> Vec<run_stages::Stage> {
-        let project = naivepost::project::load(&naivepost::startup::session_dir(&self.root)).expect("the project");
+        let project = naivepost::project::load(&naivepost::startup::session_dir(&self.root))
+            .expect("the project");
         run_stages::plan(run::Step::Prepare, &project)
             .into_iter()
             .filter(|stage| stage.name == "speech")
@@ -212,9 +235,16 @@ impl Scene {
         let mut queue = naivepost::runqueue::Queue::new();
         let mut procs = Subprocesses::default();
         let mut log: Vec<String> = Vec::new();
-        let drive = run_stages::drive_walk(&self.stages(), &mut queue, || false, || false, |line| {
-            log.push(line.to_string());
-        }, &mut procs);
+        let drive = run_stages::drive_walk(
+            &self.stages(),
+            &mut queue,
+            || false,
+            || false,
+            |line| {
+                log.push(line.to_string());
+            },
+            &mut procs,
+        );
         run_stages::say_outcome(&drive, |line| log.push(line.to_string()));
         log
     }
@@ -267,7 +297,10 @@ fn f1_5_s1_a_configured_aligner_that_is_not_served_skips_alignment_and_carries_o
         "{line}"
     );
     // The server is named by the address the conf holds, not left blank.
-    assert!(line.contains(&scene.url), "{line} names no server -- the refusal must say which box");
+    assert!(
+        line.contains(&scene.url),
+        "{line} names no server -- the refusal must say which box"
+    );
     assert_eq!(
         line,
         &format!(
@@ -278,9 +311,16 @@ fn f1_5_s1_a_configured_aligner_that_is_not_served_skips_alignment_and_carries_o
     );
     // The id is not replaced: the declared aligner was never asked.
     assert!(
-        !scene.tasks().iter().any(|seen| seen.body.contains(DECLARED_ALIGNER)),
+        !scene
+            .tasks()
+            .iter()
+            .any(|seen| seen.body.contains(DECLARED_ALIGNER)),
         "a configured id that is not served must not be swapped for one that is: {:?}",
-        scene.tasks().iter().map(|seen| &seen.body).collect::<Vec<_>>()
+        scene
+            .tasks()
+            .iter()
+            .map(|seen| &seen.body)
+            .collect::<Vec<_>>()
     );
     // And the run is not a failure: the ASR's times stand, so `words.json` is there and the segments
     // were written. `Align::None` answers S4's `Quiet`, so no alignment warning is logged either.
@@ -289,9 +329,18 @@ fn f1_5_s1_a_configured_aligner_that_is_not_served_skips_alignment_and_carries_o
         "a skipped aligner is a working setup, not a failed stage: {log:?}"
     );
     let tree = scene.tree();
-    assert!(tree.words_json(LANE).exists(), "the ASR's words are on disk: {log:?}");
-    assert!(!tree.words_aligned_json(LANE).exists(), "nothing was aligned, so no marker: {log:?}");
-    assert!(tree.transcript_txt(LANE).exists(), "the segments were still written: {log:?}");
+    assert!(
+        tree.words_json(LANE).exists(),
+        "the ASR's words are on disk: {log:?}"
+    );
+    assert!(
+        !tree.words_aligned_json(LANE).exists(),
+        "nothing was aligned, so no marker: {log:?}"
+    );
+    assert!(
+        tree.transcript_txt(LANE).exists(),
+        "the segments were still written: {log:?}"
+    );
 }
 
 /// §F1.5 S6 through the real door: the warning about voiced seconds with no word over them lives in
@@ -353,19 +402,36 @@ fn f1_5_s1_the_pickers_line_reaches_the_run_when_the_first_aligner_refuses() {
     );
     // The refusal that made it a walk is said too, in front of the line that resolves it.
     assert!(
-        log.iter().any(|line| line.contains(FIRST_TRIED_ALIGNER) && line.contains("align:")),
+        log.iter()
+            .any(|line| line.contains(FIRST_TRIED_ALIGNER) && line.contains("align:")),
         "the refusing aligner was not named: {log:?}"
     );
     // And the walk was not a failure despite the first aligner refusing every window.
-    assert!(scene.tree().words_aligned_json(LANE).exists(), "the second aligner served: {log:?}");
+    assert!(
+        scene.tree().words_aligned_json(LANE).exists(),
+        "the second aligner served: {log:?}"
+    );
 }
 
 /// The two numbers out of S6's printed sentence, which is `!!! align: N s of the M s spoken ...`.
 fn align_bare_and_spoken(line: &str) -> (u64, u64) {
     let rest = line.split("!!! align: ").nth(1).expect("the prefix");
     let mut parts = rest.split(" s of the ");
-    let bare = parts.next().expect("N").trim().parse().expect("N is a number");
-    let spoken = parts.next().expect("M s spoken").split(" s").next().expect("M").trim().parse().expect("M");
+    let bare = parts
+        .next()
+        .expect("N")
+        .trim()
+        .parse()
+        .expect("N is a number");
+    let spoken = parts
+        .next()
+        .expect("M s spoken")
+        .split(" s")
+        .next()
+        .expect("M")
+        .trim()
+        .parse()
+        .expect("M");
     (bare, spoken)
 }
 
@@ -385,10 +451,13 @@ fn stubs(tag: &str, duration: &str, silences: &[(f64, f64)]) -> PathBuf {
     // stubs a previous scene's conf still names.
     let dir = temp_dir_tagged(&format!("np-f15-tools-{tag}"));
     let probe = dir.join("ffprobe");
-    common::write_script(&probe, format!("#!/bin/sh\necho \"{duration}\"\n")).expect("the probe stub");
+    common::write_script(&probe, format!("#!/bin/sh\necho \"{duration}\"\n"))
+        .expect("the probe stub");
     let report: String = silences
         .iter()
-        .map(|(start, end)| format!("echo \"silence_start: {start}\" >&2\necho \"silence_end: {end}\" >&2\n"))
+        .map(|(start, end)| {
+            format!("echo \"silence_start: {start}\" >&2\necho \"silence_end: {end}\" >&2\n")
+        })
         .collect();
     let ffmpeg = dir.join("ffmpeg");
     // The decode's output is a REAL (silent) wav rather than a copy of the input: this stub has no audio
@@ -405,7 +474,8 @@ fn stubs(tag: &str, duration: &str, silences: &[(f64, f64)]) -> PathBuf {
     )
     .expect("the ffmpeg stub");
     for tool in [&probe, &ffmpeg] {
-        std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the stub runs");
+        std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .expect("the stub runs");
     }
     dir
 }
@@ -466,7 +536,13 @@ fn serve(mut stream: TcpStream, port: u16) -> Option<Seen> {
             break;
         }
         if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = header
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
     }
     let mut body = vec![0u8; length];
@@ -474,7 +550,11 @@ fn serve(mut stream: TcpStream, port: u16) -> Option<Seen> {
         let _ = reader.read_exact(&mut body);
     }
     let text = String::from_utf8_lossy(&body).into_owned();
-    let path = request_line.split_whitespace().nth(1).unwrap_or("/").to_string();
+    let path = request_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("/")
+        .to_string();
     let (code, payload) = route(port, &path, &text);
     let framed = format!(
         "HTTP/1.1 {code} Whatever\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
@@ -483,7 +563,10 @@ fn serve(mut stream: TcpStream, port: u16) -> Option<Seen> {
     let _ = stream.write_all(framed.as_bytes());
     let _ = stream.flush();
     let _ = stream.shutdown(std::net::Shutdown::Both);
-    Some(Seen { line: request_line, body: text })
+    Some(Seen {
+        line: request_line,
+        body: text,
+    })
 }
 
 /// Which reply a request gets. The task kinds are told apart by the model id their envelope names — the
@@ -543,10 +626,19 @@ fn route(port: u16, path: &str, body: &str) -> (u16, String) {
         {
             return (500, "{\"error\":\"CUDA out of memory\"}".to_string());
         }
-        return (200, aligner_words(*fakes.words_in_first_second.lock().expect("the arms lock"), window));
+        return (
+            200,
+            aligner_words(
+                *fakes.words_in_first_second.lock().expect("the arms lock"),
+                window,
+            ),
+        );
     }
     // The ASR: two words a piece, timed in the piece's own seconds, which `asr::shift` then moves.
-    (200, asr_words(fakes.pieces.fetch_add(1, Ordering::SeqCst) % 2))
+    (
+        200,
+        asr_words(fakes.pieces.fetch_add(1, Ordering::SeqCst) % 2),
+    )
 }
 
 fn scene_fakes(port: u16) -> Option<SceneFakes> {
@@ -578,9 +670,17 @@ fn asr_words(piece: usize) -> String {
 fn aligner_words(bare: bool, window: usize) -> String {
     let from = (window % 2) as f64 * 20.0;
     if bare {
-        return format!("{{\"words\":[{{\"word\":\"word\",\"start\":{},\"end\":{}}}]}}", from + 0.2, from + 0.4);
+        return format!(
+            "{{\"words\":[{{\"word\":\"word\",\"start\":{},\"end\":{}}}]}}",
+            from + 0.2,
+            from + 0.4
+        );
     }
-    format!("{{\"words\":[{{\"word\":\"word\",\"start\":{},\"end\":{}}}]}}", from, from + 19.0)
+    format!(
+        "{{\"words\":[{{\"word\":\"word\",\"start\":{},\"end\":{}}}]}}",
+        from,
+        from + 19.0
+    )
 }
 
 /// The diarizer's ordinary answer, in case a scene leaves its resume marker out.

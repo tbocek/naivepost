@@ -12,16 +12,18 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::project::MarkingPass;
-use crate::runqueue;
 use crate::project::Project;
+use crate::runqueue;
 use crate::shell::Page;
-use crate::ui::window::{depth, has_label, tab_buttons, UiState};
 use crate::ui::window as ui;
+use crate::ui::window::{depth, has_label, tab_buttons, UiState};
 
 /// The switching state as the window currently shows it — for the tests that drive a real click.
 pub fn state(window: &adw::ApplicationWindow) -> UiState {
-    let (Some(switcher), Some(status)) = (find_switcher(window.upcast_ref()), find_status(window.upcast_ref()))
-    else {
+    let (Some(switcher), Some(status)) = (
+        find_switcher(window.upcast_ref()),
+        find_status(window.upcast_ref()),
+    ) else {
         panic!("the window has no tab row");
     };
     let page = switcher
@@ -43,12 +45,13 @@ pub fn state(window: &adw::ApplicationWindow) -> UiState {
 /// The tooltip the tab button for `page` carries, which is how a test reads §1's "tooltip = the
 /// reason" without reaching inside the switcher itself.
 pub fn tab_tooltip(window: &adw::ApplicationWindow, page: Page) -> Option<String> {
-    tab_button(window, page)?.tooltip_text().map(|text| text.to_string())
+    tab_button(window, page)?
+        .tooltip_text()
+        .map(|text| text.to_string())
 }
 /// Whether the tab for `page` is greyed (§1's "greyed, not disabled" — the class, never `set_sensitive`).
 pub fn tab_dimmed(window: &adw::ApplicationWindow, page: Page) -> bool {
-    tab_button(window, page)
-        .is_some_and(|button| button.has_css_class("dim-label"))
+    tab_button(window, page).is_some_and(|button| button.has_css_class("dim-label"))
 }
 /// The tab button drawing `page`'s word, so a test can click it the way a user does.
 pub fn tab_button(window: &adw::ApplicationWindow, page: Page) -> Option<gtk::Button> {
@@ -102,7 +105,10 @@ pub fn mark_narration_owed(window: &adw::ApplicationWindow) {
     let _ = window;
     if let Some(shell) = ui::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()) {
         // `now` is irrelevant here: leaving the tab writes whatever is owed, even a beat early.
-        shell.borrow_mut().narration_pending.touched(std::time::Duration::from_secs(0));
+        shell
+            .borrow_mut()
+            .narration_pending
+            .touched(std::time::Duration::from_secs(0));
     }
 }
 /// §1 badge **4** — the header's project name/path label, so a caller (a switch, an Open, a Save that
@@ -130,9 +136,12 @@ pub fn install_project_title(header: &adw::HeaderBar) {
 /// before any flow took one on) the launch's own session folder answers — the same fallback `save_target`
 /// uses — so the header never opens blank.
 pub fn paint_project_title() {
-    let Some(title) = project_title_of() else { return };
-    let dir = crate::ui::save_apply::open_dir()
-        .unwrap_or_else(|| crate::startup::session_dir(&std::env::current_dir().unwrap_or_default()));
+    let Some(title) = project_title_of() else {
+        return;
+    };
+    let dir = crate::ui::save_apply::open_dir().unwrap_or_else(|| {
+        crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
+    });
     let tab = ui::WINDOW_SHELLS
         .with(|shells| shells.borrow().last().cloned())
         .map(|shell| shell.borrow().page.label().to_string())
@@ -167,7 +176,10 @@ pub fn tab_info_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 pub fn tab_info_parts(window: &adw::ApplicationWindow) -> Option<(String, String)> {
     let tip = tab_info_button(window)?.tooltip_text()?.to_string();
     let join = tip.find(" \u{2014} ")?;
-    Some((tip[..join].to_string(), tip[join + " \u{2014} ".len()..].to_string()))
+    Some((
+        tip[..join].to_string(),
+        tip[join + " \u{2014} ".len()..].to_string(),
+    ))
 }
 /// The switcher inside the window: it is the one thing in here with a stack of its own.
 pub(crate) fn find_switcher(root: &gtk::Widget) -> Option<adw::ViewSwitcher> {
@@ -176,7 +188,9 @@ pub(crate) fn find_switcher(root: &gtk::Widget) -> Option<adw::ViewSwitcher> {
     }
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if let Some(found) = find_switcher(&widget) {
             return Some(found);
         }
@@ -191,7 +205,9 @@ pub fn save_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 }
 /// The tooltip Save carries, which is how a test reads §1's wording for badge **3**.
 pub fn save_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
-    save_button(window)?.tooltip_text().map(|text| text.to_string())
+    save_button(window)?
+        .tooltip_text()
+        .map(|text| text.to_string())
 }
 /// The Rescan button, named so a test can press it the way a user does.
 pub fn rescan_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
@@ -221,7 +237,9 @@ pub fn open_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 /// not a read of it: swapping this exact copy is what every page sees.
 pub fn session_handle(window: &adw::ApplicationWindow) -> Rc<RefCell<Project>> {
     let _ = window;
-    ui::SESSION.with(|slots| slots.borrow().last().cloned()).expect("the window has a session")
+    ui::SESSION
+        .with(|slots| slots.borrow().last().cloned())
+        .expect("the window has a session")
 }
 pub fn session_sources(window: &adw::ApplicationWindow) -> Vec<String> {
     let _ = window;
@@ -247,7 +265,9 @@ pub fn run_queue(_window: &adw::ApplicationWindow) -> Option<Rc<RefCell<runqueue
 }
 /// The tooltip Open carries, which is how a test reads §1's wording for badge **2**.
 pub fn open_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
-    open_button(window)?.tooltip_text().map(|text| text.to_string())
+    open_button(window)?
+        .tooltip_text()
+        .map(|text| text.to_string())
 }
 /// The run's progress bar (F0.5 S2), found the same way as [`play_button`]. Window-level, so a name
 /// lookup cannot land on a per-page copy.
@@ -265,11 +285,15 @@ pub fn log_expander(window: &adw::ApplicationWindow) -> Option<gtk::Expander> {
 }
 /// The tooltip the progress bar carries — where F0.5 puts the counting ("task 4 of 12, 8 waiting").
 pub fn progress_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
-    progress_bar(window)?.tooltip_text().map(|text| text.to_string())
+    progress_bar(window)?
+        .tooltip_text()
+        .map(|text| text.to_string())
 }
 /// The tooltip Rescan carries, which is how a test reads §1's wording for badge **8**.
 pub fn rescan_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
-    rescan_button(window)?.tooltip_text().map(|text| text.to_string())
+    rescan_button(window)?
+        .tooltip_text()
+        .map(|text| text.to_string())
 }
 /// Prepare's "Add source files…" button, named so a test can press it the way a user does.
 pub fn add_sources_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
@@ -351,24 +375,34 @@ pub fn new_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 }
 /// The tooltip ＋ New carries, which is how a test reads §1's wording for badge **1**.
 pub fn new_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
-    new_button(window)?.tooltip_text().map(|text| text.to_string())
+    new_button(window)?
+        .tooltip_text()
+        .map(|text| text.to_string())
 }
 /// The ▶ button, named rather than searched for by icon: the icon changes to ⏸ while a run works,
 /// and an unnamed busy button would then be findable no more.
 pub fn play_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
-    find_widget_by_name(window.upcast_ref(), "play-button")?.downcast().ok()
+    find_widget_by_name(window.upcast_ref(), "play-button")?
+        .downcast()
+        .ok()
 }
 /// The ⏹ button (F0.3), found the same way as [`play_button`].
 pub fn stop_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
-    find_widget_by_name(window.upcast_ref(), "stop-button")?.downcast().ok()
+    find_widget_by_name(window.upcast_ref(), "stop-button")?
+        .downcast()
+        .ok()
 }
 /// The "I'm feeling lucky" button (F0.4), found the same way as [`play_button`].
 pub fn lucky_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
-    find_widget_by_name(window.upcast_ref(), "lucky-button")?.downcast().ok()
+    find_widget_by_name(window.upcast_ref(), "lucky-button")?
+        .downcast()
+        .ok()
 }
 /// The tooltip ▶ carries, which is how a test reads §2's wording without reaching into the button.
 pub fn play_tooltip(window: &adw::ApplicationWindow) -> Option<String> {
-    play_button(window)?.tooltip_text().map(|text| text.to_string())
+    play_button(window)?
+        .tooltip_text()
+        .map(|text| text.to_string())
 }
 /// The first widget under `root` carrying `name`, found the same walk as [`find_status`].
 pub(crate) fn find_widget_by_name(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
@@ -377,7 +411,9 @@ pub(crate) fn find_widget_by_name(root: &gtk::Widget, name: &str) -> Option<gtk:
     }
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if let Some(found) = find_widget_by_name(&widget, name) {
             return Some(found);
         }
@@ -391,8 +427,14 @@ pub fn view_stack(window: &adw::ApplicationWindow) -> Option<adw::ViewStack> {
         if let Some(stack) = node.downcast_ref::<adw::ViewStack>() {
             return Some(stack.clone());
         }
-        for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
-            let Ok(child) = child.downcast::<gtk::Widget>() else { continue };
+        for child in node
+            .observe_children()
+            .iter::<glib::Object>()
+            .filter_map(Result::ok)
+        {
+            let Ok(child) = child.downcast::<gtk::Widget>() else {
+                continue;
+            };
             if let Some(stack) = find(&child) {
                 return Some(stack);
             }
@@ -417,7 +459,9 @@ pub fn find_status(root: &gtk::Widget) -> Option<gtk::Label> {
     }
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if let Some(found) = find_status(&widget) {
             return Some(found);
         }

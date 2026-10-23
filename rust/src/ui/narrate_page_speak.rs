@@ -10,8 +10,8 @@
 
 use crate::narrate_preview_leg::{self};
 use crate::narrate_preview_media;
-use crate::ui::narrate_page::{self, NarrateState};
 use crate::narration::Entry;
+use crate::ui::narrate_page::{self, NarrateState};
 
 /// F4.4 for one row, over the real wire: the take's key and seed come from the record itself, the
 /// address, the key, the model id and the server's health off the Settings file as it stands NOW
@@ -32,7 +32,10 @@ pub(crate) fn speak_and_audition(
     preview_volume: f64,
 ) -> String {
     let Some(tree) = crate::ui::window::narrate_session_tree() else {
-        return narrate_page::say(window, "no project folder is open \u{2014} nowhere to keep the take");
+        return narrate_page::say(
+            window,
+            "no project folder is open \u{2014} nowhere to keep the take",
+        );
     };
     let key = crate::narration::key_for(entry, Some(&s.voice));
     let seed = crate::narration::tts_seed(&key);

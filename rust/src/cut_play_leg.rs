@@ -126,7 +126,13 @@ pub fn arm_spare_page(cut: &Cut, t: f64, page: &dyn CutPreviewPage) -> Option<f6
     }
     LAST_ARMED.with(|slot| *slot.borrow_mut() = opened);
     let swapped = SWAPPED.with(|cell| cell.take());
-    SPARE_ARMS.with(|log| log.borrow_mut().push(SpareArm { at: opened, prerolled, swapped }));
+    SPARE_ARMS.with(|log| {
+        log.borrow_mut().push(SpareArm {
+            at: opened,
+            prerolled,
+            swapped,
+        })
+    });
     opened
 }
 
@@ -199,7 +205,14 @@ pub fn route(cut: &Cut, t: f64, volume: f64) -> Routings {
     Routings {
         still: frame.still,
         rate: frame.rate,
-        gain: cut_hear::mix_gain(volume, if cut_hear::bed_silenced_under(&cut.fx, t) { 0.0 } else { cut_hear::gain_under(&cut.fx, t) }),
+        gain: cut_hear::mix_gain(
+            volume,
+            if cut_hear::bed_silenced_under(&cut.fx, t) {
+                0.0
+            } else {
+                cut_hear::gain_under(&cut.fx, t)
+            },
+        ),
     }
 }
 
@@ -228,7 +241,9 @@ pub struct Frame {
 pub fn frame(cut: &Cut, seg: Option<&Seg>, t: f64) -> Frame {
     Frame {
         still: cut_play::shows_a_still(cut, t),
-        rate: seg.map(cut_play::played_rate).unwrap_or(cut_play::FLAT_RATE),
+        rate: seg
+            .map(cut_play::played_rate)
+            .unwrap_or(cut_play::FLAT_RATE),
         volume: seg.map(cut_play::volume_applies).unwrap_or(true),
     }
 }
@@ -270,13 +285,7 @@ pub const DIM_ALPHA: f64 = 0.18;
 ///
 /// `pps` is the strip's pixels-per-second (the same number the kept boxes were converted with), so the
 /// dim lines up with the ruler and the clips without a second scale factor anywhere.
-pub fn paint_dimmed(
-    cr: &cairo::Context,
-    spans: &[(f64, f64)],
-    top: f64,
-    height: f64,
-    pps: f64,
-) {
+pub fn paint_dimmed(cr: &cairo::Context, spans: &[(f64, f64)], top: f64, height: f64, pps: f64) {
     cr.set_source_rgb(DIM_GREY, DIM_GREY, DIM_GREY);
     for &(start, end) in spans {
         let x = start * pps;
@@ -395,7 +404,10 @@ fn changed_rate(rate: f64) -> bool {
 pub fn clock_line(clock: f64, ended: bool) -> String {
     let face = crate::preview::clock(Some(clock));
     if ended {
-        format!(">>> preview: {face} \u{2014} past the last clip, paused \u{b7} {}", cut_play::cut_clock_note())
+        format!(
+            ">>> preview: {face} \u{2014} past the last clip, paused \u{b7} {}",
+            cut_play::cut_clock_note()
+        )
     } else {
         format!(">>> preview: {face} \u{b7} {}", cut_play::cut_clock_note())
     }

@@ -22,7 +22,6 @@ use naivepost::watchdog;
 use crate::common;
 use common::wait_until;
 
-
 const SHORT_LIMIT: Duration = common::WATCHDOG_TEST_LIMIT;
 
 /// The names a hang dump must carry, checked against one file's text.
@@ -85,28 +84,54 @@ fn sec_03_shell_1_the_window_s10_the_silence_rule_measures_the_gap_against_the_l
         "a beat stamped after `now` is no silence, not a negative one"
     );
     // Exactly at the limit has NOT yet passed it; one ms more has.
-    assert!(!watchdog::stalled(now, now - watchdog::SILENCE_LIMIT, watchdog::SILENCE_LIMIT));
-    assert!(watchdog::stalled(now, now - watchdog::SILENCE_LIMIT - Duration::from_millis(1), watchdog::SILENCE_LIMIT));
+    assert!(!watchdog::stalled(
+        now,
+        now - watchdog::SILENCE_LIMIT,
+        watchdog::SILENCE_LIMIT
+    ));
+    assert!(watchdog::stalled(
+        now,
+        now - watchdog::SILENCE_LIMIT - Duration::from_millis(1),
+        watchdog::SILENCE_LIMIT
+    ));
     // A beat in the middle of the silence resets the count: it is the GAP that matters, not the total.
-    assert!(!watchdog::stalled(now, now - Duration::from_millis(500), watchdog::SILENCE_LIMIT));
+    assert!(!watchdog::stalled(
+        now,
+        now - Duration::from_millis(500),
+        watchdog::SILENCE_LIMIT
+    ));
     // And the same pair against a shorter limit is a hang — which is what lets the live checks below
     // watch a hang happen without sleeping for §1's three seconds.
-    assert!(watchdog::stalled(now, now - Duration::from_millis(500), SHORT_LIMIT));
+    assert!(watchdog::stalled(
+        now,
+        now - Duration::from_millis(500),
+        SHORT_LIMIT
+    ));
 }
 
 /// One dump's body, which goes to stderr AND to the file, so the two can never disagree: the component,
 /// how long it had been unresponsive, the pid, then the stacks.
 #[test]
 fn sec_03_shell_1_the_window_s10_a_dump_names_the_stalled_thread_its_pid_and_its_stacks() {
-    let body = watchdog::dump_body(Duration::from_millis(3200), 4242, "#0 fake_frame at fake.rs:1\n");
+    let body = watchdog::dump_body(
+        Duration::from_millis(3200),
+        4242,
+        "#0 fake_frame at fake.rs:1\n",
+    );
     assert!(body.contains(watchdog::COMPONENT), "{body}");
     assert!(body.contains("3.2s"), "how late it was: {body}");
     assert!(body.contains("pid 4242"), "{body}");
-    assert!(body.contains("stack:\n#0 fake_frame"), "the stacks come under a heading:\n{body}");
+    assert!(
+        body.contains("stack:\n#0 fake_frame"),
+        "the stacks come under a heading:\n{body}"
+    );
     // Whole seconds print plain, the way §7's other dump spells them.
     assert!(watchdog::dump_body(Duration::from_secs(4), 1, "").contains("4s"));
     // The real capture is not empty: a dump of this process has frames in it.
-    assert!(watchdog::stacks().len() > 20, "a captured backtrace has something in it");
+    assert!(
+        watchdog::stacks().len() > 20,
+        "a captured backtrace has something in it"
+    );
 }
 
 /// The live half: a thread that stops beating IS dumped, through the program's own door, into the
@@ -122,11 +147,17 @@ fn sec_03_shell_1_the_window_s10_a_live_watch_dumps_after_the_silence_passes() {
     // One beat establishes that the thread is alive; then nothing more is said, and the silence is the
     // hang. Beating on the test's own clock is the marker the GTK timer uses.
     watchdog::beat(watchdog::clock().as_millis() as u64);
-    wait_until("the watchdog wrote its hang dump", || !common::hang_dumps(&paths).is_empty());
+    wait_until("the watchdog wrote its hang dump", || {
+        !common::hang_dumps(&paths).is_empty()
+    });
     let files = common::hang_dumps(&paths);
     assert_eq!(files.len(), 1, "one hang is one dump: {files:?}");
     let path = &files[0];
-    assert_eq!(path.parent().unwrap(), paths.config_dir, "the dump lands beside the settings (§7)");
+    assert_eq!(
+        path.parent().unwrap(),
+        paths.config_dir,
+        "the dump lands beside the settings (§7)"
+    );
     let stamp = path
         .file_name()
         .unwrap()
@@ -153,11 +184,14 @@ fn sec_03_shell_1_the_window_s10_a_live_watch_dumps_after_the_silence_passes() {
     // Beating again DOES clear the flag, but the beat cannot be rung from here: `LAST_BEAT_MS` follows
     // `clock()`, so a test's extra `beat()` lands at "now" and reads as no silence at all. Only a real
     // stall followed by a real recovery can drive that half, which is what the app does on its own.
-    wait_until(
-        "the watcher had looked again",
-        || watchdog::clock() > SHORT_LIMIT * 4,
+    wait_until("the watcher had looked again", || {
+        watchdog::clock() > SHORT_LIMIT * 4
+    });
+    assert_eq!(
+        common::hang_dumps(&paths).len(),
+        1,
+        "one hang earns exactly one file"
     );
-    assert_eq!(common::hang_dumps(&paths).len(), 1, "one hang earns exactly one file");
     assert!(
         watchdog::beats() > beats_before,
         "the beat the test rang is counted: {} -> {}",

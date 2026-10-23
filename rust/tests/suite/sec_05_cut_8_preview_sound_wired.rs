@@ -12,13 +12,13 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use naivepost::cut::Seg;
 use naivepost::preview;
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, settle};
 
 static RAN_MUTE: AtomicBool = AtomicBool::new(false);
 static RAN_RESET: AtomicBool = AtomicBool::new(false);
@@ -48,14 +48,26 @@ fn check_the_mute_change_logs_one_line_naming_its_reason(app: &adw::Application)
     let window = cut_window(app);
     // A footage scene with the footage's own sound off: `cut_hear::footage_sound_heard` says `!mute`, so
     // this is the page's own answer for "the scene under the line does not hear it", not a scripted one.
-    let silent = vec![Seg { s: 0.0, e: 60.0, mute: true, ..Default::default() }];
-    let heard = vec![Seg { s: 0.0, e: 60.0, ..Default::default() }];
+    let silent = vec![Seg {
+        s: 0.0,
+        e: 60.0,
+        mute: true,
+        ..Default::default()
+    }];
+    let heard = vec![Seg {
+        s: 0.0,
+        e: 60.0,
+        ..Default::default()
+    }];
     ui::window::clear_logs_for_test();
 
     // Tick 1: the line moves under the silent scene. That is a CHANGE — the player started unmuted — so
     // exactly one line, and it names the scene as the cause.
     let first = ui::apply_mix(&window, &silent, &[], &[], 1.0);
-    assert!(first.footage_muted, "the mix says the footage is silent here");
+    assert!(
+        first.footage_muted,
+        "the mix says the footage is silent here"
+    );
     let after_first: Vec<String> = log()
         .into_iter()
         .filter(|line| line.starts_with(">>> preview: the footage's own sound"))
@@ -91,8 +103,18 @@ fn check_the_mute_change_logs_one_line_naming_its_reason(app: &adw::Application)
     // so the scene under it says "heard" and only the card mutes — which is exactly the reason §8 makes it
     // name first.
     let card = vec![
-        Seg { s: 0.0, e: 60.0, ..Default::default() },
-        Seg { s: 2.0, e: 2.0, dur: 4.0, ins: "f2-12-sting.mp4".into(), ..Default::default() },
+        Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        },
+        Seg {
+            s: 2.0,
+            e: 2.0,
+            dur: 4.0,
+            ins: "f2-12-sting.mp4".into(),
+            ..Default::default()
+        },
     ];
     assert!(
         naivepost::ui::preview_sound::card_holds_for_test(&window, &card, 2.0),
@@ -148,8 +170,7 @@ fn check_the_mute_change_logs_one_line_naming_its_reason(app: &adw::Application)
         "one more un-mute, one line, got {heard_again:?}"
     );
     assert_eq!(
-        heard_again[0],
-        ">>> preview: the footage's own sound is heard again",
+        heard_again[0], ">>> preview: the footage's own sound is heard again",
         "and in the spec's own words"
     );
     drop(window);
@@ -202,7 +223,9 @@ fn check_a_failing_pipeline_says_so(app: &adw::Application) {
     assert!(!cued, "a player that is not there cannot be cued");
     let lines = log();
     assert!(
-        lines.iter().any(|line| line.starts_with("!!! Cut: playback failed")),
+        lines
+            .iter()
+            .any(|line| line.starts_with("!!! Cut: playback failed")),
         "the log holds the reason, got {lines:?}"
     );
     let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
@@ -217,7 +240,8 @@ fn check_a_failing_pipeline_says_so(app: &adw::Application) {
 }
 
 #[test]
-fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s2_the_preview_says_its_own_sound() {
+fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s2_the_preview_says_its_own_sound(
+) {
     common::pin_private_cwd();
     let app = adw::Application::builder()
         .application_id(ui::APP_ID)
@@ -232,8 +256,14 @@ fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s2_the_prev
     });
     app.run_with_args::<String>(&[]);
     assert!(RAN_MUTE.load(Ordering::SeqCst), "the mute-change check ran");
-    assert!(RAN_RESET.load(Ordering::SeqCst), "the stream-volume reset check ran");
-    assert!(RAN_FAILURE.load(Ordering::SeqCst), "the failing-pipeline check ran");
+    assert!(
+        RAN_RESET.load(Ordering::SeqCst),
+        "the stream-volume reset check ran"
+    );
+    assert!(
+        RAN_FAILURE.load(Ordering::SeqCst),
+        "the failing-pipeline check ran"
+    );
 }
 
 /// The mix-lane half: the sentence a dropped lane says, pinned against the door the log now carries. The
@@ -242,7 +272,8 @@ fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s2_the_prev
 /// what codehalter named, was that the program ever used §8's sentence for it — so this pins that the door
 /// `lane_hear::apply_with` calls is the spec's own, naming the recording.
 #[test]
-fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s2_a_lane_that_drops_is_named() {
+fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s2_a_lane_that_drops_is_named()
+{
     common::pin_private_cwd();
     let base = "2026-09-16 17-26-20";
     let said = preview::mix_lane_failure(base, "no such file");

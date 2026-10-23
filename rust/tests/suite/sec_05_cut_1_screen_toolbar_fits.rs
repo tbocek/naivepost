@@ -13,17 +13,16 @@
 //! The second check pins the other half of the same fix: §A group 1 spells the transport as glyphs
 //! (▶, ▶✂, ▶✂✂) with the sentence in the tooltip, which is what bought back the ~1000 px.
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, hold_last_window, release_last_window, settle};
 use gtk4 as gtk;
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle};
 
 static RAN_FITS: AtomicBool = AtomicBool::new(false);
 static RAN_GLYPHS: AtomicBool = AtomicBool::new(false);
 static RAN_VOLUME_ICON: AtomicBool = AtomicBool::new(false);
 static RAN_POPOVER: AtomicBool = AtomicBool::new(false);
-
 
 /// A Cut page over a session with footage, sized the way `just snapshot 05-cut` sizes it: the layout
 /// collapses to one column without an explicit size before `present()`.
@@ -35,7 +34,9 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
     std::env::set_current_dir(&root).expect("cwd pinned away from rust/");
     let session = naivepost::startup::session_dir(&root);
     let mut seed = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    seed.sources.iter_mut().for_each(|source| source.footage = true);
+    seed.sources
+        .iter_mut()
+        .for_each(|source| source.footage = true);
     std::fs::create_dir_all(&session).expect("session folder");
     naivepost::project::save(&seed, &session).expect("the session is a real project on disk");
 
@@ -53,7 +54,11 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
         end: 120.0,
     }]);
     let seeded = naivepost::cut::Cut {
-        segs: vec![naivepost::cut::Seg { s: 0.0, e: 60.0, ..Default::default() }],
+        segs: vec![naivepost::cut::Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     naivepost::ui::seed_review_cut(&window, &seeded);
@@ -66,7 +71,10 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
 const BAR_CONTROLS: [(&str, &str); 18] = [
     ("play-recording-button", "5 \u{25b6} the recording"),
     ("play-cut-button", "6 \u{25b6}\u{2702} the cut"),
-    ("review-cuts-button", "7 \u{25b6}\u{2702}\u{2702} review every cut"),
+    (
+        "review-cuts-button",
+        "7 \u{25b6}\u{2702}\u{2702} review every cut",
+    ),
     ("line-step-back-five", "8 frame steps"),
     ("preview-volume", "9 preview volume"),
     ("add-button", "10 Add"),
@@ -99,8 +107,8 @@ fn check_every_control_sits_on_the_bar(app: &adw::Application) {
         bar_bounds.x(),
         bar_right
     );
-        let mut natural_by_group: std::collections::BTreeMap<String, i32> =
-            std::collections::BTreeMap::new();
+    let mut natural_by_group: std::collections::BTreeMap<String, i32> =
+        std::collections::BTreeMap::new();
     let mut clipped: Vec<String> = Vec::new();
     // `compute_bounds` answers in NATIVE coordinates, which is what "inside the bar" has to mean here; a
     // widget's own x/y getters answer against its parent and would compare two different frames.
@@ -140,9 +148,7 @@ fn check_every_control_sits_on_the_bar(app: &adw::Application) {
                     .and_then(|s| s.child())
                     .map(|c| c.width())
                     .unwrap_or(0);
-                natural = scroll
-                    .measure(gtk::Orientation::Horizontal, -1)
-                    .1;
+                natural = scroll.measure(gtk::Orientation::Horizontal, -1).1;
                 break;
             }
             owner = node.parent();
@@ -177,7 +183,12 @@ fn check_every_control_sits_on_the_bar(app: &adw::Application) {
     // that decides whether every \u{a7}1 control can sit inside its own group, so it is asserted, not just
     // printed — a wider label or fatter padding that pushes it past the bar clips a control again.
     let needed = sum + 5 * 4;
-    println!("SUM natural={sum} + spacing={} = {} against bar {}", 5 * 4, needed, bar.width());
+    println!(
+        "SUM natural={sum} + spacing={} = {} against bar {}",
+        5 * 4,
+        needed,
+        bar.width()
+    );
     assert!(
         needed <= bar.width(),
         "\u{a7}A's one row needs {needed} px (six groups' natural widths + their gaps) but the bar is {} px \
@@ -204,7 +215,10 @@ fn check_the_transport_is_glyphs_with_the_sentence_in_the_tip(app: &adw::Applica
         "\u{a7}1 item 5 wears the glyph \u{a7}A gives it, not a sentence"
     );
     assert_eq!(transport[1].label, "\u{25b6}\u{2702}", "\u{a7}1 item 6");
-    assert_eq!(transport[2].label, "\u{25b6}\u{2702}\u{2702}", "\u{a7}1 item 7");
+    assert_eq!(
+        transport[2].label, "\u{25b6}\u{2702}\u{2702}",
+        "\u{a7}1 item 7"
+    );
     // ...and the words did not disappear, they moved where \u{a7}A puts them.
     assert!(
         transport[0].tip.contains("cuts and all"),
@@ -212,7 +226,9 @@ fn check_the_transport_is_glyphs_with_the_sentence_in_the_tip(app: &adw::Applica
         transport[0].tip
     );
     assert!(
-        transport[1].tip.contains("the removed stretches are skipped"),
+        transport[1]
+            .tip
+            .contains("the removed stretches are skipped"),
         "the tooltip carries F2.2's sentence: {:?}",
         transport[1].tip
     );
@@ -224,7 +240,8 @@ fn check_the_transport_is_glyphs_with_the_sentence_in_the_tip(app: &adw::Applica
 
     // And on screen: the realized button answers with the same glyph and the same tip.
     let window = cut_page(app);
-    let button = common::find_named(&window, "play-recording-button").expect("\u{a7}1 item 5 is on the page");
+    let button = common::find_named(&window, "play-recording-button")
+        .expect("\u{a7}1 item 5 is on the page");
     let downcast = button.downcast::<gtk::Button>().expect("it is a button");
     assert_eq!(
         downcast.label().as_deref(),
@@ -249,7 +266,10 @@ fn check_the_transport_is_glyphs_with_the_sentence_in_the_tip(app: &adw::Applica
             .iter()
             .find(|tool| tool.name == name)
             .unwrap_or_else(|| panic!("\u{a7}1 item 8 names `{name}`"));
-        assert_eq!(step.label, glyph, "`{name}` wears the bare arrow \u{a7}A draws");
+        assert_eq!(
+            step.label, glyph,
+            "`{name}` wears the bare arrow \u{a7}A draws"
+        );
         assert!(
             step.tip.contains("frame"),
             "`{name}` leaves which way and how far to the tooltip: {:?}",
@@ -267,15 +287,19 @@ fn check_the_transport_is_glyphs_with_the_sentence_in_the_tip(app: &adw::Applica
 fn check_the_volume_group_wears_its_icon(app: &adw::Application) {
     let window = cut_page(app);
     // The page's own door for the slider, so this check and F2.5's read the same widget.
-    let scale = naivepost::ui::preview_volume_scale(&window).expect("\u{a7}1 item 9 preview-volume");
+    let scale =
+        naivepost::ui::preview_volume_scale(&window).expect("\u{a7}1 item 9 preview-volume");
     let row = scale.parent().expect("the slider sits in the volume row");
     let icon = common::find_named(&window, "preview-volume-icon")
         .expect("\u{a7}A group 2 asks for an icon beside the slider");
     assert!(
-        icon.parent().is_some_and(|p| p.upcast_ref::<gtk::Widget>() == row.upcast_ref::<gtk::Widget>()),
+        icon.parent()
+            .is_some_and(|p| p.upcast_ref::<gtk::Widget>() == row.upcast_ref::<gtk::Widget>()),
         "the icon belongs to the volume group, not somewhere else on the page"
     );
-    let label = icon.downcast_ref::<gtk::Label>().expect("the icon is a glyph label");
+    let label = icon
+        .downcast_ref::<gtk::Label>()
+        .expect("the icon is a glyph label");
     assert_eq!(
         label.text().as_str(),
         naivepost::ui::SPEAKER_GLYPH,
@@ -292,10 +316,23 @@ fn check_the_volume_group_wears_its_icon(app: &adw::Application) {
     println!("VOLUME ROW children {order:?}");
     // The word label is unnamed (another item's test pins it as the row's FIRST child by type), so the
     // order is read by position: something before the icon, and the slider after it.
-    let glyph = order.iter().position(|n| n == "preview-volume-icon").expect("icon named");
-    let slider = order.iter().position(|n| n == "preview-volume").expect("slider named");
-    assert!(glyph > 0 && glyph < slider, "word, then icon, then slider: {order:?}");
-    assert_eq!(scale.width_request(), 120, "\u{a7}A group 2's slider is 120 px wide");
+    let glyph = order
+        .iter()
+        .position(|n| n == "preview-volume-icon")
+        .expect("icon named");
+    let slider = order
+        .iter()
+        .position(|n| n == "preview-volume")
+        .expect("slider named");
+    assert!(
+        glyph > 0 && glyph < slider,
+        "word, then icon, then slider: {order:?}"
+    );
+    assert_eq!(
+        scale.width_request(),
+        120,
+        "\u{a7}A group 2's slider is 120 px wide"
+    );
     assert_eq!(
         icon.tooltip_text().as_deref(),
         Some(naivepost::cut_hear::VOLUME_TIP),
@@ -318,11 +355,14 @@ fn check_the_volume_group_wears_its_icon(app: &adw::Application) {
 /// §1 names in order, and activating the button drives that same MenuButton's active state.
 fn check_the_effects_button_opens_a_real_popover(app: &adw::Application) {
     let window = cut_page(app);
-    let button = common::find_named(&window, "effect-button").expect("\u{a7}1 item 17 effect-button");
+    let button =
+        common::find_named(&window, "effect-button").expect("\u{a7}1 item 17 effect-button");
     let menu = button
         .downcast_ref::<gtk::MenuButton>()
         .expect("\u{a7}1 item 17 is a dropdown, so a MenuButton");
-    let popover = menu.popover().expect("the dropdown owns a real gtk::Popover");
+    let popover = menu
+        .popover()
+        .expect("the dropdown owns a real gtk::Popover");
     let downcast = popover
         .downcast_ref::<gtk::Popover>()
         .expect("the popup is a gtk::Popover, not a flat box");
@@ -340,10 +380,20 @@ fn check_the_effects_button_opens_a_real_popover(app: &adw::Application) {
     if let Some(child) = downcast.child() {
         walk(&child, &mut names);
     }
-    let wanted: Vec<&str> = naivepost::cut_screen::EFFECT_ITEMS.iter().map(|i| i.name).collect();
-    let held: Vec<&str> = wanted.iter().copied().filter(|n| names.contains(&n.to_string())).collect();
+    let wanted: Vec<&str> = naivepost::cut_screen::EFFECT_ITEMS
+        .iter()
+        .map(|i| i.name)
+        .collect();
+    let held: Vec<&str> = wanted
+        .iter()
+        .copied()
+        .filter(|n| names.contains(&n.to_string()))
+        .collect();
     println!("POPOVER rows {held:?} of {wanted:?}");
-    assert_eq!(held, wanted, "the popover holds \u{a7}1's six effects, in \u{a7}1's order");
+    assert_eq!(
+        held, wanted,
+        "the popover holds \u{a7}1's six effects, in \u{a7}1's order"
+    );
     // Fire it the way the toolkit does; the button's own active state is what shows the popover.
     button.emit_by_name::<()>("activate", &[]);
     settle();
@@ -387,7 +437,10 @@ fn sec_05_cut_1_screen_toolbar_fits_the_transport_wears_glyps_and_keeps_its_word
 fn sec_05_cut_1_screen_s9_the_volume_group_wears_its_icon() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_VOLUME_ICON.load(Ordering::SeqCst), "check 3 did not run");
+    assert!(
+        RAN_VOLUME_ICON.load(Ordering::SeqCst),
+        "check 3 did not run"
+    );
 }
 
 #[test]

@@ -83,9 +83,9 @@ pub(crate) fn finish(applied: &Applied, project: &Project, status: &gtk::Label) 
     let file = crate::open_project::project_file_in(&applied.out);
     match crate::ui::window::remember_opened(&applied.root, &file) {
         Ok(remembered) => crate::ui::window::log_line(&format!(">>> opened {}", remembered.file)),
-        Err(why) => crate::ui::window::log_line(&format!(
-            "!!! could not remember this project -- {why}"
-        )),
+        Err(why) => {
+            crate::ui::window::log_line(&format!("!!! could not remember this project -- {why}"))
+        }
     }
 
     // S4's status, last: "opened — <base>".

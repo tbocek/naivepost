@@ -50,9 +50,17 @@ pub fn bands(cut_: &Cut, filmed: &[Recording]) -> StripBands {
     // A missing row collapses to zero height at the bottom of the row above it, so `band_at` can never
     // answer a band the painter did not draw.
     let lane_top = bar_bottom;
-    let lane_bottom = if cut_.lanes.is_empty() { lane_top } else { lane_top + LANE_H };
+    let lane_bottom = if cut_.lanes.is_empty() {
+        lane_top
+    } else {
+        lane_top + LANE_H
+    };
     let wave_top = lane_bottom;
-    let wave_bottom = if filmed.is_empty() { wave_top } else { wave_top + WAVE_H };
+    let wave_bottom = if filmed.is_empty() {
+        wave_top
+    } else {
+        wave_top + WAVE_H
+    };
     StripBands {
         recorders: (lane_top, lane_bottom),
         // `band_at` tests wave before bar, so a collapsed wave span can never steal the bar's row.
@@ -77,8 +85,7 @@ pub fn press_falls_inside(band: Option<&crate::cut_select::Selection>, at_second
 /// which is exactly what [`paint_bands`] draws, so the plate the eye saw is the plate the hand picked.
 fn lane_at_x(cut_: &Cut, x: f64, pps: f64) -> Option<String> {
     let at = x / pps;
-    cut_
-        .lanes
+    cut_.lanes
         .iter()
         .find(|lane| lane.at <= at && at < lane.at + lane.dur)
         .map(|lane| lane.name.clone())
@@ -125,17 +132,12 @@ pub fn press_targets_at(
     let no_lane_row = cut_.lanes.is_empty();
     match band_at(y, &drawn) {
         Band::Recorders => (
-            lane_at_x(cut_, x, pps).or_else(|| {
-                no_lane_row.then(|| seam.map(str::to_string)).flatten()
-            }),
+            lane_at_x(cut_, x, pps)
+                .or_else(|| no_lane_row.then(|| seam.map(str::to_string)).flatten()),
             None,
             on_border,
         ),
-        Band::Wave => (
-            None,
-            wave_answer(cut_, &filmed, x, pps, seam),
-            on_border,
-        ),
+        Band::Wave => (None, wave_answer(cut_, &filmed, x, pps, seam), on_border),
         Band::Ruler | Band::Bar => (None, None, on_border),
     }
 }
@@ -172,7 +174,13 @@ fn wave_plate_exists(cut_: &Cut, filmed: &[Recording]) -> bool {
 /// The wave strip's answer for this press: the RECORDING whose plate lies under x when such a plate was
 /// painted, and otherwise the caller's seam — which is what keeps flowchart M2 reachable on a strip that drew
 /// one row, where there is nothing to read a name off.
-fn wave_answer(cut_: &Cut, filmed: &[Recording], x: f64, pps: f64, seam: Option<&str>) -> Option<String> {
+fn wave_answer(
+    cut_: &Cut,
+    filmed: &[Recording],
+    x: f64,
+    pps: f64,
+    seam: Option<&str>,
+) -> Option<String> {
     if wave_plate_exists(cut_, filmed) {
         return recording_at_x(filmed, x, pps);
     }
@@ -325,7 +333,12 @@ pub fn paint_bands(cr: &cairo::Context, w: f64, cut_: &Cut, filmed: &[Recording]
                 continue;
             }
             cr.set_source_rgba(0.35, 0.45, 0.6, 0.45);
-            cr.rectangle(x, lane_top + 2.0, wide.min(w - x), lane_bottom - lane_top - 4.0);
+            cr.rectangle(
+                x,
+                lane_top + 2.0,
+                wide.min(w - x),
+                lane_bottom - lane_top - 4.0,
+            );
             let _ = cr.fill();
             cr.set_source_rgb(0.95, 0.95, 0.95);
             cr.set_font_size(9.0);
@@ -450,7 +463,9 @@ fn cached_peaks(base: &str) -> Option<Vec<u8>> {
     let root = std::env::current_dir().ok()?;
     let tree = crate::layout::Tree::new(crate::startup::session_dir(&root)).ok()?;
     let meta = std::fs::metadata(tree.wave(base)).ok()?;
-    let wave = crate::wave::read(&tree, base, meta.len() as i64, 0).ok().flatten()?;
+    let wave = crate::wave::read(&tree, base, meta.len() as i64, 0)
+        .ok()
+        .flatten()?;
     wave.chans.into_iter().next()
 }
 
@@ -489,7 +504,9 @@ pub fn open_folds() -> Vec<usize> {
 /// The folds the rule asked to open, as the cut's own fold spans. Indexing into the cut rather than
 /// reading the surface is what makes the answer the same whether the cut has two folds or none.
 fn fold_spans(cut_: &Cut, open: &[usize]) -> Vec<[f64; 2]> {
-    open.iter().filter_map(|index| cut_.folds.get(*index).copied()).collect()
+    open.iter()
+        .filter_map(|index| cut_.folds.get(*index).copied())
+        .collect()
 }
 
 /// F2.8 S2: apply a right gesture to this window's cut. Called from `window.rs`' move path, which owns
@@ -504,7 +521,14 @@ fn fold_spans(cut_: &Cut, open: &[usize]) -> Vec<[f64; 2]> {
 ///   after it write state without pushing, which is what `pushes_undo` means on this path.
 /// * the folds the rule asked to open are opened now and refolded on release ([`end_move`]).
 pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gesture) -> bool {
-    let cut_trim::Gesture::Slid { shift, row, open, dragged, .. } = gesture else {
+    let cut_trim::Gesture::Slid {
+        shift,
+        row,
+        open,
+        dragged,
+        ..
+    } = gesture
+    else {
         return false;
     };
     let mut cut_ = crate::ui::window::newest_review_cut();
@@ -537,7 +561,9 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
         DRAG_OPEN.with(|cell| *cell.borrow_mut() = open.clone());
         let mut cut_open = cut_.clone();
         for span in opened.iter() {
-            cut_open.folds.retain(|fold| !(fold[0] < span[1] && fold[1] > span[0]));
+            cut_open
+                .folds
+                .retain(|fold| !(fold[0] < span[1] && fold[1] > span[0]));
         }
         crate::ui::window::seed_review_cut(window, &cut_open);
         crate::ui::cut_folds::refresh_fold_badges(window);
@@ -557,7 +583,6 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
     true
 }
 
-
 /// S3: an unmoved right press is a click. Nothing is written, nothing is undone; the page says `this one`.
 /// `spec/inventory/cut.md`'s summary of this surface is the source of the wording.
 pub const CLICK_STATUS: &str = "this one";
@@ -575,7 +600,8 @@ pub fn end_release() {
 /// first so a list that shifted under the unfolds lands where it was, and leave every other fold alone —
 /// a fold the user had already opened is not this drag's to close.
 pub fn end_move(window: &adw::ApplicationWindow) {
-    let opened = DRAG_FOLDS.with(|cell: &std::cell::RefCell<Vec<[f64; 2]>>| cell.borrow_mut().split_off(0));
+    let opened =
+        DRAG_FOLDS.with(|cell: &std::cell::RefCell<Vec<[f64; 2]>>| cell.borrow_mut().split_off(0));
     if opened.is_empty() {
         DRAG_OPEN.with(|cell| cell.borrow_mut().clear());
         MOVE_PUSHED.with(|cell| cell.set(false));
@@ -632,11 +658,13 @@ pub fn scrub_picture(window: &adw::ApplicationWindow, at_secs: f64) -> bool {
     if crate::cut_play_back::playing_pid().is_none() {
         return false;
     }
-    let files = crate::ui::cut_record_play::files_for(window, &crate::ui::cut_record_play::runs_now());
+    let files =
+        crate::ui::cut_record_play::files_for(window, &crate::ui::cut_record_play::runs_now());
     if files.is_empty() {
         return false;
     }
-    crate::cut_play_back::cue_clips(&files, at_secs, &|line| crate::ui::window::log_line(line)).is_ok()
+    crate::cut_play_back::cue_clips(&files, at_secs, &|line| crate::ui::window::log_line(line))
+        .is_ok()
 }
 
 /// F2.8 S1 with the drag in hand remembered: `first` says whether THIS move is the hold's first, which is the

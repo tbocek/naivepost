@@ -12,11 +12,11 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
 use naivepost::audio_task;
 use naivepost::layout::Tree;
 use naivepost::separate::{self, CHUNK_MAX_SECONDS};
 use naivepost::separate_media as media;
-use crate::common;
 
 /// A stub ffmpeg that behaves like the tool where a rule depends on it AND records every invocation,
 /// one line per call, into `argv.log` next to it. `body` is what the script does after logging.
@@ -98,13 +98,19 @@ fn f1_2_s1_the_decode_runs_the_configured_ffmpeg_at_44_1khz_stereo() {
     let out = dir.join("stems/lecture.work/lecture.pcm");
     let mut log: Vec<String> = Vec::new();
 
-    let done = media::decode(&dir.join("ffmpeg").display().to_string(), &source, &out, &mut |line| {
-        log.push(line.to_string())
-    })
+    let done = media::decode(
+        &dir.join("ffmpeg").display().to_string(),
+        &source,
+        &out,
+        &mut |line| log.push(line.to_string()),
+    )
     .expect("the decode finishes");
 
     assert_eq!(done, out, "the decode hands back the file it wrote");
-    assert_eq!(std::fs::read(&out).ok().as_deref(), Some("mkv-bytes".as_bytes()));
+    assert_eq!(
+        std::fs::read(&out).ok().as_deref(),
+        Some("mkv-bytes".as_bytes())
+    );
     let argv = calls(&dir);
     assert_eq!(argv.len(), 1, "one command for one decode: {argv:?}");
     // The plan's own tail, in order: no video, the rate, the channels, the raw format.
@@ -113,8 +119,16 @@ fn f1_2_s1_the_decode_runs_the_configured_ffmpeg_at_44_1khz_stereo() {
         "the decode carries decode_plan()'s arguments verbatim: {}",
         argv[0]
     );
-    assert!(argv[0].ends_with(&out.display().to_string()), "and names its output last: {}", argv[0]);
-    assert!(argv[0].contains("-i"), "the recording is an input: {}", argv[0]);
+    assert!(
+        argv[0].ends_with(&out.display().to_string()),
+        "and names its output last: {}",
+        argv[0]
+    );
+    assert!(
+        argv[0].contains("-i"),
+        "the recording is an input: {}",
+        argv[0]
+    );
     // §8: the command line is logged before it starts, so a slow or hung tool is identifiable in the log.
     assert!(
         log.iter().any(|line| line.contains("44100")),
@@ -169,13 +183,20 @@ fn f1_2_s2_each_silence_folds_to_its_midpoint() {
         "[silencedetect @ 0x1] silence_start: 100\n",
         "[silencedetect @ 0x1] silence_end: 102\n",
     ));
-    assert_eq!(found, vec![12.0, 101.0], "both pairs at their middles: {found:?}");
+    assert_eq!(
+        found,
+        vec![12.0, 101.0],
+        "both pairs at their middles: {found:?}"
+    );
     assert_eq!(
         media::midpoints("[silencedetect @ 0x1] silence_start: 640\n"),
         vec![640.0],
         "a gap the file never leaves gets its start"
     );
-    assert!(media::midpoints("frame=  100 fps=30\n").is_empty(), "chatter alone is no silence");
+    assert!(
+        media::midpoints("frame=  100 fps=30\n").is_empty(),
+        "chatter alone is no silence"
+    );
 
     // And the leg that runs it asks for the app's own threshold, read off the module that owns it.
     let dir = stub("silences", COPY);
@@ -203,13 +224,16 @@ fn f1_2_s2_no_silence_is_an_answer_and_a_failed_measurement_is_an_error() {
         .expect("nothing quiet is not a failure");
     assert!(found.is_empty(), "no gaps, so no moved edges: {found:?}");
 
-    let broken = stub("quiet-fail", "echo \"Error opening input file\" >&2\nexit 69\n");
-    let err = media::silences(
-        &broken.join("ffmpeg").display().to_string(),
-        &decoded,
-    )
-    .expect_err("a failed measurement must not read as silence");
-    assert!(err.contains("silencedetect"), "the reason says which leg broke: {err}");
+    let broken = stub(
+        "quiet-fail",
+        "echo \"Error opening input file\" >&2\nexit 69\n",
+    );
+    let err = media::silences(&broken.join("ffmpeg").display().to_string(), &decoded)
+        .expect_err("a failed measurement must not read as silence");
+    assert!(
+        err.contains("silencedetect"),
+        "the reason says which leg broke: {err}"
+    );
 }
 
 /// S3: a rest made of several stems is mixed with [`separate::amix`], `normalize=0` included, because
@@ -237,9 +261,19 @@ fn f1_2_s3_a_chunk_is_cut_at_the_plan_times_and_named_after_its_recording() {
     let dir = stub("cut", COPY);
     let decoded = dir.join("lecture.pcm");
     write(&decoded, b"pcm-bytes");
-    let piece = dir.join("stems/lecture.work").join(media::chunk_file("lecture", 2));
-    assert_eq!(media::chunk_file("lecture", 2), "lecture-c02.wav", "lane first, then the part number");
-    assert_eq!(media::chunk_name(2), naivepost::asr::part(2), "and the bare name stays asr::part's twin");
+    let piece = dir
+        .join("stems/lecture.work")
+        .join(media::chunk_file("lecture", 2));
+    assert_eq!(
+        media::chunk_file("lecture", 2),
+        "lecture-c02.wav",
+        "lane first, then the part number"
+    );
+    assert_eq!(
+        media::chunk_name(2),
+        naivepost::asr::part(2),
+        "and the bare name stays asr::part's twin"
+    );
 
     media::cut(
         &dir.join("ffmpeg").display().to_string(),
@@ -250,7 +284,10 @@ fn f1_2_s3_a_chunk_is_cut_at_the_plan_times_and_named_after_its_recording() {
         &mut |_| {},
     )
     .expect("the cut runs");
-    assert_eq!(std::fs::read(&piece).ok().as_deref(), Some("pcm-bytes".as_bytes()));
+    assert_eq!(
+        std::fs::read(&piece).ok().as_deref(),
+        Some("pcm-bytes".as_bytes())
+    );
     let argv = calls(&dir);
     assert_eq!(argv.len(), 1, "one command per chunk: {argv:?}");
     assert!(
@@ -279,8 +316,15 @@ fn f1_2_s4_one_part_is_copied_without_calling_ffmpeg() {
         &mut |line| log.push(line.to_string()),
     )
     .expect("one part joins");
-    assert_eq!(std::fs::read(&out).ok().as_deref(), Some("VOICE-BYTES".as_bytes()));
-    assert!(calls(&dir).is_empty(), "no command was run: {:?}", calls(&dir));
+    assert_eq!(
+        std::fs::read(&out).ok().as_deref(),
+        Some("VOICE-BYTES".as_bytes())
+    );
+    assert!(
+        calls(&dir).is_empty(),
+        "no command was run: {:?}",
+        calls(&dir)
+    );
     assert!(log.is_empty(), "and nothing was logged about one: {log:?}");
 }
 
@@ -318,7 +362,11 @@ fn f1_2_s4_several_parts_join_through_a_concat_list_in_the_work_dir() {
         "the demuxer, not the filter, and a stream copy: {}",
         argv[0]
     );
-    assert!(argv[0].ends_with(&out.display().to_string()), "output last: {}", argv[0]);
+    assert!(
+        argv[0].ends_with(&out.display().to_string()),
+        "output last: {}",
+        argv[0]
+    );
 }
 
 /// S4/S5: a video's rest is muxed with the ORIGINAL picture copied and FLAC sound — the frames are
@@ -344,7 +392,11 @@ fn f1_2_s4_a_videos_rest_is_muxed_with_the_picture_copied_and_flac_sound() {
     let argv = calls(&dir);
     assert_eq!(argv.len(), 1, "one command: {argv:?}");
     for fragment in ["-map 0:v", "-map 1:a", "-c:v copy", "-c:a flac"] {
-        assert!(argv[0].contains(fragment), "{fragment} belongs in the mux: {}", argv[0]);
+        assert!(
+            argv[0].contains(fragment),
+            "{fragment} belongs in the mux: {}",
+            argv[0]
+        );
     }
     assert!(
         argv[0].contains(&format!("-i {} -i {}", source.display(), rest.display())),
@@ -361,10 +413,16 @@ fn f1_2_s4_the_work_dir_sits_beside_the_products_and_clears_on_entry_only() {
     let root = unique_dir("f12-work").join("talk.naivepost");
     let tree = Tree::new(&root).expect("a .naivepost folder is a project");
     let work = media::work_dir(&tree, "lecture");
-    assert_eq!(work, tree.stems_dir().join("lecture.work"), "stems/<base>.work");
+    assert_eq!(
+        work,
+        tree.stems_dir().join("lecture.work"),
+        "stems/<base>.work"
+    );
     assert_eq!(
         work.parent().expect("a parent"),
-        tree.split_voice("lecture").parent().expect("the voice half's folder"),
+        tree.split_voice("lecture")
+            .parent()
+            .expect("the voice half's folder"),
         "beside the halves, so one folder holds everything a split made"
     );
 
@@ -374,15 +432,20 @@ fn f1_2_s4_the_work_dir_sits_beside_the_products_and_clears_on_entry_only() {
     write(&work.join("lecture.pcm"), b"pcm");
     write(&work.join("p000.wav"), b"part");
     media::clear_work(&work).expect("the parts go");
-    assert!(!work.exists(), "the whole scratch folder is gone: {:?}", work);
+    assert!(
+        !work.exists(),
+        "the whole scratch folder is gone: {:?}",
+        work
+    );
 }
 
 /// The two-way answer: one voice, one rest, and the voice index points at the only voice there is.
 #[test]
 fn f1_2_s3_a_two_way_reply_names_its_voice_and_its_rest() {
-    let reply: serde_json::Value =
-        serde_json::from_str(r#"{"voice":"/uploads/lecture/voice.wav","rest":"/uploads/lecture/rest.wav"}"#)
-            .expect("a reply");
+    let reply: serde_json::Value = serde_json::from_str(
+        r#"{"voice":"/uploads/lecture/voice.wav","rest":"/uploads/lecture/rest.wav"}"#,
+    )
+    .expect("a reply");
     let stems = audio_task::chunk_stems(&reply).expect("the flat shape parses");
     assert_eq!(stems.voice, Some(0), "the single voice is index 0");
     assert_eq!(stems.voices.len(), 1);
@@ -400,8 +463,16 @@ fn f1_2_s3_a_named_stem_set_finds_the_voice_wherever_it_sits() {
     )
     .expect("a reply");
     let stems = audio_task::chunk_stems(&reply).expect("the named shape parses");
-    assert_eq!(stems.voice, Some(0), "index INTO the voice list, not into the reply");
-    assert_eq!(stems.voices[0].as_str(), "/u/voc.wav", "and it is the vocals file");
+    assert_eq!(
+        stems.voice,
+        Some(0),
+        "index INTO the voice list, not into the reply"
+    );
+    assert_eq!(
+        stems.voices[0].as_str(),
+        "/u/voc.wav",
+        "and it is the vocals file"
+    );
     assert_eq!(stems.rests.len(), 1);
     assert_eq!(stems.rests[0].as_str(), "/u/inst.wav");
 }
@@ -416,7 +487,12 @@ fn f1_2_s3_a_flat_four_stem_answer_keeps_three_as_the_rest_in_order() {
     )
     .expect("a reply");
     let stems = audio_task::chunk_stems(&reply).expect("the flat object parses");
-    assert_eq!(stems.voices.len(), 1, "exactly one voice: {:?}", stems.voices);
+    assert_eq!(
+        stems.voices.len(),
+        1,
+        "exactly one voice: {:?}",
+        stems.voices
+    );
     assert_eq!(stems.voices[0].as_str(), "/u/v.wav");
     assert_eq!(stems.voice, Some(0));
     let rests: Vec<&str> = stems.rests.iter().map(|path| path.as_str()).collect();
@@ -424,7 +500,10 @@ fn f1_2_s3_a_flat_four_stem_answer_keeps_three_as_the_rest_in_order() {
     // pinned here is the rule (every non-voice stem, none lost or duplicated), not the reply's order.
     assert_eq!(rests.len(), 3, "three rests: {rests:?}");
     for want in ["/u/d.wav", "/u/b.wav", "/u/o.wav"] {
-        assert!(rests.contains(&want), "{want} is part of the rest: {rests:?}");
+        assert!(
+            rests.contains(&want),
+            "{want} is part of the rest: {rests:?}"
+        );
     }
 }
 
@@ -436,7 +515,10 @@ fn f1_2_s3_a_silent_chunk_is_not_an_error() {
         serde_json::from_str(r#"{"voice":null,"silence":true}"#).expect("a reply");
     let stems = audio_task::chunk_stems(&reply).expect("silence is an answer");
     assert_eq!(stems.voice, None, "no voice to place");
-    assert!(stems.voices.is_empty() && stems.rests.is_empty(), "and no files either");
+    assert!(
+        stems.voices.is_empty() && stems.rests.is_empty(),
+        "and no files either"
+    );
 }
 
 /// A reply with no paths and no sign of meaning silence is a mistake, and it is shown: an empty answer
@@ -445,8 +527,14 @@ fn f1_2_s3_a_silent_chunk_is_not_an_error() {
 fn f1_2_s3_a_reply_with_no_paths_at_all_is_refused_showing_the_reply() {
     let reply: serde_json::Value = serde_json::from_str(r#"{"result":"busy"}"#).expect("a reply");
     let err = audio_task::chunk_stems(&reply).expect_err("that is not a stem answer");
-    assert!(err.contains("busy"), "the server's own sentence is in the reason: {err}");
-    assert!(err.contains("no stem paths"), "and it says what was missing: {err}");
+    assert!(
+        err.contains("busy"),
+        "the server's own sentence is in the reason: {err}"
+    );
+    assert!(
+        err.contains("no stem paths"),
+        "and it says what was missing: {err}"
+    );
 }
 
 /// The ceiling the plan is sized by, pinned here so a chunk count asserted anywhere else is anchored to
@@ -456,12 +544,23 @@ fn f1_2_s2_the_ceiling_the_chunks_are_cut_to_is_the_model_s_own() {
     assert_eq!(CHUNK_MAX_SECONDS, 300.0, "P.machine.separationChunkSeconds");
     // A silence nearer the nominal edge moves the cut onto itself; the plan still covers the whole file.
     let moved = separate::chunk_plan(640.0, &[298.0]);
-    assert_eq!(moved.first().expect("a first piece").1, 298.0, "moved to the silence");
-    assert_eq!(moved.last().expect("a last piece").1, 640.0, "and it ends where the file does");
+    assert_eq!(
+        moved.first().expect("a first piece").1,
+        298.0,
+        "moved to the silence"
+    );
+    assert_eq!(
+        moved.last().expect("a last piece").1,
+        640.0,
+        "and it ends where the file does"
+    );
     // No silences at all: the edges stay on the clock, and no piece breaks the ceiling.
     let plain = separate::chunk_plan(640.0, &[]);
     assert_eq!(plain, vec![(0.0, 300.0), (300.0, 600.0), (600.0, 640.0)]);
     for (from, to) in &plain {
-        assert!(to - from <= CHUNK_MAX_SECONDS, "a piece over the ceiling: {plain:?}");
+        assert!(
+            to - from <= CHUNK_MAX_SECONDS,
+            "a piece over the ceiling: {plain:?}"
+        );
     }
 }

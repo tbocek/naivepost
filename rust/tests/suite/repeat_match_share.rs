@@ -28,7 +28,10 @@ fn p_eng_repeatshare_s1_the_share_is_0_7_and_catalogued_once() {
         .into_iter()
         .find(|param| param.id == "P.eng.repeatShare")
         .expect("the share bound must be catalogued for Prepare, whose retake pass reads it");
-    assert_eq!(row.from, "prepare_decisions::TAIL_MATCH_MIN", "a row must name the constant its rule reads");
+    assert_eq!(
+        row.from, "prepare_decisions::TAIL_MATCH_MIN",
+        "a row must name the constant its rule reads"
+    );
     assert_eq!(row.spelled, "0.7");
     assert_eq!(row.spelled.parse::<f64>().unwrap(), 0.7);
 
@@ -37,7 +40,10 @@ fn p_eng_repeatshare_s1_the_share_is_0_7_and_catalogued_once() {
 
     // And exactly one row for it across all five lists — one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.repeatShare").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.repeatShare")
+            .count(),
         1,
         "P.eng.repeatShare catalogued more than once"
     );
@@ -49,19 +55,29 @@ fn p_eng_repeatshare_s1_the_share_is_0_7_and_catalogued_once() {
 fn p_eng_repeatshare_s2_seven_of_ten_meets_the_bar_exactly() {
     // P.eng.repeatShare: the bar is 7 words here, and exactly 7 arrive.
     let tail = [
-        "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett",
+        "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india",
+        "juliett",
     ];
-    let later = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf"];
+    let later = [
+        "alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf",
+    ];
 
-    let found = pd::suffix_match(&tail, &later).expect("seven of ten reaches the bar, not falls short");
-    assert_eq!(found.matched, 7, "the walk stops when the later take runs out");
+    let found =
+        pd::suffix_match(&tail, &later).expect("seven of ten reaches the bar, not falls short");
+    assert_eq!(
+        found.matched, 7,
+        "the walk stops when the later take runs out"
+    );
     assert_eq!(found.share, 0.7, "{found:?}");
     assert!(found.share >= pd::TAIL_MATCH_MIN, "{}", found.share);
     // 0.7 is not representable in binary, but 0.7 × 10 rounds to exactly 7.0 in f64 and `ceil` of that is 7 —
     // so the acceptance here is the rule being inclusive at the bar, not a float coincidence papering over a
     // shortfall. Six of ten would refuse: ceil(0.7 × 10) is 7 either way.
     let six = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot"];
-    assert!(pd::suffix_match(&tail, &six).is_none(), "six of ten is under the bar");
+    assert!(
+        pd::suffix_match(&tail, &six).is_none(),
+        "six of ten is under the bar"
+    );
 }
 
 /// S3: over and under the bar on the SAME tail length, so nothing but the count of returned words differs.
@@ -80,7 +96,10 @@ fn p_eng_repeatshare_s3_four_of_five_passes_and_three_does_not() {
     assert_eq!(four.edits, 0);
 
     let three = pd::suffix_match(&tail, &["alpha", "bravo", "charlie"]);
-    assert!(three.is_none(), "three of five is under the bar, whatever the tail's other words");
+    assert!(
+        three.is_none(),
+        "three of five is under the bar, whatever the tail's other words"
+    );
 
     // The two fixtures differ ONLY in how many tail words turned up — same tail, same leading words, one fewer
     // present — which is what makes the bar the thing that decided rather than any difference in shape.
@@ -98,7 +117,10 @@ fn p_eng_repeatshare_s4_short_tails_are_stricter_and_the_neighbours_stay_distinc
     // would refuse 0.667 against 0.7. What the ceil adds is that no partial word ever counts, so a short tail
     // effectively needs a full repeat.
     let tail3 = ["alpha", "bravo", "charlie"];
-    assert!(pd::suffix_match(&tail3, &["alpha", "bravo"]).is_none(), "two of three cannot reach 3");
+    assert!(
+        pd::suffix_match(&tail3, &["alpha", "bravo"]).is_none(),
+        "two of three cannot reach 3"
+    );
     assert!(
         pd::suffix_match(&tail3, &tail3).is_some(),
         "found whole, a three-word tail clears its own bar"
@@ -110,7 +132,11 @@ fn p_eng_repeatshare_s4_short_tails_are_stricter_and_the_neighbours_stay_distinc
     assert_eq!(pd::TAIL_SKIP_MAX, 3);
     assert_eq!(pd::TAIL_EDIT_MAX, 1);
     assert_ne!(pd::TAIL_MATCH_MIN, 3.0, "the share is not the skip count");
-    assert_ne!(pd::TAIL_MATCH_MIN, 1.0, "the share is not the edit allowance");
+    assert_ne!(
+        pd::TAIL_MATCH_MIN,
+        1.0,
+        "the share is not the edit allowance"
+    );
 
     // And each keeps its own row pointing at its own constant.
     let share_row = anywhere("P.eng.repeatShare");
@@ -124,6 +150,12 @@ fn p_eng_repeatshare_s4_short_tails_are_stricter_and_the_neighbours_stay_distinc
 
     // Guard clause: nothing to match against finds nothing, without walking anything.
     let within = ["alpha", "bravo", "charlie", "delta"];
-    assert!(pd::suffix_match(&[], &within).is_none(), "an empty tail repeats nothing");
-    assert!(pd::suffix_match(&tail3, &[]).is_none(), "an empty later take holds no repeat");
+    assert!(
+        pd::suffix_match(&[], &within).is_none(),
+        "an empty tail repeats nothing"
+    );
+    assert!(
+        pd::suffix_match(&tail3, &[]).is_none(),
+        "an empty later take holds no repeat"
+    );
 }

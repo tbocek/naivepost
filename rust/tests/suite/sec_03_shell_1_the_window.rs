@@ -20,8 +20,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
-use naivepost::project::Project;
 use naivepost::prepare;
+use naivepost::project::Project;
 use naivepost::shell::{self, Page};
 use naivepost::ui;
 
@@ -90,7 +90,10 @@ fn s2_header_badges_in_order(app: &adw::Application) {
     let header = header_of(&window);
     let left = packed_names(&header, "start");
     for name in ["new-button", "open-button", "save-button"] {
-        assert!(left.iter().any(|n| n == name), "New, Open, Save pack from the left: {left:?}");
+        assert!(
+            left.iter().any(|n| n == name),
+            "New, Open, Save pack from the left: {left:?}"
+        );
     }
     assert_eq!(
         position_of(&left, "project-title"),
@@ -106,8 +109,14 @@ fn s2_header_badges_in_order(app: &adw::Application) {
         "Open comes before Save, as §1's **2** **3**: {left:?}"
     );
     // Badge 5: the tab row IS the title widget, in the header's centre -- not a row under the header.
-    let title = header.title_widget().expect("§1 badge 5: the tab row is the header's title widget");
-    assert_eq!(title.widget_name(), "page-tabs", "the header's centre slot holds the tab row");
+    let title = header
+        .title_widget()
+        .expect("§1 badge 5: the tab row is the header's title widget");
+    assert_eq!(
+        title.widget_name(),
+        "page-tabs",
+        "the header's centre slot holds the tab row"
+    );
     assert!(
         common::widget_in(&window, "page-tabs").is_some(),
         "and it is still reachable by name from the window tree"
@@ -136,7 +145,10 @@ fn s4_project_label_names_the_open_project(app: &adw::Application) {
     let shown = title.text().to_string();
     let session = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
     let name = session.file_name().unwrap().to_string_lossy().into_owned();
-    assert!(shown.contains(&name), "the header names the open project: {shown} / {name}");
+    assert!(
+        shown.contains(&name),
+        "the header names the open project: {shown} / {name}"
+    );
     assert!(
         shown.contains(Page::Prepare.label()),
         "at full width the tab's word is part of it: {shown}"
@@ -164,7 +176,10 @@ fn s4b_tab_row_icons(app: &adw::Application) {
     );
     let root = scratch_root("tabs");
     release_last_window();
-    let model = Project { sources: vec![common::footage("project:sources/a.mkv")], ..Default::default() };
+    let model = Project {
+        sources: vec![common::footage("project:sources/a.mkv")],
+        ..Default::default()
+    };
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
     hold_last_window(window.clone());
@@ -173,7 +188,10 @@ fn s4b_tab_row_icons(app: &adw::Application) {
         common::widget_in(&window, "page-tabs").is_some(),
         "the window carries its named tab row (§1 badge 5)"
     );
-    assert!(!ui::tab_dimmed(&window, Page::Cut), "with a footage source the Cut tab is not greyed");
+    assert!(
+        !ui::tab_dimmed(&window, Page::Cut),
+        "with a footage source the Cut tab is not greyed"
+    );
     assert_eq!(
         ui::tab_tooltip(&window, Page::Cut).as_deref(),
         Some(Page::Cut.tip()),
@@ -205,12 +223,14 @@ fn s5_bottom_bar_order(app: &adw::Application) {
         run_names.contains(&"run-controls".to_string()) && position_of(&run_names, "run-controls") < position_of(&run_names, "readout-row"),
         "§1: the controls scroll sideways inside the row, with the readouts to their right: {run_names:?}"
     );
-    let controls = common::widget_in(&window, "run-controls-inner").expect("the run bar's controls");
+    let controls =
+        common::widget_in(&window, "run-controls-inner").expect("the run bar's controls");
     // §2's order lives inside the scroller now: ▶ , I'm feeling lucky , ⏹ , then the gear and the passes.
     let control_names = child_names(&controls);
     assert!(
         position_of(&control_names, "play-button") < position_of(&control_names, "lucky-button")
-            && position_of(&control_names, "lucky-button") < position_of(&control_names, "stop-button"),
+            && position_of(&control_names, "lucky-button")
+                < position_of(&control_names, "stop-button"),
         "§2's run bar still reads ▶ , I'm feeling lucky , ⏹ inside its scroller: {control_names:?}"
     );
     let progress = position_of(&run_names, "run-progress");
@@ -219,7 +239,8 @@ fn s5_bottom_bar_order(app: &adw::Application) {
         progress < readouts && readouts != usize::MAX,
         "§1: the progress bar and the readouts share the row, the bar first: {run_names:?}"
     );
-    let readout_row = common::widget_in(&window, "readout-row").expect("the readouts share the run row");
+    let readout_row =
+        common::widget_in(&window, "readout-row").expect("the readouts share the run row");
     // Exactly four children, in §1's order: Inputs readout, the `Outputs:` label, the Outputs folder button,
     // the Outputs count (`Outputs: [📁] Prepare: 5 files, 1.4 MB`). The word is a LABEL of its own now — §1
     // counts it as one of the row's parts and the button draws the icon alone.
@@ -234,9 +255,15 @@ fn s5_bottom_bar_order(app: &adw::Application) {
         "§1's order inside that row: Inputs readout, Outputs label, Outputs folder button, Outputs count"
     );
     let log = position_of(&names, "log-expander");
-    assert!(position_of(&names, "run-bar") < log, "the log expander sits under the row: {names:?}");
-    let expander: gtk::Expander = ui::log_expander(&window).expect("the shell carries a log expander");
-    let header = expander.label_widget().expect("the expander's header carries the status line");
+    assert!(
+        position_of(&names, "run-bar") < log,
+        "the log expander sits under the row: {names:?}"
+    );
+    let expander: gtk::Expander =
+        ui::log_expander(&window).expect("the shell carries a log expander");
+    let header = expander
+        .label_widget()
+        .expect("the expander's header carries the status line");
     let header_names = child_names(&header);
     assert_eq!(
         header_names.last().map(String::as_str),
@@ -257,7 +284,8 @@ fn s6b_log_messages_and_levels(app: &adw::Application) {
     let root = scratch_root("loglevel");
     let window = window(app, "Prepare");
     let view = ui::log_view(&window).expect("the expander holds the log body");
-    let expander: gtk::Expander = ui::log_expander(&window).expect("the shell carries a log expander");
+    let expander: gtk::Expander =
+        ui::log_expander(&window).expect("the shell carries a log expander");
     expander.set_expanded(true);
     let buffer = view.buffer();
     buffer.set_text("");
@@ -289,8 +317,16 @@ fn s6b_log_messages_and_levels(app: &adw::Application) {
             .filter(|line| buffer.iter_at_line(*line).is_some_and(|it| it.has_tag(&t)))
             .collect()
     };
-    assert_eq!(tagged(log_level::FAILURE_TAG), vec![1], "the failure line is the red one");
-    assert_eq!(tagged(log_level::DETAIL_TAG), vec![2], "the detail line is the dimmed one");
+    assert_eq!(
+        tagged(log_level::FAILURE_TAG),
+        vec![1],
+        "the failure line is the red one"
+    );
+    assert_eq!(
+        tagged(log_level::DETAIL_TAG),
+        vec![2],
+        "the detail line is the dimmed one"
+    );
     // "progress plain" is the ABSENCE of a tag: the progress line and the unmarked one carry none, so
     // they draw in the log view's own foreground.
     for plain in [0, 3] {
@@ -301,7 +337,10 @@ fn s6b_log_messages_and_levels(app: &adw::Application) {
             .map(|tag| tag.name().unwrap_or_default().to_string())
             .filter(|name| name == log_level::FAILURE_TAG || name == log_level::DETAIL_TAG)
             .collect();
-        assert!(level_tags.is_empty(), "line {plain} draws plain, with no level tag: {level_tags:?}");
+        assert!(
+            level_tags.is_empty(),
+            "line {plain} draws plain, with no level tag: {level_tags:?}"
+        );
     }
     window.close();
     let _ = std::fs::remove_dir_all(&root);
@@ -324,7 +363,9 @@ fn drawn_band(paned: &gtk::Paned) -> f64 {
 /// (GTK maps nothing and reports no child height), otherwise its allocated height, or what its own scroller
 /// asks for when the allocation has not landed yet — which is why a test waits for this as a condition.
 fn log_body_px(expander: &gtk::Expander) -> i32 {
-    let Some(child) = expander.child() else { return 0 };
+    let Some(child) = expander.child() else {
+        return 0;
+    };
     if !expander.is_expanded() {
         return 0;
     }
@@ -347,7 +388,10 @@ fn settle_until(limit: std::time::Duration, want: impl Fn() -> Option<f64>) -> f
             return done;
         }
         if std::time::Instant::now() >= deadline {
-            panic!("§1: the shell never settled into the asked layout within {} s", limit.as_secs());
+            panic!(
+                "§1: the shell never settled into the asked layout within {} s",
+                limit.as_secs()
+            );
         }
         glib::MainContext::default().iteration(true);
     }
@@ -377,7 +421,10 @@ fn s1d_opening_and_closing_the_log_moves_the_page_height(app: &adw::Application)
         // §1's size, so the drawn band alone can never show this.
         (log_body_px(&expander) > 0).then(|| log_body_px(&expander) as f64)
     });
-    assert!(expander.is_expanded(), "the expander's own activate opens it");
+    assert!(
+        expander.is_expanded(),
+        "the expander's own activate opens it"
+    );
     assert!(
         opened > 0.0,
         "opening the log has to give its body drawn pixels: {opened} px"
@@ -429,9 +476,17 @@ fn s7_draggable_divider(app: &adw::Application) {
         .expect("the shell splits page from bottom bar with a named divider")
         .downcast()
         .expect("the divider is a gtk::Paned");
-    assert_eq!(paned.orientation(), gtk::Orientation::Vertical, "the page sits above the bottom bar");
-    let start = paned.start_child().expect("the divider's first half is the page");
-    let end = paned.end_child().expect("the divider's second half is the bottom bar");
+    assert_eq!(
+        paned.orientation(),
+        gtk::Orientation::Vertical,
+        "the page sits above the bottom bar"
+    );
+    let start = paned
+        .start_child()
+        .expect("the divider's first half is the page");
+    let end = paned
+        .end_child()
+        .expect("the divider's second half is the bottom bar");
     assert!(
         start.downcast::<adw::ViewStack>().is_ok(),
         "the page half is the stack itself, so dragging gives IT height"
@@ -444,9 +499,14 @@ fn s7_draggable_divider(app: &adw::Application) {
     // Dragging the handle moves height: a position is a value the user sets and GTK keeps.
     let before = paned.position();
     paned.set_position(before + 120);
-    assert_eq!(paned.position(), before + 120, "the handle carries the page's height, not a fixed strip");
+    assert_eq!(
+        paned.position(),
+        before + 120,
+        "the handle carries the page's height, not a fixed strip"
+    );
     // Collapsing the log returns its height to the page half: the bottom half asks for less.
-    let expander: gtk::Expander = ui::log_expander(&window).expect("the shell carries a log expander");
+    let expander: gtk::Expander =
+        ui::log_expander(&window).expect("the shell carries a log expander");
     expander.set_expanded(true);
     settle();
     let tall = end.measure(gtk::Orientation::Vertical, -1).0;
@@ -487,7 +547,11 @@ fn s8_a_page_whose_prerequisites_vanish_moves_to_prepare(app: &adw::Application)
     window.present();
     hold_last_window(window.clone());
     settle();
-    assert_eq!(ui::state(&window).page, Page::Cut, "the check starts on the page that will lose its base");
+    assert_eq!(
+        ui::state(&window).page,
+        Page::Cut,
+        "the check starts on the page that will lose its base"
+    );
 
     // The press: the header's Rescan, fired the way GTK fires a click.
     let rescan = common::widget_in(&window, "rescan-button")
@@ -525,15 +589,37 @@ fn s9_closing_flushes_without_asking(app: &adw::Application) {
     let session = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
     std::fs::create_dir_all(&session).expect("session folder");
     let model = Project {
-        sources: vec![Source { path: "project:sources/lecture.mkv".into(), footage: true, ..Default::default() }],
+        sources: vec![Source {
+            path: "project:sources/lecture.mkv".into(),
+            footage: true,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     project::save(&model, &session).expect("session written");
     let tree = Tree::new(&session).expect("a .naivepost folder is a project");
-    cut::save(&Cut { segs: vec![Seg { s: 5.0, e: 12.0, ..Default::default() }], ..Default::default() }, &tree)
-        .expect("a cut clip, so the row is drawn");
+    cut::save(
+        &Cut {
+            segs: vec![Seg {
+                s: 5.0,
+                e: 12.0,
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+        &tree,
+    )
+    .expect("a cut clip, so the row is drawn");
     narration::save(
-        &Narration { entries: vec![Entry { s: 5.0, e: 12.0, text: "before".into(), ..Default::default() }], silent: vec![] },
+        &Narration {
+            entries: vec![Entry {
+                s: 5.0,
+                e: 12.0,
+                text: "before".into(),
+                ..Default::default()
+            }],
+            silent: vec![],
+        },
         &tree,
     )
     .expect("narration on disk");
@@ -541,7 +627,15 @@ fn s9_closing_flushes_without_asking(app: &adw::Application) {
     window.present();
     hold_last_window(window.clone());
     settle();
-    ui::set_state(naivepost::ui::NarrateState { entries: vec![Entry { s: 5.0, e: 12.0, text: "before".into(), ..Default::default() }], ..Default::default() });
+    ui::set_state(naivepost::ui::NarrateState {
+        entries: vec![Entry {
+            s: 5.0,
+            e: 12.0,
+            text: "before".into(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
     ui::refresh(&window);
     // Type into the row's live box: that marks the narration owed without waiting for the autosave beat.
     let typed = "written on the way out";
@@ -561,7 +655,9 @@ fn s9_closing_flushes_without_asking(app: &adw::Application) {
     );
     let file = tree.narration_json();
     assert!(
-        !std::fs::read_to_string(&file).unwrap_or_default().contains(typed),
+        !std::fs::read_to_string(&file)
+            .unwrap_or_default()
+            .contains(typed),
         "the edit is owed, not yet on disk"
     );
     let windows_before = app.windows().len();
@@ -570,18 +666,28 @@ fn s9_closing_flushes_without_asking(app: &adw::Application) {
     // above use after every `window.close()`.
     settle();
     assert!(
-        std::fs::read_to_string(&file).unwrap_or_default().contains(typed),
+        std::fs::read_to_string(&file)
+            .unwrap_or_default()
+            .contains(typed),
         "§1: closing flushes what is owed before it closes"
     );
-    assert_eq!(app.windows().len(), windows_before - 1, "§1: …then closes, with no prompt of its own");
+    assert_eq!(
+        app.windows().len(),
+        windows_before - 1,
+        "§1: …then closes, with no prompt of its own"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
 /// The header bar of a built window: `build_window` puts it first in the window's top box.
 fn header_of(window: &adw::ApplicationWindow) -> adw::HeaderBar {
     let content = window.content().expect("the window has content");
-    let header = content.first_child().expect("the top box starts with the header bar");
-    header.downcast().expect("the first child is the header bar")
+    let header = content
+        .first_child()
+        .expect("the top box starts with the header bar");
+    header
+        .downcast()
+        .expect("the first child is the header bar")
 }
 
 /// The widget names under the header bar that belong to one side, in the order the tree is walked.
@@ -598,12 +704,20 @@ fn packed_names(header: &adw::HeaderBar, end: &str) -> Vec<String> {
         "start" => &["new-button", "open-button", "save-button", "project-title"],
         _ => &["tab-info-button", "settings-button", "rescan-button"],
     };
-    all.into_iter().filter(|name| side.contains(&name.as_str())).collect()
+    all.into_iter()
+        .filter(|name| side.contains(&name.as_str()))
+        .collect()
 }
 
 fn collect_names(widget: &gtk::Widget, out: &mut Vec<String>) {
-    for child in widget.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
-        let Ok(child) = child.downcast::<gtk::Widget>() else { continue };
+    for child in widget
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+    {
+        let Ok(child) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         let name = child.widget_name().to_string();
         if !name.is_empty() {
             out.push(name);
@@ -632,15 +746,27 @@ fn position_of(names: &[String], name: &str) -> usize {
 fn s2b_info_describes_the_shown_tab(app: &adw::Application) {
     let window = window(app, "Prepare");
     let (label, help) = ui::tab_info_parts(&window).expect("the header ⓘ carries “label — help”");
-    assert_eq!(label, Page::Prepare.label(), "\u{24d8} names the tab showing: {label:?}");
-    assert_eq!(help, Page::Prepare.tip(), "\u{24d8} carries that tab's help text: {help:?}");
+    assert_eq!(
+        label,
+        Page::Prepare.label(),
+        "\u{24d8} names the tab showing: {label:?}"
+    );
+    assert_eq!(
+        help,
+        Page::Prepare.tip(),
+        "\u{24d8} carries that tab's help text: {help:?}"
+    );
     // A switch syncs it: the same button, the new tab's two parts.
     if let Some(stack) = ui::view_stack(&window) {
         stack.set_visible_child_name("Cut");
         settle();
     }
     let (label, help) = ui::tab_info_parts(&window).expect("the header \u{24d8} after the switch");
-    assert_eq!(label, Page::Cut.label(), "\u{24d8} followed the tab to its label: {label:?}");
+    assert_eq!(
+        label,
+        Page::Cut.label(),
+        "\u{24d8} followed the tab to its label: {label:?}"
+    );
     assert_eq!(help, Page::Cut.tip(), "and to its help text: {help:?}");
     window.close();
 }
@@ -669,7 +795,8 @@ fn s5b_outputs_folder_button_opens_the_pages_folder(app: &adw::Application) {
     settle();
     naivepost::ui::open_apply::move_row_for_test(&session, &model);
 
-    let folder = ui::outputs_folder_button(&window).expect("\u{00a7}1 badge 15: the Outputs row has its folder button");
+    let folder = ui::outputs_folder_button(&window)
+        .expect("\u{00a7}1 badge 15: the Outputs row has its folder button");
     // §6's other half of badge 15, through the widget: with a session open there IS a folder to show, so
     // the row is live and a press means something. (The fixture folder this window was built from is not
     // the launch's session folder, so `paint_readouts` leaves it inert here — as it does for any window
@@ -752,10 +879,14 @@ fn s1b_bottom_half_is_on_screen_at_the_minimum(app: &adw::Application) {
     // a collapsed `gtk::Expander` does not map its child at all (`compute_bounds` answers nothing), so the
     // body has no pixels until a click opens it — which `s1d_…` covers through the expander's own signal.
     let view = ui::log_view(&window).expect("badge 18: the expander holds the log body");
-    assert!(view.downcast_ref::<gtk::TextView>().is_some(), "and it is the read-only monospace text view §1 describes");
+    assert!(
+        view.downcast_ref::<gtk::TextView>().is_some(),
+        "and it is the read-only monospace text view §1 describes"
+    );
     // …and the band ends where the window does, so there is no empty strip under it (§1: "with no empty
     // space under them").
-    let expander = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "log-expander").expect("badge 16");
+    let expander = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "log-expander")
+        .expect("badge 16");
     assert!(
         expander.1 + expander.3 <= window.height() as f64 + 1.0,
         "the log expander must end inside the window, not past its floor: y {} h {} in a {} tall window",
@@ -770,18 +901,28 @@ fn s1b_bottom_half_is_on_screen_at_the_minimum(app: &adw::Application) {
 /// and the log starts collapsed (so the bottom half is only the run row plus that header).
 fn s1c_the_log_starts_collapsed_with_the_status_in_its_header(app: &adw::Application) {
     let window = window(app, "Prepare");
-    let expander: gtk::Expander = ui::log_expander(&window).expect("badge 16: the shell carries a log expander");
+    let expander: gtk::Expander =
+        ui::log_expander(&window).expect("badge 16: the shell carries a log expander");
     assert!(!expander.is_expanded(), "§1: the log starts collapsed");
-    let header = expander.label_widget().expect("the expander's header carries the status line");
-    assert_eq!(header.widget_name(), "log-header", "badges 16/17 share one named header row");
-    let title_x = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "log-header").map(|(x, ..)| x);
-    let status = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "status-line").expect("badge 17 exists");
+    let header = expander
+        .label_widget()
+        .expect("the expander's header carries the status line");
+    assert_eq!(
+        header.widget_name(),
+        "log-header",
+        "badges 16/17 share one named header row"
+    );
+    let title_x = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "log-header")
+        .map(|(x, ..)| x);
+    let status = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "status-line")
+        .expect("badge 17 exists");
     assert!(
         status.0 > title_x.unwrap_or_default(),
         "§1: the status line sits at the expander header's RIGHT end, not beside the word Log: {status:?} vs {title_x:?}"
     );
     // And it is inside the band, not stranded at the window's bottom-left edge.
-    let band = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "log-expander").expect("badge 16");
+    let band = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "log-expander")
+        .expect("badge 16");
     assert!(
         status.1 >= band.1 && status.1 <= band.1 + band.3,
         "badge 17 belongs to the expander's header row: status y {} vs expander y {} h {}",
@@ -795,7 +936,9 @@ fn s1c_the_log_starts_collapsed_with_the_status_in_its_header(app: &adw::Applica
 /// §1's collapsed-band sentence as one number: with the log closed, the bottom half is EXACTLY the run-bar
 /// row plus the log expander's header — nothing more, so there is no empty strip under them and the page has
 /// taken all the rest of the height. Measured on the drawn boxes at §1's minimum size.
-fn s1g_the_collapsed_bottom_half_is_exactly_the_run_row_plus_the_log_header(app: &adw::Application) {
+fn s1g_the_collapsed_bottom_half_is_exactly_the_run_row_plus_the_log_header(
+    app: &adw::Application,
+) {
     let window = window(app, "Prepare");
     let expander: gtk::Expander = ui::log_expander(&window).expect("badge 16");
     assert!(!expander.is_expanded(), "§1: the log starts collapsed");
@@ -818,9 +961,15 @@ fn s1g_the_collapsed_bottom_half_is_exactly_the_run_row_plus_the_log_header(app:
     let (_ex, ey, _ew, eh) = shot("log-expander");
     assert!(
         (ey + eh - window.height() as f64).abs() <= 2.0,
-        "§1: no empty space under the collapsed log: expander ends at {:.0} in a {} tall window", ey + eh, window.height());
+        "§1: no empty space under the collapsed log: expander ends at {:.0} in a {} tall window",
+        ey + eh,
+        window.height()
+    );
     // The band is a real box, not a sliver: it holds both widgets it counts.
-    assert!(w > 0.0 && h > 0.0 && x >= 0.0 && y >= 0.0, "the bottom bar is drawn: {x} {y} {w} {h}");
+    assert!(
+        w > 0.0 && h > 0.0 && x >= 0.0 && y >= 0.0,
+        "the bottom bar is drawn: {x} {y} {w} {h}"
+    );
     window.close();
 }
 
@@ -833,9 +982,10 @@ fn s1e_the_page_names_no_extra_heading_and_shows_its_controls(app: &adw::Applica
     let window = window(app, "Prepare");
     // (a) Nothing drawn ABOVE the page's first control. `add-sources-button` is badge 9's first widget,
     // so anything painted higher than it is something §1 does not list.
-    let add_y = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "add-sources-button")
-        .expect("badge 9's first control is drawn")
-        .1;
+    let add_y =
+        ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "add-sources-button")
+            .expect("badge 9's first control is drawn")
+            .1;
     // (a) Nothing on the VISIBLE page above its first control. Only widgets inside `page-scroll-Prepare`
     // count: the window also holds every other page, and a hidden one reports a stale position.
     let scroll = common::widget_in(window.upcast_ref(), "page-scroll-Prepare")
@@ -847,7 +997,9 @@ fn s1e_the_page_names_no_extra_heading_and_shows_its_controls(app: &adw::Applica
             panic!("badge 6 is the header's ONE ⓘ; a per-page copy `{name}` is an extra control");
         }
         if !name.is_empty() {
-            if let Some((_, y, h, _)) = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), name) {
+            if let Some((_, y, h, _)) =
+                ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), name)
+            {
                 if h > 0.0 && y + h <= add_y - 1.0 {
                     panic!("something drawn above \"Add source files…\": {name} at y {y}");
                 }
@@ -860,12 +1012,19 @@ fn s1e_the_page_names_no_extra_heading_and_shows_its_controls(app: &adw::Applica
         .filter(|node| node.css_classes().iter().any(|class| class == "title-1"))
         .map(|node| format!("{node:?}"))
         .collect();
-    assert!(titles.is_empty(), "§1 gives the page no heading of its own, yet title-1 labels are drawn: {titles:?}");
+    assert!(
+        titles.is_empty(),
+        "§1 gives the page no heading of its own, yet title-1 labels are drawn: {titles:?}"
+    );
     // (b) Exactly one ⓘ in the WINDOW, and it is the header's — so this walk starts at the window.
     let mut all: Vec<String> = Vec::new();
     collect_names(window.upcast_ref(), &mut all);
     let infos: Vec<&String> = all.iter().filter(|n| *n == "tab-info-button").collect();
-    assert_eq!(infos.len(), 1, "§1 badge 6: exactly one ⓘ in the window, got {infos:?}");
+    assert_eq!(
+        infos.len(),
+        1,
+        "§1 badge 6: exactly one ⓘ in the window, got {infos:?}"
+    );
     let info = common::widget_in(&window, "tab-info-button")
         .expect("the header's ⓘ")
         .downcast::<gtk::Button>()
@@ -901,8 +1060,15 @@ fn s1f_the_frame_row_carries_every_control_the_inventory_lists(app: &adw::Applic
     let row = common::widget_in(&window, "frame-controls").expect("§4's row under the source list");
     let names = child_names(&row);
     let want = ["freq-stepper", "language-entry"];
-    let held: Vec<&&str> = want.iter().filter(|n| names.iter().any(|c| c == **n)).collect();
-    assert_eq!(held.len(), want.len(), "the row is missing controls: has {names:?}, wants {want:?}");
+    let held: Vec<&&str> = want
+        .iter()
+        .filter(|n| names.iter().any(|c| c == **n))
+        .collect();
+    assert_eq!(
+        held.len(),
+        want.len(),
+        "the row is missing controls: has {names:?}, wants {want:?}"
+    );
     for pair in want.windows(2) {
         assert!(
             position_of(&names, pair[0]) < position_of(&names, pair[1]),
@@ -926,7 +1092,10 @@ fn s1f_the_frame_row_carries_every_control_the_inventory_lists(app: &adw::Applic
         .filter_map(|o| o.downcast_ref::<gtk::Label>().map(|l| l.text().to_string()))
         .collect();
     for word in ["Freq", "Language"] {
-        assert!(texts.iter().any(|t| t == word), "the row must carry the label \"{word}\": {texts:?}");
+        assert!(
+            texts.iter().any(|t| t == word),
+            "the row must carry the label \"{word}\": {texts:?}"
+        );
     }
     window.close();
 }
@@ -972,8 +1141,13 @@ fn sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider() {
 fn s15_the_outputs_row_reads_label_button_count(app: &adw::Application) {
     let root = scratch_root("outputsrow");
     let window = window(app, "Prepare");
-    let label = ui::outputs_label(&window).expect("§1 badge 15: the row has its own Outputs: label");
-    assert_eq!(label.text().as_str(), "Outputs:", "the label says exactly the word §1 spells");
+    let label =
+        ui::outputs_label(&window).expect("§1 badge 15: the row has its own Outputs: label");
+    assert_eq!(
+        label.text().as_str(),
+        "Outputs:",
+        "the label says exactly the word §1 spells"
+    );
     let button = ui::outputs_folder_button(&window).expect("§1 badge 15: the folder button");
     assert_eq!(
         button.label().unwrap_or_default().as_str(),
@@ -988,7 +1162,7 @@ fn s15_the_outputs_row_reads_label_button_count(app: &adw::Application) {
 /// answered with no window in sight, which is what makes the rule checkable at all.
 #[test]
 fn sec_03_shell_1_the_window_s3_the_project_label_narrows_path_then_name_then_name_only() {
-    use naivepost::ui::header_title::{label_for, stage_for, APPROX_CHAR_PX, Fit};
+    use naivepost::ui::header_title::{label_for, stage_for, Fit, APPROX_CHAR_PX};
     let dir = Path::new("/home/dev/videos/02-eth.naivepost");
     assert_eq!(
         label_for(dir, "Cut", Fit::Roomy),
@@ -1007,7 +1181,10 @@ fn sec_03_shell_1_the_window_s3_the_project_label_narrows_path_then_name_then_na
     );
     // A missing half is left out, never joined with a stray separator.
     assert_eq!(label_for(Path::new(""), "Cut", Fit::Roomy), "Cut");
-    assert_eq!(label_for(Path::new("/a/b.naivepost"), "", Fit::Roomy), "/a/b.naivepost");
+    assert_eq!(
+        label_for(Path::new("/a/b.naivepost"), "", Fit::Roomy),
+        "/a/b.naivepost"
+    );
     assert_eq!(label_for(Path::new(""), "", Fit::Tightest), "");
     // And the stage follows the width the label was given: the same text stays Roomy while it fits,
     // drops one rung when half of it would fit, and the last when even that would not.
@@ -1032,10 +1209,22 @@ fn sec_03_shell_1_the_window_s15_the_count_reads_the_label_space_count_size() {
         shown.starts_with("Prepare: "),
         "§1 spells the row `Prepare: 5 files, 1.4 MB` — label, ONE space, count: {shown:?}"
     );
-    let (label, body) = shown.split_once(' ').expect("label and count separated by a space");
-    assert_eq!(label, prepare::OUTPUTS_LABEL, "exactly one space joins them: {shown:?}");
-    assert!(!body.starts_with(' '), "no double blank after the label: {shown:?}");
-    assert!(!body.contains(':'), "the count carries no prefix of its own: {shown:?}");
+    let (label, body) = shown
+        .split_once(' ')
+        .expect("label and count separated by a space");
+    assert_eq!(
+        label,
+        prepare::OUTPUTS_LABEL,
+        "exactly one space joins them: {shown:?}"
+    );
+    assert!(
+        !body.starts_with(' '),
+        "no double blank after the label: {shown:?}"
+    );
+    assert!(
+        !body.contains(':'),
+        "the count carries no prefix of its own: {shown:?}"
+    );
 }
 
 /// S6: the level rule itself — `>>> ` / `!!! ` / four spaces stay what decides the LEVEL (§7 spells its
@@ -1051,15 +1240,34 @@ fn sec_03_shell_1_the_window_s6_the_log_level_rule_strips_the_marker_and_colours
     assert_eq!(log_level::body_of(">>> cut: 3 clips"), "cut: 3 clips");
     assert_eq!(log_level::body_of("!!! frames failed"), "frames failed");
     assert_eq!(log_level::body_of("    $ ffmpeg -i x"), "$ ffmpeg -i x");
-    assert_eq!(log_level::body_of("line restored to 00:11"), "line restored to 00:11");
+    assert_eq!(
+        log_level::body_of("line restored to 00:11"),
+        "line restored to 00:11"
+    );
     // §7's link line keeps the indent INSIDE its marker, so the message keeps it too.
     assert_eq!(
         log_level::body_of(">>>   this run's exchanges, images included: llm/x.html"),
         "  this run's exchanges, images included: llm/x.html"
     );
     // Which level gets which colour is one table, and the plain levels answer `None`.
-    assert_eq!(Level::Failure.tag(), Some(log_level::FAILURE_TAG), "failure is the red one");
-    assert_eq!(Level::Detail.tag(), Some(log_level::DETAIL_TAG), "detail is the dimmed one");
-    assert_eq!(Level::Progress.tag(), None, "progress is PLAIN: no tag, the theme's own colour");
-    assert_eq!(Level::Plain.tag(), None, "an unmarked line draws the same plain");
+    assert_eq!(
+        Level::Failure.tag(),
+        Some(log_level::FAILURE_TAG),
+        "failure is the red one"
+    );
+    assert_eq!(
+        Level::Detail.tag(),
+        Some(log_level::DETAIL_TAG),
+        "detail is the dimmed one"
+    );
+    assert_eq!(
+        Level::Progress.tag(),
+        None,
+        "progress is PLAIN: no tag, the theme's own colour"
+    );
+    assert_eq!(
+        Level::Plain.tag(),
+        None,
+        "an unmarked line draws the same plain"
+    );
 }

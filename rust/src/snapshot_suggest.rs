@@ -57,7 +57,11 @@ pub fn press_landed(window: &adw::ApplicationWindow) -> String {
     let walk = suggest::Walk {
         talked: vec![(2.6, 17.4), (24.2, 38.8), (45.2, 57.8)],
         silences: Vec::new(),
-        snap_points: words.iter().copied().map(|at| (at, Candidate::WordEdge)).collect(),
+        snap_points: words
+            .iter()
+            .copied()
+            .map(|at| (at, Candidate::WordEdge))
+            .collect(),
         marks: vec![(36.0, 37.0)],
     };
     // What a model would have stamped: seconds copied off the request's timeline, each one between two

@@ -90,7 +90,10 @@ pub fn ensure(
         return Ok(out);
     }
     if !source.exists() {
-        return Err(format!("{}: the recording named by the row is not there", source.display()));
+        return Err(format!(
+            "{}: the recording named by the row is not there",
+            source.display()
+        ));
     }
     decode(configured_ffmpeg, source, &out, log)?;
     Ok(out)

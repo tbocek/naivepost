@@ -26,8 +26,7 @@ pub const BUSY_REFUSAL: &str = "a run is already active \u{2014} stop it first (
 /// S4's skip sentences, in the spec's own wording (em dash U+2014).
 pub const CUT_SKIPPED: &str =
     ">>> run: Cut skipped \u{2014} the cut has hand edits, which are kept";
-pub const NARRATE_SKIPPED: &str =
-    ">>> run: Narrate skipped \u{2014} this video has no narration";
+pub const NARRATE_SKIPPED: &str = ">>> run: Narrate skipped \u{2014} this video has no narration";
 
 /// The button's label. §03 names the control by this phrase and the prototype's run-bar image shows it
 /// as text beside the gears, so the words go on the button rather than being implied by an icon.
@@ -240,7 +239,10 @@ impl Chain {
             // wording. `NARRATE_SKIPPED` is kept as the drift check the branch itself asserts.
             let owned = crate::narrate_off::skips(run::Step::Narrate, true)
                 .unwrap_or_else(|| NARRATE_SKIPPED.to_string());
-            assert_eq!(owned, NARRATE_SKIPPED, "the skip line and narrate_off's must be one string");
+            assert_eq!(
+                owned, NARRATE_SKIPPED,
+                "the skip line and narrate_off's must be one string"
+            );
             return Advance::Skipped { line: owned };
         }
         if page == Page::Cut && self.hand_edits {
@@ -292,7 +294,6 @@ impl Chain {
         }
     }
 }
-
 
 /// The step a page's chain entry corresponds to, exposed so a test can pin the mapping without
 /// reaching into [`chain_steps`].

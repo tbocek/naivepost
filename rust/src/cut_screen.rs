@@ -45,7 +45,8 @@ pub fn toolbar_css() -> String {
 /// The toolbar's groups, left to right (§1: transport, preview volume, verbs, effects dropdown,
 /// history, zoom). The window builds one box per entry in this order, which is what makes the order
 /// a fact a test can hold rather than a fact about how a file happens to read.
-pub const TOOLBAR_GROUPS: [&str; 6] = ["transport", "volume", "verbs", "effects", "history", "zoom"];
+pub const TOOLBAR_GROUPS: [&str; 6] =
+    ["transport", "volume", "verbs", "effects", "history", "zoom"];
 
 // --- Thumbnail size (§A's idle row: "Thumbnails [🖼− 🖼+] … ×3/4, ×4/3, clamp 40..160") ----------
 
@@ -173,15 +174,28 @@ pub fn wheel(over: WheelOver, shift: bool, dy: f64, dx: f64, view_px: f64) -> Wh
             } else {
                 0
             };
-            Wheel::StepFrames { frames: step * direction }
+            Wheel::StepFrames {
+                frames: step * direction,
+            }
         }
         WheelOver::Tracks => {
             if shift || dx.abs() > dy.abs() {
-                let direction = if dx < 0.0 { -1.0 } else if dx > 0.0 { 1.0 } else { -dy.signum() };
-                Wheel::Pan { px: pan_px(view_px) * direction }
+                let direction = if dx < 0.0 {
+                    -1.0
+                } else if dx > 0.0 {
+                    1.0
+                } else {
+                    -dy.signum()
+                };
+                Wheel::Pan {
+                    px: pan_px(view_px) * direction,
+                }
             } else {
                 // Banked deltas arrive as a count of notches, so the factor is the step to that power.
-                Wheel::Zoom { factor: ZOOM_STEP.powf(-dy), at_x: 0.0 }
+                Wheel::Zoom {
+                    factor: ZOOM_STEP.powf(-dy),
+                    at_x: 0.0,
+                }
             }
         }
     }
@@ -328,10 +342,26 @@ pub const TRANSPORT_BUTTONS: [Tool; 7] = [
         label: PLAY_GLYPH_REVIEW,
         tip: REVIEW_TIP,
     },
-    Tool { name: "line-step-back-five", label: "\u{2039}\u{2039}", tip: FRAME_TIP },
-    Tool { name: "line-step-back", label: "\u{2039}", tip: FRAME_TIP },
-    Tool { name: "line-step-forward", label: "\u{203a}", tip: FRAME_TIP },
-    Tool { name: "line-step-forward-five", label: "\u{203a}\u{203a}", tip: FRAME_TIP },
+    Tool {
+        name: "line-step-back-five",
+        label: "\u{2039}\u{2039}",
+        tip: FRAME_TIP,
+    },
+    Tool {
+        name: "line-step-back",
+        label: "\u{2039}",
+        tip: FRAME_TIP,
+    },
+    Tool {
+        name: "line-step-forward",
+        label: "\u{203a}",
+        tip: FRAME_TIP,
+    },
+    Tool {
+        name: "line-step-forward-five",
+        label: "\u{203a}\u{203a}",
+        tip: FRAME_TIP,
+    },
 ];
 
 /// Verbs, §1 items 10 → 15 in one row: ＋ Add, | Split, － Remove, ⧉ Copy, ⧉ Paste, Insert, ⇲ Lane.
@@ -383,12 +413,36 @@ pub const INSERT_TOOL: Tool = Tool {
 /// so an entry here cannot name a kind the cut cannot hold. A stop is not a seventh entry: §1 lists
 /// none, and `EffectKind` folds `"speed" | "stop"` into Speed.
 pub const EFFECT_ITEMS: [Tool; 6] = [
-    Tool { name: "effect-item-zoom", label: "\u{2295} Zoom", tip: "zoom" },
-    Tool { name: "effect-item-text", label: "\u{275d} Text", tip: "text" },
-    Tool { name: "effect-item-svg", label: "\u{25a8} SVG", tip: "svg" },
-    Tool { name: "effect-item-speed", label: "\u{23e9} Speed", tip: "speed" },
-    Tool { name: "effect-item-volume", label: "\u{1f50a} Volume", tip: "volume" },
-    Tool { name: "effect-item-label", label: "\u{1f3f7} Label", tip: "label" },
+    Tool {
+        name: "effect-item-zoom",
+        label: "\u{2295} Zoom",
+        tip: "zoom",
+    },
+    Tool {
+        name: "effect-item-text",
+        label: "\u{275d} Text",
+        tip: "text",
+    },
+    Tool {
+        name: "effect-item-svg",
+        label: "\u{25a8} SVG",
+        tip: "svg",
+    },
+    Tool {
+        name: "effect-item-speed",
+        label: "\u{23e9} Speed",
+        tip: "speed",
+    },
+    Tool {
+        name: "effect-item-volume",
+        label: "\u{1f50a} Volume",
+        tip: "volume",
+    },
+    Tool {
+        name: "effect-item-label",
+        label: "\u{1f3f7} Label",
+        tip: "label",
+    },
 ];
 
 /// History, §1 items 18 → 21 with the keys §1 spells: Undo Ctrl+Z, Redo Ctrl+Shift+Z **or Ctrl+Y**,
@@ -421,8 +475,16 @@ as they were loaded (\u{21b6} Undo brings them back)",
 
 /// Zoom, §1 item 22: − then +.
 pub const ZOOM_BUTTONS: [Tool; 2] = [
-    Tool { name: "zoom-out-button", label: "\u{2212}", tip: ZOOM_OUT_TIP },
-    Tool { name: "zoom-in-button", label: "+", tip: ZOOM_IN_TIP },
+    Tool {
+        name: "zoom-out-button",
+        label: "\u{2212}",
+        tip: ZOOM_OUT_TIP,
+    },
+    Tool {
+        name: "zoom-in-button",
+        label: "+",
+        tip: ZOOM_IN_TIP,
+    },
 ];
 
 /// Which of the four history buttons may be pressed right now, in [`HISTORY_BUTTONS`]' order:
@@ -472,7 +534,13 @@ pub fn readout_widget(label: &str) -> String {
     let spelled = label.replace('\u{00d7}', " times");
     let slug: String = spelled
         .chars()
-        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect();
     let slug = slug.trim_matches('-').replace("--", "-");
     format!("cut-readout-{slug}")
@@ -518,7 +586,13 @@ pub fn cut_seconds(cut: &Cut) -> f64 {
 pub fn cut_seconds_at_1x(cut: &Cut) -> f64 {
     cut.segs
         .iter()
-        .map(|seg| if seg.is_insert() { seg.dur } else { seg.e - seg.s })
+        .map(|seg| {
+            if seg.is_insert() {
+                seg.dur
+            } else {
+                seg.e - seg.s
+            }
+        })
         .sum()
 }
 
@@ -561,13 +635,41 @@ pub fn idle_readouts(
             value: format!("{thumb_px} px"),
             tip: "smaller|larger thumbnails on the tracks",
         },
-        Readout { label: "Aspect ratio", value: aspect.to_string(), tip: "" },
-        Readout { label: "Playhead", value: tools::mm_ss(playhead), tip: "" },
-        Readout { label: "Selection", value: selection, tip: "" },
-        Readout { label: "Cut", value: tools::mm_ss(cut_seconds(cut)), tip: "" },
-        Readout { label: "Cut at 1\u{00d7}", value: tools::mm_ss(cut_seconds_at_1x(cut)), tip: "" },
-        Readout { label: "Source", value: tools::mm_ss(source_seconds), tip: "" },
-        Readout { label: "Segments", value: segment_count(cut).to_string(), tip: "" },
+        Readout {
+            label: "Aspect ratio",
+            value: aspect.to_string(),
+            tip: "",
+        },
+        Readout {
+            label: "Playhead",
+            value: tools::mm_ss(playhead),
+            tip: "",
+        },
+        Readout {
+            label: "Selection",
+            value: selection,
+            tip: "",
+        },
+        Readout {
+            label: "Cut",
+            value: tools::mm_ss(cut_seconds(cut)),
+            tip: "",
+        },
+        Readout {
+            label: "Cut at 1\u{00d7}",
+            value: tools::mm_ss(cut_seconds_at_1x(cut)),
+            tip: "",
+        },
+        Readout {
+            label: "Source",
+            value: tools::mm_ss(source_seconds),
+            tip: "",
+        },
+        Readout {
+            label: "Segments",
+            value: segment_count(cut).to_string(),
+            tip: "",
+        },
     ]
 }
 
@@ -664,5 +766,6 @@ pub fn visible_window(offset_px: f64, view_px: f64, pps: f64, filmed_px: f64) ->
 
 /// ✚ Effect ▾ — §1 item 17's dropdown. The tooltip says what the six entries are for, since the
 /// button's own label cannot.
-pub const EFFECT_MENU_TIP: &str = "add an effect over the seconds under the red line \u{2014} zoom, text, \
+pub const EFFECT_MENU_TIP: &str =
+    "add an effect over the seconds under the red line \u{2014} zoom, text, \
 a drawing, a speed change, a volume or a label";

@@ -267,7 +267,9 @@ pub struct Run {
 pub enum Finish {
     Done,
     /// The step's own refusal (F1.1/F2.14/F4.1/F5.1 refuse at their own start) — not the bar's.
-    Refused { reason: String },
+    Refused {
+        reason: String,
+    },
 }
 
 /// What one press of ▶ did. The UI draws from this and forwards it; it decides nothing.
@@ -318,8 +320,8 @@ impl RunBar {
         // the spec says one press ends both, so after killing playback the code falls through to the
         // run below and the status ends on "stopping…", not "playback stopped". Turning this into
         // `return Stopped::TransportOnly` here would make ⏹ take two presses to stop a run.
-        let stopped_playback = transport_for(page, transport)
-            .is_some_and(|t| t.playing || t.cued());
+        let stopped_playback =
+            transport_for(page, transport).is_some_and(|t| t.playing || t.cued());
         if stopped_playback {
             self.status = PLAYBACK_STOPPED.to_string();
         }
@@ -446,9 +448,8 @@ pub fn controls(running: &Option<Run>, transport: Option<Transport>) -> Controls
         || transport.is_some_and(|transport| transport.playing);
     // ⏹ has something to end if a run is under way, or a preview is playing, or one is parked part
     // way through — a started-but-paused preview still needs ending.
-    let stop_sensitive = running.is_some()
-        || busy
-        || transport.is_some_and(|transport| transport.cued());
+    let stop_sensitive =
+        running.is_some() || busy || transport.is_some_and(|transport| transport.cued());
     // A paused run is still a run, so the gears gate reads `running.is_some()` rather than `busy`:
     // parking a run does not free the bar for a chain.
     let run_alive = running.is_some() || transport.is_some_and(|transport| transport.playing);

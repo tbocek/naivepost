@@ -14,14 +14,14 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, hold_last_window, release_last_window, settle, tape, widget_in};
 use gtk4 as gtk;
 use naivepost::cut::{Cut, EffectKind, Fx};
 use naivepost::shell::Page;
 use naivepost::timeline::Recording;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, tape, widget_in};
 
 static RAN_EMPTY_LANE: AtomicBool = AtomicBool::new(false);
 static RAN_BAR_IN_ROW: AtomicBool = AtomicBool::new(false);
@@ -94,17 +94,29 @@ fn held_caption() -> Fx {
 /// ruler sit above both, which is why the older "under the band, above the camera rows" seat was wrong.
 fn the_lane_sits_under_the_frame(app: &adw::Application) {
     let window = cut_page(app, &tape(), &Cut::default());
-    assert!(widget_in(&window, "preview-panel").is_some(), "the Cut page drew the preview panel");
-    let lane_box = widget_in(&window, "effects-lane").expect("the Cut page drew the effects-lane holder");
-    let parent = lane_box.parent().expect("the lane is packed in the page box");
+    assert!(
+        widget_in(&window, "preview-panel").is_some(),
+        "the Cut page drew the preview panel"
+    );
+    let lane_box =
+        widget_in(&window, "effects-lane").expect("the Cut page drew the effects-lane holder");
+    let parent = lane_box
+        .parent()
+        .expect("the lane is packed in the page box");
     let mut order: Vec<String> = Vec::new();
     let mut child = parent.first_child();
     while let Some(node) = child {
         order.push(node.widget_name().to_string());
         child = node.next_sibling();
     }
-    let panel_at = order.iter().position(|n| n == "preview-panel").expect("the page drew the preview panel");
-    let lane_at = order.iter().position(|n| n == "effects-lane").expect("effects-lane is in the page box");
+    let panel_at = order
+        .iter()
+        .position(|n| n == "preview-panel")
+        .expect("the page drew the preview panel");
+    let lane_at = order
+        .iter()
+        .position(|n| n == "effects-lane")
+        .expect("effects-lane is in the page box");
     assert_eq!(
         lane_at,
         panel_at + 1,
@@ -131,7 +143,10 @@ fn lane_preview_round(app: &adw::Application) {
         1,
         "an empty cut leaves the lane one row deep, not zero-height"
     );
-    assert!(holds(&lane, "fx-lane-row-0"), "that row is named fx-lane-row-0");
+    assert!(
+        holds(&lane, "fx-lane-row-0"),
+        "that row is named fx-lane-row-0"
+    );
     RAN_EMPTY_LANE.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -150,7 +165,11 @@ fn lane_preview_round(app: &adw::Application) {
         "the press alone adds no record -- the loudness is still an unanswered question"
     );
     click(&window, "volume-apply-button");
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 1, "Apply put one record on the cut");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        1,
+        "Apply put one record on the cut"
+    );
     let row = widget_in(&window, "fx-lane-row-0").expect("row 0 exists after the click");
     assert!(
         holds(&row, "fx-bar-0"),
@@ -182,12 +201,18 @@ fn lane_preview_round(app: &adw::Application) {
         "the held overlay draws full, got {}",
         held_overlay.opacity()
     );
-    assert!(held_overlay.has_css_class("held-effect"), "and carries the dashed outline class");
+    assert!(
+        held_overlay.has_css_class("held-effect"),
+        "and carries the dashed outline class"
+    );
     // Put it down the way the app does — the effects lane takes it — and the class must be GONE, not left over.
     ui::press_fx_lane(&window);
     ui::refresh_effects_lane(&window);
     settle();
-    assert!(ui::held_effect().is_none(), "the lane took the effect out of hand");
+    assert!(
+        ui::held_effect().is_none(),
+        "the lane took the effect out of hand"
+    );
     assert!(
         !widget_in(&window, "preview-overlay-0")
             .map(|w| w.has_css_class("held-effect"))
@@ -201,9 +226,16 @@ fn lane_preview_round(app: &adw::Application) {
     // --- (d) Undo takes the bar away -------------------------------------------------------------
     let window = cut_page(app, &tape(), &Cut::default());
     click(&window, "effect-item-volume");
-    assert!(widget_in(&window, "fx-bar-0").is_some(), "the bar is there before the undo");
+    assert!(
+        widget_in(&window, "fx-bar-0").is_some(),
+        "the bar is there before the undo"
+    );
     click(&window, "undo-button");
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 0, "Undo took the record back");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        0,
+        "Undo took the record back"
+    );
     let lane = ui::effects_lane_box(&window)
         .expect("the lane holder survives the undo")
         .upcast::<gtk::Widget>();
@@ -221,7 +253,8 @@ fn lane_preview_round(app: &adw::Application) {
 }
 
 #[test]
-fn sec_06_effects_2_the_lane_and_the_preview_wire_the_lane_and_the_preview_draw_what_the_records_hold() {
+fn sec_06_effects_2_the_lane_and_the_preview_wire_the_lane_and_the_preview_draw_what_the_records_hold(
+) {
     // Pin cwd to our own temp root BEFORE anything builds.
     let root = std::env::temp_dir().join(format!("np-lane-{}", std::process::id()));
     std::fs::create_dir_all(&root).expect("temp root created");
@@ -239,11 +272,26 @@ fn sec_06_effects_2_the_lane_and_the_preview_wire_the_lane_and_the_preview_draw_
         app.run_with_args::<String>(&[]);
     });
 
-    assert!(RAN_EMPTY_LANE.load(Ordering::SeqCst), "the empty-lane check never ran");
-    assert!(RAN_BAR_IN_ROW.load(Ordering::SeqCst), "the bar-in-row check never ran");
-    assert!(RAN_HELD_OVERLAY.load(Ordering::SeqCst), "the held-overlay check never ran");
-    assert!(RAN_UNDO_TAKES_BAR.load(Ordering::SeqCst), "the undo-takes-the-bar check never ran");
-    assert!(RAN_SEAT.load(Ordering::SeqCst), "the lane-seat check never ran");
+    assert!(
+        RAN_EMPTY_LANE.load(Ordering::SeqCst),
+        "the empty-lane check never ran"
+    );
+    assert!(
+        RAN_BAR_IN_ROW.load(Ordering::SeqCst),
+        "the bar-in-row check never ran"
+    );
+    assert!(
+        RAN_HELD_OVERLAY.load(Ordering::SeqCst),
+        "the held-overlay check never ran"
+    );
+    assert!(
+        RAN_UNDO_TAKES_BAR.load(Ordering::SeqCst),
+        "the undo-takes-the-bar check never ran"
+    );
+    assert!(
+        RAN_SEAT.load(Ordering::SeqCst),
+        "the lane-seat check never ran"
+    );
     // Silence the unused-import lint for the kind the fixtures spell as a string.
     let _ = EffectKind::Text;
 }

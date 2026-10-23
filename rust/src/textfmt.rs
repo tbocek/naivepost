@@ -143,8 +143,13 @@ pub fn read_lines(path: &Path) -> Result<Vec<Line>, String> {
         let fields: Vec<&str> = row.splitn(4, '\t').collect();
         // splitn(4) keeps a tab inside the text with the text, which is why the count is
         // tested as "at least" rather than equal.
-        let [start, end, speaker, text] = <[&str; 4]>::try_from(fields.as_slice())
-            .map_err(|_| format!("{}: {row}: expected start, end, speaker and text", path.display()))?;
+        let [start, end, speaker, text] =
+            <[&str; 4]>::try_from(fields.as_slice()).map_err(|_| {
+                format!(
+                    "{}: {row}: expected start, end, speaker and text",
+                    path.display()
+                )
+            })?;
         out.push(Line {
             start: number(start, path, row)?,
             end: number(end, path, row)?,
@@ -182,9 +187,12 @@ pub fn read_session(path: &Path) -> Result<Vec<SessionLine>, String> {
     let mut out = Vec::new();
     for row in rows(&text) {
         let fields: Vec<&str> = row.splitn(5, '\t').collect();
-        let [start, end, source, who, text] = <[&str; 5]>::try_from(fields.as_slice())
-            .map_err(|_| {
-                format!("{}: {row}: expected start, end, source, speaker and text", path.display())
+        let [start, end, source, who, text] =
+            <[&str; 5]>::try_from(fields.as_slice()).map_err(|_| {
+                format!(
+                    "{}: {row}: expected start, end, source, speaker and text",
+                    path.display()
+                )
             })?;
         out.push(SessionLine {
             start: number(start, path, row)?,
@@ -253,7 +261,12 @@ pub fn read_events(path: &Path) -> Result<Vec<FrameEvent>, String> {
         let (start, end, text): (&str, Option<&str>, &str) = match fields.as_slice() {
             [start, end, text] => (*start, Some(*end), *text),
             [start, text] => (*start, None, *text),
-            _ => return Err(format!("{}: {row}: expected start, end and text", path.display())),
+            _ => {
+                return Err(format!(
+                    "{}: {row}: expected start, end and text",
+                    path.display()
+                ))
+            }
         };
         let start = number(start, path, row)?;
         let end = match end {
@@ -268,7 +281,11 @@ pub fn read_events(path: &Path) -> Result<Vec<FrameEvent>, String> {
             }
             continue;
         }
-        out.push(FrameEvent { start, end, text: text.to_string() });
+        out.push(FrameEvent {
+            start,
+            end,
+            text: text.to_string(),
+        });
     }
     Ok(out)
 }
@@ -321,11 +338,21 @@ pub fn read_retakes(path: &Path) -> Result<Vec<Retake>, String> {
             continue;
         }
         // The prototype parses the first three and drops the line if any fails.
-        let (Ok(s), Ok(e), Ok(again)) = (f[0].parse::<f64>(), f[1].parse::<f64>(), f[2].parse::<f64>())
-        else {
+        let (Ok(s), Ok(e), Ok(again)) = (
+            f[0].parse::<f64>(),
+            f[1].parse::<f64>(),
+            f[2].parse::<f64>(),
+        ) else {
             continue;
         };
-        let mut mark = Retake { s, e, again, to: e, text: String::new(), whole: String::new() };
+        let mut mark = Retake {
+            s,
+            e,
+            again,
+            to: e,
+            text: String::new(),
+            whole: String::new(),
+        };
         match f.len() {
             3 => {}
             4 => mark.text = f[3].to_string(),
@@ -442,7 +469,11 @@ fn marker_len(text: &str) -> Option<usize> {
     // `|cut N|`: a space, a count, a closing pipe.
     if let Some(inner) = rest.strip_prefix(' ') {
         let end = inner.find('|')?;
-        return inner[..end].trim().parse::<usize>().ok().map(|_| "|cut ".len() + end + 1);
+        return inner[..end]
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .map(|_| "|cut ".len() + end + 1);
     }
     // `|cut|`, and every further field glued to it without a space. A field runs from its
     // opening pipe to the next one, spaces inside included — which is exactly why the words
@@ -474,7 +505,7 @@ fn cut_count(marker: &str) -> usize {
 
 /// A time column: a number, or an error naming the file and the row.
 fn number(field: &str, path: &Path, row: &str) -> Result<f64, String> {
-    field.parse::<f64>().map_err(|_| {
-        format!("{}: {row}: {field:?} is not a time", path.display())
-    })
+    field
+        .parse::<f64>()
+        .map_err(|_| format!("{}: {row}: {field:?} is not a time", path.display()))
 }

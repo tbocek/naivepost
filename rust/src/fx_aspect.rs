@@ -66,7 +66,8 @@ pub fn stored(choice: &str) -> String {
 // --- the three branches: what to store, what to add, what to say ------------------------------------------------
 
 /// F3.2 (`source`): the report for the footage's own shape, quoted whole by the spec's last sentence.
-const SOURCE_STATUS: &str = "aspect: the source's own \u{2014} the video comes out the shape it was filmed";
+const SOURCE_STATUS: &str =
+    "aspect: the source's own \u{2014} the video comes out the shape it was filmed";
 
 /// What picking a shape did: the aspect to store, the zoom to add (F3.2 adds one in exactly one branch), and the
 /// line the page prints. The three branches of the flowchart differ only in these three answers.
@@ -89,7 +90,11 @@ pub fn choose(current: &Cut, choice: &str) -> Chosen {
         // Nothing added, and nothing taken away: a pick of `source` says what shape the video comes out, not that
         // someone's zooms were a mistake. A staying zoom on the lane still reframes the footage inside those bars,
         // and only its own round (F3.8) removes it.
-        return Chosen { aspect: String::new(), zoom: None, status: SOURCE_STATUS.to_string() };
+        return Chosen {
+            aspect: String::new(),
+            zoom: None,
+            status: SOURCE_STATUS.to_string(),
+        };
     }
 
     if fx_zoom::a_staying_zoom_exists(&current.fx) {
@@ -109,7 +114,11 @@ pub fn choose(current: &Cut, choice: &str) -> Chosen {
     Chosen {
         aspect: stored(choice),
         zoom: Some(fx_zoom::new_zoom(
-            (fx_zoom::SETTLED.cx, fx_zoom::SETTLED.cy, fx_zoom::SETTLED.hf),
+            (
+                fx_zoom::SETTLED.cx,
+                fx_zoom::SETTLED.cy,
+                fx_zoom::SETTLED.hf,
+            ),
             0.0,
             HOLD_SECONDS,
             true,

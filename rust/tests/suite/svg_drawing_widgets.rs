@@ -23,7 +23,9 @@ use naivepost::ui;
 
 use crate::common;
 pub use common::find_in;
-use common::{settle, status_text, entry, widget, label_text, click, cut_page_settled_first as cut_page};
+use common::{
+    click, cut_page_settled_first as cut_page, entry, label_text, settle, status_text, widget,
+};
 
 static RAN_REFUSE: AtomicBool = AtomicBool::new(false);
 static RAN_CHOOSER: AtomicBool = AtomicBool::new(false);
@@ -49,7 +51,6 @@ fn form_holder(window: &adw::ApplicationWindow) -> gtk::Box {
 fn form_visible(window: &adw::ApplicationWindow) -> bool {
     form_holder(window).get_visible()
 }
-
 
 /// Mark a stretch on the selection ground — the same seam a drag leaves behind.
 fn mark_band(window: &adw::ApplicationWindow, from: f64, to: f64) {
@@ -131,7 +132,8 @@ fn f3_5_s1_a_press_with_no_line_refuses_before_any_chooser(app: &adw::Applicatio
     // Four buttons ask for the same missing thing in the words of what each one DOES ("the effect" / "the
     // drawing" / ...), so they must NOT be interchangeable: a test keeps them apart.
     assert_ne!(
-        fx_svg::NO_LINE, fx_zoom::NO_LINE,
+        fx_svg::NO_LINE,
+        fx_zoom::NO_LINE,
         "\u{25a8} SVG's refusal is not \u{2295} Zoom's borrowed sentence"
     );
     assert!(!ui::svg_armed(), "a refusal arms nothing");
@@ -211,8 +213,8 @@ fn f3_5_s2_choosing_a_file_arms_and_names_it(app: &adw::Application) {
         !banded.contains("It starts at the red line"),
         "and makes no claim about the red line, got {banded}"
     );
-        ui::release_svg_arm_only();
-RAN_ARM.store(true, Ordering::SeqCst);
+    ui::release_svg_arm_only();
+    RAN_ARM.store(true, Ordering::SeqCst);
     window.close();
     settle();
 }
@@ -225,14 +227,17 @@ fn f3_5_s2_a_second_choice_never_disarms(app: &adw::Application) {
     // `fx_svg::chose` takes no `already_armed` precisely so this cannot toggle off (§F3.5 S2, and the
     // prototype's own comment "never a toggle-off: a file was just chosen on purpose").
     arm_with(&window, "assets/other.svg");
-    assert!(ui::svg_armed(), "still armed after a second deliberate choice");
+    assert!(
+        ui::svg_armed(),
+        "still armed after a second deliberate choice"
+    );
     assert_eq!(
         ui::svg_chosen_file().as_deref(),
         Some("assets/other.svg"),
         "and the newer drawing is the one carried forward"
     );
-        ui::release_svg_arm_only();
-RAN_NO_TOGGLE.store(true, Ordering::SeqCst);
+    ui::release_svg_arm_only();
+    RAN_NO_TOGGLE.store(true, Ordering::SeqCst);
     window.close();
     settle();
 }
@@ -265,8 +270,8 @@ fn f3_5_s3_a_click_lands_the_middle_box_not_the_lower_third(app: &adw::Applicati
         ui::review_cut_of(&window).fx.is_empty(),
         "landing a box records nothing: the file was chosen, the length not yet answered"
     );
-        ui::release_svg_arm_only();
-RAN_CLICK.store(true, Ordering::SeqCst);
+    ui::release_svg_arm_only();
+    RAN_CLICK.store(true, Ordering::SeqCst);
     window.close();
     settle();
 }
@@ -314,12 +319,9 @@ fn f3_5_s3_a_drag_keeps_its_box_and_a_selection_gives_the_seconds(app: &adw::App
         ui::zoom_form_open().is_none(),
         "and opened no zoom form while a drawing was armed"
     );
-    assert!(
-        ui::text_form_open().is_none(),
-        "nor a caption form either"
-    );
-        ui::release_svg_arm_only();
-RAN_DRAG.store(true, Ordering::SeqCst);
+    assert!(ui::text_form_open().is_none(), "nor a caption form either");
+    ui::release_svg_arm_only();
+    RAN_DRAG.store(true, Ordering::SeqCst);
     window.close();
     settle();
 }
@@ -358,8 +360,8 @@ fn f3_5_s3_the_camera_layer_stays_up_while_a_drawing_is_placed(app: &adw::Applic
         opacity_before,
         "the camera rect's opacity is exactly what it was before arming"
     );
-        ui::release_svg_arm_only();
-RAN_CAMERA.store(true, Ordering::SeqCst);
+    ui::release_svg_arm_only();
+    RAN_CAMERA.store(true, Ordering::SeqCst);
     window.close();
     settle();
 }
@@ -412,8 +414,8 @@ fn f3_5_s4_the_form_is_titled_by_its_second_and_leads_with_the_file(app: &adw::A
         fx_svg::base("assets/logo.svg"),
         "the file row shows the drawing's base name"
     );
-        ui::release_svg_arm_only();
-RAN_FIELDS.store(true, Ordering::SeqCst);
+    ui::release_svg_arm_only();
+    RAN_FIELDS.store(true, Ordering::SeqCst);
     window.close();
     settle();
 }
@@ -426,7 +428,10 @@ fn f3_5_s4_no_file_is_not_placed(app: &adw::Application) {
     // `release_svg_arm_only` clears just those two: `press_svg_cancel` would also take down whatever form a
     // previous block left open, which is right for Cancel and wrong for tidying between checks.
     ui::release_svg_arm_only();
-    assert!(!ui::svg_armed() && ui::svg_chosen_file().is_none(), "clean start");
+    assert!(
+        !ui::svg_armed() && ui::svg_chosen_file().is_none(),
+        "clean start"
+    );
     // A blank/space file is judged on trim(): the same answer as leaving the chooser alone. It REFUSES, and since
     // `chose` never toggles off, refusing also means it changed nothing about any previous arm.
     let blank = ui::svg_chosen(&window, Some("   "));
@@ -467,13 +472,20 @@ fn f3_5_s4_a_length_under_the_floor_is_refused_naming_it(app: &adw::Application)
     settle();
     // Direct door call: see the note in `f3_5_s4_no_file_is_not_placed`.
     let said = ui::press_svg_apply(&window);
-    assert_ne!(said, fx_svg::NO_FILE, "this is the LENGTH refusal, not the no-file one");
+    assert_ne!(
+        said,
+        fx_svg::NO_FILE,
+        "this is the LENGTH refusal, not the no-file one"
+    );
     assert!(
         said.contains(&fx_text::MIN_SECONDS.to_string()),
         "it names the floor ({}) it rejected against, got {said}",
         fx_text::MIN_SECONDS
     );
-    assert!(said.contains("0.10"), "and quotes the value too short, got {said}");
+    assert!(
+        said.contains("0.10"),
+        "and quotes the value too short, got {said}"
+    );
     assert!(
         ui::review_cut_of(&window).fx.is_empty(),
         "a refused Apply places nothing"
@@ -482,8 +494,8 @@ fn f3_5_s4_a_length_under_the_floor_is_refused_naming_it(app: &adw::Application)
         ui::svg_form_open().is_some() && form_visible(&window),
         "and keeps the form open with the box already drawn"
     );
-        ui::release_svg_arm_only();
-RAN_FLOOR.store(true, Ordering::SeqCst);
+    ui::release_svg_arm_only();
+    RAN_FLOOR.store(true, Ordering::SeqCst);
     window.close();
     settle();
 }
@@ -502,7 +514,10 @@ fn f3_5_s4_apply_places_one_drawing_and_one_undo_takes_it_back(app: &adw::Applic
     assert_eq!(cut_.fx.len(), 1, "one Apply, one record");
     let fx = &cut_.fx[0];
     assert_eq!(fx.kind, "svg", "of kind svg");
-    assert_eq!(fx.src, "assets/logo.svg", "carrying the chosen file as its src");
+    assert_eq!(
+        fx.src, "assets/logo.svg",
+        "carrying the chosen file as its src"
+    );
     assert_eq!(fx.t, 30.0, "at the line the box landed on");
     assert_eq!(
         (fx.cx, fx.cy, fx.wf, fx.hf),
@@ -530,7 +545,11 @@ fn f3_5_s4_apply_places_one_drawing_and_one_undo_takes_it_back(app: &adw::Applic
 /// §F3.5 S5: 512 px, transparent, one raster per file, one log line per failure.
 fn f3_5_s5_the_raster_is_512_px_transparent_and_one_per_file(app: &adw::Application) {
     // // effects.previewRasterPx
-    assert_eq!(fx_svg::PREVIEW_RASTER_PX, 512.0, "the preview copy is 512 px");
+    assert_eq!(
+        fx_svg::PREVIEW_RASTER_PX,
+        512.0,
+        "the preview copy is 512 px"
+    );
     let window = land_click_form(app, 30.0);
     assert!(
         label_text(&window, "svg-preview-raster-note").contains("512"),
@@ -538,7 +557,9 @@ fn f3_5_s5_the_raster_is_512_px_transparent_and_one_per_file(app: &adw::Applicat
     );
 
     let argv = fx_svg::ffmpeg_raster("ffmpeg", "a.svg", "out.png");
-    for flag in ["-width", "512", "-height", "-keep_ar", "1", "-pix_fmt", "rgba"] {
+    for flag in [
+        "-width", "512", "-height", "-keep_ar", "1", "-pix_fmt", "rgba",
+    ] {
         assert!(
             argv.iter().any(|arg| arg == flag),
             "the ffmpeg vector carries {flag}, so the drawing is sized and kept transparent: {argv:?}"
@@ -562,7 +583,11 @@ fn f3_5_s5_the_raster_is_512_px_transparent_and_one_per_file(app: &adw::Applicat
         fx_svg::Slot::Ready,
         "once made it is never asked again -- six placements, one run"
     );
-    assert_eq!(cache.len(), 1, "one entry per file, the invariant §A.5 states");
+    assert_eq!(
+        cache.len(),
+        1,
+        "one entry per file, the invariant §A.5 states"
+    );
 
     // Failure is SAID ONCE and the file is then left alone.
     let first = cache.failure_line("broken.svg", "no such file");
@@ -596,20 +621,56 @@ fn f3_5_the_drawing_flow_is_wired_through_the_real_widgets() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_REFUSE.load(Ordering::SeqCst), "the S1 no-line refusal never ran");
-    assert!(RAN_CHOOSER.load(Ordering::SeqCst), "the S1 chooser never ran");
-    assert!(RAN_NO_FILE.load(Ordering::SeqCst), "the S2 cancelled-chooser check never ran");
-    assert!(RAN_ARM.load(Ordering::SeqCst), "the S2 arm-and-name check never ran");
-    assert!(RAN_NO_TOGGLE.load(Ordering::SeqCst), "the S2 no-toggle check never ran");
-    assert!(RAN_CLICK.load(Ordering::SeqCst), "the S3 click-to-middle check never ran");
-    assert!(RAN_DRAG.load(Ordering::SeqCst), "the S3 drag/dispatch check never ran");
-    assert!(RAN_CAMERA.load(Ordering::SeqCst), "the S3 camera-stays-up check never ran");
-    assert!(RAN_FIELDS.load(Ordering::SeqCst), "the S4 field-order check never ran");
-    assert!(RAN_NOT_PLACED.load(Ordering::SeqCst), "the S4 no-file check never ran");
-    assert!(RAN_FLOOR.load(Ordering::SeqCst), "the S4 length-floor check never ran");
+    assert!(
+        RAN_REFUSE.load(Ordering::SeqCst),
+        "the S1 no-line refusal never ran"
+    );
+    assert!(
+        RAN_CHOOSER.load(Ordering::SeqCst),
+        "the S1 chooser never ran"
+    );
+    assert!(
+        RAN_NO_FILE.load(Ordering::SeqCst),
+        "the S2 cancelled-chooser check never ran"
+    );
+    assert!(
+        RAN_ARM.load(Ordering::SeqCst),
+        "the S2 arm-and-name check never ran"
+    );
+    assert!(
+        RAN_NO_TOGGLE.load(Ordering::SeqCst),
+        "the S2 no-toggle check never ran"
+    );
+    assert!(
+        RAN_CLICK.load(Ordering::SeqCst),
+        "the S3 click-to-middle check never ran"
+    );
+    assert!(
+        RAN_DRAG.load(Ordering::SeqCst),
+        "the S3 drag/dispatch check never ran"
+    );
+    assert!(
+        RAN_CAMERA.load(Ordering::SeqCst),
+        "the S3 camera-stays-up check never ran"
+    );
+    assert!(
+        RAN_FIELDS.load(Ordering::SeqCst),
+        "the S4 field-order check never ran"
+    );
+    assert!(
+        RAN_NOT_PLACED.load(Ordering::SeqCst),
+        "the S4 no-file check never ran"
+    );
+    assert!(
+        RAN_FLOOR.load(Ordering::SeqCst),
+        "the S4 length-floor check never ran"
+    );
     assert!(
         RAN_APPLY_UNDO.load(Ordering::SeqCst),
         "the S4 apply-and-undo check never ran"
     );
-    assert!(RAN_RASTER.load(Ordering::SeqCst), "the S5 raster check never ran");
+    assert!(
+        RAN_RASTER.load(Ordering::SeqCst),
+        "the S5 raster check never ran"
+    );
 }

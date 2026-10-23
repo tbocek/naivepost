@@ -18,8 +18,8 @@ use naivepost::layout::Tree;
 use naivepost::params;
 use naivepost::run::{RunBar, Snapshot, Step};
 use naivepost::runqueue::{
-    self, checkpoint, Queue, Checkpoint, CHECKPOINT_POLL, PROGRESS_PULSE, TRACK_DESCRIBE, TRACK_FIX,
-    TRACK_FRAMES, TRACK_STT,
+    self, checkpoint, Checkpoint, Queue, CHECKPOINT_POLL, PROGRESS_PULSE, TRACK_DESCRIBE,
+    TRACK_FIX, TRACK_FRAMES, TRACK_STT,
 };
 use naivepost::services::{Kind, UNLOAD_IS_BEST_EFFORT, UNLOAD_TIMEOUT};
 use naivepost::shell::Page;
@@ -39,7 +39,10 @@ fn call(step: &str) -> Call {
         mode: Mode::Thinking,
         took_secs: 0,
         thinking_secs: None,
-        messages: vec![Message { role: "user".into(), parts: vec![Part::Text("x".repeat(8))] }],
+        messages: vec![Message {
+            role: "user".into(),
+            parts: vec![Part::Text("x".repeat(8))],
+        }],
         reply: "done".into(),
         reasoning: None,
         tool_calls: Vec::new(),
@@ -56,16 +59,27 @@ fn f0_5_s1_start_run_turns_running_on_and_opens_the_log() {
     let mut bar = RunBar::default();
     let mut queue = Queue::new();
     let mut log = exchanges::RunLog::new();
-    let started =
-        runqueue::start_run(&mut bar, &mut queue, &mut log, Step::Prepare, Snapshot::default());
+    let started = runqueue::start_run(
+        &mut bar,
+        &mut queue,
+        &mut log,
+        Step::Prepare,
+        Snapshot::default(),
+    );
 
     assert!(bar.running.is_some(), "S1: startRun flips running on");
-    assert_eq!(started.epoch, bar.run_epoch, "S1: the epoch reported is the bar's");
+    assert_eq!(
+        started.epoch, bar.run_epoch,
+        "S1: the epoch reported is the bar's"
+    );
     assert!(
         bar.running.as_ref().unwrap().log_expanded,
         "S1: a run that says nothing where you can see it did not run"
     );
-    assert!(!started.closed_log_page, "nothing was open, so nothing got closed");
+    assert!(
+        !started.closed_log_page,
+        "nothing was open, so nothing got closed"
+    );
 }
 
 #[test]
@@ -77,9 +91,19 @@ fn f0_5_s1_start_run_clears_a_stale_cancel_from_the_previous_run() {
     bar.cancelled = true;
     bar.stop_flag = true;
 
-    let epoch = runqueue::start_run(&mut bar, &mut queue, &mut log, Step::Suggest, Snapshot::default()).epoch;
+    let epoch = runqueue::start_run(
+        &mut bar,
+        &mut queue,
+        &mut log,
+        Step::Suggest,
+        Snapshot::default(),
+    )
+    .epoch;
 
-    assert!(!bar.cancelled, "S1: the cancel flag is cleared for the new run");
+    assert!(
+        !bar.cancelled,
+        "S1: the cancel flag is cleared for the new run"
+    );
     assert!(!bar.stop_flag, "S1: the stop flag is cleared too");
     assert_eq!(epoch, bar.run_epoch);
     // And the stale pairing cannot be reconstructed: the old epoch is not the current one.
@@ -105,10 +129,20 @@ fn f0_5_s1_start_run_resets_the_queue_it_inherits() {
     queue.prog(TRACK_STT, 0.75, "recognising");
     assert!(queue.fraction() > 0.5, "the seeded run has moved the bar");
 
-    runqueue::start_run(&mut bar, &mut queue, &mut log, Step::Produce, Snapshot::default());
+    runqueue::start_run(
+        &mut bar,
+        &mut queue,
+        &mut log,
+        Step::Produce,
+        Snapshot::default(),
+    );
 
     assert_eq!(queue.fraction(), 0.0, "S1: the queue is reset to zero");
-    assert_eq!(queue.text(), "", "S1: and says nothing until a job is put on it");
+    assert_eq!(
+        queue.text(),
+        "",
+        "S1: and says nothing until a job is put on it"
+    );
 }
 
 #[test]
@@ -122,10 +156,22 @@ fn f0_5_s1_start_run_closes_the_model_log_page() {
     log.record(&t, "0925-120000", "Describe", &call("Describe"));
     assert!(log.is_open(), "a call opened the run's exchange page");
 
-    let started = runqueue::start_run(&mut bar, &mut queue, &mut log, Step::Prepare, Snapshot::default());
+    let started = runqueue::start_run(
+        &mut bar,
+        &mut queue,
+        &mut log,
+        Step::Prepare,
+        Snapshot::default(),
+    );
 
-    assert!(started.closed_log_page, "S1 reports that a page had to be closed");
-    assert!(!log.is_open(), "S1: the model log page is closed at the start of the next run");
+    assert!(
+        started.closed_log_page,
+        "S1 reports that a page had to be closed"
+    );
+    assert!(
+        !log.is_open(),
+        "S1: the model log page is closed at the start of the next run"
+    );
     assert_eq!(log.page_rel(), None);
 }
 
@@ -147,13 +193,28 @@ fn f0_5_s1_the_cancel_context_is_freshened_before_the_queue_reset() {
     queue.push(TRACK_FIX, 3, "block");
     queue.prog(TRACK_FIX, 1.0, "fixing block 3/3");
 
-    let started = runqueue::start_run(&mut bar, &mut queue, &mut log, Step::Prepare, Snapshot::default());
+    let started = runqueue::start_run(
+        &mut bar,
+        &mut queue,
+        &mut log,
+        Step::Prepare,
+        Snapshot::default(),
+    );
 
     let run = bar.running.as_ref().expect("a run stands after start_run");
-    assert!(!run.paused, "S1: the pause flag of the previous run is cleared");
-    assert!(!bar.cancelled && !bar.stop_flag, "S1: the cancel context is fresh");
+    assert!(
+        !run.paused,
+        "S1: the pause flag of the previous run is cleared"
+    );
+    assert!(
+        !bar.cancelled && !bar.stop_flag,
+        "S1: the cancel context is fresh"
+    );
     assert_eq!(queue.fraction(), 0.0, "S1: then the queue is emptied");
-    assert!(run.log_expanded, "S1: and the log opens last, over clean state");
+    assert!(
+        run.log_expanded,
+        "S1: and the log opens last, over clean state"
+    );
     assert_eq!(started.epoch, bar.run_epoch);
 }
 
@@ -172,7 +233,10 @@ fn f0_5_s2_job_push_take_prog_read_as_the_prototype_writes_them() {
     q.prog(TRACK_STT, 4.0 / 12.0, "chunk 4/12");
 
     assert_eq!(q.text(), "describe 1/2: chunk 4/12");
-    assert_eq!(q.track(TRACK_STT).tip(), "describe: task 4 of 12, 8 waiting");
+    assert_eq!(
+        q.track(TRACK_STT).tip(),
+        "describe: task 4 of 12, 8 waiting"
+    );
     assert!(
         (q.fraction() - 4.0 / 12.0).abs() < 1e-9,
         "the track's own absolute contribution is what the bar shows"
@@ -192,10 +256,18 @@ fn f0_5_s2_a_skipped_task_is_taken_too_or_the_bar_stalls() {
     for _ in 0..3 {
         q.take(TRACK_FIX);
     }
-    assert_eq!(q.track(TRACK_FIX).taken, 3, "skipped work still advances the head");
+    assert_eq!(
+        q.track(TRACK_FIX).taken,
+        3,
+        "skipped work still advances the head"
+    );
     // The position is carried by the tooltip while the short line stays on the job's kind; the count
     // lands in the words as soon as `prog` has something to say.
-    assert_eq!(q.text(), "transcript 2/2: block", "and the line counts past it");
+    assert_eq!(
+        q.text(),
+        "transcript 2/2: block",
+        "and the line counts past it"
+    );
     assert_eq!(
         q.track(TRACK_FIX).tip(),
         "transcript: task 3 of 7, 4 waiting",
@@ -204,7 +276,11 @@ fn f0_5_s2_a_skipped_task_is_taken_too_or_the_bar_stalls() {
 
     // A `prog` after the skip carries its own words instead of stacking the count on top.
     q.prog(TRACK_FIX, 3.0 / 7.0, "fixing block 3/7");
-    assert_eq!(q.text(), "transcript 2/2: fixing block 3/7", "the count is said once");
+    assert_eq!(
+        q.text(),
+        "transcript 2/2: fixing block 3/7",
+        "the count is said once"
+    );
 }
 
 #[test]
@@ -216,7 +292,10 @@ fn f0_5_s2_push_of_nothing_adds_nothing() {
     let before = q.track(TRACK_STT).clone();
     q.push(TRACK_STT, 0, "other");
     assert_eq!(q.track(TRACK_STT), &before, "zero tasks changes nothing");
-    assert_eq!(before.kind, "chunk", "and it does not overwrite the kind either");
+    assert_eq!(
+        before.kind, "chunk",
+        "and it does not overwrite the kind either"
+    );
 }
 
 #[test]
@@ -237,7 +316,10 @@ fn f0_5_s2_two_tracks_sum_into_one_bar() {
     q.prog(TRACK_FRAMES, 0.9, "extracting");
     assert_eq!(q.fraction(), 1.0, "clamped to what a bar can show");
     // Both jobs still read on the line, joined.
-    assert!(q.text().contains("speech") && q.text().contains("frames"), "two jobs, one line");
+    assert!(
+        q.text().contains("speech") && q.text().contains("frames"),
+        "two jobs, one line"
+    );
 }
 
 #[test]
@@ -297,8 +379,15 @@ fn f0_5_s2_qdone_keeps_the_half_earned_and_quiets_the_line() {
         "the earned half stays earned: {}",
         q.fraction()
     );
-    assert_eq!(q.track(TRACK_STT).line(), "speech done", "a done job says only its name");
-    assert!(q.text().contains("frames"), "and the live job still owns the words");
+    assert_eq!(
+        q.track(TRACK_STT).line(),
+        "speech done",
+        "a done job says only its name"
+    );
+    assert!(
+        q.text().contains("frames"),
+        "and the live job still owns the words"
+    );
 }
 
 #[test]
@@ -311,12 +400,19 @@ fn f0_5_s2_an_emptied_queue_is_not_an_unfilled_one() {
     filled.take(TRACK_FIX);
     filled.done(TRACK_FIX, 1.0);
     assert!(filled.track(TRACK_FIX).ever_filled);
-    assert_eq!(filled.track(TRACK_FIX).tip(), "transcript: 1 task(s), all done");
+    assert_eq!(
+        filled.track(TRACK_FIX).tip(),
+        "transcript: 1 task(s), all done"
+    );
 
     let mut never = Queue::new();
     never.job(TRACK_FIX, "transcript", 0, 0);
     assert!(!never.track(TRACK_FIX).ever_filled, "no push, no fill");
-    assert_eq!(never.track(TRACK_FIX).tip(), "", "and nothing to say in the tooltip");
+    assert_eq!(
+        never.track(TRACK_FIX).tip(),
+        "",
+        "and nothing to say in the tooltip"
+    );
 }
 
 #[test]
@@ -336,7 +432,10 @@ fn f0_5_s2_the_bar_never_goes_backwards_within_a_phase() {
         }
         q.prog(TRACK_STT, i as f64 / 20.0, "describing");
         let now = q.fraction();
-        assert!(now >= last, "the bar went backwards at task {i}: {last} -> {now}");
+        assert!(
+            now >= last,
+            "the bar went backwards at task {i}: {last} -> {now}"
+        );
         last = now;
     }
 }
@@ -397,7 +496,11 @@ fn f0_5_s2_the_joined_line_is_what_the_close_writes() {
         queue.text_and_tip().0,
         "the status row shows exactly the joined line"
     );
-    assert!(queue.text().contains("frames 1/2: frame 2/4"), "\u{a7}2's shape: {}", queue.text());
+    assert!(
+        queue.text().contains("frames 1/2: frame 2/4"),
+        "\u{a7}2's shape: {}",
+        queue.text()
+    );
 }
 
 // --- S4: endRun -------------------------------------------------------------------------------------
@@ -417,9 +520,16 @@ fn f0_5_s4_end_run_turns_running_off_and_moves_the_chain_on() {
     let ended = runqueue::end_run(&mut bar, Some(Page::Narrate));
 
     assert!(bar.running.is_none(), "S4: running is off");
-    assert_eq!(bar.status, "", "S4: the bar's sentence is cleared for what comes next");
+    assert_eq!(
+        bar.status, "",
+        "S4: the bar's sentence is cleared for what comes next"
+    );
     assert!(ended.chain_moves_on, "S4: the chain has Narrate to move to");
-    assert_eq!(ended.audio_unload, Kind::UnloadAll, "S4: and the audio unload is handed over");
+    assert_eq!(
+        ended.audio_unload,
+        Kind::UnloadAll,
+        "S4: and the audio unload is handed over"
+    );
 }
 
 #[test]

@@ -49,7 +49,10 @@ pub fn recording_path(tree: &layout::Tree, project: &Project, voice: &str) -> Op
         return None;
     }
     if let Some(slot) = voice_ref::narrator_slot(voice) {
-        let source = project.sources.iter().find(|source| source.narrator == slot as u32)?;
+        let source = project
+            .sources
+            .iter()
+            .find(|source| source.narrator == slot as u32)?;
         return Some(layout::resolve(tree.dir(), tree.dir(), &source.path));
     }
     // A voices-folder id: the file the picker copied in. The ids come off `voices::list_wavs`, which lists
@@ -82,10 +85,11 @@ fn probe_seconds(path: &Path) -> Option<f64> {
     let configured = crate::settings::from_environment()
         .map(|paths| crate::settings::read(&paths).unwrap_or_default().ffmpeg)
         .unwrap_or_default();
-    let seconds = crate::cut_lanes::probe_duration(&configured, &path.display().to_string(), &mut |line| {
-        crate::ui::window::log_line(line)
-    })
-    .ok()?;
+    let seconds =
+        crate::cut_lanes::probe_duration(&configured, &path.display().to_string(), &mut |line| {
+            crate::ui::window::log_line(line)
+        })
+        .ok()?;
     (seconds > 0.0).then_some(seconds)
 }
 

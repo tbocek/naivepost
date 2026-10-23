@@ -274,7 +274,11 @@ pub fn open(uri: &str) -> Result<(), String> {
     // start is the failure worth reporting, and `launch` reports that by panicking out of a callback
     // context, so it is caught here and handed to the fallback.
     let started = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        launcher.launch(None as Option<&gtk::Window>, None as Option<&gio::Cancellable>, |_result| {});
+        launcher.launch(
+            None as Option<&gtk::Window>,
+            None as Option<&gio::Cancellable>,
+            |_result| {},
+        );
     }));
     if started.is_ok() {
         return Ok(());

@@ -25,8 +25,14 @@ use shared::*;
 /// The two messages every §3.7 ask carries.
 fn ask_messages() -> Vec<Message> {
     vec![
-        Message { role: "system".to_string(), parts: vec![Part::Text("the rules".to_string())] },
-        Message { role: "user".to_string(), parts: vec![Part::Text("CLIP 1: 10.0 s long".to_string())] },
+        Message {
+            role: "system".to_string(),
+            parts: vec![Part::Text("the rules".to_string())],
+        },
+        Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text("CLIP 1: 10.0 s long".to_string())],
+        },
     ]
 }
 
@@ -47,7 +53,12 @@ struct Scripted {
 
 impl Scripted {
     fn new(replies: Vec<tool_loop::Turn>) -> Scripted {
-        Scripted { replies, index: 0, rounds: 0, seen: Vec::new() }
+        Scripted {
+            replies,
+            index: 0,
+            rounds: 0,
+            seen: Vec::new(),
+        }
     }
 
     fn ask(&mut self) -> impl FnMut(&[Message], &[Tool]) -> Result<tool_loop::Turn, String> + '_ {
@@ -79,7 +90,8 @@ impl Scripted {
 #[test]
 fn f6_1_s2_a_captions_round_that_calls_is_logged_and_its_call_survives() {
     naivepost::ui::window::clear_logs_for_test();
-    let caption = json!({"clip": 2, "start": 1.0, "end": 4.0, "text": "the line the model asked for"});
+    let caption =
+        json!({"clip": 2, "start": 1.0, "end": 4.0, "text": "the line the model asked for"});
     let mut scripted = Scripted::new(vec![
         // Round 1: look first, then ask for the caption — §3.7's "so a zoom can be aimed" read, plus the work.
         tool_loop::Turn {
@@ -99,7 +111,11 @@ fn f6_1_s2_a_captions_round_that_calls_is_logged_and_its_call_survives() {
             finish: false,
         },
         // Round 2: nothing more to ask.
-        tool_loop::Turn { content: String::new(), calls: Vec::new(), finish: true },
+        tool_loop::Turn {
+            content: String::new(),
+            calls: Vec::new(),
+            finish: true,
+        },
     ]);
     let mut batch = two_clips();
     let run = clip_rules_tools_leg::run_over_batch(
@@ -113,9 +129,16 @@ fn f6_1_s2_a_captions_round_that_calls_is_logged_and_its_call_survives() {
     // were put before any sink saw them, so nothing here depends on a window existing.
     let said_lines: Vec<String> = run.run.logs.clone();
     let lines_with = |needle: &str| -> Vec<String> {
-        said_lines.iter().filter(|line| line.contains(needle)).cloned().collect::<Vec<String>>()
+        said_lines
+            .iter()
+            .filter(|line| line.contains(needle))
+            .cloned()
+            .collect::<Vec<String>>()
     };
-    assert_eq!(scripted.rounds, 2, "a round that called cost exactly one more round");
+    assert_eq!(
+        scripted.rounds, 2,
+        "a round that called cost exactly one more round"
+    );
 
     // §2 S2's own wording, as the program writes it (an em dash, `round i of 8`, name directly followed by the
     // raw arguments JSON).
@@ -126,8 +149,16 @@ fn f6_1_s2_a_captions_round_that_calls_is_logged_and_its_call_survives() {
         "the round line names the step, the round and the budget: {}",
         rounds[0]
     );
-    assert!(rounds[0].contains("get_frames{"), "the call is named as `name{{args}}`: {}", rounds[0]);
-    assert!(rounds[0].contains("add_caption{"), "both calls of the round, joined: {}", rounds[0]);
+    assert!(
+        rounds[0].contains("get_frames{"),
+        "the call is named as `name{{args}}`: {}",
+        rounds[0]
+    );
+    assert!(
+        rounds[0].contains("add_caption{"),
+        "both calls of the round, joined: {}",
+        rounds[0]
+    );
     assert!(
         rounds[0].contains("\"text\":\"the line the model a"),
         "the raw arguments ride in the line, cut at 60 bytes: {}",
@@ -166,13 +197,22 @@ fn f6_1_s2_a_captions_round_that_calls_is_logged_and_its_call_survives() {
         .collect();
     assert_eq!(asked.len(), 1, "one caption call survived: {asked:?}");
     assert_eq!(asked[0].clip, 2, "for the clip the model named");
-    assert_eq!(asked[0].text, "the line the model asked for", "with the model's own words");
+    assert_eq!(
+        asked[0].text, "the line the model asked for",
+        "with the model's own words"
+    );
     let placed = naivepost::cut_captions::place(&[(1, 10.0), (2, 10.0)], &asked);
     assert!(
         matches!(placed, naivepost::cut_captions::Reply::Accepted(_)),
         "and it is placeable: {placed:?}"
     );
-    assert_eq!(run.run.outcome, tool_loop::Outcome::Finished { asked_finish: false }, "the flow ended on finish");
+    assert_eq!(
+        run.run.outcome,
+        tool_loop::Outcome::Finished {
+            asked_finish: false
+        },
+        "the flow ended on finish"
+    );
 }
 
 /// §F3.11 / §2 S2 for decorations: the model asks `get_frames` to aim a zoom, is shown the frames, and then asks
@@ -199,7 +239,11 @@ fn f6_1_s2_a_decoration_round_reads_the_frames_it_needs_then_asks() {
             }],
             finish: false,
         },
-        tool_loop::Turn { content: String::new(), calls: Vec::new(), finish: true },
+        tool_loop::Turn {
+            content: String::new(),
+            calls: Vec::new(),
+            finish: true,
+        },
     ]);
     let mut batch = two_clips();
     let run = clip_rules_tools_leg::run_over_batch(
@@ -213,19 +257,39 @@ fn f6_1_s2_a_decoration_round_reads_the_frames_it_needs_then_asks() {
     // were put before any sink saw them, so nothing here depends on a window existing.
     let said_lines: Vec<String> = run.run.logs.clone();
     let lines_with = |needle: &str| -> Vec<String> {
-        said_lines.iter().filter(|line| line.contains(needle)).cloned().collect::<Vec<String>>()
+        said_lines
+            .iter()
+            .filter(|line| line.contains(needle))
+            .cloned()
+            .collect::<Vec<String>>()
     };
     assert_eq!(scripted.rounds, 3, "read, ask, then finish: three rounds");
 
     // The read went to clip 2, and its answer named clip 2 — the model was shown what it asked to see.
     let read = lines_with("[tool call get_frames(");
     assert_eq!(read.len(), 1, "the read is noted: {read:?}");
-    assert!(read[0].contains("\"clip\":2"), "the frames answer names the clip it read: {}", read[0]);
-    assert!(!read[0].contains("\"error\""), "clip 2 is in the batch, so the read is not refused: {}", read[0]);
+    assert!(
+        read[0].contains("\"clip\":2"),
+        "the frames answer names the clip it read: {}",
+        read[0]
+    );
+    assert!(
+        !read[0].contains("\"error\""),
+        "clip 2 is in the batch, so the read is not refused: {}",
+        read[0]
+    );
     // The second round's line exists because there WAS a second round.
     let second = lines_with("round 2 of");
-    assert_eq!(second.len(), 1, "the round after the read is logged: {second:?}");
-    assert!(second[0].contains("add_effect{"), "and it names the decoration asked for: {}", second[0]);
+    assert_eq!(
+        second.len(),
+        1,
+        "the round after the read is logged: {second:?}"
+    );
+    assert!(
+        second[0].contains("add_effect{"),
+        "and it names the decoration asked for: {}",
+        second[0]
+    );
 
     // The decoration is the pass's own call shape and places with the app's defaults, not the model's numbers.
     let calls: Vec<naivepost::cut_effects_pass::Call> = run
@@ -238,9 +302,21 @@ fn f6_1_s2_a_decoration_round_reads_the_frames_it_needs_then_asks() {
         .collect();
     assert_eq!(calls.len(), 1, "one decoration survived: {calls:?}");
     let placed = naivepost::cut_effects_pass::place(&two_clips(), &calls);
-    assert!(placed.usable(), "a decoration on clip 2 places: {:?}", placed.fault);
-    assert_eq!(placed.effects.len(), 1, "one effect landed: {:?}", placed.effects);
-    assert_eq!(placed.effects[0].kind, "zoom", "the zoom the model asked for");
+    assert!(
+        placed.usable(),
+        "a decoration on clip 2 places: {:?}",
+        placed.fault
+    );
+    assert_eq!(
+        placed.effects.len(),
+        1,
+        "one effect landed: {:?}",
+        placed.effects
+    );
+    assert_eq!(
+        placed.effects[0].kind, "zoom",
+        "the zoom the model asked for"
+    );
 }
 
 /// §2 S4: a model that keeps calling never has its last round's work thrown away — the loop STOPS at the budget,
@@ -251,15 +327,18 @@ fn f6_1_s4_a_loop_that_never_stops_costs_exactly_the_round_budget() {
     // A scripted endless loop must actually be endless: one reply per round, or the list running out hands back an
     // empty turn and §3 finishes the flow instead of §4 exhausting it.
     let budget = tool_rounds();
-    let endless = vec![tool_loop::Turn {
-        content: String::new(),
-        calls: vec![naivepost::exchanges::ToolCall {
-            name: "get_frames".to_string(),
-            args: json!({"clip": 1}).to_string(),
-            result: String::new(),
-        }],
-        finish: false,
-    }; (budget as usize) + 4];
+    let endless = vec![
+        tool_loop::Turn {
+            content: String::new(),
+            calls: vec![naivepost::exchanges::ToolCall {
+                name: "get_frames".to_string(),
+                args: json!({"clip": 1}).to_string(),
+                result: String::new(),
+            }],
+            finish: false,
+        };
+        (budget as usize) + 4
+    ];
     let mut scripted = Scripted::new(endless);
     let mut batch = two_clips();
     let run = clip_rules_tools_leg::run_over_batch(
@@ -273,9 +352,17 @@ fn f6_1_s4_a_loop_that_never_stops_costs_exactly_the_round_budget() {
     // were put before any sink saw them, so nothing here depends on a window existing.
     let said_lines: Vec<String> = run.run.logs.clone();
     let lines_with = |needle: &str| -> Vec<String> {
-        said_lines.iter().filter(|line| line.contains(needle)).cloned().collect::<Vec<String>>()
+        said_lines
+            .iter()
+            .filter(|line| line.contains(needle))
+            .cloned()
+            .collect::<Vec<String>>()
     };
-    assert_eq!(run.run.outcome, tool_loop::Outcome::Exhausted, "the budget ended the flow");
+    assert_eq!(
+        run.run.outcome,
+        tool_loop::Outcome::Exhausted,
+        "the budget ended the flow"
+    );
     assert_eq!(
         scripted.rounds as u32,
         budget + 1,
@@ -285,13 +372,28 @@ fn f6_1_s4_a_loop_that_never_stops_costs_exactly_the_round_budget() {
     // §2 S4's line, in the program's own wording.
     let said = lines_with("still calling tools after");
     assert_eq!(said.len(), 1, "the exhaustion line is said once: {said:?}");
-    assert!(said[0].starts_with("!!! effects:"), "it names the step: {}", said[0]);
-    assert!(said[0].contains("the step gets no answer from this call"), "and §2's ending: {}", said[0]);
+    assert!(
+        said[0].starts_with("!!! effects:"),
+        "it names the step: {}",
+        said[0]
+    );
+    assert!(
+        said[0].contains("the step gets no answer from this call"),
+        "and §2's ending: {}",
+        said[0]
+    );
     // The step gets NO answer: nothing was placed, and the last round's calls were not run.
-    assert!(run.job_calls(&[Tool::AddEffect]).is_empty(), "a loop that never stops answers nothing");
+    assert!(
+        run.job_calls(&[Tool::AddEffect]).is_empty(),
+        "a loop that never stops answers nothing"
+    );
     // And it has no PROSE either: `prose` is how a caller reads back a §2 answer in words, so an exhausted loop
     // must hand back None rather than some earlier round's half-sentence.
-    assert_eq!(run.prose(), None, "an exhausted conversation ends without a prose answer");
+    assert_eq!(
+        run.prose(),
+        None,
+        "an exhausted conversation ends without a prose answer"
+    );
     // The other shape of the same helper: a round that CALLS and then answers in WORDS leaves that document
     // readable, which is what F3.9/F3.10/F3.11 read back when a server looks first and writes after.
     let mut prose_round = Scripted::new(vec![tool_loop::Turn {
@@ -320,7 +422,11 @@ fn f6_1_s4_a_loop_that_never_stops_costs_exactly_the_round_budget() {
     assert!(placed.effects.is_empty(), "so the cut gains no decoration");
     // The budget is spent BEFORE the last round's work: the run only carries `budget` round lines, and the round
     // after the budget never ran a tool.
-    assert_eq!(lines_with("round ").len() as u32, budget, "one line per round, no more");
+    assert_eq!(
+        lines_with("round ").len() as u32,
+        budget,
+        "one line per round, no more"
+    );
 }
 
 /// The mode the §3.7 asks send: captions thinks, speed and decorations do not — pinned here so a change to the
@@ -328,9 +434,15 @@ fn f6_1_s4_a_loop_that_never_stops_costs_exactly_the_round_budget() {
 #[test]
 fn f6_1_s2_the_modes_the_clip_passes_ask_in_are_the_ones_their_prompts_were_written_for() {
     let effects = naivepost::effects_ask::chat_body("m", "s", "u").expect("an effects body");
-    assert!(effects.contains("\"enable_thinking\":false"), "decorations ask without thinking");
+    assert!(
+        effects.contains("\"enable_thinking\":false"),
+        "decorations ask without thinking"
+    );
     let speeds = naivepost::speeds_ask::chat_body("m", "s", "u").expect("a speeds body");
-    assert!(speeds.contains("\"enable_thinking\":false"), "speeds ask without thinking");
+    assert!(
+        speeds.contains("\"enable_thinking\":false"),
+        "speeds ask without thinking"
+    );
     // The captions ask builds its body inside the ask, so its flag is read from the settings-reading path by
     // `tests/f3_9_s3_a_…`; here the check is that the two Execute-mode passes did not drift to thinking.
 }

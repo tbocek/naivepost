@@ -36,7 +36,6 @@ fn number_anywhere(id: &str) -> f64 {
         .unwrap_or_else(|_| panic!("{id} spells a number"))
 }
 
-
 /// S1: `P.eng.effectMinSelectionSeconds` = 0.2, held by `cut_speed::MIN_MARKED_SECONDS`, catalogued once under
 /// the family §10 files it in.
 #[test]
@@ -119,7 +118,11 @@ fn p_eng_effectminselectionseconds_s4_the_boundary_is_not_below_rather_than_stri
     match exact {
         cut_speed::Pressed::Stretched { t, dur } => {
             assert_eq!(t, 30.0);
-            assert_close("a band exactly at the floor", dur, cut_speed::MIN_MARKED_SECONDS);
+            assert_close(
+                "a band exactly at the floor",
+                dur,
+                cut_speed::MIN_MARKED_SECONDS,
+            );
         }
         other => panic!("a band at the floor should be a chosen stretch, got {other:?}"),
     }
@@ -164,14 +167,16 @@ fn p_eng_effectminselectionseconds_s5_one_bound_two_rows_and_four_other_floors()
     // refuses a shorter typed number over. Not the same question as whether the hand dragged.
     assert_eq!(fx_volume::MIN_SECONDS, 0.1);
     assert_ne!(
-        fx_volume::MIN_SECONDS, cut_speed::MIN_MARKED_SECONDS,
+        fx_volume::MIN_SECONDS,
+        cut_speed::MIN_MARKED_SECONDS,
         "the form's typed floor is not the marked-band floor"
     );
 
     // P.eng.minPieceSeconds (cut_select::MIN_SECONDS, 0.04): is a remainder of footage worth keeping at all.
     assert_eq!(cut_select::MIN_SECONDS, 0.04);
     assert_ne!(
-        cut_select::MIN_SECONDS, cut_speed::MIN_MARKED_SECONDS,
+        cut_select::MIN_SECONDS,
+        cut_speed::MIN_MARKED_SECONDS,
         "worth-keeping is not meant-to-drag"
     );
 
@@ -179,7 +184,8 @@ fn p_eng_effectminselectionseconds_s5_one_bound_two_rows_and_four_other_floors()
     // digits as the volume form's floor, different rule again, and neither is this one.
     assert_eq!(fx_lane::MIN_BAND_SECONDS, 0.1);
     assert_ne!(
-        fx_lane::MIN_BAND_SECONDS, cut_speed::MIN_MARKED_SECONDS,
+        fx_lane::MIN_BAND_SECONDS,
+        cut_speed::MIN_MARKED_SECONDS,
         "the drag floor is not the selection floor"
     );
 
@@ -187,7 +193,8 @@ fn p_eng_effectminselectionseconds_s5_one_bound_two_rows_and_four_other_floors()
     // left or it is dropped outright.
     assert_eq!(cut_clamp::MIN_SURVIVING_SECONDS, 1.0);
     assert_ne!(
-        cut_clamp::MIN_SURVIVING_SECONDS, cut_speed::MIN_MARKED_SECONDS,
+        cut_clamp::MIN_SURVIVING_SECONDS,
+        cut_speed::MIN_MARKED_SECONDS,
         "the drop threshold is not the selection floor"
     );
 

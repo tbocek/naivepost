@@ -12,9 +12,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
 use gtk4 as gtk;
-use crate::common;
 use naivepost::cut::{self, Seg};
 use naivepost::layout::Tree;
 use naivepost::narration::{self, Entry};
@@ -107,8 +107,7 @@ fn inputs_text(window: &adw::ApplicationWindow) -> String {
 }
 
 fn outputs_text(window: &adw::ApplicationWindow) -> String {
-    ui::outputs_sentence(window)
-        .expect("the window carries outputs-readout")
+    ui::outputs_sentence(window).expect("the window carries outputs-readout")
 }
 
 fn info_tip(window: &adw::ApplicationWindow) -> String {
@@ -163,8 +162,15 @@ fn f0_1_s1_every_tab_shows_its_icon(window: &adw::ApplicationWindow) {
     }
     let stack = stack_in(window.upcast_ref()).expect("the window holds the page stack");
     for page in Page::all() {
-        let icon = stack.page(&stack.child_by_name(page.label()).expect("a page per tab")).icon_name();
-        assert_eq!(icon.as_deref(), Some(page.icon()), "the {} tab's icon", page.label());
+        let icon = stack
+            .page(&stack.child_by_name(page.label()).expect("a page per tab"))
+            .icon_name();
+        assert_eq!(
+            icon.as_deref(),
+            Some(page.icon()),
+            "the {} tab's icon",
+            page.label()
+        );
     }
 }
 
@@ -254,7 +260,10 @@ fn f0_1_s5_narrate_refits_its_lines(app: &adw::Application, dir: &Path) {
     let _ = dir;
     // A line already on its clip's own bounds: the refit sweep runs and finds nothing to move, so the
     // status line says the sweep happened and the file is left alone until something is owed.
-    let project = Project { sources: one_source(true), ..Default::default() };
+    let project = Project {
+        sources: one_source(true),
+        ..Default::default()
+    };
     let tree = session_tree(&project);
     cut::save(&cut_with(5.0, 12.0), &tree).expect("cut written");
     narration::save(&narration_with(5.0, 12.0), &tree).expect("narration written");
@@ -305,9 +314,14 @@ fn f0_1_s2_locked_cut_bounces_the_click(app: &adw::Application, dir: &Path) {
     click_tab(&window, Page::Cut);
 
     let state = ui::state(&window);
-    assert_eq!(state.page, Page::Prepare, "the bounce must not move the page");
     assert_eq!(
-        state.status, shell::CUT_LOCK,
+        state.page,
+        Page::Prepare,
+        "the bounce must not move the page"
+    );
+    assert_eq!(
+        state.status,
+        shell::CUT_LOCK,
         "the status line carries the lock reason verbatim"
     );
     assert!(

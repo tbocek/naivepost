@@ -32,7 +32,11 @@ fn sec_01_project_and_files_8_session_clock_s1_earliest_stamp_is_zero() {
         "2026-08-08 20-55-15.mp4",
     ];
     let c = clock(&names);
-    assert_eq!(c.zero, at(2026, 8, 8, 19, 55, 15), "zero is the earliest stamp");
+    assert_eq!(
+        c.zero,
+        at(2026, 8, 8, 19, 55, 15),
+        "zero is the earliest stamp"
+    );
     // The list's order changes nothing: each file sits where its own name says.
     assert_eq!(c.offset(0), 120.0);
     assert_eq!(c.offset(1), 0.0);
@@ -63,43 +67,89 @@ fn sec_01_project_and_files_8_session_clock_s2_every_accepted_spelling() {
     // unix seconds 2017–2033."
 
     // OBS, with spaces and dashes for the time.
-    assert_eq!(name_stamp("2026-08-08 19-55-15.mp4"), Some(at(2026, 8, 8, 19, 55, 15)));
+    assert_eq!(
+        name_stamp("2026-08-08 19-55-15.mp4"),
+        Some(at(2026, 8, 8, 19, 55, 15))
+    );
     // Quest, a run of digits with a trailing suffix after the seconds.
-    assert_eq!(name_stamp("quest-20260808-195900-0.mp4"), Some(at(2026, 8, 8, 19, 59, 0)));
+    assert_eq!(
+        name_stamp("quest-20260808-195900-0.mp4"),
+        Some(at(2026, 8, 8, 19, 59, 0))
+    );
     // A phone camera.
-    assert_eq!(name_stamp("VID_20250814_213311.mp4"), Some(at(2025, 8, 14, 21, 33, 11)));
+    assert_eq!(
+        name_stamp("VID_20250814_213311.mp4"),
+        Some(at(2025, 8, 14, 21, 33, 11))
+    );
     // A dashcam: fourteen digits and nothing between them.
-    assert_eq!(name_stamp("20250814213311.mp4"), Some(at(2025, 8, 14, 21, 33, 11)));
+    assert_eq!(
+        name_stamp("20250814213311.mp4"),
+        Some(at(2025, 8, 14, 21, 33, 11))
+    );
     // ShadowPlay: dots throughout, and a fourth group after the seconds.
-    assert_eq!(name_stamp("2025.08.14 - 21.33.11.03.mp4"), Some(at(2025, 8, 14, 21, 33, 11)));
+    assert_eq!(
+        name_stamp("2025.08.14 - 21.33.11.03.mp4"),
+        Some(at(2025, 8, 14, 21, 33, 11))
+    );
     // QuickTime: a one-digit hour with mandatory separators, and the half of the day.
-    assert_eq!(name_stamp("2026-08-08 at 7.55.15 PM.mp4"), Some(at(2026, 8, 8, 19, 55, 15)));
+    assert_eq!(
+        name_stamp("2026-08-08 at 7.55.15 PM.mp4"),
+        Some(at(2026, 8, 8, 19, 55, 15))
+    );
     // ISO, glued by a T.
-    assert_eq!(name_stamp("2026-08-08T19:55:15.mp4"), Some(at(2026, 8, 8, 19, 55, 15)));
+    assert_eq!(
+        name_stamp("2026-08-08T19:55:15.mp4"),
+        Some(at(2026, 8, 8, 19, 55, 15))
+    );
 
     // Two spellings of one instant land on the same second, which is what puts them on one
     // clock at all.
     let c = clock(&["2026-08-08T19:55:15.mp4", "2026-08-08 19-55-15.mov"]);
     assert_eq!(c.offset(0), 0.0);
-    assert_eq!(c.offset(1), 0.0, "the same moment written twice is the same place");
+    assert_eq!(
+        c.offset(1),
+        0.0,
+        "the same moment written twice is the same place"
+    );
 
     // The century is pinned to 19/20: an old tape still names its own second.
-    assert_eq!(name_stamp("1998-03-01 08-00-00.mp4"), Some(at(1998, 3, 1, 8, 0, 0)));
-    assert_eq!(frame_name(at(1998, 3, 1, 8, 0, 0)), "1998-03-01_08-00-00.000");
+    assert_eq!(
+        name_stamp("1998-03-01 08-00-00.mp4"),
+        Some(at(1998, 3, 1, 8, 0, 0))
+    );
+    assert_eq!(
+        frame_name(at(1998, 3, 1, 8, 0, 0)),
+        "1998-03-01_08-00-00.000"
+    );
 
     // The 12-hour form names its half of the day; midnight under `am` is zero, noon is
     // already twelve.
-    assert_eq!(name_stamp("2026-08-08 at 12.05.00 AM.mp4"), Some(at(2026, 8, 8, 0, 5, 0)));
-    assert_eq!(name_stamp("2026-08-08 at 12.05.00 PM.mp4"), Some(at(2026, 8, 8, 12, 5, 0)));
-    assert_eq!(name_stamp("2026-08-08 at 7.55.15 am.mp4"), Some(at(2026, 8, 8, 7, 55, 15)));
+    assert_eq!(
+        name_stamp("2026-08-08 at 12.05.00 AM.mp4"),
+        Some(at(2026, 8, 8, 0, 5, 0))
+    );
+    assert_eq!(
+        name_stamp("2026-08-08 at 12.05.00 PM.mp4"),
+        Some(at(2026, 8, 8, 12, 5, 0))
+    );
+    assert_eq!(
+        name_stamp("2026-08-08 at 7.55.15 am.mp4"),
+        Some(at(2026, 8, 8, 7, 55, 15))
+    );
 
     // Bare unix seconds, which is what an iPhone screen recording carries: the pin's floor
     // (2017-07-14) is asserted here and 2022-12-31 is a mid-window reading. The prototype writes
     // one with its digits glued to the word (`RPReplay_Final1723456789.mp4`); its `(?:\A|\D)`
     // bound is zero-width and this engine's `[^0-9]` is consumed, but a letter is not a digit, so
     // both read that name. What neither reads is an eleven-digit run: it is a serial number.
-    assert_eq!(name_stamp("RPReplay_Final_1500000000.mp4"), Some(1_500_000_000.0)); // 2017-07-14: the pin's floor
-    assert_eq!(name_stamp("RPReplay_Final_1672527599.mp4"), Some(1_672_527_599.0)); // 2022-12-31
+    assert_eq!(
+        name_stamp("RPReplay_Final_1500000000.mp4"),
+        Some(1_500_000_000.0)
+    ); // 2017-07-14: the pin's floor
+    assert_eq!(
+        name_stamp("RPReplay_Final_1672527599.mp4"),
+        Some(1_672_527_599.0)
+    ); // 2022-12-31
     assert_eq!(name_stamp("take-1723456789.wav"), Some(1_723_456_789.0));
     // A glued name reads too, once the run is exactly ten digits: the left bound this engine
     // consumes rather than asserts (`(?:^|[^0-9])`) costs nothing when the letter before it is
@@ -115,7 +165,10 @@ fn sec_01_project_and_files_8_session_clock_s2_every_accepted_spelling() {
     // an OBS one sits 3600 s behind it.
     let c = clock(&["2026-08-08 19-55-15.mp4", "clip-1786399000.wav"]);
     assert_eq!(c.offset(0), 0.0);
-    assert!(c.offset(1) > 0.0, "the unix stamp is later than the OBS one");
+    assert!(
+        c.offset(1) > 0.0,
+        "the unix stamp is later than the OBS one"
+    );
 }
 
 #[test]
@@ -125,8 +178,16 @@ fn sec_01_project_and_files_8_session_clock_s2_impossible_or_day_first_names_are
     assert_eq!(name_stamp("2026-13-08 19-55-15.mp4"), None, "month 13");
     assert_eq!(name_stamp("2026-08-08 25-55-15.mp4"), None, "hour 25");
     assert_eq!(name_stamp("2026-08-32 19-55-15.mp4"), None, "day 32");
-    assert_eq!(name_stamp("2026-02-30 19-55-15.mp4"), None, "a February that never was");
-    assert_eq!(name_stamp("1899-08-08 19-55-15.mp4"), None, "the century is pinned to 19/20");
+    assert_eq!(
+        name_stamp("2026-02-30 19-55-15.mp4"),
+        None,
+        "a February that never was"
+    );
+    assert_eq!(
+        name_stamp("1899-08-08 19-55-15.mp4"),
+        None,
+        "the century is pinned to 19/20"
+    );
 
     // Day first reads as no stamp at all rather than as a guess.
     assert_eq!(name_stamp("14.08.2025 21-33-11.mp4"), None);
@@ -134,10 +195,22 @@ fn sec_01_project_and_files_8_session_clock_s2_impossible_or_day_first_names_are
 
     // A bare run of digits only counts inside the window, and only as ten digits bounded by
     // non-digits.
-    assert_eq!(name_stamp("video-1499999999.mp4"), None, "2017 is the floor");
-    assert_eq!(name_stamp("video-2147483647.mp4"), None, "and 2033 the ceiling");
+    assert_eq!(
+        name_stamp("video-1499999999.mp4"),
+        None,
+        "2017 is the floor"
+    );
+    assert_eq!(
+        name_stamp("video-2147483647.mp4"),
+        None,
+        "and 2033 the ceiling"
+    );
     assert_eq!(name_stamp("video-1500000000.mp4"), Some(1_500_000_000.0));
-    assert_eq!(name_stamp("clip-17234567890.mp4"), None, "eleven digits is a serial");
+    assert_eq!(
+        name_stamp("clip-17234567890.mp4"),
+        None,
+        "eleven digits is a serial"
+    );
 
     // A digit run that only resembles a date cannot mask the real stamp after it: every
     // candidate gets a chance.
@@ -157,14 +230,10 @@ fn sec_01_project_and_files_8_session_clock_s2_impossible_or_day_first_names_are
 }
 
 #[test]
-fn sec_01_project_and_files_8_session_clock_s3_unstamped_sits_at_the_session_start_not_its_mtime()
-{
+fn sec_01_project_and_files_8_session_clock_s3_unstamped_sits_at_the_session_start_not_its_mtime() {
     // "An unstamped file sits at the session start (never at its mtime); its row shows a
     // warning."
-    let dir = std::env::temp_dir().join(format!(
-        "np-clock-{}-s3",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("np-clock-{}-s3", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
 
@@ -258,7 +327,11 @@ fn sec_01_project_and_files_8_session_clock_s6_frames_are_named_by_their_exact_s
     assert_eq!(frame_name(base + 0.25), "2026-08-08_19-55-15.250");
     assert_eq!(frame_name(base + 0.5), "2026-08-08_19-55-15.500");
     assert_eq!(frame_name(base + 0.75), "2026-08-08_19-55-15.750");
-    assert_eq!(frame_name(base + 1.0), "2026-08-08_19-55-16.000", "the next second");
+    assert_eq!(
+        frame_name(base + 1.0),
+        "2026-08-08_19-55-16.000",
+        "the next second"
+    );
 
     // No index and no collision suffix: the name is a function of the instant alone, so
     // naming the same instants backwards gives the same names.
@@ -273,14 +346,25 @@ fn sec_01_project_and_files_8_session_clock_s6_frames_are_named_by_their_exact_s
     }
     let mut sorted = forwards.clone();
     sorted.sort();
-    assert_eq!(sorted, forwards, "the names sort in the order they were made");
+    assert_eq!(
+        sorted, forwards,
+        "the names sort in the order they were made"
+    );
 
     // Read back: the inverse of the same spelling, and nothing else.
     for (n, name) in forwards.iter().enumerate() {
         assert_eq!(read_frame(name), Some(base + n as f64 * 0.25), "{name}");
     }
-    assert_eq!(read_frame("f000001.jpg"), None, "a frame from before frames were stamped");
-    assert_eq!(read_frame("2026-08-08_19-55-15.00"), None, "three digits of millisecond");
+    assert_eq!(
+        read_frame("f000001.jpg"),
+        None,
+        "a frame from before frames were stamped"
+    );
+    assert_eq!(
+        read_frame("2026-08-08_19-55-15.00"),
+        None,
+        "three digits of millisecond"
+    );
 
     // A frame on the file's own clock: the instant a name claims renders back as that name.
     let stamp = name_stamp("VID_20250814_213311.mp4").unwrap();

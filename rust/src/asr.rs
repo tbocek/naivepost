@@ -111,7 +111,11 @@ pub fn cut_points(duration: f64, silences: &[Silence], limit: f64, seek: f64) ->
         return vec![0.0, duration];
     }
     // A reach of half the ceiling or more would let two cuts walk past each other.
-    let mut seek = if seek < 0.0 || 2.0 * seek >= limit { 0.0 } else { seek };
+    let mut seek = if seek < 0.0 || 2.0 * seek >= limit {
+        0.0
+    } else {
+        seek
+    };
     seek = seek.min(limit / 6.0);
     let pieces = (duration / (limit - 2.0 * seek)).ceil() as usize;
     let step = duration / pieces as f64;
@@ -157,7 +161,12 @@ pub fn progress(index: usize, total: usize) -> String {
 /// S3: ffmpeg's arguments for one chunk, `-ss` before `-i` because on the pcm this stage wrote that
 /// seek is exact rather than a keyframe away. The caller appends its own `-i` and output path.
 pub fn cut_plan(from: f64, to: f64) -> Vec<String> {
-    vec!["-ss".into(), trim_number(from), "-t".into(), trim_number(to - from)]
+    vec![
+        "-ss".into(),
+        trim_number(from),
+        "-t".into(),
+        trim_number(to - from),
+    ]
 }
 
 /// A number without a tail of `.0`, which is what makes the logged command line readable and keeps
@@ -198,7 +207,10 @@ pub fn stitch(pieces: &[Piece]) -> (String, Vec<Word>) {
         .map(|piece| piece.text.as_str())
         .filter(|text| !text.trim().is_empty())
         .collect();
-    let words = pieces.iter().flat_map(|piece| piece.words.clone()).collect();
+    let words = pieces
+        .iter()
+        .flat_map(|piece| piece.words.clone())
+        .collect();
     (texts.join(" "), words)
 }
 
@@ -261,15 +273,7 @@ where
     let mut limit = chunk_limit(model_family);
 
     loop {
-        let attempt = run_at(
-            tree,
-            source,
-            duration,
-            language,
-            silences,
-            limit,
-            &mut ask,
-        );
+        let attempt = run_at(tree, source, duration, language, silences, limit, &mut ask);
         match attempt {
             Ok(mut done) => {
                 // `done.steps` stand as they are: the progress strings of an attempt that failed

@@ -8,11 +8,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::temp_dir_created as temp_dir;
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
 use naivepost::separate::{self, CHUNK_MAX_SECONDS};
-use crate::common;
-use common::temp_dir_created as temp_dir;
 
 /// A project folder holding the two recordings a session might split: one video with a timestamp in
 /// its name (the shape S5 cares about) and one plain audio file.
@@ -77,7 +77,10 @@ fn f1_2_s1_the_audio_going_up_is_44_1khz_stereo() {
     let args = plan.join(" ");
     assert!(args.contains("-ar 44100"), "the rate is set: {args}");
     assert!(args.contains("-ac 2"), "two channels: {args}");
-    assert!(args.contains("-vn"), "no picture goes to an audio model: {args}");
+    assert!(
+        args.contains("-vn"),
+        "no picture goes to an audio model: {args}"
+    );
 }
 
 /// S2: the ceiling on one request, and a cut that moves to a silence rather than to a word.
@@ -93,7 +96,9 @@ fn f1_2_s2_chunks_stay_under_the_ceiling_and_are_cut_at_silences() {
     let pieces = separate::chunk_plan(640.0, &[]);
     assert_eq!(pieces.len(), 3, "640 s is three requests: {pieces:?}");
     assert!(
-        pieces.iter().all(|(from, to)| to - from <= CHUNK_MAX_SECONDS),
+        pieces
+            .iter()
+            .all(|(from, to)| to - from <= CHUNK_MAX_SECONDS),
         "no piece goes over the ceiling: {pieces:?}"
     );
     assert_eq!(pieces.first().unwrap().0, 0.0);
@@ -105,7 +110,10 @@ fn f1_2_s2_chunks_stay_under_the_ceiling_and_are_cut_at_silences() {
     // ...and one further away than the seek window is not considered at all, which is what keeps a
     // piece from ever growing past the ceiling.
     let pieces = separate::chunk_plan(640.0, &[250.0]);
-    assert_eq!(pieces[0].1, 300.0, "a far silence leaves the nominal edge: {pieces:?}");
+    assert_eq!(
+        pieces[0].1, 300.0,
+        "a far silence leaves the nominal edge: {pieces:?}"
+    );
     // The recording is cut into whole pieces, so a piece never runs past its end either.
     let last = *pieces.last().unwrap();
     assert!(last.0 < last.1, "no empty tail: {pieces:?}");
@@ -136,7 +144,10 @@ fn f1_2_s3_the_voice_stem_and_the_rest_are_picked() {
 fn f1_2_s3_a_stem_set_with_no_voice_is_refused() {
     let err = separate::pick_stems(&stems("drums, bass, other")).unwrap_err();
     assert!(err.contains("none of them is the voice"), "{err}");
-    assert!(err.contains("drums, bass, other"), "the names are quoted: {err}");
+    assert!(
+        err.contains("drums, bass, other"),
+        "the names are quoted: {err}"
+    );
 }
 
 /// S3: and a model that gave only the voice is refused too — the recording without the voice is the
@@ -145,7 +156,10 @@ fn f1_2_s3_a_stem_set_with_no_voice_is_refused() {
 fn f1_2_s3_a_voice_with_no_other_half_is_refused() {
     let err = separate::pick_stems(&stems("vocals")).unwrap_err();
     assert!(err.contains("there is no other half"), "{err}");
-    assert!(err.contains("\"vocals\""), "the stem that came back alone: {err}");
+    assert!(
+        err.contains("\"vocals\""),
+        "the stem that came back alone: {err}"
+    );
 }
 
 /// S4/S5: the halves land under `stems/`, named after the source with its timestamp intact, and a
@@ -167,7 +181,11 @@ fn f1_2_s4_a_videos_rest_is_muxed_as_mkv_and_an_audio_keeps_wav() {
         levels(vec![]),
     )
     .expect("the split runs");
-    assert!(outcome.rest.ends_with(".split-novoice.mkv"), "{}", outcome.rest);
+    assert!(
+        outcome.rest.ends_with(".split-novoice.mkv"),
+        "{}",
+        outcome.rest
+    );
 
     let mut project = project_with(vec![source("project:sources/mic.wav", false, 1)]);
     let outcome = separate::separate(
@@ -182,9 +200,17 @@ fn f1_2_s4_a_videos_rest_is_muxed_as_mkv_and_an_audio_keeps_wav() {
         levels(vec![]),
     )
     .expect("the split runs");
-    assert!(outcome.rest.ends_with(".split-novoice.wav"), "{}", outcome.rest);
+    assert!(
+        outcome.rest.ends_with(".split-novoice.wav"),
+        "{}",
+        outcome.rest
+    );
     // The voice half is always a wav: it is what Narrate reads.
-    assert!(outcome.voice.ends_with(".split-voice.wav"), "{}", outcome.voice);
+    assert!(
+        outcome.voice.ends_with(".split-voice.wav"),
+        "{}",
+        outcome.voice
+    );
 }
 
 /// S5: both halves are on disk where the tree says they belong, timestamp and all — that is what
@@ -276,9 +302,15 @@ fn f1_2_s6_the_log_says_what_is_about_to_happen_and_what_came_back() {
 fn f1_2_s6_a_rest_far_under_the_mix_warns() {
     let warning = separate::lopsided("-20.0 dB", "-31.0 dB").expect("11 dB down is worth saying");
     assert!(warning.contains("11 dB under the mix"), "{warning}");
-    assert!(warning.contains("cut from the original instead of the split"), "{warning}");
+    assert!(
+        warning.contains("cut from the original instead of the split"),
+        "{warning}"
+    );
 
-    assert!(separate::lopsided("-20.0 dB", "-25.0 dB").is_none(), "5 dB is a normal split");
+    assert!(
+        separate::lopsided("-20.0 dB", "-25.0 dB").is_none(),
+        "5 dB is a normal split"
+    );
     // Exactly at the bound it is said: the spec says ">= 10 dB".
     assert!(separate::lopsided("-20.0 dB", "-30.0 dB").is_some());
     // A level that could not be measured says nothing — a missing number is not evidence.
@@ -286,8 +318,14 @@ fn f1_2_s6_a_rest_far_under_the_mix_warns() {
     assert!(separate::lopsided("-20.0 dB", "n/a").is_none());
 
     let report = separate::loudness_report("lecture.mkv", "-20.0 dB", "-21.0 dB", "-35.0 dB");
-    assert!(report.starts_with(">>> [lecture.mkv] the mix averaged -20.0 dB"), "{report}");
-    assert!(report.ends_with("cut from the original instead of the split."), "{report}");
+    assert!(
+        report.starts_with(">>> [lecture.mkv] the mix averaged -20.0 dB"),
+        "{report}"
+    );
+    assert!(
+        report.ends_with("cut from the original instead of the split."),
+        "{report}"
+    );
 }
 
 /// S6/S7: both halves on disk means nothing is redone — one line in the log and the row stays as it
@@ -313,9 +351,15 @@ fn f1_2_s6_both_halves_there_is_a_line_and_no_work() {
     )
     .expect("nothing to do is not a failure");
 
-    assert_eq!(outcome.logs, vec![">>> lecture.mkv already split".to_string()]);
+    assert_eq!(
+        outcome.logs,
+        vec![">>> lecture.mkv already split".to_string()]
+    );
     assert_eq!(project.sources.len(), 1, "the row stayed one row");
-    assert!(project.sources[0].sepvoice, "untouched: no wish was granted or cleared");
+    assert!(
+        project.sources[0].sepvoice,
+        "untouched: no wish was granted or cleared"
+    );
     assert_eq!(project.sources[0].path, "project:sources/lecture.mkv");
 }
 
@@ -349,7 +393,10 @@ fn f1_2_s7_one_row_becomes_two_and_the_wish_is_cleared() {
     assert!(!voice.footage, "a wav is never footage");
     assert_eq!(rest.narrator, 0, "the rest takes nobody's slot");
     assert_eq!(voice.narrator, 2, "the voice keeps the slot the row held");
-    assert!(!rest.sepvoice && !voice.sepvoice, "the wish is cleared on both");
+    assert!(
+        !rest.sepvoice && !voice.sepvoice,
+        "the wish is cleared on both"
+    );
     assert!(rest.tracks.is_empty() && voice.tracks.is_empty());
 
     // A second ▶ over the two new rows splits neither: their names are already split products.
@@ -388,8 +435,16 @@ fn f1_2_s7_the_stored_paths_stay_inside_the_project() {
     )
     .expect("the split runs");
 
-    assert!(outcome.rest.starts_with("project:stems/"), "{}", outcome.rest);
-    assert!(outcome.voice.starts_with("project:stems/"), "{}", outcome.voice);
+    assert!(
+        outcome.rest.starts_with("project:stems/"),
+        "{}",
+        outcome.rest
+    );
+    assert!(
+        outcome.voice.starts_with("project:stems/"),
+        "{}",
+        outcome.voice
+    );
     for row in &project.sources {
         assert!(row.path.starts_with("project:stems/"), "{}", row.path);
     }

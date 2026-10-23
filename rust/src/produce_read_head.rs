@@ -32,5 +32,6 @@ pub fn source_is_footage(seg: &crate::cut::Seg) -> bool {
 /// [`crate::timeline::filmed_runs`] output the Cut page reads its debt tail from,
 /// so the preview and the render answer the question with one arithmetic.
 pub fn on_recording(seg: &crate::cut::Seg, runs: &[(f64, f64)]) -> bool {
-    runs.iter().any(|(start, end)| start < &seg.e && seg.s < *end)
+    runs.iter()
+        .any(|(start, end)| start < &seg.e && seg.s < *end)
 }

@@ -39,7 +39,9 @@ pub fn visible_insert_form(window: &adw::ApplicationWindow) -> Option<gtk::Widge
         }
         for child in root.observe_children().iter::<glib::Object>() {
             let Ok(child) = child else { continue };
-            let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+            let Ok(widget) = child.downcast::<gtk::Widget>() else {
+                continue;
+            };
             if let Some(found) = walk(&widget) {
                 return Some(found);
             }
@@ -286,7 +288,9 @@ pub(crate) fn refresh_insert_tick(window: &adw::ApplicationWindow) {
         return;
     };
     let mode = insert_mode_now(window);
-    tick.set_label(Some(cut_insert::tick_label(mode == cut_insert::Mode::Between)));
+    tick.set_label(Some(cut_insert::tick_label(
+        mode == cut_insert::Mode::Between,
+    )));
     tick.set_sensitive(!matches!(mode, cut_insert::Mode::Lane));
 }
 
@@ -309,10 +313,8 @@ fn card_arrival(path: &str, answers: &[(String, String)]) -> Option<String> {
     if answers.is_empty() || !path.to_lowercase().ends_with(".svg") {
         return None;
     }
-    let doc = std::fs::read_to_string(std::path::Path::new(
-        &cut_cards::split_path(path).file,
-    ))
-    .ok()?;
+    let doc =
+        std::fs::read_to_string(std::path::Path::new(&cut_cards::split_path(path).file)).ok()?;
     (!cut_insert::answered_holes(&doc, answers).is_empty())
         .then_some(cut_cards::FILLED_IN.to_string())
 }
@@ -332,7 +334,8 @@ pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
     let silent = ui::find_widget_by_name(window.upcast_ref(), "insert-sound-tick")
         .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
         .is_some_and(|tick| tick.is_active());
-    let answer = cut_insert::FormAnswer::from_form(insert_mode_now(window), &text, fallback, silent);
+    let answer =
+        cut_insert::FormAnswer::from_form(insert_mode_now(window), &text, fallback, silent);
     // §G: what was typed into the card's own fields goes ONTO THE PATH, because that is where the render reads
     // its arguments from. Reading them off the widgets the same form built (the names it wrote) keeps the widget
     // layer to reading; deciding what an answer means is `cut_insert::answer_path`'s.
@@ -340,10 +343,13 @@ pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
         .fields
         .iter()
         .map(|field| {
-            let typed = ui::find_widget_by_name(window.upcast_ref(), &format!("insert-field-{}", field.key))
-                .and_then(|w| w.downcast::<gtk::Entry>().ok())
-                .map(|entry| entry.text().to_string())
-                .unwrap_or_default();
+            let typed = ui::find_widget_by_name(
+                window.upcast_ref(),
+                &format!("insert-field-{}", field.key),
+            )
+            .and_then(|w| w.downcast::<gtk::Entry>().ok())
+            .map(|entry| entry.text().to_string())
+            .unwrap_or_default();
             (field.key.clone(), typed)
         })
         .collect();
@@ -434,7 +440,7 @@ pub fn press_insert(window: &adw::ApplicationWindow) -> String {
 /// Open the native file chooser over `dir`. Kept apart from [`press_insert`] so the decision (where, which
 /// title, which filter) is testable without a display: a headless run simply never answers the dialog.
 #[allow(deprecated)] // GTK 4.10 deprecates the whole GtkFileChooser API; its replacement is a rewrite
-// of this chooser, so the deprecated calls stay and are named here rather than silently
+                     // of this chooser, so the deprecated calls stay and are named here rather than silently
 pub(crate) fn open_insert_chooser(
     window: &adw::ApplicationWindow,
     title: &str,
@@ -557,7 +563,17 @@ pub fn insert_chosen_with_length(
 /// same reading §4 gives a source row whose probe fails.
 fn file_has_sound(path: &str) -> bool {
     let ffprobe = crate::services::ffprobe_for("", crate::ui::cut_card_preview::FFPROBE);
-    let asked = ["-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path];
+    let asked = [
+        "-v",
+        "error",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index",
+        "-of",
+        "csv=p=0",
+        path,
+    ];
     let answer = crate::source_probe::run_ffprobe(&ffprobe, &asked).unwrap_or_default();
     // One line per audio stream (`csv=p=0`), so a non-empty answer is the file's own sound. Parsed here rather
     // than through `source_probe::audio_streams`, which asks for JSON and fails on an older ffprobe that prints
@@ -609,7 +625,6 @@ pub fn refresh_insert_button(window: &adw::ApplicationWindow) {
 pub fn place_known() -> bool {
     ui::INSERT_PLACE_KNOWN.with(|cell| cell.borrow().unwrap_or(false))
 }
-
 
 /// S1: ⧉ Insert's wire. The button forwards here and prints what comes back, so no rule sits in the callback.
 ///

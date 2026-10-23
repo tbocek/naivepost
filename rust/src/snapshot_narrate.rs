@@ -28,9 +28,14 @@ pub(crate) fn stage_envelope(tree: &crate::layout::Tree, source: &std::path::Pat
     }
     let lane = format!("voice:{}", crate::narrate_data::take_base(source));
     let decoded = tree.voice16k_wav(&lane);
-    let seconds = crate::ui::narrate_band::recording_seconds().unwrap_or(45.0).round().max(1.0);
+    let seconds = crate::ui::narrate_band::recording_seconds()
+        .unwrap_or(45.0)
+        .round()
+        .max(1.0);
     let rate = crate::transcribe::SAMPLE_RATE;
-    if crate::snapshot::write_silence_wav(&decoded, rate as u32, (seconds * rate as f64) as u32).is_err() {
+    if crate::snapshot::write_silence_wav(&decoded, rate as u32, (seconds * rate as f64) as u32)
+        .is_err()
+    {
         return false;
     }
     crate::wave_build::ensure(tree, &lane, source, &mut |_| {}).is_ok()
@@ -41,9 +46,14 @@ pub(crate) fn stage_envelope(tree: &crate::layout::Tree, source: &std::path::Pat
 /// app would build each through the CONFIGURED ffmpeg, which this machine may point at a path that is not
 /// there; staging instead lets the band read a genuine cache (see [`stage_envelope`]).
 pub(crate) fn stage_seeded_envelopes(tree: &crate::layout::Tree) -> bool {
-    let mut staged = vec![stage_envelope(tree, &crate::narrate_data::base_reference(tree))];
+    let mut staged = vec![stage_envelope(
+        tree,
+        &crate::narrate_data::base_reference(tree),
+    )];
     if let Ok(project) = crate::project::load(tree.dir()) {
-        if let Some(recording) = crate::narrate_band_face::recording_path(tree, &project, "narrator1") {
+        if let Some(recording) =
+            crate::narrate_band_face::recording_path(tree, &project, "narrator1")
+        {
             staged.push(stage_envelope(tree, &recording));
         }
     }
@@ -160,7 +170,11 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
         // ends with, so the shot shows a state a real run produces rather than one the bench invented.
         crate::ui::window::set_status_line(
             window,
-            &crate::narrate_run::Outcome::Spoken { written: 4, spoken: 4 }.status(),
+            &crate::narrate_run::Outcome::Spoken {
+                written: 4,
+                spoken: 4,
+            }
+            .status(),
         );
         // The bar's own close door (F0.5 S4), reached the way the run reaches it.
         crate::ui::run_close::close_last_narrate_run();

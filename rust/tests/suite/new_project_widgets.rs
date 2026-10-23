@@ -4,11 +4,11 @@
 
 use std::path::Path;
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use naivepost::new_project;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, settle};
 
 /// One running GTK application for this test binary, taken in turn by the checks below — the same
 /// single-main-loop arrangement tests/suite/smoke.rs needs for the same reason.
@@ -55,7 +55,10 @@ fn check_the_run_refuses_new(app: &adw::Application) {
     window.present();
     ui::window::clear_logs_for_test();
     let before = ui::session_sources(&window);
-    assert!(!before.is_empty(), "the fixture has sources a new project would take away");
+    assert!(
+        !before.is_empty(),
+        "the fixture has sources a new project would take away"
+    );
 
     // A run stands the way a real ▶ stands one: `runqueue::start_run` is what that handler calls.
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
@@ -170,7 +173,10 @@ fn collect_button_ids(root: &gtk4::Widget, ids: &mut Vec<String>) {
 fn f0_8_s3_the_new_button_asks_before_it_empties_anything() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the ＋ New check never ran");
+    assert!(
+        RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the ＋ New check never ran"
+    );
 }
 
 /// The button is there with §1's tooltip; pressing it on a session that has something in it changes
@@ -191,7 +197,11 @@ fn check_button_and_dialog(app: &adw::Application) {
     new_.emit_clicked();
     // S3 is a question, so the window says nothing yet: no refusal (S1) and nothing emptied. The
     // status line is the only place this flow can speak, and it stays quiet until an answer.
-    assert_eq!(ui::state(&window).status, "", "asking must not report anything");
+    assert_eq!(
+        ui::state(&window).status,
+        "",
+        "asking must not report anything"
+    );
 
     // The dialog itself, built from the module's strings: the question as its heading, and for a
     // session that never had a name, the paragraph that says so.
@@ -275,7 +285,10 @@ fn empty_session_goes_straight_to_naming(app: &adw::Application) {
     std::fs::create_dir_all(&blank_folder).unwrap();
     naivepost::project::save(&naivepost::project::Project::default(), &blank_folder).unwrap();
     let model = naivepost::project::load(&blank_folder).expect("the blank session loads");
-    assert!(model.sources.is_empty(), "this scenario is about an empty session");
+    assert!(
+        model.sources.is_empty(),
+        "this scenario is about an empty session"
+    );
 
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
@@ -287,7 +300,11 @@ fn empty_session_goes_straight_to_naming(app: &adw::Application) {
 
     // Nothing said: S1's refusal would have appeared on the status line, and S3's question would have
     // left it quiet but put a dialog on screen. Here the press moved straight past both.
-    assert_eq!(ui::state(&window).status, "", "naming the folder says nothing yet");
+    assert_eq!(
+        ui::state(&window).status,
+        "",
+        "naming the folder says nothing yet"
+    );
     assert!(ui::window_logs().is_empty(), "{:?}", ui::window_logs());
     assert!(
         ui::session_sources(&window).is_empty(),
@@ -352,7 +369,10 @@ fn press_asks_for_a_name_before_anything_changes(app: &adw::Application) {
     std::fs::create_dir_all(&blank).unwrap();
     naivepost::project::save(&naivepost::project::Project::default(), &blank).unwrap();
     let model = naivepost::project::load(&blank).expect("the blank session loads");
-    assert!(model.sources.is_empty(), "an empty session goes straight to naming");
+    assert!(
+        model.sources.is_empty(),
+        "an empty session goes straight to naming"
+    );
 
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
@@ -372,13 +392,22 @@ fn press_asks_for_a_name_before_anything_changes(app: &adw::Application) {
     let days = [day.clone(), today()];
     assert!(
         offered.ends_with(".naivepost")
-            && days.iter().any(|d| !d.is_empty() && offered.starts_with(d.as_str())),
+            && days
+                .iter()
+                .any(|d| !d.is_empty() && offered.starts_with(d.as_str())),
         "the default name is today's date with the suffix: {offered}"
     );
-    assert_ne!(offered, format!("{day}.naivepost"), "the taken date was skipped");
+    assert_ne!(
+        offered,
+        format!("{day}.naivepost"),
+        "the taken date was skipped"
+    );
     // And the press itself changed nothing: creating waits for the answer.
     assert_eq!(ui::state(&window).status, "", "naming says nothing yet");
-    assert!(ui::session_sources(&window).is_empty(), "the session stayed empty");
+    assert!(
+        ui::session_sources(&window).is_empty(),
+        "the session stayed empty"
+    );
     assert!(ui::window_logs().is_empty(), "{:?}", ui::window_logs());
     window.close();
     std::fs::remove_dir_all(&blank).ok();
@@ -439,7 +468,11 @@ fn refused_name_is_not_applied(app: &adw::Application) {
         "S5's sentence reaches the status line from the answer"
     );
     assert_eq!(ui::session_sources(&window), before, "nothing half-applied");
-    assert!(ui::window_logs().is_empty(), "a refusal writes no log line: {:?}", ui::window_logs());
+    assert!(
+        ui::window_logs().is_empty(),
+        "a refusal writes no log line: {:?}",
+        ui::window_logs()
+    );
     window.close();
     std::fs::remove_dir_all(&root).ok();
 }
@@ -461,7 +494,10 @@ fn typed_name_is_applied(app: &adw::Application) {
     let model = naivepost::project::load(&fixture).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
-    assert!(!ui::session_sources(&window).is_empty(), "the fixture has sources to lose");
+    assert!(
+        !ui::session_sources(&window).is_empty(),
+        "the fixture has sources to lose"
+    );
 
     let root = common::temp_dir_tagged("typed");
     let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
@@ -476,15 +512,20 @@ fn typed_name_is_applied(app: &adw::Application) {
         written.join(naivepost::project::PROJECT_FILE).is_file(),
         "S6 wrote the blank project where the typed name pointed"
     );
-    assert!(ui::session_sources(&window).is_empty(), "the blank project became the session");
+    assert!(
+        ui::session_sources(&window).is_empty(),
+        "the blank project became the session"
+    );
     assert_eq!(
         ui::state(&window).status,
         "new project \u{2014} fresh.naivepost",
         "S6's status sentence"
     );
     assert!(
-        ui::window_logs().iter().any(|line| line.starts_with(">>> new project ")
-            && line.ends_with("-- the session is empty; outputs on disk are untouched")),
+        ui::window_logs()
+            .iter()
+            .any(|line| line.starts_with(">>> new project ")
+                && line.ends_with("-- the session is empty; outputs on disk are untouched")),
         "the log carries S6's line verbatim: {:?}",
         ui::window_logs()
     );
@@ -529,11 +570,17 @@ fn choosers_follow_a_project_outside_the_root(app: &adw::Application) {
     let root = common::temp_dir_tagged("follow");
 
     // The case that moves them: created OUTSIDE the root, so its parent is the folder the person chose.
-    let created = new_project::create(&root, &root.join("elsewhere"), "far")
-        .expect("a free name creates");
-    let chosen = created.chooser.clone().expect("outside the root names a folder");
+    let created =
+        new_project::create(&root, &root.join("elsewhere"), "far").expect("a free name creates");
+    let chosen = created
+        .chooser
+        .clone()
+        .expect("outside the root names a folder");
     naivepost::ui::new_apply::apply(&created, &session, &status);
-    assert_eq!(naivepost::ui::new_apply::chooser_dir().as_deref(), Some(chosen.as_path()));
+    assert_eq!(
+        naivepost::ui::new_apply::chooser_dir().as_deref(),
+        Some(chosen.as_path())
+    );
 
     ui::new_button(&window)
         .expect("the header bar has a New button")
@@ -581,9 +628,15 @@ fn applied_new_project_moves_the_window(app: &adw::Application) {
     let root = common::temp_dir("applied");
     // The chooser's answer is the folder that IS the new project (01 §1), so its own name is what
     // `create` is given and `created.path` comes back as that same folder.
-    let created = new_project::create(&root, &root, "fresh.naivepost")
-        .expect("a free name creates");
-    assert!(created.path.join(naivepost::project::PROJECT_FILE).is_file(), "S6 saved it");
+    let created =
+        new_project::create(&root, &root, "fresh.naivepost").expect("a free name creates");
+    assert!(
+        created
+            .path
+            .join(naivepost::project::PROJECT_FILE)
+            .is_file(),
+        "S6 saved it"
+    );
 
     let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
     let session = ui::session_handle(&window);
@@ -591,16 +644,17 @@ fn applied_new_project_moves_the_window(app: &adw::Application) {
     naivepost::ui::new_apply::apply(&created, &session, &status);
 
     // The swap: the pages read this same handle, so an empty list here IS the refreshed page.
-    assert!(ui::session_sources(&window).is_empty(), "the blank project became the session");
+    assert!(
+        ui::session_sources(&window).is_empty(),
+        "the blank project became the session"
+    );
     assert_eq!(
         ui::state(&window).status,
         format!("new project \u{2014} {}", created.base),
         "S6's status sentence"
     );
     assert!(
-        ui::window_logs()
-            .iter()
-            .any(|line| line == &created.log),
+        ui::window_logs().iter().any(|line| line == &created.log),
         "the log carries S6's line verbatim: {:?}",
         ui::window_logs()
     );
@@ -622,8 +676,8 @@ fn applied_new_project_moves_the_window(app: &adw::Application) {
     // sheet was standing in and `far.naivepost` the name typed into it, so the PROJECT ends up at
     // `elsewhere/far.naivepost` while `Created::chooser` holds the parent the user actually chose --
     // which is what "chooser folders follow the chosen folder" means.
-    let outside = new_project::create(&root, &root.join("elsewhere"), "far")
-        .expect("a free name creates");
+    let outside =
+        new_project::create(&root, &root.join("elsewhere"), "far").expect("a free name creates");
     naivepost::ui::new_apply::apply(&outside, &session, &status);
     assert_eq!(
         naivepost::ui::new_apply::chooser_dir().as_deref(),
@@ -662,9 +716,11 @@ fn already_there_is_not_applied(app: &adw::Application) {
     std::fs::create_dir_all(&taken).unwrap();
     naivepost::project::save(&naivepost::project::Project::default(), &taken).unwrap();
 
-    let refused = new_project::create(&root, &root, "jan")
-        .expect_err("a project already there is refused");    assert!(
-        refused.contains("jan.naivepost is a project already \u{2014} open it, or pick another name"),
+    let refused =
+        new_project::create(&root, &root, "jan").expect_err("a project already there is refused");
+    assert!(
+        refused
+            .contains("jan.naivepost is a project already \u{2014} open it, or pick another name"),
         "{refused}"
     );
     // The refusal arm of the chooser's callback, through the window's own door (`name_chosen`), not by

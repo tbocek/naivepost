@@ -17,8 +17,8 @@ use crate::cut_delete;
 use crate::cut_line::{self, Hit};
 use crate::cut_play_back;
 use crate::cut_select::{self, Surface};
-use crate::ui::{self, cut_picture, cut_tracks, cut_view};
 use crate::play_back;
+use crate::ui::{self, cut_picture, cut_tracks, cut_view};
 
 /// One press on the PLACEHOLDER strip (`select-surface`), which is not the painted band: its box holds one
 /// picture row at `SELECT_SURFACE_PPS` and has no gutter of its own (F2.6 drew it that way and F2.8's
@@ -62,7 +62,11 @@ pub fn press_strip(
 pub fn surface_at_band(window: &adw::ApplicationWindow, y_px: f64) -> Surface {
     let cut_ = ui::review_cut_of(window);
     let bands = cut_tracks::bands_for(crate::fx_lane::row_count(&cut_.fx));
-    cut_select::surface_at(y_px, &bands, crate::timeline::row_count(&ui::page_recordings(), &cut_))
+    cut_select::surface_at(
+        y_px,
+        &bands,
+        crate::timeline::row_count(&ui::page_recordings(), &cut_),
+    )
 }
 
 /// One press on the band at `(x_px, y_px)` in the band's own pixels, at `now_ms` for the write throttle.
@@ -142,11 +146,15 @@ fn press_in(
     crate::ui::window::place_line_press(window, hit, now_ms)
 }
 
-
 /// Is a kept scene's picture under this press? The scene must cover the second and sit on the clicked row:
 /// rows are named `cam<N>` exactly as [`crate::timeline::kept_footage_recordings`] names them, so the row
 /// number finds its camera without a second map.
-fn scene_on_row(cut_: &Cut, recordings: &[crate::timeline::Recording], row: usize, at: f64) -> bool {
+fn scene_on_row(
+    cut_: &Cut,
+    recordings: &[crate::timeline::Recording],
+    row: usize,
+    at: f64,
+) -> bool {
     let Some(cam) = recordings
         .get(row)
         .and_then(|recording| recording.base.strip_prefix("cam"))
@@ -181,7 +189,9 @@ fn pick_on_band(cut_: &cut::Cut, pps: f64, origin: f64, x_px: f64) {
             nearest = Some((edge_px, held.index));
         }
     }
-    let Some((edge_px, index)) = nearest else { return };
+    let Some((edge_px, index)) = nearest else {
+        return;
+    };
     let held = &boxes[index];
     let left = held.x - origin;
     let inside = x_px >= left && x_px <= left + held.w;

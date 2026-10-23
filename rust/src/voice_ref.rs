@@ -73,12 +73,7 @@ pub enum VoiceChoice {
 ///
 /// `narrators` is how many narrator slots have a recording, `voice_files` the names in the voices
 /// folder, `dir` the voices folder as it is shown in the "no longer in DIR" sentence.
-pub fn pick_voice(
-    id: &str,
-    narrators: usize,
-    voice_files: &[String],
-    dir: &str,
-) -> VoiceChoice {
+pub fn pick_voice(id: &str, narrators: usize, voice_files: &[String], dir: &str) -> VoiceChoice {
     if id == CAPTIONS {
         return VoiceChoice::Silent(SILENT_SWITCH.to_string());
     }
@@ -144,7 +139,9 @@ pub const SILENT_SWITCH: &str =
 
 /// S1's report for a narrator slot.
 pub fn narrator_switch(slot: usize) -> String {
-    format!("voice: narrator {slot}'s \u{2014} it is re-cut from the recording on the next line spoken")
+    format!(
+        "voice: narrator {slot}'s \u{2014} it is re-cut from the recording on the next line spoken"
+    )
 }
 
 /// S1's report for a voices-folder file.
@@ -204,7 +201,10 @@ pub fn plan_reference(
 ) -> ReferencePlan {
     if !takes.is_empty() {
         return ReferencePlan::HandPicked(
-            takes.iter().map(|&(start, end)| Piece { start, end }).collect(),
+            takes
+                .iter()
+                .map(|&(start, end)| Piece { start, end })
+                .collect(),
         );
     }
     if turns.is_empty() {
@@ -245,7 +245,10 @@ pub fn plan_reference(
         if until - from < REF_MIN_TAKE_SECONDS {
             continue;
         }
-        let piece = Piece { start: from, end: until };
+        let piece = Piece {
+            start: from,
+            end: until,
+        };
         let words = words_in(from, until);
         if (words as f64) < (until - from) * REF_MIN_WORDS_PER_SECOND {
             sparse.push((piece, words));
@@ -265,9 +268,11 @@ pub fn plan_reference(
     // alone would take a slow rambling take over a dense one carrying twice the speech, and the clone learns
     // the voice, not the pacing, so density is what matters.
     candidates.sort_by(|(a, a_words), (b, b_words)| {
-        b_words
-            .cmp(a_words)
-            .then(b.seconds().partial_cmp(&a.seconds()).unwrap_or(std::cmp::Ordering::Equal))
+        b_words.cmp(a_words).then(
+            b.seconds()
+                .partial_cmp(&a.seconds())
+                .unwrap_or(std::cmp::Ordering::Equal),
+        )
     });
     let mut chosen: Vec<Piece> = Vec::new();
     let mut total = 0.0;
@@ -302,7 +307,11 @@ pub fn turn_seconds(turns: &[(f64, f64, u32)], speaker: u32) -> f64 {
 /// stays that refusal rather than becoming a guess.
 pub fn ranked_speaker(turns: &[(f64, f64, u32)]) -> Option<u32> {
     let mut best: Option<(f64, u32)> = None;
-    for speaker in turns.iter().map(|(_, _, who)| *who).collect::<std::collections::BTreeSet<u32>>() {
+    for speaker in turns
+        .iter()
+        .map(|(_, _, who)| *who)
+        .collect::<std::collections::BTreeSet<u32>>()
+    {
         let held = turn_seconds(turns, speaker);
         if best.is_none_or(|(seconds, _)| held > seconds) {
             best = Some((held, speaker));
@@ -312,7 +321,8 @@ pub fn ranked_speaker(turns: &[(f64, f64, u32)]) -> Option<u32> {
 }
 
 /// S2's refusal when there is no diarization to choose from at all.
-pub const NO_DIARIZATION: &str = "no diarization for X -- run Prepare, or pick the seconds by hand under the video";
+pub const NO_DIARIZATION: &str =
+    "no diarization for X -- run Prepare, or pick the seconds by hand under the video";
 
 /// S2's refusal when diarization exists but nothing clean and long enough turned up.
 pub const NO_CLEAN_STRETCH: &str = "no clean solo stretch found for the voice reference";
@@ -392,14 +402,18 @@ pub fn wav_header(path: &Path) -> Option<(u16, u32)> {
     }
     // The fmt chunk follows the 12-byte RIFF header in every writer we meet; scanning for the tag
     // keeps odd padding between chunks from being misread.
-    let fmt_at = (12..bytes.len().saturating_sub(4))
-        .find(|&i| &bytes[i..i + 4] == b"fmt ")?;
+    let fmt_at = (12..bytes.len().saturating_sub(4)).find(|&i| &bytes[i..i + 4] == b"fmt ")?;
     let body = fmt_at + 8;
     if bytes.len() < body + 16 {
         return None;
     }
     let tag = u16::from_le_bytes([bytes[body], bytes[body + 1]]);
-    let rate = u32::from_le_bytes([bytes[body + 4], bytes[body + 5], bytes[body + 6], bytes[body + 7]]);
+    let rate = u32::from_le_bytes([
+        bytes[body + 4],
+        bytes[body + 5],
+        bytes[body + 6],
+        bytes[body + 7],
+    ]);
     Some((tag, rate))
 }
 
@@ -495,7 +509,10 @@ pub fn recut_for_voice(
     // pieces' own, re-asked of the caller's counter here rather than carried out of the plan, so
     // `ReferencePlan` keeps its shape (tests compare it against plain piece lists).
     let words: usize = if hand_picked == 0 {
-        pieces.iter().map(|piece| words_in(piece.start, piece.end)).sum()
+        pieces
+            .iter()
+            .map(|piece| words_in(piece.start, piece.end))
+            .sum()
     } else {
         0
     };
@@ -513,7 +530,8 @@ pub fn recut_for_voice(
         let mut parts: Vec<PathBuf> = Vec::new();
         for (index, piece) in pieces.iter().enumerate() {
             let part = part_path(tree, index);
-            let args = level_piece_args(source, piece.start, piece.end, &part.display().to_string());
+            let args =
+                level_piece_args(source, piece.start, piece.end, &part.display().to_string());
             run_ffmpeg(ffmpeg, &args)?;
             parts.push(part);
         }
@@ -533,7 +551,11 @@ pub fn recut_for_voice(
     if semitones.abs() < f64::EPSILON {
         copy_file(&base, &served)?;
     } else {
-        let shift = shift_args(&base.display().to_string(), &served.display().to_string(), semitones);
+        let shift = shift_args(
+            &base.display().to_string(),
+            &served.display().to_string(),
+            semitones,
+        );
         run_ffmpeg(ffmpeg, &shift)?;
     }
     Ok(Built {
@@ -567,10 +589,9 @@ fn nothing_is_tagged(tree: &Tree, source: &str) -> bool {
         // below is the honest one.
         return false;
     };
-    !project
-        .sources
-        .iter()
-        .any(|project_source| project_source.narrator != 0 && same_file(&project_source.path, source))
+    !project.sources.iter().any(|project_source| {
+        project_source.narrator != 0 && same_file(&project_source.path, source)
+    })
 }
 
 /// The slot this flow cuts for. §1 makes the first tagged recording the one the narration is spoken
@@ -658,12 +679,7 @@ pub fn concat_args(list: &str, out: &str) -> Vec<String> {
 /// copy so the two files agree byte-for-byte at zero shift (§3's `shiftRef`).
 ///
 /// Every failure names the program and the reason and comes back `Err`: no silent fallback.
-pub fn build(
-    tree: &Tree,
-    source: &str,
-    ffmpeg: &str,
-    semitones: f64,
-) -> Result<Built, String> {
+pub fn build(tree: &Tree, source: &str, ffmpeg: &str, semitones: f64) -> Result<Built, String> {
     let base = narrate_data::base_reference(tree);
     let served = narrate_data::served_reference(tree);
     let mut said = Vec::new();
@@ -679,7 +695,11 @@ pub fn build(
     if semitones.abs() < f64::EPSILON {
         copy_file(&base, &served)?;
     } else {
-        let shift = shift_args(&base.display().to_string(), &served.display().to_string(), semitones);
+        let shift = shift_args(
+            &base.display().to_string(),
+            &served.display().to_string(),
+            semitones,
+        );
         run_ffmpeg(ffmpeg, &shift)?;
     }
     Ok(Built {
@@ -740,12 +760,7 @@ pub fn sample_cached(tree: &Tree, voice: &str, text: &str) -> Option<Vec<u8>> {
 
 /// S5's last step: file the take under the sample's own name. Returns nothing — the caller keeps the
 /// bytes it read; this only says whether they could be written where they belong.
-pub fn store_sample(
-    tree: &Tree,
-    voice: &str,
-    text: &str,
-    bytes: &[u8],
-) -> Result<(), String> {
+pub fn store_sample(tree: &Tree, voice: &str, text: &str, bytes: &[u8]) -> Result<(), String> {
     let file = sample_file(tree, voice, text);
     if let Some(parent) = file.parent() {
         std::fs::create_dir_all(parent).map_err(|err| format!("{}: {err}", parent.display()))?;
@@ -753,7 +768,6 @@ pub fn store_sample(
     std::fs::write(&file, bytes).map_err(|err| format!("{}: {err}", file.display()))?;
     Ok(())
 }
-
 
 /// Run ffmpeg and turn any failure into a named error, the way the other legs do. The output folder is
 /// made first: the reference's working files live under `narrate/reference/`, which a fresh session
@@ -766,15 +780,13 @@ fn run_ffmpeg(ffmpeg: &str, args: &[String]) -> Result<(), String> {
         }
     }
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-    crate::subprocess::run(ffmpeg, &borrowed, |_| {}).map_err(|why| {
-        format!("{}: {why}", crate::subprocess::shown(ffmpeg, &borrowed))
-    })?;
+    crate::subprocess::run(ffmpeg, &borrowed, |_| {})
+        .map_err(|why| format!("{}: {why}", crate::subprocess::shown(ffmpeg, &borrowed)))?;
     Ok(())
 }
 
 fn copy_file(from: &Path, to: &Path) -> Result<(), String> {
-    let bytes =
-        std::fs::read(from).map_err(|err| format!("{}: {err}", from.display()))?;
+    let bytes = std::fs::read(from).map_err(|err| format!("{}: {err}", from.display()))?;
     if let Some(parent) = to.parent() {
         let _ = std::fs::create_dir_all(parent);
     }

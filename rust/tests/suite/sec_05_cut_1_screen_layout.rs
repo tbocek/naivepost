@@ -11,11 +11,11 @@
 //! `next_sibling()`, positions from `compute_bounds()`, widths from `width()` — because a layout that
 //! merely renders is not evidence: the broken page rendered fine and was wrong by 750 px.
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, hold_last_window, release_last_window, settle};
 use gtk4 as gtk;
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle};
 
 static RAN_ORDER: AtomicBool = AtomicBool::new(false);
 static RAN_NO_GAP: AtomicBool = AtomicBool::new(false);
@@ -28,7 +28,6 @@ static RAN_BELOW: AtomicBool = AtomicBool::new(false);
 /// How far below the toolbar's bottom edge the tape may start. §A puts the tracks DIRECTLY under the
 /// toolbar; the arrangement bug left ~750 px of empty plate between them, so anything past this fails.
 const MAX_TOOLBAR_TO_TAPE_PX: i32 = 260;
-
 
 /// The page's own vertical box: the ancestor whose DIRECT children include the toolbar, which is where
 /// every part of the Cut page was appended. Reading children here rather than walking the whole tree is
@@ -45,7 +44,9 @@ fn page_box_of(toolbar: &gtk::Widget) -> gtk::Box {
         if holds {
             break;
         }
-        candidate = candidate.parent().expect("the toolbar is nested deeper than expected");
+        candidate = candidate
+            .parent()
+            .expect("the toolbar is nested deeper than expected");
     }
     candidate
         .downcast::<gtk::Box>()
@@ -66,8 +67,12 @@ fn child_names(page_box: &gtk::Box) -> Vec<String> {
 /// relative to the native surface, which is the one frame every widget on this page shares.
 #[allow(deprecated)] // 4.12's replacement needs a surface node this tree does not hand out
 fn edges(widget: &gtk::Widget) -> (i32, i32) {
-    let native = widget.native().expect("the page is inside a realized window");
-    let (_, y) = widget.translate_coordinates(&native, 0.0, 0.0).expect("the widget is laid out");
+    let native = widget
+        .native()
+        .expect("the page is inside a realized window");
+    let (_, y) = widget
+        .translate_coordinates(&native, 0.0, 0.0)
+        .expect("the widget is laid out");
     let top = y as i32;
     (top, top + widget.height())
 }
@@ -75,8 +80,12 @@ fn edges(widget: &gtk::Widget) -> (i32, i32) {
 /// A widget's left edge in window coordinates, alongside its top edge.
 #[allow(deprecated)] // same door as [`edges`]
 fn left_edge(widget: &gtk::Widget) -> (i32, i32) {
-    let native = widget.native().expect("the page is inside a realized window");
-    let (x, y) = widget.translate_coordinates(&native, 0.0, 0.0).expect("the widget is laid out");
+    let native = widget
+        .native()
+        .expect("the page is inside a realized window");
+    let (x, y) = widget
+        .translate_coordinates(&native, 0.0, 0.0)
+        .expect("the widget is laid out");
     (x as i32, y as i32)
 }
 
@@ -95,7 +104,9 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
     std::env::set_current_dir(&root).expect("cwd pinned away from rust/");
     let session = naivepost::startup::session_dir(&root);
     let mut seed = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    seed.sources.iter_mut().for_each(|source| source.footage = true);
+    seed.sources
+        .iter_mut()
+        .for_each(|source| source.footage = true);
     std::fs::create_dir_all(&session).expect("session folder");
     naivepost::project::save(&seed, &session).expect("the session is a real project on disk");
 
@@ -116,7 +127,11 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
         end: 120.0,
     }]);
     let seeded = naivepost::cut::Cut {
-        segs: vec![naivepost::cut::Seg { s: 0.0, e: 60.0, ..Default::default() }],
+        segs: vec![naivepost::cut::Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     naivepost::ui::seed_review_cut(&window, &seeded);
@@ -137,7 +152,11 @@ fn check_the_page_children_are_in_spec_order(app: &adw::Application) {
         names
             .iter()
             .position(|found| found == name)
-            .unwrap_or_else(|| panic!("`{name}` is not a direct child of the box that holds the toolbar: {names:?}"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "`{name}` is not a direct child of the box that holds the toolbar: {names:?}"
+                )
+            })
     };
     // `cut-top` is no longer beside the toolbar -- it is above the divider, in the box one level up.
     let vsplit = common::find_named(&window, "cut-page-split")
@@ -152,15 +171,16 @@ fn check_the_page_children_are_in_spec_order(app: &adw::Application) {
         at("cut-toolbar") < at("track-layers"),
         "the toolbar comes before the tape: {names:?}"
     );
-    assert!(
-        at("track-layers") < at("track-strip"),
-        "the band and its overlay stack come before the trim strip: {names:?}"
-    );
+    // §1's tracks are ONE stack — `track-layers` — so nothing else sits between the band and the row list:
+    // the old placeholder strip (with its own ruler + kept bar) is no longer part of the visible page.
     let bar = at("track-scrollbar");
     // The effects lane is NOT in this list: §06-effects#2 packs it under the preview frame, so it
     // travels inside `cut-top` with the picture rather than below the divider.
-    for name in ["cut-toolbar", "track-layers", "track-strip", "camera-rows"] {
-        assert!(at(name) < bar, "`{name}` sits above the scrollbar: {names:?}");
+    for name in ["cut-toolbar", "track-layers", "camera-rows"] {
+        assert!(
+            at(name) < bar,
+            "`{name}` sits above the scrollbar: {names:?}"
+        );
     }
     RAN_ORDER.store(true, Ordering::SeqCst);
 }
@@ -169,7 +189,8 @@ fn check_the_page_children_are_in_spec_order(app: &adw::Application) {
 fn check_no_gap_between_toolbar_and_tape(app: &adw::Application) {
     let window = cut_page(app);
     let toolbar = common::find_named(&window, "cut-toolbar").expect("§A's toolbar is on the page");
-    let layers = common::find_named(&window, "track-layers").expect("the band's layer stack is on the page");
+    let layers =
+        common::find_named(&window, "track-layers").expect("the band's layer stack is on the page");
     let (_, toolbar_bottom) = edges(&toolbar);
     let (tape_top, _) = edges(&layers);
     let gap = tape_top - toolbar_bottom;
@@ -185,9 +206,12 @@ fn check_no_gap_between_toolbar_and_tape(app: &adw::Application) {
 /// reading column sits BESIDE it rather than stacked under it, and the eight rows keep their own width.
 fn check_the_preview_outranks_the_reading_column(app: &adw::Application) {
     let window = cut_page(app);
-    let preview = common::find_named(&window, "preview-panel").expect("§A's preview panel is on the page");
-    let frame = common::find_named(&window, "cut-form-frame").expect("§A's form column is on the page");
-    let grid = common::find_named(&window, "cut-form").expect("the idle readings grid is in the column");
+    let preview =
+        common::find_named(&window, "preview-panel").expect("§A's preview panel is on the page");
+    let frame =
+        common::find_named(&window, "cut-form-frame").expect("§A's form column is on the page");
+    let grid =
+        common::find_named(&window, "cut-form").expect("the idle readings grid is in the column");
     let (preview_w, grid_w) = (preview.width(), grid.width());
     let (preview_x, _) = left_edge(&preview);
     let (frame_x, _) = left_edge(&frame);
@@ -227,8 +251,10 @@ fn check_the_preview_outranks_the_reading_column(app: &adw::Application) {
 /// same parent, the child immediately after it, and BELOW it on screen (not beside it in the paned).
 fn check_the_lane_sits_under_the_frame(app: &adw::Application) {
     let window = cut_page(app);
-    let panel = common::find_named(&window, "preview-panel").expect("\u{a7}A's preview panel is on the page");
-    let lane = common::find_named(&window, "effects-lane").expect("the Cut page drew the effects lane");
+    let panel = common::find_named(&window, "preview-panel")
+        .expect("\u{a7}A's preview panel is on the page");
+    let lane =
+        common::find_named(&window, "effects-lane").expect("the Cut page drew the effects lane");
     let parent = lane.parent().expect("the lane is packed somewhere");
     let mut order: Vec<String> = Vec::new();
     let mut child = parent.first_child();
@@ -272,14 +298,19 @@ fn check_the_page_has_both_dividers(app: &adw::Application) {
         .and_then(|w| w.downcast::<gtk::Paned>().ok())
         .expect("§A's horizontal paned (660) is on the page");
     // The horizontal one sits in the vertical one's START pane -- above the divider, as §1 says.
-    let start = vsplit.start_child().expect("the vertical paned has a start pane");
+    let start = vsplit
+        .start_child()
+        .expect("the vertical paned has a start pane");
     assert_eq!(
         start.widget_name(),
         "cut-top",
         "the top/bottom divider's start pane holds the left/right divider"
     );
     let top_pos = vsplit.position();
-    println!("VSPLIT cut-page-split position {top_pos} px (opens at {})", naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX);
+    println!(
+        "VSPLIT cut-page-split position {top_pos} px (opens at {})",
+        naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX
+    );
     assert!(
         (top_pos - naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX).abs() <= SPLIT_SLACK_PX,
         "the upper part opens {} px tall, not {} px",
@@ -287,7 +318,10 @@ fn check_the_page_has_both_dividers(app: &adw::Application) {
         naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX
     );
     let side_pos = hsplit.position();
-    println!("HSPLIT cut-top position {side_pos} px (opens at {})", naivepost::ui::cut_page_layout::SELF_SPLIT_PREVIEW_PX);
+    println!(
+        "HSPLIT cut-top position {side_pos} px (opens at {})",
+        naivepost::ui::cut_page_layout::SELF_SPLIT_PREVIEW_PX
+    );
     assert!(
         (side_pos - naivepost::ui::cut_page_layout::SELF_SPLIT_PREVIEW_PX).abs() <= SPLIT_SLACK_PX,
         "the preview opens {} px wide, not {} px",
@@ -305,7 +339,9 @@ fn check_the_bottom_half_is_below_the_divider(app: &adw::Application) {
     let vsplit = common::find_named(&window, "cut-page-split")
         .and_then(|w| w.downcast::<gtk::Paned>().ok())
         .expect("§A's vertical paned (380) is on the page");
-    let top = vsplit.start_child().expect("the vertical paned has a start pane");
+    let top = vsplit
+        .start_child()
+        .expect("the vertical paned has a start pane");
     let toolbar = common::find_named(&window, "cut-toolbar").expect("§A's toolbar is on the page");
     let (_, top_bottom) = edges(&top);
     let (toolbar_top, _) = edges(&toolbar);
@@ -320,19 +356,62 @@ fn check_the_bottom_half_is_below_the_divider(app: &adw::Application) {
     let bar_at = names
         .iter()
         .position(|name| name == "track-scrollbar")
-        .unwrap_or_else(|| panic!("the scrollbar shares the lower pane with the toolbar: {names:?}"));
+        .unwrap_or_else(|| {
+            panic!("the scrollbar shares the lower pane with the toolbar: {names:?}")
+        });
     assert_eq!(
         bar_at,
         names.len() - 1,
         "badge **31** is the last thing in the lower pane: {names:?}"
     );
-    for name in ["cut-toolbar", "track-layers", "track-strip", "camera-rows"] {
+    for name in ["cut-toolbar", "track-layers", "camera-rows"] {
         assert!(
-            names.iter().position(|found| found == name).is_some_and(|at| at < bar_at),
+            names
+                .iter()
+                .position(|found| found == name)
+                .is_some_and(|at| at < bar_at),
             "`{name}` sits above the scrollbar in the lower pane: {names:?}"
         );
     }
     RAN_BELOW.store(true, Ordering::SeqCst);
+}
+
+/// §1's tracks are ONE stack. The page used to show TWO: `track-layers` (ruler, selection band, picture
+/// rows, lane rows) and, packed under it, the placeholder strip with its OWN ruler, its own green/grey
+/// blocks and its own lane plate — which is why the shot read as two ruler-headed groups. The strip is now
+/// an invisible press surface (§F2.8), so what a user sees is one ruler row and nothing below it but the
+/// rows and the scrollbar. Asserted off the realized tree: the band is painted, the strip is not shown.
+fn check_one_stack_has_one_ruler(app: &adw::Application) {
+    let window = cut_page(app);
+    let layers =
+        common::find_named(&window, "track-layers").expect("§1's single band is on the page");
+    assert!(
+        layers.is_mapped() && layers.height() > 0,
+        "the one stack got no pixels: {}x{} mapped={}",
+        layers.width(),
+        layers.height(),
+        layers.is_mapped()
+    );
+    // The ruler lives in that stack (`track-band` paints it, `track-playhead` rides above it) — both are
+    // children of `track-layers`, so there is exactly one ruler row on the page.
+    for name in ["track-band", "track-playhead"] {
+        let part = common::find_named(&window, name)
+            .unwrap_or_else(|| panic!("the band's layer {name} is missing"));
+        assert!(
+            part.parent().is_some(),
+            "{name} is parentless, so it draws nothing"
+        );
+    }
+    // And the old second ruler is gone from what a person sees: still in the tree (F2.8's gestures live on
+    // it), never shown.
+    let strip =
+        common::find_named(&window, "track-strip").expect("F2.8's press surface is still built");
+    assert!(
+        strip.opacity() == 0.0,
+        "the placeholder strip paints again, so the page has two rulers"
+    );
+    window.close();
+    RAN_ONE_RULER.store(true, Ordering::SeqCst);
 }
 
 fn round() {
@@ -352,10 +431,13 @@ fn round() {
         println!("CHECK 7 the tape under the toolbar is PAINTED, not merely in the tree");
         check_the_tape_is_painted_below_the_toolbar(app);
         RAN_TAPE_PAINTED.store(true, Ordering::SeqCst);
+        println!("CHECK 8 the tracks are ONE stack with ONE ruler");
+        check_one_stack_has_one_ruler(app);
     });
 }
 
 static RAN_TAPE_PAINTED: AtomicBool = AtomicBool::new(false);
+static RAN_ONE_RULER: AtomicBool = AtomicBool::new(false);
 
 /// §1's badges **24** (ruler) and **25** (the green bar of a kept scene) live in the pane UNDER the page's
 /// own top/bottom divider, so "below it, top to bottom" is only true if that pane got
@@ -367,28 +449,27 @@ fn check_the_tape_is_painted_below_the_toolbar(app: &adw::Application) {
     let window = cut_page(app);
     let toolbar = common::find_named(&window, "cut-toolbar").expect("§1's toolbar is on the page");
     let (_, toolbar_bottom) = edges(&toolbar);
-    for name in ["track-layers", "track-strip"] {
-        let widget = common::find_named(&window, name)
-            .unwrap_or_else(|| panic!("`{name}` is missing from the Cut page"));
-        let (top, bottom) = edges(&widget);
-        println!(
-            "TAPE {name}: y={top}..{bottom} w={} h={} mapped={}",
-            widget.width(),
-            widget.height(),
-            widget.is_mapped()
-        );
-        assert!(
-            widget.is_mapped() && widget.width() > 0 && widget.height() > 0,
-            "`{name}` (§1's ruler and kept-scene bars) was built but never painted: {}x{} mapped={}",
-            widget.width(),
-            widget.height(),
-            widget.is_mapped()
-        );
-        assert!(
-            top >= toolbar_bottom,
-            "`{name}` starts at {top}, above the toolbar's bottom edge {toolbar_bottom} — §1 puts the tracks BELOW the toolbar"
-        );
-    }
+    let name = "track-layers";
+    let widget = common::find_named(&window, name)
+        .unwrap_or_else(|| panic!("`{name}` is missing from the Cut page"));
+    let (top, bottom) = edges(&widget);
+    println!(
+        "TAPE {name}: y={top}..{bottom} w={} h={} mapped={}",
+        widget.width(),
+        widget.height(),
+        widget.is_mapped()
+    );
+    assert!(
+        widget.is_mapped() && widget.width() > 0 && widget.height() > 0,
+        "`{name}` (§1's ruler and kept-scene bars) was built but never painted: {}x{} mapped={}",
+        widget.width(),
+        widget.height(),
+        widget.is_mapped()
+    );
+    assert!(
+                    top >= toolbar_bottom,
+                    "`{name}` starts at {top}, above the toolbar's bottom edge {toolbar_bottom} — §1 puts the tracks BELOW the toolbar"
+                );
     // Badge 31's own position is NOT pinned here: §A hides the bar when the tape fits the view, and which of
     // the two states a laid-out page happens to open in is badge 31's rule — shown when it overflows with a
     // geared thumb, hidden at the floor — already walked through the toolbar's zoom doors in
@@ -399,49 +480,80 @@ fn check_the_tape_is_painted_below_the_toolbar(app: &adw::Application) {
 fn sec_05_cut_1_screen_the_page_stacks_preview_then_toolbar_then_tracks_then_scrollbar() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_ORDER.load(Ordering::SeqCst), "the child-order check never ran");
+    assert!(
+        RAN_ORDER.load(Ordering::SeqCst),
+        "the child-order check never ran"
+    );
 }
 
 #[test]
 fn sec_05_cut_1_screen_the_tape_sits_directly_under_the_toolbar() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_NO_GAP.load(Ordering::SeqCst), "the toolbar-to-tape gap check never ran");
+    assert!(
+        RAN_NO_GAP.load(Ordering::SeqCst),
+        "the toolbar-to-tape gap check never ran"
+    );
 }
 
 #[test]
 fn sec_05_cut_1_screen_the_lane_sits_under_the_frame_it_marks() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_LANE.load(Ordering::SeqCst), "the lane-under-the-frame check never ran");
+    assert!(
+        RAN_LANE.load(Ordering::SeqCst),
+        "the lane-under-the-frame check never ran"
+    );
 }
 
 #[test]
 fn sec_05_cut_1_screen_the_preview_gets_the_wide_half_of_the_top_row() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_WIDTHS.load(Ordering::SeqCst), "the preview-width check never ran");
+    assert!(
+        RAN_WIDTHS.load(Ordering::SeqCst),
+        "the preview-width check never ran"
+    );
 }
 
 #[test]
 fn sec_05_cut_1_screen_the_page_is_split_top_and_bottom_by_a_draggable_divider() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_VSPLIT.load(Ordering::SeqCst), "the top/bottom divider check never ran");
+    assert!(
+        RAN_VSPLIT.load(Ordering::SeqCst),
+        "the top/bottom divider check never ran"
+    );
 }
 
 #[test]
 fn sec_05_cut_1_screen_the_top_row_is_split_left_and_right_at_660_px() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_HSPLIT.load(Ordering::SeqCst), "the left/right divider check never ran");
+    assert!(
+        RAN_HSPLIT.load(Ordering::SeqCst),
+        "the left/right divider check never ran"
+    );
 }
 
 #[test]
 fn sec_05_cut_1_screen_the_toolbar_tracks_and_scrollbar_sit_below_the_divider() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_BELOW.load(Ordering::SeqCst), "the below-the-divider check never ran");
+    assert!(
+        RAN_BELOW.load(Ordering::SeqCst),
+        "the below-the-divider check never ran"
+    );
+}
+
+#[test]
+fn sec_05_cut_1_screen_one_stack_has_one_ruler() {
+    common::pin_private_cwd();
+    round();
+    assert!(
+        RAN_ONE_RULER.load(Ordering::SeqCst),
+        "the one-stack check never ran"
+    );
 }
 
 #[test]

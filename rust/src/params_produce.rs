@@ -13,7 +13,7 @@
 
 use crate::bodies::{sd_waits, SdWait};
 use crate::produce_embed::{POSTER_JPEG_QUALITY, POSTER_QSCALE};
-use crate::produce_render::{MP4_START_FLAGS, MP4_STREAM_FLAGS, INPUT_FLAG, SEEK_FLAG};
+use crate::produce_render::{INPUT_FLAG, MP4_START_FLAGS, MP4_STREAM_FLAGS, SEEK_FLAG};
 use crate::produce_runs::{JPEG_QUALITIES, JPEG_RETRY_LIMIT};
 use crate::services::Kind;
 
@@ -25,7 +25,13 @@ pub fn export_ladder() -> String {
     JPEG_QUALITIES
         .iter()
         .enumerate()
-        .map(|(index, rung)| if index < tried { rung.to_string() } else { format!("{rung}*") })
+        .map(|(index, rung)| {
+            if index < tried {
+                rung.to_string()
+            } else {
+                format!("{rung}*")
+            }
+        })
         .collect::<Vec<String>>()
         .join("/")
         + &format!(" (* = beyond the {tried} reported)")
@@ -58,7 +64,11 @@ pub fn sd_timeouts() -> String {
 /// One wait as `label Ns`, plus ` every Ms` where the kind polls.
 fn spell_wait(label: &str, wait: &SdWait) -> String {
     match wait.interval {
-        Some(gap) => format!("{label} {}s every {}s", wait.timeout.as_secs(), gap.as_secs()),
+        Some(gap) => format!(
+            "{label} {}s every {}s",
+            wait.timeout.as_secs(),
+            gap.as_secs()
+        ),
         None => format!("{label} {}s", wait.timeout.as_secs()),
     }
 }

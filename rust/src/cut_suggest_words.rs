@@ -66,7 +66,11 @@ pub fn reason_for(states: &[WordState]) -> Option<String> {
     let named = list_with(&causes, " and ");
     // Every recording that failed is counted, whatever its cause: a person reading this has to know
     // how many rows are affected.
-    let failed = states.len() - states.iter().filter(|s| matches!(s, WordState::Usable)).count();
+    let failed = states.len()
+        - states
+            .iter()
+            .filter(|s| matches!(s, WordState::Usable))
+            .count();
     Some(format!(
         "{failed} of {} recording(s) have words we cannot use: {named}",
         states.len()
@@ -107,7 +111,10 @@ pub enum WordState {
 /// §1's answer for one set of readings: any recording whose words are not usable and the cut
 /// actually depends on, and the whole gate is `Needed`.
 pub fn gate(states: &[WordState]) -> Words {
-    if states.iter().any(|state| !matches!(state, WordState::Usable)) {
+    if states
+        .iter()
+        .any(|state| !matches!(state, WordState::Usable))
+    {
         Words::Needed
     } else {
         Words::Present

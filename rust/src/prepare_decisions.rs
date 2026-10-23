@@ -219,9 +219,7 @@ impl MarkCase {
             MarkCase::RephraseFragment => {
                 "only the broken-off fragment goes; the rephrased rest stays"
             }
-            MarkCase::Resurrected => {
-                "a second listening heard this stretch, so the mark is lifted"
-            }
+            MarkCase::Resurrected => "a second listening heard this stretch, so the mark is lifted",
         }
     }
 }

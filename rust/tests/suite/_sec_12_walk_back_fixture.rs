@@ -56,8 +56,18 @@ pub fn first_word() -> f64 {
 pub fn base_cut() -> naivepost::cut::Cut {
     naivepost::cut::Cut {
         segs: vec![
-            naivepost::cut::Seg { s: 0.0, e: SCENE_GAP_START - GAP_SECONDS, cam: 0, ..Default::default() },
-            naivepost::cut::Seg { s: SCENE_GAP_START, e: 30.0, cam: 0, ..Default::default() },
+            naivepost::cut::Seg {
+                s: 0.0,
+                e: SCENE_GAP_START - GAP_SECONDS,
+                cam: 0,
+                ..Default::default()
+            },
+            naivepost::cut::Seg {
+                s: SCENE_GAP_START,
+                e: 30.0,
+                cam: 0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }
@@ -104,7 +114,10 @@ fn write_envelope(tree: &Tree, project: &Project) {
     peaks.extend(vec![QUIET; (GAP_SECONDS * HZ) as usize]);
     // Loud again for the rest of the lane, which is where the second group of words sits.
     peaks.extend(vec![LOUD; ((30.0 - SCENE_GAP_START) * HZ) as usize]);
-    let wave = Wave { hz: HZ, chans: vec![peaks] };
+    let wave = Wave {
+        hz: HZ,
+        chans: vec![peaks],
+    };
     naivepost::wave::write(tree, "lecture", &wave, meta.len() as i64, mtime)
         .expect("write the wave cache");
     // The project's footage row must name this recording, or `read_lanes` has no lane to read at all.

@@ -13,8 +13,8 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
-use crate::project::TextMark;
 use crate::produce_screen;
+use crate::project::TextMark;
 use crate::ui::produce_page::ProduceState;
 
 /// One painted box: `(x, y, width, height)` in plate px plus the words to print in it.
@@ -34,7 +34,13 @@ pub fn layout_marks(
     if title_printed && !title.is_empty() {
         // §A draws the title band across the top of the picture, inset so it never touches an edge.
         let inset = w * 0.06;
-        boxes.push((inset, h * 0.06, w - 2.0 * inset, h * 0.22, title.to_string()));
+        boxes.push((
+            inset,
+            h * 0.06,
+            w - 2.0 * inset,
+            h * 0.22,
+            title.to_string(),
+        ));
     }
     for mark in marks {
         let bw = (mark.wf * w).max(1.0);
@@ -111,13 +117,19 @@ fn find_named(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
 /// The holder as the box it is built as. `find_named` answers a bare `Widget`, and gtk4-rs resolves
 /// `BoxExt::append` against the wrong `append` in scope unless the receiver is already a `gtk::Box`.
 fn holder_box(holder: &gtk::Widget) -> gtk::Box {
-    holder.clone().downcast::<gtk::Box>().expect("the word-box holder is a Box")
+    holder
+        .clone()
+        .downcast::<gtk::Box>()
+        .expect("the word-box holder is a Box")
 }
 
 /// The overlay the word boxes float in. `build_left_column` already made it — the plate inside it holds no
 /// children of its own — so this only finds it again; a plate whose parent is that overlay answers it.
 fn overlay_over_plate(plate: &gtk::Widget, holder: &gtk::Widget) -> gtk::Overlay {
-    if let Some(existing) = plate.parent().and_then(|p| p.downcast::<gtk::Overlay>().ok()) {
+    if let Some(existing) = plate
+        .parent()
+        .and_then(|p| p.downcast::<gtk::Overlay>().ok())
+    {
         return existing;
     }
     // No overlay to live in means the page was built without one, which is a build bug, not a case to paper
@@ -360,7 +372,10 @@ fn paint_thumbnail(cr: &cairo::Context, w: f64, h: f64) {
         missing(cr, w, h);
     }
     draw_crop(cr, &state, w, h);
-    draw_words(cr, &layout_marks(&state.texts, &state.thumb_title, state.title_seeded, w, h));
+    draw_words(
+        cr,
+        &layout_marks(&state.texts, &state.thumb_title, state.title_seeded, w, h),
+    );
 }
 
 /// One image slot's plate. Only the base (**2**) can differ in shape from the video, so only it draws a
@@ -389,13 +404,14 @@ fn frame_path(entry: Option<&String>) -> std::path::PathBuf {
     }
 }
 
-
 /// The session folder this page's pictures live in: the project the app took on (Open, a Save, or a
 /// snapshot's `--project`), else the launch's working copy beside cwd — which is what a test pins to.
 fn session_dir() -> std::path::PathBuf {
     open_project()
         .or_else(crate::ui::save_apply::open_dir)
-        .unwrap_or_else(|| crate::startup::session_dir(&std::env::current_dir().unwrap_or_default()))
+        .unwrap_or_else(|| {
+            crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
+        })
 }
 
 thread_local! {

@@ -6,12 +6,12 @@
 #[path = "captions_wire_harness.rs"]
 mod harness;
 
-use harness::*;
 use crate::common;
 use common::three_clips;
+use harness::*;
+use naivepost::cut_speed_pass::Call;
 use naivepost::speeds_ask;
 use serde_json::json;
-use naivepost::cut_speed_pass::Call;
 
 /// Which clips carry a caption: clip 3, with its one caption — `N caption(s) -- runs at 1`, spelled as
 /// §F3.10 spells it.
@@ -32,7 +32,8 @@ fn speeds_json(speeds: &[(u32, f64)]) -> String {
 
 /// The batch the Cut page hands the pass: three 20 s clips at their session seconds, one caption on clip 3.
 fn captioned_batch() -> naivepost::tools::clips::Clips {
-    let mut batch = naivepost::tools::clips::Clips::new(&[(1, 0.0, 20.0), (2, 20.0, 20.0), (3, 40.0, 20.0)]);
+    let mut batch =
+        naivepost::tools::clips::Clips::new(&[(1, 0.0, 20.0), (2, 20.0, 20.0), (3, 40.0, 20.0)]);
     batch.add_caption(3, 1.0, 6.0, "a line already on screen");
     batch
 }
@@ -61,17 +62,37 @@ fn f3_10_s2_live_speeds_reply_refused_on_a_captioned_clip_is_said() {
     let llm = FakeLlm::start(vec![tool_answer(3, 2.0)]);
     point_at(&llm.url());
 
-    let asked = speeds_ask::ask(&fixture.tree, "Run the dull stretches fast.", &three_clips(), &captioned(), 1, &|| false);
-    let seen_reply = llm.next_seen().reply;    assert!(!asked.failed, "the ask was answered: {:?}", asked.reason);
+    let asked = speeds_ask::ask(
+        &fixture.tree,
+        "Run the dull stretches fast.",
+        &three_clips(),
+        &captioned(),
+        1,
+        &|| false,
+    );
+    let seen_reply = llm.next_seen().reply;
+    assert!(!asked.failed, "the ask was answered: {:?}", asked.reason);
     // The ask reports what the model ASKED for: the refusal is the tool's judgement, made where the captions
     // are known, so it is `cut_speed_pass::place` that refuses — not a filter that quietly drops the rate.
-    assert_eq!(asked.calls, vec![Call { clip: 3, rate: 2.0 }], "the ask reports the model's own call -- the server answered {seen_reply}");
+    assert_eq!(
+        asked.calls,
+        vec![Call { clip: 3, rate: 2.0 }],
+        "the ask reports the model's own call -- the server answered {seen_reply}"
+    );
 
     // The batch the Cut page hands the pass: three 20 s clips, one caption on clip 3.
     let batch = captioned_batch();
     let reply = naivepost::cut_speed_pass::place(&batch, &asked.calls);
-    assert!(reply.usable(), "a per-call refusal does not cost the round: {:?}", reply.fault);
-    assert!(reply.effects.is_empty(), "nothing lands over a captioned clip, got {:?}", reply.effects);
+    assert!(
+        reply.usable(),
+        "a per-call refusal does not cost the round: {:?}",
+        reply.fault
+    );
+    assert!(
+        reply.effects.is_empty(),
+        "nothing lands over a captioned clip, got {:?}",
+        reply.effects
+    );
     let said: Vec<String> = reply
         .answers
         .iter()
@@ -81,6 +102,12 @@ fn f3_10_s2_live_speeds_reply_refused_on_a_captioned_clip_is_said() {
         })
         .collect();
     assert_eq!(said.len(), 1, "one refusal, said aloud: {said:?}");
-    assert!(said[0].contains("cannot be sped up"), "the tool names the rule it refused: {said:?}");
-    assert!(said[0].contains("clip 3"), "and names the clip it refused: {said:?}");
+    assert!(
+        said[0].contains("cannot be sped up"),
+        "the tool names the rule it refused: {said:?}"
+    );
+    assert!(
+        said[0].contains("clip 3"),
+        "and names the clip it refused: {said:?}"
+    );
 }

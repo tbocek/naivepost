@@ -15,9 +15,9 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::produce_screen as screen;
+use crate::project::{Codec, Container, Subtitles};
 use crate::ui::produce_page_layout as layout;
 use crate::ui::produce_page_rows::{session_tree, words_half};
-use crate::project::{Codec, Container, Subtitles};
 
 /// What the page shows. Published by the flows, read by every handler.
 #[derive(Debug, Clone, Default)]
@@ -439,7 +439,8 @@ pub fn build() -> gtk::Widget {
 pub fn widget_in_root(name: &str) -> Option<gtk::Box> {
     // The page is built once and held here so `draw_slots` can find its own box before the window has
     // a content root to walk from (the same reason the narrate page looks up from `window.content()`).
-    ROOT.with(|held| held.borrow().clone()).and_then(|root| find(&root, name))
+    ROOT.with(|held| held.borrow().clone())
+        .and_then(|root| find(&root, name))
 }
 
 fn find(node: &gtk::Widget, name: &str) -> Option<gtk::Box> {
@@ -467,7 +468,8 @@ thread_local! {
 
 /// The window this page lives in, once `wire` has run. Slot buttons are attached through it.
 pub fn held_window() -> Option<adw::ApplicationWindow> {
-    ROOT.with(|held| held.borrow().clone()).and_then(|w| w.downcast::<adw::ApplicationWindow>().ok())
+    ROOT.with(|held| held.borrow().clone())
+        .and_then(|w| w.downcast::<adw::ApplicationWindow>().ok())
 }
 
 /// Publish a window as the page's live one WITHOUT rebuilding anything — a test's seam for the same slot `wire`
@@ -490,8 +492,7 @@ pub fn page_root() -> Option<gtk::Widget> {
 }
 
 pub fn page_image_box_for_test() -> Option<gtk::Widget> {
-    page_root()
-        .and_then(|root| crate::ui::window::find_widget_by_name(&root, "publish-images"))
+    page_root().and_then(|root| crate::ui::window::find_widget_by_name(&root, "publish-images"))
 }
 
 /// Find one widget by name from the window this page sits in.
@@ -525,8 +526,8 @@ fn label(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Label> {
 /// is the same door `build_settings` walks. Rebuilding also re-attaches nothing twice, because every
 /// child is removed from the grid before any is added.
 fn rebuild_settings(window: &adw::ApplicationWindow, _s: &ProduceState) {
-    let Some(grid) = widget_in(window, "encoder-settings")
-        .and_then(|w| w.downcast::<gtk::Grid>().ok())
+    let Some(grid) =
+        widget_in(window, "encoder-settings").and_then(|w| w.downcast::<gtk::Grid>().ok())
     else {
         return;
     };
@@ -575,8 +576,8 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     // The four typed boxes are the exception: these `set_text` calls DO emit `changed`, and a keystroke
     // wire would otherwise answer our own repaint as an edit (and, for the title, re-enter `refresh`).
     SETTINGS_GUARD.with(|guard| guard.set(true));
-    if let Some(entry) = widget_in(window, "title-entry")
-        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+    if let Some(entry) =
+        widget_in(window, "title-entry").and_then(|w| w.downcast::<gtk::Entry>().ok())
     {
         entry.set_text(&s.title);
     }
@@ -585,8 +586,7 @@ pub fn refresh(window: &adw::ApplicationWindow) {
         ("negative-prompt", &s.negative),
         ("description-box", &s.description),
     ] {
-        if let Some(view) = widget_in(window, name)
-            .and_then(|w| w.downcast::<gtk::TextView>().ok())
+        if let Some(view) = widget_in(window, name).and_then(|w| w.downcast::<gtk::TextView>().ok())
         {
             view.buffer().set_text(text);
         }
@@ -603,8 +603,16 @@ pub fn refresh(window: &adw::ApplicationWindow) {
         // The tooltip answers "what exactly is behind that count": the clip range, the first line to
         // // be spoken, the voice in use, and whether text leaves the machine. Only what THIS session has
         // is stated; a thing the flows have not published yet contributes no row rather than a guess.
-        let first_line = if s.first_spoken.is_empty() { None } else { Some(s.first_spoken.as_str()) };
-        let voice = if s.voice.is_empty() { None } else { Some(s.voice.as_str()) };
+        let first_line = if s.first_spoken.is_empty() {
+            None
+        } else {
+            Some(s.first_spoken.as_str())
+        };
+        let voice = if s.voice.is_empty() {
+            None
+        } else {
+            Some(s.voice.as_str())
+        };
         inputs.set_tooltip_text(Some(&screen::inputs_tooltip(
             &s.cut_line,
             first_line,
@@ -632,12 +640,13 @@ pub fn refresh(window: &adw::ApplicationWindow) {
 fn session_readouts(narration_off: bool) -> Option<(usize, bool)> {
     let dir = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
     let tree = crate::layout::Tree::new(&dir).ok()?;
-    let lines = crate::narration::load(&tree).map(|n| n.entries).unwrap_or_default();
+    let lines = crate::narration::load(&tree)
+        .map(|n| n.entries)
+        .unwrap_or_default();
     let owed = crate::narrate_off::lines_to_speak(narration_off, &lines)
         .iter()
         .filter(|line| {
-            crate::produce_stamp::wav_of(&tree, line, None, 0)
-                .is_none_or(|wav| !wav.exists())
+            crate::produce_stamp::wav_of(&tree, line, None, 0).is_none_or(|wav| !wav.exists())
         })
         .count();
     // §A's "no upload text" is the file's existence, and `publish::is_written` is that question already
@@ -689,7 +698,10 @@ pub fn press_make_base(window: &adw::ApplicationWindow, index: usize) -> String 
         return say(window, "that slot is already the base");
     }
     refresh(window);
-    say(window, "base changed \u{2014} the image model edits the first picture now")
+    say(
+        window,
+        "base changed \u{2014} the image model edits the first picture now",
+    )
 }
 
 /// Swap one slot's picture for another file.
@@ -715,7 +727,8 @@ pub fn press_remove_image(window: &adw::ApplicationWindow, index: usize) -> Stri
     };
     refresh(window);
     if read_state().frames.is_empty() {
-        return say(window, screen::EMPTY_IMAGES);    }
+        return say(window, screen::EMPTY_IMAGES);
+    }
     say(window, &format!("image removed: {}", short(&path)))
 }
 
@@ -856,7 +869,11 @@ pub fn press_words_reword(window: &adw::ApplicationWindow, index: usize, text: &
     refresh(window);
     say(
         window,
-        if removed { "words removed" } else { "words reworded" },
+        if removed {
+            "words removed"
+        } else {
+            "words reworded"
+        },
     )
 }
 
@@ -1037,7 +1054,11 @@ pub fn set_text_field(field: &str, text: &str) -> String {
         }
         true
     });
-    if stored { "".to_string() } else { "no such text box on this page".to_string() }
+    if stored {
+        "".to_string()
+    } else {
+        "no such text box on this page".to_string()
+    }
 }
 
 /// Attach every handler. Called from `build_window` after `set_content`, like every other control on
@@ -1069,8 +1090,12 @@ pub fn wire(window: &adw::ApplicationWindow) {
                     // picture back — the row takes the next name it would have shown. A slot's Change… is
                     // stricter (it swaps one picture for another, and with nothing on disk it refuses with
                     // NO_FRAME_TO_ADD); an empty row has nothing to swap, only something to add.
-                    let next = crate::ui::produce_slots::real_frame_entry()
-                        .unwrap_or_else(|| format!("project:produce/publish/frame-{}.jpg", read_state().frames.len() + 1));
+                    let next = crate::ui::produce_slots::real_frame_entry().unwrap_or_else(|| {
+                        format!(
+                            "project:produce/publish/frame-{}.jpg",
+                            read_state().frames.len() + 1
+                        )
+                    });
                     press_add_image(&w, &next);
                 }
                 "title-suggest" => {
@@ -1127,8 +1152,8 @@ fn wire_settings(window: &adw::ApplicationWindow) {
         "Audio",
         "Subtitles",
     ] {
-        let Some(picker) = widget_in(window, &row_widget(row))
-            .and_then(|w| w.downcast::<gtk::DropDown>().ok())
+        let Some(picker) =
+            widget_in(window, &row_widget(row)).and_then(|w| w.downcast::<gtk::DropDown>().ok())
         else {
             continue;
         };
@@ -1146,8 +1171,8 @@ fn wire_settings(window: &adw::ApplicationWindow) {
         });
     }
     for row in ["Game audio", "Quality (CRF)"] {
-        let Some(scale) = widget_in(window, &row_widget(row))
-            .and_then(|w| w.downcast::<gtk::Scale>().ok())
+        let Some(scale) =
+            widget_in(window, &row_widget(row)).and_then(|w| w.downcast::<gtk::Scale>().ok())
         else {
             continue;
         };
@@ -1165,8 +1190,8 @@ fn wire_settings(window: &adw::ApplicationWindow) {
         ("Channels", "tick-mono"),
         ("Frame edges", "tick-blurred"),
     ] {
-        let Some(tick) = widget_in(window, name)
-            .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+        let Some(tick) =
+            widget_in(window, name).and_then(|w| w.downcast::<gtk::CheckButton>().ok())
         else {
             continue;
         };
@@ -1219,7 +1244,8 @@ pub(crate) fn draw_into(s: &ProduceState) {
     // `gtk_box_append: assertion 'gtk_widget_get_parent (child) == NULL'`. So the holder is found through
     // the window being refreshed when there is one, and only falls back to ROOT for the draw `build()` does
     // before any window exists.
-    let list = match held_window().and_then(|w| widget_in(&w, "publish-images"))
+    let list = match held_window()
+        .and_then(|w| widget_in(&w, "publish-images"))
         .and_then(|w| w.downcast::<gtk::Box>().ok())
     {
         Some(list) => list,
@@ -1267,10 +1293,9 @@ pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
     // S3: ONE function answers "what is the cut", and the Cut page's own segments win so a tweak that
     // was never saved still renders. `review_cut_of` is that live cut.
     let cut = match tree.as_ref() {
-        Some(tree) => crate::produce_flow::what_is_the_cut(
-            Some(crate::ui::review_cut_of(window)),
-            tree,
-        ),
+        Some(tree) => {
+            crate::produce_flow::what_is_the_cut(Some(crate::ui::review_cut_of(window)), tree)
+        }
         None => crate::ui::review_cut_of(window),
     };
     // S1: nothing to render. The shell refuses before the bar opens; this is the page's own copy of that
@@ -1281,14 +1306,25 @@ pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
     let settings = produce_settings(&s);
     let Some(tree) = tree.as_ref() else {
         // No project folder means no stamp and no video to ask about: encode.
-        return finish_produce(window, &s, &project, cut, settings, crate::produce_flow::Gate::Encode);
+        return finish_produce(
+            window,
+            &s,
+            &project,
+            cut,
+            settings,
+            crate::produce_flow::Gate::Encode,
+        );
     };
     // S2: up to date is the stamp's question, and it is asked over the narration too — §F5.3 lists the
     // lines (bounds, text, wav size and mtime) among what the hash covers, so `gate_stamp` reads
     // `narrate/narration.json` itself rather than hashing an empty list and calling that cheap. It also
     // takes the whole cut and the footage frame, because those are what the encoder is handed beside the
     // segments; the shape is measured by the same helper the snapshot below uses, so gate and run agree.
-    let voice = if s.voice.is_empty() { None } else { Some(s.voice.as_str()) };
+    let voice = if s.voice.is_empty() {
+        None
+    } else {
+        Some(s.voice.as_str())
+    };
     let current = crate::produce_stamp::gate_stamp(
         tree,
         &settings,
@@ -1306,7 +1342,8 @@ pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
             crate::produce_stamp::read_stamp(tree).as_deref(),
             &current,
         ),
-        tree.final_video(container_name(parse_container(&s.container))).exists(),
+        tree.final_video(container_name(parse_container(&s.container)))
+            .exists(),
     );
     finish_produce(window, &s, &project, cut, settings, gate)
 }
@@ -1340,7 +1377,14 @@ fn finish_produce(
             settings.clone(),
         );
         return crate::ui::produce_confirm::confirm_then(window, &video, move || {
-            encode_and_finish(&win, &st, &prj, &ct, &set, crate::produce_flow::Gate::Encode);
+            encode_and_finish(
+                &win,
+                &st,
+                &prj,
+                &ct,
+                &set,
+                crate::produce_flow::Gate::Encode,
+            );
         });
     }
     encode_and_finish(window, s, project, &cut, &settings, gate)
@@ -1390,7 +1434,10 @@ fn encode_and_finish(
         voice: s.voice.clone(),
         no_narration: project.no_narration,
     };
-    let run = crate::produce_flow::Run { aspect: run.cut.aspect.clone(), ..run };
+    let run = crate::produce_flow::Run {
+        aspect: run.cut.aspect.clone(),
+        ..run
+    };
     // S4: the one opening line, logged before either half starts.
     crate::ui::window::log_line(&crate::produce_flow::opening_line(&run, false));
     // S5/S6: both halves through `run_with`, so the closing line and the bar's progress text come from

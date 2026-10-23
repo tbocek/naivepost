@@ -134,7 +134,10 @@ fn closing_line_lands_in_the_window_log(app: &adw::Application) {
         .unwrap_or_else(|| panic!("the close wrote no closing line, log was {lines:?}"));
     assert!(said.contains("llm 1 in 20s on the wire"), "{said}");
     assert!(said.contains("; audio 1 in 6s"), "{said}");
-    assert!(!said.contains("image"), "an untouched service says nothing: {said}");
+    assert!(
+        !said.contains("image"),
+        "an untouched service says nothing: {said}"
+    );
     window.close();
 }
 
@@ -180,7 +183,11 @@ fn chain_close_says_it_too() {
         .into_iter()
         .filter(|line| line.starts_with(">>> requests:"))
         .collect::<Vec<String>>();
-    assert_eq!(said, vec![">>> requests: web 1 in 3s on the wire".to_string()], "one closing line, spelled as every other run ending spells it");
+    assert_eq!(
+        said,
+        vec![">>> requests: web 1 in 3s on the wire".to_string()],
+        "one closing line, spelled as every other run ending spells it"
+    );
     // §2's rule the close is written under: the queue's line goes on the row, and the queue is emptied
     // for whatever press comes next.
     assert_eq!(

@@ -46,7 +46,11 @@ fn f3_5_s1_no_line_refuses_before_the_chooser() {
         fx_svg::NO_LINE,
         "click a track first \u{2014} the drawing needs a moment to appear at"
     );
-    assert_ne!(fx_svg::NO_LINE, fx_zoom::NO_LINE, "a drawing asks in a drawing's words");
+    assert_ne!(
+        fx_svg::NO_LINE,
+        fx_zoom::NO_LINE,
+        "a drawing asks in a drawing's words"
+    );
 
     // A line and the dialog opens — for the file, not yet for the gesture.
     assert_eq!(fx_svg::press(Some(0.0)), Press::OpenChooser);
@@ -54,10 +58,16 @@ fn f3_5_s1_no_line_refuses_before_the_chooser() {
 
     // What it opens: §A.5's title, its `svg`-only filter, and the shared root-level cards folder. The directory is
     // another module's rule, so it is asserted through that module rather than re-spelled here.
-    assert_eq!(fx_svg::CHOOSE_TITLE, "Choose a drawing to lay over the video");
+    assert_eq!(
+        fx_svg::CHOOSE_TITLE,
+        "Choose a drawing to lay over the video"
+    );
     assert_eq!(fx_svg::CHOOSE_FILTER, "SVG drawing");
     let root = std::path::Path::new("/home/dev/eth");
-    assert_eq!(fx_svg::chooser_dir(root), naivepost::layout::assets_dir(root));
+    assert_eq!(
+        fx_svg::chooser_dir(root),
+        naivepost::layout::assets_dir(root)
+    );
     assert_eq!(
         fx_svg::chooser_dir(root),
         naivepost::cut_insert::chooser_dir(root)
@@ -71,7 +81,10 @@ fn f3_5_s1_no_line_refuses_before_the_chooser() {
 /// blank answer is the same answer as none: the file row can hold a space.
 #[test]
 fn f3_5_s2_the_file_is_asked_first_and_a_cancel_places_nothing() {
-    assert_eq!(fx_svg::chose(Some("logo.svg")), Chose::Armed("logo.svg".into()));
+    assert_eq!(
+        fx_svg::chose(Some("logo.svg")),
+        Chose::Armed("logo.svg".into())
+    );
     for nothing in [None, Some(""), Some("   ")] {
         assert_eq!(
             fx_svg::chose(nothing),
@@ -79,7 +92,10 @@ fn f3_5_s2_the_file_is_asked_first_and_a_cancel_places_nothing() {
             "{nothing:?} is no ink"
         );
     }
-    assert_eq!(fx_svg::NO_FILE, "choose a drawing and it goes on the picture");
+    assert_eq!(
+        fx_svg::NO_FILE,
+        "choose a drawing and it goes on the picture"
+    );
 
     // The refusal reaches the record too: a form applied with an empty file places nothing (§F3.5's last line).
     assert_eq!(
@@ -127,10 +143,17 @@ fn f3_5_s3_the_arm_names_the_file() {
     // "3 s" is written down once for all of them. Asserted through the function that owns it.
     assert_eq!(
         fx_svg::arm_words("logo.svg", None),
-        format!("{}{}", fx_svg::arm_head("logo.svg"), fx_zoom::arm_tail(None))
+        format!(
+            "{}{}",
+            fx_svg::arm_head("logo.svg"),
+            fx_zoom::arm_tail(None)
+        )
     );
     let marked = fx_svg::arm_words("tier.svg?S=Dust II", Some((12.0, 42.0)));
-    assert!(marked.starts_with(&fx_svg::arm_head("tier.svg?S=Dust II")), "{marked}");
+    assert!(
+        marked.starts_with(&fx_svg::arm_head("tier.svg?S=Dust II")),
+        "{marked}"
+    );
     // §A.4's own quotation of the shared tail: the app's seconds-and-length spelling of the stretch.
     assert!(marked.contains("00:12 \u{2013} 00:42, 30.0 s"), "{marked}");
 }
@@ -141,15 +164,32 @@ fn f3_5_s3_the_arm_names_the_file() {
 /// that stored nothing; this pins that the two agree.
 #[test]
 fn f3_5_s3b_the_default_box_is_the_middle_not_the_lower_third() {
-    assert_eq!(fx_svg::MIDDLE, Box_ { cx: 0.5, cy: 0.5, wf: 0.6, hf: 0.6 });
+    assert_eq!(
+        fx_svg::MIDDLE,
+        Box_ {
+            cx: 0.5,
+            cy: 0.5,
+            wf: 0.6,
+            hf: 0.6
+        }
+    );
     assert_ne!(fx_svg::MIDDLE.cy, fx_text::LOWER_THIRD.cy);
     assert_ne!(fx_svg::MIDDLE.wf, fx_text::LOWER_THIRD.wf);
 
-    let bare = Fx { kind: "svg".into(), ..Default::default() };
+    let bare = Fx {
+        kind: "svg".into(),
+        ..Default::default()
+    };
     assert_eq!(bare.centre(), (fx_svg::MIDDLE.cx, fx_svg::MIDDLE.cy));
     // …and a caption with no box still goes to the lower third, so one default did not eat the other.
-    let caption = Fx { kind: "text".into(), ..Default::default() };
-    assert_eq!(caption.centre(), (fx_text::LOWER_THIRD.cx, fx_text::LOWER_THIRD.cy));
+    let caption = Fx {
+        kind: "text".into(),
+        ..Default::default()
+    };
+    assert_eq!(
+        caption.centre(),
+        (fx_text::LOWER_THIRD.cx, fx_text::LOWER_THIRD.cy)
+    );
 
     // S1's other rule (§A.5 "same as text"): the box is measured against the output frame, so the camera layer holds
     // its place while a drawing is placed — asserted through text's own answer, and against zoom's opposite one.
@@ -159,15 +199,34 @@ fn f3_5_s3b_the_default_box_is_the_middle_not_the_lower_third() {
     assert!(!fx_zoom::whole_source_shown(false));
 
     // A click takes the middle, and a stretch is the length: 3 s from the red line otherwise.
-    let clicked = fx_svg::place(naivepost::fx_text::BoxChoice::Click, "logo.svg", Some(12.0), None, FRAME).unwrap();
+    let clicked = fx_svg::place(
+        naivepost::fx_text::BoxChoice::Click,
+        "logo.svg",
+        Some(12.0),
+        None,
+        FRAME,
+    )
+    .unwrap();
     assert_eq!((clicked.cx.unwrap(), clicked.cy.unwrap()), (0.5, 0.5));
     assert_eq!((clicked.wf.unwrap(), clicked.hf.unwrap()), (0.6, 0.6));
-    let stretched =
-        fx_svg::place(naivepost::fx_text::BoxChoice::Click, "logo.svg", Some(12.0), Some((30.0, 47.5)), FRAME)
-            .unwrap();
+    let stretched = fx_svg::place(
+        naivepost::fx_text::BoxChoice::Click,
+        "logo.svg",
+        Some(12.0),
+        Some((30.0, 47.5)),
+        FRAME,
+    )
+    .unwrap();
     assert_eq!((stretched.t, stretched.dur), (30.0, 17.5));
     // With neither a selection nor a line there is no second to place it at: nothing is placed.
-    assert!(fx_svg::place(naivepost::fx_text::BoxChoice::Click, "logo.svg", None, None, FRAME).is_none());
+    assert!(fx_svg::place(
+        naivepost::fx_text::BoxChoice::Click,
+        "logo.svg",
+        None,
+        None,
+        FRAME
+    )
+    .is_none());
 }
 
 // --- S4: the form --------------------------------------------------------------------------------------------------
@@ -178,7 +237,10 @@ fn f3_5_s3b_the_default_box_is_the_middle_not_the_lower_third() {
 /// keeps the two apart on purpose), and Linear writes no `ease` key so an untouched file re-saves byte-identically.
 #[test]
 fn f3_5_s4_the_form() {
-    assert_eq!(fx_svg::form_title(75.0), format!("SVG at {}", tools::mm_ss(75.0)));
+    assert_eq!(
+        fx_svg::form_title(75.0),
+        format!("SVG at {}", tools::mm_ss(75.0))
+    );
     assert!(fx_svg::form_title(0.0).starts_with("SVG at "));
     assert_eq!(
         fx_svg::FORM_FIELDS,
@@ -187,10 +249,16 @@ fn f3_5_s4_the_form() {
     assert_eq!(fx_svg::CHOOSE_BUTTON, "Choose\u{2026}");
 
     let written = fx_svg::apply(&form(("assets/logo.svg", 2.0))).expect("a good form");
-    assert_eq!((written.kind.as_str(), written.src.as_str()), ("svg", "assets/logo.svg"));
+    assert_eq!(
+        (written.kind.as_str(), written.src.as_str()),
+        ("svg", "assets/logo.svg")
+    );
     assert_eq!((written.t, written.dur), (6.0, 2.0));
     // fades 0.3 — P.policy.effectDefaultFades, whose row reads text/svg 0.3.
-    assert_eq!((written.trans, written.tout), (fx_text::FADE_SECONDS, fx_text::FADE_SECONDS));
+    assert_eq!(
+        (written.trans, written.tout),
+        (fx_text::FADE_SECONDS, fx_text::FADE_SECONDS)
+    );
     assert_eq!(fx_text::FADE_SECONDS, 0.3);
     // An svg's content is its file: the words field stays empty so a path can never read as text.
     assert_eq!(written.text, "");
@@ -198,15 +266,30 @@ fn f3_5_s4_the_form() {
     assert_eq!(written.ease, "");
     let (cx, cy, hf, wf) = fx_svg::MIDDLE.stored();
     assert_eq!(
-        (written.cx.unwrap(), written.cy.unwrap(), written.hf.unwrap(), written.wf.unwrap()),
+        (
+            written.cx.unwrap(),
+            written.cy.unwrap(),
+            written.hf.unwrap(),
+            written.wf.unwrap()
+        ),
         (cx, cy, hf, wf)
     );
 
     // t/dur come from the selection when there is one, else 3 s from the line — P.policy.effectDefaultSeconds, whose
     // row names zoom, text and svg together, so it is one constant rather than a second 3.0.
     assert_eq!(fx_zoom::DEFAULT_SECONDS, 3.0);
-    let from_line = fx_svg::place(naivepost::fx_text::BoxChoice::Click, "logo.svg", Some(9.0), None, FRAME).unwrap();
-    assert_eq!((from_line.t, from_line.dur), (9.0, fx_zoom::DEFAULT_SECONDS));
+    let from_line = fx_svg::place(
+        naivepost::fx_text::BoxChoice::Click,
+        "logo.svg",
+        Some(9.0),
+        None,
+        FRAME,
+    )
+    .unwrap();
+    assert_eq!(
+        (from_line.t, from_line.dur),
+        (9.0, fx_zoom::DEFAULT_SECONDS)
+    );
 
     // A re-chosen file in the form wins over whatever the arm took, and it is stored trimmed: a trailing space typed
     // into the row is not part of anyone's filename.
@@ -266,13 +349,20 @@ fn f3_5_s5_the_preview_raster_is_512_px_and_transparent() {
 
     let args = fx_svg::ffmpeg_raster("ffmpeg", "/x/assets/logo.svg", "out.png");
     for flag in [
-        "-width", "512", "-height", "512", "-keep_ar", "1", "-pix_fmt", "rgba", "-f", "image2", "-c:v", "png",
+        "-width", "512", "-height", "512", "-keep_ar", "1", "-pix_fmt", "rgba", "-f", "image2",
+        "-c:v", "png",
     ] {
-        assert!(args.iter().any(|arg| arg == flag), "{flag} missing from {args:?}");
+        assert!(
+            args.iter().any(|arg| arg == flag),
+            "{flag} missing from {args:?}"
+        );
     }
     assert_eq!(args.first().map(String::as_str), Some("ffmpeg"));
     // The file is the input and the output comes last: one vector, no shell string to get wrong.
-    let at = args.iter().position(|arg| arg == "/x/assets/logo.svg").expect("the drawing is the input");
+    let at = args
+        .iter()
+        .position(|arg| arg == "/x/assets/logo.svg")
+        .expect("the drawing is the input");
     assert_eq!(args[at - 1], "-i");
     assert_eq!(args.last().map(String::as_str), Some("out.png"));
 
@@ -281,10 +371,23 @@ fn f3_5_s5_the_preview_raster_is_512_px_and_transparent() {
         .into_iter()
         .find(|param| param.id == "effects.previewRasterPx")
         .expect("the raster's size is catalogued");
-    assert_eq!(row.spelled.parse::<f64>().unwrap(), fx_svg::PREVIEW_RASTER_PX);
+    assert_eq!(
+        row.spelled.parse::<f64>().unwrap(),
+        fx_svg::PREVIEW_RASTER_PX
+    );
     assert_eq!(row.from, "fx_svg::PREVIEW_RASTER_PX");
-    let listed: Vec<String> = params::cut().into_iter().map(|param| param.id.to_string()).collect();
-    assert_eq!(listed.iter().filter(|id| *id == "effects.previewRasterPx").count(), 1, "catalogued twice");
+    let listed: Vec<String> = params::cut()
+        .into_iter()
+        .map(|param| param.id.to_string())
+        .collect();
+    assert_eq!(
+        listed
+            .iter()
+            .filter(|id| *id == "effects.previewRasterPx")
+            .count(),
+        1,
+        "catalogued twice"
+    );
 }
 
 /// S5 (`cached per file`; §A.5 `failure logged once`): one raster per FILE rather than one per effect — the same logo
@@ -306,7 +409,10 @@ fn f3_5_s5b_one_raster_per_file_and_one_log_line_per_file() {
         first.as_deref(),
         Some(">>> the drawing logo.svg cannot be shown: ffmpeg drew nothing")
     );
-    assert_eq!(rasters.failure_line("/x/assets/logo.svg", "ffmpeg drew nothing"), None);
+    assert_eq!(
+        rasters.failure_line("/x/assets/logo.svg", "ffmpeg drew nothing"),
+        None
+    );
     assert_eq!(rasters.request("/x/assets/logo.svg"), Slot::Failed);
 
     // A different file is a different question and still gets its line. (Three entries: the logo was asked about
@@ -341,32 +447,56 @@ fn f3_5_s5b_one_raster_per_file_and_one_log_line_per_file() {
 fn f3_5_s5c_the_drawing_keeps_its_own_shape_inside_the_box() {
     // A wide drawing in a square box: full width, half as tall, hanging equally above and below.
     let (x, y, w, h) = fx_svg::fit_inside(100.0, 100.0, 2.0);
-    assert!((w - 100.0).abs() < 1e-9 && (h - 50.0).abs() < 1e-9, "{w}x{h}");
+    assert!(
+        (w - 100.0).abs() < 1e-9 && (h - 50.0).abs() < 1e-9,
+        "{w}x{h}"
+    );
     assert!(x.abs() < 1e-9 && (y - 25.0).abs() < 1e-9, "({x}, {y})");
 
     // A tall one: full height, half as wide, centred left-to-right.
     let (tx, ty, tw, th) = fx_svg::fit_inside(100.0, 100.0, 0.5);
-    assert!((tw - 50.0).abs() < 1e-9 && (th - 100.0).abs() < 1e-9, "{tw}x{th}");
+    assert!(
+        (tw - 50.0).abs() < 1e-9 && (th - 100.0).abs() < 1e-9,
+        "{tw}x{th}"
+    );
     assert!((tx - 25.0).abs() < 1e-9 && ty.abs() < 1e-9, "({tx}, {ty})");
 
     // A square drawing in a square box fills it; in a wide box it is full height and the short axis is the WIDTH, so
     // the leftover air is left and right — 100 × 100 of the 200's width, 50 px either side.
     let (sx, sy, sw, sh) = fx_svg::fit_inside(100.0, 100.0, 1.0);
-    assert!((sw - 100.0).abs() < 1e-9 && (sh - 100.0).abs() < 1e-9 && sx.abs() < 1e-9 && sy.abs() < 1e-9);
+    assert!(
+        (sw - 100.0).abs() < 1e-9
+            && (sh - 100.0).abs() < 1e-9
+            && sx.abs() < 1e-9
+            && sy.abs() < 1e-9
+    );
     let (wx, wy, ww, wh) = fx_svg::fit_inside(200.0, 100.0, 1.0);
-    assert!((ww - 100.0).abs() < 1e-9 && (wh - 100.0).abs() < 1e-9, "{ww}x{wh}");
+    assert!(
+        (ww - 100.0).abs() < 1e-9 && (wh - 100.0).abs() < 1e-9,
+        "{ww}x{wh}"
+    );
     assert!((wx - 50.0).abs() < 1e-9 && wy.abs() < 1e-9, "({wx}, {wy})");
 
     // Never over the box on either axis, whatever comes in — and the aspect survives every one of them.
-    for (bw, bh, aspect) in [(640.0, 360.0, 1.777_8), (360.0, 640.0, 0.562_5), (100.0, 1.0, 4.0), (1.0, 100.0, 0.25)] {
+    for (bw, bh, aspect) in [
+        (640.0, 360.0, 1.777_8),
+        (360.0, 640.0, 0.562_5),
+        (100.0, 1.0, 4.0),
+        (1.0, 100.0, 0.25),
+    ] {
         let (_, _, w, h) = fx_svg::fit_inside(bw, bh, aspect);
         assert!(w <= bw + 1e-9 && h <= bh + 1e-9, "{w}x{h} in {bw}x{bh}");
-        assert!((w / h - aspect).abs() <= aspect * 1e-9, "aspect lost: {w}/{h} vs {aspect}");
+        assert!(
+            (w / h - aspect).abs() <= aspect * 1e-9,
+            "aspect lost: {w}/{h} vs {aspect}"
+        );
     }
 
     // Unknown shape, or no box to fit into: the box itself, not a zero-sized draw.
     let (ux, uy, uw, uh) = fx_svg::fit_inside(100.0, 80.0, 0.0);
-    assert!((uw - 100.0).abs() < 1e-9 && (uh - 80.0).abs() < 1e-9 && ux.abs() < 1e-9 && uy.abs() < 1e-9);
+    assert!(
+        (uw - 100.0).abs() < 1e-9 && (uh - 80.0).abs() < 1e-9 && ux.abs() < 1e-9 && uy.abs() < 1e-9
+    );
     let (_, _, zw, zh) = fx_svg::fit_inside(0.0, 0.0, 1.0);
     assert!(zw.abs() < 1e-9 && zh.abs() < 1e-9);
 }

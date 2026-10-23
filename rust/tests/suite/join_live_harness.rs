@@ -21,14 +21,14 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use naivepost::layout::Tree;
-use naivepost::project::{MarkingPass, Project};
 use crate::common;
 use common::footage;
+use naivepost::layout::Tree;
+use naivepost::project::{MarkingPass, Project};
 use naivepost::requests::{self, Word, WordsDoc};
 use naivepost::settings::{self, Conf};
-use serde_json::json;
 use naivepost::transcribe::SAMPLE_RATE;
+use serde_json::json;
 
 /// What one request looked like from the server's side.
 pub struct Seen {
@@ -98,7 +98,10 @@ impl FakeLlm {
     /// then dials -- the call blocks to its 10-minute ceiling. So callers get the port only, and a scenario
     /// that needs the address dead across a whole scenario holds a [`dead_listener`] itself.
     pub fn dead_port() -> u16 {
-        Self::dead_listener().local_addr().expect("a local address").port()
+        Self::dead_listener()
+            .local_addr()
+            .expect("a local address")
+            .port()
     }
 
     pub fn url(&self) -> String {
@@ -203,7 +206,10 @@ pub fn fixture(tag: &str) -> Fixture {
     // from under the other, and both append their `chat` rows to the same `requests.tsv`. The count this scenario
     // reads back then carries the sibling's dial too -- three asks where two were promised -- which is how it
     // failed in one suite run and passed in the next.
-    let root = std::env::temp_dir().join(format!("naivepost-f110live-{tag}-{}-{depth}", std::process::id()));
+    let root = std::env::temp_dir().join(format!(
+        "naivepost-f110live-{tag}-{}-{depth}",
+        std::process::id()
+    ));
     // Wipe the whole scenario root, INCLUDING any answer cached under an earlier run of this tag:
     // a cached reply would answer the ask without ever reaching the fake server, and the test would
     // then assert about a request that never went out.

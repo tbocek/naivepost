@@ -12,8 +12,8 @@ mod harness;
 use harness::*;
 #[path = "joined_answer.rs"]
 mod joined_answer;
-use joined_answer::{finish, raw};
 use joined_answer::answer;
+use joined_answer::{finish, raw};
 
 #[test]
 fn f1_10_s3_a_refused_live_answer_is_asked_once_more_and_the_retry_lands() {
@@ -57,7 +57,10 @@ fn f1_10_s3_a_refused_live_answer_is_asked_once_more_and_the_retry_lands() {
     let before: Vec<String> = TAKE_A.iter().map(|w| w.to_string()).collect();
     let after: Vec<String> = TAKE_B.iter().map(|w| w.to_string()).collect();
     match joins::answer_join(&mut join, &answer(&kept), &before, &after) {
-        Outcome::Applied { before: gone, after: 0 } => assert_eq!(gone, 3, "three off BEFORE"),
+        Outcome::Applied {
+            before: gone,
+            after: 0,
+        } => assert_eq!(gone, 3, "three off BEFORE"),
         other => panic!("the retry's answer must be applied, got {other:?}"),
     }
 }

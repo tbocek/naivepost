@@ -15,13 +15,13 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::cut;
-use crate::cut_screen;
-use crate::ui::cut_form_frame;
 use crate::cut_hear;
+use crate::cut_screen;
 use crate::cut_select;
-use crate::ui::cut_tracks;
 use crate::cut_trim;
 use crate::prepare;
+use crate::ui::cut_form_frame;
+use crate::ui::cut_tracks;
 
 /// The height a page's own scroller offers before its content scrolls (§1's draggable divider: the page
 /// half can be dragged down to this and no further; below it the page would be unreadable). At §1's
@@ -41,16 +41,15 @@ pub(crate) const SOURCES_MIN_H: i32 = 120;
 /// The prompt bench's ceiling lives in `window_bench` (the scroller's own builder sets it); this file no
 /// longer caps the box — see [`editor_scroller`] for why the cap came off here.
 use crate::project::Project;
+use crate::shell::Page;
 use crate::sources;
 use crate::ui::cut_lane_rows::cut_form_column;
 use crate::ui::source_rows;
+use crate::ui::window::{press_effect_item, session_reads, STRIP_HEIGHT, STRIP_WIDTH};
 use crate::ui::window_bench::{bench_box, bench_paths, label};
 use crate::ui::window_doors::find_widget_by_name;
 use crate::ui::window_policy::main_window;
 use crate::ui::window_project::{ADD_LABEL, COPY_LABEL};
-use crate::ui::window_trim_strip::paint_track_strip;
-use crate::ui::window::{press_effect_item, session_reads, STRIP_HEIGHT, STRIP_WIDTH};
-use crate::shell::Page;
 
 /// One page of the window: its name and the state it shows.
 /// Prepare's two widgets are handed back beside the page so `build_window` can wire *that* button —
@@ -110,7 +109,8 @@ pub(crate) fn page_box(
     // (the window may never be pushed wider than §1's 1240 px minimum). The page fits its width because the parts that
     // could overflow scroll inside themselves — the sources list, the bench box, the Cut tool groups.
     page_scroller.set_child(Some(&box_));
-    box_.set_margin_start(24);    box_.set_margin_end(24);
+    box_.set_margin_start(24);
+    box_.set_margin_end(24);
     box_.set_margin_top(24);
     box_.set_margin_bottom(24);
 
@@ -256,7 +256,6 @@ pub(crate) fn page_box(
         box_.append(&produce);
     }
 
-
     // The Cut page's own children are re-seated by `cut_page_layout::arrange`, which reads the FIRST child of
     // this box as the row above the paned. It used to be a per-page heading (title + ⓘ); §1 lists no such
     // heading and its picture starts at the page's first control, so the toolbar is that first child now —
@@ -312,7 +311,6 @@ pub(crate) fn page_box(
         // only what the slider needs and let the leftover go to the groups that can use it.
         volume_group.set_hexpand(false);
         volume_group.set_halign(gtk::Align::Start);
-
 
         // F2.5 S6: the preview volume. One control for one number — `cut_hear::PreviewVolume` is the
         // app's single loudness setting and every slider shown mirrors it, so this widget owns no copy of
@@ -444,7 +442,8 @@ pub(crate) fn page_box(
         // placed or edited, this holds the eight readings: thumbnail size (with its −/+ ladder), aspect
         // ratio, playhead, selection, cut, cut at 1×, source, segments — each value label named off
         // `cut_screen::readout_widget(label)` so the label is spelled once and the name follows.
-        let (form, insert_footer) = cut_form_frame::frame_parts(&cut_form_column().upcast::<gtk::Widget>());
+        let (form, insert_footer) =
+            cut_form_frame::frame_parts(&cut_form_column().upcast::<gtk::Widget>());
         box_.insert_child_after(&form, Some(&previous));
         previous = form.upcast();
 
@@ -459,7 +458,10 @@ pub(crate) fn page_box(
         box_.insert_child_after(&insert_form, Some(&previous));
         // The footer that finishes an insert, directly under its own form: §05#1 pins the buttons that place
         // what a form proposes, and inside the scrolling body they fell below the painted frame.
-        box_.insert_child_after(&insert_footer, Some(&insert_form.clone().upcast::<gtk::Widget>()));
+        box_.insert_child_after(
+            &insert_footer,
+            Some(&insert_form.clone().upcast::<gtk::Widget>()),
+        );
         previous = insert_footer.upcast();
 
         // F3.1 S4: the zoom's own form, built the same way and right after the insert form's slot so
@@ -484,10 +486,7 @@ pub(crate) fn page_box(
         let speed_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
         speed_form.set_widget_name(&format!("speed-form-{page}"));
         speed_form.set_visible(false);
-        box_.insert_child_after(
-            &speed_form,
-            Some(&zoom_form.upcast::<gtk::Widget>()),
-        );
+        box_.insert_child_after(&speed_form, Some(&zoom_form.upcast::<gtk::Widget>()));
 
         // F3.4 Text — the caption form's own holder, right under the speed form's and built EMPTY here for the
         // same tab-scoping reason: `page_box` runs once per tab, so a name not carrying `{page}` would exist
@@ -498,20 +497,14 @@ pub(crate) fn page_box(
         let text_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
         text_form.set_widget_name(&format!("text-form-{page}"));
         text_form.set_visible(false);
-        box_.insert_child_after(
-            &text_form,
-            Some(&speed_form.upcast::<gtk::Widget>()),
-        );
+        box_.insert_child_after(&text_form, Some(&speed_form.upcast::<gtk::Widget>()));
         // F3.5 #06-effects#1-svg: the drawing form's holder, named the same tab-scoped way as the
         // `zoom-form` / `speed-form` / `text-form` rule above. Hidden until a file is chosen and a box has
         // landed; filled by `show_svg_form`, which invents nothing -- every word comes from `fx_svg`.
         let svg_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
         svg_form.set_widget_name(&format!("svg-form-{page}"));
         svg_form.set_visible(false);
-        box_.insert_child_after(
-            &svg_form,
-            Some(&text_form.upcast::<gtk::Widget>()),
-        );
+        box_.insert_child_after(&svg_form, Some(&text_form.upcast::<gtk::Widget>()));
         // F3.6 Volume — the volume form's own holder, named the same tab-scoped way as the `zoom-form` /
         // `speed-form` / `text-form` / `svg-form` rule above: `page_box` runs once per tab, so an unscoped
         // name would exist four times per window and a lookup by name would land on whichever box the walk
@@ -520,10 +513,7 @@ pub(crate) fn page_box(
         let volume_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
         volume_form.set_widget_name(&format!("volume-form-{page}"));
         volume_form.set_visible(false);
-        box_.insert_child_after(
-            &volume_form,
-            Some(&svg_form.upcast::<gtk::Widget>()),
-        );
+        box_.insert_child_after(&volume_form, Some(&svg_form.upcast::<gtk::Widget>()));
         // F3.7 Label — the label form's own holder, named the same tab-scoped way as the `zoom-form` /
         // `speed-form` / `text-form` / `svg-form` / `volume-form` rule above: `page_box` runs once per tab, so
         // an unscoped name would exist four times per window and a lookup by name would land on whichever box
@@ -532,26 +522,25 @@ pub(crate) fn page_box(
         let label_form = gtk::Box::new(gtk::Orientation::Vertical, 4);
         label_form.set_widget_name(&format!("label-form-{page}"));
         label_form.set_visible(false);
-        box_.insert_child_after(
-            &label_form,
-            Some(&volume_form.upcast::<gtk::Widget>()),
-        );
+        box_.insert_child_after(&label_form, Some(&volume_form.upcast::<gtk::Widget>()));
 
-
-
-        // F2.8: the strip that carries trim and move. A PLACEHOLDER standing in for the picture rows,
-        // green bars and wave strips F2.10/F2.11 draw, scoped the way `select-surface` above is — no
-        // invented tracks. Two hands on one strip: a press within `cut_trim::EDGE_GRAB_PX` of a clip
-        // border drags that border (`// layout.edgeGrabPx`), and a right-press anywhere else moves what
-        // is under the pointer. The gestures are attached in `wire_track_strip`, after `set_content`,
-        // because a handler on a widget outside the realized tree never fires.
+        // F2.8: the surface that carries trim and move presses. It is a PRESS surface only and is NOT
+        // painted: §1's tracks are ONE stack — ruler, selection band, picture rows with their wave strips,
+        // then the separate recordings' lanes, then the scrollbar — and `track-layers` below draws all of it.
+        // This widget used to draw its own placeholder ruler + kept bar + lane band, which put a SECOND set
+        // of time labels in the middle of the page (the answered question on this item). The gestures stay
+        // wired here (`wire_track_strip`, after `set_content`) and convert in TRAVELLED pixels at
+        // `cut_view::strip_pps()`, so hiding the paint moves no press geometry: a drag's offset cancels the
+        // scroll on both sides. `strip_clip_boxes_for_test` reads the same zoom, so F2.8's tests still fire.
         let strip = gtk::DrawingArea::new();
         strip.set_widget_name("track-strip");
         strip.set_size_request(STRIP_WIDTH, STRIP_HEIGHT);
         strip.set_halign(gtk::Align::Start);
-        // The strip paints itself from this window's cut — the ruler, the kept bar and its borders, or
-        // `cut_trim::STRIP_EMPTY_HINT` when there is nothing to show. See `paint_track_strip`.
-        strip.set_draw_func(move |_, cr, w, h| paint_track_strip(cr, w, h));
+        // F2.8's press surface takes presses but paints nothing (the band below draws every mark). Hiding it
+        // with `set_visible(false)` gave it a 0×0 box, which is not "invisible": the widget left the layout
+        // entirely, so §1's own "every part has pixels" check found no box at all and its gestures had no
+        // allocation to convert. It stays IN the layout at its size request and simply never draws.
+        strip.set_opacity(0.0);
         strip.set_tooltip_text(Some(&format!(
             "{} / {}",
             cut_trim::TRIM_TIP,
@@ -574,6 +563,8 @@ pub(crate) fn page_box(
         )
         .upcast();
         box_.insert_child_after(&strip, Some(&previous));
+        // NOTE: `strip` is inserted (so its gesture controllers belong to the realized tree) but stays
+        // invisible — see the comment at its build. §1's single ruler lives in `track-layers` above.
 
         // F2.10 Cameras and hearing — the named row list, right under the strip's ruler, where
         // `spec/img/05-rows.png` puts the camera rows. DECISION: F2.11 owns the real picture rows,
@@ -611,7 +602,6 @@ pub(crate) fn page_box(
     // children of the same overlay (`fold-badges`), each over the bar whose gap it folds. Placement stays
     // single-sourced in `cut_fold`: `FOLD_MIN_PX` (no badge over a gap with no room) and `BADGE_INSIDE_PX`
     // (just inside the neighbouring bar, never mid-gap), both applied by `cut_fold::badges`.
-
 
     view.set_content(Some(&page_scroller));
     // The page's half of `main-divider` is this `AdwToolbarView`, not the scroller inside it, so the expand
@@ -656,7 +646,11 @@ fn install_toolbar_css_once() {
 /// page is shown before the first of those runs, so a button that started sensitive would be claiming it has
 /// work to do when it has none. Groups whose controls act on nothing (verbs with no band, history with no
 /// edit) start greyed; groups that always have a job (transport, zoom) start live.
-pub(crate) fn cut_tool_group(name: &str, tools: &[cut_screen::Tool], rests_insensitive: bool) -> gtk::Box {
+pub(crate) fn cut_tool_group(
+    name: &str,
+    tools: &[cut_screen::Tool],
+    rests_insensitive: bool,
+) -> gtk::Box {
     let group = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     group.set_widget_name(&format!("group-{name}"));
     // Fill + hexpand, not `halign(Start)`: the bar distributes its slack over the six groups, and a group
@@ -681,7 +675,11 @@ pub(crate) fn cut_tool_group(name: &str, tools: &[cut_screen::Tool], rests_insen
     // expanded). The inner scroller keeps minimum 0 either way, which is what holds the shell at §1's
     // 1240x900 floor (`tests/suite/window_shrinks.rs`).
     let absorbs_slack = name == "zoom";
-    group.set_halign(if absorbs_slack { gtk::Align::Fill } else { gtk::Align::Start });
+    group.set_halign(if absorbs_slack {
+        gtk::Align::Fill
+    } else {
+        gtk::Align::Start
+    });
     group.set_hexpand(absorbs_slack);
     // The group's controls sit in one inner row rather than directly on the named box. That row is what
     // gets scrolled when the bar is narrower than the group (§A's own "as the window narrows" rule for
@@ -875,7 +873,6 @@ fn editor_scroller(scroller: &gtk::ScrolledWindow) -> gtk::Widget {
     scroller.clone().upcast::<gtk::Widget>()
 }
 
-
 /// One of Freq's two stepper buttons (§4's badge **8`). `steps` is its direction along
 /// [`prepare::FREQ_STOPS`]: `-1` for `—`, `+1` for `+`. It reads the stop the dropdown is showing (falling
 /// back to the session's own interval before any choice exists), moves it through `prepare::freq_step`, and
@@ -955,8 +952,20 @@ pub(crate) fn frame_controls(session: &Rc<RefCell<Project>>) -> gtk::Widget {
     stepper.set_widget_name("freq-stepper");
     row.remove(&freq);
     stepper.append(&freq);
-    stepper.append(&freq_step_button("freq-down", "list-remove-symbolic", -1, session, &freq));
-    stepper.append(&freq_step_button("freq-up", "list-add-symbolic", 1, session, &freq));
+    stepper.append(&freq_step_button(
+        "freq-down",
+        "list-remove-symbolic",
+        -1,
+        session,
+        &freq,
+    ));
+    stepper.append(&freq_step_button(
+        "freq-up",
+        "list-add-symbolic",
+        1,
+        session,
+        &freq,
+    ));
     row.append(&stepper);
 
     row.append(&label("Language"));

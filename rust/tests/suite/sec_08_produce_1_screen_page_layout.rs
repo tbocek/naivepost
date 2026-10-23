@@ -94,10 +94,22 @@ fn check_the_page_is_split_in_two(window: &adw::ApplicationWindow) {
         gtk::Orientation::Horizontal,
         "{ITEM}: the divider splits left and right, not top and bottom"
     );
-    let start = paned.start_child().expect("{ITEM}: the paned has a start child");
-    let end = paned.end_child().expect("{ITEM}: the paned has an end child");
-    assert_eq!(start.widget_name(), "produce-left", "{ITEM}: the LEFT column is the paned's start half");
-    assert_eq!(end.widget_name(), "produce-right", "{ITEM}: the RIGHT column is the paned's end half");
+    let start = paned
+        .start_child()
+        .expect("{ITEM}: the paned has a start child");
+    let end = paned
+        .end_child()
+        .expect("{ITEM}: the paned has an end child");
+    assert_eq!(
+        start.widget_name(),
+        "produce-left",
+        "{ITEM}: the LEFT column is the paned's start half"
+    );
+    assert_eq!(
+        end.widget_name(),
+        "produce-right",
+        "{ITEM}: the RIGHT column is the paned's end half"
+    );
 
     let split_box = bounds(window, "produce-split");
     let left = bounds(window, "produce-left");
@@ -300,7 +312,10 @@ fn check_both_columns_hold_spec_order(window: &adw::ApplicationWindow) {
         }
         node = current.parent();
     }
-    assert!(in_scroller, "{ITEM}: the encoder settings live inside a ScrolledWindow (§A)");
+    assert!(
+        in_scroller,
+        "{ITEM}: the encoder settings live inside a ScrolledWindow (§A)"
+    );
     RAN_ORDER.store(true, Ordering::SeqCst);
 }
 
@@ -356,7 +371,11 @@ fn encoder_lines(window: &adw::ApplicationWindow) -> Vec<Vec<(f32, f32, String)>
         "{ITEM}: every settings row draws a named control: {}",
         placed.len()
     );
-    placed.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then(a.1.partial_cmp(&b.1).unwrap()));
+    placed.sort_by(|a, b| {
+        a.0.partial_cmp(&b.0)
+            .unwrap()
+            .then(a.1.partial_cmp(&b.1).unwrap())
+    });
     let mut lines: Vec<Vec<(f32, f32, String)>> = Vec::new();
     for control in placed {
         match lines.last_mut() {
@@ -398,7 +417,10 @@ fn check_encoder_pairs_share_lines(window: &adw::ApplicationWindow) {
         lines.iter().map(|l| l.len()).collect::<Vec<_>>()
     );
     // LEFT TO RIGHT AND THEN DOWN: reading the lines in order reproduces §A's row order exactly.
-    let read_back: Vec<String> = lines.iter().flat_map(|l| l.iter().map(|c| c.2.clone())).collect();
+    let read_back: Vec<String> = lines
+        .iter()
+        .flat_map(|l| l.iter().map(|c| c.2.clone()))
+        .collect();
     println!("read back: {read_back:?}");
     let expected: Vec<String> = naivepost::produce_screen::SETTINGS_ROWS
         .iter()
@@ -438,11 +460,10 @@ fn check_encoder_lines_match_the_picture(window: &adw::ApplicationWindow) {
     };
     // Items 11: three dropdown pairs across the first line, then Resolution / Frame rate / Audio.
     want(0, &["setting-container", "setting-codec", "setting-preset"]);
-    want(1, &[
-        "setting-resolution",
-        "setting-frame-rate",
-        "setting-audio",
-    ]);
+    want(
+        1,
+        &["setting-resolution", "setting-frame-rate", "setting-audio"],
+    );
     // Item 12: Subtitles beside Translate — the widest control on the line, so no third pair fits.
     want(2, &["setting-subtitles", "setting-translate"]);
     // No line holds a fourth pair: that would mean the slot budget leaked.
@@ -475,7 +496,8 @@ fn check_encoder_lines_match_the_picture(window: &adw::ApplicationWindow) {
     let subtitles = line_of("setting-subtitles").expect("{ITEM}: Subtitles drew a line");
     let quality = line_of("setting-quality--crf").expect("{ITEM}: Quality drew a line");
     if naivepost::produce_screen::settings_rows_shown(false).contains(&"Game audio") {
-        let game = line_of("setting-game-audio").expect("{ITEM}: narration on means a Game audio line");
+        let game =
+            line_of("setting-game-audio").expect("{ITEM}: narration on means a Game audio line");
         assert!(
             game > subtitles && game < quality,
             "{ITEM}: the Game audio row belongs between Subtitles and Quality, got line {game} against \
@@ -641,14 +663,25 @@ fn check_encoder_rows_fit_the_column(window: &adw::ApplicationWindow) {
     let mut pairs: Vec<(f32, f32, f32, String)> = Vec::new();
     for node in grid.observe_children().iter::<glib::Object>() {
         let Ok(obj) = node else { continue };
-        let Ok(cell) = obj.downcast::<gtk::Widget>() else { continue };
-        let Some(b) = cell.compute_bounds(window.upcast_ref::<gtk::Widget>()) else { continue };
-        pairs.push((b.y(), b.x(), b.x() + b.width(), cell.widget_name().to_string()));
+        let Ok(cell) = obj.downcast::<gtk::Widget>() else {
+            continue;
+        };
+        let Some(b) = cell.compute_bounds(window.upcast_ref::<gtk::Widget>()) else {
+            continue;
+        };
+        pairs.push((
+            b.y(),
+            b.x(),
+            b.x() + b.width(),
+            cell.widget_name().to_string(),
+        ));
     }
     // Attach order, NOT sorted by x: the pairs are attached label-then-control, which is the only order
     // that says which control belongs to which label.
     for i in (0..pairs.len()).step_by(2) {
-        let Some((ly, lx, ledges, lname)) = pairs.get(i) else { continue };
+        let Some((ly, lx, ledges, lname)) = pairs.get(i) else {
+            continue;
+        };
         let Some(next) = pairs.get(i + 1) else { break };
         if (next.0 - ly).abs() > SAME_LINE_PX {
             continue; // a lone label on its line: nothing of its own to compare against
@@ -661,7 +694,11 @@ fn check_encoder_rows_fit_the_column(window: &adw::ApplicationWindow) {
         );
     }
     for (x, width, name) in &cells {
-        println!("FIT {name} x={x:.1} right edge={:.1} (column ends {:.1})", x + width, right_end);
+        println!(
+            "FIT {name} x={x:.1} right edge={:.1} (column ends {:.1})",
+            x + width,
+            right_end
+        );
         assert!(
             *x >= right.x() - 1.0 && x + width <= right_end + 1.0,
             "{ITEM}: {name} is cut at the column's edge: {}..{} against {right:?}",
@@ -671,7 +708,10 @@ fn check_encoder_rows_fit_the_column(window: &adw::ApplicationWindow) {
     }
     // The two rows the clipped shot lost entirely, named rather than counted: Preset was never drawn, and
     // the Title ↻ sat past the edge so item 8 read as a bare heading.
-    for name in [ui::produce_page::row_widget("Preset"), "title-suggest".to_string()] {
+    for name in [
+        ui::produce_page::row_widget("Preset"),
+        "title-suggest".to_string(),
+    ] {
         let b = bounds(window, &name);
         assert!(b.width() > 0.0, "{ITEM}: {name} draws nothing");
         assert!(
@@ -725,21 +765,30 @@ fn layout_round() {
 fn sec_08_produce_1_screen_s1_the_page_is_split_in_two_side_by_side() {
     common::pin_private_cwd();
     layout_round();
-    assert!(RAN_SPLIT.load(Ordering::SeqCst), "{ITEM} s1: the split check never ran");
+    assert!(
+        RAN_SPLIT.load(Ordering::SeqCst),
+        "{ITEM} s1: the split check never ran"
+    );
 }
 
 #[test]
 fn sec_08_produce_1_screen_s1_both_columns_hold_spec_order_top_to_bottom() {
     common::pin_private_cwd();
     layout_round();
-    assert!(RAN_ORDER.load(Ordering::SeqCst), "{ITEM} s1: the column-order check never ran");
+    assert!(
+        RAN_ORDER.load(Ordering::SeqCst),
+        "{ITEM} s1: the column-order check never ran"
+    );
 }
 
 #[test]
 fn sec_08_produce_1_screen_s1_encoder_pairs_share_lines_in_order() {
     common::pin_private_cwd();
     layout_round();
-    assert!(RAN_PAIRS.load(Ordering::SeqCst), "{ITEM} s1: the encoder-pairs check never ran");
+    assert!(
+        RAN_PAIRS.load(Ordering::SeqCst),
+        "{ITEM} s1: the encoder-pairs check never ran"
+    );
 }
 
 /// §A's "label + control pairs … several to a line" is only worth anything if the line fits the column.
@@ -764,7 +813,7 @@ fn sec_08_produce_1_screen_s1_encoder_lines_match_the_spec_picture() {
     );
 }
 
-/// Three pairs to a line only counts if each pair still READS: every dropdown shows its whole value and 
+/// Three pairs to a line only counts if each pair still READS: every dropdown shows its whole value and
 /// stays inside the column.
 #[test]
 fn sec_08_produce_1_screen_s1_encoder_settings_stay_readable_at_three_to_a_line() {

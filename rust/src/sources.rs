@@ -26,16 +26,19 @@ pub const ROW_KEY: &str = "\n\nThe symbols on every row, in order:\n\
 
 /// §4's strings, in the words the spec gives them.
 pub const ADD_TIP: &str = "Add recordings or footage \u{2014} several at once";
-pub const COPY_TIP: &str = "Ticked, an added file is copied into the project's sources/ folder, so the \
+pub const COPY_TIP: &str =
+    "Ticked, an added file is copied into the project's sources/ folder, so the \
     project holds everything it needs. Unticked, the file is referenced where it is: nothing is \
     duplicated, and the session breaks if it moves.";
-pub const LIST_TIP: &str = "Every file here is transcribed, and placed on the session clock by the \
+pub const LIST_TIP: &str =
+    "Every file here is transcribed, and placed on the session clock by the \
     timestamp in its name";
 pub const FOOTAGE_TIP: &str = "Footage \u{2014} frames come out of this file and it can be cut.\n\
     Off: it is only listened to, which is what a video kept for its audio wants.";
 pub const NARRATOR_TIP: &str = "Which voice this is. 0 clicks in: nobody yet.\n\
     1 is the voice the narration is spoken in; 2\u{2013}4 are the rest of the group.";
-pub const SEPARATE_TIP: &str = "Split the voice off \u{2014} on \u{25b6} this recording is separated into the\n\
+pub const SEPARATE_TIP: &str =
+    "Split the voice off \u{2014} on \u{25b6} this recording is separated into the\n\
     voice and everything else. This row keeps everything else; the voice\n\
     is added as a track of its own, so it can be cut and mixed apart.";
 pub const REMOVE_TIP: &str = "Remove from this session \u{2014} the file itself is left alone";
@@ -136,7 +139,8 @@ fn base_name(path: &str) -> &str {
 
 /// §4's three-line explanation over the track checks: what a tick means, said once instead of on every
 /// check. The lane half of it is §5's rule; this is the sentence the popover shows.
-pub const TRACKS_HELP: &str = "Each ticked track becomes a lane of its own, mixed like a separate\n\
+pub const TRACKS_HELP: &str =
+    "Each ticked track becomes a lane of its own, mixed like a separate\n\
     recording. Untick one and its audio leaves the session; the last one\n\
     cannot come off, because a row that hears nothing has no transcript to fix.";
 
@@ -187,7 +191,11 @@ pub fn toggle_footage(project: &mut Project, index: usize, on: bool) -> bool {
 /// Nobody else is moved to make room: a row that already holds a slot is somebody the user named. But
 /// a cycle can vacate slot 1, and slot 1 is auto-filled whenever unheld, so it is asked for here.
 pub fn cycle_narrator(project: &mut Project, index: usize) -> u32 {
-    let held = project.sources.get(index).map(|source| source.narrator).unwrap_or(0);
+    let held = project
+        .sources
+        .get(index)
+        .map(|source| source.narrator)
+        .unwrap_or(0);
     let next = if held != 0 {
         0
     } else {
@@ -206,7 +214,10 @@ pub fn cycle_narrator(project: &mut Project, index: usize) -> u32 {
 
 /// Which row holds this narrator slot.
 pub fn slot_holder(project: &Project, slot: u32) -> Option<usize> {
-    project.sources.iter().position(|source| source.narrator == slot && slot != 0)
+    project
+        .sources
+        .iter()
+        .position(|source| source.narrator == slot && slot != 0)
 }
 
 /// The tooltip §4 puts on the narrator button: what the row is now, and that a click moves it on. Slot
@@ -224,7 +235,9 @@ pub fn slot_tip(slot: u32) -> String {
 /// name carries no timestamp, because such a file starts where the session does — which is only right
 /// if it was rolling from the start.
 pub fn warning(source: &Source) -> Option<&'static str> {
-    clock::name_stamp(base_name(&source.path)).is_none().then_some(WARN_TIP)
+    clock::name_stamp(base_name(&source.path))
+        .is_none()
+        .then_some(WARN_TIP)
 }
 
 /// The stored path of whoever speaks this slot — §5's lane naming and Produce's readouts both want it.
@@ -273,7 +286,9 @@ pub fn clash(project: &Project) -> Option<(String, String)> {
 /// The log's line for a clash: it names both rows and the folder they would share. `base` is the name
 /// without its extension — the folder either file would be written into.
 pub fn clash_log(a: &str, b: &str) -> String {
-    let base = base_name(a).rsplit_once('.').map_or(base_name(a), |(stem, _)| stem);
+    let base = base_name(a)
+        .rsplit_once('.')
+        .map_or(base_name(a), |(stem, _)| stem);
     format!("!!! {a} and {b} are both inputs/{base} -- rename one")
 }
 
@@ -298,7 +313,8 @@ pub fn clean_on_load(project: &mut Project, report: &mut Vec<String>) {
         // whole list, and answering it while holding a `&mut` to one row is how this turns into a
         // borrow checker argument.
         let slot = project.sources[index].narrator;
-        if slot != 0 && (slot > NARRATOR_SLOTS as u32 || slot_holder(project, slot) != Some(index)) {
+        if slot != 0 && (slot > NARRATOR_SLOTS as u32 || slot_holder(project, slot) != Some(index))
+        {
             report.push(format!(
                 "{}: slot {slot} is taken -- untagged",
                 base_name(&project.sources[index].path)
@@ -391,7 +407,10 @@ pub fn split_lanes(project: &Project) -> Vec<String> {
                 || base_name(&source.path).to_string(),
                 |(stem, _)| stem.to_string(),
             );
-            source.tracks.iter().map(move |track| format!("{stem}-t{track}"))
+            source
+                .tracks
+                .iter()
+                .map(move |track| format!("{stem}-t{track}"))
         })
         .collect()
 }

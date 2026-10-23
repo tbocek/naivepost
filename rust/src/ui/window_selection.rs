@@ -15,16 +15,15 @@ use crate::cut;
 
 use crate::cut_hear;
 use crate::cut_line;
-use crate::preview;
 use crate::cut_select;
 use crate::cut_verbs;
 use crate::fx_band;
 use crate::fx_record;
 use crate::fx_zoom;
 use crate::narration::Narration;
-use crate::ui::cut_form_frame;
-use crate::ui::window as ui;
+use crate::preview;
 use crate::ui::cut_cameras::refresh_camera_rows;
+use crate::ui::cut_form_frame;
 use crate::ui::cut_label_hand::{close_label_form, label_form_open, show_label_form};
 use crate::ui::cut_speed_hand::{close_speed_form, show_speed_form, speed_form_open};
 use crate::ui::cut_svg::{
@@ -35,6 +34,7 @@ use crate::ui::cut_text_hand::{
     text_armed, text_form_open,
 };
 use crate::ui::cut_volume_hand::{close_volume_form, show_volume_form, volume_form_open};
+use crate::ui::window as ui;
 use crate::ui::window::refresh_effects_lane;
 
 /// The narration this window holds, newest slot -- the handle a flow re-seeds after it re-read the
@@ -134,7 +134,9 @@ pub fn clear_selection(window: &adw::ApplicationWindow) -> bool {
 /// `Part::Outside` moves nothing: a press clear of the band starts a new selection instead, which is
 /// S1's job, not a nudge.
 pub fn nudge_selection(window: &adw::ApplicationWindow, part: cut_select::Part, to: f64, pps: f64) {
-    let Some(band) = selection(window) else { return };
+    let Some(band) = selection(window) else {
+        return;
+    };
     let (cut_, lanes) = selection_snap_inputs(window);
     let marks = cut_select::snap_marks(&cut_, &lanes, preview_playhead(window));
     let moved = match part {
@@ -406,7 +408,13 @@ pub fn press_effect_bar(
     match answer {
         fx_band::Press::ClickForm => {
             open_effect_form(window, &fx);
-            cut_form_frame::set_pinned(window, Some(&format!("edit {}", fx_record::label_of(fx.effect_kind().unwrap_or(cut::EffectKind::Zoom)))));
+            cut_form_frame::set_pinned(
+                window,
+                Some(&format!(
+                    "edit {}",
+                    fx_record::label_of(fx.effect_kind().unwrap_or(cut::EffectKind::Zoom))
+                )),
+            );
         }
         fx_band::Press::Hold { t, from_end: _ } => {
             ui::set_held_effect(Some(fx.clone()));
@@ -415,7 +423,9 @@ pub fn press_effect_bar(
             ui::set_line_position(window, cut_line::LinePos { t });
             ui::refresh_insert_button(window);
             refresh_effects_lane(window);
-            let said = fx_band::picked_up(fx_record::label_of(fx.effect_kind().unwrap_or(cut::EffectKind::Zoom)));
+            let said = fx_band::picked_up(fx_record::label_of(
+                fx.effect_kind().unwrap_or(cut::EffectKind::Zoom),
+            ));
             if let Some(status_line) = ui::find_status(window.upcast_ref()) {
                 status_line.set_text(&said);
             }
@@ -496,7 +506,9 @@ pub fn nudge_held_effect(window: &adw::ApplicationWindow, delta: f64) -> String 
     // the held record "behind the viewer" for the refresh to give up.
     ui::set_line_position(window, cut_line::LinePos { t });
     refresh_effects_lane(window);
-    let said = fx_band::moved(fx_record::label_of(held.effect_kind().unwrap_or(cut::EffectKind::Zoom)));
+    let said = fx_band::moved(fx_record::label_of(
+        held.effect_kind().unwrap_or(cut::EffectKind::Zoom),
+    ));
     if let Some(status_line) = ui::find_status(window.upcast_ref()) {
         status_line.set_text(&said);
     }
@@ -594,8 +606,18 @@ pub fn press_edit_effect(window: &adw::ApplicationWindow) -> String {
     // One form on the page at a time: opening this record's form over another would leave both visible.
     close_any_effect_form(window);
     open_effect_form(window, &shown);
-    cut_form_frame::set_pinned(window, Some(&format!("edit {}", fx_record::label_of(shown.effect_kind().unwrap_or(cut::EffectKind::Zoom)))));
-    let said = format!("editing {} \u{2014} {}", fx_record::label_of(shown.effect_kind().unwrap_or(cut::EffectKind::Zoom)), fx_band::KEPT_AS_YOU_TYPE);
+    cut_form_frame::set_pinned(
+        window,
+        Some(&format!(
+            "edit {}",
+            fx_record::label_of(shown.effect_kind().unwrap_or(cut::EffectKind::Zoom))
+        )),
+    );
+    let said = format!(
+        "editing {} \u{2014} {}",
+        fx_record::label_of(shown.effect_kind().unwrap_or(cut::EffectKind::Zoom)),
+        fx_band::KEPT_AS_YOU_TYPE
+    );
     if let Some(status_line) = ui::find_status(window.upcast_ref()) {
         status_line.set_text(&said);
     }
@@ -761,7 +783,10 @@ pub fn apply_mix(
     // not move, and the same rule mutes the footage here. The card's OWN sound is what plays instead, which is
     // why this mutes the footage and never the card.
     let held_by_card = crate::ui::cut_card_preview::card_hearing(
-        &cut::Cut { segs: segs.to_vec(), ..Default::default() },
+        &cut::Cut {
+            segs: segs.to_vec(),
+            ..Default::default()
+        },
         t,
     )
     .is_some_and(|hearing| hearing.footage_held);

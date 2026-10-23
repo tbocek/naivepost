@@ -49,7 +49,12 @@ static COUNTER: AtomicUsize = AtomicUsize::new(0);
 /// §3.3's answer for a block of `lines` lines: one `fix_line` each, then `finish`.
 fn fix_answer(lines: usize) -> String {
     let mut calls: Vec<serde_json::Value> = (1..=lines)
-        .map(|n| tool_call("fix_line", &serde_json::json!({"n": n, "text": format!("respelled line {n}")})))
+        .map(|n| {
+            tool_call(
+                "fix_line",
+                &serde_json::json!({"n": n, "text": format!("respelled line {n}")}),
+            )
+        })
         .collect();
     calls.push(tool_call("finish", &serde_json::json!({})));
     chat_answer(&calls)
@@ -65,7 +70,10 @@ fn describe_answer(frames: usize) -> String {
             )
         })
         .collect();
-    calls.push(tool_call("set_state", &serde_json::json!({"text": "mid-lecture, board half full"})));
+    calls.push(tool_call(
+        "set_state",
+        &serde_json::json!({"text": "mid-lecture, board half full"}),
+    ));
     calls.push(tool_call("finish", &serde_json::json!({})));
     chat_answer(&calls)
 }
@@ -109,7 +117,11 @@ impl FakeLlm {
                 let describe = answer_describe.clone();
                 std::thread::spawn(move || {
                     let body = read_ask(stream.try_clone().expect("clone"));
-                    let answer = if body.contains(FIX_MARK) { &fix } else { &describe };
+                    let answer = if body.contains(FIX_MARK) {
+                        &fix
+                    } else {
+                        &describe
+                    };
                     if serve(stream, answer).is_some() {
                         if let Ok(mut count) = counter.lock() {
                             *count += 1;
@@ -118,7 +130,12 @@ impl FakeLlm {
                 });
             }
         });
-        FakeLlm { url: format!("http://127.0.0.1:{port}"), fix, describe, asks }
+        FakeLlm {
+            url: format!("http://127.0.0.1:{port}"),
+            fix,
+            describe,
+            asks,
+        }
     }
 
     /// The asks this server took. The vision reply that writes `events.tsv` lands on the connection's own
@@ -136,7 +153,6 @@ impl FakeLlm {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
     }
-
 }
 
 /// The request body, read off the wire so the tool names in it can choose the reply.
@@ -151,7 +167,13 @@ fn read_ask(stream: TcpStream) -> String {
             break;
         }
         if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = header
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
     }
     let mut body = vec![0u8; length];
@@ -230,11 +252,17 @@ fn stubs() -> PathBuf {
         "#!/bin/sh\ninput=''\nout=''\noutdir=''\nprev=''\nfor a in \"$@\"; do\n  if [ \"$prev\" = \"-i\" ]; then input=\"$a\"; fi\n  if [ \"$prev\" = \"-f\" ]; then out=\"$a\"; fi\n  outdir=\"$a\"\n  prev=\"$a\"\ndone\nif [ -n \"$out\" ]; then\n  case \"$out\" in\n    /*|*/*) mkdir -p \"$(dirname -- \"$out\")\" ;;\n  esac\n  printf pcm > \"$out\"\nelif [ -n \"$input\" ]; then\n  case \"$outdir\" in\n    *.jpg) mkdir -p \"$(dirname -- \"$outdir\")\"; printf JPEG > \"$outdir\" ;;\n    *) base=$(basename -- \"$input\"); mkdir -p \"$outdir\"; printf JPEG > \"$outdir/$base\" ;;\n  esac\nfi\n",
     )
     .expect("the ffmpeg stub");
-    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("it runs");
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("it runs");
     let ffmpeg = dir.join("ffmpeg");
-    common::write_script(&ffmpeg, format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", script.display())).expect("the wrapper");
+    common::write_script(
+        &ffmpeg,
+        format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", script.display()),
+    )
+    .expect("the wrapper");
     for tool in [&probe, &ffmpeg] {
-        std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("it runs");
+        std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .expect("it runs");
     }
     dir
 }
@@ -245,7 +273,10 @@ fn stubs() -> PathBuf {
 fn point_settings_at(audio_url: &str, llm_url: &str, tools: &Path) {
     let config = std::env::temp_dir().join(format!("np-f18p-cfg-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&config);
-    let paths = Paths { config_dir: config.join("naivepost"), data_dir: config.join("data") };
+    let paths = Paths {
+        config_dir: config.join("naivepost"),
+        data_dir: config.join("data"),
+    };
     let mut conf = Conf::default();
     conf.audio_server = audio_url.to_string();
     conf.server = llm_url.to_string();
@@ -284,10 +315,15 @@ fn pin_session(tag: &str) -> (PathBuf, Tree) {
         // diarizer — so the press costs only the vision and fix asks this test is about. The decode is a
         // REAL (silent) wav: §F1.11 measures the envelope from it for real, and placeholder bytes would
         // stop the row before the fixer was ever asked.
-        std::fs::write(tree.voice16k_wav(lane), silent_wav_bytes(LINES as f64)).expect("the decoded audio");
-        std::fs::write(tree.words_json(lane), words_doc(false).expect("words.json")).expect("the ASR answer");
-        std::fs::write(tree.words_aligned_json(lane), words_doc(true).expect("aligned"))
-            .expect("the aligner's answer");
+        std::fs::write(tree.voice16k_wav(lane), silent_wav_bytes(LINES as f64))
+            .expect("the decoded audio");
+        std::fs::write(tree.words_json(lane), words_doc(false).expect("words.json"))
+            .expect("the ASR answer");
+        std::fs::write(
+            tree.words_aligned_json(lane),
+            words_doc(true).expect("aligned"),
+        )
+        .expect("the aligner's answer");
         // A BARE ARRAY, which is what `requests::read_turns` parses (`Vec<Turn>`, not a document).
         std::fs::write(
             tree.turns_json(lane),
@@ -297,15 +333,25 @@ fn pin_session(tag: &str) -> (PathBuf, Tree) {
         let frames = tree.frames_dir(lane);
         std::fs::create_dir_all(&frames).expect("the frames folder");
         for at in [0.0, 1.0, 2.0, 3.0] {
-            std::fs::write(frames.join(format!("{}.jpg", frame_name(at))), b"jpeg").expect("the frame");
+            std::fs::write(frames.join(format!("{}.jpg", frame_name(at))), b"jpeg")
+                .expect("the frame");
         }
-        std::fs::write(tree.frames_marker(lane), "0.25|1.0\n").expect("the frames marker: nothing to re-frame");
+        std::fs::write(tree.frames_marker(lane), "0.25|1.0\n")
+            .expect("the frames marker: nothing to re-frame");
         std::fs::write(tree.scenes_tsv(lane), "").expect("scenes.tsv, no changes planted");
     }
     // The deck's event log: two picture events, which become EVENT rows on the merged timeline (§S5).
     let events = vec![
-        FrameEvent { start: 1.0, end: 4.0, text: "a slide appears".to_string() },
-        FrameEvent { start: 6.0, end: 8.0, text: "the speaker writes".to_string() },
+        FrameEvent {
+            start: 1.0,
+            end: 4.0,
+            text: "a slide appears".to_string(),
+        },
+        FrameEvent {
+            start: 6.0,
+            end: 8.0,
+            text: "the speaker writes".to_string(),
+        },
     ];
     textfmt::write_events(&events, &tree.events_tsv(DECK)).expect("events.tsv");
     (root, tree)
@@ -324,7 +370,9 @@ fn words_doc(aligned: bool) -> Result<String, serde_json::Error> {
             })
         })
         .collect();
-    let text: String = (0..LINES).map(|index| format!("word{index} one{index} ")).collect::<String>();
+    let text: String = (0..LINES)
+        .map(|index| format!("word{index} one{index} "))
+        .collect::<String>();
     let doc = if aligned {
         serde_json::json!({ "words": words })
     } else {
@@ -388,8 +436,14 @@ fn silent_wav_bytes(seconds: f64) -> Vec<u8> {
 /// through: the placement file, the merged timeline carrying both sources, and the text Cut reads.
 fn check_the_press_writes_the_session_files(app: &adw::Application, _llm: &FakeLlm) {
     let (_keep, tree) = pin_session("files");
-    assert!(!tree.offsets_tsv().exists(), "nothing is planted: the press must write the placement itself");
-    assert!(!tree.session_tsv().exists(), "and nothing planted the session timeline either");
+    assert!(
+        !tree.offsets_tsv().exists(),
+        "nothing is planted: the press must write the placement itself"
+    );
+    assert!(
+        !tree.session_tsv().exists(),
+        "and nothing planted the session timeline either"
+    );
 
     let model = Project {
         interval: 1.0,
@@ -404,10 +458,13 @@ fn check_the_press_writes_the_session_files(app: &adw::Application, _llm: &FakeL
     window.present();
 
     // §S5's preflight, §S0's markers and §S3's asks all run behind this one call.
-    ui::play_button(&window).expect("the run bar has a ▶").emit_clicked();
+    ui::play_button(&window)
+        .expect("the run bar has a ▶")
+        .emit_clicked();
     let logs = ui::window_logs();
     assert!(
-        logs.iter().any(|line| line.contains("fixing ") && line.contains("block 1/")),
+        logs.iter()
+            .any(|line| line.contains("fixing ") && line.contains("block 1/")),
         "the press asked the fixer for each source's block: {logs:?}"
     );
     assert!(
@@ -420,29 +477,41 @@ fn check_the_press_writes_the_session_files(app: &adw::Application, _llm: &FakeL
     let rows: Vec<&str> = offsets.lines().filter(|line| !line.is_empty()).collect();
     assert_eq!(rows.len(), 1, "one video against one audio: {offsets}");
     let fields: Vec<&str> = rows[0].split('\t').collect();
-    assert_eq!(fields, vec![DECK, MIC, "-90.00"], "placed 90 s apart: {offsets}");
+    assert_eq!(
+        fields,
+        vec![DECK, MIC, "-90.00"],
+        "placed 90 s apart: {offsets}"
+    );
 
     // S5's file: rows from BOTH recordings and the deck's two picture events, sorted by start.
-    let timeline =
-        textfmt::read_session(&tree.session_tsv()).expect("session.tsv is readable");
+    let timeline = textfmt::read_session(&tree.session_tsv()).expect("session.tsv is readable");
     assert!(
         timeline.len() >= LINES * 2,
         "both recordings' words are on it: {timeline:?}"
     );
     let sources: Vec<&str> = timeline.iter().map(|row| row.source.as_str()).collect();
-    assert!(sources.contains(&DECK) && sources.contains(&MIC), "rows from both sources: {timeline:?}");
+    assert!(
+        sources.contains(&DECK) && sources.contains(&MIC),
+        "rows from both sources: {timeline:?}"
+    );
     assert!(
         timeline.iter().any(|row| row.who == "EVENT"),
         "the deck's picture events are rows too: {timeline:?}"
     );
     assert!(
-        timeline.windows(2).all(|pair| pair[0].start <= pair[1].start),
+        timeline
+            .windows(2)
+            .all(|pair| pair[0].start <= pair[1].start),
         "sorted by start: {timeline:?}"
     );
 
     // S7's file: the text Cut reads, one line per row, each naming its speaker.
-    let session_txt = std::fs::read_to_string(tree.session_txt()).expect("the press wrote session.txt");
-    assert!(!session_txt.trim().is_empty(), "session.txt has to be the whole text");
+    let session_txt =
+        std::fs::read_to_string(tree.session_txt()).expect("the press wrote session.txt");
+    assert!(
+        !session_txt.trim().is_empty(),
+        "session.txt has to be the whole text"
+    );
     assert!(
         session_txt.contains("S1:") && session_txt.contains("EVENT:"),
         "who said it is on every line: {session_txt}"

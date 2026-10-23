@@ -8,13 +8,15 @@
 //! fine and was wrong about which side the numbers belong on. Every number here comes out of the realized
 //! tree (`translate_coordinates`, `width()`), never off a screenshot.
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, hold_last_window, release_last_window, settle};
 use gtk4 as gtk;
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle};
 
 static RAN_VALUES: AtomicBool = AtomicBool::new(false);
+static RAN_IDLE_PAINTED: AtomicBool = AtomicBool::new(false);
+static RAN_LADDER: AtomicBool = AtomicBool::new(false);
 static RAN_HEADING: AtomicBool = AtomicBool::new(false);
 static RAN_GUTTER: AtomicBool = AtomicBool::new(false);
 
@@ -27,8 +29,12 @@ const VALUE_RIGHT_SLACK_PX: i32 = 8;
 /// on the page because `translate_coordinates` answers relative to the native surface.
 #[allow(deprecated)] // 4.12's replacement needs a surface node this tree does not hand out
 fn span(widget: &gtk::Widget) -> (i32, i32) {
-    let native = widget.native().expect("the page is inside a realized window");
-    let (x, _) = widget.translate_coordinates(&native, 0.0, 0.0).expect("the widget is laid out");
+    let native = widget
+        .native()
+        .expect("the page is inside a realized window");
+    let (x, _) = widget
+        .translate_coordinates(&native, 0.0, 0.0)
+        .expect("the widget is laid out");
     let left = x as i32;
     (left, left + widget.width())
 }
@@ -45,7 +51,9 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
     std::env::set_current_dir(&root).expect("cwd pinned away from rust/");
     let session = naivepost::startup::session_dir(&root);
     let mut seed = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    seed.sources.iter_mut().for_each(|source| source.footage = true);
+    seed.sources
+        .iter_mut()
+        .for_each(|source| source.footage = true);
     std::fs::create_dir_all(&session).expect("session folder");
     naivepost::project::save(&seed, &session).expect("the session is a real project on disk");
 
@@ -62,7 +70,11 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
         end: 120.0,
     }]);
     let seeded = naivepost::cut::Cut {
-        segs: vec![naivepost::cut::Seg { s: 0.0, e: 60.0, ..Default::default() }],
+        segs: vec![naivepost::cut::Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     naivepost::ui::seed_review_cut(&window, &seeded);
@@ -89,9 +101,13 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
 /// right edge sits at or left of its value's left edge, and the value ends where the grid ends.
 fn check_the_readings_are_label_left_value_right(app: &adw::Application) {
     let window = cut_page(app);
-    let grid = common::find_named(&window, "cut-form").expect("§A's idle readings grid is on the page");
+    let grid =
+        common::find_named(&window, "cut-form").expect("§A's idle readings grid is on the page");
     let (grid_left, grid_right) = span(&grid);
-    println!("GRID cut-form spans x={grid_left}..{grid_right} ({} px)", grid.width());
+    println!(
+        "GRID cut-form spans x={grid_left}..{grid_right} ({} px)",
+        grid.width()
+    );
     assert!(
         grid_right > grid_left,
         "the grid has a width to align values against: {} px",
@@ -118,15 +134,17 @@ fn check_the_readings_are_label_left_value_right(app: &adw::Application) {
             .unwrap_or_else(|| panic!("the `{label}` row has no value ({value_name})"));
         // The grid's own right edge is the column's: the pane ends where the divider sits, and §1 wants
         // each value reading at that end. (`cut-form` fills its pane -- see `cut_form_column`.)
-        let (grid_right, value_right) = if value_name == "thumb-minus" || value_name == "aspect-choice" {
-            // A row whose value is a CONTROL: measure its whole CELL (the ladder's box for 🖼− number 🖼+,
-            // the readout-plus-dropdown box for Aspect ratio), not the first widget inside it.
-            let cell = value.parent().expect("the control lives in a box");
-            let (_, cell_right) = span(&cell);
-            (grid_right, cell_right)
-        } else {            let (_, right) = span(&value);
-            (grid_right, right)
-        };
+        let (grid_right, value_right) =
+            if value_name == "thumb-minus" || value_name == "aspect-choice" {
+                // A row whose value is a CONTROL: measure its whole CELL (the ladder's box for 🖼− number 🖼+,
+                // the readout-plus-dropdown box for Aspect ratio), not the first widget inside it.
+                let cell = value.parent().expect("the control lives in a box");
+                let (_, cell_right) = span(&cell);
+                (grid_right, cell_right)
+            } else {
+                let (_, right) = span(&value);
+                (grid_right, right)
+            };
         // The grid's own right edge is the column's: the pane ends where the divider sits, and §1 wants
         // each value reading at that end. (`cut-form` fills its pane -- see `cut_form_column`.)
         let (key_left, key_right) = span(&key);
@@ -148,13 +166,134 @@ fn check_the_readings_are_label_left_value_right(app: &adw::Application) {
     RAN_VALUES.store(true, Ordering::SeqCst);
 }
 
+/// §1's idle column MEASURED AS PAINTED, not only as a tree: every reading the item lists must have real
+/// pixels in a real Cut-page window, and the pinned heading must have none while nothing is open. The
+/// label-left/value-right arithmetic is the check above; this one is the fact that the column is not an
+/// empty white panel (which is what the render showed once the readings fell out of the paned's pane).
+fn check_the_idle_column_paints_every_reading(app: &adw::Application) {
+    let window = cut_page(app);
+    let idle =
+        common::find_named(&window, "cut-form").expect("the idle readings grid is on the page");
+    assert!(idle.is_visible(), "an idle page shows its readings");
+    let scroller = common::find_named(&window, "cut-form-scroller")
+        .expect("§A's scroller holds the idle rows");
+    assert!(
+        scroller.height() > 0,
+        "the scroller holding the readings was squeezed to nothing: {} px",
+        scroller.height()
+    );
+    // One row per reading §1 lists, each with its key and its value on screen.
+    let mut painted = 0;
+    for label in naivepost::cut_screen::IDLE_FORM_ROWS {
+        let name = naivepost::cut_screen::readout_widget(label);
+        let key = common::find_named(&window, &format!("{name}-key"))
+            .unwrap_or_else(|| panic!("the `{label}` row has no key label"));
+        assert!(
+            key.is_visible() && key.width() > 0,
+            "`{label}`'s label is not painted: visible={} {} px",
+            key.is_visible(),
+            key.width()
+        );
+        let value = match label {
+            "Thumbnails" => common::find_named(&window, "thumb-plus"),
+            "Aspect ratio" => common::find_named(&window, "aspect-choice"),
+            _ => common::find_named(&window, &name),
+        }
+        .unwrap_or_else(|| panic!("the `{label}` row has no value widget on screen"));
+        assert!(
+            value.is_visible() && value.width() > 0,
+            "`{label}`'s value is not painted: visible={} {} px",
+            value.is_visible(),
+            value.width()
+        );
+        painted += 1;
+    }
+    assert_eq!(
+        painted,
+        naivepost::cut_screen::IDLE_FORM_ROWS.len(),
+        "every reading §1 lists is on the idle column"
+    );
+    // And no heading: §1 says the idle column STARTS with the readings.
+    let heading =
+        common::find_named(&window, "cut-form-heading").expect("the pinned heading exists");
+    assert!(
+        !heading.is_visible(),
+        "the idle column shows no pinned heading (§1)"
+    );
+    hold_last_window(window);
+    RAN_IDLE_PAINTED.store(true, Ordering::SeqCst);
+}
+
+/// §1's ladder clicks on the real buttons: 🖼− / 🖼+ step the number they drive, and the readout in the
+/// column moves with them (it is written by the same door). `cut_screen::thumb_up`/`thumb_down` own the
+/// arithmetic (pinned in `cut_screen_readouts.rs`); this proves the buttons are wired to it and that the
+/// label the user reads agrees, so the control can never drift from the number beside it.
+fn check_the_thumbnail_ladder_steps_its_readout(app: &adw::Application) {
+    let window = cut_page(app);
+    // The Thumbnails row's value is the ladder's BOX (🖼− number 🖼+): the number is the BOX that carries
+    // the row's readout name (`cut_form_column` names the control cell, not a label inside it), and
+    // `press_thumb` repaints the number label that sits beside it.
+    let cell = common::find_named(&window, "cut-readout-thumbnails")
+        .expect("the Thumbnails row answers to its readout name");
+    let number = || {
+        fn find(w: &gtk::Widget) -> Option<String> {
+            if let Some(label) = w.downcast_ref::<gtk::Label>() {
+                // The ladder's two steps are buttons with labels too; the number is the label that is not
+                // one of their glyphs.
+                let text = label.text().trim().to_string();
+                if !text.starts_with('\u{1f5bc}') {
+                    return Some(text);
+                }
+            }
+            for child in w.observe_children().iter::<glib::Object>().flatten() {
+                if let Some(w) = child.downcast_ref::<gtk::Widget>() {
+                    if let Some(text) = find(w) {
+                        return Some(text);
+                    }
+                }
+            }
+            None
+        }
+        find(cell.upcast_ref()).expect("the ladder carries its number between the two steps")
+    };
+    let before = number();
+    common::find_named(&window, "thumb-plus")
+        .expect("§A's 🖼+ is on the column")
+        .emit_by_name::<()>("clicked", &[]);
+    settle();
+    let bigger = number();
+    assert_ne!(
+        bigger, before,
+        "🖼+ moves the number it drives: {before} -> {bigger}"
+    );
+    common::find_named(&window, "thumb-minus")
+        .expect("§A's 🖼− is on the column")
+        .emit_by_name::<()>("clicked", &[]);
+    settle();
+    assert_eq!(
+        number(),
+        before,
+        "and 🖼− steps it back: {before} -> {bigger} -> {}",
+        number()
+    );
+    hold_last_window(window);
+    RAN_LADDER.store(true, Ordering::SeqCst);
+}
+
 /// §A's pinned heading: absent on the idle column, and once a form is open it carries the title at its
 /// left and the ✕ at its right end. The form is opened through the program's own door — the chooser seam
 /// `tests/suite/cut_form_frame_widgets.rs` uses, i.e. what the native file dialog's callback calls.
 fn check_the_pinned_heading_shows_only_with_a_form(app: &adw::Application) {
     let window = cut_page(app);
-    let heading = common::find_named(&window, "cut-form-heading").expect("§A's pinned heading row exists");
-    assert!(!heading.is_visible(), "the idle column starts with the readings and NO heading (§1)");
+    let heading =
+        common::find_named(&window, "cut-form-heading").expect("§A's pinned heading row exists");
+    assert!(
+        !heading.is_visible(),
+        "the idle column starts with the readings and NO heading (§1)"
+    );
+    // Left up, not closed: the checks that run after this one hold a window on purpose, and `cut_page`
+    // closes the one the previous check left behind. Closing here would take the tree this round's other
+    // checks are still reading (`hold_last_window` keeps the newest window alive for exactly that reason).
 
     let video = {
         let dir = std::env::temp_dir().join(format!("np-column-sting-{}", std::process::id()));
@@ -166,7 +305,10 @@ fn check_the_pinned_heading_shows_only_with_a_form(app: &adw::Application) {
     let said = naivepost::ui::insert_chosen_with_length(&window, &video, 20.0, Some(7.5));
     settle();
     assert!(said.contains("sting.mp4"), "{said}");
-    assert!(naivepost::ui::insert_open(&window).is_some(), "the insert form is open");
+    assert!(
+        naivepost::ui::insert_open(&window).is_some(),
+        "the insert form is open"
+    );
 
     assert!(heading.is_visible(), "an open form pins its heading");
     let title = common::find_named(&window, "cut-form-title")
@@ -174,7 +316,10 @@ fn check_the_pinned_heading_shows_only_with_a_form(app: &adw::Application) {
         .expect("the heading carries a title label");
     let close = common::find_named(&window, "cut-form-close").expect("the heading carries the ✕");
     let words = title.text().to_string();
-    assert!(!words.trim().is_empty(), "the open form's heading names what is open");
+    assert!(
+        !words.trim().is_empty(),
+        "the open form's heading names what is open"
+    );
     let (title_left, title_right) = span(title.upcast_ref());
     let (close_left, close_right) = span(&close);
     println!("HEADING title \"{words}\" x={title_left}..{title_right}, close x={close_left}..{close_right}");
@@ -206,7 +351,10 @@ fn check_the_pinned_heading_shows_only_with_a_form(app: &adw::Application) {
 fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
     let window = cut_page(app);
     let gutter = naivepost::cut_screen::GUTTER_PX;
-    println!("GUTTER cut_screen::GUTTER_PX = {gutter} px, cut_view::gutter_px() = {}", naivepost::ui::cut_view::gutter_px());
+    println!(
+        "GUTTER cut_screen::GUTTER_PX = {gutter} px, cut_view::gutter_px() = {}",
+        naivepost::ui::cut_view::gutter_px()
+    );
     assert_eq!(gutter, 30.0, "§1's gutter is 30 px");
     assert_eq!(
         naivepost::ui::cut_view::gutter_px(),
@@ -230,11 +378,14 @@ fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
         if node.widget_name() == name {
             return true;
         }
-        node.observe_children().iter::<glib::Object>().flatten().any(|child| {
-            child
-                .downcast_ref::<gtk::Widget>()
-                .is_some_and(|child| inside(child, name))
-        })
+        node.observe_children()
+            .iter::<glib::Object>()
+            .flatten()
+            .any(|child| {
+                child
+                    .downcast_ref::<gtk::Widget>()
+                    .is_some_and(|child| inside(child, name))
+            })
     }
     for rail in ["gutter-badges", "gutter-switches"] {
         assert!(
@@ -284,6 +435,10 @@ fn round() {
     common::one_app_round(|app| {
         println!("CHECK 1 the eight idle readings are label left, value right");
         check_the_readings_are_label_left_value_right(app);
+        println!("CHECK 1b every reading is PAINTED on the idle column, with no heading");
+        check_the_idle_column_paints_every_reading(app);
+        println!("CHECK 1c the thumbnail ladder clicks step the number it drives");
+        check_the_thumbnail_ladder_steps_its_readout(app);
         println!("CHECK 2 the pinned heading shows only while a form is open");
         check_the_pinned_heading_shows_only_with_a_form(app);
         println!("CHECK 3 the gutter is a 30 px column, not a band");
@@ -295,19 +450,48 @@ fn round() {
 fn sec_05_cut_1_screen_the_idle_readings_sit_label_left_and_value_right() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_VALUES.load(Ordering::SeqCst), "the reading-alignment check never ran");
+    assert!(
+        RAN_VALUES.load(Ordering::SeqCst),
+        "the reading-alignment check never ran"
+    );
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_idle_column_shows_its_readings() {
+    common::pin_private_cwd();
+    round();
+    assert!(
+        RAN_IDLE_PAINTED.load(Ordering::SeqCst),
+        "the idle-column-painted check never ran"
+    );
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_thumbnail_ladder_steps_the_number_it_drives() {
+    common::pin_private_cwd();
+    round();
+    assert!(
+        RAN_LADDER.load(Ordering::SeqCst),
+        "the thumbnail ladder check never ran"
+    );
 }
 
 #[test]
 fn sec_05_cut_1_screen_the_pinned_heading_shows_only_while_a_form_is_open() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_HEADING.load(Ordering::SeqCst), "the pinned-heading check never ran");
+    assert!(
+        RAN_HEADING.load(Ordering::SeqCst),
+        "the pinned-heading check never ran"
+    );
 }
 
 #[test]
 fn sec_05_cut_1_screen_the_gutter_is_a_30_px_column_not_a_band_of_its_own() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_GUTTER.load(Ordering::SeqCst), "the gutter check never ran");
+    assert!(
+        RAN_GUTTER.load(Ordering::SeqCst),
+        "the gutter check never ran"
+    );
 }

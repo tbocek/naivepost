@@ -44,10 +44,16 @@ fn p_eng_aspectstayseconds_s1_the_stay_is_1_0_and_catalogued_once() {
     assert_eq!(number_anywhere("P.eng.aspectStaySeconds"), 1.0);
 
     // The row names the constant its rule reads, not a copy of the number.
-    assert_eq!(anywhere("P.eng.aspectStaySeconds").from, "fx_aspect::HOLD_SECONDS");
+    assert_eq!(
+        anywhere("P.eng.aspectStaySeconds").from,
+        "fx_aspect::HOLD_SECONDS"
+    );
 
     // §10 §5.1 files it among the engineering constants, so the prefix must answer to Eng.
-    assert_eq!(params::family("P.eng.aspectStaySeconds"), params::Family::Eng);
+    assert_eq!(
+        params::family("P.eng.aspectStaySeconds"),
+        params::Family::Eng
+    );
 
     // And the row sits in the Cut page's list, where F3.2's own bare row also lives.
     assert!(
@@ -63,16 +69,25 @@ fn p_eng_aspectstayseconds_s1_the_stay_is_1_0_and_catalogued_once() {
 #[test]
 fn p_eng_aspectstayseconds_s2_a_shape_with_no_staying_zoom_places_one_second_of_hold() {
     let cut = Cut::default();
-    assert!(!fx_zoom::a_staying_zoom_exists(&cut.fx), "the fixture must really have nothing staying");
+    assert!(
+        !fx_zoom::a_staying_zoom_exists(&cut.fx),
+        "the fixture must really have nothing staying"
+    );
 
     let chosen = fx_aspect::choose(&cut, "9:16");
-    let zoom = chosen.zoom.clone().expect("this branch places the framing zoom");
+    let zoom = chosen
+        .zoom
+        .clone()
+        .expect("this branch places the framing zoom");
     assert_eq!(zoom.kind, "zoom");
     assert_eq!(zoom.t, 0.0, "at 0:00, the first second of the session");
     // The value under test: the hold is exactly §10's second, not some rounded stand-in.
     assert_eq!(zoom.dur, fx_aspect::HOLD_SECONDS);
     assert_eq!(zoom.dur, 1.0);
-    assert!(zoom.stay, "a reframing stays; that is what makes it a camera move rather than an event");
+    assert!(
+        zoom.stay,
+        "a reframing stays; that is what makes it a camera move rather than an event"
+    );
 
     // A staying camera has nowhere to pull back to, so it gets no fades — [`fx_zoom::fades`] answers (0, 0)
     // for `stay`, and this zoom goes through it rather than setting the fields itself.
@@ -84,8 +99,14 @@ fn p_eng_aspectstayseconds_s2_a_shape_with_no_staying_zoom_places_one_second_of_
     assert_eq!(zoom.cx, Some(fx_zoom::SETTLED.cx));
     assert_eq!(zoom.cy, Some(fx_zoom::SETTLED.cy));
     assert_eq!(zoom.hf, Some(fx_zoom::SETTLED.hf));
-    assert_eq!((zoom.cx, zoom.cy, zoom.hf), (Some(0.5), Some(0.5), Some(1.0)));
-    assert_eq!(zoom.cam, 0, "no row asked for: the pick owns no lane of its own");
+    assert_eq!(
+        (zoom.cx, zoom.cy, zoom.hf),
+        (Some(0.5), Some(0.5), Some(1.0))
+    );
+    assert_eq!(
+        zoom.cam, 0,
+        "no row asked for: the pick owns no lane of its own"
+    );
 
     // The line the page prints, whole.
     assert_eq!(chosen.aspect, "9:16");
@@ -102,12 +123,19 @@ fn p_eng_aspectstayseconds_s3_an_existing_staying_zoom_means_no_second_hold() {
     let mut cut = Cut::default();
     // A staying zoom someone placed by hand, at 12 s for 4 s — deliberately not 1.0 s, so a wrongly-added
     // second hold could not hide behind matching lengths.
-    cut.fx.push(fx_zoom::new_zoom((0.4, 0.5, 0.6), 12.0, 4.0, true, 0));
-    assert!(fx_zoom::a_staying_zoom_exists(&cut.fx), "the fixture must exercise THIS branch");
+    cut.fx
+        .push(fx_zoom::new_zoom((0.4, 0.5, 0.6), 12.0, 4.0, true, 0));
+    assert!(
+        fx_zoom::a_staying_zoom_exists(&cut.fx),
+        "the fixture must exercise THIS branch"
+    );
     let before = cut.fx.len();
 
     let chosen = fx_aspect::choose(&cut, "9:16");
-    assert_eq!(chosen.zoom, None, "the lane already decides the framing; nothing is added");
+    assert_eq!(
+        chosen.zoom, None,
+        "the lane already decides the framing; nothing is added"
+    );
     assert_eq!(chosen.aspect, "9:16", "the shape itself is still stored");
     assert_eq!(
         chosen.status,
@@ -125,8 +153,14 @@ fn p_eng_aspectstayseconds_s3_an_existing_staying_zoom_means_no_second_hold() {
 fn p_eng_aspectstayseconds_s4_source_places_no_hold_at_all() {
     let cut = Cut::default();
     let chosen = fx_aspect::choose(&cut, fx_aspect::SOURCE);
-    assert_eq!(chosen.zoom, None, "nothing is added for the footage's own shape");
-    assert_eq!(chosen.aspect, "", "unset is stored empty, not as the word \"source\"");
+    assert_eq!(
+        chosen.zoom, None,
+        "nothing is added for the footage's own shape"
+    );
+    assert_eq!(
+        chosen.aspect, "",
+        "unset is stored empty, not as the word \"source\""
+    );
     assert_eq!(
         chosen.status,
         "aspect: the source's own \u{2014} the video comes out the shape it was filmed"
@@ -136,7 +170,10 @@ fn p_eng_aspectstayseconds_s4_source_places_no_hold_at_all() {
     // for nothing.
     let mut cut = Cut::default();
     fx_aspect::apply(&mut cut, fx_aspect::SOURCE);
-    assert!(cut.fx.is_empty(), "a pick of `source` must not leave a hold lying on the lane");
+    assert!(
+        cut.fx.is_empty(),
+        "a pick of `source` must not leave a hold lying on the lane"
+    );
     assert_eq!(cut.aspect, "");
 }
 
@@ -160,7 +197,8 @@ fn p_eng_aspectstayseconds_s5_one_constant_two_rows_and_not_the_hand_placed_defa
     // stop/speed/volume/label 2"), so the zoom cell is matched in its own words.
     assert_eq!(fx_zoom::DEFAULT_SECONDS, 3.0);
     assert_ne!(
-        fx_aspect::HOLD_SECONDS, fx_zoom::DEFAULT_SECONDS,
+        fx_aspect::HOLD_SECONDS,
+        fx_zoom::DEFAULT_SECONDS,
         "an aspect's hold must not quietly become a hand-placed zoom's length"
     );
     let family = anywhere("P.policy.effectDefaultSeconds").spelled;
@@ -179,7 +217,10 @@ fn p_eng_aspectstayseconds_s5_one_constant_two_rows_and_not_the_hand_placed_defa
     assert_eq!(cut.fx[0].t, 0.0);
     assert_eq!(cut.fx[0].dur, fx_aspect::HOLD_SECONDS);
     assert!(cut.fx[0].stay);
-    assert!(status.contains("0:00"), "the line names the second the hold starts: {status}");
+    assert!(
+        status.contains("0:00"),
+        "the line names the second the hold starts: {status}"
+    );
     assert_eq!(
         status,
         "aspect 1:1 \u{2014} a \u{2295} zoom at 0:00 holds the whole frame, centred"

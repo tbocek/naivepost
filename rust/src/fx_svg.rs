@@ -18,7 +18,7 @@ use std::path::Path;
 
 use crate::cut::Fx;
 use crate::cut_speed;
-use crate::fx_text::{self, Box_, BoxChoice};
+use crate::fx_text::{self, BoxChoice, Box_};
 use crate::fx_zoom;
 use crate::layout;
 use crate::tools;
@@ -93,7 +93,8 @@ pub fn chose(file: Option<&str>) -> Chose {
 /// so the arm says what is about to be drawn and not merely that something is. One constant with a hole for the file,
 /// so a test compares the sentence rather than hoping three `contains` cover it. The semicolon, not a full stop,
 /// before "the drawing keeps its own shape" is §A.5's punctuation.
-pub const ARM_WORDS: &str = "Drag the box {} goes in \u{2014} anywhere on the picture, any shape; the drawing keeps \
+pub const ARM_WORDS: &str =
+    "Drag the box {} goes in \u{2014} anywhere on the picture, any shape; the drawing keeps \
                              its own shape inside it. A click puts one across the middle. ";
 
 /// F3.5 S2: the arm's whole paragraph — this flow's gesture with the file named, then the shared tail saying where it
@@ -116,7 +117,12 @@ pub fn arm_head(file: &str) -> String {
 /// drawing is as often the subject as a decoration, and the lower third is a guess about which one it is.
 /// [`crate::cut::Fx::centre`] already answers `{0.5, 0.5}` for an svg that stored nothing; this is the same centre
 /// with its size spelled, so a drawing placed by click and one read back from a file cannot diverge.
-pub const MIDDLE: Box_ = Box_ { cx: 0.5, cy: 0.5, wf: 0.6, hf: 0.6 };
+pub const MIDDLE: Box_ = Box_ {
+    cx: 0.5,
+    cy: 0.5,
+    wf: 0.6,
+    hf: 0.6,
+};
 
 /// F3.5 S3 (`Camera layer stays up`): §A.5 says a drawing is the same as text, and text's box is measured against the
 /// output frame — so the framing holds its place while a drawing is placed, exactly as in [`fx_text`] and for the
@@ -137,8 +143,7 @@ pub fn form_title(t: f64) -> String {
 /// first because it is what a drawing is made of, and because it can be changed here after the arm took one. Order
 /// is the sentence a person reads, not a layout detail, as in [`fx_zoom::FORM_FIELDS`] and
 /// [`crate::fx_text::FORM_FIELDS`].
-pub const FORM_FIELDS: [&str; 5] =
-    ["File", "Length (s)", "Fade in (s)", "Fade out (s)", "Curve"];
+pub const FORM_FIELDS: [&str; 5] = ["File", "Length (s)", "Fade in (s)", "Fade out (s)", "Curve"];
 
 /// F3.5 S4 (`+ Choose…`): the button beside the file's name, which re-opens [`CHOOSE_TITLE`]'s dialog. A drawing is
 /// the only effect whose form can change what it is made of, so its first row is a picker rather than a label.
@@ -213,7 +218,9 @@ pub fn place(
     let on = match choice {
         BoxChoice::Click => MIDDLE,
         // A press that did not travel is a click wherever it landed.
-        BoxChoice::Dragged { w, h, .. } if w < fx_zoom::DRAG_MIN_PX || h < fx_zoom::DRAG_MIN_PX => MIDDLE,
+        BoxChoice::Dragged { w, h, .. } if w < fx_zoom::DRAG_MIN_PX || h < fx_zoom::DRAG_MIN_PX => {
+            MIDDLE
+        }
         BoxChoice::Dragged { x, y, w, h } => Box_::from_px(x, y, w, h, frame.0, frame.1).clamp(),
     };
     let (t, dur) = match (selection, line) {
@@ -398,7 +405,9 @@ impl Rasters {
     /// unlike [`Rasters::request`] this takes on no job, so the painter can ask every frame without arming a
     /// second raster behind the first one's back.
     pub fn raster_of(&self, path: &str) -> Option<std::path::PathBuf> {
-        self.entries.get(path).and_then(|entry| entry.raster.clone())
+        self.entries
+            .get(path)
+            .and_then(|entry| entry.raster.clone())
     }
 
     /// F3.5 S5 (`failure logged once`): the line for a drawing that cannot be shown, `Some` only the first time this

@@ -37,7 +37,6 @@ fn number_anywhere(id: &str) -> f64 {
         .unwrap_or_else(|_| panic!("{id} spells a number"))
 }
 
-
 /// S1: `P.eng.effectMinSeconds` = 0.1, held by `fx_lane::MIN_BAND_SECONDS`, catalogued once under the family
 /// §10 files it in.
 #[test]
@@ -47,10 +46,16 @@ fn p_eng_effectminseconds_s1_the_floor_is_0_1_and_catalogued_once() {
     assert_eq!(number_anywhere("P.eng.effectMinSeconds"), 0.1);
 
     // The row names the constant its rule reads, not a copy of the number.
-    assert_eq!(anywhere("P.eng.effectMinSeconds").from, "fx_lane::MIN_BAND_SECONDS");
+    assert_eq!(
+        anywhere("P.eng.effectMinSeconds").from,
+        "fx_lane::MIN_BAND_SECONDS"
+    );
 
     // §10 §5.1 files it among the engineering constants, so the prefix must answer to Eng.
-    assert_eq!(params::family("P.eng.effectMinSeconds"), params::Family::Eng);
+    assert_eq!(
+        params::family("P.eng.effectMinSeconds"),
+        params::Family::Eng
+    );
 
     // And it lives in the effects list specifically — the lane is §06's, not the Cut page's.
     let in_effects = params::effects()
@@ -72,8 +77,15 @@ fn p_eng_effectminseconds_s2_dragging_the_trailing_end_below_the_floor_stops_at_
     // own still stops at the shortest band there is instead of crossing over and inverting the selection.
     let (t_zero, dur_zero) = fx_lane::drag_end(10.0, 4.0, true, 10.0);
     assert_eq!(t_zero, 10.0);
-    assert_close("trailing drag onto its own start", dur_zero, fx_lane::MIN_BAND_SECONDS);
-    assert!(dur_zero > 0.0, "a dragged band never has zero or negative length");
+    assert_close(
+        "trailing drag onto its own start",
+        dur_zero,
+        fx_lane::MIN_BAND_SECONDS,
+    );
+    assert!(
+        dur_zero > 0.0,
+        "a dragged band never has zero or negative length"
+    );
     assert!(t_zero + dur_zero > t_zero, "and never runs backwards");
 }
 
@@ -92,7 +104,11 @@ fn p_eng_effectminseconds_s3_dragging_the_leading_end_stops_at_the_floor_and_at_
     // the length follows the hand. What the rule guarantees here is only that the answer is not negative.
     let (t_front, dur_front) = fx_lane::drag_end(0.02, 1.0, false, 0.5);
     assert_eq!(t_front, 0.5, "the start the hand asked for");
-    assert_close("stop unchanged, so the band shortened", t_front + dur_front, 1.02);
+    assert_close(
+        "stop unchanged, so the band shortened",
+        t_front + dur_front,
+        1.02,
+    );
 
     // The same band dragged off the front of the session lands on 0 rather than on a negative second.
     let (t_off, dur_off) = fx_lane::drag_end(0.02, 1.0, false, -3.0);
@@ -111,7 +127,11 @@ fn p_eng_effectminseconds_s4_it_is_a_floor_not_a_fixed_size() {
     // Exactly ON the floor is allowed too: the rule clamps below it, not at it.
     let (t_at, dur_at) = fx_lane::drag_end(5.0, 3.0, true, 5.1);
     assert_eq!(t_at, 5.0);
-    assert_close("trailing drag exactly on the floor", dur_at, fx_lane::MIN_BAND_SECONDS);
+    assert_close(
+        "trailing drag exactly on the floor",
+        dur_at,
+        fx_lane::MIN_BAND_SECONDS,
+    );
 }
 
 /// S5: four different rules bound a length from below and only one of them is this one. Two of the neighbours
@@ -122,20 +142,29 @@ fn p_eng_effectminseconds_s5_the_floor_is_not_the_other_three_seconds_rules() {
     // left or it is dropped outright. Nothing to do with how short a hand may drag a band.
     assert_eq!(cut_clamp::MIN_SURVIVING_SECONDS, 1.0);
     assert_ne!(
-        fx_lane::MIN_BAND_SECONDS, cut_clamp::MIN_SURVIVING_SECONDS,
+        fx_lane::MIN_BAND_SECONDS,
+        cut_clamp::MIN_SURVIVING_SECONDS,
         "the drag floor and the drop threshold are different rules"
     );
 
     // effects.volumeMinSeconds (fx_volume::MIN_SECONDS): the VOLUME FORM's typed floor. It happens to be 0.1
     // too, which is why the equality here is against the surviving-seconds bound and not a bare number: same
     // digits, different rule, and one must not be quietly substituted for the other.
-    assert_eq!(fx_volume::MIN_SECONDS, fx_lane::MIN_BAND_SECONDS, "both are 0.1 by coincidence");
+    assert_eq!(
+        fx_volume::MIN_SECONDS,
+        fx_lane::MIN_BAND_SECONDS,
+        "both are 0.1 by coincidence"
+    );
     assert_ne!(
-        fx_volume::MIN_SECONDS, cut_clamp::MIN_SURVIVING_SECONDS,
+        fx_volume::MIN_SECONDS,
+        cut_clamp::MIN_SURVIVING_SECONDS,
         "the volume form's floor is not the drop threshold"
     );
     // They stay separate rows nonetheless: the form's floor is a typed-input bound, this is a drag bound.
-    assert_eq!(number_anywhere("effects.volumeMinSeconds"), fx_volume::MIN_SECONDS);
+    assert_eq!(
+        number_anywhere("effects.volumeMinSeconds"),
+        fx_volume::MIN_SECONDS
+    );
     assert_ne!(
         anywhere("effects.volumeMinSeconds").from,
         anywhere("P.eng.effectMinSeconds").from,
@@ -146,7 +175,8 @@ fn p_eng_effectminseconds_s5_the_floor_is_not_the_other_three_seconds_rules() {
     // effects lane's floor is longer because a band has to stay grabbable, not merely visible.
     assert_eq!(cut_select::MIN_SECONDS, 0.04);
     assert_ne!(
-        fx_lane::MIN_BAND_SECONDS, cut_select::MIN_SECONDS,
+        fx_lane::MIN_BAND_SECONDS,
+        cut_select::MIN_SECONDS,
         "the selection band's floor is not the effects lane's"
     );
 }

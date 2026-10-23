@@ -147,16 +147,7 @@ pub fn send_budget(
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Sent, String> {
     send_pinged(
-        server,
-        endpoint,
-        kind,
-        job,
-        body,
-        None,
-        cancelled,
-        None,
-        None,
-        budget,
+        server, endpoint, kind, job, body, None, cancelled, None, None, budget,
     )
 }
 
@@ -172,16 +163,7 @@ pub fn send_named(
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Sent, String> {
     send_pinged(
-        server,
-        endpoint,
-        kind,
-        job,
-        body,
-        filename,
-        cancelled,
-        None,
-        None,
-        None,
+        server, endpoint, kind, job, body, filename, cancelled, None, None, None,
     )
 }
 
@@ -206,11 +188,7 @@ fn send_pinged(
         return Err(format!("{}: cancelled before sending", kind.path(job)));
     }
 
-    let url = format!(
-        "{}{}",
-        endpoint.url.trim_end_matches('/'),
-        kind.path(job)
-    );
+    let url = format!("{}{}", endpoint.url.trim_end_matches('/'), kind.path(job));
 
     // The timeouts come straight out of §1's table. `Some(d)` bounds the whole call; `None`
     // bounds only the connect, per CONNECT_TIMEOUT's note above. A caller with a bound of its own (a
@@ -567,7 +545,10 @@ pub fn call_dialed(
         Err(reason) => Outcome::Error(reason.clone()),
     };
 
-    let mut row = fill_sizes(request_timing::finish_row(base, &timer, outcome, attempt), dial.body);
+    let mut row = fill_sizes(
+        request_timing::finish_row(base, &timer, outcome, attempt),
+        dial.body,
+    );
     // What came back, off the wire rather than guessed: §10 wants the size of the reply beside the size
     // of the request. A caller that already filled the column (a leg that counts its own payload) is left.
     if let Ok(reply) = &result {
@@ -606,7 +587,8 @@ pub fn call_dialed(
 pub fn fill_sizes(mut row: Request, body: Option<&str>) -> Request {
     let Some(text) = body else { return row };
     if row.sent_bytes.is_none() {
-        let asked: serde_json::Value = serde_json::from_str(text).unwrap_or(serde_json::Value::Null);
+        let asked: serde_json::Value =
+            serde_json::from_str(text).unwrap_or(serde_json::Value::Null);
         let bytes = asked
             .get("messages")
             .and_then(|messages| messages.as_array())
@@ -619,7 +601,9 @@ pub fn fill_sizes(mut row: Request, body: Option<&str>) -> Request {
                             .map(|parts| parts.to_vec())
                             .unwrap_or_default()
                     })
-                    .filter(|part| part.get("type").and_then(serde_json::Value::as_str) == Some("text"))
+                    .filter(|part| {
+                        part.get("type").and_then(serde_json::Value::as_str) == Some("text")
+                    })
                     .map(|part| {
                         part.get("text")
                             .and_then(serde_json::Value::as_str)
@@ -666,7 +650,14 @@ pub fn fill_sizes(mut row: Request, body: Option<&str>) -> Request {
 }
 
 /// A `Request` carrying only what the caller knows, ready for [`call`] to finish.
-pub fn base_row(server: Server, model: &str, kind: &str, run: &str, step: &str, job: &str) -> Request {
+pub fn base_row(
+    server: Server,
+    model: &str,
+    kind: &str,
+    run: &str,
+    step: &str,
+    job: &str,
+) -> Request {
     Request {
         started: requests::format_started(epoch_ms(), local_offset_secs()),
         run: run.to_string(),

@@ -28,16 +28,28 @@ fn sec_09_llm_and_tools_1_request_contract_s4_a_stream_that_ends_early_keeps_wha
         step: "effects".to_string(),
         ..Default::default()
     };
-    let body = serde_json::json!({"model": stream::MODEL, "messages": [], "stream": true}).to_string();
+    let body =
+        serde_json::json!({"model": stream::MODEL, "messages": [], "stream": true}).to_string();
     let (_row, sent) = server_leg_call(&tree, &base, &endpoint, &body);
     let sent = sent.expect("the fake answered over the wire");
-    assert!(llm::is_event_stream(&sent.content_type), "the fake streamed: {}", sent.content_type);
+    assert!(
+        llm::is_event_stream(&sent.content_type),
+        "the fake streamed: {}",
+        sent.content_type
+    );
 
     // The framing rule, on the bytes that actually arrived.
     let lines: Vec<&str> = sent.body.lines().collect();
     let got = llm::from_events(&lines);
-    assert_eq!(got.ended, llm::Ended::Eof, "no [DONE], so the reader must say so");
-    assert!(!got.complete(), "a reply whose stream was cut is known to be a partial");
+    assert_eq!(
+        got.ended,
+        llm::Ended::Eof,
+        "no [DONE], so the reader must say so"
+    );
+    assert!(
+        !got.complete(),
+        "a reply whose stream was cut is known to be a partial"
+    );
     assert!(
         !got.reply.answer().is_empty(),
         "EOF keeps what arrived rather than throwing it away: {:?}",
@@ -45,8 +57,13 @@ fn sec_09_llm_and_tools_1_request_contract_s4_a_stream_that_ends_early_keeps_wha
     );
     // And the same bytes routed through the door every chat caller reads with answer, they do not fail: the
     // partial IS the reply a step gets.
-    let reply = llm::reply_from(&sent.content_type, &sent.body).expect("a partial stream still answers");
-    assert_eq!(reply.answer(), got.reply.answer(), "the door and the reader agree on what arrived");
+    let reply =
+        llm::reply_from(&sent.content_type, &sent.body).expect("a partial stream still answers");
+    assert_eq!(
+        reply.answer(),
+        got.reply.answer(),
+        "the door and the reader agree on what arrived"
+    );
 }
 
 /// One call through the leg every step dials with, unwrapped from the liveness watch: this check is about the
@@ -57,5 +74,14 @@ fn server_leg_call(
     endpoint: &services::Endpoint,
     body: &str,
 ) -> (Request, Result<naivepost::server_leg::Sent, String>) {
-    naivepost::server_leg::call(tree, base, Server::Llm, endpoint, Kind::Chat, None, Some(body), &|| false)
+    naivepost::server_leg::call(
+        tree,
+        base,
+        Server::Llm,
+        endpoint,
+        Kind::Chat,
+        None,
+        Some(body),
+        &|| false,
+    )
 }

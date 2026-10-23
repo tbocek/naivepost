@@ -68,14 +68,23 @@ fn stopped_early() -> Option<String> {
 /// clock then agree about where a caption can go, exactly as a real session's would.
 fn tape_cut() -> Cut {
     Cut {
-        segs: vec![Seg { s: 0.0, e: 300.0, cam: 0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 300.0,
+            cam: 0,
+            ..Default::default()
+        }],
         ..Default::default()
     }
 }
 
 /// Declare the take the way the page declares one, so the preview has footage to play (§F3.4 S5's toggle needs it).
 fn declare_tape() {
-    ui::set_session_recordings(&[Recording { base: "session-tape".to_string(), start: 0.0, end: 300.0 }]);
+    ui::set_session_recordings(&[Recording {
+        base: "session-tape".to_string(),
+        start: 0.0,
+        end: 300.0,
+    }]);
 }
 
 /// Place a caption the way a person does: arm ✐ Text, land a box, type, Apply. Returns the index of the record
@@ -91,7 +100,10 @@ fn place_caption(window: &adw::ApplicationWindow, words: &str) -> usize {
     assert!(ui::text_armed(), "✐ Text did not arm -- {armed}");
     // A zero-travel press: §S2 makes that a CLICK, which takes the lower third — the wide box these checks grab.
     let landed = ui::text_drag_ended(window, (40.0, 40.0), (40.0, 40.0));
-    assert!(ui::text_form_open().is_some(), "landing the box drew no form -- {landed}");
+    assert!(
+        ui::text_form_open().is_some(),
+        "landing the box drew no form -- {landed}"
+    );
     ui::text_type_words(window, words);
     let applied = ui::press_text_apply(window);
     let cut_ = ui::review_cut_of(window);
@@ -106,7 +118,11 @@ fn place_caption(window: &adw::ApplicationWindow, words: &str) -> usize {
 
 /// The text record at `index`, read back off the page — the state the logic doors answer, not a painted pixel.
 fn record(window: &adw::ApplicationWindow, index: usize) -> Fx {
-    ui::review_cut_of(window).fx.into_iter().nth(index).expect("the record is still on the cut")
+    ui::review_cut_of(window)
+        .fx
+        .into_iter()
+        .nth(index)
+        .expect("the record is still on the cut")
 }
 
 /// A text record's box, the same way the page resolves one (`Fx::centre` falls back to the lower third).
@@ -133,7 +149,8 @@ fn placed_box_px(window: &adw::ApplicationWindow, index: usize) -> (f64, f64, f6
 /// Returns the status line the page printed, which is how a caller tells an edit from a play/pause toggle.
 fn drag_panel(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) -> String {
     let _ = window;
-    let gesture = ui::zoom_gesture(&last_window()).expect("the page wired a drag onto the preview panel");
+    let gesture =
+        ui::zoom_gesture(&last_window()).expect("the page wired a drag onto the preview panel");
     gesture.emit_by_name::<()>("drag-begin", &[&from.0, &from.1]);
     gesture.emit_by_name::<()>("drag-end", &[&(to.0 - from.0), &(to.1 - from.1)]);
     settle();
@@ -182,7 +199,9 @@ fn hold_window(window: &adw::ApplicationWindow) {
 }
 
 fn last_window() -> adw::ApplicationWindow {
-    LAST_WINDOW.with(|slot| slot.borrow().clone()).expect("a page is built")
+    LAST_WINDOW
+        .with(|slot| slot.borrow().clone())
+        .expect("a page is built")
 }
 
 /// Build the Cut page for one check. `common::cut_page` keeps its own last-window slot, which is what the
@@ -204,7 +223,11 @@ fn f3_4_s5_a_drag_on_a_placed_box_moves_it(app: &adw::Application) {
     // line, so a downward move is clamped back to where it started and proves nothing about the drag.
     // `fx_text::grab_edge` answers `None` at the middle, so this is a move, not a resize.
     let delta = (0.0, -30.0);
-    drag_panel(&window, (x + w / 2.0, y + h / 2.0), (x + w / 2.0 + delta.0, y + h / 2.0 + delta.1));
+    drag_panel(
+        &window,
+        (x + w / 2.0, y + h / 2.0),
+        (x + w / 2.0 + delta.0, y + h / 2.0 + delta.1),
+    );
     // Which door answered, said by the page itself: a refusal here means the gesture fell through to the framing
     // flow instead of reaching the caption, which is the wire this check exists to prove.
     let said = common::status_text(&window);
@@ -222,7 +245,10 @@ fn f3_4_s5_a_drag_on_a_placed_box_moves_it(app: &adw::Application) {
     // The sentence is `fx_band`'s (§F3.8 S3), quoted from the module rather than retyped: if the door ever
     // composes its own wording, this fails instead of quietly agreeing with a near-duplicate.
     let said = fx_band::moved(fx_record::label_of(EffectKind::Text));
-    assert!(said.contains("moved") && said.contains("\u{21b6} Undo"), "{said}");
+    assert!(
+        said.contains("moved") && said.contains("\u{21b6} Undo"),
+        "{said}"
+    );
     RAN_MOVE.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -235,9 +261,16 @@ fn f3_4_s5_one_undo_takes_the_move_back(app: &adw::Application) {
     let index = place_caption(&window, "one lecture");
     let before = box_of(&record(&window, index));
     let (x, y, w, h) = placed_box_px(&window, index);
-    drag_panel(&window, (x + w / 2.0, y + h / 2.0), (x + w / 2.0, y + h / 2.0 - 30.0));
+    drag_panel(
+        &window,
+        (x + w / 2.0, y + h / 2.0),
+        (x + w / 2.0, y + h / 2.0 - 30.0),
+    );
     let moved = box_of(&record(&window, index));
-    assert_ne!(moved.cy, before.cy, "nothing moved, so undo would prove nothing");
+    assert_ne!(
+        moved.cy, before.cy,
+        "nothing moved, so undo would prove nothing"
+    );
     // The toolbar's ↶, by name — the button a click reaches.
     common::click(&window, "undo-button");
     let back = box_of(&record(&window, index));
@@ -265,11 +298,20 @@ fn f3_4_s5_a_drag_on_an_edge_resizes_and_never_goes_under_16_px(app: &adw::Appli
         "the dragged edge went under the {} px floor: {nw:.1} px wide",
         fx_text::MIN_BOX_PX
     );
-    assert!(nw < w - 1.0, "the drag did not resize anything: {w:.1} -> {nw:.1}");
+    assert!(
+        nw < w - 1.0,
+        "the drag did not resize anything: {w:.1} -> {nw:.1}"
+    );
     assert_eq!(ny, y, "resizing a vertical edge moved the box vertically");
-    assert_eq!(nh, h, "resizing a vertical edge changed the height -- the axes are independent");
+    assert_eq!(
+        nh, h,
+        "resizing a vertical edge changed the height -- the axes are independent"
+    );
     let said = fx_band::resized(fx_record::label_of(EffectKind::Text));
-    assert!(said.contains("resized") && said.contains("\u{21b6} Undo"), "{said}");
+    assert!(
+        said.contains("resized") && said.contains("\u{21b6} Undo"),
+        "{said}"
+    );
     RAN_EDGE.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -299,8 +341,15 @@ fn f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app: &adw::Appl
     // 13 and 37 px, every one outside `SNAP_PX`. Nothing may move it but the hand.
     let off_to = (middle.0 - naivepost::fx_zoom::DRAG_MIN_PX - 1.0, middle.1);
     let off_said = drag_panel(&window, middle, off_to);
-    assert!(heard(&off_said), "the page did not take the first nudge as an edit -- it said: {off_said}");
-    assert_eq!(drag_kind(&off_said), Some(None), "the first nudge resized instead of moving -- it said: {off_said}");
+    assert!(
+        heard(&off_said),
+        "the page did not take the first nudge as an edit -- it said: {off_said}"
+    );
+    assert_eq!(
+        drag_kind(&off_said),
+        Some(None),
+        "the first nudge resized instead of moving -- it said: {off_said}"
+    );
     let moved = placed_box_px(&window, index);
     assert!(
         (moved.0 - (x - naivepost::fx_zoom::DRAG_MIN_PX - 1.0)).abs() <= 0.6,
@@ -343,8 +392,15 @@ fn f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app: &adw::Appl
     let (ax, ay, _, _) = aim_delta.to_px(FRAME.0, FRAME.1);
     let aim_to = (aim_from.0 + (ax - moved.0), aim_from.1 + (ay - moved.1));
     let aim_said = drag_panel(&window, aim_from, aim_to);
-    assert!(heard(&aim_said), "the page did not take the pull toward the centre as an edit -- it said: {aim_said}");
-    assert_eq!(drag_kind(&aim_said), Some(None), "the pull toward the centre resized instead of moving -- it said: {aim_said}");
+    assert!(
+        heard(&aim_said),
+        "the page did not take the pull toward the centre as an edit -- it said: {aim_said}"
+    );
+    assert_eq!(
+        drag_kind(&aim_said),
+        Some(None),
+        "the pull toward the centre resized instead of moving -- it said: {aim_said}"
+    );
     let centred = placed_box_px(&window, index);
     assert!(
         (centred.0 + centred.2 / 2.0 - centre_x).abs() <= 0.6,
@@ -365,7 +421,10 @@ fn f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app: &adw::Appl
     let right_from = (centred.0 + centred.2, centred.1 + centred.3 / 2.0);
     let right_to = (right_x - fx_text::SNAP_PX * 0.5, right_from.1 + 1.0);
     let right_said = drag_panel(&window, right_from, right_to);
-    assert!(heard(&right_said), "the page did not take the pull toward the right edge as an edit -- it said: {right_said}");
+    assert!(
+        heard(&right_said),
+        "the page did not take the pull toward the right edge as an edit -- it said: {right_said}"
+    );
     let edged = placed_box_px(&window, index);
     assert_eq!(
         resized_edge(centred, edged),
@@ -384,7 +443,10 @@ fn f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app: &adw::Appl
     let left_from = (edged.0, edged.1 + edged.3 / 2.0);
     let left_to = (left_x + fx_text::SNAP_PX * 0.5, left_from.1 + 1.0);
     let left_said = drag_panel(&window, left_from, left_to);
-    assert!(heard(&left_said), "the page did not take the pull toward the left edge as an edit -- it said: {left_said}");
+    assert!(
+        heard(&left_said),
+        "the page did not take the pull toward the left edge as an edit -- it said: {left_said}"
+    );
     let at_left = placed_box_px(&window, index);
     assert_eq!(
         resized_edge(edged, at_left),
@@ -407,12 +469,27 @@ fn f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app: &adw::Appl
 fn f3_4_s5_the_snap_lines_show_while_the_box_is_moved(app: &adw::Application) {
     use naivepost::snapshot_preview_frame;
     let lines = fx_text::snap_lines_px(FRAME);
-    assert_eq!(lines.len(), 6, "the frame has three vertical and three horizontal lines");
+    assert_eq!(
+        lines.len(),
+        6,
+        "the frame has three vertical and three horizontal lines"
+    );
     let dir = std::env::temp_dir().join(format!("np-f34-snap-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");
     let cut = Cut {
-        segs: vec![Seg { s: 0.0, e: 300.0, cam: 0, ..Default::default() }],
-        fx: vec![Fx { kind: "text".into(), t: 10.0, dur: 6.0, text: "one lecture".into(), ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 300.0,
+            cam: 0,
+            ..Default::default()
+        }],
+        fx: vec![Fx {
+            kind: "text".into(),
+            t: 10.0,
+            dur: 6.0,
+            text: "one lecture".into(),
+            ..Default::default()
+        }],
         ..Default::default()
     };
     let shot = |on: bool, tag: &str| {
@@ -429,9 +506,15 @@ fn f3_4_s5_the_snap_lines_show_while_the_box_is_moved(app: &adw::Application) {
     // `cut_preview_press`'s named accessor — the test-only window onto that switch — so the two paths (the painter's
     // direct read at paint time, a check's read here) are seen to agree on one state and not keep two.
     naivepost::ui::cut_preview_frame::note_edit(true);
-    assert!(naivepost::ui::cut_preview_press::snap_lines_are_on_for_test(), "note_edit did not turn the lines on");
+    assert!(
+        naivepost::ui::cut_preview_press::snap_lines_are_on_for_test(),
+        "note_edit did not turn the lines on"
+    );
     naivepost::ui::cut_preview_frame::note_edit(false);
-    assert!(!naivepost::ui::cut_preview_frame::edit_snap_on(), "note_edit(false) must clear them again");
+    assert!(
+        !naivepost::ui::cut_preview_frame::edit_snap_on(),
+        "note_edit(false) must clear them again"
+    );
     RAN_LINES.store(true, Ordering::SeqCst);
     let _ = app;
 }
@@ -452,7 +535,11 @@ fn f3_4_s5_a_press_without_travel_still_toggles_play(app: &adw::Application) {
         "a click inside the caption's box did not toggle the transport"
     );
     let after = box_of(&record(&window, index));
-    assert_eq!((after.cx, after.cy), (before.cx, before.cy), "a click moved the box");
+    assert_eq!(
+        (after.cx, after.cy),
+        (before.cx, before.cy),
+        "a click moved the box"
+    );
     RAN_TOGGLE.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -467,11 +554,21 @@ fn f3_4_s3_empty_words_are_not_placed_and_the_form_stays_open(app: &adw::Applica
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
     ui::press_effect_item(&window, EffectKind::Text);
     ui::text_drag_ended(&window, (40.0, 40.0), (40.0, 40.0));
-    assert!(ui::text_form_open().is_some(), "landing the box drew no form");
+    assert!(
+        ui::text_form_open().is_some(),
+        "landing the box drew no form"
+    );
     // The button, fired the way a click fires it — not `press_text_apply`, so the wire is what is proven.
     common::click(&window, "text-apply-button");
-    assert_eq!(ui::review_cut_of(&window).fx.len(), before, "empty words were placed");
-    assert!(ui::text_form_open().is_some(), "a refused Apply closed the form");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        before,
+        "empty words were placed"
+    );
+    assert!(
+        ui::text_form_open().is_some(),
+        "a refused Apply closed the form"
+    );
     let status = ui::find_status(window.upcast_ref()).expect("the shell has a status row");
     assert_eq!(
         status.text().as_str(),
@@ -484,13 +581,34 @@ fn f3_4_s3_empty_words_are_not_placed_and_the_form_stays_open(app: &adw::Applica
 }
 
 fn round(app: &adw::Application) {
-    step!("f3_4_s5_a_drag_on_a_placed_box_moves_it", f3_4_s5_a_drag_on_a_placed_box_moves_it(app));
-    step!("f3_4_s5_one_undo_takes_the_move_back", f3_4_s5_one_undo_takes_the_move_back(app));
-    step!("f3_4_s5_a_drag_on_an_edge_resizes_and_never_goes_under_16_px", f3_4_s5_a_drag_on_an_edge_resizes_and_never_goes_under_16_px(app));
-    step!("f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets", f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app));
-    step!("f3_4_s5_the_snap_lines_show_while_the_box_is_moved", f3_4_s5_the_snap_lines_show_while_the_box_is_moved(app));
-    step!("f3_4_s5_a_press_without_travel_still_toggles_play", f3_4_s5_a_press_without_travel_still_toggles_play(app));
-    step!("f3_4_s3_empty_words_are_not_placed_and_the_form_stays_open", f3_4_s3_empty_words_are_not_placed_and_the_form_stays_open(app));
+    step!(
+        "f3_4_s5_a_drag_on_a_placed_box_moves_it",
+        f3_4_s5_a_drag_on_a_placed_box_moves_it(app)
+    );
+    step!(
+        "f3_4_s5_one_undo_takes_the_move_back",
+        f3_4_s5_one_undo_takes_the_move_back(app)
+    );
+    step!(
+        "f3_4_s5_a_drag_on_an_edge_resizes_and_never_goes_under_16_px",
+        f3_4_s5_a_drag_on_an_edge_resizes_and_never_goes_under_16_px(app)
+    );
+    step!(
+        "f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets",
+        f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets(app)
+    );
+    step!(
+        "f3_4_s5_the_snap_lines_show_while_the_box_is_moved",
+        f3_4_s5_the_snap_lines_show_while_the_box_is_moved(app)
+    );
+    step!(
+        "f3_4_s5_a_press_without_travel_still_toggles_play",
+        f3_4_s5_a_press_without_travel_still_toggles_play(app)
+    );
+    step!(
+        "f3_4_s3_empty_words_are_not_placed_and_the_form_stays_open",
+        f3_4_s3_empty_words_are_not_placed_and_the_form_stays_open(app)
+    );
     release_last_window();
 }
 
@@ -507,11 +625,26 @@ fn f3_4_s5_the_preview_edits_a_placed_caption_through_the_real_widgets() {
     for (name, ran) in [
         ("f3_4_s5_a_drag_on_a_placed_box_moves_it", &RAN_MOVE),
         ("f3_4_s5_one_undo_takes_the_move_back", &RAN_UNDO),
-        ("f3_4_s5_a_drag_on_an_edge_resizes_and_never_goes_under_16_px", &RAN_EDGE),
-        ("f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets", &RAN_SNAP),
-        ("f3_4_s5_the_snap_lines_show_while_the_box_is_moved", &RAN_LINES),
-        ("f3_4_s5_a_press_without_travel_still_toggles_play", &RAN_TOGGLE),
-        ("f3_4_s3_empty_words_are_not_placed_and_the_form_stays_open", &RAN_NO_WORDS),
+        (
+            "f3_4_s5_a_drag_on_an_edge_resizes_and_never_goes_under_16_px",
+            &RAN_EDGE,
+        ),
+        (
+            "f3_4_s5_the_snap_is_10_px_and_the_frame_lines_are_the_targets",
+            &RAN_SNAP,
+        ),
+        (
+            "f3_4_s5_the_snap_lines_show_while_the_box_is_moved",
+            &RAN_LINES,
+        ),
+        (
+            "f3_4_s5_a_press_without_travel_still_toggles_play",
+            &RAN_TOGGLE,
+        ),
+        (
+            "f3_4_s3_empty_words_are_not_placed_and_the_form_stays_open",
+            &RAN_NO_WORDS,
+        ),
     ] {
         assert!(ran.load(Ordering::SeqCst), "{name} never ran");
     }

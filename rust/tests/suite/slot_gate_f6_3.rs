@@ -90,7 +90,11 @@ impl Scene {
         conf.slots.tts = tts;
         conf.slots.sd = sd;
         settings::save(&paths, &conf).expect("the conf");
-        Scene { paths, project, root }
+        Scene {
+            paths,
+            project,
+            root,
+        }
     }
 
     /// Point the process at this scenario's settings, and keep the process-wide pin for as long as it lives.
@@ -157,7 +161,9 @@ impl Held {
     fn wait_arrived(&self, arrived: &mut bool) {
         *arrived = false;
         self.queue.fetch_add(1, Ordering::SeqCst);
-        let ok = wait_for(Duration::from_secs(15), || self.arrived.load(Ordering::SeqCst));
+        let ok = wait_for(Duration::from_secs(15), || {
+            self.arrived.load(Ordering::SeqCst)
+        });
         self.queue.fetch_sub(1, Ordering::SeqCst);
         self.arrived.store(false, Ordering::SeqCst);
         *arrived = ok;
@@ -249,7 +255,10 @@ fn held_server(answer: fn(&str) -> (String, Vec<u8>)) -> (String, Held, Tally) {
 
 /// The ASR-shaped answer, for the audio door.
 fn asr_answer(_path: &str) -> (String, Vec<u8>) {
-    ("application/json".to_string(), br#"{"text":"hello there","words":[]}"#.to_vec())
+    (
+        "application/json".to_string(),
+        br#"{"text":"hello there","words":[]}"#.to_vec(),
+    )
 }
 
 /// A speech answer big enough to be a take (§F4.4 S5's floor is 1000 bytes of wav).
@@ -274,7 +283,13 @@ fn drain(stream: &TcpStream) -> String {
             break;
         }
         if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = header
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
     }
     let mut body = vec![0u8; length];
@@ -286,10 +301,7 @@ fn drain(stream: &TcpStream) -> String {
 
 /// Poll `check` until it holds, failing loudly rather than hanging the suite when it never does.
 fn wait_until(check: impl Fn() -> bool, why: &str) {
-    assert!(
-        wait_for(Duration::from_secs(15), check),
-        "timed out: {why}"
-    );
+    assert!(wait_for(Duration::from_secs(15), check), "timed out: {why}");
 }
 
 /// How long a dial waits for its own turn in the gate before a test stops calling it "parked". Deliberately
@@ -326,10 +338,7 @@ fn on_the_wire(held: &Held) -> bool {
 /// A dial that has had [`PARKED_MS`] and is still running: parked in the gate. `why` is the test's own words,
 /// echoed into the failure so a hung thread reads as the rule it broke.
 fn still_parked(handle: &std::thread::JoinHandle<impl Send>, why: &str) {
-    assert!(
-        !parked(handle),
-        "{why}"
-    );
+    assert!(!parked(handle), "{why}");
 }
 
 /// One dial of the real audio door (ASR task), against the conf's box.
@@ -338,7 +347,11 @@ fn dial_asr(scene: &Scene, step: &str, model: &str) -> Result<String, String> {
     audio_task::dial(
         &Some(scene.tree()),
         &scene.paths,
-        Ask { step, job: "c00.wav", task: "asr" },
+        Ask {
+            step,
+            job: "c00.wav",
+            task: "asr",
+        },
         model,
         &bodies::asr_body(model, &audio, "en"),
     )
@@ -371,7 +384,11 @@ fn dial_thread(
 ) -> std::thread::JoinHandle<Dial> {
     std::thread::spawn(move || {
         let from = ui::window_logs().len();
-        let scene = Scene { paths, project, root };
+        let scene = Scene {
+            paths,
+            project,
+            root,
+        };
         let outcome = dial_asr(&scene, step, model);
         Dial {
             ok: outcome.is_ok(),
@@ -382,29 +399,48 @@ fn dial_thread(
 }
 
 /// The audio door on a thread that can log on its own thread — the shape every check below uses.
-fn dial_async(scene: &Scene, step: &'static str, model: &'static str) -> std::thread::JoinHandle<Dial> {
-    dial_thread(scene.paths.clone(), scene.project.clone(), scene.root.clone(), step, model)
+fn dial_async(
+    scene: &Scene,
+    step: &'static str,
+    model: &'static str,
+) -> std::thread::JoinHandle<Dial> {
+    dial_thread(
+        scene.paths.clone(),
+        scene.project.clone(),
+        scene.root.clone(),
+        step,
+        model,
+    )
 }
 
 /// A speech dial on its own thread, so it can take its slot (and wait for one) off the main thread.
-fn speak_thread(scene: &Scene, voice: &'static str, text: &'static str, seed: i64) -> std::thread::JoinHandle<(bool, Vec<String>)> {
+fn speak_thread(
+    scene: &Scene,
+    voice: &'static str,
+    text: &'static str,
+    seed: i64,
+) -> std::thread::JoinHandle<(bool, Vec<String>)> {
     std::thread::spawn({
-        let scene = Scene { paths: scene.paths.clone(), project: scene.project.clone(), root: scene.root.clone() };
+        let scene = Scene {
+            paths: scene.paths.clone(),
+            project: scene.project.clone(),
+            root: scene.root.clone(),
+        };
         move || {
-        let from = ui::window_logs().len();
-        let tree = scene.tree();
-        let conf = settings::read(&scene.paths).expect("conf");
-        let endpoint = naivepost::services::audio_endpoint(&conf, |_| None);
-        let body = bodies::speech_body(
-            voice,
-            text,
-            &ServerPath::from_upload("/v.wav").expect("absolute"),
-            "en",
-            &[0.0; 8],
-            seed,
-        );
-        let ok = naivepost::speak_leg::speech_call(&tree, &endpoint, &body).is_ok();
-        (ok, take_logs(from))
+            let from = ui::window_logs().len();
+            let tree = scene.tree();
+            let conf = settings::read(&scene.paths).expect("conf");
+            let endpoint = naivepost::services::audio_endpoint(&conf, |_| None);
+            let body = bodies::speech_body(
+                voice,
+                text,
+                &ServerPath::from_upload("/v.wav").expect("absolute"),
+                "en",
+                &[0.0; 8],
+                seed,
+            );
+            let ok = naivepost::speak_leg::speech_call(&tree, &endpoint, &body).is_ok();
+            (ok, take_logs(from))
         }
     })
 }
@@ -460,17 +496,29 @@ fn f6_3_s2_a_waiting_step_says_the_line_once_and_first_come_first_served_holds()
         &second,
         "the second request waits rather than going out: the voice has ONE slot",
     );
-    assert_eq!(tally.here(), 1, "the waiter is parked in the gate, not on the wire: {}", tally.here());
+    assert_eq!(
+        tally.here(),
+        1,
+        "the waiter is parked in the gate, not on the wire: {}",
+        tally.here()
+    );
 
     held.release();
     // One held request per release: the FIRST dial answers and gives its slot back, then the waiter's turn
     // arrives and the server answers it from its own allowance. Releasing twice up front would answer both
     // at once and prove nothing about the hand-off.
     let first_done = first.join().expect("first ends");
-    assert!(first_done.ok, "the first dial succeeded: {:?}", first_done.err);
+    assert!(
+        first_done.ok,
+        "the first dial succeeded: {:?}",
+        first_done.err
+    );
     // The waiter is admitted only now, so its request reaches the fake only now: it needs its own release.
     held.release();
-    wait_until(|| second.is_finished(), "the freed slot went to whoever waited first");
+    wait_until(
+        || second.is_finished(),
+        "the freed slot went to whoever waited first",
+    );
     let second_done = second.join().expect("second ends");
     assert!(second_done.ok, "the second succeeded after the wait");
 
@@ -480,14 +528,21 @@ fn f6_3_s2_a_waiting_step_says_the_line_once_and_first_come_first_served_holds()
         .filter(|line| line.contains("waiting for") && line.contains("slot(s) busy"))
         .cloned()
         .collect();
-    assert_eq!(said.len(), 1, "the line is said ONCE per queueing spell, not per poll: {said:?}");
+    assert_eq!(
+        said.len(),
+        1,
+        "the line is said ONCE per queueing spell, not per poll: {said:?}"
+    );
     // §4's line names the STEP; the holder names inside the brackets carry the per-ask `#N` suffix
     // `slot_gate::hold` adds (two asks of one step are distinct queue members), so what is pinned here is the
     // part §4 fixes verbatim: the step word, "waiting for <model>", "all N slot(s) busy", and the named holder.
     assert!(
         said[0].starts_with(">>> Marking")
-            && said[0].contains(&format!("waiting for {model} -- all 1 slot(s) busy ({busy})")),
-        "§4 spells the step, the model, the count and the holders: {}", said[0]
+            && said[0].contains(&format!(
+                "waiting for {model} -- all 1 slot(s) busy ({busy})"
+            )),
+        "§4 spells the step, the model, the count and the holders: {}",
+        said[0]
     );
     wait_until(
         || slot_gate::holders(&url, model).is_empty(),
@@ -516,7 +571,10 @@ fn f6_3_s2_the_wait_is_cancellable_by_stop() {
     naivepost::cancel_leg::cancel_now();
     wait_until(|| queued.is_finished(), "⏹ ended the wait");
     let outcome = queued.join().expect("the queued dial returned");
-    assert!(!outcome.ok, "a request that waited and was stopped reports a refusal, not a reply");
+    assert!(
+        !outcome.ok,
+        "a request that waited and was stopped reports a refusal, not a reply"
+    );
     assert!(
         outcome.logs.iter().any(|line| line.contains("waiting for")),
         "it really was waiting when the stop came: {:?}",
@@ -547,7 +605,12 @@ fn f6_3_s4_a_queued_step_names_the_step_it_waited_behind() {
     let second = dial_async(scene, "Marking", model_a);
     // Only ONE request has reached the wire so far: the waiter is parked in the gate, not on the socket.
     still_parked(&second, "the waiter never reached the server");
-    assert_eq!(tally.here(), 1, "the waiting request never reached the server: {}", tally.here());
+    assert_eq!(
+        tally.here(),
+        1,
+        "the waiting request never reached the server: {}",
+        tally.here()
+    );
     held.release();
     assert!(first.join().expect("first done").ok);
     held.release();
@@ -625,7 +688,10 @@ fn f6_3_s2_a_slot_wait_lands_in_the_requests_row() {
     let row = rows.lines().last().expect("a row");
     let fields: Vec<&str> = row.split('\t').collect();
     let wait_field = fields.get(12).copied().unwrap_or_default();
-    assert!(!wait_field.is_empty(), "the waiting row records its wait: {row}");
+    assert!(
+        !wait_field.is_empty(),
+        "the waiting row records its wait: {row}"
+    );
     let secs: f64 = wait_field.parse().expect("the wait column is seconds");
     assert!(secs > 0.0, "and it is a positive number: {row}");
 }
@@ -708,7 +774,13 @@ fn f6_3_s3_the_image_and_tts_models_take_their_own_slots() {
     held.release();
     let (spoke_ok, _) = speaking.join().expect("speech ended");
     assert!(spoke_ok, "the first line was spoken");
-    wait_until(|| second_speech.is_finished(), "the queued line went in when the voice freed up");
+    wait_until(
+        || second_speech.is_finished(),
+        "the queued line went in when the voice freed up",
+    );
     let (second_ok, second_logs) = second_speech.join().expect("second speech ended");
-    assert!(second_ok, "the queued line was spoken after the wait: {second_logs:?}");
+    assert!(
+        second_ok,
+        "the queued line was spoken after the wait: {second_logs:?}"
+    );
 }

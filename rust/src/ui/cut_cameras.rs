@@ -16,9 +16,10 @@ use crate::cut_cam;
 use crate::cut_fold;
 use crate::cut_hear;
 use crate::cut_verbs::{self, Badge};
-use crate::ui::cut_verb_press::press_badge;
-#[allow(unused_imports)] // kept for the seams' own callers; the crosses now fire through `press_badge`
+#[allow(unused_imports)]
+// kept for the seams' own callers; the crosses now fire through `press_badge`
 use crate::ui::cut_folds::{press_lane_cross, press_row_cross, CROSS_GLYPH};
+use crate::ui::cut_verb_press::press_badge;
 use crate::ui::window::{
     find_status, find_widget_by_name, held_segment, line_position, newest_review_cut, record_edit,
     set_watched_row, watched_row,
@@ -38,7 +39,9 @@ thread_local! {
 /// switch. `line_step_button` only downcasts to a plain Button, so the toggle half needs its own finder;
 /// it is the same walk, and the same stable names the page drew.
 pub fn toggle_button(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::ToggleButton> {
-    find_widget_by_name(window.upcast_ref(), name)?.downcast().ok()
+    find_widget_by_name(window.upcast_ref(), name)?
+        .downcast()
+        .ok()
 }
 
 /// F2.10 S3: this window's [`cut_cam::Watch`], created on first ask so a page that was never clicked
@@ -278,24 +281,26 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
         // F2.11 S2: is this the bottom row and empty? Asked of `cut_fold::row_is_empty` so the ✕'s
         // sensitivity IS the rule — a greyed cross means "this row has footage / is the last one",
         // never a guess made at draw time.
-        let cross_live = index + 1 == total && cut_fold::row_is_empty(index, &recordings, &placed, &cut_.segs);
+        let cross_live =
+            index + 1 == total && cut_fold::row_is_empty(index, &recordings, &placed, &cut_.segs);
 
         // Reuse the row this window already drew rather than appending a second copy: `find_widget_by_name`
         // matches GTK's widget name, so a duplicate `camera-row-1` would leave the FIRST one — the
         // widget a test finds by that name — frozen at its old label while a hidden twin carried the
         // new state. Building once and re-styling is what keeps the on-screen plate and the rule the
         // same object.
-        let holder = match find_widget_by_name(rows_box.upcast_ref(), &format!("camera-row-{}", index + 1))
-            .and_then(|found| found.downcast::<gtk::Box>().ok())
-        {
-            Some(existing) => existing,
-            None => {
-                let fresh = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-                fresh.set_widget_name(&format!("camera-row-{}", index + 1));
-                rows_box.append(&fresh);
-                fresh
-            }
-        };
+        let holder =
+            match find_widget_by_name(rows_box.upcast_ref(), &format!("camera-row-{}", index + 1))
+                .and_then(|found| found.downcast::<gtk::Box>().ok())
+            {
+                Some(existing) => existing,
+                None => {
+                    let fresh = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+                    fresh.set_widget_name(&format!("camera-row-{}", index + 1));
+                    rows_box.append(&fresh);
+                    fresh
+                }
+            };
         if watched == Some(index) {
             // **4** in `spec/img/05-rows.png`: the watched row is outlined, not filled. BOTH branches
             // run on every pass, so the outline can move OFF a row as well as onto one.
@@ -413,7 +418,8 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
             match (kept, rail.as_ref()) {
                 // Re-state the switch already on the rail: drop this pass's fresh one and re-read the face
                 // of the one that has lived there since it was first drawn.
-                (Some(existing), _) => existing.set_active(heard_whole_cut),                (None, Some(rail)) => rail.append(&gutter),
+                (Some(existing), _) => existing.set_active(heard_whole_cut),
+                (None, Some(rail)) => rail.append(&gutter),
                 // A page built without a band keeps the switch beside its plate.
                 (None, None) => holder.append(&gutter),
             }
@@ -470,31 +476,32 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
         // once per lane name and never re-appended; a lane removed by a press simply stops being redrawn
         // because its name no longer comes from `cut.lanes`.
         for lane in &lanes {
-            let cross = match find_widget_by_name(rows_box.upcast_ref(), &format!("lane-cross-{lane}"))
-                .and_then(|found| found.downcast::<gtk::Button>().ok())
-            {
-                Some(existing) => existing,
-                None => {
-                    let fresh = gtk::Button::new();
-                    fresh.set_widget_name(&format!("lane-cross-{lane}"));
-                    fresh.set_label(CROSS_GLYPH);
-                    // F2.7 ✕ badges: a cut lane's cross is the `cut lane` badge. Its ORDER in `cut.lanes` is
-                    // the target `press_badge` asks for, so it is taken here, where the lane is known, rather
-                    // than guessed from the name later.
-                    let lane_index = cut_
-                        .lanes
-                        .iter()
-                        .position(|kept| kept.name == *lane)
-                        .unwrap_or(usize::MAX);
-                    fresh.set_tooltip_text(Some(cut_verbs::badge_action(Badge::CutLane)));
-                    let win = window.clone();
-                    fresh.connect_clicked(move |_| {
-                        press_badge(&win, Badge::CutLane, lane_index);
-                    });
-                    holder.append(&fresh);
-                    fresh
-                }
-            };
+            let cross =
+                match find_widget_by_name(rows_box.upcast_ref(), &format!("lane-cross-{lane}"))
+                    .and_then(|found| found.downcast::<gtk::Button>().ok())
+                {
+                    Some(existing) => existing,
+                    None => {
+                        let fresh = gtk::Button::new();
+                        fresh.set_widget_name(&format!("lane-cross-{lane}"));
+                        fresh.set_label(CROSS_GLYPH);
+                        // F2.7 ✕ badges: a cut lane's cross is the `cut lane` badge. Its ORDER in `cut.lanes` is
+                        // the target `press_badge` asks for, so it is taken here, where the lane is known, rather
+                        // than guessed from the name later.
+                        let lane_index = cut_
+                            .lanes
+                            .iter()
+                            .position(|kept| kept.name == *lane)
+                            .unwrap_or(usize::MAX);
+                        fresh.set_tooltip_text(Some(cut_verbs::badge_action(Badge::CutLane)));
+                        let win = window.clone();
+                        fresh.connect_clicked(move |_| {
+                            press_badge(&win, Badge::CutLane, lane_index);
+                        });
+                        holder.append(&fresh);
+                        fresh
+                    }
+                };
             // The cross goes with its lane: still listed -> still pressable; gone from `cut.lanes` (the
             // press took it) -> insensitive rather than left firing at a lane that no longer exists.
             cross.set_sensitive(cut_.lanes.iter().any(|kept| &kept.name == lane));
@@ -519,7 +526,10 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
                 // Put it away when the scene moved off this row or left the cut, so a greyed ✕ never sits on
                 // a row that no longer shows that scene.
                 if let Some(stale) = found {
-                    if let Some(parent) = stale.parent().and_then(|node| node.downcast::<gtk::Box>().ok()) {
+                    if let Some(parent) = stale
+                        .parent()
+                        .and_then(|node| node.downcast::<gtk::Box>().ok())
+                    {
                         parent.remove(&stale);
                     }
                 }
@@ -557,7 +567,10 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
                 .and_then(|found| found.downcast::<gtk::Button>().ok());
             if !mine {
                 if let Some(stale) = found_lens {
-                    if let Some(parent) = stale.parent().and_then(|node| node.downcast::<gtk::Box>().ok()) {
+                    if let Some(parent) = stale
+                        .parent()
+                        .and_then(|node| node.downcast::<gtk::Box>().ok())
+                    {
                         parent.remove(&stale);
                     }
                 }
@@ -700,7 +713,9 @@ pub fn hand_preview_back(window: &adw::ApplicationWindow) -> Option<String> {
     refresh_camera_rows(window);
     // And the panel goes back to the cut's own picture for the same reason a watch moved it.
     crate::ui::cut_picture::refresh(window);
-    Some(format!("\u{25b6} plays the cut \u{2014} {named} no longer watched"))
+    Some(format!(
+        "\u{25b6} plays the cut \u{2014} {named} no longer watched"
+    ))
 }
 
 /// F2.10: the box holding this window's camera rows, by its stable name — `None` on a page that drew

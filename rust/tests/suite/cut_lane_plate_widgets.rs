@@ -8,13 +8,13 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use naivepost::cut::{Cut, Lane, Seg};
 use naivepost::shell::Page;
 use naivepost::timeline::Recording;
 use naivepost::{cut_lanes, ui};
-use crate::common;
-use common::{fixture_dir, settle};
 
 static RAN_PLATE: AtomicBool = AtomicBool::new(false);
 
@@ -31,7 +31,11 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    assert_eq!(ui::state(&window).page, Page::Cut, "the Cut page is showing");
+    assert_eq!(
+        ui::state(&window).page,
+        Page::Cut,
+        "the Cut page is showing"
+    );
     window
 }
 
@@ -47,7 +51,11 @@ fn check_the_live_band_scene_carries_the_lane_plate(app: &adw::Application) {
         end: 120.0,
     }]);
     let mut seeded = Cut::default();
-    seeded.segs.push(Seg { s: 0.0, e: 60.0, ..Default::default() });
+    seeded.segs.push(Seg {
+        s: 0.0,
+        e: 60.0,
+        ..Default::default()
+    });
     seeded.lanes.push(Lane {
         name: "2026-09-16 17-26-20".into(),
         src: "project:audio/2026-09-16 17-26-20.wav".into(),

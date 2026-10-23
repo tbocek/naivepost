@@ -19,14 +19,19 @@ use naivepost::tools::clips::Clips;
 use crate::common;
 use common::{assert_close, row};
 
-
 /// One row of the catalogue, by id. `params::find` answers Prepare's list only, and this flow's rows live in §6's
 /// (`params::cut`), so look through both — and assert exactly one hit, since two homes for one bound is what the
 /// catalogue exists to prevent.
 /// The cut S1–S6 argue about: five clips of ten seconds at their session seconds. Ten is exact in binary and so are
 /// the multiples, which is what lets every expected number below be derived by hand.
 fn five_clips() -> Clips {
-    Clips::new(&[(1, 0.0, 10.0), (2, 10.0, 10.0), (3, 20.0, 10.0), (4, 30.0, 10.0), (5, 40.0, 10.0)])
+    Clips::new(&[
+        (1, 0.0, 10.0),
+        (2, 10.0, 10.0),
+        (3, 20.0, 10.0),
+        (4, 30.0, 10.0),
+        (5, 40.0, 10.0),
+    ])
 }
 
 fn call(clip: u32, rate: f64) -> Call {
@@ -35,7 +40,14 @@ fn call(clip: u32, rate: f64) -> Call {
 
 /// A speed effect for the merge rule, which is about stretches rather than about clips.
 fn speed(t: f64, dur: f64, rate: f64, tout: f64) -> Fx {
-    Fx { kind: "speed".into(), t, dur, rate, tout, ..Default::default() }
+    Fx {
+        kind: "speed".into(),
+        t,
+        dur,
+        rate,
+        tout,
+        ..Default::default()
+    }
 }
 
 // --- S1: the one call -------------------------------------------------------------------------------------------------
@@ -51,17 +63,29 @@ fn f3_10_s1_one_call_over_the_whole_cut() {
     let gap = row("P.policy.speedGapSeconds");
     assert_eq!(gap.spelled, "4");
     assert_eq!(gap.from, "cut_speed_pass::GAP_SECONDS");
-    assert_eq!(params::family("P.policy.speedGapSeconds"), params::Family::Policy);
+    assert_eq!(
+        params::family("P.policy.speedGapSeconds"),
+        params::Family::Policy
+    );
 
     let clips = five_clips();
     // The footage total is the clips' own seconds, before any rate shortens them: 5 × 10.0.
-    assert_close("five clips of ten seconds", pass::footage_total(&clips), 50.0);
+    assert_close(
+        "five clips of ten seconds",
+        pass::footage_total(&clips),
+        50.0,
+    );
 
     let text = pass::brief(&clips, pass::footage_total(&clips));
     // The footage line first — "longer dull stretch → higher rate" needs a denominator — then the clip list under the
     // app's one header (reused from §F3.9 rather than restated with this pass's own spelling of it).
-    assert!(text.starts_with("FOOTAGE: 50 seconds over 5 clips.\n\n"), "{text}");
-    let at = text.find(cut_captions::CLIPS_HEADER).expect("the header opens the clip list");
+    assert!(
+        text.starts_with("FOOTAGE: 50 seconds over 5 clips.\n\n"),
+        "{text}"
+    );
+    let at = text
+        .find(cut_captions::CLIPS_HEADER)
+        .expect("the header opens the clip list");
     let first_clip = text.find("CLIP 1:").expect("the first clip");
     assert!(at < first_clip, "{text}: a clip line precedes the header");
     let lines: Vec<&str> = text.lines().skip(2).collect();
@@ -82,7 +106,10 @@ fn f3_10_s1_one_call_over_the_whole_cut() {
     captioned.add_caption(1, 1.0, 3.0, "first line");
     captioned.add_caption(1, 4.0, 6.0, "second line");
     let shown = pass::brief(&captioned, pass::footage_total(&captioned));
-    assert!(shown.contains("CLIP 1: 10.0 s long, 2 caption(s) -- runs at 1"), "{shown}");
+    assert!(
+        shown.contains("CLIP 1: 10.0 s long, 2 caption(s) -- runs at 1"),
+        "{shown}"
+    );
     // A clip with nothing on it carries no note — the count is per clip, not a summary line.
     assert!(shown.contains("\nCLIP 2: 10.0 s long\n"), "{shown}");
 }
@@ -97,10 +124,20 @@ fn f3_10_s2_a_captioned_clip_is_refused_not_dropped() {
     clips.add_caption(2, 1.0, 4.0, "words on screen");
 
     let reply = pass::place(&clips, &[call(2, 4.0)]);
-    assert_eq!(reply.fault, None, "a refusal is not a fault: nothing here asks for a retry");
-    assert!(reply.effects.is_empty(), "a refusal places nothing: {:?}", reply.effects);
+    assert_eq!(
+        reply.fault, None,
+        "a refusal is not a fault: nothing here asks for a retry"
+    );
+    assert!(
+        reply.effects.is_empty(),
+        "a refusal places nothing: {:?}",
+        reply.effects
+    );
     let Answer::Refused(reason) = &reply.answers[0] else {
-        panic!("a fast rate over captions was not refused: {:?}", reply.answers[0]);
+        panic!(
+            "a fast rate over captions was not refused: {:?}",
+            reply.answers[0]
+        );
     };
     // §3.7's tool's own sentence, said back rather than paraphrased: the model learns what to do about it.
     assert!(reason.contains("cannot be sped up"), "{reason}");
@@ -111,19 +148,27 @@ fn f3_10_s2_a_captioned_clip_is_refused_not_dropped() {
     let mixed = pass::place(&clips, &[call(2, 4.0), call(1, 2.0)]);
     assert_eq!(mixed.fault, None);
     assert_eq!(mixed.effects.len(), 1, "{:?}", mixed.effects);
-    assert_eq!(mixed.effects[0].t, 0.0, "the effect that survived is clip 1's");
+    assert_eq!(
+        mixed.effects[0].t, 0.0,
+        "the effect that survived is clip 1's"
+    );
     assert!(matches!(mixed.answers[0], Answer::Refused(_)));
     assert!(matches!(mixed.answers[1], Answer::Placed(_)));
 
     // Only the FAST half is refused: a caption over a slowed clip is on screen longer rather than shorter, so slow
     // motion over words is allowed and placed.
     let slow = pass::place(&clips, &[call(2, 0.5)]);
-    assert!(matches!(slow.answers[0], Answer::Placed(_)), "{:?}", slow.answers[0]);
+    assert!(
+        matches!(slow.answers[0], Answer::Placed(_)),
+        "{:?}",
+        slow.answers[0]
+    );
     assert_eq!(slow.effects.len(), 1);
     assert_close("the asked-for slow rate stands", slow.effects[0].rate, 0.5);
 
     // And the caption count in the brief is the same fact this refusal enforces — said first, enforced after.
-    assert!(pass::brief(&clips, pass::footage_total(&clips)).contains("CLIP 2: 10.0 s long, 1 caption(s) -- runs at 1"));
+    assert!(pass::brief(&clips, pass::footage_total(&clips))
+        .contains("CLIP 2: 10.0 s long, 1 caption(s) -- runs at 1"));
 }
 
 // --- S3: rate ≈ 1 -------------------------------------------------------------------------------------------------------
@@ -147,14 +192,21 @@ fn f3_10_s3_a_rate_near_1_is_ignored() {
     let reply = pass::place(&clips, &[call(1, 1.0), call(2, 1.004)]);
     assert!(reply.usable());
     assert!(reply.effects.is_empty(), "{:?}", reply.effects);
-    assert!(reply.answers.iter().all(|a| *a == Answer::Ignored), "{:?}", reply.answers);
+    assert!(
+        reply.answers.iter().all(|a| *a == Answer::Ignored),
+        "{:?}",
+        reply.answers
+    );
 
     // A rate nobody sent arrives as 0 — an omitted JSON number and a 0 are the same thing, and reading that as a freeze
     // would hand a still to every reply that forgot to name a speed. So: no effect, and specifically no ×0 record.
     let omitted = pass::place(&clips, &[call(3, 0.0)]);
     assert!(omitted.effects.is_empty(), "{:?}", omitted.effects);
     assert_eq!(omitted.answers, vec![Answer::Ignored]);
-    assert!(!omitted.effects.iter().any(|fx| fx.rate == 0.0), "an omitted rate must not become a stop");
+    assert!(
+        !omitted.effects.iter().any(|fx| fx.rate == 0.0),
+        "an omitted rate must not become a stop"
+    );
 
     // The two numbers this flow adds to the catalogue, both read from the pass rather than restated. §10 gives them no
     // `P.` row, so they carry the bare prefix of the rule that reads them.
@@ -164,7 +216,10 @@ fn f3_10_s3_a_rate_near_1_is_ignored() {
     let neutral = row("effects.neutralRateTolerance");
     assert_eq!(neutral.spelled, "0.01");
     assert_eq!(neutral.from, "cut_speed_pass::NEUTRAL_TOLERANCE");
-    assert_eq!(params::family("effects.neutralRateTolerance"), params::Family::Other);
+    assert_eq!(
+        params::family("effects.neutralRateTolerance"),
+        params::Family::Other
+    );
 }
 
 // --- S4: the effect, its fades, and the rate that was actually applied ----------------------------------------------------
@@ -205,7 +260,11 @@ fn f3_10_s4_the_effect_is_the_clip_and_the_ramp_may_be_refused_by_arithmetic() {
     // makes, and the lane would show a rate nothing plays at.
     let fast = pass::place(&clips, &[call(1, 100.0)]);
     assert_eq!(fast.effects.len(), 1);
-    assert_close("the clamp moved it to the ceiling", fast.effects[0].rate, 4.0);
+    assert_close(
+        "the clamp moved it to the ceiling",
+        fast.effects[0].rate,
+        4.0,
+    );
     // …and its fades are the ones THAT rate can afford: at ×4 the least stair is P.eng.rampStepSeconds · √4 = 1.2 s,
     // more than any proposed ramp (min(1, d/4) ≤ 1), so a clamped speed arrives with hard edges.
     assert_close("no ramp at that rate", fast.effects[0].trans, 0.0);
@@ -241,7 +300,10 @@ fn f3_10_s5_same_rate_stretches_nearer_than_the_gap_merge() {
     // A hair over it either: four seconds and a tenth of a nanosecond is still not nearer than four seconds. (The
     // float risk runs the other way — arithmetic can land a merge just under — which is why the app's seconds come from
     // word edges rather than from sums.)
-    let hair = pass::merge(&[speed(0.0, 10.0, 2.0, 0.5), speed(14.0000000001, 10.0, 2.0, 0.5)]);
+    let hair = pass::merge(&[
+        speed(0.0, 10.0, 2.0, 0.5),
+        speed(14.0000000001, 10.0, 2.0, 0.5),
+    ]);
     assert_eq!(hair.len(), 2, "{hair:?}");
 
     // Two rates two seconds apart are two decisions, not one: merging them would silently pick a rate for the second
@@ -252,11 +314,25 @@ fn f3_10_s5_same_rate_stretches_nearer_than_the_gap_merge() {
     // Out of order input is still one run (the fold sorts the speeds it folds), and everything that is not a speed
     // survives untouched and in the order it arrived — a caption must not be shuffled against the zoom it was written
     // for.
-    let text = Fx { kind: "text".into(), t: 5.0, dur: 2.0, text: "words".into(), ..Default::default() };
-    let mixed = pass::merge(&[speed(12.0, 10.0, 2.0, 0.75), text.clone(), speed(0.0, 10.0, 2.0, 0.5)]);
+    let text = Fx {
+        kind: "text".into(),
+        t: 5.0,
+        dur: 2.0,
+        text: "words".into(),
+        ..Default::default()
+    };
+    let mixed = pass::merge(&[
+        speed(12.0, 10.0, 2.0, 0.75),
+        text.clone(),
+        speed(0.0, 10.0, 2.0, 0.5),
+    ]);
     assert_eq!(mixed.len(), 2, "{mixed:?}");
     assert_close("the two runs folded", mixed[0].dur, 22.0);
-    assert_eq!(mixed[1], text, "the caption came back changed: {:?}", mixed[1]);
+    assert_eq!(
+        mixed[1], text,
+        "the caption came back changed: {:?}",
+        mixed[1]
+    );
     assert_eq!((mixed[1].kind.as_str(), mixed[1].t), ("text", 5.0));
 
     // Nothing in, nothing out.
@@ -276,14 +352,24 @@ fn f3_10_s6_the_two_lines_and_the_two_round_budget() {
     // footage. Both clock times go through tools::mm_ss, which PADS — `00:40`, not the prototype's unpadded `0:40` —
     // because that is how every other status line in this app prints a second.
     let reply = pass::place(&clips, &[call(2, 2.0), call(3, 2.0)]);
-    assert_eq!(reply.effects.len(), 1, "the two runs are nearer than the gap, so they merge");
+    assert_eq!(
+        reply.effects.len(),
+        1,
+        "the two runs are nearer than the gap, so they merge"
+    );
     assert_eq!(
         pass::runs_fast(&clips, &reply.effects, pass::footage_total(&clips)),
-        format!(">>> speed: 2 clip(s) run fast \u{2014} {} of video from {} of footage", "00:40", "00:50")
+        format!(
+            ">>> speed: 2 clip(s) run fast \u{2014} {} of video from {} of footage",
+            "00:40", "00:50"
+        )
     );
     let line = pass::runs_fast(&clips, &reply.effects, pass::footage_total(&clips));
     assert!(line.contains('\u{2014}'), "{line}: no em dash");
-    assert!(!line.contains("--"), "{line}: this line's break is an em dash, not --");
+    assert!(
+        !line.contains("--"),
+        "{line}: this line's break is an em dash, not --"
+    );
     // N counts CLIPS running fast — the merged pair is two clips, which is what the sentence says.
     assert!(line.starts_with(">>> speed: 2 clip(s) run fast"), "{line}");
 
@@ -298,7 +384,10 @@ fn f3_10_s6_the_two_lines_and_the_two_round_budget() {
     );
 
     // The giving-up line, whole, with its promise.
-    assert_eq!(pass::no_answer(), "!!! speed: no usable answer \u{2014} every clip plays at 1");
+    assert_eq!(
+        pass::no_answer(),
+        "!!! speed: no usable answer \u{2014} every clip plays at 1"
+    );
     assert!(!pass::no_answer().contains("--"), "{}", pass::no_answer());
 
     // Two rounds and no more, read through the budget F3.9 already owns: one attempt made owes a retry, two do not.
@@ -334,6 +423,12 @@ fn f3_10_s6_the_two_lines_and_the_two_round_budget() {
         break;
     }
     assert_eq!(runs, 2, "two rounds and no more");
-    assert_eq!(log, vec![pass::rejected("clip 9 is not one of the clips given (1 to 5)"), pass::no_answer()]);
+    assert_eq!(
+        log,
+        vec![
+            pass::rejected("clip 9 is not one of the clips given (1 to 5)"),
+            pass::no_answer()
+        ]
+    );
     assert!(effects.is_empty(), "every clip plays at 1: {effects:?}");
 }

@@ -55,7 +55,8 @@ fn no_envelope(_: f64) -> Option<&'static edge::Edges> {
 }
 
 #[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s1_there_are_exactly_five_and_each_is_named_as_spec_does() {
+fn sec_12_decisions_1_the_five_homes_of_a_decision_s1_there_are_exactly_five_and_each_is_named_as_spec_does(
+) {
     let labels: Vec<&str> = Home::all().iter().map(|h| h.label()).collect();
     assert_eq!(
         labels,
@@ -71,8 +72,8 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s1_there_are_exactly_five_and
 }
 
 #[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s2_only_two_homes_let_the_model_act_in_the_same_conversation()
-{
+fn sec_12_decisions_1_the_five_homes_of_a_decision_s2_only_two_homes_let_the_model_act_in_the_same_conversation(
+) {
     // §1 marks two cells with "may act on it" / "may fix it"; the other three cannot.
     let acting: Vec<Home> = Home::all()
         .into_iter()
@@ -111,11 +112,15 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s3_scope_splits_per_item_from
 }
 
 #[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s4_the_walk_back_admits_only_mechanical_explainable_visible() {
+fn sec_12_decisions_1_the_five_homes_of_a_decision_s4_the_walk_back_admits_only_mechanical_explainable_visible(
+) {
     // All three hold and the walk-back will take it. Any one missing and the change would be invisible
     // to the model and unaccountable afterwards, which is what S9 shows a real walk-back avoiding.
     assert!(audit::walk_back_admits(true, true, true));
-    assert!(!audit::walk_back_admits(false, true, true), "not mechanical");
+    assert!(
+        !audit::walk_back_admits(false, true, true),
+        "not mechanical"
+    );
     assert!(
         !audit::walk_back_admits(true, false, true),
         "not explainable in one sentence"
@@ -138,14 +143,27 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s5_announcement_follows_the_r
 }
 
 #[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s6_tool_argument_example_lines_stated_seconds_returned() {
+fn sec_12_decisions_1_the_five_homes_of_a_decision_s6_tool_argument_example_lines_stated_seconds_returned(
+) {
     // §1's first example: "which lines are an abandoned attempt". The model states line numbers — it
     // is never asked for a timestamp it would have to compute — and the tool answers in seconds.
     let mut marks = Marks::new(
         vec![
-            Line { n: 1, start: 0.0, end: 2.0 },
-            Line { n: 2, start: 180.0, end: 182.0 },
-            Line { n: 3, start: 400.0, end: 402.0 },
+            Line {
+                n: 1,
+                start: 0.0,
+                end: 2.0,
+            },
+            Line {
+                n: 2,
+                start: 180.0,
+                end: 182.0,
+            },
+            Line {
+                n: 3,
+                start: 400.0,
+                end: 402.0,
+            },
         ],
         6.0,
     );
@@ -171,8 +189,8 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s6_tool_argument_example_line
 }
 
 #[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s7_tool_result_example_snapped_edges_and_how_far_they_moved()
-{
+fn sec_12_decisions_1_the_five_homes_of_a_decision_s7_tool_result_example_snapped_edges_and_how_far_they_moved(
+) {
     // §1's second example: "a segment's snapped edges and how far they moved", within
     // P.policy.snapToleranceSeconds. Both numbers arrive unprompted in the same reply.
     let tolerance = cutpass::SNAP_TOLERANCE_SECONDS;
@@ -188,7 +206,11 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s7_tool_result_example_snappe
     assert!(replied["error"].is_null(), "{replied}");
 
     let span = &replied["span"];
-    assert_eq!(span[0].as_f64().unwrap(), 100.0, "snapped onto the allowed point");
+    assert_eq!(
+        span[0].as_f64().unwrap(),
+        100.0,
+        "snapped onto the allowed point"
+    );
     let moved = &replied["moved"];
     assert!(
         (moved[0].as_f64().unwrap() + 0.2).abs() < 1e-6,
@@ -196,30 +218,48 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s7_tool_result_example_snappe
     );
     // The movement is bounded by the parameter §1 cites, and the right edge had nowhere to go.
     assert!(moved[0].as_f64().unwrap().abs() <= tolerance);
-    assert!((moved[1].as_f64().unwrap()).abs() < 1e-9, "right edge unmoved: {replied}");
+    assert!(
+        (moved[1].as_f64().unwrap()).abs() < 1e-9,
+        "right edge unmoved: {replied}"
+    );
     // And the same reply carries the whole-cut context, since the model is choosing a set one at a time.
     assert!(num(&replied, "footage") > 0.0);
 }
 
 #[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s8_finish_answer_examples_complain_about_the_whole() {
+fn sec_12_decisions_1_the_five_homes_of_a_decision_s8_finish_answer_examples_complain_about_the_whole(
+) {
     // §1's third home: "is told what is still wrong with the whole; may fix it". Both examples come
     // through finish_cut, whose complaints count over everything added rather than one item.
     let too_few = error(&a_plan().finish_cut());
     assert!(too_few.contains("0 segments is under the"), "{too_few}");
-    assert!(too_few.contains("add more"), "fixable, not fatal: {too_few}");
+    assert!(
+        too_few.contains("add more"),
+        "fixable, not fatal: {too_few}"
+    );
 
     // Reached through the named helper, with the bound taken from the status rather than restated.
     let status = a_plan().status();
     assert_eq!(status.min_segments, cutpass::min_segments(TARGET));
     let problems = cutpass::cut_problems(&status);
-    assert!(problems.iter().any(|p| p.starts_with("0 segments")), "{problems:?}");
+    assert!(
+        problems.iter().any(|p| p.starts_with("0 segments")),
+        "{problems:?}"
+    );
 
     // Narrate's side of the same home: a clip nobody answered. It names the clip and echoes its bounds,
     // which is what makes the fault repairable in the same conversation.
     let segs = vec![
-        naivepost::cut::Seg { s: 0.0, e: 10.0, ..Default::default() },
-        naivepost::cut::Seg { s: 10.0, e: 25.0, ..Default::default() },
+        naivepost::cut::Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        },
+        naivepost::cut::Seg {
+            s: 10.0,
+            e: 25.0,
+            ..Default::default()
+        },
     ];
     let fault = naivepost::narrate_reply::clip_without_entry(1, &segs);
     assert!(fault.contains("clip 2"), "{fault}");
@@ -228,7 +268,8 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s8_finish_answer_examples_com
 }
 
 #[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s9_walk_back_example_placement_moves_marks_unannounced() {
+fn sec_12_decisions_1_the_five_homes_of_a_decision_s9_walk_back_example_placement_moves_marks_unannounced(
+) {
     // §1's fourth home: "never sees it". place_edges rewrites the marks it is handed and returns the
     // rewritten set plus notes. Those notes go into the human transcript (§05), not back into the
     // conversation that made the mark — which is why the walk-back demands mechanical + explainable +
@@ -259,8 +300,8 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s9_walk_back_example_placemen
 }
 
 #[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s10_policy_prompt_examples_are_one_number_and_one_wording()
-{
+fn sec_12_decisions_1_the_five_homes_of_a_decision_s10_policy_prompt_examples_are_one_number_and_one_wording(
+) {
     // The 40 % ceiling on marks: one number, held once under its P. id, applied to every item alike.
     assert_eq!(audit::examples()[5].home, Home::PolicyOrPrompt);
     assert_eq!(audit::examples()[5].what, "the 40 % ceiling on marks");
@@ -273,20 +314,26 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s10_policy_prompt_examples_ar
     assert_eq!(row.from, "tools::retakes::RETAKE_CEIL");
     // Its directive-A home is Machine, and §1 does NOT count Machine as its fifth home: the ceiling
     // bounds what the servers allow, it is not a per-item judgement either way.
-    assert_eq!(decision_homes::home_of("P.machine.retakeCeil"), Some(decision_homes::Home::Machine));
+    assert_eq!(
+        decision_homes::home_of("P.machine.retakeCeil"),
+        Some(decision_homes::Home::Machine)
+    );
     assert!(!audit::is_number_or_wording(decision_homes::Home::Machine));
 
     // "clean it like a subtitler": one wording, known to prompts::is_known, owned by Prompt — and that
     // pairing is exactly what §1 means by the fifth home.
     assert!(prompts::is_known("captions"));
-    assert_eq!(decision_homes::home_of("captions"), Some(decision_homes::Home::Prompt));
+    assert_eq!(
+        decision_homes::home_of("captions"),
+        Some(decision_homes::Home::Prompt)
+    );
     assert!(audit::is_number_or_wording(decision_homes::Home::Prompt));
     assert_eq!(audit::examples()[6].lives_in, "spec/prompts/captions.md");
 }
 
 #[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s11_the_table_covers_every_home_and_no_row_contradicts_its_own_rule()
-{
+fn sec_12_decisions_1_the_five_homes_of_a_decision_s11_the_table_covers_every_home_and_no_row_contradicts_its_own_rule(
+) {
     let table = audit::examples();
     // Seven examples, four of them paired, covering all five homes.
     assert_eq!(table.len(), 7);
@@ -301,19 +348,24 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s11_the_table_covers_every_ho
         assert!(!row.what.is_empty() && !row.lives_in.is_empty(), "{row:?}");
         // No row sits under a home whose announcement rule contradicts it.
         match row.home {
-            Home::ToolResult | Home::FinishAnswer => assert!(audit::change_is_announced(row.home), "{row:?}"),
+            Home::ToolResult | Home::FinishAnswer => {
+                assert!(audit::change_is_announced(row.home), "{row:?}")
+            }
             _ => assert!(!audit::change_is_announced(row.home), "{row:?}"),
         }
     }
 }
 
 #[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s12_is_number_or_wording_spans_policy_and_prompt_only() {
+fn sec_12_decisions_1_the_five_homes_of_a_decision_s12_is_number_or_wording_spans_policy_and_prompt_only(
+) {
     // §1's fifth home spans two of directive A's four, and only those two.
     assert!(audit::is_number_or_wording(decision_homes::Home::Policy));
     assert!(audit::is_number_or_wording(decision_homes::Home::Prompt));
     assert!(!audit::is_number_or_wording(decision_homes::Home::Machine));
-    assert!(!audit::is_number_or_wording(decision_homes::Home::Engineering));
+    assert!(!audit::is_number_or_wording(
+        decision_homes::Home::Engineering
+    ));
 
     // Reached through real ids rather than the enum alone: a policy number yes, a machine limit no,
     // an engineering constant no, a prompt wording yes.

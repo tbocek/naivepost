@@ -9,10 +9,10 @@
 
 use std::fs;
 
-use naivepost::exchanges::{self, Call, Message, Mode, Page, Part, ToolCall};
-use naivepost::layout::Tree;
 use crate::common;
 use common::temp_dir_created as temp_dir;
+use naivepost::exchanges::{self, Call, Message, Mode, Page, Part, ToolCall};
+use naivepost::layout::Tree;
 
 /// A project folder the page can be filed under.
 fn tree(tag: &str) -> Tree {
@@ -108,7 +108,10 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s10_the_meta_line_names_model_mode_
     let mut executed = call("Cut", 64, "[{\"s\":1}]");
     executed.mode = Mode::Execute;
     executed.took_secs = 45;
-    assert_eq!(exchanges::meta_line(&executed, true), "qwen3-32b \u{b7} execute \u{b7} 45s");
+    assert_eq!(
+        exchanges::meta_line(&executed, true),
+        "qwen3-32b \u{b7} execute \u{b7} 45s"
+    );
     let thinker = call("Describe", 64, "described");
     assert!(
         exchanges::meta_line(&thinker, true).contains("thinking"),
@@ -121,7 +124,10 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s10_the_meta_line_names_model_mode_
     let waiting = exchanges::meta_line(&call("Describe", 64, ""), false);
     assert_eq!(
         waiting,
-        format!("qwen3-32b \u{b7} thinking \u{b7} {}", exchanges::REPLY_PENDING),
+        format!(
+            "qwen3-32b \u{b7} thinking \u{b7} {}",
+            exchanges::REPLY_PENDING
+        ),
         "the pending marker replaces the duration entirely"
     );
 
@@ -129,9 +135,15 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s10_the_meta_line_names_model_mode_
     let mut broken = call("Describe", 64, "");
     broken.error = Some("no answer from localhost:8731".into());
     let said = exchanges::meta_line(&broken, true);
-    assert!(said.starts_with("qwen3-32b \u{b7} thinking \u{b7} "), "{said}");
+    assert!(
+        said.starts_with("qwen3-32b \u{b7} thinking \u{b7} "),
+        "{said}"
+    );
     assert!(said.contains("no answer from localhost:8731"), "{said}");
-    assert!(!said.contains("0s \u{b7}"), "no fake duration beside a failure: {said}");
+    assert!(
+        !said.contains("0s \u{b7}"),
+        "no fake duration beside a failure: {said}"
+    );
 
     // (e) the same three things together in the page's own `<p class="meta">`, through the recorder rather
     // than the formatter alone — that paragraph is what a person opens the page to read.
@@ -154,7 +166,8 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s10_the_meta_line_names_model_mode_
 /// was never pinned. `Part::Image` contributes 0 to the byte count (a picture is not text) and 1 to the
 /// image count, wherever in the messages it sits.
 #[test]
-fn sec_03_shell_7_the_model_exchange_log_llm_s11_the_send_line_counts_the_images_that_traveled_with_the_text() {
+fn sec_03_shell_7_the_model_exchange_log_llm_s11_the_send_line_counts_the_images_that_traveled_with_the_text(
+) {
     // One message, two pictures: the bytes are the words' alone, the count is both pictures.
     let mut one = call("Describe", 462_234, "the slide lists four steps");
     one.messages = vec![Message {
@@ -165,7 +178,11 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s11_the_send_line_counts_the_images
             Part::Image("data:image/jpeg;base64,BBBB".into()),
         ],
     }];
-    assert_eq!(one.sent(), (462_234, 2), "a picture adds no text bytes but one to the count");
+    assert_eq!(
+        one.sent(),
+        (462_234, 2),
+        "a picture adds no text bytes but one to the count"
+    );
     assert_eq!(
         exchanges::log_lines(&one)[0],
         ">>> Describe: 451.4 kB of text and 2 image(s) went to the LLM",
@@ -194,7 +211,11 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s11_the_send_line_counts_the_images
             ],
         },
     ];
-    assert_eq!(split.sent(), (2_048, 3), "every message's words and pictures count, in any order");
+    assert_eq!(
+        split.sent(),
+        (2_048, 3),
+        "every message's words and pictures count, in any order"
+    );
 
     // Text only keeps the SAME wording with a zero — there is no separate sentence for "no pictures".
     let plain = call("Describe", 512, "said");
@@ -210,8 +231,14 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s11_the_send_line_counts_the_images
     page.record(&one);
     assert_eq!(page.flush(), None);
     let html = fs::read_to_string(page.path()).unwrap();
-    assert!(html.contains("<img src=\"data:image/jpeg;base64,AAAA\">"), "{html}");
-    assert!(html.contains("<img src=\"data:image/jpeg;base64,BBBB\">"), "{html}");
+    assert!(
+        html.contains("<img src=\"data:image/jpeg;base64,AAAA\">"),
+        "{html}"
+    );
+    assert!(
+        html.contains("<img src=\"data:image/jpeg;base64,BBBB\">"),
+        "{html}"
+    );
     assert_eq!(
         html.matches("<img ").count(),
         2,
@@ -220,7 +247,8 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s11_the_send_line_counts_the_images
 }
 
 #[test]
-fn sec_03_shell_7_the_model_exchange_log_llm_s3_cut_off_and_empty_reply_are_called_out_in_the_log() {
+fn sec_03_shell_7_the_model_exchange_log_llm_s3_cut_off_and_empty_reply_are_called_out_in_the_log()
+{
     let mut cut = call("Cut", 2_048, "half an answer");
     cut.took_secs = 61;
     cut.cut_off = true;
@@ -253,8 +281,8 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s3_cut_off_and_empty_reply_are_call
 }
 
 #[test]
-fn sec_03_shell_7_the_model_exchange_log_llm_s4_the_reply_preview_skips_the_reasoning_and_the_ellipsis()
-{
+fn sec_03_shell_7_the_model_exchange_log_llm_s4_the_reply_preview_skips_the_reasoning_and_the_ellipsis(
+) {
     assert_eq!(
         exchanges::preview("think    hard</think> Yes,\n  split at 12 s"),
         "Yes, split at 12 s"
@@ -293,18 +321,24 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s5_the_page_link_appears_once_per_r
     let second = page.record(&call("Narrate", 32, "voiced"));
     assert_eq!(second.len(), 4, "{second:?}");
     assert!(
-        !second.iter().any(|line| line.contains("this run's exchanges")),
+        !second
+            .iter()
+            .any(|line| line.contains("this run's exchanges")),
         "{second:?}"
     );
 }
 
 #[test]
-fn sec_03_shell_7_the_model_exchange_log_llm_s6_the_page_numbers_its_sections_and_folds_the_reasoning()
-{
+fn sec_03_shell_7_the_model_exchange_log_llm_s6_the_page_numbers_its_sections_and_folds_the_reasoning(
+) {
     let tree = tree("s6");
     let mut page = Page::start(&tree, "0307-142201", "Describe");
 
-    let mut first = call("Describe", 64, "<script>alert(1)</script> was not the answer");
+    let mut first = call(
+        "Describe",
+        64,
+        "<script>alert(1)</script> was not the answer",
+    );
     first.mode = Mode::Thinking;
     first.reasoning = Some("the frame shows a slide".into());
     first.messages = vec![Message {
@@ -361,8 +395,13 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s7_recording_never_fails_the_call()
     let lines = page.record(&call("Describe", 32, "described"));
     assert_eq!(lines.len(), 5, "{lines:?}");
 
-    let failure = page.flush().expect("a page that cannot be written must say so");
-    assert!(failure.starts_with("could not keep the exchange: "), "{failure}");
+    let failure = page
+        .flush()
+        .expect("a page that cannot be written must say so");
+    assert!(
+        failure.starts_with("could not keep the exchange: "),
+        "{failure}"
+    );
     assert!(!project.join("llm/0307-142201-Describe.html").exists());
 }
 
@@ -370,8 +409,8 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s7_recording_never_fails_the_call()
 // made rather than only at the end. Both live in `Page::begin`/`stream`/`complete`.
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_page_is_written_before_the_reply_arrives()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_page_is_written_before_the_reply_arrives(
+) {
     let tree = tree("s8-progressive");
     let mut page = Page::start(&tree, "0307-142201", "Describe");
     assert!(!page.path().exists(), "naming the page writes nothing");
@@ -380,7 +419,10 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_pa
     call.took_secs = 5;
     let lines = page.begin(&call);
     assert_eq!(lines.len(), 2, "{lines:?}");
-    assert_eq!(lines[0], ">>> Describe: 0.1 kB of text and 0 image(s) went to the LLM");
+    assert_eq!(
+        lines[0],
+        ">>> Describe: 0.1 kB of text and 0 image(s) went to the LLM"
+    );
     assert_eq!(
         lines[1],
         ">>>   this run's exchanges, images included: llm/0307-142201-Describe.html"
@@ -389,7 +431,10 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_pa
     // The prompt is on disk already — a run killed here still leaves what it asked.
     let written = fs::read_to_string(page.path()).unwrap();
     assert!(written.contains("<h1>1. Describe</h1>"), "{written}");
-    assert!(!written.contains("came back"), "no verdict before the reply");
+    assert!(
+        !written.contains("came back"),
+        "no verdict before the reply"
+    );
 
     page.stream("Split ").unwrap();
     page.stream("at 12 s").unwrap();
@@ -398,7 +443,10 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_pa
 
     call.reply = "Split at 12 s".into();
     let verdict = page.complete(&call);
-    assert_eq!(verdict[1], ">>> Describe: 13 B came back in 5s", "{verdict:?}");
+    assert_eq!(
+        verdict[1], ">>> Describe: 13 B came back in 5s",
+        "{verdict:?}"
+    );
     let whole = fs::read_to_string(page.path()).unwrap();
     assert_eq!(
         whole.matches("Split at 12 s").count(),
@@ -413,8 +461,8 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_pa
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_verdict_says_how_long_and_what_it_cost()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_verdict_says_how_long_and_what_it_cost(
+) {
     let mut long_thinker = call("Cut", 4_096, "cut at the word edges");
     long_thinker.took_secs = 182;
     long_thinker.thinking_secs = Some(62);
@@ -425,12 +473,15 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_ve
 
     // A model that does not separate the two gets the plain verdict.
     let plain = call("Cut", 4_096, "cut at the word edges");
-    assert_eq!(exchanges::log_lines(&plain)[1], ">>> Cut: 21 B came back in 0s");
+    assert_eq!(
+        exchanges::log_lines(&plain)[1],
+        ">>> Cut: 21 B came back in 0s"
+    );
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_verdict_for_an_answer_of_nothing_and_a_failed_call()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s7_the_verdict_for_an_answer_of_nothing_and_a_failed_call(
+) {
     let nothing = call("Narrate", 128, "   ");
     assert_eq!(
         exchanges::log_lines(&nothing),

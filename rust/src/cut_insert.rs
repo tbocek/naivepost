@@ -21,8 +21,8 @@ use std::path::{Path, PathBuf};
 
 use crate::cut::{Cut, Lane, Seg};
 use crate::cut_copy::{footage_stretches, lane_name};
-use crate::cut_select::{Scope, Selection, MIN_SCENE_SECONDS};
 use crate::cut_screen;
+use crate::cut_select::{Scope, Selection, MIN_SCENE_SECONDS};
 use crate::layout;
 use crate::tools;
 
@@ -245,9 +245,13 @@ pub fn card_fields(svg: &[u8]) -> Vec<Field> {
     let text = String::from_utf8_lossy(svg);
     let mut out: Vec<Field> = Vec::new();
     for rest in text.split("<!--").filter_map(|chunk: &str| {
-        chunk.strip_prefix(" Input:").or_else(|| chunk.strip_prefix("Input:"))
+        chunk
+            .strip_prefix(" Input:")
+            .or_else(|| chunk.strip_prefix("Input:"))
     }) {
-        let Some(decl) = rest.split("-->").next() else { continue };
+        let Some(decl) = rest.split("-->").next() else {
+            continue;
+        };
         // Three parts at most: the hint keeps any bar it contains.
         let mut parts = decl.splitn(3, '|');
         let head = parts.next().unwrap_or_default().trim();
@@ -266,7 +270,10 @@ pub fn card_fields(svg: &[u8]) -> Vec<Field> {
 
         let key = match head.find('[') {
             Some(at) => {
-                for flag in head[at..].trim_matches(|c| c == '[' || c == ']').split([',', ' ']) {
+                for flag in head[at..]
+                    .trim_matches(|c| c == '[' || c == ']')
+                    .split([',', ' '])
+                {
                     match flag.trim().to_lowercase().as_str() {
                         "keep" => field.keep = true,
                         "logo" => field.logo = true,
@@ -285,7 +292,10 @@ pub fn card_fields(svg: &[u8]) -> Vec<Field> {
         if field.label.is_empty() {
             field.label = key.to_string();
         }
-        if out.iter().any(|seen| seen.key.eq_ignore_ascii_case(&field.key)) {
+        if out
+            .iter()
+            .any(|seen| seen.key.eq_ignore_ascii_case(&field.key))
+        {
             continue;
         }
         out.push(field);
@@ -352,11 +362,13 @@ pub const BETWEEN_LABEL: &str =
 /// F2.12 S4/S5: the first radio's placement when a sound-scoped card is silenced — the same splice, plus the
 /// reason its sound is not there (§G's status clause). One string, not a concatenation: the `\` continuation
 /// swallows the newline and the indent, so this stays one space wide.
-pub const BETWEEN_SILENT_LABEL: &str = "between the footage, which is cut open for it, and silent \u{2014} the \
+pub const BETWEEN_SILENT_LABEL: &str =
+    "between the footage, which is cut open for it, and silent \u{2014} the \
                                         selection was scoped to the picture alone";
 
 /// F2.12 S4: §G's second radio.
-pub const OVER_LABEL: &str = "Play OVER the footage \u{2014} the card replaces those seconds (the same as Remove)";
+pub const OVER_LABEL: &str =
+    "Play OVER the footage \u{2014} the card replaces those seconds (the same as Remove)";
 /// F2.12 S4: §G's third, offered for video alone ([`lane_offered`]).
 pub const LANE_LABEL: &str =
     "Put it on a LANE of its own \u{2014} a row of the band to cut to, and nothing is cut yet";
@@ -375,7 +387,12 @@ pub fn lane_offered(kind: Kind) -> bool {
 /// there is nothing underneath it yet and the question waits until ＋ Add chooses between the rows. Spliced,
 /// only the file's own sound is in play; over, either the file's or the session's under it opens the question —
 /// a still with no sound laid over silent footage asks nothing, which is what keeps the form short.
-pub fn sound_open(kind: Kind, mode: Mode, file_has_sound: bool, footage_under_has_sound: bool) -> bool {
+pub fn sound_open(
+    kind: Kind,
+    mode: Mode,
+    file_has_sound: bool,
+    footage_under_has_sound: bool,
+) -> bool {
     if matches!(kind, Kind::Audio) || mode == Mode::Lane {
         return false;
     }
@@ -388,7 +405,8 @@ pub fn sound_open(kind: Kind, mode: Mode, file_has_sound: bool, footage_under_ha
 /// F2.12 S4: the tick's sentence when the card goes BETWEEN the footage (§G, verbatim).
 pub const SILENT_LABEL: &str = "Play it SILENT \u{2014} the insert's own sound is not used";
 /// F2.12 S4: the same tick's other reading, for a card laid OVER the footage (§G, verbatim).
-pub const KEEP_LABEL: &str = "Keep the sound running under it \u{2014} only the picture is replaced";
+pub const KEEP_LABEL: &str =
+    "Keep the sound running under it \u{2014} only the picture is replaced";
 
 /// F2.12 S4: which sentence the one stored flag says. `mute` is one flag because it is one sentence — this
 /// insert brings no sound of its own — and two behaviours, because the mode already says what is underneath it:
@@ -461,20 +479,49 @@ pub fn place(
         return place_sound(cut, path, at, length, was);
     }
     if mode == Mode::Lane {
-        let name = lane_name(&base_name(path), &cut.lanes.iter().map(|lane| lane.name.clone()).collect::<Vec<_>>());
-        let lane = Lane { name: name.clone(), src: path.to_string(), at, off: 0.0, dur: length };
+        let name = lane_name(
+            &base_name(path),
+            &cut.lanes
+                .iter()
+                .map(|lane| lane.name.clone())
+                .collect::<Vec<_>>(),
+        );
+        let lane = Lane {
+            name: name.clone(),
+            src: path.to_string(),
+            at,
+            off: 0.0,
+            dur: length,
+        };
         cut.lanes.push(lane);
         let how = format!(
             "on a lane of its own ({name}) \u{2014} select on that row and press \u{ff0b} Add to cut to it"
         );
-        return Ok(Placed { segs: Vec::new(), how: how.clone(), status: status_line(path, at, length, &how, was, was) });
+        return Ok(Placed {
+            segs: Vec::new(),
+            how: how.clone(),
+            status: status_line(path, at, length, &how, was, was),
+        });
     }
     let card = if mode == Mode::Between {
         // Spliced: `s == e` with a `dur`, and the footage under it untouched.
-        Seg { s: at, e: at, ins: path.to_string(), dur: length, mute: silent, ..Default::default() }
+        Seg {
+            s: at,
+            e: at,
+            ins: path.to_string(),
+            dur: length,
+            mute: silent,
+            ..Default::default()
+        }
     } else {
         // Overwriting: it runs for the seconds it took, so it carries no `dur`.
-        Seg { s: at, e: at + length, ins: path.to_string(), mute: silent, ..Default::default() }
+        Seg {
+            s: at,
+            e: at + length,
+            ins: path.to_string(),
+            mute: silent,
+            ..Default::default()
+        }
     };
     // One string, not a concatenation: `\` inside a literal swallows the newline and the indent with it, and a
     // status line with the words welded together reads wrong on the page.
@@ -492,13 +539,23 @@ pub fn place(
         lay_over_footage(cut, &card)
     };
     let now = cut_screen::cut_seconds(cut);
-    Ok(Placed { segs, how: how.clone(), status: status_line(path, at, length, &how, now, was) })
+    Ok(Placed {
+        segs,
+        how: how.clone(),
+        status: status_line(path, at, length, &how, now, was),
+    })
 }
 
 /// F2.12 S5 (`sound → over kept footage`): the sound laid over the picture, one piece per kept stretch, each
 /// carrying its own part of the file so pieces either side of a hole are parts of one sound and not its opening
 /// seconds twice. Zero stretches means no picture under it, which is what the refusal says.
-fn place_sound(cut: &mut Cut, path: &str, at: f64, length: f64, was: f64) -> Result<Placed, String> {
+fn place_sound(
+    cut: &mut Cut,
+    path: &str,
+    at: f64,
+    length: f64,
+    was: f64,
+) -> Result<Placed, String> {
     let to = at + length;
     let stretches = footage_stretches(cut, at, to);
     if stretches.is_empty() {
@@ -526,7 +583,11 @@ fn place_sound(cut: &mut Cut, path: &str, at: f64, length: f64, was: f64) -> Res
             continue;
         }
         if seg.s < at {
-            out.push(Seg { s: seg.s, e: at, ..seg.clone() });
+            out.push(Seg {
+                s: seg.s,
+                e: at,
+                ..seg.clone()
+            });
         }
         for piece in &pieces {
             if piece.s < seg.e && piece.e > seg.s {
@@ -534,17 +595,28 @@ fn place_sound(cut: &mut Cut, path: &str, at: f64, length: f64, was: f64) -> Res
             }
         }
         if seg.e > to {
-            out.push(Seg { s: to, e: seg.e, ..seg.clone() });
+            out.push(Seg {
+                s: to,
+                e: seg.e,
+                ..seg.clone()
+            });
         }
     }
     cut.segs = out;
     let how = if pieces.len() > 1 {
-        format!("over {} stretches of footage, which keep their frames", pieces.len())
+        format!(
+            "over {} stretches of footage, which keep their frames",
+            pieces.len()
+        )
     } else {
         "over the footage, which keeps its frames \u{2014} drag its edges to retime it".to_string()
     };
     let now = cut_screen::cut_seconds(cut);
-    Ok(Placed { segs: pieces, how: how.clone(), status: status_line(path, at, length, &how, now, was) })
+    Ok(Placed {
+        segs: pieces,
+        how: how.clone(),
+        status: status_line(path, at, length, &how, now, was),
+    })
 }
 
 /// F2.12 S5 (`overwriting → replaces those seconds`): the card put over the footage, which gives up the seconds
@@ -562,9 +634,16 @@ fn lay_over_footage(cut: &mut Cut, card: &Seg) -> Vec<Seg> {
             continue;
         }
         if seg.s < from {
-            out.push(Seg { s: seg.s, e: from, ..seg.clone() });
+            out.push(Seg {
+                s: seg.s,
+                e: from,
+                ..seg.clone()
+            });
         }
-        if stretches.iter().any(|(start, stop)| start < &seg.e && stop > &seg.s) {
+        if stretches
+            .iter()
+            .any(|(start, stop)| start < &seg.e && stop > &seg.s)
+        {
             let mut piece = card.clone();
             piece.s = seg.s.max(from);
             piece.e = seg.e.min(to);
@@ -572,7 +651,11 @@ fn lay_over_footage(cut: &mut Cut, card: &Seg) -> Vec<Seg> {
             out.push(piece);
         }
         if seg.e > to {
-            out.push(Seg { s: to, e: seg.e, ..seg.clone() });
+            out.push(Seg {
+                s: to,
+                e: seg.e,
+                ..seg.clone()
+            });
         }
     }
     cut.segs = out;
@@ -621,7 +704,9 @@ pub fn hold(seg: Option<&Seg>) -> bool {
 /// not hold the timeline still: a trim, a merge or another insert renumbers the list under it, so an index kept
 /// across the window would open the wrong card.
 pub fn find_card(cut: &Cut, path: &str, at: f64) -> Option<usize> {
-    cut.segs.iter().position(|seg| seg.ins == path && (seg.s - at).abs() < 0.01)
+    cut.segs
+        .iter()
+        .position(|seg| seg.ins == path && (seg.s - at).abs() < 0.01)
 }
 
 /// F2.12 S6: what the page says when the card went away while its dialog was open.
@@ -680,7 +765,10 @@ pub fn frame_times(length: f64, fps: f64) -> Vec<f64> {
 pub fn nearest_rendered(times: &[f64], t: f64) -> Option<f64> {
     // `total_cmp` on a difference compares magnitudes only when the difference does not cross zero, and a
     // frame before the playhead produces exactly that: 0.0 - 0.34 would have ranked first for being negative.
-    times.iter().copied().min_by(|a, b| (a - t).abs().total_cmp(&(b - t).abs()))
+    times
+        .iter()
+        .copied()
+        .min_by(|a, b| (a - t).abs().total_cmp(&(b - t).abs()))
 }
 
 /// F2.12 S7 (`48-texture cap`, §I's `insFilmMax`): frames held in memory for one card. A minute of a sting at
@@ -710,7 +798,13 @@ pub const PREVIEW_WIDTH: u32 = 960;
 /// aspect, and inside a filter graph a bare comma both separates filters and separates arguments, so the ones
 /// belonging to `if()` are escaped. A frame at or under the cap passes through at its own width, so a preview
 /// is never widened.
-pub fn ffmpeg_frames_argv(ffmpeg: &str, path: &str, fps: Option<f64>, width: u32, out: &str) -> Vec<String> {
+pub fn ffmpeg_frames_argv(
+    ffmpeg: &str,
+    path: &str,
+    fps: Option<f64>,
+    width: u32,
+    out: &str,
+) -> Vec<String> {
     let cap = preview_width(width);
     let mut args = vec![
         ffmpeg.to_string(),
@@ -753,7 +847,10 @@ pub fn ffmpeg_frames(ffmpeg: &str, path: &str, fps: f64, width: u32, out: &str) 
 /// on the clock and the footage waits under it, which is worth saying because everywhere else on this page the
 /// picture moves when the clock does.
 pub fn held_status(card: &str) -> String {
-    format!("{} \u{2014} the footage is held while it plays", base_name(card))
+    format!(
+        "{} \u{2014} the footage is held while it plays",
+        base_name(card)
+    )
 }
 
 // --- the form's opening plan -------------------------------------------------------------------------------
@@ -811,12 +908,7 @@ pub fn form_plan(
         seconds,
         mode,
         lane_shown: lane_offered(file_kind),
-        sound_shown: sound_open(
-            file_kind,
-            mode,
-            file_has_sound,
-            footage_under_has_sound,
-        ),
+        sound_shown: sound_open(file_kind, mode, file_has_sound, footage_under_has_sound),
         sound_label: tick_label(mode == Mode::Between),
         fields: Vec::new(),
         values: crate::cut_cards::split_path(path).args,

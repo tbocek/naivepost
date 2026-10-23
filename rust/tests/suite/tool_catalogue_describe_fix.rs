@@ -91,12 +91,42 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_speech_around_takes_e
     let b = batch();
     // Two recordings, and one of them has six lines in range: a cap would silently drop four.
     let lines = vec![
-        Spoken { source: "cam".into(), start: 8.0, end: 10.0, text: "before the window".into() },
-        Spoken { source: "cam".into(), start: 13.0, end: 14.0, text: "inside".into() },
-        Spoken { source: "mic".into(), start: 15.0, end: 16.0, text: "other recording".into() },
-        Spoken { source: "mic".into(), start: 12.5, end: 13.5, text: "straddling the edge".into() },
-        Spoken { source: "mic".into(), start: 40.0, end: 41.0, text: "far away".into() },
-        Spoken { source: "cam".into(), start: 20.0, end: 21.0, text: "after".into() },
+        Spoken {
+            source: "cam".into(),
+            start: 8.0,
+            end: 10.0,
+            text: "before the window".into(),
+        },
+        Spoken {
+            source: "cam".into(),
+            start: 13.0,
+            end: 14.0,
+            text: "inside".into(),
+        },
+        Spoken {
+            source: "mic".into(),
+            start: 15.0,
+            end: 16.0,
+            text: "other recording".into(),
+        },
+        Spoken {
+            source: "mic".into(),
+            start: 12.5,
+            end: 13.5,
+            text: "straddling the edge".into(),
+        },
+        Spoken {
+            source: "mic".into(),
+            start: 40.0,
+            end: 41.0,
+            text: "far away".into(),
+        },
+        Spoken {
+            source: "cam".into(),
+            start: 20.0,
+            end: 21.0,
+            text: "after".into(),
+        },
     ];
 
     let found = b.speech_around(12.0, 16.0, &lines);
@@ -105,8 +135,16 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_speech_around_takes_e
     // spoken there.
     assert!(texts.contains(&"straddling the edge"), "{texts:?}");
     // Every source, however many lines one of them has.
-    assert_eq!(found.iter().filter(|l| l.source == "mic").count(), 2, "{texts:?}");
-    assert_eq!(found.iter().filter(|l| l.source == "cam").count(), 1, "{texts:?}");
+    assert_eq!(
+        found.iter().filter(|l| l.source == "mic").count(),
+        2,
+        "{texts:?}"
+    );
+    assert_eq!(
+        found.iter().filter(|l| l.source == "cam").count(),
+        1,
+        "{texts:?}"
+    );
     // And nothing outside the stretch.
     assert!(!texts.contains(&"before the window"), "{texts:?}");
     assert!(!texts.contains(&"far away"), "{texts:?}");
@@ -130,7 +168,10 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_finish_asks_for_the_g
     // "same" would be a word pointing nowhere, which is why the prototype force-wrote a line there.
     assert_eq!(missing[0].reason, MissingReason::FirstFrameWithNoHistory);
     assert_eq!(missing[1].reason, MissingReason::NoEvent);
-    assert_eq!(missing[0].at, 12.0, "the missing frame is named by its session second");
+    assert_eq!(
+        missing[0].at, 12.0,
+        "the missing frame is named by its session second"
+    );
 
     // A first frame answered with "same" and no history is the same problem: the model is asked.
     let mut b = batch();
@@ -193,23 +234,40 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_a_drifted_offset_is_s
     // is nothing on a five-second grid, where half an interval is 2.5 s — and with frames at 0, 1 and
     // 2 s the nearest one to 2 s is the last frame, which is also the batch's own end.
     let out = describe::parse_event_line("EVENT [+2.0s]: late", 5.0, &frames);
-    assert!(matches!(out, ParseOutcome::Snapped { frame: 3, .. }), "{out:?}");
+    assert!(
+        matches!(out, ParseOutcome::Snapped { frame: 3, .. }),
+        "{out:?}"
+    );
 
     // The nearest frame and its drift, exposed because a caller may want to say how far the model's
     // number was off rather than silently moving it.
     assert_eq!(
         describe::place_offset(0.5, 1.0, &frames),
-        describe::Placement::Frame { frame: 1, at: 0.0, drift: 0.5 }
+        describe::Placement::Frame {
+            frame: 1,
+            at: 0.0,
+            drift: 0.5
+        }
     );
     // 0.51 s is nearer the *next* frame than the one it drifted from, and that is the snap.
     assert_eq!(
         describe::place_offset(0.51, 1.0, &frames),
-        describe::Placement::Frame { frame: 2, at: 1.0, drift: 0.49 }
+        describe::Placement::Frame {
+            frame: 2,
+            at: 1.0,
+            drift: 0.49
+        }
     );
     // Nothing on the grid is within half an interval past the last frame.
-    assert_eq!(describe::place_offset(2.6, 1.0, &frames), describe::Placement::TooFar(2.6));
+    assert_eq!(
+        describe::place_offset(2.6, 1.0, &frames),
+        describe::Placement::TooFar(2.6)
+    );
     // An empty batch has no frame to land on, however small the offset.
-    assert_eq!(describe::place_offset(0.0, 1.0, &[]), describe::Placement::TooFar(0.0));
+    assert_eq!(
+        describe::place_offset(0.0, 1.0, &[]),
+        describe::Placement::TooFar(0.0)
+    );
 
     // An unparseable offset is dropped silently — and a missing bracket is the same case, because
     // there is no moment to attach the words to either.
@@ -285,9 +343,27 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_an_unlabelled_reply_i
 #[test]
 fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_one_bad_row_is_one_refusal() {
     let mut block = Block::new(vec![
-        Line { n: 1, start: 0.0, end: 2.0, speaker: "1".into(), text: "asr one".into() },
-        Line { n: 2, start: 2.0, end: 4.0, speaker: "2".into(), text: "asr two".into() },
-        Line { n: 3, start: 4.0, end: 6.0, speaker: "1".into(), text: "asr three".into() },
+        Line {
+            n: 1,
+            start: 0.0,
+            end: 2.0,
+            speaker: "1".into(),
+            text: "asr one".into(),
+        },
+        Line {
+            n: 2,
+            start: 2.0,
+            end: 4.0,
+            speaker: "2".into(),
+            text: "asr two".into(),
+        },
+        Line {
+            n: 3,
+            start: 4.0,
+            end: 6.0,
+            speaker: "1".into(),
+            text: "asr three".into(),
+        },
     ]);
 
     let body = block.fix_line(2, "respelled two");
@@ -319,7 +395,11 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_one_bad_row_is_one_re
         .to_string();
     assert!(reason.contains("tab"), "{reason}");
     assert!(reason.contains("line 2"), "{reason}");
-    assert_eq!(block.fixes()[0].1, "respelled two", "the refusal changed nothing");
+    assert_eq!(
+        block.fixes()[0].1,
+        "respelled two",
+        "the refusal changed nothing"
+    );
 
     // Times and speakers are not arguments: `fix_line` takes a number and words, so there is no way
     // to move a line in time or reassign it. Asserted by the signature above; asserted again here by
@@ -357,7 +437,10 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_a_flag_leaves_the_lin
     assert_eq!(block.apply()[0].speaker, "1");
     assert_eq!(block.apply()[0].text, "asr one");
     assert_eq!(block.flags().len(), 1);
-    assert_eq!(block.flags()[0].1, "this is the second speaker, not the first");
+    assert_eq!(
+        block.flags()[0].1,
+        "this is the second speaker, not the first"
+    );
 
     // Notes are kept in order and can pile up on one line — a mis-timed row and a wrong speaker
     // together are two things a person needs to hear about.
@@ -380,14 +463,44 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_the_context_window_gr
     let other_source = vec![
         // Exactly at the edge of the ±5 s window from `from` = 20: overlap is what counts, so a line
         // ending AT 15.0 says nothing inside it and falls away.
-        Line { n: 1, start: 14.0, end: 15.0, speaker: "2".into(), text: "ends at the edge".into() },
+        Line {
+            n: 1,
+            start: 14.0,
+            end: 15.0,
+            speaker: "2".into(),
+            text: "ends at the edge".into(),
+        },
         // Straddles the window's opening: started long before, spoken into it. Containment would
         // drop this, and it is the grounding a respelling most needs.
-        Line { n: 2, start: 10.0, end: 16.0, speaker: "2".into(), text: "straddles in".into() },
-        Line { n: 3, start: 24.0, end: 25.0, speaker: "1".into(), text: "inside".into() },
+        Line {
+            n: 2,
+            start: 10.0,
+            end: 16.0,
+            speaker: "2".into(),
+            text: "straddles in".into(),
+        },
+        Line {
+            n: 3,
+            start: 24.0,
+            end: 25.0,
+            speaker: "1".into(),
+            text: "inside".into(),
+        },
         // Ends just past the closing edge at 25 s, so it is still spoken inside the window.
-        Line { n: 4, start: 24.5, end: 25.5, speaker: "2".into(), text: "straddles out".into() },
-        Line { n: 5, start: 30.0, end: 31.0, speaker: "2".into(), text: "past the window".into() },
+        Line {
+            n: 4,
+            start: 24.5,
+            end: 25.5,
+            speaker: "2".into(),
+            text: "straddles out".into(),
+        },
+        Line {
+            n: 5,
+            start: 30.0,
+            end: 31.0,
+            speaker: "2".into(),
+            text: "past the window".into(),
+        },
     ];
 
     let block = Block::default();
@@ -409,7 +522,10 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_the_context_window_gr
     }]);
     block.fix_line(1, "respelled here");
     let all = block.context_lines(20.0, 24.0, other_source.iter().chain(block.lines().iter()));
-    assert!(all.iter().any(|line| line.text == "this block"), "own lines are read too");
+    assert!(
+        all.iter().any(|line| line.text == "this block"),
+        "own lines are read too"
+    );
     assert!(all.len() >= 3);
 
     // Reversed bounds ask the same question.

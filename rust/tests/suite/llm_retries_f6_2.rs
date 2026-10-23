@@ -62,20 +62,44 @@ fn f6_2_s1_transport_death_words_are_matched_whole() {
 
     // Near-misses that are prose. This is the whole reason for whole-word matching: a five-minute wait on a
     // healthy server, on the strength of a sentence about the model's behaviour, is worse than no retry at all.
-    assert!(!retry::transport_death("the model refused to answer the question"), "bare `refused` is prose");
-    assert!(!retry::transport_death("a resettable timer fired"), "a word that merely starts like one");
-    assert!(!retry::transport_death("the leof graph changed"), "`eof` inside a word is not `eof`");
-    assert!(!retry::transport_death("the answer names 3 segments and 2 effects"), "no death word at all");
+    assert!(
+        !retry::transport_death("the model refused to answer the question"),
+        "bare `refused` is prose"
+    );
+    assert!(
+        !retry::transport_death("a resettable timer fired"),
+        "a word that merely starts like one"
+    );
+    assert!(
+        !retry::transport_death("the leof graph changed"),
+        "`eof` inside a word is not `eof`"
+    );
+    assert!(
+        !retry::transport_death("the answer names 3 segments and 2 effects"),
+        "no death word at all"
+    );
 
     // A status code is never "the server went away" (§3, verbatim). The server answered; asking again in four
     // minutes gets the same answer.
     assert_eq!(retry::status_of("HTTP 400 bad request"), Some(400));
-    assert!(!retry::transport_death("the server answered 500: internal server error"));
-    assert!(!retry::went_away("", Some(500), "internal server error"), "a status alone is not a death");
+    assert!(!retry::transport_death(
+        "the server answered 500: internal server error"
+    ));
+    assert!(
+        !retry::went_away("", Some(500), "internal server error"),
+        "a status alone is not a death"
+    );
     // And a port in an address is not a status — otherwise every connection failure would read as one the
     // server sent, which is §3's rule inverted.
-    assert_eq!(retry::status_of("dial tcp 127.0.0.1:8731: connect: connection refused"), None);
-    assert!(retry::went_away("dial tcp 127.0.0.1:8731: connect: connection refused", None, ""));
+    assert_eq!(
+        retry::status_of("dial tcp 127.0.0.1:8731: connect: connection refused"),
+        None
+    );
+    assert!(retry::went_away(
+        "dial tcp 127.0.0.1:8731: connect: connection refused",
+        None,
+        ""
+    ));
 }
 
 /// The address this app's own wire layer writes into every failure is not a status the server sent.
@@ -84,36 +108,66 @@ fn f6_2_s1_transport_death_words_are_matched_whole() {
 /// answer with status 127, which switched §3's ladder off for every LLM the app actually talks to.
 #[test]
 fn f6_2_s1_a_urls_own_message_is_not_read_as_a_status() {
-    const DEATH: &str = "llm (http://127.0.0.1:8731/v1/chat/completions) is not answering: io: Peer disconnected";
-    assert_eq!(retry::status_of(DEATH), None, "the address must not be read as a status: {DEATH}");
+    const DEATH: &str =
+        "llm (http://127.0.0.1:8731/v1/chat/completions) is not answering: io: Peer disconnected";
+    assert_eq!(
+        retry::status_of(DEATH),
+        None,
+        "the address must not be read as a status: {DEATH}"
+    );
     // The same wording with a longer port and with the other scheme: the whole URL goes, not one shape of it.
     assert_eq!(
-        retry::status_of("llm (http://127.0.0.1:45321/v1/chat/completions) is not answering: io: eof"),
+        retry::status_of(
+            "llm (http://127.0.0.1:45321/v1/chat/completions) is not answering: io: eof"
+        ),
         None,
         "a five-digit port leaves its first quad behind if only the port is skipped"
     );
     assert_eq!(
-        retry::status_of("llm (https://llm.local.test:8731/v1/chat/completions) is not answering: io: eof"),
+        retry::status_of(
+            "llm (https://llm.local.test:8731/v1/chat/completions) is not answering: io: eof"
+        ),
         None,
         "an https address reads the same way"
     );
     // And once the address stops masquerading as a status, §3's own words about a death apply: this is the message
     // a mid-call death arrives as, so it walks the ladder rather than taking the short patience.
-    assert!(retry::transport_death(DEATH), "§3 lists this wording as a death: {DEATH}");
-    assert!(retry::went_away(DEATH, None, ""), "and the door asks it the same question");
+    assert!(
+        retry::transport_death(DEATH),
+        "§3 lists this wording as a death: {DEATH}"
+    );
+    assert!(
+        retry::went_away(DEATH, None, ""),
+        "and the door asks it the same question"
+    );
 }
 
 /// Blanking an address must not cost §3 the statuses it DOES honour: a labelled status stays a status, and an
 /// unlabelled number stays prose ("a status code is never the server went away" cuts both ways).
 #[test]
 fn f6_2_s1_a_labelled_status_still_reads_after_the_url_goes() {
-    assert_eq!(retry::status_of("HTTP 500 internal server error"), Some(500), "a labelled status still reads");
-    assert_eq!(retry::status_of("the request with tools was answered 400: bad schema"), None, "no label, no status");
-    assert!(!retry::transport_death("HTTP 500 internal server error"), "a named status is not a death");
+    assert_eq!(
+        retry::status_of("HTTP 500 internal server error"),
+        Some(500),
+        "a labelled status still reads"
+    );
+    assert_eq!(
+        retry::status_of("the request with tools was answered 400: bad schema"),
+        None,
+        "no label, no status"
+    );
+    assert!(
+        !retry::transport_death("HTTP 500 internal server error"),
+        "a named status is not a death"
+    );
     // A death that also names the address AND a real labelled status: the address goes, the status stands, and §3
     // files it as an answer because the server did answer.
     let both = "llm (http://127.0.0.1:8731/v1/models) answered HTTP 503: overloaded";
-    assert_eq!(retry::status_of(both), Some(503), "the status survives the blanking: {both}");
+    assert_eq!(
+        retry::status_of(both),
+        Some(503),
+        "the status survives the blanking: {both}"
+    );
 }
 
 #[test]
@@ -122,14 +176,21 @@ fn f6_2_s1_the_ladder_and_its_log() {
     // Five waits, in order, outlasting a container restart and a weight load (§3; §10's "backoff 5 s–4 min").
     assert_eq!(retry::BACKOFF_SECONDS, [5, 20, 60, 120, 240]);
     for (failure, want) in retry::BACKOFF_SECONDS.into_iter().enumerate() {
-        assert_eq!(retry::wait_seconds(true, failure as u32), Some(want), "failure {failure}");
+        assert_eq!(
+            retry::wait_seconds(true, failure as u32),
+            Some(want),
+            "failure {failure}"
+        );
     }
     // The patience runs out: a sixth death is a server that is not coming back, and the step fails.
     assert_eq!(retry::wait_seconds(true, 5), None);
     assert_eq!(retry::wait_seconds(true, 99), None);
 
     // Spelled as §3 spells them, not as Go's duration formatter would ("1m0s").
-    let spelled: Vec<String> = retry::BACKOFF_SECONDS.iter().map(|s| retry::wait_spelling(*s)).collect();
+    let spelled: Vec<String> = retry::BACKOFF_SECONDS
+        .iter()
+        .map(|s| retry::wait_spelling(*s))
+        .collect();
     assert_eq!(spelled, ["5 s", "20 s", "1 min", "2 min", "4 min"]);
 
     // §3's line byte for byte — ASCII `--`, one-based count, the total from the ladder's length.
@@ -139,10 +200,16 @@ fn f6_2_s1_the_ladder_and_its_log() {
     );
     let last = retry::gone_log("publish", "EOF", 240, 4);
     assert_eq!(last, "!!! publish: the server went away mid-call (EOF) -- waiting 4 min and asking again (5 of 5)");
-    assert!(last.contains(&format!("(5 of {})", retry::BACKOFF_SECONDS.len())), "{last}");
+    assert!(
+        last.contains(&format!("(5 of {})", retry::BACKOFF_SECONDS.len())),
+        "{last}"
+    );
 
     // The short retry has no line in §3; a pause nobody can see reads as a hang.
-    assert_eq!(retry::waited_log("suggest", "not valid JSON: x"), ">>> suggest: asked again after 2 s (not valid JSON: x)");
+    assert_eq!(
+        retry::waited_log("suggest", "not valid JSON: x"),
+        ">>> suggest: asked again after 2 s (not valid JSON: x)"
+    );
     assert_eq!(retry::RETRY_SECONDS, 2);
 }
 
@@ -166,13 +233,25 @@ fn f6_2_s1_a_wait_ends_when_the_run_is_stopped() {
         &|| true,
         &died_by_words(),
     );
-    assert!(run.stopped, "the caller must not report this as a server failure: {}", run.joined());
+    assert!(
+        run.stopped,
+        "the caller must not report this as a server failure: {}",
+        run.joined()
+    );
     assert_eq!(run.answer, None);
-    assert_eq!(calls.get(), 1, "stopped during the wait, so nothing was asked again");
+    assert_eq!(
+        calls.get(),
+        1,
+        "stopped during the wait, so nothing was asked again"
+    );
     // The wait was *asked for*, with the ladder's first value — the module never sleeps, so this is the proof.
     assert_eq!(*waits.borrow(), vec![retry::BACKOFF_SECONDS[0]]);
     assert_eq!(run.logs.len(), 1, "{}", run.joined());
-    assert!(run.logs[0].starts_with("!!! narrate: the server went away mid-call"), "{}", run.joined());
+    assert!(
+        run.logs[0].starts_with("!!! narrate: the server went away mid-call"),
+        "{}",
+        run.joined()
+    );
 
     // Or the sleep itself reports the stop (the real one returns false when the context is done).
     let stopped = retry::run::<(), Failure>(
@@ -225,7 +304,11 @@ fn f6_2_s2_a_dead_server_is_resent_the_same_request() {
     // than continuing a half-finished conversation whose tool results never arrived.
     let arguments = "narrate the third clip";
     let seen = std::cell::RefCell::new(Vec::new());
-    let mut answers = VecDeque::from([Err(Failure("connection reset by peer")), Err(Failure("EOF")), Ok(())]);
+    let mut answers = VecDeque::from([
+        Err(Failure("connection reset by peer")),
+        Err(Failure("EOF")),
+        Ok(()),
+    ]);
     let waits = std::cell::RefCell::new(Vec::new());
     let run = retry::run::<(), Failure>(
         "narrate",
@@ -244,12 +327,23 @@ fn f6_2_s2_a_dead_server_is_resent_the_same_request() {
     assert_eq!(run.failures, 2);
     assert!(!run.stopped);
     assert_eq!(seen.borrow().len(), 3, "asked twice more after two deaths");
-    assert!(seen.borrow().iter().all(|arg| *arg == arguments), "the same request every time");
+    assert!(
+        seen.borrow().iter().all(|arg| *arg == arguments),
+        "the same request every time"
+    );
     // The ladder is walked in order, not restarted.
     assert_eq!(*waits.borrow(), vec![5, 20]);
-    let deaths: Vec<&String> = run.logs.iter().filter(|line| line.starts_with("!!!")).collect();
+    let deaths: Vec<&String> = run
+        .logs
+        .iter()
+        .filter(|line| line.starts_with("!!!"))
+        .collect();
     assert_eq!(deaths.len(), 2, "{}", run.joined());
-    assert!(deaths[0].contains("(1 of 5)") && deaths[1].contains("(2 of 5)"), "{}", run.joined());
+    assert!(
+        deaths[0].contains("(1 of 5)") && deaths[1].contains("(2 of 5)"),
+        "{}",
+        run.joined()
+    );
 
     // A call that answers first asks once and logs nothing: no waiting, no apology.
     let quiet = retry::run::<(), Failure>(
@@ -271,30 +365,58 @@ fn f6_2_s3_a_5xx_naming_a_device_backs_off() {
     assert_eq!(ITEM, "F6.2");
     // §3's new rule: an out-of-memory is not an answer about the request, it is the box having no room *yet* —
     // which is exactly what a wait fixes. So it joins the ladder instead of being resent at once.
-    assert!(retry::device_failure(Some(500), "CUDA error: out of memory"));
-    let died = retry::went_away("the server answered 500", Some(500), "CUDA error: out of memory");
+    assert!(retry::device_failure(
+        Some(500),
+        "CUDA error: out of memory"
+    ));
+    let died = retry::went_away(
+        "the server answered 500",
+        Some(500),
+        "CUDA error: out of memory",
+    );
     assert!(died, "a device failure backs off like a transport death");
-    assert_eq!(retry::wait_seconds(died, 0), Some(5), "the ladder, not the 2 s retry");
+    assert_eq!(
+        retry::wait_seconds(died, 0),
+        Some(5),
+        "the ladder, not the 2 s retry"
+    );
 
     // A 4xx never qualifies: that is the request's fault and no wait changes what the server objects to.
     assert!(!retry::device_failure(Some(400), "out of memory"));
-    assert!(!retry::went_away("the server answered 400", Some(400), "out of memory"));
+    assert!(!retry::went_away(
+        "the server answered 400",
+        Some(400),
+        "out of memory"
+    ));
     // A 5xx that says nothing of the kind is still just an answer — one short retry, first failure only.
     assert!(!retry::device_failure(Some(500), "internal server error"));
-    let plain = retry::went_away("the server answered 500", Some(500), "internal server error");
+    let plain = retry::went_away(
+        "the server answered 500",
+        Some(500),
+        "internal server error",
+    );
     assert!(!plain);
     assert_eq!(retry::wait_seconds(plain, 0), Some(retry::RETRY_SECONDS));
     // A 2xx cannot be a device failure either: nothing failed.
     assert!(!retry::device_failure(Some(200), "ok"));
-    assert!(!retry::device_failure(None, "out of memory"), "no status means no server answer to read");
+    assert!(
+        !retry::device_failure(None, "out of memory"),
+        "no status means no server answer to read"
+    );
 
     // Every phrase in the const is a phrase some server actually prints with a 5xx.
     for phrase in retry::DEVICE_FAILURE_PHRASES {
         let body = format!("the model server failed: {phrase} while loading weights");
-        assert!(retry::device_failure(Some(503), &body), "{phrase} is not recognised");
+        assert!(
+            retry::device_failure(Some(503), &body),
+            "{phrase} is not recognised"
+        );
     }
     // Case: servers shout.
-    assert!(retry::device_failure(Some(500), "CUDA ERROR: OUT OF MEMORY"));
+    assert!(retry::device_failure(
+        Some(500),
+        "CUDA ERROR: OUT OF MEMORY"
+    ));
 }
 
 // ---- s4: content repair in degraded (JSON) mode --------------------------------------
@@ -312,28 +434,46 @@ fn f6_2_s4_content_repair_in_json_mode() {
     // No text at all is the same failure. Telling it apart from a truncated answer matters more than the model
     // can see: one wants a shorter answer, the other wants an answer.
     let (kind, _) = retry::repair("   \n ", "unexpected end of JSON input").expect("a repair");
-    assert_eq!(kind, retry::Repair::NoAnswer, "empty is no answer, not a truncated one");
+    assert_eq!(
+        kind,
+        retry::Repair::NoAnswer,
+        "empty is no answer, not a truncated one"
+    );
 
     // A non-empty reply whose parse stopped for want of a tail: the ceiling was hit.
-    let (kind, problem) = retry::repair("{\"segments\": [{\"start\": 1", "unexpected end of JSON input").expect("a repair");
+    let (kind, problem) = retry::repair(
+        "{\"segments\": [{\"start\": 1",
+        "unexpected end of JSON input",
+    )
+    .expect("a repair");
     assert_eq!(kind, retry::Repair::CutOff);
     assert_eq!(problem, degraded::CUTOFF_RETRY, "one sentence, one home");
     assert!(problem.contains("far fewer items"), "{problem}");
 
     // A real syntax problem wants care, not brevity — telling it to shorten would be the wrong advice.
-    let (kind, problem) = retry::repair("{\"a\":}", "expected value at line 1 column 5").expect("a repair");
+    let (kind, problem) =
+        retry::repair("{\"a\":}", "expected value at line 1 column 5").expect("a repair");
     assert_eq!(kind, retry::Repair::Other);
     assert!(problem.starts_with("not valid JSON:"), "{problem}");
 
     // And a reply that parsed is not a problem.
     assert_eq!(retry::repair("{\"segments\": []}", ""), None);
     // `cut_off_problem` alone: an empty reply is no_answer's case, and another error is not a cutoff.
-    assert_eq!(retry::cut_off_problem("", "unexpected end of JSON input"), None);
-    assert_eq!(retry::cut_off_problem("{\"a\":1", "trailing characters"), None);
+    assert_eq!(
+        retry::cut_off_problem("", "unexpected end of JSON input"),
+        None
+    );
+    assert_eq!(
+        retry::cut_off_problem("{\"a\":1", "trailing characters"),
+        None
+    );
 
     // thinkAgain: an empty answer means the thinking budget was spent with no words, so the retry turns it off.
     assert!(!retry::think_again(true, ""), "thinking off for the retry");
-    assert!(retry::think_again(true, "{\"a\":1}"), "bad JSON keeps thinking: that model is writing and wrong");
+    assert!(
+        retry::think_again(true, "{\"a\":1}"),
+        "bad JSON keeps thinking: that model is writing and wrong"
+    );
     assert!(!retry::think_again(false, "{\"a\":1}"), "it was never on");
     // Reasoning with no answer after it is the same spent budget.
     assert!(!retry::think_again(true, "thinking hard</think>  "));
@@ -355,9 +495,15 @@ fn f6_2_s4_a_rejected_answer_goes_back_into_the_history() {
     assert_eq!(text_of(&history[0]), "{\"segments\": []");
     assert_eq!(history[1].role, "user");
     let correction = text_of(&history[1]);
-    assert!(correction.starts_with("Your answer failed validation: "), "{correction}");
+    assert!(
+        correction.starts_with("Your answer failed validation: "),
+        "{correction}"
+    );
     assert!(correction.contains("not valid JSON: x"), "{correction}");
-    assert!(correction.ends_with("Return corrected strict JSON only."), "{correction}");
+    assert!(
+        correction.ends_with("Return corrected strict JSON only."),
+        "{correction}"
+    );
 
     // An empty reply is not appended: there is no message to send, and an assistant turn holding nothing makes
     // the history read as though the model had answered with a blank.
@@ -370,7 +516,10 @@ fn f6_2_s4_a_rejected_answer_goes_back_into_the_history() {
     let earlier = retry::retry_turn(history.clone(), "x", "p", false);
     assert_eq!(earlier.len(), history.len() + 2);
     let shape = |messages: &[naivepost::exchanges::Message]| -> Vec<(String, String)> {
-        messages.iter().map(|m| (m.role.clone(), text_of(m))).collect()
+        messages
+            .iter()
+            .map(|m| (m.role.clone(), text_of(m)))
+            .collect()
     };
     assert_eq!(shape(&earlier[..history.len()]), shape(&history));
 }
@@ -403,30 +552,49 @@ fn f6_2_s5_the_two_patiences_are_not_confused() {
     assert_eq!(short.from, "llm_retry::RETRY_SECONDS");
     assert_eq!(short.spelled.as_str(), "2");
     for id in ["llm.backoffSeconds", "llm.retrySeconds"] {
-        assert_eq!(params::family(id), params::Family::Other, "{id} has no P. row in §10");
+        assert_eq!(
+            params::family(id),
+            params::Family::Other,
+            "{id} has no P. row in §10"
+        );
     }
 
     // Not the two numbers a reader might reach for. `P.eng.llmAttempts` counts *validation* attempts at one job
     // (the JSON was rejected and asked for again); `P.eng.llmToolRounds` counts tool rounds inside one call. A
     // job can spend three of the first inside one successful call, and a call can die five times without either.
     assert_eq!(params::family("P.eng.llmAttempts"), params::Family::Eng);
-    assert_eq!(roles::LLM_ATTEMPTS, 3, "validation attempts: a different item");
+    assert_eq!(
+        roles::LLM_ATTEMPTS,
+        3,
+        "validation attempts: a different item"
+    );
     assert_eq!(roles::TOOL_ROUNDS, 8, "tool rounds: a different item again");
     assert_ne!(retry::BACKOFF_SECONDS.len() as u32, roles::LLM_ATTEMPTS);
     assert_ne!(retry::RETRY_SECONDS as u32, roles::TOOL_ROUNDS);
 
     // The ladder and the retry are read from the two consts, never retyped: what `wait_seconds` answers is
     // exactly the array's contents, so changing a wait changes the log line with it.
-    assert_eq!(retry::BACKOFF_SECONDS.len(), 5, "§3 says five waits (i of 5)");
+    assert_eq!(
+        retry::BACKOFF_SECONDS.len(),
+        5,
+        "§3 says five waits (i of 5)"
+    );
     let total: u64 = retry::BACKOFF_SECONDS.iter().sum();
-    assert_eq!(total, 445, "roughly eight minutes of patience (§3's comment)");
+    assert_eq!(
+        total, 445,
+        "roughly eight minutes of patience (§3's comment)"
+    );
     for failure in 0..retry::BACKOFF_SECONDS.len() as u32 {
-        assert_eq!(retry::wait_seconds(true, failure), Some(retry::BACKOFF_SECONDS[failure as usize]));
+        assert_eq!(
+            retry::wait_seconds(true, failure),
+            Some(retry::BACKOFF_SECONDS[failure as usize])
+        );
     }
     // And the source holds no second copy of either number where a copy would matter. The two places a bare 60
     // does appear — `wait_spelling`'s minute boundary and `gone_log`'s array length — are unit arithmetic and the
     // ladder's size, not waits: neither could survive changing a wait, which is exactly what makes them safe.
-    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/llm_retry.rs")).expect("the module");
+    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/llm_retry.rs"))
+        .expect("the module");
     let body = |name: &str| -> String {
         source
             .split(&format!("pub fn {name}"))
@@ -437,12 +605,21 @@ fn f6_2_s5_the_two_patiences_are_not_confused() {
     };
     // The decision reads only the two consts: no wait is a literal there.
     let decides = body("wait_seconds");
-    assert!(decides.contains("BACKOFF_SECONDS") && decides.contains("RETRY_SECONDS"), "{decides}");
+    assert!(
+        decides.contains("BACKOFF_SECONDS") && decides.contains("RETRY_SECONDS"),
+        "{decides}"
+    );
     for literal in ["5,", "20,", "240", "(2)", "== 2"] {
-        assert!(!decides.contains(literal), "{literal} in wait_seconds is a second copy of a wait: {decides}");
+        assert!(
+            !decides.contains(literal),
+            "{literal} in wait_seconds is a second copy of a wait: {decides}"
+        );
     }
     // The log line takes its total from the ladder rather than writing 5.
     let logged = body("gone_log");
     assert!(logged.contains("BACKOFF_SECONDS.len()"), "{logged}");
-    assert!(!logged.contains("(i of 5)") && !logged.contains("of 5)"), "a literal 5 in the line: {logged}");
+    assert!(
+        !logged.contains("(i of 5)") && !logged.contains("of 5)"),
+        "a literal 5 in the line: {logged}"
+    );
 }

@@ -21,7 +21,7 @@ use naivepost::params;
 use naivepost::separate;
 
 use crate::common;
-use common::{all_rows};
+use common::all_rows;
 
 /// S1: `P.eng.sepLopsidedDB` = 10, held by `separate::LOPSIDED_DB`, catalogued once under the
 /// family §10 files it in.
@@ -35,8 +35,7 @@ fn p_eng_seplopsideddb_s1_the_threshold_is_10_and_catalogued_once() {
         .find(|param| param.id == "P.eng.sepLopsidedDB")
         .expect("the lop-sided split threshold must be catalogued for Prepare, whose split pass reads it");
     assert_eq!(
-        row.from,
-        "separate::LOPSIDED_DB",
+        row.from, "separate::LOPSIDED_DB",
         "a row must name the constant its rule reads (the prototype called it sepLopsidedDB)"
     );
     // num() takes the integer branch for a whole value, which is how §10 spells this one: "10".
@@ -52,7 +51,10 @@ fn p_eng_seplopsideddb_s1_the_threshold_is_10_and_catalogued_once() {
 
     // And exactly one row for it across all five lists -- one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.sepLopsidedDB").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.sepLopsidedDB")
+            .count(),
         1,
         "P.eng.sepLopsidedDB catalogued more than once"
     );
@@ -85,7 +87,10 @@ fn p_eng_seplopsideddb_s2_the_threshold_is_inclusive_at_exactly_ten_decibels() {
     );
 
     // Further down keeps warning -- the threshold is a floor, not a band.
-    assert!(separate::lopsided("-20.0 dB", "-45.0 dB").is_some(), "25 dB down still warns");
+    assert!(
+        separate::lopsided("-20.0 dB", "-45.0 dB").is_some(),
+        "25 dB down still warns"
+    );
 }
 
 /// S3: only a quieter rest counts, and the note quotes the measured gap rather than the constant.
@@ -106,10 +111,19 @@ fn p_eng_seplopsideddb_s3_only_a_quieter_rest_counts_and_the_gap_is_what_gets_sa
     // Thirteen decibels down: the note quotes 13 dB, the number the meters measured, NOT the 10 dB
     // threshold that decided it. A user reading the log learns the actual balance of this recording.
     let note = separate::lopsided("-20.0 dB", "-33.0 dB").expect("13 dB down is worth saying");
-    assert!(note.contains("13 dB under the mix"), "the measured gap is quoted: {note}");
-    assert!(!note.contains("10 dB"), "the deciding threshold is not printed: {note}");
+    assert!(
+        note.contains("13 dB under the mix"),
+        "the measured gap is quoted: {note}"
+    );
+    assert!(
+        !note.contains("10 dB"),
+        "the deciding threshold is not printed: {note}"
+    );
     // And the note points at the remedy rather than leaving the reader to work it out.
-    assert!(note.contains("voice half"), "the remedy names the other half: {note}");
+    assert!(
+        note.contains("voice half"),
+        "the remedy names the other half: {note}"
+    );
     assert!(
         note.contains("half named for the room has little in it"),
         "and says what went wrong: {note}"
@@ -117,8 +131,14 @@ fn p_eng_seplopsideddb_s3_only_a_quieter_rest_counts_and_the_gap_is_what_gets_sa
 
     // The reported number tracks the fixture, so it is genuinely computed from the levels.
     let deeper = separate::lopsided("-20.0 dB", "-40.0 dB").expect("20 dB down");
-    assert!(deeper.contains("20 dB under the mix"), "a deeper gap reports 20: {deeper}");
-    assert!(!deeper.contains("13 dB"), "and not the previous fixture's number: {deeper}");
+    assert!(
+        deeper.contains("20 dB under the mix"),
+        "a deeper gap reports 20: {deeper}"
+    );
+    assert!(
+        !deeper.contains("13 dB"),
+        "and not the previous fixture's number: {deeper}"
+    );
 }
 
 /// S4: an unmeasurable level says nothing, so the threshold is never consulted.
@@ -126,9 +146,18 @@ fn p_eng_seplopsideddb_s3_only_a_quieter_rest_counts_and_the_gap_is_what_gets_sa
 fn p_eng_seplopsideddb_s4_an_unmeasurable_level_never_reaches_the_threshold() {
     // Empty and non-numeric levels return None on every combination. A missing number is not evidence of
     // anything, so the function bails at the parse and no comparison against 10 dB ever happens.
-    assert!(separate::lopsided("", "-31.0 dB").is_none(), "no mix level says nothing");
-    assert!(separate::lopsided("-20.0 dB", "n/a").is_none(), "no rest level says nothing");
-    assert!(separate::lopsided("", "").is_none(), "neither level says nothing");
+    assert!(
+        separate::lopsided("", "-31.0 dB").is_none(),
+        "no mix level says nothing"
+    );
+    assert!(
+        separate::lopsided("-20.0 dB", "n/a").is_none(),
+        "no rest level says nothing"
+    );
+    assert!(
+        separate::lopsided("", "").is_none(),
+        "neither level says nothing"
+    );
     assert!(
         separate::lopsided("quiet", "silent").is_none(),
         "words where numbers belong are not a measurement"
@@ -145,7 +174,10 @@ fn p_eng_seplopsideddb_s4_an_unmeasurable_level_never_reaches_the_threshold() {
     // The parser accepts a trailing percent, which some volumedetect spellings carry: "-20.0%" parses as
     // -20.0, so a 15 dB gap between two such readings still crosses the threshold and is reported.
     let percent = separate::lopsided("-20.0%", "-35.0%").expect("percent spellings parse");
-    assert!(percent.contains("15 dB under the mix"), "15 dB from the percent pair: {percent}");
+    assert!(
+        percent.contains("15 dB under the mix"),
+        "15 dB from the percent pair: {percent}"
+    );
     // And below the threshold in the same spelling, nothing is said.
     assert!(
         separate::lopsided("-20.0%", "-25.0%").is_none(),
@@ -163,16 +195,23 @@ fn p_eng_seplopsideddb_s5_wiring_and_neighbours_by_home_not_by_number() {
         crossed.ends_with("cut from the original instead of the split."),
         "the remedy closes the report: {crossed}"
     );
-    assert!(crossed.starts_with(">>> [lecture.mkv] the mix averaged -20.0 dB"), "{crossed}");
+    assert!(
+        crossed.starts_with(">>> [lecture.mkv] the mix averaged -20.0 dB"),
+        "{crossed}"
+    );
 
     // Not-crossing case: gap 5, so the report is the plain log line and NOTHING more.
     let base = separate::loudness_log("lecture.mkv", "-20.0 dB", "-21.0 dB", "-25.0 dB");
     let plain = separate::loudness_report("lecture.mkv", "-20.0 dB", "-21.0 dB", "-25.0 dB");
-    assert_eq!(plain, base, "under the threshold the report is just the log line");
+    assert_eq!(
+        plain, base,
+        "under the threshold the report is just the log line"
+    );
     assert!(!plain.contains("lop"), "no warning smuggled in: {plain}");
 
     // Distinct homes among the separation constants.
-    let chunk = params::find("P.machine.sepChunkMaxSeconds").expect("sepChunkMaxSeconds is catalogued");
+    let chunk =
+        params::find("P.machine.sepChunkMaxSeconds").expect("sepChunkMaxSeconds is catalogued");
     assert_eq!(chunk.from, "separate::CHUNK_MAX_SECONDS");
     assert_eq!(chunk.spelled, "300");
     let lopsided_row = params::find("P.eng.sepLopsidedDB").expect("sepLopsidedDB is catalogued");
@@ -192,14 +231,21 @@ fn p_eng_seplopsideddb_s5_wiring_and_neighbours_by_home_not_by_number() {
 
     // asr::QUIET_DB (-35.0) is an ABSOLUTE level -- how quiet a stretch must be to count as silence.
     // This constant is a RELATIVE gap between two stems. Different kinds of quantity, different homes.
-    let quiet = params::find("P.machine.silenceThresholdDB").expect("silenceThresholdDB is catalogued");
+    let quiet =
+        params::find("P.machine.silenceThresholdDB").expect("silenceThresholdDB is catalogued");
     assert_eq!(quiet.from, "asr::QUIET_DB");
-    assert!(asr::QUIET_DB < 0.0, "the silence threshold is an absolute level below zero");
+    assert!(
+        asr::QUIET_DB < 0.0,
+        "the silence threshold is an absolute level below zero"
+    );
     assert!(
         separate::LOPSIDED_DB > 0.0,
         "this one is a positive difference between two measurements"
     );
-    assert_ne!(lopsided_row.from, quiet.from, "distinct homes for distinct rules");
+    assert_ne!(
+        lopsided_row.from, quiet.from,
+        "distinct homes for distinct rules"
+    );
 
     // Never interchangeable: a -35 dB rest under a -40 dB mix has both stems sitting below the silence
     // threshold, yet the gap is only 5 dB, so nothing is lop-sided and no note is made.
@@ -212,5 +258,8 @@ fn p_eng_seplopsideddb_s5_wiring_and_neighbours_by_home_not_by_number() {
         "two silent-ish stems 5 dB apart are not lop-sided"
     );
     // Same two levels read the other way round: still 5 dB, still nothing.
-    assert!(separate::lopsided("-35.0 dB", "-40.0 dB").is_none(), "direction matters too");
+    assert!(
+        separate::lopsided("-35.0 dB", "-40.0 dB").is_none(),
+        "direction matters too"
+    );
 }

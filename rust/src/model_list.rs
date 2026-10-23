@@ -65,7 +65,9 @@ pub fn parse_ids(body: &Value) -> Vec<String> {
 /// id is among them; this one only asks whether anything arrived at all.
 pub fn list_verdict(ids: &[String]) -> Result<String, String> {
     if ids.is_empty() {
-        return Err(format!("{ENDPOINT} answered with no models -- nothing to pick"));
+        return Err(format!(
+            "{ENDPOINT} answered with no models -- nothing to pick"
+        ));
     }
     Ok(format!("{} model(s) served", ids.len()))
 }
@@ -83,7 +85,9 @@ pub fn use_choice(ids: &[String], chosen: &str) -> Result<String, String> {
     if ids.iter().any(|id| id == chosen) {
         return Ok(chosen.to_string());
     }
-    Err(format!("{chosen:?} is not one of the models {ENDPOINT} listed"))
+    Err(format!(
+        "{chosen:?} is not one of the models {ENDPOINT} listed"
+    ))
 }
 
 /// One of F0.13's two LLM probes, as data.

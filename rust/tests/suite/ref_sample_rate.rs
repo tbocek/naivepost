@@ -18,7 +18,7 @@ use naivepost::separate;
 use naivepost::transcribe;
 
 use crate::common;
-use common::{all_rows};
+use common::all_rows;
 
 /// A row by id from anywhere in the catalogue. `params::find` only searches `prepare()`, and this item
 /// lives on the Narrate page, so the lookup has to span all five lists.
@@ -38,15 +38,18 @@ fn p_eng_refsamplerate_s1_the_rate_is_48000_and_catalogued_once() {
 
     let row = row_for("P.eng.refSampleRate");
     assert_eq!(
-        row.from,
-        "narrate_data::REF_SAMPLE_RATE",
+        row.from, "narrate_data::REF_SAMPLE_RATE",
         "a row must name the constant its rule reads (the prototype called it refRate)"
     );
     assert_eq!(row.spelled, "48000");
     assert_eq!(row.spelled.parse::<f64>().unwrap(), 48_000.0);
     // A `-ar` argument has to read as a whole hertz figure; a float spelling would be a different kind
     // of value than ffmpeg expects.
-    assert!(!row.spelled.contains('.'), "no decimal point in an ffmpeg rate: {}", row.spelled);
+    assert!(
+        !row.spelled.contains('.'),
+        "no decimal point in an ffmpeg rate: {}",
+        row.spelled
+    );
 
     // §10 files it among the engineering constants, so the prefix answers to Eng.
     assert_eq!(
@@ -57,7 +60,10 @@ fn p_eng_refsamplerate_s1_the_rate_is_48000_and_catalogued_once() {
 
     // And exactly one row for it across all five lists -- one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.refSampleRate").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.refSampleRate")
+            .count(),
         1,
         "P.eng.refSampleRate catalogued more than once"
     );
@@ -142,7 +148,10 @@ fn p_eng_refsamplerate_s4_three_rates_three_rules_none_interchangeable() {
     assert_eq!(asr_rate, 16_000.0);
     assert_eq!(sep_rate, 44_100.0);
     assert_eq!(ref_rate, 48_000.0);
-    assert!(asr_rate < sep_rate && sep_rate < ref_rate, "three distinct rates");
+    assert!(
+        asr_rate < sep_rate && sep_rate < ref_rate,
+        "three distinct rates"
+    );
 
     // The reference rate is NOT the ASR rate: handing the TTS server a 16 kHz clone source would give
     // it a voice with half the top end the speaker actually has.
@@ -161,15 +170,18 @@ fn p_eng_refsamplerate_s4_three_rates_three_rules_none_interchangeable() {
     // produce_render::LOUDNORM, not this constant.
     let loudness = row_for("P.eng.loudness");
     assert_eq!(loudness.from, "produce_render::LOUDNORM");
-    assert!(naivepost::produce_render::LOUDNORM.contains("loudnorm"), "{}", naivepost::produce_render::LOUDNORM);
+    assert!(
+        naivepost::produce_render::LOUDNORM.contains("loudnorm"),
+        "{}",
+        naivepost::produce_render::LOUDNORM
+    );
     assert!(
         naivepost::produce_render::LOUDNORM.contains("LRA=11"),
         "the render's own target, not the reference's: {}",
         naivepost::produce_render::LOUDNORM
     );
     assert_ne!(
-        loudness.from,
-        "narrate_data::REF_SAMPLE_RATE",
+        loudness.from, "narrate_data::REF_SAMPLE_RATE",
         "the mix's rule and the reference's write rate have different homes"
     );
 }
@@ -180,12 +192,21 @@ fn p_eng_refsamplerate_s4_three_rates_three_rules_none_interchangeable() {
 fn p_eng_refsamplerate_s5_a_usable_ffmpeg_argument_that_round_trips() {
     // All ASCII digits, five of them, parsing cleanly as a whole hertz count.
     assert!(
-        narrate_data::REF_SAMPLE_RATE.chars().all(|c| c.is_ascii_digit()),
+        narrate_data::REF_SAMPLE_RATE
+            .chars()
+            .all(|c| c.is_ascii_digit()),
         "digits only: {}",
         narrate_data::REF_SAMPLE_RATE
     );
-    assert_eq!(narrate_data::REF_SAMPLE_RATE.len(), 5, "five characters: 48000");
-    assert_eq!(narrate_data::REF_SAMPLE_RATE.parse::<u32>().unwrap(), 48_000);
+    assert_eq!(
+        narrate_data::REF_SAMPLE_RATE.len(),
+        5,
+        "five characters: 48000"
+    );
+    assert_eq!(
+        narrate_data::REF_SAMPLE_RATE.parse::<u32>().unwrap(),
+        48_000
+    );
 
     // It goes straight onto a command line unchanged.
     assert_eq!(

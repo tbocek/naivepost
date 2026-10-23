@@ -37,7 +37,14 @@ fn edges(total: f64, spans: &[(f64, f64, u8)]) -> Edges {
 /// shape-parity with the sibling fixture files rather than used here.
 #[allow(dead_code)]
 fn mark(s: f64, e: f64, again: f64, to: f64) -> Retake {
-    Retake { s, e, again, to, text: String::new(), whole: String::new() }
+    Retake {
+        s,
+        e,
+        again,
+        to,
+        text: String::new(),
+        whole: String::new(),
+    }
 }
 
 /// No envelope anywhere. Kept for shape-parity; every case here supplies one, since the room only
@@ -65,16 +72,25 @@ fn p_eng_envelopewindowseconds_s1_the_window_is_4_seconds_and_catalogued_once() 
         .into_iter()
         .find(|param| param.id == "P.eng.envelopeWindowSeconds")
         .expect("the room window must be catalogued for Prepare, whose floor reads it");
-    assert_eq!(row.from, "edges::ENVELOPE_WINDOW", "a row must name the constant its rule reads");
+    assert_eq!(
+        row.from, "edges::ENVELOPE_WINDOW",
+        "a row must name the constant its rule reads"
+    );
     assert_eq!(row.spelled, "4");
     assert_eq!(row.spelled.parse::<f64>().unwrap(), 4.0);
 
     // §10 files it among the engineering constants, so the prefix answers to Eng.
-    assert_eq!(params::family("P.eng.envelopeWindowSeconds"), params::Family::Eng);
+    assert_eq!(
+        params::family("P.eng.envelopeWindowSeconds"),
+        params::Family::Eng
+    );
 
     // And exactly one row for it across all five lists — one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.envelopeWindowSeconds").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.envelopeWindowSeconds")
+            .count(),
         1,
         "P.eng.envelopeWindowSeconds catalogued more than once"
     );
@@ -87,8 +103,14 @@ fn p_eng_envelopewindowseconds_s2_room_inside_the_window_sets_the_floor() {
     // P.eng.envelopeWindowSeconds: ROOM occupies [5.0, 7.0) — 400 buckets inside the window's 1600.
     let e = edges(14.0, &[(0.0, 5.0, WORD), (7.0, 14.0, WORD)]);
     assert_eq!(e.floor(7.0), 24, "room 8 raised to max(3*8, 8+8) = 24");
-    assert!(e.floor(7.0) > ROOM, "the floor sits above raw room so a breath still counts as sound");
-    assert!(e.floor(7.0) < WORD, "and far below the talk level, so speech is not mistaken for room");
+    assert!(
+        e.floor(7.0) > ROOM,
+        "the floor sits above raw room so a breath still counts as sound"
+    );
+    assert!(
+        e.floor(7.0) < WORD,
+        "and far below the talk level, so speech is not mistaken for room"
+    );
 }
 
 /// S3: the same room pushed outside the window is not found at all, and the floor goes to the ceiling.
@@ -98,12 +120,20 @@ fn p_eng_envelopewindowseconds_s2_room_inside_the_window_sets_the_floor() {
 fn p_eng_envelopewindowseconds_s3_room_beyond_the_window_is_not_found() {
     // P.eng.envelopeWindowSeconds: ROOM now [1.0, 3.0) ends at bucket 599; the window starts at 600.
     let out = edges(14.0, &[(0.0, 1.0, WORD), (3.0, 14.0, WORD)]);
-    assert_eq!(out.floor(7.0), u8::MAX, "window all talk: max(3*200, 200+8) clamps to 255");
+    assert_eq!(
+        out.floor(7.0),
+        u8::MAX,
+        "window all talk: max(3*200, 200+8) clamps to 255"
+    );
 
     // The contrast without literals: the identical room band, moved from inside the window to outside it,
     // changes the floor from 24 to the ceiling. Same recording, same stamp, different window reach.
     let inside = edges(14.0, &[(0.0, 5.0, WORD), (7.0, 14.0, WORD)]);
-    assert_ne!(inside.floor(7.0), out.floor(7.0), "inside the window it is found, outside it is not");
+    assert_ne!(
+        inside.floor(7.0),
+        out.floor(7.0),
+        "inside the window it is found, outside it is not"
+    );
     assert_eq!(inside.floor(7.0), 24);
 }
 
@@ -113,12 +143,24 @@ fn p_eng_envelopewindowseconds_s3_room_beyond_the_window_is_not_found() {
 fn p_eng_envelopewindowseconds_s4_the_window_reaches_the_far_side_too() {
     // P.eng.envelopeWindowSeconds: ROOM immediately after the stamp ([7.0, 9.0)) is inside the window.
     let near = edges(14.0, &[(0.0, 7.0, WORD), (9.0, 14.0, WORD)]);
-    assert_eq!(near.floor(7.0), 24, "room ahead of the stamp is inside the forward half of the window");
+    assert_eq!(
+        near.floor(7.0),
+        24,
+        "room ahead of the stamp is inside the forward half of the window"
+    );
 
     // Room starting at 11.0 is 4 s past the stamp — bucket 2200, one past the window's last bucket 2199.
     let far = edges(14.0, &[(0.0, 11.0, WORD)]);
-    assert_eq!(far.floor(7.0), u8::MAX, "beyond the forward edge the room is not there to find");
-    assert_ne!(near.floor(7.0), far.floor(7.0), "the forward reach is bounded like the backward one");
+    assert_eq!(
+        far.floor(7.0),
+        u8::MAX,
+        "beyond the forward edge the room is not there to find"
+    );
+    assert_ne!(
+        near.floor(7.0),
+        far.floor(7.0),
+        "the forward reach is bounded like the backward one"
+    );
 }
 
 /// S5: the window clamps at the ends of the file rather than failing, and it is not any of the three
@@ -140,14 +182,29 @@ fn p_eng_envelopewindowseconds_s5_the_window_clamps_at_the_file_and_is_not_its_n
     // TROUGH_REACH (0.4): how far into a fenced gap the quietest moment is looked for.
     assert_eq!(edge::TROUGH_REACH, 0.4);
 
-    assert_ne!(edge::ENVELOPE_WINDOW, edge::EDGE_REACH, "where the room is measured is not how far an edge moves");
-    assert_ne!(edge::ENVELOPE_WINDOW, edge::LATE_STAMP, "the room window is not the stamp-lateness bound");
-    assert_ne!(edge::ENVELOPE_WINDOW, edge::TROUGH_REACH, "the room window is not the in-fence trough reach");
+    assert_ne!(
+        edge::ENVELOPE_WINDOW,
+        edge::EDGE_REACH,
+        "where the room is measured is not how far an edge moves"
+    );
+    assert_ne!(
+        edge::ENVELOPE_WINDOW,
+        edge::LATE_STAMP,
+        "the room window is not the stamp-lateness bound"
+    );
+    assert_ne!(
+        edge::ENVELOPE_WINDOW,
+        edge::TROUGH_REACH,
+        "the room window is not the in-fence trough reach"
+    );
     assert!(
         edge::ENVELOPE_WINDOW > edge::EDGE_REACH * 4.0,
         "the room window is five times the walk's reach: room needs a stretch, an edge does not"
     );
 
     // And this row points at the window, not at any neighbour's constant.
-    assert_eq!(anywhere("P.eng.envelopeWindowSeconds").from, "edges::ENVELOPE_WINDOW");
+    assert_eq!(
+        anywhere("P.eng.envelopeWindowSeconds").from,
+        "edges::ENVELOPE_WINDOW"
+    );
 }

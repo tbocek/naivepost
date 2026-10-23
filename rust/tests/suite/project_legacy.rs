@@ -3,10 +3,10 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::{read_tree as read, temp_dir};
 use naivepost::layout::Tree;
 use naivepost::project::{self, Autosave};
-use crate::common;
-use common::{temp_dir, read_tree as read};
 
 fn with_file(tag: &str, text: &str) -> (PathBuf, Tree) {
     let root = temp_dir(tag);
@@ -16,14 +16,14 @@ fn with_file(tag: &str, text: &str) -> (PathBuf, Tree) {
     (root, Tree::new(&dir).unwrap())
 }
 
-
 /// Every report line mentioning one of these strings.
 fn mentions(report: &[String], word: &str) -> bool {
     report.iter().any(|line| line.contains(word))
 }
 
 #[test]
-fn sec_01_project_and_files_2_naivepostjson_legacy_videos_and_audios_become_sources_with_narrator_one() {
+fn sec_01_project_and_files_2_naivepostjson_legacy_videos_and_audios_become_sources_with_narrator_one(
+) {
     let (_root, t) = with_file(
         "videos",
         r#"{"videos":["project:sources/a.mkv"],
@@ -78,8 +78,8 @@ fn sec_01_project_and_files_2_naivepostjson_legacy_in_dir_out_dir_fill_the_choos
 }
 
 #[test]
-fn sec_01_project_and_files_2_naivepostjson_legacy_style_sets_the_policy_as_a_default_the_context_can_override()
-{
+fn sec_01_project_and_files_2_naivepostjson_legacy_style_sets_the_policy_as_a_default_the_context_can_override(
+) {
     // P.policy.markingPass and P.policy.cutMode: "read" is a lecture, where the
     // mistakes sit at the joins and the cut comes from the marked text.
     let (_root, t) = with_file("style-read", r#"{"style":"read"}"#);
@@ -134,7 +134,10 @@ fn sec_01_project_and_files_2_naivepostjson_legacy_hints_fold_into_prompts_with_
     // before; the folds are reported rather than applied because the prompt store is
     // machine-level and arrives with its own item — there is nothing to append to yet.
     for (prompt, lead_in) in [
-        ("describe", "Editor's notes about this footage -- trust them:"),
+        (
+            "describe",
+            "Editor's notes about this footage -- trust them:",
+        ),
         ("fix", "Editor's notes -- trust them:"),
         (
             "cut",
@@ -142,8 +145,14 @@ fn sec_01_project_and_files_2_naivepostjson_legacy_hints_fold_into_prompts_with_
         ),
         ("narrate", "Editor's goals and context -- honor them:"),
     ] {
-        assert!(mentions(&report, prompt), "{prompt} missing from {report:?}");
-        assert!(mentions(&report, lead_in), "{lead_in} missing from {report:?}");
+        assert!(
+            mentions(&report, prompt),
+            "{prompt} missing from {report:?}"
+        );
+        assert!(
+            mentions(&report, lead_in),
+            "{lead_in} missing from {report:?}"
+        );
     }
 
     // Whitespace folds nothing.
@@ -188,9 +197,7 @@ fn sec_01_project_and_files_2_naivepostjson_legacy_publish_base_and_title_off_mi
     ] {
         let (_root, t) = with_file(
             "base-edge",
-            &format!(
-                r#"{{"publish":{{"frames":["f0.jpg","f1.jpg","f2.jpg"],"base":{base}}}}}"#
-            ),
+            &format!(r#"{{"publish":{{"frames":["f0.jpg","f1.jpg","f2.jpg"],"base":{base}}}}}"#),
         );
         let p = project::load(t.dir()).unwrap();
         let frames: Vec<String> = p.publish.unwrap().frames;
@@ -267,7 +274,10 @@ fn sec_01_project_and_files_2_naivepostjson_autosave_writes_only_when_the_bytes_
 
     // A fresh Autosave knows nothing, so the first tick writes.
     let mut autosave = Autosave::new();
-    assert!(autosave.save_if_changed(&model, &dir).unwrap(), "first tick writes");
+    assert!(
+        autosave.save_if_changed(&model, &dir).unwrap(),
+        "first tick writes"
+    );
     // An Autosave seeded by a write holds those bytes: the next comparison is against
     // what is on disk, not against what the model held when it was opened.
     let first = std::fs::read_to_string(&file).unwrap();
@@ -285,7 +295,10 @@ fn sec_01_project_and_files_2_naivepostjson_autosave_writes_only_when_the_bytes_
     // Changed and changed back to what the file already holds: the bytes match the
     // last write once they are marshalled again, so nothing more is written.
     model.context.clear();
-    assert!(autosave.save_if_changed(&model, &dir).unwrap(), "a lecture -> \"\" differs");
+    assert!(
+        autosave.save_if_changed(&model, &dir).unwrap(),
+        "a lecture -> \"\" differs"
+    );
     assert_eq!(std::fs::read_to_string(&file).unwrap(), first);
     // The file still holds the last thing that WAS different; only the write is
     // skipped once the bytes match again.
@@ -317,7 +330,8 @@ fn sec_01_project_and_files_2_naivepostjson_autosave_interval_is_two_seconds() {
 }
 
 #[test]
-fn sec_01_project_and_files_2_naivepostjson_a_legacy_file_loads_and_its_report_is_the_whole_migration() {
+fn sec_01_project_and_files_2_naivepostjson_a_legacy_file_loads_and_its_report_is_the_whole_migration(
+) {
     let (_root, t) = with_file(
         "all-legacy",
         r#"{
@@ -336,7 +350,15 @@ fn sec_01_project_and_files_2_naivepostjson_a_legacy_file_loads_and_its_report_i
     let (p, report) = project::load_report(t.dir()).unwrap();
 
     // Every migration is in the report — nothing was folded in silently.
-    for word in ["videos", "in_dir", "out_dir", "style", "describe_hints", "prompts", "pitch"] {
+    for word in [
+        "videos",
+        "in_dir",
+        "out_dir",
+        "style",
+        "describe_hints",
+        "prompts",
+        "pitch",
+    ] {
         assert!(mentions(&report, word), "{word} missing from {report:?}");
     }
     assert_eq!(p.sources.len(), 2);

@@ -38,7 +38,9 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     std::env::set_current_dir(&root).expect("cwd pinned to the scratch root");
     let session = naivepost::startup::session_dir(&root);
     let mut seed = naivepost::project::load(&fixture_dir()).expect("the snapshot fixture loads");
-    seed.sources.iter_mut().for_each(|source| source.footage = true);
+    seed.sources
+        .iter_mut()
+        .for_each(|source| source.footage = true);
     std::fs::create_dir_all(&session).expect("session folder");
     naivepost::project::save(&seed, &session).expect("the session is a real project on disk");
 
@@ -59,7 +61,11 @@ fn lay_out(window: &adw::ApplicationWindow, w: i32, h: i32) {
     window.set_size_request(w, h);
     common::wait_for_stable_layout(window);
     let surface = window.surface().expect("a presented window has a surface");
-    assert_eq!((surface.width(), surface.height()), (w, h), "the window took its {w}x{h} size");
+    assert_eq!(
+        (surface.width(), surface.height()),
+        (w, h),
+        "the window took its {w}x{h} size"
+    );
 }
 
 /// The shell's page/bottom-bar divider.
@@ -108,11 +114,14 @@ fn check_the_preview_grows_with_the_room(app: &adw::Application) {
     // allocation asked for: under xvfb the headless WM reports a few px more than §1's number (the same
     // reason the band check below measures `window.height()`), and a control near the bottom edge would
     // otherwise fail a comparison against a size the window was never given.
-    let (win_w, win_h) = (
-        window.width() as f64,
-        window.height() as f64,
-    );
-    for name in ["preview-panel", "cut-preview-stack", "effects-lane", "track-strip", "cut-bottom"] {
+    let (win_w, win_h) = (window.width() as f64, window.height() as f64);
+    for name in [
+        "preview-panel",
+        "cut-preview-stack",
+        "effects-lane",
+        "track-strip",
+        "cut-bottom",
+    ] {
         let (x, y, w, h) = drawn(&window, name);
         assert!(
             w > 0.0 && h > 0.0 && x >= -0.5 && y >= -0.5 && x < win_w && y < win_h,
@@ -139,10 +148,13 @@ fn check_the_bottom_band_keeps_its_own_height(app: &adw::Application) {
     let (_, _, _, small_band) = drawn(&window, "bottom-bar");
     lay_out(&window, BIG_W, BIG_H);
     // The divider settles on the new height through the same allocations: wait for the band to get there.
-    wait_until("the collapsed band reached the window's bottom edge", || {
-        let (_, ey, _, eh) = drawn(&window, "log-expander");
-        (ey + eh - window.height() as f64).abs() <= 2.0
-    });
+    wait_until(
+        "the collapsed band reached the window's bottom edge",
+        || {
+            let (_, ey, _, eh) = drawn(&window, "log-expander");
+            (ey + eh - window.height() as f64).abs() <= 2.0
+        },
+    );
     let (ex, ey, _, eh) = drawn(&window, "log-expander");
     let (_, _, _, band_h) = drawn(&window, "bottom-bar");
     println!("BAND at {BIG_W}x{BIG_H}: expander y {ey} h {eh} x {ex}; bottom-bar {band_h} (was {small_band})");
@@ -169,5 +181,8 @@ fn sec_03_shell_1_the_window_s1h_above_the_minimum_the_preview_grows_with_the_ro
         check_the_preview_grows_with_the_room(app);
         check_the_bottom_band_keeps_its_own_height(app);
     });
-    assert!(RAN_GROWTH.load(Ordering::SeqCst), "the growth round never ran");
+    assert!(
+        RAN_GROWTH.load(Ordering::SeqCst),
+        "the growth round never ran"
+    );
 }

@@ -13,12 +13,12 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::fixture_dir;
 use gtk4 as gtk;
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
-use common::fixture_dir;
 
 static RAN_PAGES: AtomicBool = AtomicBool::new(false);
 
@@ -33,7 +33,11 @@ fn floors(node: &gtk::Widget, out: &mut Vec<(String, i32, i32)>) {
         let h = node.measure(gtk::Orientation::Vertical, -1).0;
         out.push((name.to_string(), w, h));
     }
-    for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
+    for child in node
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+    {
         if let Some(widget) = child.downcast_ref::<gtk::Widget>() {
             floors(widget, out);
         }
@@ -61,7 +65,11 @@ fn visible_page(window: &adw::ApplicationWindow) -> gtk::Widget {
         if let Some(stack) = node.downcast_ref::<adw::ViewStack>() {
             return Some(stack.clone());
         }
-        for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
+        for child in node
+            .observe_children()
+            .iter::<glib::Object>()
+            .filter_map(Result::ok)
+        {
             if let Some(widget) = child.downcast_ref::<gtk::Widget>() {
                 if let Some(stack) = find_stack(widget) {
                     return Some(stack);
@@ -70,7 +78,8 @@ fn visible_page(window: &adw::ApplicationWindow) -> gtk::Widget {
         }
         None
     }
-    let stack = find_stack(window.upcast_ref()).expect("the shell switches pages through an AdwViewStack");
+    let stack =
+        find_stack(window.upcast_ref()).expect("the shell switches pages through an AdwViewStack");
     stack.visible_child().expect("a page is always visible")
 }
 
@@ -83,7 +92,11 @@ fn bottom_box(window: &adw::ApplicationWindow) -> gtk::Widget {
             // The run bar's own parent is the bottom box (§1: separator, run bar row, log expander).
             return node.parent();
         }
-        for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
+        for child in node
+            .observe_children()
+            .iter::<glib::Object>()
+            .filter_map(Result::ok)
+        {
             if let Some(widget) = child.downcast_ref::<gtk::Widget>() {
                 if let Some(found) = find_run_row(widget) {
                     return Some(found);
@@ -101,7 +114,9 @@ fn bottom_box(window: &adw::ApplicationWindow) -> gtk::Widget {
 fn page_travel(window: &adw::ApplicationWindow, page: Page) -> f64 {
     let name = format!("page-scroll-{}", page.label());
     let scroller = common::widget_in(window, &name)
-        .unwrap_or_else(|| panic!("the shell wraps {page:?}'s content in a named `{name}` scroller"))
+        .unwrap_or_else(|| {
+            panic!("the shell wraps {page:?}'s content in a named `{name}` scroller")
+        })
         .downcast::<gtk::ScrolledWindow>()
         .expect("the page's wrapper is a gtk::ScrolledWindow");
     let adjustment = scroller.vadjustment();
@@ -151,7 +166,10 @@ fn check_every_page_shrinks(app: &adw::Application) {
         );
         assert_eq!(
             (window.default_width(), window.default_height()),
-            (naivepost::shell::WINDOW_MIN_W, naivepost::shell::WINDOW_MIN_H),
+            (
+                naivepost::shell::WINDOW_MIN_W,
+                naivepost::shell::WINDOW_MIN_H
+            ),
             "§1: the window OPENS at its minimum"
         );
         assert!(
@@ -171,5 +189,8 @@ fn sec_03_shell_1_the_window_the_window_opens_at_its_minimum_and_no_page_scrolls
         check_every_page_shrinks(app);
         RAN_PAGES.store(true, Ordering::SeqCst);
     });
-    assert!(RAN_PAGES.load(Ordering::SeqCst), "the shrinkability round never ran");
+    assert!(
+        RAN_PAGES.load(Ordering::SeqCst),
+        "the shrinkability round never ran"
+    );
 }

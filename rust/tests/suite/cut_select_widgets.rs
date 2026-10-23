@@ -7,12 +7,12 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{cut_window_with_footage as cut_window, settle};
 use naivepost::cut_hear;
 use naivepost::cut_select::{self, Scope, Surface};
 use naivepost::ui;
-use crate::common;
-use common::{cut_window_with_footage as cut_window, settle};
 
 static RAN_DRAG: AtomicBool = AtomicBool::new(false);
 static RAN_SOUND: AtomicBool = AtomicBool::new(false);
@@ -36,9 +36,18 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
     // Nothing selected at first: the cross is insensitive, so it cannot pretend there is something to
     // clear, and the readout shows the unclicked face rather than a zero-length span.
     let cross = ui::clear_selection_button(&window).expect("the Cut page carries clear-selection");
-    assert!(cross.is_mapped(), "the cross is drawn on the visible Cut page");
-    assert!(!cross.is_sensitive(), "with no band there is nothing to clear");
-    assert!(ui::selection(&window).is_none(), "a fresh window holds no band");
+    assert!(
+        cross.is_mapped(),
+        "the cross is drawn on the visible Cut page"
+    );
+    assert!(
+        !cross.is_sensitive(),
+        "with no band there is nothing to clear"
+    );
+    assert!(
+        ui::selection(&window).is_none(),
+        "a fresh window holds no band"
+    );
     assert_eq!(
         ui::selection_readout(&window)
             .expect("the Cut page carries selection-readout")
@@ -57,8 +66,16 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
         area.is_mapped()
     );
     assert!(area.is_mapped(), "the drag surface is mapped");
-    assert!(area.width() > 40, "surface wide enough to drag on, got {} px", area.width());
-    assert!(area.height() >= 48, "surface tall enough, got {} px", area.height());
+    assert!(
+        area.width() > 40,
+        "surface wide enough to drag on, got {} px",
+        area.width()
+    );
+    assert!(
+        area.height() >= 48,
+        "surface tall enough, got {} px",
+        area.height()
+    );
     let gesture = ui::selection_gesture(&window).expect("the surface carries a drag gesture");
 
     // Fire the drag the way the toolkit does. The handler converts x to session seconds at PPS, so a
@@ -82,7 +99,10 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
     );
 
     // S3: the readout followed the band, in the page's own clock form.
-    let readout = ui::selection_readout(&window).expect("readout present").text().to_string();
+    let readout = ui::selection_readout(&window)
+        .expect("readout present")
+        .text()
+        .to_string();
     println!("READOUT {readout}");
     assert!(
         readout.starts_with(cut_select::READOUT_PREFIX),
@@ -93,7 +113,11 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
             && readout.contains(&cut_hear::scene_clock(band.end)),
         "the readout carries the band's own from/to, got {readout}"
     );
-    assert_ne!(readout, cut_select::READOUT_NONE, "a band replaces the empty text");
+    assert_ne!(
+        readout,
+        cut_select::READOUT_NONE,
+        "a band replaces the empty text"
+    );
 
     // And the cross woke up because there is now something to clear.
     assert!(cross.is_sensitive(), "holding a band makes the cross live");
@@ -101,13 +125,23 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
     // S2: press the real cross.
     cross.emit_by_name::<()>("clicked", &[]);
     settle();
-    assert!(ui::selection(&window).is_none(), "the cross cleared the band");
+    assert!(
+        ui::selection(&window).is_none(),
+        "the cross cleared the band"
+    );
     assert!(
         !cross.is_sensitive(),
         "and the cross went insensitive again -- the sensitivity tracks the state"
     );
-    let after = ui::selection_readout(&window).expect("readout present").text().to_string();
-    assert_eq!(after, cut_select::READOUT_NONE, "the readout fell back to the empty text");
+    let after = ui::selection_readout(&window)
+        .expect("readout present")
+        .text()
+        .to_string();
+    assert_eq!(
+        after,
+        cut_select::READOUT_NONE,
+        "the readout fell back to the empty text"
+    );
 
     window.close();
 }
@@ -120,17 +154,13 @@ fn check_a_sound_selection_reaches_the_verb_state(app: &adw::Application) {
 
     // Sixty seconds of a lane's sound -- long past P.policy.minSceneSeconds, so the grey-out that
     // follows is scope alone and not a length floor quietly doing the work.
-    let band = ui::draw_selection(
-        &window,
-        Surface::Lane,
-        Some(recording),
-        10.0,
-        70.0,
-    )
-    .expect("a drag on a lane selects that recording's sound");
+    let band = ui::draw_selection(&window, Surface::Lane, Some(recording), 10.0, 70.0)
+        .expect("a drag on a lane selects that recording's sound");
     assert_eq!(
         band.scope,
-        Scope::Sound { recording: recording.to_string() },
+        Scope::Sound {
+            recording: recording.to_string()
+        },
         "the band is scoped to the one recording it was drawn on"
     );
     // P.policy.minSceneSeconds = 1.0 is well under this band, so S4's grey-out is about scope.
@@ -150,7 +180,10 @@ fn check_a_sound_selection_reaches_the_verb_state(app: &adw::Application) {
     // Clear it and the verbs come back: the state is live, not latched.
     assert!(ui::clear_selection(&window), "there was something to clear");
     let after = ui::selection_verbs(&window);
-    assert!(!after.add, "with nothing selected Add stays off -- it needs a band");
+    assert!(
+        !after.add,
+        "with nothing selected Add stays off -- it needs a band"
+    );
     assert!(!after.copy, "and Copy has nothing to take");
     assert_eq!(
         after.insert,
@@ -178,8 +211,14 @@ fn window_round() {
 fn f2_6_s1_and_s2_a_drag_selects_and_the_cross_clears_through_real_widgets() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_DRAG.load(Ordering::SeqCst), "the drag-and-cross check never ran");
-    assert!(RAN_SOUND.load(Ordering::SeqCst), "the sound-scope verb check never ran");
+    assert!(
+        RAN_DRAG.load(Ordering::SeqCst),
+        "the drag-and-cross check never ran"
+    );
+    assert!(
+        RAN_SOUND.load(Ordering::SeqCst),
+        "the sound-scope verb check never ran"
+    );
     assert!(
         RAN_BANDS.load(Ordering::SeqCst),
         "the per-band scope check never ran"
@@ -238,7 +277,8 @@ fn check_a_real_drag_scopes_to_the_surface_under_the_pointer(app: &adw::Applicat
             Some(want_surface),
             "{label}: the press remembered the ground it started on"
         );
-        let band = ui::selection(&window).unwrap_or_else(|| panic!("{label}: the drag drew no band"));
+        let band =
+            ui::selection(&window).unwrap_or_else(|| panic!("{label}: the drag drew no band"));
         assert_eq!(
             band.scope, want_scope,
             "{label}: the band's scope matches the ground under the pointer"
@@ -282,7 +322,11 @@ fn check_a_press_on_the_effects_lane_puts_a_held_effect_down(app: &adw::Applicat
         ..Default::default()
     };
     ui::set_held_effect(Some(held.clone()));
-    assert_eq!(ui::held_effect(), Some(held), "the seam put the effect in hand");
+    assert_eq!(
+        ui::held_effect(),
+        Some(held),
+        "the seam put the effect in hand"
+    );
 
     // Press inside the fx band (fx = 40..48 on the placeholder).
     let fx_y = bands.fx.0 + (bands.fx.1 - bands.fx.0) / 2.0;

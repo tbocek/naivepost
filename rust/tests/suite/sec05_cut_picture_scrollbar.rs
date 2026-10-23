@@ -13,7 +13,7 @@ use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, seg};
+use common::{fixture_dir, hold_last_window, release_last_window, seg, settle};
 
 static RAN_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_SHOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -61,20 +61,31 @@ fn cut_page_taped(
 
 /// The three-scene cut every check here sits on.
 fn three_scenes() -> cut::Cut {
-    cut::Cut { segs: vec![seg(0.0, 30.0), seg(30.0, 60.0), seg(70.0, 90.0)], ..Default::default() }
+    cut::Cut {
+        segs: vec![seg(0.0, 30.0), seg(30.0, 60.0), seg(70.0, 90.0)],
+        ..Default::default()
+    }
 }
 
 /// One camera that filmed the whole session, which is what makes the zoom floor a number the checks can
 /// reason about: at the floor all of it is on screen. Short enough that even the placeholder band's 450 px
 /// view holds it at the opening 4 px a second (36 s → 174 px), long enough to be a session.
 fn short_tape() -> Vec<naivepost::timeline::Recording> {
-    vec![naivepost::timeline::Recording { base: "session.mkv".into(), start: 0.0, end: 36.0 }]
+    vec![naivepost::timeline::Recording {
+        base: "session.mkv".into(),
+        start: 0.0,
+        end: 36.0,
+    }]
 }
 
 /// The same camera over a three-hour session: no window this page is ever given fits 10800 s at any zoom
 /// down to its floor, so the bar has a reason to exist as soon as the tape outgrows the view.
 fn long_tape() -> Vec<naivepost::timeline::Recording> {
-    vec![naivepost::timeline::Recording { base: "marathon.mkv".into(), start: 0.0, end: 10800.0 }]
+    vec![naivepost::timeline::Recording {
+        base: "marathon.mkv".into(),
+        start: 0.0,
+        end: 10800.0,
+    }]
 }
 
 fn bar(window: &adw::ApplicationWindow) -> gtk::Scrollbar {
@@ -99,9 +110,15 @@ fn check_the_bar_is_hidden_while_everything_fits(app: &adw::Application) {
         ui::cut_view::fits(total, view),
         "a {total} px tape in a {view} px view fits: the bar stays hidden"
     );
-    assert!(!cut_screen::scrollbar_shown(total, view), "the driver agrees: no bar needed");
+    assert!(
+        !cut_screen::scrollbar_shown(total, view),
+        "the driver agrees: no bar needed"
+    );
     let bar = bar(&window);
-    assert!(!bar.is_visible(), "the bar is hidden while the session fits");
+    assert!(
+        !bar.is_visible(),
+        "the bar is hidden while the session fits"
+    );
     RAN_HIDDEN.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
@@ -119,19 +136,29 @@ fn check_the_bar_appears_when_the_session_stops_fitting(app: &adw::Application) 
         "{total} px of tape in a {view} px view needs a bar"
     );
     // And deepening the zoom with the toolbar's + keeps it shown: the tape only gets longer.
-    let zoom_in = common::find_named(&window, "zoom-in-button").expect("the transport row carries a zoom + button");
+    let zoom_in = common::find_named(&window, "zoom-in-button")
+        .expect("the transport row carries a zoom + button");
     for _ in 0..3 {
         zoom_in.emit_by_name::<()>("clicked", &[]);
         settle();
         let (total, view) = extents(&window);
-        assert!(cut_screen::scrollbar_shown(total, view), "a deeper zoom never hides the bar");
+        assert!(
+            cut_screen::scrollbar_shown(total, view),
+            "a deeper zoom never hides the bar"
+        );
     }
     let bar = bar(&window);
-    assert!(bar.is_visible(), "the bar showed itself when the session outgrew the view");
+    assert!(
+        bar.is_visible(),
+        "the bar showed itself when the session outgrew the view"
+    );
     // The adjustment is what a drag on the bar reads, so it must have room left to move in — upper is the
     // tape's length, page_size the part of it already on screen.
     let adj = bar.adjustment();
-    assert!(adj.upper() > adj.page_size(), "{adj:?} should have room left to scroll");
+    assert!(
+        adj.upper() > adj.page_size(),
+        "{adj:?} should have room left to scroll"
+    );
     // §A's grab rule: "thumb geared at high zoom so one screenful is always 40 px of drag". The gear is a
     // number about the BAR, and `bar_width` falls back to the width the bar was last refreshed with while
     // GTK still reports 0 for an un-laid-out bar — which is exactly the state this headless window is in.
@@ -149,7 +176,8 @@ fn check_the_bar_appears_when_the_session_stops_fitting(app: &adw::Application) 
     // number here comes from the ONE refresh whose adjustment we are reading.
     let fraction = adj.page_size() / adj.upper();
     assert!(
-        (fraction - ui::cut_view::thumb_geared(adj.upper(), bar_px) * (view / adj.upper())).abs() < 1e-6,
+        (fraction - ui::cut_view::thumb_geared(adj.upper(), bar_px) * (view / adj.upper())).abs()
+            < 1e-6,
         "the bar's page size is the geared slice of the view: {fraction}"
     );
     RAN_SHOWN.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -174,18 +202,33 @@ fn check_a_drag_scrolls_and_holds_the_selection(app: &adw::Application) {
     let from = ui::cut_view::origin();
     // What the bar's `value-changed` wire forwards to: the same door the wheel and a drag anywhere use.
     let moved = ui::cut_view::scroll_by(total, view, 120.0);
-    assert!(moved > from, "a scroll asks for a positive offset: {from} -> {moved}");
-    assert!(moved <= (total - view).max(0.0) + 0.01, "and never past the end of the tape: {moved} of {}", total - view);
+    assert!(
+        moved > from,
+        "a scroll asks for a positive offset: {from} -> {moved}"
+    );
+    assert!(
+        moved <= (total - view).max(0.0) + 0.01,
+        "and never past the end of the tape: {moved} of {}",
+        total - view
+    );
     settle();
 
     let after = ui::selection(&window).expect("the selection survives the scroll");
-    assert_eq!((after.start, after.end), (before.start, before.end), "a scroll must not move the selection");
+    assert_eq!(
+        (after.start, after.end),
+        (before.start, before.end),
+        "a scroll must not move the selection"
+    );
     // The red line keeps its own time: `follow_playhead` moves the VIEW to it, never the other way round,
     // so a pixel scroll cannot change what second the line sits on.
     let before_line = ui::line_position(&window);
     ui::cut_view::follow_playhead(&window, 20.0);
     settle();
-    assert_eq!(ui::line_position(&window), before_line, "following the line scrolls the view, it does not move the line");
+    assert_eq!(
+        ui::line_position(&window),
+        before_line,
+        "following the line scrolls the view, it does not move the line"
+    );
     RAN_DRAG.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
@@ -208,6 +251,9 @@ fn sec_05_cut_1_screen_widgets_the_scrollbar_shows_only_when_it_is_needed() {
         (&RAN_SHOWN, "the shown-when-it-does-not check"),
         (&RAN_DRAG, "the drag-scrolls check"),
     ] {
-        assert!(flag.load(std::sync::atomic::Ordering::SeqCst), "{what} never ran");
+        assert!(
+            flag.load(std::sync::atomic::Ordering::SeqCst),
+            "{what} never ran"
+        );
     }
 }
