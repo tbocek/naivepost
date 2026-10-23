@@ -408,6 +408,8 @@ pub const INSERT_TOOL: Tool = Tool {
     tip: "put a clip, image, animation or sound into the cut \u{2014} between the footage, over it, or on a lane",
 };
 
+pub const EFFECT_MENU_TITLE: &str = "\u{271a} Effect \u{2713}";
+
 /// The effects dropdown's six entries, §1 item 17 ("✚ Effect ▾"). The third field is the effect kind
 /// id `cut::EffectKind::parse` accepts (`src/cut.rs`: zoom / speed / text / svg / volume / label),
 /// so an entry here cannot name a kind the cut cannot hold. A stop is not a seventh entry: §1 lists

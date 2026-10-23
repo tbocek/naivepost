@@ -353,9 +353,10 @@ pub fn paint(
         let want = crate::snapshot_effect_menu::labels_in_menu_order();
         // Compare the ORDER of the labels, read off the widget tree, against the order the spec gives. The row
         // strings carry names too (the caller prints them), but the spec's claim is about the sequence a person
-        // reads, so that is what is asserted here.
+        // reads, so that is what is asserted here — after the header, which is not one of the six.
         let got: Vec<String> = rows
             .iter()
+            .skip(1)
             .map(|row| row.split(": ").nth(1).unwrap_or("").to_string())
             .collect();
         assert_eq!(
@@ -414,7 +415,7 @@ pub fn paint(
         // that clamps to ~790 px headless, so the same scene is painted beside the page shot into `<name>-lane.png`
         // (the `snapshot_effect_menu` sidecar precedent). Painted through `cut_tracks::paint_at`, i.e. by the very
         // painter the band widget uses, from the cut seeded above — so it cannot show ink the widgets do not draw.
-        match crate::snapshot_lane::write_png(&lane, &out.with_extension("lane-shot.png")) {
+        match crate::snapshot_lane::write_png(&lane, dir, &out.with_extension("lane-shot.png")) {
             Ok(said) => println!("snapshot: 06-lane | {said}"),
             Err(why) => eprintln!("snapshot: 06-lane lane image | {why}"),
         }

@@ -23,9 +23,10 @@ const MENU_SHOT_W: i32 = 180;
 
 /// Pop this window's real ✚ Effect dropdown and read its rows back off the app's own popover.
 ///
-/// Returns one `"<name>: <label>"` per row, in the order the `effect-menu` box actually holds them — which is
-/// what makes this a check rather than a restatement: if a future edit reordered the buttons, or dropped one, the
-/// strings this returns change and the caller's assert fires. The order the spec gives is
+/// Returns the header row's text first, then one `"<name>: <label>"` per entry, in the order the `effect-menu`
+/// box actually holds them — which is what makes this a check rather than a restatement: if a future edit
+/// reordered the buttons, dropped one, or dropped the header §2's picture draws, the strings this returns change
+/// and the caller's assert fires. The order the spec gives is
 /// [`fx_lane::MENU_ORDER`]; the labels are `cut_screen::EFFECT_ITEMS`'s.
 ///
 /// Public because `snapshot::run` → `snapshot_effects::paint` calls it for the `06-effect-menu` screen (that is
@@ -50,22 +51,41 @@ pub fn stage(window: &adw::ApplicationWindow) -> Vec<String> {
     let popover = button
         .popover()
         .expect("snapshot: 06-effect-menu's ✚ Effect has no popover");
-    let rows: Vec<String> = popover
+    // The popover's child is an outer box now: the header label first, then the six-row `effect-menu` box.
+    let shell = popover
         .child()
         .and_then(|child| child.downcast::<gtk::Box>().ok())
-        .map(|list| {
-            list.observe_children()
-                .iter::<glib::Object>()
-                .flatten()
-                .filter_map(|row| row.downcast::<gtk::Button>().ok())
-                .map(|row| format!("{}: {}", row.widget_name(), row.label().unwrap_or_default()))
-                .collect()
-        })
-        .unwrap_or_default();
+        .expect("snapshot: 06-effect-menu's popover has no box");
+    let mut rows: Vec<String> = Vec::new();
+    for child in shell
+        .observe_children()
+        .iter::<glib::Object>()
+        .flatten()
+        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+    {
+        if child.widget_name() == "effect-menu-title" {
+            let text = child
+                .downcast_ref::<gtk::Label>()
+                .map(|label| label.text().to_string())
+                .unwrap_or_default();
+            rows.push(format!("{}: {}", child.widget_name(), text));
+        } else if child.widget_name() == "effect-menu" {
+            let list = child.downcast::<gtk::Box>().expect("checked by name");
+            rows.extend(
+                list.observe_children()
+                    .iter::<glib::Object>()
+                    .flatten()
+                    .filter_map(|row| row.downcast::<gtk::Button>().ok())
+                    .map(|row| {
+                        format!("{}: {}", row.widget_name(), row.label().unwrap_or_default())
+                    }),
+            );
+        }
+    }
     assert_eq!(
         rows.len(),
-        fx_lane::MENU_ORDER.len(),
-        "snapshot: 06-effect-menu's popover drew {} rows, the menu lists {}",
+        fx_lane::MENU_ORDER.len() + 1,
+        "snapshot: 06-effect-menu's popover drew {} rows, the menu lists {} effects plus its own header",
         rows.len(),
         fx_lane::MENU_ORDER.len()
     );
@@ -149,10 +169,40 @@ pub fn write_png(button: &gtk::MenuButton, out: &Path) -> Result<(), String> {
         .and_then(|popover| popover.child())
         .and_then(|child| child.downcast::<gtk::Box>().ok())
         .ok_or("the ✚ Effect dropdown has no row box to paint")?;
+    // The popover's child is now the outer shell (header + `effect-menu` box); the copy below flattens it back
+    // into one column of rows, so find the inner box by name rather than assuming the child IS the six rows.
+    let mut list: Option<gtk::Box> = None;
+    let mut header: Option<String> = None;
+    for child in source
+        .observe_children()
+        .iter::<glib::Object>()
+        .flatten()
+        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+    {
+        if child.widget_name() == "effect-menu" {
+            list = child.downcast::<gtk::Box>().ok();
+        } else if let Some(label) = child.downcast_ref::<gtk::Label>() {
+            header = Some(label.text().to_string());
+        }
+    }
+    let source_rows = list.ok_or("the ✚ Effect popover holds no `effect-menu` box")?;
     let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
     copy.set_widget_name("effect-menu");
     copy.set_homogeneous(false);
-    for row in source
+    // The header first, as §2's picture draws it. Inside a popover GTK gives the label the menu row's own ink;
+    // on this bare top level nothing does, so the words are spelled in `color` from the same reason the rows
+    // below need their box background spelled — see the note on [`install`] next to them.
+    if let Some(words) = header {
+        let head = gtk::Label::new(Some(&words));
+        head.set_widget_name("effect-menu-title");
+        head.set_halign(gtk::Align::Start);
+        head.set_margin_start(8);
+        head.set_margin_top(4);
+        head.set_margin_bottom(2);
+        head.add_css_class("effect-shot-head");
+        copy.append(&head);
+    }
+    for row in source_rows
         .observe_children()
         .iter::<glib::Object>()
         .flatten()
@@ -161,14 +211,23 @@ pub fn write_png(button: &gtk::MenuButton, out: &Path) -> Result<(), String> {
         let held = gtk::Button::with_label(row.label().unwrap_or_default().as_str());
         held.set_widget_name(row.widget_name().as_str());
         held.set_tooltip_text(row.tooltip_text().as_deref());
-        // Left-aligned and full width, as the popover draws them: `copy`'s own start-alignment plus a
-        // `GtkAlignStart` child collapsed every button to its own text, so the rows printed as six ragged
-        // fragments with empty space to their right instead of as the menu's rows.
+        // Left-aligned WITHIN the row, and the row itself fills the shot's width: `halign(Start)` on the button
+        // collapsed each one to its own text and centred it in the box, so the rows printed as six fragments
+        // floating in the middle instead of the menu's left-aligned rows.
         held.set_halign(gtk::Align::Fill);
+        let words = row.label().unwrap_or_default().to_string();
+        let inner = row_label_left(&words);
+        held.set_child(Some(&inner));
         copy.append(&held);
     }
     let holder = gtk::Window::new();
     holder.set_decorated(false);
+    // The shot is a snapshot of this box, not of a live window (see [`crate::snapshot_face::write_png`]), so GTK's
+    // theme never paints the ground or the glyphs behind it: without these two rules the rows came out as ink on
+    // transparent and printed as grey words on black. The colours are the popover's own — the same light ground and
+    // near-black text §2's menu shows.
+    install_shot_css();
+    copy.add_css_class("effect-shot-menu");
     // Sized from the rows' own natural height (measured, never guessed) and wide enough that the longest row's
     // text sits fully inside its button: a `measured + 12` width is what clipped `⊕ Zoom` to `Zoom` in an earlier
     // attempt, because the icon and its padding are not in a button's text width. `measure` answers
@@ -182,6 +241,35 @@ pub fn write_png(button: &gtk::MenuButton, out: &Path) -> Result<(), String> {
     let result = crate::snapshot_face::write_png(copy.upcast_ref(), out);
     holder.close();
     result
+}
+
+/// One menu row's words, pushed to the left edge of whatever box holds them — how §2's popover prints them.
+fn row_label_left(words: &str) -> gtk::Label {
+    let label = gtk::Label::new(Some(words));
+    label.set_halign(gtk::Align::Start);
+    label.set_hexpand(true);
+    label.set_margin_start(10);
+    label
+}
+
+/// Has [`install_shot_css`] run? One provider for the process; a snapshot paints one screen.
+static SHOT_CSS_LOADED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Spell the menu shot's own ground and ink, because a snapshotted box gets no theme painting behind it.
+fn install_shot_css() {
+    if SHOT_CSS_LOADED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let provider = gtk::CssProvider::new();
+    provider.load_from_string(
+        ".effect-shot-menu { background-color: #f6f5f4; color: #1c1c1c; }\n\
+         .effect-shot-head { font-weight: bold; color: #1c1c1c; }",
+    );
+    gtk::style_context_add_provider_for_display(
+        &gtk::gdk::Display::default().expect("a display to style"),
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
 }
 
 /// This window's ✚ Effect `MenuButton`, for the frame-taking step in `snapshot::run`, which is a different

@@ -88,10 +88,20 @@ fn menu_shows_the_rows(app: &adw::Application) {
     );
 
     let popover = button.popover().expect("the Effect dropdown has a popover");
-    let list = popover
+    // The popover's child is an outer box: the header label, then the `effect-menu` box of six rows. The rows are
+    // read from that inner box by name so this check keeps counting effects and not the header.
+    let shell = popover
         .child()
         .and_then(|child| child.downcast::<gtk::Box>().ok())
-        .expect("the Effect popover holds a Box of rows");
+        .expect("the Effect popover holds a Box");
+    let list = shell
+        .observe_children()
+        .iter::<glib::Object>()
+        .flatten()
+        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+        .find(|child| child.widget_name() == "effect-menu")
+        .and_then(|child| child.downcast::<gtk::Box>().ok())
+        .expect("the Effect popover holds the `effect-menu` box of rows");
     let rows: Vec<gtk::Button> = list
         .observe_children()
         .iter::<glib::Object>()
@@ -186,10 +196,12 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_menu_shot_takes_the_pictures
     }
 }
 
-#[test]
-fn sec_06_effects_2_the_lane_and_the_preview_s1_the_effect_menu_shows_the_six_rows_in_its_order() {
-    // Pin cwd to our own temp root BEFORE anything builds: the page resolves the session through
-    // `startup::session_dir(current_dir())`, and leaving it at rust/ writes a stray folder into the repo.
+/// The one application this binary is allowed: `gio` refuses a second `run_with_args`, so every check here is a
+/// step of a single activation, gated by the same temp root the rows check pins before anything builds.
+fn run_the_menu_once() {
+    if RAN_MENU.load(Ordering::SeqCst) {
+        return;
+    }
     let root = std::env::temp_dir().join(format!("np-s06e2menu-{}", std::process::id()));
     std::fs::create_dir_all(&root).expect("temp root created");
     std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
@@ -200,9 +212,18 @@ fn sec_06_effects_2_the_lane_and_the_preview_s1_the_effect_menu_shows_the_six_ro
             .application_id(ui::APP_ID)
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
-        app.connect_activate(menu_shows_the_rows);
+        app.connect_activate(|app| {
+            menu_shows_the_rows(app);
+        });
         app.run_with_args::<&str>(&[]);
     });
+}
+
+#[test]
+fn sec_06_effects_2_the_lane_and_the_preview_s1_the_effect_menu_shows_the_six_rows_in_its_order() {
+    // Pin cwd to our own temp root BEFORE anything builds: the page resolves the session through
+    // `startup::session_dir(current_dir())`, and leaving it at rust/ writes a stray folder into the repo.
+    run_the_menu_once();
 
     assert!(
         RAN_MENU.load(Ordering::SeqCst),

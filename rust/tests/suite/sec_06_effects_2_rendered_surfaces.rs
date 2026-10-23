@@ -193,7 +193,7 @@ fn painted_grounds(cut: &Cut, dir: &Path, width: i32, lane_rows: usize) -> Vec<(
         ..cut.clone()
     };
     let out = dir.join("bare-lane.png");
-    snapshot_lane::write_png(&bare, &out).expect("the empty lane paints");
+    snapshot_lane::write_png(&bare, dir, &out).expect("the empty lane paints");
     let shot = decode(&out);
     let geo = lane_geo(lane_rows);
     let y = (geo.top + geo.row_h / 2.0) as i32;
@@ -210,7 +210,7 @@ fn alone_shot(cut: &Cut, dir: &Path, keep: usize, tag: &str) -> Decoded {
         ..cut.clone()
     };
     let out = dir.join(format!("only-{tag}.png"));
-    snapshot_lane::write_png(&only, &out).expect("one bar paints");
+    snapshot_lane::write_png(&only, dir, &out).expect("one bar paints");
     decode(&out)
 }
 
@@ -238,7 +238,7 @@ fn sec_06_effects_2_the_lane_and_the_preview_s19_the_lane_file_shows_every_kind_
     pin_channel_order(&dir);
     let cut = snapshot_lane::staged_cut();
     let out = dir.join("06-lane.png");
-    let said = snapshot_lane::write_png(&cut, &out).expect("the lane paints");
+    let said = snapshot_lane::write_png(&cut, &dir, &out).expect("the lane paints");
     let shot = decode(&out);
     let bars = fx_lane::lane_layout(&cut.fx);
     assert!(!bars.is_empty(), "the staged cut carries effects: {said}");
@@ -315,7 +315,7 @@ fn sec_06_effects_2_the_lane_and_the_preview_s20_the_wash_lies_between_the_band_
     pin_channel_order(&dir);
     let cut = snapshot_lane::staged_cut();
     let out = dir.join("06-lane.png");
-    snapshot_lane::write_png(&cut, &out).expect("the lane paints");
+    snapshot_lane::write_png(&cut, &dir, &out).expect("the lane paints");
     let shot = decode(&out);
     let bars = fx_lane::lane_layout(&cut.fx);
     let geo = lane_geo(bars.iter().map(|b| b.row).max().unwrap_or(0) + 1);
@@ -630,4 +630,108 @@ fn sec_06_effects_2_the_lane_and_the_preview_s23_each_subject_holds_its_own_spec
             "{screen} claims {claimed} subjects at once -- the shot could not pick one"
         );
     }
+}
+
+// --- the FRAME the shot stages: what its own records make the painter say -------------------------------
+
+/// §2's paused half, asked of the cut `06-preview` stages rather than of a pixel: "outside the camera rect dimmed
+/// black 0.45; rect stroked white with a plate; visible overlays at real alpha", and (from §2's own caption for this
+/// screen) "the caption is fitted into its box". Every number here is one §2 states — the stroke width, the 60 px the
+/// plate waits for (`effects.plateMinPx`), the debt the staged speed owes at the shot's second — read through the
+/// doors the painter itself reads, so nothing re-derives the layout and no threshold is invented here.
+#[test]
+fn sec_06_effects_2_the_lane_and_the_preview_s2_the_staged_frame_states_crop_plate_and_alpha() {
+    let cut = naivepost::snapshot_preview::staged_cut();
+    let t = naivepost::snapshot_preview::SHOT_SECONDS;
+    // The fit the frame image uses: the staged frame's own shape contain-fitted into §2's box, asked of `fit_size`,
+    // the same door the painter measures with.
+    let fit = cut_preview_frame::fit_size(
+        snapshot_face::STRUCTURED_FRAME_W as f64,
+        snapshot_face::STRUCTURED_FRAME_H as f64,
+        960.0,
+        540.0,
+    );
+    // Nothing held, paused, settled: exactly the state §2's screenshot stands in.
+    let held = cut_preview_frame::Held {
+        index: None,
+        box_px: None,
+    };
+    let state = cut_preview_frame::describe_at(&cut, t, false, false, fit, &held);
+    let seen = cut_preview_frame::observe(&state, None);
+
+    // "rect stroked white": the paused answer carries the stroke the painter is told to draw, and §2's dim value.
+    assert!(
+        seen.held.rect_stroke_px > 0.0,
+        "the paused frame asks for no stroked rect, so the crop would be invisible"
+    );
+    assert_eq!(
+        seen.held.dim_alpha,
+        fx_lane::DIM_ALPHA,
+        "the surround is not dimmed by the alpha §2 names"
+    );
+
+    // "with a plate": the plate is the debt sentence, and it appears once the room is wider than 60 px. Both halves
+    // of §2's rule are asked -- that the staged debt is real, and that the rect's own px is room enough for it.
+    let rect = cut_preview_frame::camera_rect_px(&seen.camera, fit);
+    let room = fx_lane::room_px(rect.2, 0.0);
+    let debt = fx_lane::plate_debt_at(&cut.fx, t);
+    assert!(debt > 0.0, "nothing at the shot's second owes a sound sentence");
+    assert!(
+        fx_lane::plate_shown(room),
+        "the rect leaves {:.1} px of room, under the 60 px §2 sets for the plate",
+        room
+    );
+    let said = fx_lane::plate_for(debt, room).expect("the plate is drawn over its own rect");
+    assert!(
+        said.contains("behind") || said.contains("ahead"),
+        "the plate does not read as §2's \"sound X s behind|ahead\": {said:?}"
+    );
+    // …and the floor is the floor: the same debt earns nothing on a narrower bar, which is what makes the first
+    // assert a fact about the crop rather than a platitude about any width.
+    assert!(
+        fx_lane::plate_for(debt, fx_lane::PLATE_MIN_PX).is_none(),
+        "a plate appeared at exactly the 60 px §2 says is too narrow"
+    );
+
+    // "visible overlays at real alpha": every overlay the paused scene lists carries the alpha its own fades answer,
+    // asked of `fx_lane::visibility_at` — so a record caught mid-fade shows the fraction, not a flattened 1.
+    let caption = Fx {
+        kind: "text".to_string(),
+        t: t - 1.0,
+        dur: 6.0,
+        trans: 4.0,
+        tout: 0.3,
+        text: "Ethereum in one lecture".to_string(),
+        ..Default::default()
+    };
+    assert!(
+        (t - caption.t) < caption.trans,
+        "the staged caption must sit inside its own fade-in for this check to be about alpha"
+    );
+    let with_caption = Cut {
+        fx: [cut.fx.clone(), vec![caption.clone()]].concat(),
+        ..cut.clone()
+    };
+    let listed = fx_lane::paused_scene(&with_caption.fx, t, None, false);
+    let alphas: Vec<f64> = listed.overlays.iter().map(|(_, _, a)| *a).collect();
+    assert!(
+        !alphas.is_empty() && alphas.iter().all(|a| (0.0..=1.0).contains(a)),
+        "an overlay carries an alpha outside the real range: {alphas:?}"
+    );
+    assert!(
+        alphas.iter().any(|a| (*a - fx_lane::visibility_at(&caption, t)).abs() < 1e-9),
+        "no overlay is drawn at the alpha its own fades answer: {alphas:?}, expected {}",
+        fx_lane::visibility_at(&caption, t)
+    );
+    assert!(
+        alphas.iter().any(|a| *a < 1.0),
+        "every overlay is at full alpha, so the fades were flattened rather than shown: {alphas:?}"
+    );
+    assert!(
+        listed.overlays
+            .iter()
+            .any(|(_, kind, _)| *kind == EffectKind::Text),
+        "the placed caption is not among the visible overlays: {:?}",
+        listed.overlays
+    );
 }

@@ -54,7 +54,7 @@ pub fn write_png(
     {
         let cr =
             cairo::Context::new(&surface).map_err(|why| format!("the preview context: {why}"))?;
-        draw_with_plate(&cr, cut, t, frame, playing, &mut drawn, &mut plate_said);
+        draw_into(&cr, cut, t, frame, playing, &mut drawn, &mut plate_said, FRAME_W);
     }
     let mut file = std::fs::File::create(out).map_err(|why| format!("{}: {why}", out.display()))?;
     surface
@@ -66,21 +66,41 @@ pub fn write_png(
     Ok(drawn)
 }
 
+/// §2's paused half is `rect stroked white with a plate`, and in the live panel that plate is the
+/// `preview-plate` label — `refresh_effects_lane` writes its wording through `fx_lane::plate_for` and GTK lays it
+/// centred over the picture (`cut_preview_panel::install`, `cut_lane_rows`). A surface painted on its own has no
+/// label to lean on, so without this the frame shot shows the rect and never the plate §2 pairs with it.
+///
+/// `room_px` is the room the plate is measured against ([`crate::fx_lane::room_px`] over
+/// [`crate::fx_lane::PLATE_MIN_PX`], "wider than"), and that is the caller's question, not one this file can answer:
+/// the live panel asks it in the px of the plate it actually has, and a surface painted on its own has to say what ITS
+/// plate is. Ask it of the shape the fractions were resolved against instead (the declared 240 px panel) and a crop
+/// that fills §2's frame is told there is no room for a plate in an image four times that wide — so the plate vanishes
+/// from exactly the shot whose caption promises it.
+///
+/// The debt sentence itself is drawn beside the stroked rect, in px of the fitted box; the words come from the same
+/// door the live panel's refresh uses (`fx_lane::plate_debt_at` + `fx_lane::plate_for`), at the centre the overlay
+/// puts it at.
 /// The debt sentence drawn beside the stroked rect, in px of the fitted box.
 ///
 /// §2's paused half is `rect stroked white with a plate`, and in the live panel that plate is the
 /// `preview-plate` label — `refresh_effects_lane` writes its wording through `fx_lane::plate_for` and GTK lays it
 /// centred over the picture (`cut_preview_panel::install`, `cut_lane_rows`). A surface painted on its own has no
 /// label to lean on, so without this the frame shot shows the rect and never the plate §2 pairs with it. Same
-/// door for the words (`fx_lane::plate_debt_at` + `fx_lane::plate_for`, asked with the rect's OWN width as the
-/// room, which is what `PLATE_MIN_PX` is measured against), same centre the overlay puts it at.
+/// door for the words (`fx_lane::plate_debt_at` + `fx_lane::plate_for`), same centre the overlay puts it at.
 fn plate_on_rect(
     cr: &cairo::Context,
     cut: &Cut,
     t: f64,
     rect: (f64, f64, f64, f64),
+    room_px: f64,
 ) -> Option<String> {
-    let text = crate::fx_lane::plate_for(crate::fx_lane::plate_debt_at(&cut.fx, t), rect.2)?;
+    // same door the live panel's refresh uses (`fx_lane::plate_debt_at` + `fx_lane::plate_for`), and its room is
+    // measured through `fx_lane::room_px` exactly as the page measures its own plate's.
+    let text = crate::fx_lane::plate_for(
+        crate::fx_lane::plate_debt_at(&cut.fx, t),
+        crate::fx_lane::room_px(room_px, 0.0),
+    )?;
     cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
     cr.set_font_size(PLATE_FONT_PX);
     let extents = cr.text_extents(&text).ok()?;
@@ -119,11 +139,13 @@ pub fn draw(
     said: &mut String,
 ) {
     let mut unused = String::new();
-    draw_with_plate(cr, cut, t, frame, playing, said, &mut unused);
+    draw_into(cr, cut, t, frame, playing, said, &mut unused, FRAME_W);
 }
 
 /// The same paint with a second out-param for the plate's words, so `write_png` can print them.
-fn draw_with_plate(
+#[allow(clippy::too_many_arguments)] // five inputs plus two out-params and the plate's room: the plate's room cannot
+// be derived here (only the caller knows what plate it is painting), and a struct for it would be one field.
+fn draw_into(
     cr: &cairo::Context,
     cut: &Cut,
     t: f64,
@@ -131,6 +153,7 @@ fn draw_with_plate(
     playing: bool,
     said: &mut String,
     plate_said: &mut String,
+    plate_room_px: f64,
 ) {
     // The recorded picture first, contain-fitted exactly as the panel's `GtkPicture` fits it: every fraction the
     // camera and the caption carry is measured against THAT box, so the fit has to be computed before the ink.
@@ -197,7 +220,7 @@ fn draw_with_plate(
         // …and the plate that goes WITH the stroked rect (§2: "rect stroked white with a plate"), which only the
         // live panel's label can supply — see [`plate_on_rect`].
         let rect = cut_preview_frame::camera_rect_px(&seen.camera, fit);
-        *plate_said = plate_on_rect(cr, cut, t, rect)
+        *plate_said = plate_on_rect(cr, cut, t, rect, plate_room_px)
             .unwrap_or_else(|| "none (no debt worth a line here)".to_string());
     }
     let _ = cr.restore();

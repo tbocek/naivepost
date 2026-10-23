@@ -172,7 +172,7 @@ fn alone_shot(cut: &Cut, dir: &Path, keep: usize, tag: &str) -> (Vec<u8>, usize)
         ..cut.clone()
     };
     let out = dir.join(format!("only-{tag}.png"));
-    snapshot_lane::write_png(&only, &out).expect("one bar paints");
+    snapshot_lane::write_png(&only, dir, &out).expect("one bar paints");
     let (bytes, stride, _, _) = decode(&out);
     (bytes, stride)
 }
@@ -187,7 +187,7 @@ fn painted_grounds(cut: &Cut, dir: &Path, width: i32) -> Vec<(u32, u32, u32)> {
         ..cut.clone()
     };
     let out = dir.join("bare-lane.png");
-    snapshot_lane::write_png(&bare, &out).expect("the empty lane paints");
+    snapshot_lane::write_png(&bare, dir, &out).expect("the empty lane paints");
     let (bytes, stride, _, height) = decode(&out);
     let geo = lane_geo();
     assert!(height > 60, "the empty lane still costs its rows");
@@ -346,7 +346,7 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_lane_file_shows_a_wash_per_e
     write_red_probe(&dir); // pins the decode's channel order before any colour is trusted
     let out = dir.join("06-lane.png");
     let cut = snapshot_lane::staged_cut();
-    let said = snapshot_lane::write_png(&cut, &out).expect("the lane paints");
+    let said = snapshot_lane::write_png(&cut, &dir, &out).expect("the lane paints");
     assert!(out.is_file(), "{out:?} was never written");
     assert!(
         out.metadata().expect("read it").len() > 2000,
