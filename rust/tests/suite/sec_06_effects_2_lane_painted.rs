@@ -332,6 +332,8 @@ fn the_wash_and_the_ink_are_on_the_pixels() {
 
 // --- S21: the page wires the ink to the bars --------------------------------------------------------------
 
+/// The step also carries the span-floor guard (§2's 0.4 s floor seen through the widgets): see the `floor_pair`
+/// block inside the step, which seeds through the same door rather than being a test of its own.
 fn the_page_paints_every_placed_bar(app: &adw::Application) {
     let mut zoom = fx(EffectKind::Zoom, 5.0, 50.0);
     zoom.trans = 1.0;
@@ -374,8 +376,7 @@ fn the_page_paints_every_placed_bar(app: &adw::Application) {
     // A refresh must not stack a second surface on the same bar (build-once, like every other refresh path).
     ui::refresh_effects_lane(&window);
     settle();
-    let surfaces = widget(&window, "fx-bar-0")
-        .observe_children()
+    let surfaces = widget(&window, "fx-bar-0")        .observe_children()
         .iter::<glib::Object>()
         .filter_map(|child| child.ok())
         .filter(|child| {
@@ -387,6 +388,57 @@ fn the_page_paints_every_placed_bar(app: &adw::Application) {
     assert_eq!(
         surfaces, 1,
         "one painted surface per bar, however many refreshes run"
+    );
+
+    // §2's span floor, seen through the WIDGETS the page builds: a zoom whose `dur` is exactly
+    // `fx_lane::PACK_MIN_SECONDS` at `t = 1.0`, where recomputing its span as `(t + dur) - t` answers
+    // 0.3999999999999999 — under the floor. The packing used to test the floor that way while the bar tested it
+    // on `dur`, so the bar claimed a row the packer had never given it and both bars were laid out in
+    // `fx-lane-row-0`, one printed over the other.
+    let floor_pair = Cut {
+        segs: cut.segs.clone(),
+        fx: vec![
+            fx(EffectKind::Zoom, 1.0, fx_lane::PACK_MIN_SECONDS),
+            fx(EffectKind::Text, 1.0, 5.0),
+        ],
+        ..Default::default()
+    };
+    assert!(
+        (floor_pair.fx[0].t + floor_pair.fx[0].dur) - floor_pair.fx[0].t < fx_lane::PACK_MIN_SECONDS,
+        "these are the seconds that broke it: the recomputed span is {:?}",
+        (floor_pair.fx[0].t + floor_pair.fx[0].dur) - floor_pair.fx[0].t
+    );
+    ui::seed_review_cut(&window, &floor_pair);
+    ui::refresh_effects_lane(&window);
+    settle();
+    // Each bar lives in the row box named after the row `fx_lane` packed it on, so two effects over one another
+    // cannot share a box: §2 first-fit puts the caption over those seconds on the row BELOW.
+    assert_eq!(
+        fx_lane::row_count(&floor_pair.fx),
+        2,
+        "the floor bar reserves a row, so the lane is two rows deep"
+    );
+    let mut homes = Vec::new();
+    for index in 0..floor_pair.fx.len() {
+        let home = widget(&window, &format!("fx-bar-{index}"))
+            .parent()
+            .and_then(|p| p.downcast::<gtk::Widget>().ok())
+            .unwrap_or_else(|| panic!("bar #{index} is not in a lane row box"))
+            .widget_name()
+            .to_string();
+        assert!(
+            home.starts_with("fx-lane-row-"),
+            "bar #{index} sits in {home}, not in one of the lane's numbered row boxes"
+        );
+        homes.push(home);
+    }
+    println!("floor pair homes: {homes:?}");
+    assert_eq!(
+        homes,
+        vec!["fx-lane-row-0", "fx-lane-row-1"],
+        "the floor bar fits the topmost row and the caption over its seconds takes the row below; both \
+         landed in \"{}\"",
+        homes[0]
     );
 
     // And the ink follows the record: drop the label through the page's own door and its surface goes with it.
@@ -435,7 +487,7 @@ fn stopped_early() -> Option<String> {
     STOP_REASON.lock().unwrap().clone()
 }
 
-/// One application, one run for the widget check in this binary, through the shared harness door - for the reason
+/// One application, one run for the widget checks in this binary, through the shared harness door - for the reason
 /// it gives: `gio` refuses a second `run_with_args`, so all GTK work lives inside one activation.
 fn run_once() {
     if RAN_WIRE.load(Ordering::SeqCst) || stopped_early().is_some() {

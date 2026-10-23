@@ -86,25 +86,43 @@ pub const MENU_ORDER: [EffectKind; 6] = [
 /// push three real effects apart.
 pub const PACK_MIN_SECONDS: f64 = 0.4;
 
-/// §06-effects#2-the-lane-and-the-preview (`Rows: first-fit by seconds`): the row each effect is drawn on, in
-/// the order the effects were given. An effect takes the first row nothing already on it overlaps; a new row
-/// appears only when every existing one is busy at those seconds.
+/// One effect's place in the lane: the row it is drawn on, and whether it claims that row's seconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Packed {
+    pub row: usize,
+    pub reserves_a_row: bool,
+}
+
+/// §06-effects#2-the-lane-and-the-preview (`Rows: first-fit by seconds`, `span floor 0.4 s`): the lane's
+/// packing, one entry per effect, in the order given. An effect takes the first row nothing already on it
+/// overlaps; a new row appears only when every existing one is busy at those seconds.
+///
+/// This is THE ONLY place the span floor is tested, and it tests it on [`Fx::dur`] — §1 says `dur` already
+/// includes the fades and IS the bar's width. Testing it on a recomputed `(t + dur) - t` instead was the bug:
+/// for `t = 1.0, dur = 0.4` that subtraction answers `0.3999999999999999`, under the floor, so packing sent
+/// the effect to row 0 and left its seconds unclaimed while the painted bar still said it reserved a row —
+/// two doors, two answers, and the painter (which iterates [`lane_layout`]) inked the bar over whatever else
+/// shared row 0. Overlap itself still asks [`Fx::spans`], which is where the window on the timeline belongs.
 ///
 /// Packed by SECONDS and not by pixels, so the answer does not change when the timeline is zoomed: what fits
 /// beside an effect at 4 px/s still fits at 240 px/s. [`timeline::rows_for`] is the sibling for recordings on
 /// rows — same first-fit, different thing being packed (an effect lane has no pins and no camera rows).
-pub fn rows_for_effects(fx: &[Fx]) -> Vec<usize> {
+pub fn pack(fx: &[Fx]) -> Vec<Packed> {
     // What each row is busy with, as the spans already placed on it.
     let mut taken: Vec<Vec<(f64, f64)>> = Vec::new();
-    let mut rows = Vec::with_capacity(fx.len());
+    let mut packed = Vec::with_capacity(fx.len());
 
     for effect in fx {
-        let span = effect.spans();
-        // Under the floor: drawn at the lane's top, reserving nothing.
-        if span.1 - span.0 < PACK_MIN_SECONDS {
-            rows.push(0);
+        // Under the floor: drawn at the lane's top, reserving nothing — which is what keeps a scatter of tiny
+        // labels from pushing three real effects apart.
+        if effect.dur < PACK_MIN_SECONDS {
+            packed.push(Packed {
+                row: 0,
+                reserves_a_row: false,
+            });
             continue;
         }
+        let span = effect.spans();
         let free = taken
             .iter()
             .position(|busy| !busy.iter().any(|held| timeline::spans_overlap(*held, span)));
@@ -113,9 +131,19 @@ pub fn rows_for_effects(fx: &[Fx]) -> Vec<usize> {
             taken.len() - 1
         });
         taken[row].push(span);
-        rows.push(row);
+        packed.push(Packed {
+            row,
+            reserves_a_row: true,
+        });
     }
-    rows
+    packed
+}
+
+/// §06-effects#2-the-lane-and-the-preview (`Rows: first-fit by seconds`): the row each effect is drawn on, in
+/// the order the effects were given — [`pack`]'s rows, kept as its own name because the band's painters and
+/// press readers (`cut_tracks::rows_of`, `cut_line_press`, `cut_select_press`) ask for just this.
+pub fn rows_for_effects(fx: &[Fx]) -> Vec<usize> {
+    pack(fx).iter().map(|placed| placed.row).collect()
 }
 
 /// §06-effects#2-the-lane-and-the-preview (`lane one row deep even when empty`): how many rows the lane shows.
@@ -316,22 +344,24 @@ pub struct Bar {
 /// answers 1 for no effects at all (§2: "lane one row deep even when empty"). The view sizes itself from
 /// `row_count`, never from this list's length.
 pub fn lane_layout(fx: &[Fx]) -> Vec<Bar> {
-    let rows = rows_for_effects(fx);
+    // One entry per element of the SAME list `fx` is, so zipping keeps indices aligned even though unknown
+    // kinds are dropped below: `index` counts the list, and `packed[index]` is that effect's placement.
+    let packed = pack(fx);
     fx.iter()
-        .zip(rows)
+        .zip(packed)
         .enumerate()
-        .filter_map(|(index, (effect, row))| {
+        .filter_map(|(index, (effect, placed))| {
             let kind = effect.effect_kind()?;
             // Staying is a zoom's question: §06#1's table gives no other kind a `stay` field, so a stray
             // `stay: true` on a caption cannot make it the orange bar.
             let staying = fx_record::uses(kind, fx_record::Field::Stay) && effect.stay;
             Some(Bar {
                 index,
-                row,
+                row: placed.row,
                 kind,
                 staying,
                 colour: bar_colour(kind, staying),
-                reserves_a_row: effect.dur >= PACK_MIN_SECONDS,
+                reserves_a_row: placed.reserves_a_row,
             })
         })
         .collect()
