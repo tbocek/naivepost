@@ -11,8 +11,9 @@
 //! The fix separates what §1 puts IN THE ROW from what the app happens to start from the same place. The three
 //! pass buttons are jobs, not §1's badges (§05 #1-screen pins the Cut toolbar to its six declared groups;
 //! these three name no §1 item), so they get a box of their own AFTER the progress bar and before the
-//! readouts, where the row has slack, while `run-controls-inner` keeps exactly ▶ / 🎲 / ⏹ and fits. Every
-//! widget keeps its name, so every door and test still finds them by walking the window.
+//! readouts, where the row has slack, while `run-controls-inner` keeps exactly ▶ / 🎲 / ⏹ and fits — floored at
+//! its own buttons' minimum, which is what stops GTK scrolling badge 12 away. Every widget keeps its name, so
+//! every door and test still finds them by walking the window.
 //!
 //! Split out of `window.rs`, which is at its size budget.
 
@@ -29,10 +30,21 @@ use gtk4 as gtk;
 pub fn fit(row: &gtk::Box, controls: &gtk::Box, readout_row: &gtk::Widget) {
     let jobs = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     jobs.set_widget_name("pass-controls");
-    // Everything this box takes belongs to it now: `GtkBox::append` re-parents, so each button leaves
-    // `run-controls-inner` as it arrives here, and the scroller's natural width drops to the three badges.
+    // Each button is TAKEN OUT of `run-controls-inner` before it is appended here, and that order is the whole
+    // reason ⏹ was missing from the rendered row. `GtkBox::append` does NOT re-parent: GTK 4 asserts the child
+    // has no parent and refuses the append outright (measured, four `gtk_box_append: assertion
+    // 'gtk_widget_get_parent (child) == NULL' failed` per window build, one per button, while every name lookup
+    // still resolved). So with a bare append all four buttons stayed in `run-controls-inner`, its natural width
+    // stayed at ~800 px inside a scroller GTK allocated less than that, and badge **12** — third of ▶ / 🎲 / ⏹ —
+    // was scrolled out of the viewport: absent from `shots/03-window.png` while still in the tree.
     for name in ["policy-button", "captions-pass-button", "speeds-pass-button", "decorations-pass-button"] {
         if let Some(button) = find_in(controls.upcast_ref(), name) {
+            if let Some(previous) = button.parent() {
+                previous
+                    .downcast_ref::<gtk::Box>()
+                    .expect("a job button is held by a box")
+                    .remove(&button);
+            }
             jobs.append(&button);
         }
     }
@@ -46,16 +58,32 @@ pub fn fit(row: &gtk::Box, controls: &gtk::Box, readout_row: &gtk::Widget) {
     scroller.set_widget_name("pass-scroller");
     scroller.set_hscrollbar_policy(gtk::PolicyType::External);
     scroller.set_vscrollbar_policy(gtk::PolicyType::Never);
-    scroller.set_child(Some(&jobs));
     scroller.set_hexpand(true);
     scroller.set_vexpand(false);
-    // Nothing here puts a width on the row or its boxes. A `set_size_request` anywhere in this row becomes part
-    // of the shell's minimum WIDTH (measured: 500 px there truncated every tab label in the header, and giving
-    // the two scrollers their buttons' natural ask pushed the shot to 1341 px against §1's 1240), and §1 fixes
-    // 1240 as the narrowest the window can ever be. The clipped ⏹ that this file was written for is instead
-    // solved by what `fit` already does — moving the four job buttons out of `run-controls-inner` into their own
-    // scroller — which drops the controls' natural ask from ~800 px to ▶ / 🎲 / ⏹ (~228 px) and leaves the row
-    // room for the bar and the readouts at §1's width without any fixed number.
+    // …and the box goes inside it, LAST: `set_child` on a `gtk::ScrolledWindow` REPLACES its child and unparents
+    // the one it drops, so doing it before the four buttons were moved out of `run-controls-inner` threw their
+    // new box away while they were still in it — every button then resolved by name under a scroller that held
+    // none of them, and the row kept its old ~800 px ask.
+    scroller.set_child(Some(&jobs));
+    // …and it asks the CONTROLS scroller for its buttons' own minimum — the ONE width that decides whether §1's
+    // badges stay on screen. A `gtk::ScrolledWindow` measures MINIMUM 0 whatever it holds, so GTK happily allocates
+    // it less than its own buttons and scrolls the rest away unseen: measured at §1's minimum size `run-controls`
+    // was given 209 px while ▶ / 🎲 / ⏹ need 224, badge **12** was drawn under the progress bar, absent from
+    // `shots/03-window.png`, and still found by name — which is why every tree-based test passed. Asking HERE, not
+    // in `wrap_controls`, is what makes the number right: by now the four job buttons have moved out, so the box
+    // measures the three badges alone (measured with all seven still inside, the ask came out 644 px and pushed the
+    // job buttons past the window's edge). It costs the shell's minimum WIDTH nothing at §1's size — the row has
+    // far more than 224 to give — and only bites when the window is narrower than the badges, where scrolling them
+    // sideways is §1's own answer ("what no longer fits scrolls … instead of holding the window wide"). The JOB
+    // scroller keeps its floor of 0 for the opposite reason: those four buttons are not §1's badges, they are what
+    // §1 says must give way, and asking for their width was measured to starve badge 12 further.
+    if let Some(inner) = find_in(row.upcast_ref(), "run-controls-inner") {
+        if let Some(scroller) = find_in(row.upcast_ref(), "run-controls") {
+            if let Some(scroller) = scroller.downcast_ref::<gtk::ScrolledWindow>() {
+                scroller.set_min_content_width(inner.measure(gtk::Orientation::Horizontal, -1).0.max(0));
+            }
+        }
+    }
     // The scroller goes AFTER the progress bar (§1: the bar takes the row's free width) and BEFORE the
     // readouts, which stay at the row's right end. `GtkBox::insert_child_after` is gtk4's way of saying
     // "goes after this sibling"; with no previous sibling found it simply appends.

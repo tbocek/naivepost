@@ -122,6 +122,11 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
     }
     // Badge 13 against those badges: the progress bar's box must begin at or right of ⏹'s right edge.
     let (bar_x, _by, bw, _bh) = drawn(&window, "run-progress");
+    // What the row charged each part with, printed beside the boxes: when the bar lands on a badge, the number
+    // that was wrong is in this line and not in the picture.
+    let row = common::widget_in(&window, "run-bar").expect("§1 draws a run-bar row");
+    let charged = naivepost::ui::window_run_scroller::charged_widths_for_test(row.upcast_ref());
+    println!("{ITEM} s1: row charges {charged:?}");
     println!("{ITEM} s1: run-progress box x={bar_x:.0} w={bw:.0}, stop-button right edge {last_badge_right:.0}");
     assert!(
         bar_x >= last_badge_right - SLACK_PX,
@@ -333,8 +338,11 @@ fn s2_the_tab_row_sits_in_the_header_centre(app: &adw::Application) {
 /// allocation and Adwaita pads the header's ends, so a strictly centred row is a pixel or two off.
 const CENTRE_SLACK_PX: f64 = 8.0;
 
-/// The four job buttons moved into `pass-controls` when the run-bar row was fixed, so prove none of them was
-/// lost on the way: each resolves AND is drawn inside the run-bar row.
+/// The four job buttons moved into `pass-controls` when the run-bar row was fixed, so prove both halves of
+/// that move: each button's OWN parent is now `pass-controls` (a `gtk_box_append` of a still-parented child is
+/// refused by GTK 4 and leaves the button where it was — which is how ⏹ ended up clipped out of the shot while
+/// every name lookup still found it), and none of them was lost on the way: each resolves AND is drawn inside
+/// the run-bar row.
 fn s1_the_pass_buttons_are_still_reachable(app: &adw::Application) {
     let window = minimum_window(app, "Cut");
     let (bar_x, bar_y, bar_w, bar_h) = drawn(&window, "run-bar");
@@ -349,6 +357,18 @@ fn s1_the_pass_buttons_are_still_reachable(app: &adw::Application) {
             common::widget_in(&window, name).is_some(),
             "{ITEM}: {name} is gone from the tree — the pass buttons must survive the move to pass-controls"
         );
+        // The move itself: whose child is it? Held by `run-controls-inner`, the append never happened.
+        let held_by = common::widget_in(&window, name)
+            .expect("just checked")
+            .parent()
+            .map(|p| p.widget_name().to_string())
+            .unwrap_or_default();
+        println!("{ITEM} s1: {name} is held by {held_by:?}");
+        assert_eq!(
+            held_by, "pass-controls",
+            "{ITEM} §1: {name} is still held by {held_by:?}, not by `pass-controls` — the job buttons were \
+             never moved out of the controls scroller, so their ~600 px of labels squeeze §1's badges"
+        );
         let (x, y, w, h) = drawn(&window, name);
         println!("{ITEM} s1: {name} box x={x:.0} y={y:.0} w={w:.0} h={h:.0}");
         assert!(w > 0.0 && h > 0.0, "{ITEM}: {name} resolves but has an EMPTY box");
@@ -362,12 +382,41 @@ fn s1_the_pass_buttons_are_still_reachable(app: &adw::Application) {
     window.close();
 }
 
+/// §1 badge **12** against its own scroller: ⏹ must be drawn INSIDE the `run-controls` viewport, not merely
+/// present in the tree. Every order check above compares one badge's box with the next badge's box, so a badge
+/// pushed sideways OUT of its scroller by content too wide for it passes all of them — GTK reports the box it
+/// gave the button inside the scrollable's own (wider) canvas, and `find_widget_by_name` walks the tree, so the
+/// rendered row showed ▶, "I'm feeling lucky" and the progress track with no ⏹ at all while the whole suite
+/// stayed green. This is the check that measures the clip itself.
+fn s12_the_stop_button_is_drawn_inside_its_scroller(app: &adw::Application) {
+    let window = minimum_window(app, "Prepare");
+    let (stop_x, _sy, stop_w, stop_h) = drawn(&window, "stop-button");
+    let (view_x, view_y, view_w, view_h) = drawn(&window, "run-controls");
+    println!(
+        "{ITEM} s12: stop-button box x={stop_x:.0} w={stop_w:.0} h={stop_h:.0}; run-controls viewport x={view_x:.0} w={view_w:.0} y={view_y:.0} h={view_h:.0}"
+    );
+    assert!(
+        stop_x + stop_w <= view_x + view_w + SLACK_PX,
+        "{ITEM} §1 badge 12: ⏹ runs from x={stop_x:.0} to {:.0}, past its scroller's right edge {:.0} — GTK \
+         scrolled it out of the viewport, so the rendered run bar has no stop button even though the widget is \
+         in the tree",
+        stop_x + stop_w,
+        view_x + view_w
+    );
+    assert!(
+        stop_x >= view_x - SLACK_PX,
+        "{ITEM} §1 badge 12: ⏹ starts at x={stop_x:.0}, left of its scroller's left edge {view_x:.0}"
+    );
+    window.close();
+}
+
 /// The widget round, once.
 #[test]
 fn sec_03_shell_1_the_window_screen_the_run_bar_row_is_drawn() {
     common::pin_private_cwd();
     common::one_app_round(|app| {
         s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app);
+        s12_the_stop_button_is_drawn_inside_its_scroller(app);
         s1_nothing_is_drawn_between_the_page_and_the_run_bar(app);
         s2_the_tab_row_sits_in_the_header_centre(app);
         s1_the_pass_buttons_are_still_reachable(app);
