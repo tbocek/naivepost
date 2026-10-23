@@ -416,9 +416,10 @@ fn check_prepare_press_logs_its_bill(app: &adw::Application) {
     RAN_PREPARE_WIRE.store(true, Ordering::SeqCst);
 }
 
-/// S5 through the widget: the ⚙ press dials the policy model AND logs §4's Setup row. Both halves
+/// S5 through the widget: the header ⓘ press (F0.7 S5's door) dials the policy model AND logs §4's Setup row.
+/// Both halves
 /// matter — a bill naming a call that never went out would be decoration.
-fn check_gear_logs_the_setup_row(app: &adw::Application) {
+fn check_info_button_logs_the_setup_row(app: &adw::Application) {
     // Same scenario root as the Prepare press above (one per binary): only the LLM address is added,
     // through `point_llm`, which leaves the audio.cpp that press needed standing.
     let llm = RecordingLlm::start(set_policy_call("cutMode", "words"));
@@ -428,7 +429,7 @@ fn check_gear_logs_the_setup_row(app: &adw::Application) {
     window.present();
     settle();
     ui::set_session_context(&window, "cut on the words, not the model");
-    button(&window, "policy-button").emit_by_name::<()>("clicked", &[]);
+    button(&window, "tab-info-button").emit_by_name::<()>("clicked", &[]);
     wait_until("the Setup bill line reached the log", || {
         ui::window_logs()
             .iter()
@@ -460,7 +461,7 @@ fn check_gear_logs_the_setup_row(app: &adw::Application) {
 fn window_round() {
     common::one_app_round(|app| {
         check_prepare_press_logs_its_bill(app);
-        check_gear_logs_the_setup_row(app);
+        check_info_button_logs_the_setup_row(app);
     });
 }
 

@@ -144,7 +144,7 @@ fn one_field_answer(_req: &policy::DerivationRequest, refusals: &[String]) -> Ve
 // door 2: "on demand from the policy form" — the ⚙ derives BEFORE it paints (S5 + S3 over the wire)
 // ---------------------------------------------------------------------------
 
-/// The gear is a demand for the current answer, not a peek at whatever is cached: a context nobody has
+/// The header ⓘ is a demand for the current answer, not a peek at whatever is cached: a context nobody has
 /// derived from is derived first, so the first thing the form draws is what the model said with its
 /// `source` and `because` (S3's stored shape), never a default nobody chose.
 fn check_the_form_demands_its_derivation(app: &adw::Application) {
@@ -156,9 +156,9 @@ fn check_the_form_demands_its_derivation(app: &adw::Application) {
         "a context just typed has been derived from by nothing yet"
     );
 
-    // The real button, the way a click reaches it. `press_policy` is what answers the press.
-    ui::line_step_button(&window, "policy-button")
-        .expect("the run bar carries the policy gear")
+    // The real button, the way a click reaches it: §1 badge 6's header ⓘ. `press_policy` answers the press.
+    ui::line_step_button(&window, "tab-info-button")
+        .expect("the header carries the \u{24d8}")
         .emit_by_name::<()>("clicked", &[]);
     settle();
 

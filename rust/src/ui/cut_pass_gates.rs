@@ -1,6 +1,7 @@
-//! §F3.9 / §F3.10 / §F3.11 — the ✐ Captions, ⏩ Speeds and ✨ Decorations run-bar jobs: the button each
-//! one lives on, its gate, and the pass it starts. Split out of `window.rs`, which is past its size budget;
-//! its doors are re-exported through `window`.
+//! §F3.9 / §F3.10 / §F3.11 — the ✐ Captions, ⏩ Speeds and ✨ Decorations passes that run AFTER the cut, and
+//! the policy switch each one reads before it is asked. Split out of `window.rs`, which is past its size budget;
+//! its doors are re-exported through `window`. None of them has a control: F3.9-F3.11 are jobs of the run after
+//! the cut (`cut_suggest_land` → `cut_suggest_passes::run_after_cut`), not buttons on the run bar.
 //!
 //! Deliberately rule-free: every decision lives in `cut_captions`, `speeds_ask` and `effects_ask`; what is
 //! here gathers this window's inputs, runs the pass, and says what came back.
@@ -10,7 +11,6 @@ use crate::hand_edit;
 use crate::policy;
 
 use adw::prelude::*;
-use gtk4 as gtk;
 
 use crate::ui::window as ui;
 use crate::ui::window::refresh_effects_lane;
@@ -25,8 +25,9 @@ pub struct CaptionBatch {
     pub calls: Vec<crate::cut_captions::Call>,
 }
 
-/// F3.10's label. As with ✐ Captions, the spec's flowchart starts at a model call and names no control: a named
-/// button is the decision taken in its spirit, so the pass can be started and its gate seen.
+/// F3.10's wording — the name the job is called by in the log. No control carries it: F3.10 runs as a job of
+/// the run after the cut, so nothing outside this module reads it.
+#[allow(dead_code)]
 pub const SPEEDS_PASS_LABEL: &str = "\u{23e9} Speeds";
 
 /// F3.9 S1–S6: run the captions pass over this window's newest cut and say what happened.
@@ -214,115 +215,27 @@ pub fn run_captions_pass_with_reply(
 }
 /// F3.9: set this session's captions gate directly, the same way `set_marking_pass` sets its switch. A test
 /// needs to move the gate AFTER the window exists (a build-time value can be replaced before the handler sees
-/// it), and the grey-out must follow the very field the pass reads rather than a second copy of the decision.
-pub fn set_captions_pass(window: &adw::ApplicationWindow, on: bool) {
+/// it), and the refusal must follow the very field the pass reads rather than a second copy of the decision.
+/// F3.9: move this session's captions gate directly. `_for_test` because nothing in the program calls it —
+/// the switches are written by `policy::apply` (F0.7) and read by `policy::pass_runs`; a test that wants the
+/// gate off has to move the field itself, and saying so in the name keeps it from being mistaken for a door.
+pub fn set_captions_pass_for_test(window: &adw::ApplicationWindow, on: bool) {
     let _ = window;
     if let Some(session) = ui::SESSION.with(|slots| slots.borrow().last().cloned()) {
         session.borrow_mut().policy.captions_pass.value = on;
     }
 }
-/// F3.9: the ✐ Captions button, found by name so a test can fire the real click.
-pub fn captions_pass_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
-    ui::find_widget_by_name(window.upcast_ref(), "captions-pass-button")?
-        .downcast()
-        .ok()
-}
-/// F3.9: wire the ✐ Captions button. Sensitivity follows the SAME predicate the pass checks, so a greyed
-/// control always means "the pass would refuse", never a control that lies about its state. Re-read on every
-/// call, which is why the page re-wires it after a policy change rather than setting sensitivity once at build.
-pub fn refresh_captions_gate(window: &adw::ApplicationWindow) {
-    if let Some(button) = captions_pass_button(window) {
-        let gated = !policy::pass_runs(&ui::session_policy(window), policy::Pass::Captions);
-        button.set_sensitive(!gated);
-        if gated {
-            button.set_tooltip_text(Some(
-                "off \u{2014} the context ruled captions out (P.policy.captionsPass)",
-            ));
-        } else {
-            button.set_tooltip_text(Some(
-                "ask the model for captions over the kept clips \u{2014} \u{21b6} Undo takes the pass back",
-            ));
-        }
-    }
-}
-/// F3.9: wire the ✐ Captions button. Sensitivity follows the SAME predicate the pass checks, so a greyed
-/// control always means "the pass would refuse", never a control that lies about its state.
-pub(crate) fn wire_captions_pass(button: &gtk::Button, window: &adw::ApplicationWindow) {
-    let gated = !policy::pass_runs(&ui::session_policy(window), policy::Pass::Captions);
-    button.set_sensitive(!gated);
-    if gated {
-        button.set_tooltip_text(Some(
-            "off \u{2014} the context ruled captions out (P.policy.captionsPass)",
-        ));
-    }
-    let window = window.clone();
-    button.connect_clicked(move |_| {
-        let _ = run_captions_pass(&window);
-    });
-}
-/// F3.10: move this session's speeds gate directly, the way `set_captions_pass` moves its own.
-pub fn set_speeds_pass(window: &adw::ApplicationWindow, on: bool) {
+/// F3.10: move this session's speeds gate directly, the way [`set_captions_pass_for_test`] moves its own.
+pub fn set_speeds_pass_for_test(window: &adw::ApplicationWindow, on: bool) {
     let _ = window;
     if let Some(session) = ui::SESSION.with(|slots| slots.borrow().last().cloned()) {
         session.borrow_mut().policy.speed_pass.value = on;
     }
 }
-/// F3.10: the ⏩ Speeds button, found by name so a test can fire the real click.
-pub fn speeds_pass_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
-    ui::find_widget_by_name(window.upcast_ref(), "speeds-pass-button")?
-        .downcast()
-        .ok()
-}
-/// F3.10: re-read the gate onto the button. Same predicate the pass checks, both ways, so a greyed control
-/// always means "the pass would refuse" and the grey is never sticky.
-pub fn refresh_speeds_gate(window: &adw::ApplicationWindow) {
-    if let Some(button) = speeds_pass_button(window) {
-        let gated = !policy::pass_runs(&ui::session_policy(window), policy::Pass::Speeds);
-        button.set_sensitive(!gated);
-        button.set_tooltip_text(Some(if gated {
-            "off \u{2014} the context ruled speed changes out (P.policy.speedPass)"
-        } else {
-            "ask the model which clips run fast \u{2014} \u{21b6} Undo takes the pass back"
-        }));
-    }
-}
-/// F3.10: wire the ⏩ Speeds button.
-pub(crate) fn wire_speeds_pass(button: &gtk::Button, window: &adw::ApplicationWindow) {
-    let window = window.clone();
-    button.connect_clicked(move |_| {
-        let _ = crate::ui::cut_speeds_pass::run_speeds_pass(&window);
-    });
-}
-/// F3.11: move this session's decorations gate directly, the way `set_captions_pass` moves its own.
-pub fn set_decorations_pass(window: &adw::ApplicationWindow, on: bool) {
+/// F3.11: move this session's decorations gate directly, the way [`set_captions_pass_for_test`] moves its own.
+pub fn set_decorations_pass_for_test(window: &adw::ApplicationWindow, on: bool) {
     let _ = window;
     if let Some(session) = ui::SESSION.with(|slots| slots.borrow().last().cloned()) {
         session.borrow_mut().policy.decorations_pass.value = on;
     }
-}
-/// F3.11: the ✨ Decorations button, found by name so a test can fire the real click.
-pub fn decorations_pass_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
-    ui::find_widget_by_name(window.upcast_ref(), "decorations-pass-button")?
-        .downcast()
-        .ok()
-}
-/// F3.11: re-read the gate onto the button. Same predicate the pass checks, both ways, so a greyed control
-/// always means "the pass would refuse" and the grey is never sticky.
-pub fn refresh_decorations_gate(window: &adw::ApplicationWindow) {
-    if let Some(button) = decorations_pass_button(window) {
-        let gated = !policy::pass_runs(&ui::session_policy(window), policy::Pass::Decorations);
-        button.set_sensitive(!gated);
-        button.set_tooltip_text(Some(if gated {
-            "off \u{2014} the context ruled decorations out (P.policy.decorationsPass)"
-        } else {
-            "ask the model for zooms, a stop and some volume over the kept clips \u{2014} \u{21b6} Undo takes the pass back"
-        }));
-    }
-}
-/// F3.11: the ✨ Decorations button forwards to [`run_effects_pass`], reading the cut this window holds.
-pub(crate) fn wire_decorations_pass(button: &gtk::Button, window: &adw::ApplicationWindow) {
-    let window = window.clone();
-    button.connect_clicked(move |_| {
-        let _ = crate::ui::cut_effects_pass::run_effects_pass(&window);
-    });
 }

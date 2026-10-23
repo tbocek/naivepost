@@ -55,11 +55,11 @@ pub fn wrap_controls(controls: gtk::Widget) -> gtk::ScrolledWindow {
 ///   what is actually left once the natural-width children have been served.
 pub fn hand_the_free_width_to(row: &gtk::Widget) {
     for child in children_of(row) {
-        // The job buttons are NOT cleared: they are §1's job row sitting in the row's slack, and with the
-        // scroller minimum-0 the row has room for them only if they take what the bar leaves.
+        // The job buttons are gone from this row (§2's list is its whole content), so only the bar and the
+        // controls' scroller expand; everything else keeps its natural ask.
         let keeps = matches!(
             child.widget_name().as_str(),
-            "run-progress" | "run-controls" | "pass-controls" | "pass-scroller"
+            "run-progress" | "run-controls"
         );
         child.set_hexpand(keeps);
         if !keeps {
@@ -74,20 +74,19 @@ pub fn hand_the_free_width_to(row: &gtk::Widget) {
 /// Badge **13**'s width: what the row has LEFT once every other part of it has been served.
 ///
 /// This is the whole rule, kept apart from any widget so a test can pin it: the bar may take the row's free
-/// width (§1 badge 13) but never the room §1's badges and readouts need. `badges` is ▶ / 🎲 / ⏹ and `jobs`
-/// the four job buttons — asked off the boxes INSIDE their scrollers, because a `gtk::ScrolledWindow`
-/// measures natural 0 and would otherwise report none of its content, which is exactly how ⏹ ended up drawn
-/// UNDER the progress bar track in the shell shot. A row narrower than all of them still gets a visible bar:
-/// the floor is [`PROGRESS_MIN_PX`], never 0.
+/// width (§1 badge 13) but never the room §1's badges and readouts need. `badges` is ▶ / 🎲 / ⏹ — asked off the
+/// box INSIDE its scroller, because a `gtk::ScrolledWindow` measures natural 0 and would otherwise report none
+/// of its content, which is exactly how ⏹ ended up drawn UNDER the progress bar track in the shell shot. A row
+/// narrower than all of them still gets a visible bar: the floor is [`PROGRESS_MIN_PX`], never 0.
 /// §1 badge **13**'s share of the row: the bar's own width ask, in px.
 ///
 /// `row_w` is the row's width, `badges` what the scroller holding ▶ / 🎲 / ⏹ must be given (never less than its
-/// buttons' own minimum — see [`share_the_free_width`]), `jobs` the same for the job buttons' scroller,
-/// `readouts` the two readouts' ask and `gaps` the row's spacing. A `gtk::ScrolledWindow` measures MINIMUM 0,
-/// so GTK happily gives either scroller LESS than its buttons need — measured at §1's minimum, `run-controls`
-/// held 209 px for badges needing 224, and the bar started at x=215, i.e. over ⏹.
-pub fn progress_px(row_w: i32, badges: i32, jobs: i32, readouts: i32, gaps: i32) -> i32 {
-    (row_w - badges - jobs - readouts - gaps).max(super::window_run_bar_fit::PROGRESS_MIN_PX)
+/// buttons' own minimum — see [`share_the_free_width`]), `readouts` the two readouts' ask and `gaps` the row's
+/// spacing. A `gtk::ScrolledWindow` measures MINIMUM 0, so GTK happily gives the scroller LESS than its buttons
+/// need — measured at §1's minimum, `run-controls` held 209 px for badges needing 224, and the bar started at
+/// x=215, i.e. over ⏹.
+pub fn progress_px(row_w: i32, badges: i32, readouts: i32, gaps: i32) -> i32 {
+    (row_w - badges - readouts - gaps).max(super::window_run_bar_fit::PROGRESS_MIN_PX)
 }
 
 /// Re-ask §1's progress-bar width for a row that has just been resized. Called by `window_divider` after it
@@ -121,8 +120,8 @@ pub fn drawn_row_widths(row: &gtk::Widget) -> Vec<(String, f64, f64)> {
         .collect()
 }
 
-/// The same numbers [`share_the_free_width`] charges the row, as a report: `[(name, px)]` — each scroller's
-/// content floor (`run-controls-inner`, `pass-controls`) and what that scroller is charged for (its allocation,
+/// The same numbers [`share_the_free_width`] charges the row, as a report: `[(name, px)]` — the controls
+/// scroller's content floor (`run-controls-inner`) and what that scroller is charged for (its allocation,
 /// or that floor when GTK gave it less). Report only: it decides no rule, and it is what makes a red geometry
 /// test say WHICH number was wrong instead of only that the bar overlapped something.
 pub fn charged_widths_for_test(row: &gtk::Widget) -> Vec<(String, i32)> {
@@ -137,12 +136,9 @@ pub fn charged_widths_for_test(row: &gtk::Widget) -> Vec<(String, i32)> {
             .unwrap_or(floor)
     };
     let badge_floor = floor_of("run-controls-inner");
-    let job_floor = floor_of("pass-controls");
     vec![
         ("badges-floor".into(), badge_floor),
-        ("jobs-floor".into(), job_floor),
         ("run-controls".into(), charge("run-controls", badge_floor)),
-        ("pass-scroller".into(), charge("pass-scroller", job_floor)),
         (
             "readouts".into(),
             children_of(row)
@@ -150,7 +146,7 @@ pub fn charged_widths_for_test(row: &gtk::Widget) -> Vec<(String, i32)> {
                 .filter(|child| {
                     !matches!(
                         child.widget_name().as_str(),
-                        "run-progress" | "run-controls" | "pass-scroller"
+                        "run-progress" | "run-controls"
                     )
                 })
                 .map(|child| child.measure(gtk::Orientation::Horizontal, -1).1.max(0))
@@ -170,9 +166,8 @@ pub fn charged_widths_for_test(row: &gtk::Widget) -> Vec<(String, i32)> {
 fn share_the_free_width(row: &gtk::Widget, bar: &gtk::Widget) {
     // THE ROW'S OWN WIDTH, whatever it happens to be when this runs — see [`resize_row`] for why the same ask is
     // re-made once the divider has been allocated.
-    // The two scrollers measure natural 0, so their CONTENTS are asked for by name instead: `run-controls-inner`
-    // is §1's ▶ / 🎲 / ⏹ and `pass-controls` the four job buttons (`window_run_bar_fit` moved them there).
-    // Everything else in the row contributes its own natural ask.
+    // The controls scroller measures natural 0, so its CONTENT is asked for by name instead: `run-controls-inner`
+    // is §1's ▶ / 🎲 / ⏹. Everything else in the row contributes its own natural ask.
     let badges_floor = find_in(row, "run-controls-inner")
         .map(|w| w.measure(gtk::Orientation::Horizontal, -1).0.max(0))
         .unwrap_or_default();
@@ -182,22 +177,18 @@ fn share_the_free_width(row: &gtk::Widget, bar: &gtk::Widget) {
     // was drawn under the progress bar, absent from `shots/03-window.png`, and still found by name: which is why
     // every tree-based test passed while the shot had no ⏹. The bar's own `set_size_request` is a FLOOR too, so an
     // ask bigger than the row can serve is served by shaving a scroller instead of stretching the bar.
-    // THE FIX IS ONE NUMBER: the bar asks for what is left once BOTH sets of buttons have their own minimum,
-    // counted from the contents' minima and never from an allocation. Three other shapes were tried and measured
-    // wrong: charging the scrollers' ALLOCATIONS (GTK starved `run-controls` to 209/244 px and drew over ⏹);
-    // capping the ask by the badges' minimum but leaving the job buttons' ~400 px out of it (the leftovers went
-    // negative, so the floor held GTK to 413 px and nothing moved); and shrinking the ask further still (GTK splits
-    // the leftover between two expanding boxes regardless — the bar landed at x=132). Counting from minima costs
+    // THE FIX IS ONE NUMBER: the bar asks for what is left once the badges have their own minimum, counted from
+    // the contents' minima and never from an allocation. Three other shapes were tried and measured
+    // wrong: charging the scroller's ALLOCATION (GTK starved `run-controls` to 209/244 px and drew over ⏹);
+    // leaving the badges' minimum out of it (the leftovers went negative, so the floor held GTK to 413 px and
+    // nothing moved); and shrinking the ask further still (GTK splits the leftover between two expanding boxes
+    // regardless — the bar landed at x=132). Counting from minima costs
     // the shell nothing (a scroller's own minimum stays 0) and cannot starve a badge: where the row has no room for
-    // everything, the bar falls to [`PROGRESS_MIN_PX`] and the job buttons scroll — §1's "what no longer fits
+    // everything, the bar falls to [`PROGRESS_MIN_PX`] — §1's "what no longer fits
     // scrolls … instead of holding the window wide". (`window_run_bar_fit` separately floors the controls scroller
-    // at these same minima; a `set_min_content_width` put HERE was measured to move the SHELL's minimum from §1's
+    // at this same minimum; a `set_min_content_width` put HERE was measured to move the SHELL's minimum from §1's
     // 1240 to 1258, because this door also runs before anything is allocated.)
-    let jobs_floor = find_in(row, "pass-controls")
-        .map(|w| w.measure(gtk::Orientation::Horizontal, -1).0.max(0))
-        .unwrap_or_default();
     let controls_w = badges_floor;
-    let pass_w = jobs_floor;
     // The readouts' own ask, and the row's gaps: the bar gets whatever is left once every other part of the row
     // has been served. `row.width()` answers 1 px before the window is allocated, which clamps the answer to
     // the floor — harmless, because [`resize_row`] asks again with the real width.
@@ -206,21 +197,41 @@ fn share_the_free_width(row: &gtk::Widget, bar: &gtk::Widget) {
         .filter(|child| {
             !matches!(
                 child.widget_name().as_str(),
-                "run-progress" | "run-controls" | "pass-scroller"
+                "run-progress" | "run-controls"
             )
         })
         .map(|child| child.measure(gtk::Orientation::Horizontal, -1).1.max(0))
         .sum();
     let gaps = 6 * children_of(row).len() as i32;
-    // …and the ask itself: what is left once BOTH sets of buttons have their minimum and the readouts theirs.
-    // The job buttons are subtracted too — they sit AFTER the bar in the row, so leaving their ~400 px out of the
-    // arithmetic made the ask bigger than the row can serve, and GTK served a too-big floor by shaving
-    // `run-controls` (measured: an ask of 413 px left it 209/227 px for badges needing 224, and the track started
-    // at x=215/233, over badge **12**). Matched to the row's real leftovers, GTK has nothing to shave.
-    bar.set_size_request(
-        progress_px(row.width(), controls_w, pass_w, readouts, gaps),
-        -1,
-    );
+    // …and the ask itself: what is left once the badges have their minimum and the readouts theirs.
+    // Matched to the row's real leftovers, GTK has nothing to shave.
+    // …and the FLOOR goes on the scroller, not only on the bar. A `set_size_request` on the bar is a floor GTK
+    // honours by shaving whatever else can shrink: with only three badges left in the row this ask (≈800 px)
+    // exceeded what the row could serve, so GTK starved `run-controls` to 125 px and drew the track over ⏹.
+    // Flooring the scroller at its buttons' minimum fixes that clip, but ONLY where the row actually has room:
+    // written unconditionally it travels into the SHELL's own minimum (measured: §1's 1240 became 1311), because
+    // this door also runs before anything is allocated. So the floor is asked for when the row is wider than
+    // everything in it — the case badge 12 needs — and skipped while the row is still unallocated or genuinely
+    // too narrow, where §1's answer is "what no longer fits scrolls" instead of holding the window wide.
+    if let Some(scroller) = find_in(row, "run-controls") {
+        if let Some(scroller) = scroller.downcast_ref::<gtk::ScrolledWindow>() {
+            // The floor is asked for ONLY where the row has already been laid out and can serve it. Written
+            // unconditionally it travels into the SHELL's own minimum — measured: §1's 1240 became 1311 — because
+            // a ScrolledWindow reports its `min_content_width` as its MINIMUM whatever it holds, and this door
+            // also runs while the row is still unallocated (GTK answers 1 px). Where the row genuinely cannot fit
+            // everything, the floor stays 0 and §1's answer rules instead: "what no longer fits scrolls … instead
+            // of holding the window wide".
+            let others = controls_w + readouts + gaps;
+            let serves_it = row.width() > 1 && row.width() >= others;
+            scroller.set_min_content_width(if serves_it { controls_w.max(0) } else { 0 });
+        }
+    }
+    // Badge 13 keeps only its FLOOR here (`PROGRESS_MIN_PX`). Asking it for the whole leftover as a size request
+    // was what starved the badges: a `set_size_request` is a floor GTK honours by shaving whatever else can
+    // shrink, so an ≈800 px ask on a row that could not serve it took pixels off `run-controls` (measured 125 px
+    // for badges needing 232) and drew the track over ⏹. With the scroller floored above, `hexpand` gives the bar
+    // exactly the same leftover, and nothing has to be shaved.
+    bar.set_size_request(super::window_run_bar_fit::PROGRESS_MIN_PX, -1);
 }
 
 /// The first widget named `name` at or below `node`.

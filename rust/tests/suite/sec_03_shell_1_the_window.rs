@@ -32,6 +32,8 @@ use common::{fixture_dir, hold_last_window, release_last_window, settle};
 /// `activate`, which is also what brings GTK up for the process.
 static GTK: std::sync::Once = std::sync::Once::new();
 static RAN: AtomicBool = AtomicBool::new(false);
+/// Set once the ⓘ tooltip check has run, inside this binary's ONE application round.
+static INFO_TIP_RAN: AtomicBool = AtomicBool::new(false);
 
 /// The scratch root one round works in: `build_window` resolves its session folder from the cwd, so a
 /// round that cares which folder the header names pins the cwd here first.
@@ -225,7 +227,7 @@ fn s5_bottom_bar_order(app: &adw::Application) {
     );
     let controls =
         common::widget_in(&window, "run-controls-inner").expect("the run bar's controls");
-    // §2's order lives inside the scroller now: ▶ , I'm feeling lucky , ⏹ , then the gear and the passes.
+    // §2's order lives inside the scroller now: ▶ , I'm feeling lucky , ⏹ — and nothing else.
     let control_names = child_names(&controls);
     assert!(
         position_of(&control_names, "play-button") < position_of(&control_names, "lucky-button")
@@ -1110,6 +1112,8 @@ fn sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider() {
             .flags(gio::ApplicationFlags::NON_UNIQUE)
             .build();
         app.connect_activate(|app| {
+            s1_the_info_button_names_the_shown_tab(app);
+            INFO_TIP_RAN.store(true, Ordering::SeqCst);
             s1_title_and_default_size(app);
             s2_header_badges_in_order(app);
             s1b_bottom_half_is_on_screen_at_the_minimum(app);
@@ -1156,6 +1160,51 @@ fn s15_the_outputs_row_reads_label_button_count(app: &adw::Application) {
     );
     window.close();
     let _ = std::fs::remove_dir_all(&root);
+}
+
+/// §1 badge **6**'s tooltip: `ⓘ`'s tooltip IS `shell::info_tip(<shown page>)`, before and after a switch —
+/// §1's "tooltip = current tab's label + help text" and F0.1 S4's "sync ⓘ", and nothing else (the form the
+/// press opens is F0.7's, pinned in `cut_policy_form_widgets.rs`). `s2b_info_describes_the_shown_tab` reads
+/// the same fact through `ui::tab_info_parts`; this pins it against the function that composes the sentence.
+fn s1_the_info_button_names_the_shown_tab(app: &adw::Application) {
+    let window = window(app, "Prepare");
+    let info = ui::line_step_button(&window, "tab-info-button")
+        .expect("§1 badge 6: the header carries \u{24d8}");
+    assert_eq!(
+        info.tooltip_text().as_deref(),
+        Some(shell::info_tip(Page::Prepare).as_str()),
+        "\u{24d8}'s tooltip is the shown tab's label + help text"
+    );
+    ui::tab_button(&window, Page::Cut)
+        .expect("the shell has a Cut tab")
+        .emit_clicked();
+    settle();
+    let tip = info.tooltip_text().unwrap_or_default().to_string();
+    assert_eq!(
+        Some(tip.as_str()),
+        Some(shell::info_tip(Page::Cut).as_str()),
+        "F0.1 S4: after a switch the tooltip is the new tab's own sentence"
+    );
+    assert!(
+        tip.starts_with("Cut"),
+        "and it begins with the tab's word: {tip:?}"
+    );
+    window.close();
+}
+
+/// §1 badge **6**'s tooltip, on its own so a failure names this item. A process gets ONE application (this
+/// file's header), so the check rides inside `the_shell_draws_its_title_tabs_log_and_divider` below and this
+/// test only reads back that it ran.
+#[test]
+fn sec_03_shell_1_the_window_s1_the_info_button_names_the_shown_tab() {
+    common::pin_private_cwd();
+    // Drive the file's own round first: `GTK` is a `Once`, so this call either runs the whole round (when
+    // cargo happens to order this test first) or returns at once having already been run.
+    sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider();
+    assert!(
+        INFO_TIP_RAN.load(Ordering::SeqCst),
+        "the \u{24d8} tooltip check never ran"
+    );
 }
 
 /// S3: the project name/path ladder — path + tab words → file name + tab words → file name alone —

@@ -1,6 +1,8 @@
-// F3.10 Speeds proposed by the model — the WIRE: a click on ⏩ Speeds reaches the rules in
-// `naivepost::cut_speed_pass` through a real widget, and what they answer lands on the cut, the lane, the
-// status line and the log instead of staying inside a callback.
+// F3.10 Speeds proposed by the model — the WIRE: the pass's own door reaches the rules in
+// `naivepost::cut_speed_pass`, and what they answer lands on the cut, the lane,
+// the status line and the log instead of staying inside a callback. The trigger is §S2b's:
+// `cut_suggest_land` → `cut_suggest_passes::run_after_cut` asks this door after the cut lands, filtered by
+// P.policy.speedPass — F3.10 names no control.
 //
 // `rust/tests/suite/cut_proposed_speeds.rs` proves the rules themselves (the one-call brief, the per-call refusal,
 // rate ≈ 1 ignored, the ramp arithmetic, the gap merge, the two lines); this file proves the Cut page can
@@ -12,13 +14,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
-use gtk4 as gtk;
 use naivepost::cut::{Cut, Fx, Seg};
 use naivepost::cut_speed_pass::{self, Call};
 use naivepost::ui;
 
 use crate::common;
-use common::{cut_page, settle, status_text, widget_in};
+use common::{cut_page, settle, status_text};
 
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
 static RAN_PLACED_REFUSED_IGNORED: AtomicBool = AtomicBool::new(false);
@@ -44,26 +45,24 @@ fn three_clips_captioned() -> Cut {
 // --- the round ----------------------------------------------------------------------------------------
 
 fn speeds_round(app: &adw::Application) {
-    // --- (1) a real click answers, and invents nothing when no model was dialled -------------------
+    // --- (1) the pass answers, and invents nothing when no model was dialled -----------------------
+    // F3.10 has no control: it is a job of the run after the cut, so the door `run_after_cut` walks is what
+    // is driven here.
     let window = cut_page(app, &common::three_clips_cut());
     let before = ui::review_cut_of(&window).fx.len();
-    let button = widget_in(&window, "speeds-pass-button").expect("⏩ Speeds is on the run-bar row");
-    button
-        .clone()
-        .downcast::<gtk::Button>()
-        .expect("it is a button")
-        .emit_by_name::<()>("clicked", &[]);
+    let started = ui::run_speeds_pass(&window);
     settle();
     assert_eq!(
         ui::review_cut_of(&window).fx.len(),
         before,
         "with no proposal from the model no rate is invented into the cut"
     );
-    let said = status_text(&window);
+    let started_is_said = status_text(&window);
     assert!(
-        said.contains("clip") || said.contains("speed"),
-        "the status says what the pass did, got {said:?}"
+        started_is_said.contains("clip") || started_is_said.contains("speed"),
+        "the status says what the pass did, got {started_is_said:?}"
     );
+    assert!(!started.contains("off"), "the pass ran, got {started}");
     RAN_CLICK.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -112,28 +111,30 @@ fn speeds_round(app: &adw::Application) {
     // The segments are laid end-to-gap-end so the merged pair leaves a real gap; the count is asserted against
     // `cut_speed_pass::merge` itself rather than a hand-tallied number, so the test pins the behaviour and
     // follows the rule if the rule moves.
-    let mut gap_cut = Cut::default();
-    gap_cut.segs = vec![
-        Seg {
-            s: 0.0,
-            e: 10.0,
-            cam: 0,
-            ..Default::default()
-        },
-        // clip 2 is NOT asked about -- it stays at 1x, which is what leaves the two fast runs separated.
-        Seg {
-            s: 10.0,
-            e: 13.0,
-            cam: 0,
-            ..Default::default()
-        },
-        Seg {
-            s: 13.0,
-            e: 23.0,
-            cam: 0,
-            ..Default::default()
-        },
-    ];
+    let gap_cut = Cut {
+        segs: vec![
+            Seg {
+                s: 0.0,
+                e: 10.0,
+                cam: 0,
+                ..Default::default()
+            },
+            // clip 2 is NOT asked about -- it stays at 1x, which is what leaves the two fast runs separated.
+            Seg {
+                s: 10.0,
+                e: 13.0,
+                cam: 0,
+                ..Default::default()
+            },
+            Seg {
+                s: 13.0,
+                e: 23.0,
+                cam: 0,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
     let window = cut_page(app, &gap_cut);
     let calls = [Call { clip: 1, rate: 2.0 }, Call { clip: 3, rate: 2.0 }];
     let _ = ui::run_speeds_pass_with_reply(&window, &calls);
@@ -189,15 +190,11 @@ fn speeds_round(app: &adw::Application) {
     window.close();
     settle();
 
-    // --- (4) the gate: speedPass off greys the control and refuses the press ---------------------
+    // --- (4) the gate: speedPass off makes the pass refuse and place nothing ----------------------
+    // No control greys out any more — F3.10 is a job of the run after the cut, not a button — so what the
+    // switch owns is the refusal itself, the same predicate `cut_suggest_passes::order` filters on.
     let window = cut_page(app, &common::three_clips_cut());
-    ui::set_speeds_pass(&window, false);
-    ui::refresh_speeds_gate(&window);
-    let button = ui::speeds_pass_button(&window).expect("⏩ Speeds is on the run-bar row");
-    assert!(
-        !button.is_sensitive(),
-        "the control greys out when the pass is off -- a grey button always means the pass would refuse"
-    );
+    ui::set_speeds_pass_for_test(&window, false);
     let refused = ui::run_speeds_pass(&window);
     assert!(
         refused.contains("off"),
@@ -210,17 +207,12 @@ fn speeds_round(app: &adw::Application) {
         still_refused.contains("off"),
         "nor does the with_reply seam, got {still_refused}"
     );
-    // An insensitive button swallows the emission, so what is asserted is the state rather than a
-    // fired-and-ignored click: GTK will not run the handler of a control it has greyed out.
+    // An off switch refuses every door into the pass, so the state check is that both still say "off".
+    ui::set_speeds_pass_for_test(&window, true);
+    let reopened = ui::run_speeds_pass_with_reply(&window, &[Call { clip: 1, rate: 3.0 }]);
     assert!(
-        !button.is_sensitive(),
-        "still grey after the refused presses"
-    );
-    ui::set_speeds_pass(&window, true);
-    ui::refresh_speeds_gate(&window);
-    assert!(
-        button.is_sensitive(),
-        "switching the policy back on re-enables the control"
+        !reopened.contains("off"),
+        "switching the policy back on lets the pass run again, got {reopened}"
     );
     RAN_GATE.store(true, Ordering::SeqCst);
     window.close();
@@ -308,7 +300,7 @@ fn cut_captions_retries_once() -> bool {
 }
 
 #[test]
-fn f3_10_widget_the_speeds_button_reaches_the_pass() {
+fn f3_10_widget_the_speeds_pass_door_places_what_it_is_answered() {
     // Pin cwd to our own temp root BEFORE anything builds: the press resolves the project through
     // `startup::session_dir(current_dir())`, and leaving it at rust/ writes a stray
     // `rust/session.naivepost/` into the repo.
@@ -326,7 +318,10 @@ fn f3_10_widget_the_speeds_button_reaches_the_pass() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_CLICK.load(Ordering::SeqCst), "the real click never ran");
+    assert!(
+        RAN_CLICK.load(Ordering::SeqCst),
+        "the run-through-the-door check never ran"
+    );
     assert!(
         RAN_PLACED_REFUSED_IGNORED.load(Ordering::SeqCst),
         "placed/refused/ignored never ran"

@@ -41,7 +41,6 @@ use crate::runqueue;
 use crate::shell::{Move, Outcome, Page, Refresh, Shell};
 use crate::startup;
 use crate::ui::cut_svg::wire_svg_esc;
-use crate::ui::policy_form;
 
 /// §1's badge **15** is a folder button beside the count; its tooltip names what the button opens.
 /// The page-specific wording §1 mentions lives in `Shell::outputs`' own doc — the button itself is
@@ -119,16 +118,12 @@ pub(crate) use crate::ui::window_trim_strip::{
     refresh_copy_buttons, wire_copy_esc, wire_delete_keys, wire_track_strip,
 };
 
-// The §02 run-bar presses live in `window_run_press` and the three pass jobs in `cut_pass_gates`
-// (window.rs is past its size budget); these are the doors the rest of the page calls, kept at their paths.
-pub use crate::ui::cut_pass_gates::SPEEDS_PASS_LABEL;
+// The three post-cut pass jobs live in `cut_pass_gates` (window.rs is past its size budget); these are the
+// doors the rest of the page and the run call, kept at their paths. No control starts them: they are jobs of
+// the run after the cut (`cut_suggest_passes::run_after_cut`).
 pub use crate::ui::cut_pass_gates::{
-    captions_pass_button, decorations_pass_button, refresh_captions_gate, refresh_decorations_gate,
-    refresh_speeds_gate, run_captions_pass, run_captions_pass_with_reply, set_captions_pass,
-    set_decorations_pass, set_speeds_pass, speeds_pass_button, CaptionBatch,
-};
-pub(crate) use crate::ui::cut_pass_gates::{
-    wire_captions_pass, wire_decorations_pass, wire_speeds_pass,
+    run_captions_pass, run_captions_pass_with_reply, set_captions_pass_for_test,
+    set_decorations_pass_for_test, set_speeds_pass_for_test, CaptionBatch,
 };
 pub(crate) use crate::ui::window_run_press::{
     live_transport, wire_lucky, wire_play, wire_play_cut, wire_play_recording, wire_preview_volume,
@@ -467,51 +462,11 @@ pub fn build_window(
     controls.append(&play);
     controls.append(&lucky);
     controls.append(&stop_);
-    // F0.7's policy gear, right beside the "I'm feeling lucky" gears rather than in a toolbar of its own:
-    // §03 puts both kinds of ⚙ on the same bar, and a second row of controls would read as a new area
-    // of the window that no spec page drew.
-    let policy_button = gtk::Button::from_icon_name("emblem-system-symbolic");
-    policy_button.set_widget_name("policy-button");
-    policy_button.set_tooltip_text(Some(policy_form::OPEN_TIP));
-    controls.append(&policy_button);
-    wire_policy(&policy_button, &window);
-    // F3.9's ✐ Captions lives on THIS bar, not on the Cut toolbar: §05 #1-screen pins that toolbar to six
-    // declared groups (`cut_screen::TOOLBAR_GROUPS`), and F3.9 names no §1 item, so its control cannot join
-    // that order without inventing a seventh group the inventory does not list. A caption pass is a JOB run
-    // after the cut, which is what this row is for -- beside ▶ / ⏹ / 🎲 / ⚙, the other things you start.
-    // Created once per window here (before any lookup) so re-entering the tab cannot stack a second button;
-    // the widget NAME is unchanged from the toolbar attempt, so tests and snapshots find it where they always did.
-    let captions = gtk::Button::with_label(CAPTIONS_PASS_LABEL);
-    captions.set_widget_name("captions-pass-button");
-    captions.set_tooltip_text(Some(
-        "ask the model for captions over the kept clips \u{2014} \u{21b6} Undo takes the pass back",
-    ));
-    controls.append(&captions);
-    refresh_captions_gate(&window);
-    wire_captions_pass(&captions, &window);
-    // F3.10's ⏩ Speeds beside it, for the same reason: one call after the cut asking which stretches run
-    // dull is a job, not one of §1's toolbar items, so it sits with the other jobs and NOT in `cut-toolbar`
-    // (whose six groups §05 #1-screen pins).
-    let speeds = gtk::Button::with_label(SPEEDS_PASS_LABEL);
-    speeds.set_widget_name("speeds-pass-button");
-    speeds.set_tooltip_text(Some(
-        "ask the model which clips run fast \u{2014} \u{21b6} Undo takes the pass back",
-    ));
-    controls.append(&speeds);
-    refresh_speeds_gate(&window);
-    wire_speeds_pass(&speeds, &window);
-    // F3.11's ✨ Decorations beside those two, for the same reason: one call after the cut asking for zooms,
-    // a stop and some volume is a job, not one of §1's toolbar items, so it sits with the other jobs and NOT
-    // in `cut-toolbar` (whose six groups §05 #1-screen pins via `cut_screen::TOOLBAR_GROUPS`). Created once
-    // per window here, before any lookup, so re-entering the tab cannot stack a second button.
-    let decorations = gtk::Button::with_label(DECORATIONS_PASS_LABEL);
-    decorations.set_widget_name("decorations-pass-button");
-    decorations.set_tooltip_text(Some(
-        "ask the model for zooms, a stop and some volume over the kept clips \u{2014} \u{21b6} Undo takes the pass back",
-    ));
-    controls.append(&decorations);
-    refresh_decorations_gate(&window);
-    wire_decorations_pass(&decorations, &window);
+    // …and NOTHING else. §2's list is the row's whole content: the four controls above, then the readouts.
+    // The editing-policy form has no gear here (F0.7 S5 opens it from the header ⓘ, badge 6, wired below);
+    // F0.7's derivation runs by itself when the User Context changes (`window_bench` → `schedule_policy_derive`),
+    // and F3.9-F3.11 are jobs of the run after the cut (`cut_suggest_land` → `cut_suggest_passes::run_after_cut`),
+    // filtered by the policy switches — none of them starts from a button on this bar.
     // §2's bar reads ▶ , I'm feeling lucky , ⏹ , then the progress bar taking the row's free width --
     // it stays in the OUTER row, beside the readouts, so shrinking squeezes the buttons and not the bar.
     // §1: the run bar's controls live in a box of their own (`run-controls-inner`), which
@@ -780,12 +735,8 @@ pub fn build_window(
     // would show them live until the first drag, which is a button lying about the state. The pairing lives
     // in the page half, so this file grows by nothing of its own beyond the call.
     crate::ui::cut_cut_play::paint_both_skipping_buttons(&window);
-    // F3.9's ✐ Captions is wired where it is BUILT -- in the run-bar row above, next to the other jobs -- and
-    // deliberately NOT appended into `cut-toolbar`: §05 #1-screen asserts that bar holds exactly the six
-    // groups `cut_screen::TOOLBAR_GROUPS` declares, in that order, and F3.9 adds no §1 item to any of them.
-    // Only the gate is refreshed here, because the policy may have moved since the page was built.
-    refresh_captions_gate(&window);
-    refresh_speeds_gate(&window);
+    // F3.9-F3.11 are jobs of the run after the cut, not controls: `cut_suggest_land` asks each pass the
+    // policy switches on, so nothing here has a gate to repaint.
     // F2.4 S4: this window's line slot, registered with the others so the newest window is the live
     // one. The project root DOES reach the page — `session_root` above is what the cut was loaded from —
     // so the saved position is restored here rather than starting at zero: `cut_line::restore` keeps it

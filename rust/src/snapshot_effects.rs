@@ -147,35 +147,9 @@ pub fn paint(
             "snapshot: 06-flows placed {landed:?}, expected a caption, a speed and a zoom"
         );
         // The three job buttons themselves: this screen exists to show THEM working, so a shot where one of
-        // them is missing would still print a page whose pass looks like it ran by itself. They live on
-        // `run-controls-inner` inside the sideways scroller §1 names `run-controls`, whose policy is External —
-        // the SHELL scrolls that row, so at a snapshot's window width the last control can sit at a negative x,
-        // clipped out of the picture. That is not this screen's subject and not a regression (the shell owns the
-        // scroll), so what is asserted here is that all three exist, are labelled and wired, and each reports its
-        // own gate; the pixels of the row go beside the page as `06-flows-runbar.png`, where they can be read.
-        let mut seen: Vec<String> = Vec::new();
-        for name in [
-            "captions-pass-button",
-            "speeds-pass-button",
-            "decorations-pass-button",
-        ] {
-            let button = ui::window::find_widget_by_name(window.upcast_ref(), name)
-                .unwrap_or_else(|| panic!("snapshot: 06-flows found no {name}"))
-                .downcast::<gtk4::Button>()
-                .unwrap_or_else(|_| panic!("snapshot: {name} is not a button"));
-            let label = button.label().unwrap_or_default().to_string();
-            assert!(!label.is_empty(), "snapshot: {name} carries no label");
-            assert!(
-                button.has_tooltip(),
-                "snapshot: {name} says nothing about what it does"
-            );
-            seen.push(format!(
-                "{name} {label:?} sensitive:{}",
-                button.is_sensitive()
-            ));
-        }
-        println!("snapshot: 06-flows | run-bar jobs {}", seen.join(", "));
-        RUNBAR_SHOT.with(|f| f.set(true));
+        // The three passes ran as jobs of the cut, so what this screen records is what they PLACED: no control
+        // starts them (§2's run bar holds only ▶ / lucky / ⏹ / the bar and the readouts), and a pass that placed
+        // nothing would otherwise print a bare page and still exit 0.
         let shown = ui::find_status(window.upcast_ref())
             .map(|row| row.text().to_string())
             .unwrap_or_default();
@@ -431,53 +405,4 @@ pub fn paint(
     }
 
     false
-}
-
-/// Has [`paint`] staged the `06-flows` screen? `snapshot::run` asks once, beside the effect-menu sidecar, and
-/// paints the run-bar row into `<name>-runbar.png` when it is set: that row's own pixels are where its three job
-/// buttons can be read, because the shell scrolls the row sideways at a snapshot's window width.
-pub fn runbar_shot_wanted() -> bool {
-    RUNBAR_SHOT.with(|flag| flag.get())
-}
-
-/// The three pass buttons' own row, copied onto a top level of its own so every label reads. A COPY again, for
-/// the same reason as [`crate::snapshot_effect_menu::write_png`]: reparenting a mapped widget out of its window
-/// leaves it with no render node. Each button keeps its label, tooltip and sensitivity because those ARE what
-/// this screen records.
-pub fn write_runbar_png(
-    window: &adw::ApplicationWindow,
-    out: &std::path::Path,
-) -> Result<(), String> {
-    let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
-    row.set_widget_name("run-controls-inner");
-    for name in [
-        "captions-pass-button",
-        "speeds-pass-button",
-        "decorations-pass-button",
-    ] {
-        let held = ui::window::find_widget_by_name(window.upcast_ref(), name)
-            .and_then(|widget| widget.downcast::<gtk4::Button>().ok())
-            .unwrap_or_else(|| panic!("snapshot: found no {name}"));
-        let copy = gtk4::Button::with_label(held.label().unwrap_or_default().as_str());
-        copy.set_widget_name(name);
-        copy.set_tooltip_text(held.tooltip_text().as_deref());
-        copy.set_sensitive(held.is_sensitive());
-        row.append(&copy);
-    }
-    let holder = gtk4::Window::new();
-    holder.set_decorated(false);
-    // Measured from the row's own natural size, never guessed: too narrow and a label clips to an ellipsis.
-    let width = row.measure(gtk4::Orientation::Horizontal, -1).3;
-    let height = row.measure(gtk4::Orientation::Vertical, -1).3;
-    holder.set_default_size(width.max(200), height.max(48));
-    holder.set_child(Some(&row));
-    holder.present();
-    crate::snapshot_face::pump_context(64);
-    let result = crate::snapshot_face::write_png(row.upcast_ref(), out);
-    holder.close();
-    result
-}
-
-thread_local! {
-    static RUNBAR_SHOT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
