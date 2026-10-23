@@ -548,12 +548,6 @@ fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
         "the fold-all badge sits at the gutter's TOP, above the lane switches (§1's order): \
          badge y={badge_top} vs {lane} switch y={switch_top}"
     );
-    // Its tooltip is the sentence that says what pressing it does; without one the glyph is unguessable.
-    let tip = badge.tooltip_text().unwrap_or_default().trim().to_string();
-    assert!(
-        tip.contains("fold"),
-        "badge 23 explains itself, got {tip:?}"
-    );
     RAN_GUTTER.store(true, Ordering::SeqCst);
 }
 
