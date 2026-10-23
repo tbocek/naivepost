@@ -347,6 +347,13 @@ thread_local! {
 
 /// Write what the plate is fitted to, from [`crate::effect_overlap::source_frame`].
 fn set_plate_shape(window: &adw::ApplicationWindow, shape: (i32, i32)) {
+    note_plate_shape(window, shape)
+}
+
+/// The same note for a caller that knows the plate's shape from a file rather than from the page's own search:
+/// a snapshot staging its own frame (`snapshot_preview`) has the JPEG on disk and can say what it measures, instead
+/// of leaving the plate on `FALLBACK_SHAPE` and letting one set of fractions mean two different boxes in px.
+pub fn note_plate_shape(window: &adw::ApplicationWindow, shape: (i32, i32)) {
     let _ = window;
     PLATE_SHAPE.with(|slot| *slot.borrow_mut() = Some(shape));
 }

@@ -29,14 +29,16 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
 fn staged_menu_lists_the_app_s_rows(app: &adw::Application) {
     let window = cut_page(app);
     let rows = naivepost::snapshot_effect_menu::stage(&window);
+    // The header first, then the six entries: `stage` reads them off the popover's own box in that order.
     assert_eq!(
         rows.len(),
-        fx_lane_len(),
-        "the staging step read {} rows from the popover",
+        fx_lane_len() + 1,
+        "the staging step read {} rows from the popover (six effects plus the header)",
         rows.len()
     );
+    let items: Vec<&str> = rows.iter().skip(1).map(|row| row.as_str()).collect();
     // Each row is `"<widget name>: <label>"`, so both halves of the proof come off the widget tree.
-    let names: Vec<&str> = rows
+    let names: Vec<&str> = items
         .iter()
         .map(|row| row.split(": ").next().unwrap())
         .collect();
@@ -48,7 +50,7 @@ fn staged_menu_lists_the_app_s_rows(app: &adw::Application) {
         names, wanted,
         "the staged menu is not in the spec's row order"
     );
-    let labels: Vec<String> = rows
+    let labels: Vec<String> = items
         .iter()
         .map(|row| row.split(": ").nth(1).unwrap_or_default().to_string())
         .collect();

@@ -16,6 +16,7 @@
 use std::path::Path;
 
 use crate::cut::{Cut, Fx, Seg};
+use crate::layout;
 use crate::timeline::Recording;
 use crate::ui::cut_tracks::{self, Scene};
 /// The spec's own width for this image (`spec/img/06-lane.png` is 1240 x 200). Not a tuning value: it is the
@@ -36,14 +37,27 @@ pub fn is_lane_subject(screen: &str) -> bool {
     screen == "06-lane"
 }
 
-/// Paint the lane scene into `<out>` at [`SHOT_W`] wide and as tall as its own rows. Returns the log sentence.
-pub fn write_png(cut: &Cut, out: &Path) -> Result<String, String> {
+/// Paint the lane scene into `<out>` at [`SHOT_W`] wide and as tall as its own rows. `dir` is the project folder
+/// the snapshot was asked to render: the picture row's frames and the wave strip's envelope cache are staged there
+/// first (see [`stage_frame`] / [`stage_envelope`]) and read back through the SAME doors the live page reads them
+/// (`cut_tracks::frame_paths`, `cache/waves/<base>.wave`), so this image cannot show content the app would not have.
+/// Returns the log sentence.
+pub fn write_png(cut: &Cut, dir: &Path, out: &Path) -> Result<String, String> {
     let thumb_px = cut_tracks::THUMB_DEFAULT_PX;
-    let scene = scene(cut);
-    // The band's own height at this thumbnail size is what the painter lays rows out against: ruler + selection
-    // band + one lane row per overlapping group + a picture row with its wave strip. Asking for LESS than that
-    // would not shrink the drawing — `paint_at` lays its rows out by the scene, so a 200 px ask over a 268 px
-    // scene simply cut the picture row off mid-way, which is what an earlier version of this shot showed.
+    let base = "session-tape";
+    // Staged here rather than by each caller so every producer of this image — `just snapshot 06-lane` and the
+    // checks that decode it — goes through one door and gets the same content.
+    stage_frame(dir, base, 0.0);
+    if let Err(why) = stage_envelope(dir, base) {
+        eprintln!("snapshot: 06-lane wave cache | {why}");
+    }
+    let mut scene = scene(cut);
+    // What the band may show, listed through the painter's own door. Empty when nothing is there, which draws no
+    // pictures rather than inventing black (§1's prototype note).
+    scene.thumbs = staged_tree(dir)
+        .ok()
+        .map(|tree| vec![(base.to_string(), cut_tracks::frame_paths(&tree, base))])
+        .unwrap_or_default();
     let height = cut_tracks::band_height_px(&scene, thumb_px).ceil() as i32;
     let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, SHOT_W, height)
         .map_err(|why| format!("the lane surface: {why}"))?;
@@ -64,9 +78,83 @@ pub fn write_png(cut: &Cut, out: &Path) -> Result<String, String> {
     ))
 }
 
+/// The tree every file this shot reads and writes lives under: `snapshot::run` hands its screens the copied
+/// session, and a test's temp root gets the same shape so one set of doors serves both callers.
+fn staged_tree(dir: &Path) -> Result<layout::Tree, String> {
+    layout::Tree::new(session_folder(dir))
+}
+
+/// The folder the program's own doors resolve as the session for the files this shot stages and reads back.
+/// A page's `cache/…` and `prepare/inputs/…` live under the folder the window took on, and there are two doors to
+/// agree with: `Tree::new(dir)` when a caller hands over the session itself (§07's band staging passes a `Tree`
+/// built on `narrate_session_tree()`), and `startup::session_dir(current_dir())` for the wave strip's own reader
+/// (`cut_trim_press::cached_peaks`), which resolves the working copy beside the launch. A bare temp root gets the
+/// `session.naivepost` shape inside it, so one set of doors serves both callers.
+fn session_folder(dir: &Path) -> std::path::PathBuf {
+    let session_beside_launch =
+        crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    if dir == session_beside_launch {
+        return dir.to_path_buf();
+    }
+    if dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.ends_with(".naivepost"))
+    {
+        return dir.join("session.naivepost");
+    }
+    dir.join("session.naivepost")
+}
+
+/// The tape length the lane shot paints, in seconds: the whole surface at [`PPS`].
+const TAPE_SECONDS: f64 = SHOT_W as f64 / PPS;
+
+/// Stage one extracted frame where Prepare would have put one, through the program's own door
+/// (`snapshot_face::seed_structured_frame`), so `cut_tracks::frame_paths` finds a real JPEG on the grid and the
+/// picture row carries film instead of flat grey. Nothing is painted here: this only puts the file where the
+/// painter already knows to look.
+///
+/// ONE frame, because that is what the band shows: `draw_picture_rows` picks the single frame nearest the view's
+/// left edge and marks it at that second — planting more files changes which one lands, not how many are drawn.
+pub fn stage_frame(dir: &Path, base: &str, second: f64) -> Option<std::path::PathBuf> {
+    let tree = staged_tree(dir).ok()?;
+    crate::snapshot_face::seed_structured_frame(tree.dir(), base, second)
+}
+
+/// Stage this take's loudness envelope into `cache/waves/<base>.wave` the way the app itself does: write the
+/// decoded mono audio where `wave_build::ensure` looks for it, then let that door fold the peaks and write the
+/// cache (`wave_build::ensure` -> `wave::write`), which is also what stamps it against the reading. `draw_row_wave_strips`
+/// -> `cut_trim_press::paint_row_wave` then reads that same cache back through `cached_peaks`; without it the strip
+/// draws a flat baseline. Nothing here paints — this only puts files where the painter already knows to look.
+///
+/// `cached_peaks` stamps the cache against the CACHE's own (length, 0) and resolves the session from the CURRENT
+/// WORKING DIRECTORY (`startup::session_dir(current_dir())`), so a shot taken from a launch whose working copy is
+/// this project reads what is written here; a check pointing elsewhere gets a flat strip and says so.
+///
+/// The audio is the tone-burst wav `snapshot::write_silence_wav` produces — the same stand-in §07's Narrate band is
+/// staged with (`snapshot_narrate::stage_envelope`) — at the rate the fold assumes. It is real audio the program's
+/// own decoder reads, not a scripted picture.
+pub fn stage_envelope(dir: &Path, lane: &str) -> Result<(), String> {
+    let tree = staged_tree(dir)?;
+    let decoded = tree.voice16k_wav(lane);
+    let rate = crate::transcribe::SAMPLE_RATE;
+    // The decoded file is what the fold READS, so it has to exist first: `write_silence_wav` only writes an
+    // existing file (`File::options().open`), it does not create one.
+    if let Some(parent) = decoded.parent() {
+        std::fs::create_dir_all(parent).map_err(|why| format!("{}: {why}", parent.display()))?;
+    }
+    crate::snapshot::write_silence_wav(
+        &decoded,
+        rate as u32,
+        ((TAPE_SECONDS + 1.0) * rate as f64) as u32,
+    )
+    .map_err(|why| format!("{}: {why}", decoded.display()))?;
+    crate::wave_build::ensure(&tree, lane, &decoded, &mut |_| {})
+}
+
 /// The scene: the same cut the window was seeded with, at the spec's zoom, over one take long enough to fill the
-/// image. Thumbnails are left out — nothing decodes during a paint (§7), and the spec's own row of slides is
-/// footage this container has no frames of; the ground and the wave strips carry the comparison instead.
+/// image. Thumbnails come from [`write_png`], which lists what the folder actually holds; here they are empty
+/// because nothing decodes during a paint (§7).
 fn scene(cut: &Cut) -> Scene {
     Scene {
         pps: PPS,

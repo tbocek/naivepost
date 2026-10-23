@@ -804,6 +804,19 @@ pub(crate) fn cut_tool_group(
 /// `GSK_RENDERER=cairo` — the flat rows keep the same names and the same order.
 pub(crate) fn cut_effect_menu(window: &adw::ApplicationWindow) -> gtk::Popover {
     let popover = gtk::Popover::new();
+    // The popover's own child is an outer box whose FIRST row is the menu's name. `spec/img/06-effect-menu.png`
+    // draws the header as the trigger's own label with a check (`✚ Effect ✓`) above the six entries; without it
+    // the popover shows six anonymous rows and no name, which is what the render was judged against.
+    let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    shell.set_widget_name("effect-menu-popover");
+    // A Label, not a Button: the header names the menu and answers nothing, so pressing it does nothing.
+    let title = gtk::Label::new(Some(cut_screen::EFFECT_MENU_TITLE));
+    title.set_widget_name("effect-menu-title");
+    title.set_halign(gtk::Align::Start);
+    title.set_margin_start(8);
+    title.set_margin_top(4);
+    title.set_margin_bottom(2);
+    shell.append(&title);
     let list = gtk::Box::new(gtk::Orientation::Vertical, 0);
     list.set_widget_name("effect-menu");
     for item in cut_screen::EFFECT_ITEMS {
@@ -829,7 +842,8 @@ pub(crate) fn cut_effect_menu(window: &adw::ApplicationWindow) -> gtk::Popover {
         });
         list.append(&row);
     }
-    popover.set_child(Some(&list));
+    shell.append(&list);
+    popover.set_child(Some(&shell));
     popover
 }
 
