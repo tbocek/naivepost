@@ -947,7 +947,13 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 // IS its shape), and asking for its own width is what lets the picture keep the pane's width
                 // instead of being drawn 1280 wide and cropped to 660.
                 let panel_w = panel.width().max(1);
-                crate::ui::cut_preview_panel::grow_to(&panel, panel_w as f64, (top_h - lane_h) as f64);
+                // …but the ask is CEILED at §A's opening by the page's own rule: feeding the pane's
+                // CURRENT height back into the panel's request unceiled is a feedback loop — the grown
+                // request becomes the start pane's minimum, the paned clamps its handle to it, and the
+                // pane overflows the divider, clipping §1's first idle reading (badge **2**) out of the
+                // shot (measured: `cut-top` 417 px at y=45 inside a paned whose edge sat at y=82).
+                let tall = crate::ui::cut_page_layout::preview_ask_ceiling(top_h, lane_h);
+                crate::ui::cut_preview_panel::grow_to(&panel, panel_w as f64, tall as f64);
                 crate::ui::cut_preview_frame::repaint(&window);
                 // No divider re-ask here: made before the window has §1's size it lands on the paned's clamp
                 // and undoes `rest_page_splits`, which runs after the final size request.

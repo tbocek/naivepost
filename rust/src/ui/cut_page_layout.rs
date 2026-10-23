@@ -119,6 +119,15 @@ pub const BANDS_ABOVE_PICTURE_PX: i32 = 18 + 22;
 /// window, while the band itself asked 126 px and got 132 px).
 pub const CUT_BOTTOM_FLOOR_PX: i32 = 196;
 
+/// The tallest the picture may be ASKED for once a pane has grown past §A's opening: an ask above
+/// [`SELF_SPLIT_TOP_PX`] becomes the paned's start-pane minimum, the handle clamps to it, and the pane
+/// overflows the divider — everything above the new handle position is clipped out of the render, §1's
+/// first idle reading with it. One rule for the page and for anything that re-asks the panel later (the
+/// snapshot does, at its final size), so a re-ask can never undo the opening.
+pub fn preview_ask_ceiling(pane_h: i32, lane_h: i32) -> i32 {
+    (pane_h - lane_h).min(SELF_SPLIT_TOP_PX - lane_h).max(1)
+}
+
 /// What a wide `gtk::Paned` keeps for its own handle and frame, measured on the built page: a 634 px paned
 /// holding a 380 px start pane and a 250 px end pane leaves 4 px over. Named here because it is this page's
 /// divider that has to be paid for, not a GTK-wide constant.
@@ -268,9 +277,11 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
             scroller.set_vexpand(false);
             // Ask the grid itself what its readings cost and use the larger of that and the row-count
             // floor: a taller ladder or a wrapped label raises the ask instead of scrolling rows away.
-            let rows_h = idle_rows_height(frame);
-            scroller.set_min_content_height(IDLE_ROWS_MIN_HEIGHT.max(rows_h));
-            scroller.set_max_content_height(IDLE_ROWS_CAP_H.max(IDLE_ROWS_MIN_HEIGHT.max(rows_h)));
+            // The floor and the ask are ONE number from here on: the frame's request below and the
+            // scroller's min/max both come off `rows_h`, so the viewport is never shorter than its body.
+            let rows_h = IDLE_ROWS_MIN_HEIGHT.max(idle_rows_height(frame));
+            scroller.set_min_content_height(rows_h);
+            scroller.set_max_content_height(IDLE_ROWS_CAP_H.max(rows_h));
             // The ASK goes on the scroller alone, not on the frame: §1 forbids the page from scrolling as a
             // whole at its minimum (`tests/suite/window_shrinks.rs` measures zero travel on every tab), and
             // a request on the frame is charged to the page box, which pushed `page-scroll-Cut` past its
@@ -285,7 +296,7 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
             frame.set_valign(gtk::Align::Start);
             frame.set_size_request(
                 FORM_COLUMN_MIN_W,
-                FORM_COLUMN_MIN_H.min(SELF_SPLIT_TOP_PX - COLUMN_FRAME_PX),
+                (rows_h + COLUMN_FRAME_PX).min(SELF_SPLIT_TOP_PX),
             );
             // The eight rows are shown WHOLE rather than scrolled into that cap: the scroller takes its
             // body's natural height up to the cap instead of answering its minimum and clipping the grid.
@@ -296,6 +307,11 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
             if let Some(window) = window {
                 crate::ui::cut_form_frame::scroll_to_top(window);
             }
+            // …and once more at the first real allocation. The ask above lands while the viewport is still
+            // 0 px tall, and headless a widget allocated once fires no `notify::height` (see
+            // [`rest_opening_once`]), so a scroll position that anything else parked elsewhere — a focus
+            // moving to the dropdown, a later resize — is never corrected. One bounded idle, no sleep.
+            rest_scroll_once(&scroller);
         }
         if let Some(grid) = frame
             .observe_children()
@@ -524,15 +540,30 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
 
 /// What the eight idle readings actually cost: the `cut-form` grid's own vertical minimum, asked of the
 /// widget rather than remembered. 0 when this page has no readings (a page built without the form column).
+///
+/// The grid is found by DESCENT, not among the frame's direct children: `cut_form_frame::frame_parts`
+/// puts the body INSIDE `cut-form-scroller`, so a one-level scan answered `None` here, this returned 0,
+/// and every ask below fell back to [`IDLE_ROWS_MIN_HEIGHT`] (8 × 29 = 232 px) — less than the grid
+/// really costs, because its Aspect ratio row carries a `gtk::DropDown` taller than a label line. The
+/// viewport was then shorter than its body and §1's first reading, "Thumbnails:" (badge **2**), was
+/// painted above the visible edge.
 fn idle_rows_height(frame: &gtk::Widget) -> i32 {
-    frame
-        .observe_children()
-        .iter::<glib::Object>()
-        .filter_map(Result::ok)
-        .filter_map(|child| child.downcast::<gtk::Grid>().ok())
-        .find(|grid| grid.widget_name() == "cut-form")
+    find_grid(frame)
         .map(|grid| grid.measure(gtk::Orientation::Vertical, -1).0)
         .unwrap_or(0)
+}
+
+/// Depth-first search for the readings grid, the same walk `cut_form_frame` uses to find its own parts.
+fn find_grid(node: &gtk::Widget) -> Option<gtk::Grid> {
+    if node.widget_name() == "cut-form" {
+        return node.downcast_ref::<gtk::Grid>().cloned();
+    }
+    for child in node.observe_children().iter::<glib::Object>().flatten() {
+        if let Some(grid) = find_grid(child.downcast_ref::<gtk::Widget>()?) {
+            return Some(grid);
+        }
+    }
+    None
 }
 
 /// Take every named widget out of `page_box` and hand it back, in the order asked for. Detaching (as
@@ -566,6 +597,21 @@ fn detach(page_box: &gtk::Box, names: &[String]) -> Vec<gtk::Widget> {
 /// that stops clamping is the first real allocation (§1's minimum window): before it the paned answers 1 px
 /// tall and any ask lands on the clamp. The shell's divider does exactly this (`window_divider`), and GTK 4
 /// has no allocate signal to hook, so a bounded one-shot idle is the door — no sleep, no guessed wait.
+/// One shot at putting the form column back at the TOP of its readings, for one scroller. Same door as
+/// [`rest_opening_once`], same reason: §1's "the idle column starts with the readings" has to hold at the
+/// size the page is actually painted at, not only at the size it was built at.
+pub fn rest_scroll_once(scroller: &gtk::ScrolledWindow) {
+    let asked = std::rc::Rc::new(std::cell::Cell::new(false));
+    let held = scroller.clone();
+    glib::idle_add_local_once(move || {
+        if held.height() <= 1 || asked.get() {
+            return;
+        }
+        asked.set(true);
+        crate::ui::cut_form_frame::scroll_to_top_of(&held);
+    });
+}
+
 pub fn rest_opening_once(divider: &gtk::Paned) {
     let asked = std::rc::Rc::new(std::cell::Cell::new(false));
     let held = divider.clone();

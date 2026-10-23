@@ -79,6 +79,25 @@ pub fn frame_parts(body: &gtk::Widget) -> (gtk::Box, gtk::Box) {
             scroll_to_top_of(&scroller);
         }
     });
+    // §1's "the idle column STARTS with the readings", held as a rule on the adjustment itself rather
+    // than as one ask made at build time. Anything can park a `gtk::ScrolledWindow`'s viewport lower — a
+    // focus landing on the Aspect ratio dropdown, a re-render at another size, a later resize — and a
+    // column parked past its first line loses badge **2**, 'Thumbnails:', off the painted pixels while
+    // every tree walk still finds the row (measured: the shot's viewport reported `value=0` a moment
+    // before its PNG opened on 'Aspect ratio:'). While a form is open the column may scroll — §A pins
+    // only its heading and footer — so the guard reads the pinned heading: visible heading means a form
+    // is open and its body keeps its scroll.
+    let heading_for_adjust = heading.clone();
+    let correcting = std::rc::Rc::new(std::cell::Cell::new(false));
+    let hold = correcting.clone();
+    scroller.vadjustment().connect_value_changed(move |adjust| {
+        if heading_for_adjust.is_visible() || hold.get() || adjust.value() <= adjust.lower() {
+            return;
+        }
+        hold.set(true);
+        adjust.set_value(adjust.lower());
+        hold.set(false);
+    });
     // §1's idle column STARTS with the readings: a `gtk::ScrolledWindow` keeps whatever value its
     // adjustment last held, so a body that once grew past this viewport (a form opened and closed, or a
     // window resized down) would leave the column parked at its TAIL -- the render showed only the last
