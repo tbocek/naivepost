@@ -67,6 +67,23 @@ pub fn frame_parts(body: &gtk::Widget) -> (gtk::Box, gtk::Box) {
     scroller.set_policy(gtk::PolicyType::External, gtk::PolicyType::Automatic);
     scroller.set_vexpand(true);
     scroller.set_child(Some(body));
+    // §1's idle column STARTS with the readings, and a `gtk::ScrolledWindow` keeps whatever value its
+    // adjustment last held: once anything scrolled this viewport (a form taller than the pane, or a window
+    // squeezed down to §1's minimum), the column opened on its TAIL and the render showed only the last four
+    // readings with three clipped pills above them. So every time a body goes into the frame -- the page
+    // painting its idle rows, a form opening, a form closing back to the readings -- the ask is to start at
+    // the top. `set_child` fires `child-notify::child`, which is what makes this the program's own door.
+    scroller.connect_child_notify({
+        let scroller = scroller.clone();
+        move |_pspec| {
+            scroll_to_top_of(&scroller);
+        }
+    });
+    // §1's idle column STARTS with the readings: a `gtk::ScrolledWindow` keeps whatever value its
+    // adjustment last held, so a body that once grew past this viewport (a form opened and closed, or a
+    // window resized down) would leave the column parked at its TAIL -- the render showed only the last
+    // four readings with three clipped pills above them. The page asks for the top whenever it paints the
+    // idle rows (`cut_page_layout::arrange`) and whenever a form closes; this is where the ask lands.
 
     // The INSERT's own pinned footer, handed out beside the column so the page can place it directly under the
     // insert form (§S4 draws that form below the frame, in place of the readings). It is a SECOND box rather
@@ -80,6 +97,28 @@ pub fn frame_parts(body: &gtk::Widget) -> (gtk::Box, gtk::Box) {
     column.append(&scroller);
     column.append(&idle_footer);
     (column, footer)
+}
+
+/// Put one scroller's viewport at the top of its body. `frame_parts` wires this to every frame's own
+/// scroller, so it runs whenever a body is placed in the column; [`scroll_to_top`] is the same ask for a
+/// caller that only has the window.
+fn scroll_to_top_of(scroller: &gtk::ScrolledWindow) {
+    let adjust = scroller.vadjustment();
+    adjust.set_value(adjust.lower());
+}
+
+/// Ask this window's form column to show the TOP of its body -- §1's "the idle column starts with the
+/// readings". The page calls it after placing the idle rows and after a form closes; a column parked at its
+/// tail would hide the first readings (see [`frame_parts`]). Returns whether the window had a column.
+pub fn scroll_to_top(window: &adw::ApplicationWindow) -> bool {
+    let Some(scroller) = named(window, "cut-form-scroller") else {
+        return false;
+    };
+    let Some(scroller) = scroller.downcast::<gtk::ScrolledWindow>().ok() else {
+        return false;
+    };
+    scroll_to_top_of(&scroller);
+    true
 }
 
 /// The frame's widgets, newest window winning like every other per-window reader here.
@@ -290,9 +329,12 @@ pub fn press_close(window: &adw::ApplicationWindow) -> String {
     }
     if let Some(said) = ui::press_band_esc(window) {
         set_pinned(window, None);
+        // Back to the readings, from their first line (§1).
+        scroll_to_top(window);
         return said;
     }
     set_pinned(window, None);
+    scroll_to_top(window);
     NOTHING_OPEN.to_string()
 }
 

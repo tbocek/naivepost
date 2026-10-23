@@ -157,6 +157,12 @@ fn scrollbar_ask_px() -> i32 {
 const IDLE_ROWS_MIN_HEIGHT: i32 = 200;
 /// The width §1's reading column asks for before the preview starts losing pixels to it.
 pub const FORM_COLUMN_MIN_W: i32 = 300;
+/// The height that column needs to show its eight idle readings whole (§1: "idle readings, one per line").
+/// Measured at the minimum window the pane came out ~65 px against the ~230 px the grid wants, so the
+/// scroller scrolled and the render showed only the last four rows (three clipped pills above them). The
+/// floor makes the pane ask for its readings instead of clipping them; what gives is the divider position,
+/// which §1 already allows ("above the minimum the layout grows with the window").
+pub const FORM_COLUMN_MIN_H: i32 = 300;
 /// … and the height band the scroller between the pinned heading and footer is sized to. Left uncapped
 /// it asked for the whole page's height, which is what pushed the tracks ~750 px below the preview. Measured
 /// on `05-insert-form`: at 460 the form body filled the frame and its footer ("Insert it" + "Cancel") fell
@@ -177,11 +183,7 @@ pub fn arrange(page_box: &gtk::Box, window: &adw::ApplicationWindow) {
 /// `arrange`, with the tape's height ask supplied. Split out because §1's band costs a row per camera AND a
 /// row per cut lane, so a caller that has already put a cut on the page (or a test that seeds one) must charge
 /// the bottom pane for the rows THAT scene paints, not for the idle one `arrange` can see.
-pub fn arrange_priced(
-    page_box: &gtk::Box,
-    band_ask: i32,
-    _window: Option<&adw::ApplicationWindow>,
-) {
+pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::ApplicationWindow>) {
     // The toolbar and the scrollbar around the tape, plus the box's own row spacing: the band's ask is only
     // one of the three things the bottom pane stacks (§A: "bottom = toolbar, tracks, scrollbar").
     let pane_floor_px = cut_bottom_floor_px(band_ask);
@@ -238,7 +240,7 @@ pub fn arrange_priced(
         // per-widget ceiling here can hold the column narrow -- the pane position is what seats it.
         frame.set_hexpand(false);
         // The frame states only the floor it must never go under; the height band lives on the scroller.
-        frame.set_size_request(FORM_COLUMN_MIN_W, -1);
+        frame.set_size_request(FORM_COLUMN_MIN_W, FORM_COLUMN_MIN_H);
         if let Some(scroller) = frame
             .observe_children()
             .iter::<glib::Object>()
@@ -254,6 +256,14 @@ pub fn arrange_priced(
             scroller.set_vexpand(false);
             scroller.set_min_content_height(IDLE_ROWS_MIN_HEIGHT);
             scroller.set_max_content_height(IDLE_ROWS_CAP_H);
+            // §1's idle column starts with the readings, so the pane is asked to show its TOP: the scroller
+            // keeps whatever adjustment it last had, and at the minimum window the eight rows do not fit, so
+            // a leftover value left the first four readings painted above the visible edge. `frame_parts`
+            // also asks this whenever a body is placed in the frame; this is the seat §1 describes -- the page
+            // painting its readings.
+            if let Some(window) = window {
+                crate::ui::cut_form_frame::scroll_to_top(window);
+            }
         }
         if let Some(grid) = frame
             .observe_children()

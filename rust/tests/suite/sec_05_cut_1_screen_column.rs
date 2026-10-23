@@ -19,6 +19,7 @@ static RAN_IDLE_PAINTED: AtomicBool = AtomicBool::new(false);
 static RAN_LADDER: AtomicBool = AtomicBool::new(false);
 static RAN_HEADING: AtomicBool = AtomicBool::new(false);
 static RAN_GUTTER: AtomicBool = AtomicBool::new(false);
+static RAN_TOP_READING: AtomicBool = AtomicBool::new(false);
 
 /// How far a value's right edge may fall short of the grid's own right edge and still count as
 /// right-aligned: a couple of pixels of padding, not a column's worth of slack. The bug put them
@@ -280,6 +281,104 @@ fn check_the_thumbnail_ladder_steps_its_readout(app: &adw::Application) {
     RAN_LADDER.store(true, Ordering::SeqCst);
 }
 
+/// §1's idle column at the MINIMUM window: the readings are shown from their FIRST line. The scroller is
+/// squeezed to its 200 px floor there (the page cannot give it more), and a `gtk::ScrolledWindow` that gains
+/// an adjustment keeps whatever value it last had — so once anything scrolled it, the column opened on the
+/// TAIL of the eight rows and 'Thumbnails:', 'Aspect ratio:', 'Playhead:' and 'Selection:' were painted above
+/// the visible edge (measured in `shots/05-cut.png`: three clipped pills at the top of the column). This is
+/// the fact §1 states as "the idle column starts with the readings": the ladder buttons and the aspect
+/// dropdown are MAPPED and inside the scroller's own box, the 'Thumbnails:' key sits ABOVE 'Aspect ratio:',
+/// and every row's key is mapped.
+fn check_the_idle_column_opens_on_its_first_reading(app: &adw::Application) {
+    let window = cut_page_at_minimum(app);
+    let scroller_box = common::find_named(&window, "cut-form-scroller")
+        .expect("§A's scroller holds the idle rows");
+    let scroller = scroller_box
+        .clone()
+        .downcast::<gtk::ScrolledWindow>()
+        .expect("§A's scroller is a ScrolledWindow");
+    let adjust = scroller.vadjustment();
+    println!(
+        "COLUMN at minimum: scroller {} px tall, adjustment lower={} upper={} page={} value={}",
+        scroller.height(),
+        adjust.lower(),
+        adjust.upper(),
+        adjust.page_size(),
+        adjust.value()
+    );
+    // Where the scroller's box is in window coordinates: a reading painted outside it is not on screen.
+    let top = top_y(&scroller_box);
+    let bottom = top + scroller.height();
+    for name in ["thumb-minus", "thumb-plus", "aspect-choice"] {
+        let widget =
+            common::find_named(&window, name).unwrap_or_else(|| panic!("{name} is on the column"));
+        crate::common::wait_until(
+            &format!("{name} is laid out (it has pixels of its own)"),
+            || widget.width() > 0 && widget.height() > 0,
+        );
+        assert!(
+            widget.is_mapped(),
+            "{name} is built but never painted (mapped=false) — the column opens below it"
+        );
+        let y = top_y(&widget);
+        assert!(
+            y >= top - CLIP_SLACK_PX && y + widget.height() <= bottom + CLIP_SLACK_PX,
+            "{name} is painted at y={y}..{}, outside the scroller's y={top}..{bottom}: the idle column \
+             is showing the tail of the readings, not their first line",
+            y + widget.height()
+        );
+    }
+    // §1's order in the column: the thumbnail row comes before the aspect row, which comes before the clocks.
+    let thumb_key = common::find_named(&window, "cut-readout-thumbnails-key")
+        .expect("the Thumbnails row has its key label");
+    let aspect_key = common::find_named(&window, "cut-readout-aspect-ratio-key")
+        .expect("the Aspect ratio key label");
+    let (thumb_top, aspect_top) = (top_y(&thumb_key), top_y(&aspect_key));
+    println!("COLUMN order: 'Thumbnails:' y={thumb_top}, 'Aspect ratio:' y={aspect_top}");
+    assert!(
+        thumb_top < aspect_top,
+        "'Thumbnails:' reads above 'Aspect ratio:' (§1's row order): {thumb_top} vs {aspect_top}"
+    );
+    for label in naivepost::cut_screen::IDLE_FORM_ROWS {
+        let key = common::find_named(
+            &window,
+            &format!("{}-key", naivepost::cut_screen::readout_widget(label)),
+        )
+        .unwrap_or_else(|| panic!("the `{label}` row has no key label"));
+        assert!(
+            key.is_mapped(),
+            "`{label}`'s key is built but not painted on the idle column"
+        );
+    }
+    hold_last_window(window);
+    RAN_TOP_READING.store(true, Ordering::SeqCst);
+}
+
+/// A widget's top edge in window coordinates, the vertical twin of [`span`].
+#[allow(deprecated)] // 4.12's replacement needs a surface node this tree does not hand out
+fn top_y(widget: &gtk::Widget) -> i32 {
+    let native = widget
+        .native()
+        .expect("the page is inside a realized window");
+    let (_, y) = widget
+        .translate_coordinates(&native, 0.0, 0.0)
+        .expect("the widget is laid out");
+    y as i32
+}
+
+/// How far past the scroller's edge a widget may sit and still count as on screen: a row's own border and
+/// the sub-pixel rounding of `translate_coordinates`, not a row's worth of slack.
+const CLIP_SLACK_PX: i32 = 4;
+
+/// The same Cut page as [`cut_page`] but sized to §1's MINIMUM window, which is where the form column gets
+/// its shortest pane and the clipping showed up.
+fn cut_page_at_minimum(app: &adw::Application) -> adw::ApplicationWindow {
+    let window = cut_page(app);
+    common::size_to_minimum(&window);
+    settle();
+    window
+}
+
 /// §A's pinned heading: absent on the idle column, and once a form is open it carries the title at its
 /// left and the ✕ at its right end. The form is opened through the program's own door — the chooser seam
 /// `tests/suite/cut_form_frame_widgets.rs` uses, i.e. what the native file dialog's callback calls.
@@ -428,6 +527,33 @@ fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
         left >= band_left && right <= band_left + naivepost::cut_screen::GUTTER_PX as i32,
         "`gutter-switch-{lane}` must be inside the gutter column: {left}..{right} vs band {band_left}"
     );
+    // §1's order IN the gutter: the whole-cut fold-all badge is its first control, above every lane's own
+    // sound switch ("fold-all badge, per-lane and per-row sound switches, empty-row cross"). And it has to
+    // be PAINTED there: the rail is dark ink, so a badge left in the theme's dark label colour sits
+    // dark-on-dark at the top of the column and reads as absent (what the render showed).
+    crate::common::wait_until(
+        "the fold-all badge is laid out (it has pixels of its own)",
+        || badge.width() > 0 && badge.height() > 0,
+    );
+    assert!(
+        badge.is_mapped(),
+        "badge 23 is built but never painted (mapped=false): {} px at y={}",
+        badge.height(),
+        top_y(&badge)
+    );
+    let (badge_top, switch_top) = (top_y(&badge), top_y(&switch));
+    println!("GUTTER order: fold-all y={badge_top}, `{lane}` switch y={switch_top}");
+    assert!(
+        badge_top <= switch_top,
+        "the fold-all badge sits at the gutter's TOP, above the lane switches (§1's order): \
+         badge y={badge_top} vs {lane} switch y={switch_top}"
+    );
+    // Its tooltip is the sentence that says what pressing it does; without one the glyph is unguessable.
+    let tip = badge.tooltip_text().unwrap_or_default().trim().to_string();
+    assert!(
+        tip.contains("fold"),
+        "badge 23 explains itself, got {tip:?}"
+    );
     RAN_GUTTER.store(true, Ordering::SeqCst);
 }
 
@@ -437,6 +563,8 @@ fn round() {
         check_the_readings_are_label_left_value_right(app);
         println!("CHECK 1b every reading is PAINTED on the idle column, with no heading");
         check_the_idle_column_paints_every_reading(app);
+        println!("CHECK 1d at the minimum window the column opens on its FIRST reading");
+        check_the_idle_column_opens_on_its_first_reading(app);
         println!("CHECK 1c the thumbnail ladder clicks step the number it drives");
         check_the_thumbnail_ladder_steps_its_readout(app);
         println!("CHECK 2 the pinned heading shows only while a form is open");
@@ -483,6 +611,16 @@ fn sec_05_cut_1_screen_the_pinned_heading_shows_only_while_a_form_is_open() {
     assert!(
         RAN_HEADING.load(Ordering::SeqCst),
         "the pinned-heading check never ran"
+    );
+}
+
+#[test]
+fn sec_05_cut_1_screen_the_idle_column_paints_its_top_readings_as_well() {
+    common::pin_private_cwd();
+    round();
+    assert!(
+        RAN_TOP_READING.load(Ordering::SeqCst),
+        "the minimum-window first-reading check never ran"
     );
 }
 
