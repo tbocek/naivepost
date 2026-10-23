@@ -39,7 +39,10 @@ fn f6_2_s3_a_an_unusable_answer_names_its_repair_and_a_good_one_names_none() {
         Some(Repair::NoAnswer),
         "an empty reply is no answer, not a truncated one"
     );
-    let reasoning = llm_retry::repair("I will now write the JSON.</think>", "unexpected end of JSON input");
+    let reasoning = llm_retry::repair(
+        "I will now write the JSON.</think>",
+        "unexpected end of JSON input",
+    );
     assert_eq!(
         reasoning.as_ref().map(|(_, problem)| problem.as_str()),
         Some(llm_retry::NO_ANSWER),
@@ -51,7 +54,10 @@ fn f6_2_s3_a_an_unusable_answer_names_its_repair_and_a_good_one_names_none() {
     );
 
     // Truncated: text survived but ran out. That is `cutOff`, and its sentence asks for fewer items.
-    let truncated = llm_retry::repair("{\"clips\":[{\"i\":1,\"fx\"", "unexpected end of JSON input");
+    let truncated = llm_retry::repair(
+        "{\"clips\":[{\"i\":1,\"fx\"",
+        "unexpected end of JSON input",
+    );
     assert_eq!(truncated.map(|(kind, _)| kind), Some(Repair::CutOff));
     assert_eq!(
         llm_retry::cut_off_problem("{\"clips\":[", "unexpected end of JSON input"),
@@ -78,7 +84,10 @@ fn f6_2_s3_a_an_unusable_answer_names_its_repair_and_a_good_one_names_none() {
 /// JSON is writing and getting it wrong — switching its reasoning off makes the next answer worse.
 #[test]
 fn f6_2_s3_b_an_empty_answer_turns_thinking_off_for_the_retry_and_bad_json_keeps_it_on() {
-    assert!(!llm_retry::think_again(true, ""), "empty answer: thinking off");
+    assert!(
+        !llm_retry::think_again(true, ""),
+        "empty answer: thinking off"
+    );
     assert!(
         !llm_retry::think_again(true, "all of it was reasoning</think>  "),
         "reasoning-only is the same empty answer"
@@ -87,7 +96,10 @@ fn f6_2_s3_b_an_empty_answer_turns_thinking_off_for_the_retry_and_bad_json_keeps
         llm_retry::think_again(true, "{\"clips\":[oops]"),
         "bad JSON keeps thinking: that model is writing and wrong"
     );
-    assert!(!llm_retry::think_again(false, "{\"clips\":[]}"), "it was never on to begin with");
+    assert!(
+        !llm_retry::think_again(false, "{\"clips\":[]}"),
+        "it was never on to begin with"
+    );
 }
 
 /// `retryTurn`: the rejected answer goes back into the conversation so the model can see what it got wrong,
@@ -96,18 +108,39 @@ fn f6_2_s3_b_an_empty_answer_turns_thinking_off_for_the_retry_and_bad_json_keeps
 /// mid-round expects its calls answered rather than a new instruction from the user.
 #[test]
 fn f6_2_s3_c_the_correction_goes_back_into_the_conversation_as_a_turn_or_a_tool_result() {
-    let start = vec![Message { role: "user".to_string(), parts: vec![Part::Text("caption it".into())] }];
+    let start = vec![Message {
+        role: "user".to_string(),
+        parts: vec![Part::Text("caption it".into())],
+    }];
 
-    let grown = llm_retry::retry_turn(start.clone(), "{\"clips\":[", naivepost::degraded::CUTOFF_RETRY, false);
-    assert_eq!(grown.len(), 3, "the ask, the refused answer, the correction");
-    assert_eq!(grown[1].role, "assistant", "the refused answer is echoed so the model sees its own truncation");
-    assert_eq!(grown[2].role, "user", "in prose mode the correction comes from the user");
+    let grown = llm_retry::retry_turn(
+        start.clone(),
+        "{\"clips\":[",
+        naivepost::degraded::CUTOFF_RETRY,
+        false,
+    );
+    assert_eq!(
+        grown.len(),
+        3,
+        "the ask, the refused answer, the correction"
+    );
+    assert_eq!(
+        grown[1].role, "assistant",
+        "the refused answer is echoed so the model sees its own truncation"
+    );
+    assert_eq!(
+        grown[2].role, "user",
+        "in prose mode the correction comes from the user"
+    );
     let said = match &grown[2].parts[0] {
         Part::Text(text) => text.clone(),
         other => panic!("expected a text part, got {other:?}"),
     };
     assert!(
-        said.contains(&format!("Your answer failed validation: {}", naivepost::degraded::CUTOFF_RETRY)),
+        said.contains(&format!(
+            "Your answer failed validation: {}",
+            naivepost::degraded::CUTOFF_RETRY
+        )),
         "the correction quotes the repair sentence: {said}"
     );
     assert!(
@@ -116,11 +149,21 @@ fn f6_2_s3_c_the_correction_goes_back_into_the_conversation_as_a_turn_or_a_tool_
     );
 
     let blank = llm_retry::retry_turn(start.clone(), "   ", llm_retry::NO_ANSWER, false);
-    assert_eq!(blank.len(), 2, "an empty answer is NOT echoed back: {blank:?}");
-    assert_eq!(blank[1].role, "user", "the correction carries the whole message instead");
+    assert_eq!(
+        blank.len(),
+        2,
+        "an empty answer is NOT echoed back: {blank:?}"
+    );
+    assert_eq!(
+        blank[1].role, "user",
+        "the correction carries the whole message instead"
+    );
 
     let tool_mode = llm_retry::retry_turn(start, "{\"clips\":[", "p", true);
-    assert_eq!(tool_mode[2].role, "tool", "with tools the correction is a tool result (§3's last line)");
+    assert_eq!(
+        tool_mode[2].role, "tool",
+        "with tools the correction is a tool result (§3's last line)"
+    );
 }
 
 /// The repair door's own contract, without a socket: one extra ask when the caller says the answer is
@@ -136,14 +179,23 @@ fn f6_2_s3_c_the_repair_door_asks_once_more_and_never_a_third_time() {
     };
     let dial = |body: &str| -> Result<(String, String), String> {
         // First answer: reasoning only. Second: a real document.
-        let content = if body == "body1" { "thought hard</think>" } else { "{\"clips\":[]}" };
-        Ok(("application/json".to_string(), format!(r#"{{"choices":[{{"message":{{"content":"{content}"}}}}]}}"#)))
+        let content = if body == "body1" {
+            "thought hard</think>"
+        } else {
+            "{\"clips\":[]}"
+        };
+        Ok((
+            "application/json".to_string(),
+            format!(r#"{{"choices":[{{"message":{{"content":"{content}"}}}}]}}"#),
+        ))
     };
-    let problem = |reply: &llm_request::Reply| {
-        llm_retry::no_answer(reply.answer()).map(str::to_string)
-    };
+    let problem =
+        |reply: &llm_request::Reply| llm_retry::no_answer(reply.answer()).map(str::to_string);
     let messages = || {
-        vec![Message { role: "user".to_string(), parts: vec![Part::Text("caption it".into())] }]
+        vec![Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text("caption it".into())],
+        }]
     };
     // The flow's own first round, read exactly as a chat ask reads it. Its body is built the way the flow builds
     // one — this door spends no request of its own before the answer reaches it.
@@ -163,26 +215,54 @@ fn f6_2_s3_c_the_repair_door_asks_once_more_and_never_a_third_time() {
         &build,
     )
     .expect("the repair went out");
-    assert!(out.retried, "the first answer was unusable, so a second went out");
-    assert_eq!(dials.borrow().len(), 2, "§3's repair is once-only: {:?}", dials.borrow());
-    assert_eq!(dials.borrow()[1], (3, false), "the repair adds the correction AND turns thinking off");
-    assert!(out.body.contains("\"clips\""), "the caller reads back the SECOND answer");
+    assert!(
+        out.retried,
+        "the first answer was unusable, so a second went out"
+    );
+    assert_eq!(
+        dials.borrow().len(),
+        2,
+        "§3's repair is once-only: {:?}",
+        dials.borrow()
+    );
+    assert_eq!(
+        dials.borrow()[1],
+        (3, false),
+        "the repair adds the correction AND turns thinking off"
+    );
+    assert!(
+        out.body.contains("\"clips\""),
+        "the caller reads back the SECOND answer"
+    );
     let said = log.borrow();
     assert_eq!(said.len(), 1, "one line about the repair: {said:?}");
-    assert!(said[0].starts_with(">>> captions:"), "it names the step: {}", said[0]);
-    assert!(said[0].contains("asked again"), "and says what happened: {}", said[0]);
+    assert!(
+        said[0].starts_with(">>> captions:"),
+        "it names the step: {}",
+        said[0]
+    );
+    assert!(
+        said[0].contains("asked again"),
+        "and says what happened: {}",
+        said[0]
+    );
 
     // A usable answer costs no extra request: the door refuses to spend one on a question already answered, and
     // dials nothing further.
     let dials = std::cell::Cell::new(0usize);
     let good = llm_request::parse_reply(
-        &serde_json::from_str::<serde_json::Value>("{\"choices\":[{\"message\":{\"content\":\"{}\"}}]}")
-            .expect("an envelope"),
+        &serde_json::from_str::<serde_json::Value>(
+            "{\"choices\":[{\"message\":{\"content\":\"{}\"}}]}",
+        )
+        .expect("an envelope"),
     );
     let err = llm_repair_leg::ask_repair_after(
         "captions",
         &|_| {},
-        vec![Message { role: "user".to_string(), parts: vec![Part::Text("x".into())] }],
+        vec![Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text("x".into())],
+        }],
         true,
         false,
         &|_| None::<String>,
@@ -195,7 +275,12 @@ fn f6_2_s3_c_the_repair_door_asks_once_more_and_never_a_third_time() {
     )
     .expect_err("nothing to repair");
     assert!(err.contains("nothing to repair"), "it says why: {err}");
-    assert_eq!(dials.get(), 0, "a usable answer spends no request: {}", dials.get());
+    assert_eq!(
+        dials.get(),
+        0,
+        "a usable answer spends no request: {}",
+        dials.get()
+    );
 }
 
 // ---- S3 over the wire -------------------------------------------------------------------------

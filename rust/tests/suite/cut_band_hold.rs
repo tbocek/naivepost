@@ -34,7 +34,13 @@ fn f3_8_s1_a_press_on_a_band_picks_it_up() {
     // picked up from wherever the hand grabbed it. `t` comes back as the band's start, which is where the red
     // line goes.
     let press = fx_band::press_band(20.0, 60.0, 5.0, false, true, None);
-    assert_eq!(press, fx_band::Press::Hold { t: 20.0, from_end: None });
+    assert_eq!(
+        press,
+        fx_band::Press::Hold {
+            t: 20.0,
+            from_end: None
+        }
+    );
 
     // The status sentence, whole: no em dash and no Undo clause, because picking something up has changed
     // nothing yet.
@@ -45,15 +51,24 @@ fn f3_8_s1_a_press_on_a_band_picks_it_up() {
     // Grabbing an end carries that end through, so the caller resizes without asking the geometry again.
     assert_eq!(
         fx_band::press_band(20.0, 60.0, 5.0, false, true, Some(true)),
-        fx_band::Press::Hold { t: 20.0, from_end: Some(true) }
+        fx_band::Press::Hold {
+            t: 20.0,
+            from_end: Some(true)
+        }
     );
     assert_eq!(
         fx_band::press_band(20.0, 60.0, 5.0, false, true, Some(false)),
-        fx_band::Press::Hold { t: 20.0, from_end: Some(false) }
+        fx_band::Press::Hold {
+            t: 20.0,
+            from_end: Some(false)
+        }
     );
 
     // Empty lane: the press puts whatever was in hand down rather than picking anything up.
-    assert_eq!(fx_band::press_band(20.0, 60.0, 40.0, false, false, None), fx_band::Press::Dropped);
+    assert_eq!(
+        fx_band::press_band(20.0, 60.0, 40.0, false, false, None),
+        fx_band::Press::Dropped
+    );
 }
 
 #[test]
@@ -75,7 +90,10 @@ fn f3_8_s1_under_four_pixels_is_a_click_that_opens_the_form() {
     );
     assert_eq!(
         fx_band::press_band(20.0, 60.0, 4.1, false, true, None),
-        fx_band::Press::Hold { t: 20.0, from_end: None }
+        fx_band::Press::Hold {
+            t: 20.0,
+            from_end: None
+        }
     );
 
     // The delegation: `fx_band`'s answer agrees with the slop owner's, at 4 px and either side of it. This is
@@ -106,19 +124,29 @@ fn f3_8_s1_ends_are_grips_only_at_30_px() {
     assert_eq!(fx_band::grab_at(0.0, 40.0), Some(true));
     assert_eq!(fx_band::grab_at(cut_select::GRIP_PX, 40.0), Some(true));
     assert_eq!(fx_band::grab_at(39.0, 40.0), Some(false));
-    assert_eq!(fx_band::grab_at(40.0 - cut_select::GRIP_PX, 40.0), Some(false));
+    assert_eq!(
+        fx_band::grab_at(40.0 - cut_select::GRIP_PX, 40.0),
+        Some(false)
+    );
     assert_eq!(fx_band::grab_at(20.0, 40.0), None);
 
     // Just outside each grip is the middle, not the grip: the reach is exactly GRIP_PX, reached through
     // `cut_select::GRIP_PX` (one of §10's "grab reaches") and never written again as a local 6.0.
     assert_eq!(fx_band::grab_at(cut_select::GRIP_PX + 1.0, 40.0), None);
-    assert_eq!(fx_band::grab_at(40.0 - cut_select::GRIP_PX - 1.0, 40.0), None);
+    assert_eq!(
+        fx_band::grab_at(40.0 - cut_select::GRIP_PX - 1.0, 40.0),
+        None
+    );
     assert_eq!(cut_select::GRIP_PX, 6.0);
 
     // Below 30 px there are no grips at all: every pixel of a narrow bar moves it, so nobody resizes one by
     // accident.
     for x in [0.0, 3.0, 6.0, 10.0, 17.0, 20.0] {
-        assert_eq!(fx_band::grab_at(x, 20.0), None, "{x} px on a 20 px bar is not a grip");
+        assert_eq!(
+            fx_band::grab_at(x, 20.0),
+            None,
+            "{x} px on a 20 px bar is not a grip"
+        );
     }
 
     // The catalogue row points at the same constant the rule reads (§10 gives this no `P.` id, so it is a
@@ -144,19 +172,31 @@ fn f3_8_s2_the_whole_band_moves_clamped_and_both_ends_snap() {
 
     // Start within reach of 10.0+... no: nearest mark to 10.6 is 10.0 (0.6 <= 0.8) while the tail (14.6) is
     // far, so the start lands on the mark.
-    assert_eq!(fx_band::move_whole(&band, 10.6, &marks, pps, 100.0), (10.0, 4.0));
+    assert_eq!(
+        fx_band::move_whole(&band, 10.6, &marks, pps, 100.0),
+        (10.0, 4.0)
+    );
 
     // Tail nearer than the start: dragged so the tail is 0.4 s off 30.0 and the start 3.6 s off 10.0 \u2192
     // the tail wins, start = 26.0.
-    assert_eq!(fx_band::move_whole(&band, 25.6, &marks, pps, 100.0), (26.0, 4.0));
+    assert_eq!(
+        fx_band::move_whole(&band, 25.6, &marks, pps, 100.0),
+        (26.0, 4.0)
+    );
 
     // Neither end within reach: exactly where the hand left it, unsnapped.
-    assert_eq!(fx_band::move_whole(&band, 15.0, &marks, pps, 100.0), (15.0, 4.0));
+    assert_eq!(
+        fx_band::move_whole(&band, 15.0, &marks, pps, 100.0),
+        (15.0, 4.0)
+    );
 
     // Both ends within reach of their own marks: the NEARER end decides (start 0.2 off 10.0 vs tail 0.5 off
     // 30.0-ish \u2014 built so the start is nearer).
     let both = [10.0, 14.5];
-    assert_eq!(fx_band::move_whole(&band, 10.2, &both, pps, 100.0), (10.0, 4.0));
+    assert_eq!(
+        fx_band::move_whole(&band, 10.2, &both, pps, 100.0),
+        (10.0, 4.0)
+    );
 
     // The delegation: `move_whole` IS `cut_select::snap_span` plus the timeline clamp, so the span rule
     // (nearer end wins) is not reimplemented here.
@@ -168,9 +208,18 @@ fn f3_8_s2_the_whole_band_moves_clamped_and_both_ends_snap() {
 
     // Clamped inside the timeline: before second 0 is refused by the clamp, and a tail that would run past the
     // session end is pulled back so the WHOLE band fits.
-    assert_eq!(fx_band::move_whole(&band, -5.0, &[], pps, 100.0), (0.0, 4.0));
-    assert_eq!(fx_band::move_whole(&band, 99.0, &[], pps, 100.0), (96.0, 4.0));
-    assert_eq!(fx_band::move_whole(&band, 200.0, &[], pps, 100.0), (96.0, 4.0));
+    assert_eq!(
+        fx_band::move_whole(&band, -5.0, &[], pps, 100.0),
+        (0.0, 4.0)
+    );
+    assert_eq!(
+        fx_band::move_whole(&band, 99.0, &[], pps, 100.0),
+        (96.0, 4.0)
+    );
+    assert_eq!(
+        fx_band::move_whole(&band, 200.0, &[], pps, 100.0),
+        (96.0, 4.0)
+    );
 
     // Length never changes when the whole band slides.
     for to in [-5.0, 0.0, 15.0, 99.0, 200.0] {
@@ -194,12 +243,18 @@ fn f3_8_s2_an_end_resizes_with_the_0_1_s_floor() {
 
     // Dragging the start past the end stops AT the floor rather than through it: no inverted band.
     let (t, dur) = fx_band::resize_end(&band, false, 30.0);
-    assert!(dur >= fx_lane::MIN_BAND_SECONDS, "length floored at 0.1 s, got {dur}");
+    assert!(
+        dur >= fx_lane::MIN_BAND_SECONDS,
+        "length floored at 0.1 s, got {dur}"
+    );
     assert_eq!(t + dur, 24.0, "the untouched end stays put at 24.0");
 
     // Same from the other end.
     let (t, dur) = fx_band::resize_end(&band, true, 15.0);
-    assert!(dur >= fx_lane::MIN_BAND_SECONDS, "length floored at 0.1 s, got {dur}");
+    assert!(
+        dur >= fx_lane::MIN_BAND_SECONDS,
+        "length floored at 0.1 s, got {dur}"
+    );
     assert_eq!(t, 20.0, "the untouched end stays put at 20.0");
     assert_eq!(fx_lane::MIN_BAND_SECONDS, 0.1);
 }
@@ -212,11 +267,17 @@ fn f3_8_s2_keyboard_nudge_is_unsnapped() {
     let delta = 0.05;
     let (t, dur) = fx_band::nudged(&band, delta);
     assert_eq!(t, 20.05);
-    assert_eq!(t, effect_rules::nudge(band.t, delta), "delegated to effect_rules::nudge");
+    assert_eq!(
+        t,
+        effect_rules::nudge(band.t, delta),
+        "delegated to effect_rules::nudge"
+    );
     assert_eq!(t, band.t + delta);
     assert_ne!(
         t,
-        cut_select::snap(band.t + delta, &[20.05], 10.0) - 0.0 + 0.0_f64.min(0.0) + (band.t + delta),
+        cut_select::snap(band.t + delta, &[20.05], 10.0) - 0.0
+            + 0.0_f64.min(0.0)
+            + (band.t + delta),
         "trivially equal guard: the nudge is the raw sum, not a snapped value"
     );
 
@@ -275,7 +336,10 @@ fn f3_8_s3_kill_needs_32_px_and_beats_the_drag() {
         fx_band::press_band(20.0, 34.0, 200.0, true, true, Some(false)),
         fx_band::Press::Kill
     );
-    assert_eq!(fx_band::press_band(20.0, 34.0, 0.0, true, true, None), fx_band::Press::Kill);
+    assert_eq!(
+        fx_band::press_band(20.0, 34.0, 0.0, true, true, None),
+        fx_band::Press::Kill
+    );
 
     let row = params::effects()
         .into_iter()
@@ -292,7 +356,10 @@ fn f3_8_s3_undo_is_pushed_on_the_first_two_pixels_once() {
     assert_eq!(fx_band::UNDO_PUSH_PX, 2.0);
     assert!(!fx_band::undo_pushed(1.9, false));
     assert!(fx_band::undo_pushed(2.0, false));
-    assert!(!fx_band::undo_pushed(100.0, true), "already pushed: the gesture keeps its one entry");
+    assert!(
+        !fx_band::undo_pushed(100.0, true),
+        "already pushed: the gesture keeps its one entry"
+    );
     assert!(!fx_band::undo_pushed(0.0, false));
 
     // The delegation: `pushes_undo` is the once-only half of the rule, unchanged.
@@ -342,10 +409,26 @@ fn f3_8_s4_edit_refinds_by_kind_and_start_within_one_ms() {
     // hold the lane still while a dialog is open.
     let lane = vec![zoom_at(10.0, 3.0), zoom_at(20.0, 4.0)];
     assert_eq!(fx_band::refind(&lane, "zoom", 20.0), Some(1));
-    assert_eq!(fx_band::refind(&lane, "zoom", 20.0005), Some(1), "inside the 1 ms reach");
-    assert_eq!(fx_band::refind(&lane, "zoom", 19.9995), Some(1), "inside the 1 ms reach");
-    assert_eq!(fx_band::refind(&lane, "zoom", 20.0015), None, "outside the reach");
-    assert_eq!(fx_band::refind(&lane, "zoom", 19.9985), None, "outside the reach");
+    assert_eq!(
+        fx_band::refind(&lane, "zoom", 20.0005),
+        Some(1),
+        "inside the 1 ms reach"
+    );
+    assert_eq!(
+        fx_band::refind(&lane, "zoom", 19.9995),
+        Some(1),
+        "inside the 1 ms reach"
+    );
+    assert_eq!(
+        fx_band::refind(&lane, "zoom", 20.0015),
+        None,
+        "outside the reach"
+    );
+    assert_eq!(
+        fx_band::refind(&lane, "zoom", 19.9985),
+        None,
+        "outside the reach"
+    );
 
     // Same kind at a different start, and a different kind at the same start: both misses. Position in the list
     // buys nothing \u2014 the first element is never found by asking for the second's time.
@@ -353,7 +436,10 @@ fn f3_8_s4_edit_refinds_by_kind_and_start_within_one_ms() {
     assert_eq!(fx_band::refind(&lane, "volume", 20.0), None);
 
     // The delegation and the miss sentence, whole.
-    assert_eq!(fx_band::refind(&lane, "zoom", 20.0005), effect_rules::find_by_value(&lane, "zoom", 20.0005));
+    assert_eq!(
+        fx_band::refind(&lane, "zoom", 20.0005),
+        effect_rules::find_by_value(&lane, "zoom", 20.0005)
+    );
     assert_eq!(effect_rules::REACH_SECONDS, 0.001);
     assert_eq!(
         fx_band::GONE,
@@ -387,8 +473,16 @@ fn f3_8_s4_the_box_comes_from_the_live_effect_never_the_snapshot() {
 
     // A live record with NO box stays no-box even when the snapshot holds four numbers: the absence is the
     // truth, and inventing a box from a stale copy would draw one that was never set.
-    let bare = Fx { kind: "volume".into(), t: 5.0, dur: 1.0, ..Default::default() };
-    assert_eq!(fx_band::live_box(&bare, Some(stale)), (None, None, None, None));
+    let bare = Fx {
+        kind: "volume".into(),
+        t: 5.0,
+        dur: 1.0,
+        ..Default::default()
+    };
+    assert_eq!(
+        fx_band::live_box(&bare, Some(stale)),
+        (None, None, None, None)
+    );
 
     // No snapshot at all is the ordinary case and answers the live values too.
     assert_eq!(
@@ -404,8 +498,14 @@ fn f3_8_s5_first_answer_pushes_undo_and_a_refusal_gives_it_back() {
     // S5: "first answer pushes Undo". One form visit, one entry, until a refusal hands it back.
     let mut form = fx_band::LiveForm::default();
     assert!(!form.undo_pushed);
-    assert!(form.first_answer(), "the first accepted answer owns the entry");
-    assert!(!form.first_answer(), "every later change rides on that same entry");
+    assert!(
+        form.first_answer(),
+        "the first accepted answer owns the entry"
+    );
+    assert!(
+        !form.first_answer(),
+        "every later change rides on that same entry"
+    );
     assert!(!form.first_answer());
 
     // A refusal wrote nothing, so it must not have spent the entry either: after one, the next accepted answer

@@ -51,7 +51,13 @@ pub struct Task {
 impl Task {
     /// A task that must run.
     pub fn run_it(label: &str, program: &str, args: Vec<String>) -> Self {
-        Task { label: label.to_string(), program: program.to_string(), args, already_done: false, session: None }
+        Task {
+            label: label.to_string(),
+            program: program.to_string(),
+            args,
+            already_done: false,
+            session: None,
+        }
     }
 
     /// A task whose output already exists: counted, taken, and left alone.
@@ -179,14 +185,24 @@ fn speech_stage(project: &Project) -> Stage {
         .iter()
         .filter(|source| !source.footage)
         .map(|source| Task {
-            label: format!("transcribing {}", crate::audio_task::source_lane(&source.path)),
+            label: format!(
+                "transcribing {}",
+                crate::audio_task::source_lane(&source.path)
+            ),
             program: AUDIO_TASK.to_string(),
             args: vec![source.path.clone(), project.language.clone()],
             already_done: false,
             session: None,
         })
         .collect();
-    Stage { track: runqueue::TRACK_STT, name: "speech", phase: 1, of: 2, kind: "chunk", tasks }
+    Stage {
+        track: runqueue::TRACK_STT,
+        name: "speech",
+        phase: 1,
+        of: 2,
+        kind: "chunk",
+        tasks,
+    }
 }
 
 // Align's clip cut lived here until F1.5: one `align::clip_plan` ffmpeg call per recording, whose
@@ -236,12 +252,19 @@ pub fn drive_page(
     queue: &QueueHolder,
     bar: &BarHolder,
     procs: &ProcsHolder,
-) -> Drive {    let stages = plan(step, project);
+) -> Drive {
+    let stages = plan(step, project);
     if stages.is_empty() {
         return Drive::Done { ran: 0, skipped: 0 };
     }
-    let paused = { let bar = bar.clone(); move || bar.borrow().running.as_ref().is_some_and(|r| r.paused) };
-    let stopped = { let bar = bar.clone(); move || bar.borrow().stop_flag };
+    let paused = {
+        let bar = bar.clone();
+        move || bar.borrow().running.as_ref().is_some_and(|r| r.paused)
+    };
+    let stopped = {
+        let bar = bar.clone();
+        move || bar.borrow().stop_flag
+    };
     // §S6: hand the walk the bar's slices, so a Prepare run moves 0–10 / 10–30 / 30–100 instead of
     // reporting each stage as a whole bar. Empty for every other step, which is what they do today.
     let slices = if step == run::Step::Prepare {
@@ -345,7 +368,10 @@ where
         for task in stage.tasks.iter() {
             // §S3: ask before every task. A pause waits one poll and asks again; a stop leaves now.
             if !wait_for_go(&paused, &stop_flag) {
-                return Drive::Stopped { ran, left: progress.left };
+                return Drive::Stopped {
+                    ran,
+                    left: progress.left,
+                };
             }
             // §S2: taken whatever happens next — including a task already on disk.
             queue.take(stage.track);
@@ -359,13 +385,18 @@ where
             // work is a request rather than a fork. The door answers with the lines it logged.
             if task.program == AUDIO_TASK {
                 // Same dial door, two different asks: the walk does not decide which, the row says.
-                let worked = if task.args.first().map(String::as_str) == Some(crate::separate_run::SEPARATE_MARK) {
+                let worked = if task.args.first().map(String::as_str)
+                    == Some(crate::separate_run::SEPARATE_MARK)
+                {
                     crate::separate_run::run_task(task, &mut log)
                 } else {
                     dial_task(task, &mut log)
                 };
                 if let Err(error) = worked {
-                    return Drive::Failed { stage: stage.name, error };
+                    return Drive::Failed {
+                        stage: stage.name,
+                        error,
+                    };
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -377,7 +408,10 @@ where
             // marks them with the program word it reads.
             if task.program == crate::frames_run::FRAMES_TASK {
                 if let Err(error) = crate::frames_run::run_task(task, &mut log) {
-                    return Drive::Failed { stage: stage.name, error };
+                    return Drive::Failed {
+                        stage: stage.name,
+                        error,
+                    };
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -388,7 +422,10 @@ where
             // `take`, different door. `drive_walk` does not decide which, the row says by its program.
             if task.program == VISION_TASK {
                 if let Err(error) = crate::describe_call::run_task(task, &mut log) {
-                    return Drive::Failed { stage: stage.name, error };
+                    return Drive::Failed {
+                        stage: stage.name,
+                        error,
+                    };
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -399,7 +436,10 @@ where
             // wrote and contacts no model, so the row only costs the bar one task.
             if task.program == crate::word_list::WORDS_TASK {
                 if let Err(error) = crate::word_list::run_task(task, &mut log) {
-                    return Drive::Failed { stage: stage.name, error };
+                    return Drive::Failed {
+                        stage: stage.name,
+                        error,
+                    };
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -410,7 +450,10 @@ where
             // which job by its program, `drive_walk` does not decide.
             if task.program == TEXT_TASK {
                 if let Err(error) = crate::fix_call::run_task(task, &mut log) {
-                    return Drive::Failed { stage: stage.name, error };
+                    return Drive::Failed {
+                        stage: stage.name,
+                        error,
+                    };
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -421,13 +464,17 @@ where
             // row says which by its program, `drive_walk` does not decide.
             if task.program == crate::fix_session::PLACEMENT_TASK
                 || task.program == crate::fix_session::SESSION_TASK
-            {                let worked = if task.program == crate::fix_session::PLACEMENT_TASK {
+            {
+                let worked = if task.program == crate::fix_session::PLACEMENT_TASK {
                     crate::fix_session::run_placement(task, &mut log)
                 } else {
                     crate::fix_session::run_session(task, &mut log)
                 };
                 if let Err(error) = worked {
-                    return Drive::Failed { stage: stage.name, error };
+                    return Drive::Failed {
+                        stage: stage.name,
+                        error,
+                    };
                 }
                 ran += 1;
                 progress = progress.advanced();
@@ -435,7 +482,10 @@ where
                 continue;
             }
             if let Err(why) = spawn_task(task, procs, &mut log) {
-                return Drive::Failed { stage: stage.name, error: why };
+                return Drive::Failed {
+                    stage: stage.name,
+                    error: why,
+                };
             }
             ran += 1;
             progress = progress.advanced();
@@ -456,12 +506,18 @@ pub struct Progress {
 impl Progress {
     /// Nothing done yet, `total` still ahead.
     pub fn at_start(total: usize) -> Self {
-        Progress { done: 0, left: total }
+        Progress {
+            done: 0,
+            left: total,
+        }
     }
 
     /// One task finished: it moves from `left` into `done`.
     pub fn advanced(self) -> Self {
-        Progress { done: self.done + 1, left: self.left.saturating_sub(1) }
+        Progress {
+            done: self.done + 1,
+            left: self.left.saturating_sub(1),
+        }
     }
 }
 
@@ -493,8 +549,12 @@ fn position(done: usize, total: usize) -> f64 {
 /// the one the machine can be asked for — ffprobe on the decoded pcm, whose absence is the honest
 /// reason a row gets nothing rather than a silent zero.
 fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
-    let paths = crate::settings::from_environment().ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
-    let tree = crate::layout::Tree::new(crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())).ok();
+    let paths = crate::settings::from_environment()
+        .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
+    let tree = crate::layout::Tree::new(crate::startup::session_dir(
+        &std::env::current_dir().unwrap_or_default(),
+    ))
+    .ok();
     let source = task.args.first().cloned().unwrap_or_default();
     let lane = crate::audio_task::source_lane(&source);
     let conf = crate::settings::read(&paths).unwrap_or_default();
@@ -509,7 +569,10 @@ fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     // A row whose recording is not on disk stops here, before anything is asked of ffmpeg: §Failure-is-
     // specific names the file that is missing rather than blaming the tool that never got to run.
     if !source_path.exists() {
-        return Err(format!("{lane}: no decoded audio to transcribe -- {} is not there", source_path.display()));
+        return Err(format!(
+            "{lane}: no decoded audio to transcribe -- {} is not there",
+            source_path.display()
+        ));
     }
     let pcm = crate::decode_audio::ensure(&tree, &lane, &source_path, &conf.ffmpeg, log)?;
     // §F1.11: the words fence a cut's edge and the cached envelope chooses where inside the fence it
@@ -519,7 +582,8 @@ fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     // the row by name rather than being logged and skipped: an unmeasured lane means unmeasured edges.
     crate::wave_build::ensure(&tree, &lane, &source_path, log)?;
     let duration = probe_duration(&conf.ffmpeg, &pcm, log)?;
-    let passage = crate::audio_task::transcribe_source(&tree, &paths, &lane, duration, &language, log)?;
+    let passage =
+        crate::audio_task::transcribe_source(&tree, &paths, &lane, duration, &language, log)?;
     for line in &passage.logs {
         log(line);
     }
@@ -532,9 +596,19 @@ fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
 ///
 /// Public because the frames door asks the same question of a video (§F1.6 S3 needs the take's length to
 /// know where its grid stops), and one ffprobe rule belongs in one place.
-pub fn probe_duration(configured_ffmpeg: &str, path: &Path, log: &mut impl FnMut(&str)) -> Result<f64, String> {
+pub fn probe_duration(
+    configured_ffmpeg: &str,
+    path: &Path,
+    log: &mut impl FnMut(&str),
+) -> Result<f64, String> {
     let ffprobe = crate::services::ffprobe_for(configured_ffmpeg, "ffprobe");
-    let shown = ["-show_entries", "format=duration", "-of", "default=nw=1:nk=1", &path.display().to_string()];
+    let shown = [
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=nw=1:nk=1",
+        &path.display().to_string(),
+    ];
     let out = subprocess::run(&ffprobe, &shown, |line| log(line))?
         .trim()
         .parse::<f64>()
@@ -549,7 +623,11 @@ pub fn probe_duration(configured_ffmpeg: &str, path: &Path, log: &mut impl FnMut
 /// register it, leaving F0.3 nothing to kill. This spawns the same program with piped stdio, records
 /// the pid the moment it exists, waits, and formats its error through the same
 /// [`subprocess::failure`] the rest of the tree uses.
-pub fn spawn_task(task: &Task, procs: &mut Subprocesses, log: &mut impl FnMut(&str)) -> Result<(), String> {
+pub fn spawn_task(
+    task: &Task,
+    procs: &mut Subprocesses,
+    log: &mut impl FnMut(&str),
+) -> Result<(), String> {
     let owned: Vec<&str> = task.args.iter().map(String::as_str).collect();
     log(&subprocess::log_line(&task.program, &owned));
     let child = subprocess::spawn_piped(&task.program, &owned)

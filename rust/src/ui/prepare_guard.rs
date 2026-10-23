@@ -94,7 +94,14 @@ pub fn say_ending_in_for_test(
     let Some(queue) = crate::ui::window::run_queue(window) else {
         return;
     };
-    finish(&prepare_run::ending_of(drive, &tree), window, project, &bar, &queue, dir);
+    finish(
+        &prepare_run::ending_of(drive, &tree),
+        window,
+        project,
+        &bar,
+        &queue,
+        dir,
+    );
 }
 
 /// The one place an ending is painted: bar to 1 when it finished, log lines, status sentence, then

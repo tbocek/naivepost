@@ -38,9 +38,14 @@ pub fn apply(created: &Created, session: &Rc<RefCell<Project>>, status: &gtk::La
     // the new project — the session is already switched, and saying so is the whole remedy.
     let file = crate::open_project::project_file_in(&created.path);
     REMEMBERED.with(|list| {
-        match crate::settings::from_environment()
-            .map(|paths| crate::machine_store::persist_project(&paths, &mut list.borrow_mut(), &created.path, &file))
-        {
+        match crate::settings::from_environment().map(|paths| {
+            crate::machine_store::persist_project(
+                &paths,
+                &mut list.borrow_mut(),
+                &created.path,
+                &file,
+            )
+        }) {
             Some(Ok(_)) | None => {}
             Some(Err(why)) => crate::ui::window::log_line(&format!(
                 "!!! could not remember this project -- {why}"

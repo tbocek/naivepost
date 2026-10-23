@@ -15,11 +15,11 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::footage;
 use naivepost::layout::Tree;
 use naivepost::project::Project;
-use crate::common;
-use common::footage;
 use naivepost::{prepare_run, run, ui};
 
 /// A root with `<root>/session.naivepost/` made and cwd pinned to the root — the arrangement

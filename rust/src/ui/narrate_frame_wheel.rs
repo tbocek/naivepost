@@ -15,7 +15,9 @@ use crate::narrate_frame::{self, DEFAULT_FPS};
 
 /// Attach the paused-frame wheel. Called once from the page's `wire`, after `set_content`.
 pub fn install(window: &adw::ApplicationWindow) {
-    let Some(picture) = picture_of(window) else { return };
+    let Some(picture) = picture_of(window) else {
+        return;
+    };
     let wheel = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
     wheel.set_name(Some("wheel-narrate-picture"));
     let win = window.clone();

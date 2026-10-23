@@ -17,7 +17,7 @@ use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, settle, status_text, cut_button_carries as button};
+use common::{cut_button_carries as button, fixture_dir, settle, status_text};
 
 static RAN_BUTTONS: AtomicBool = AtomicBool::new(false);
 static RAN_SOUND_GREY: AtomicBool = AtomicBool::new(false);
@@ -41,7 +41,10 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     // A cut with two kept scenes on row 0: enough that Add has something to add over and Remove has
     // something to drop. Seeded through the same seam ▶✂✂ reads.
     let seeded = cut::Cut {
-        segs: vec![common::seg_cam(0.0, 30.0, 0), common::seg_cam(30.0, 60.0, 0)],
+        segs: vec![
+            common::seg_cam(0.0, 30.0, 0),
+            common::seg_cam(30.0, 60.0, 0),
+        ],
         ..Default::default()
     };
     ui::seed_review_cut(&window, &seeded);
@@ -68,8 +71,14 @@ fn check_the_verb_buttons_reach_the_rule(app: &adw::Application) {
 
     // A fresh window holds no band, so nothing that needs one is live; | Split is the exception because
     // with no band it splits at the red line instead of doing nothing.
-    assert!(!add_.is_sensitive(), "no selection yet, so ＋ Add is greyed");
-    assert!(!remove_.is_sensitive(), "no selection yet, so － Remove is greyed");
+    assert!(
+        !add_.is_sensitive(),
+        "no selection yet, so ＋ Add is greyed"
+    );
+    assert!(
+        !remove_.is_sensitive(),
+        "no selection yet, so － Remove is greyed"
+    );
     assert!(
         split_.is_sensitive(),
         "| Split works with no selection: one border at the red line"
@@ -78,7 +87,10 @@ fn check_the_verb_buttons_reach_the_rule(app: &adw::Application) {
     // Seed a FOOTAGE band through the F2.6 seam, exactly as a drag would leave it.
     let band = ui::draw_selection(&window, Surface::PictureRow(0), None, 10.0, 40.0)
         .expect("a drag on a picture row selects that row's footage");
-    let seeded_segs = vec![common::seg_cam(0.0, 30.0, 0), common::seg_cam(30.0, 60.0, 0)];
+    let seeded_segs = vec![
+        common::seg_cam(0.0, 30.0, 0),
+        common::seg_cam(30.0, 60.0, 0),
+    ];
 
     assert!(
         button(&window, "add-button").is_sensitive(),
@@ -130,7 +142,12 @@ fn check_a_sound_band_greys_the_three(app: &adw::Application) {
     let window = cut_window(app);
     let sound = ui::draw_selection(&window, Surface::Lane, Some("lecture"), 10.0, 40.0)
         .expect("a drag on a lane selects that recording's sound");
-    assert_eq!(sound.scope, Scope::Sound { recording: "lecture".into() });
+    assert_eq!(
+        sound.scope,
+        Scope::Sound {
+            recording: "lecture".into()
+        }
+    );
 
     let verbs = ui::selection_verbs(&window);
     assert!(
@@ -156,8 +173,7 @@ fn check_a_sound_band_greys_the_three(app: &adw::Application) {
 /// status names, because the effect is what the hand last touched.
 fn check_delete_takes_the_effect_first(app: &adw::Application) {
     let window = cut_window(app);
-    ui::draw_selection(&window, Surface::PictureRow(0), None, 10.0, 40.0)
-        .expect("a band is up");
+    ui::draw_selection(&window, Surface::PictureRow(0), None, 10.0, 40.0).expect("a band is up");
     ui::set_held_clip(Some(common::seg_cam(5.0, 9.0, 0)));
     ui::set_held_effect(Some(cut::Fx {
         kind: "zoom".into(),
@@ -174,8 +190,7 @@ fn check_delete_takes_the_effect_first(app: &adw::Application) {
         "whatever ⌦ decided, the status line shows that decision and nothing else"
     );
     assert_eq!(
-        printed,
-        "removed the effect \u{2014} \u{21b6} Undo (Ctrl+Z) takes it back",
+        printed, "removed the effect \u{2014} \u{21b6} Undo (Ctrl+Z) takes it back",
         "an effect outranks a held clip and a live band"
     );
 

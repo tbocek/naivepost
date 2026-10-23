@@ -19,7 +19,9 @@ use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{cut_page_settled_first as cut_page, find_in, settle, status_text, wait_until, widget};
+use common::{
+    cut_page_settled_first as cut_page, find_in, settle, status_text, wait_until, widget,
+};
 
 static RAN_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_CANCEL: AtomicBool = AtomicBool::new(false);
@@ -79,7 +81,8 @@ fn page_with_six_bands(app: &adw::Application) -> adw::ApplicationWindow {
 /// sequence behind an emitted signal, so letting the context run mid-press loses it (the `cut_trim_move_widgets`
 /// idiom `f3_8_band_gesture_widgets.rs` spells out).
 fn click_band(window: &adw::ApplicationWindow, index: usize) {
-    let gesture = ui::bar_gesture_for_test(window, index).expect("the lane wired a gesture for this band");
+    let gesture =
+        ui::bar_gesture_for_test(window, index).expect("the lane wired a gesture for this band");
     gesture.emit_by_name::<()>("drag-begin", &[&24.0, &0.0f64]);
     gesture.emit_by_name::<()>("drag-update", &[&1.0, &0.0f64]);
     gesture.emit_by_name::<()>("drag-end", &[&1.0, &0.0f64]);
@@ -90,9 +93,9 @@ fn click_band(window: &adw::ApplicationWindow, index: usize) {
 /// cannot answer for this one, plus the form's FIRST and LAST holder children: the row is §S5's ENDING, so it
 /// must be one of the two widgets the holder packs last, and no field may sit below it.
 fn row_in(holder: &gtk::Widget) -> gtk::Box {
-    let found = forms().iter().find_map(|(kind, _)| {
-        find_in(holder, &ui::cut_form_buttons::form_buttons_name(kind))
-    });
+    let found = forms()
+        .iter()
+        .find_map(|(kind, _)| find_in(holder, &ui::cut_form_buttons::form_buttons_name(kind)));
     let row = found.unwrap_or_else(|| {
         panic!("the form ends with the shared Apply/Cancel row, not loose buttons")
     });
@@ -126,8 +129,13 @@ fn bounds(window: &adw::ApplicationWindow, target: &gtk::Widget) -> gtk::graphen
 
 /// Wait for the holder to have an allocation, then hand back this check's row and its geometry.
 /// The measured row plus the two buttons in the order the row packs them.
-fn measured_row(window: &adw::ApplicationWindow, holder_name: &str) -> (gtk::Box, gtk::Button, gtk::Button) {
-    let holder = widget(window, holder_name).downcast::<gtk::Box>().expect("the holder is a box");
+fn measured_row(
+    window: &adw::ApplicationWindow,
+    holder_name: &str,
+) -> (gtk::Box, gtk::Button, gtk::Button) {
+    let holder = widget(window, holder_name)
+        .downcast::<gtk::Box>()
+        .expect("the holder is a box");
     // A closed form is hidden, not emptied (`close_*_form` only sets the box invisible), so an earlier check's
     // widgets can still sit in it. `is_visible` answers FALSE for a widget that is parented but below an
     // invisible ancestor, which is exactly "shown right now" — the wait for "THIS form is the one on screen".
@@ -148,11 +156,7 @@ fn measured_row(window: &adw::ApplicationWindow, holder_name: &str) -> (gtk::Box
         naivepost::ui::cut_form_buttons::FORM_BUTTONS.len(),
         "the row carries exactly the two buttons §F3.8 S5 spells"
     );
-    (
-        row,
-        buttons[0].clone(),
-        buttons[1].clone(),
-    )
+    (row, buttons[0].clone(), buttons[1].clone())
 }
 
 /// S5's ending, measured on all six forms: Apply then Cancel, one row, under them S5's note, and the whole
@@ -338,8 +342,14 @@ fn f3_8_s5_every_form_ends_with_apply_then_cancel_and_the_note() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_ROW.load(Ordering::SeqCst), "the row-order check never ran");
-    assert!(RAN_CANCEL.load(Ordering::SeqCst), "the Cancel check never ran");
+    assert!(
+        RAN_ROW.load(Ordering::SeqCst),
+        "the row-order check never ran"
+    );
+    assert!(
+        RAN_CANCEL.load(Ordering::SeqCst),
+        "the Cancel check never ran"
+    );
     assert!(
         RAN_REFUSED.load(Ordering::SeqCst),
         "the refused-Apply check never ran"

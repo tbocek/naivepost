@@ -47,13 +47,17 @@ fn f4_6_s1_an_untagged_narrator_names_the_prepare_step() {
 
 #[test]
 fn f4_6_s1_a_vanished_voice_file_names_its_folder() {
-    let choice = voice_ref::pick_voice("gone", 1, &files(&["warm.wav"]), "/mnt/models/audiocpp/voices");
+    let choice = voice_ref::pick_voice(
+        "gone",
+        1,
+        &files(&["warm.wav"]),
+        "/mnt/models/audiocpp/voices",
+    );
     let VoiceChoice::Refused(why) = choice else {
         panic!("a file that is not in the folder must refuse, got {choice:?}");
     };
     assert_eq!(
-        why,
-        "voice gone is no longer in /mnt/models/audiocpp/voices \u{2014} pick another",
+        why, "voice gone is no longer in /mnt/models/audiocpp/voices \u{2014} pick another",
         "the refusal names the folder it looked in, so the person can go look too"
     );
 }
@@ -110,7 +114,10 @@ fn f4_6_s1_switching_keeps_the_synthesized_audio_of_the_old_voice() {
     };
     let before = tts_key(&entry, Some("narrator1"), None);
     let after = tts_key(&entry, Some("narrator2"), None);
-    assert_ne!(before, after, "the voice is inside the key, so a new voice cannot clobber the old take");
+    assert_ne!(
+        before, after,
+        "the voice is inside the key, so a new voice cannot clobber the old take"
+    );
     // And the sample cache is keyed the same way by name.
     let root = std::env::temp_dir().join(format!("np-f46-key-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -132,11 +139,17 @@ fn f4_6_s1_switching_keeps_the_synthesized_audio_of_the_old_voice() {
 #[test]
 fn f4_6_s2_hand_picked_takes_win_without_diarization() {
     // No turns at all: a hand-picked take still builds, because S2 says the takes win outright.
-    let (count, span) = (Words::flat(0, None).counter(), Words::flat(0, None).spanner());
+    let (count, span) = (
+        Words::flat(0, None).counter(),
+        Words::flat(0, None).spanner(),
+    );
     let plan = voice_ref::plan_reference(&[(4.0, 12.0)], &[], &count, &span, 1);
     assert_eq!(
         plan,
-        ReferencePlan::HandPicked(vec![Piece { start: 4.0, end: 12.0 }]),
+        ReferencePlan::HandPicked(vec![Piece {
+            start: 4.0,
+            end: 12.0
+        }]),
         "hand-picked takes need no diarization and no cap"
     );
     // Even one far past the wanted length: the cap is the AUTOMATIC pick's, not the person's.
@@ -150,21 +163,26 @@ fn f4_6_s2_hand_picked_takes_win_without_diarization() {
 }
 
 #[test]
-fn f4_6_s2_automatic_pick_respects_the_five_second_floor_the_two_second_gap_and_1_5_words_per_second()
-{
+fn f4_6_s2_automatic_pick_respects_the_five_second_floor_the_two_second_gap_and_1_5_words_per_second(
+) {
     // P.eng.refMinTakeSeconds 5.0: a 4 s spoken span is too short, a 6 s one passes.
     let words = Words::flat(40, Some((0.0, 4.0)));
-    let short = voice_ref::plan_reference(&[], &[(0.0, 4.0, 1)], &words.counter(), &words.spanner(), 1);
+    let short =
+        voice_ref::plan_reference(&[], &[(0.0, 4.0, 1)], &words.counter(), &words.spanner(), 1);
     assert_eq!(
         short,
         ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string()),
         "P.eng.refMinTakeSeconds: below the floor there is nothing clean to take"
     );
     let dense = Words::flat(30, Some((0.0, 6.0)));
-    let ok = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1)], &dense.counter(), &dense.spanner(), 1);
+    let ok =
+        voice_ref::plan_reference(&[], &[(0.0, 6.0, 1)], &dense.counter(), &dense.spanner(), 1);
     assert_eq!(
         ok,
-        ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
+        ReferencePlan::Automatic(vec![Piece {
+            start: 0.0,
+            end: 6.0
+        }]),
         "a solo turn over the floor with enough words is taken whole"
     );
 
@@ -182,17 +200,27 @@ fn f4_6_s2_automatic_pick_respects_the_five_second_floor_the_two_second_gap_and_
         "1 s of clearance is inside the 2 s the spec asks for, so the stretch is not solo"
     );
     // ...while 2 s exactly clears it.
-    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1), (8.0, 9.0, 2)], &dense.counter(), &dense.spanner(), 1);
+    let clear = voice_ref::plan_reference(
+        &[],
+        &[(0.0, 6.0, 1), (8.0, 9.0, 2)],
+        &dense.counter(),
+        &dense.spanner(),
+        1,
+    );
     assert_eq!(
         clear,
-        ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
+        ReferencePlan::Automatic(vec![Piece {
+            start: 0.0,
+            end: 6.0
+        }]),
         "at exactly REF_PAD_SECONDS the neighbour is outside the window's guard"
     );
 
     // P.eng.refMinWordsPerSecond 1.5: 6 s needs 9 words; 8 is too sparse to clone from — but §6 drops a
     // thin take only when that leaves SOME candidate, so with nothing else on offer the thin one is kept.
     let thin = Words::flat(8, Some((0.0, 6.0)));
-    let sparse = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1)], &thin.counter(), &thin.spanner(), 1);
+    let sparse =
+        voice_ref::plan_reference(&[], &[(0.0, 6.0, 1)], &thin.counter(), &thin.spanner(), 1);
     assert_eq!(
         sparse,
         ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
@@ -200,11 +228,13 @@ fn f4_6_s2_automatic_pick_respects_the_five_second_floor_the_two_second_gap_and_
          the diarization offers"
     );
     assert_eq!(
-        voice_ref::REF_MIN_TAKE_SECONDS, 5.0,
+        voice_ref::REF_MIN_TAKE_SECONDS,
+        5.0,
         "P.eng.refMinTakeSeconds spells 5"
     );
     assert_eq!(
-        voice_ref::REF_MIN_WORDS_PER_SECOND, 1.5,
+        voice_ref::REF_MIN_WORDS_PER_SECOND,
+        1.5,
         "P.eng.refMinWordsPerSecond spells 1.5"
     );
 }
@@ -236,13 +266,17 @@ fn f4_6_s2_the_pick_stops_at_fourteen_seconds_and_three_pieces() {
     );
     assert_eq!(voice_ref::REF_TAKE_MAX, 3, "P.machine.refTakeMax spells 3");
     assert_eq!(
-        voice_ref::REF_WANT_SECONDS, 14.0,
+        voice_ref::REF_WANT_SECONDS,
+        14.0,
         "P.machine.refWantSeconds spells 14, shared with the status line's 'plenty' mark"
     );
     // Returned in playing order, not in longest-first order.
     let mut sorted = pieces.clone();
     sorted.sort_by(|a, b| a.start.total_cmp(&b.start));
-    assert_eq!(pieces, sorted, "the pieces come back in time order so the cut reads forwards");
+    assert_eq!(
+        pieces, sorted,
+        "the pieces come back in time order so the cut reads forwards"
+    );
 }
 
 #[test]
@@ -252,7 +286,8 @@ fn f4_6_s2_no_diarization_is_said_as_run_prepare_or_pick_by_hand() {
     assert_eq!(
         plan,
         ReferencePlan::Unavailable(
-            "no diarization for X -- run Prepare, or pick the seconds by hand under the video".to_string()
+            "no diarization for X -- run Prepare, or pick the seconds by hand under the video"
+                .to_string()
         ),
         "S2's no-diarization refusal names both ways out"
     );
@@ -281,9 +316,12 @@ fn f4_6_s2_no_clean_solo_stretch_is_said() {
 /// §07-narrate#4-parameters-used — P.eng.refPadSeconds is read by the solo test itself: a neighbour 1.9 s
 /// away sits inside the pad and disqualifies the stretch, while one at exactly 2.0 s does not.
 #[test]
-fn sec_07_narrate_4_parameters_used_ref_pad_seconds_guards_the_solo_window()
-{
-    assert_eq!(voice_ref::REF_PAD_SECONDS, 2.0, "P.eng.refPadSeconds spells 2");
+fn sec_07_narrate_4_parameters_used_ref_pad_seconds_guards_the_solo_window() {
+    assert_eq!(
+        voice_ref::REF_PAD_SECONDS,
+        2.0,
+        "P.eng.refPadSeconds spells 2"
+    );
     // 1.9 s of clearance: inside the pad, so nobody can say the window is solo.
     let words = Words::flat(30, Some((0.0, 6.0)));
     let crowded = voice_ref::plan_reference(
@@ -308,7 +346,10 @@ fn sec_07_narrate_4_parameters_used_ref_pad_seconds_guards_the_solo_window()
     );
     assert_eq!(
         clear,
-        ReferencePlan::Automatic(vec![Piece { start: 0.0, end: 6.0 }]),
+        ReferencePlan::Automatic(vec![Piece {
+            start: 0.0,
+            end: 6.0
+        }]),
         "the pad is inclusive at its own value"
     );
 }
@@ -317,8 +358,7 @@ fn sec_07_narrate_4_parameters_used_ref_pad_seconds_guards_the_solo_window()
 /// that stretch's own length breaking a tie. Both candidates here clear `refMinWordsPerSecond`, so the floor
 /// cannot be what decides between them.
 #[test]
-fn sec_07_narrate_4_parameters_used_ref_ranking_is_words_said_with_length_as_tie_break()
-{
+fn sec_07_narrate_4_parameters_used_ref_ranking_is_words_said_with_length_as_tie_break() {
     // A 6 s turn with 30 words against an 8 s turn with 15: both are dense enough (8 s needs 12), but the
     // shorter one says twice as much, so it is the FIRST piece taken. The answer is re-sorted into time
     // order before it comes back (§F4.6's cut reads forwards), so what proves the ranking here is which of
@@ -343,10 +383,7 @@ fn sec_07_narrate_4_parameters_used_ref_ranking_is_words_said_with_length_as_tie
     let counter = Words::flat(15, None).per_turn(&[(wanted + 20.0, 30)]);
     let capped = voice_ref::plan_reference(
         &[],
-        &[
-            (0.0, wanted + 4.0, 1u32),
-            (wanted + 20.0, wanted + 26.0, 1),
-        ],
+        &[(0.0, wanted + 4.0, 1u32), (wanted + 20.0, wanted + 26.0, 1)],
         &counter,
         &dense_span,
         1,
@@ -394,10 +431,22 @@ fn f4_6_s3_the_base_is_leveled_to_minus_16_lufs_and_written_mono_48k() {
         joined.contains("loudnorm=I=-16:TP=-1.5:LRA=7"),
         "the filter is §10's P.eng.refLoudness spelled straight through: {joined}"
     );
-    assert!(joined.contains("-ac 1"), "mono, because a clone wants one voice not a stereo field");
-    assert!(joined.contains("-ar 48000"), "48 kHz, the rate the server accepts");
-    assert!(joined.contains("pcm_s16le"), "plain pcm, not a compressed codec");
-    assert!(joined.contains("-vn"), "any video stream in the source is dropped");
+    assert!(
+        joined.contains("-ac 1"),
+        "mono, because a clone wants one voice not a stereo field"
+    );
+    assert!(
+        joined.contains("-ar 48000"),
+        "48 kHz, the rate the server accepts"
+    );
+    assert!(
+        joined.contains("pcm_s16le"),
+        "plain pcm, not a compressed codec"
+    );
+    assert!(
+        joined.contains("-vn"),
+        "any video stream in the source is dropped"
+    );
     assert_eq!(args.last().map(String::as_str), Some("/tmp/base.wav"));
 }
 
@@ -432,12 +481,18 @@ fn f4_6_s3_a_header_the_server_cannot_read_needs_re_cut_and_is_named() {
     let plain = dir.join("plain.wav");
     std::fs::write(&plain, wav_bytes(1 /*PCM*/, 48_000)).expect("write plain");
     assert_eq!(voice_ref::wav_header(&plain), Some((1, 48_000)));
-    assert!(!voice_ref::needs_re_cut(&plain), "48 kHz PCM is exactly what the server reads");
+    assert!(
+        !voice_ref::needs_re_cut(&plain),
+        "48 kHz PCM is exactly what the server reads"
+    );
 
     // WAVE_FORMAT_EXTENSIBLE (0xFFFE): refused.
     let ext = dir.join("ext.wav");
     std::fs::write(&ext, wav_bytes(0xFFFE, 48_000)).expect("write extensible");
-    assert!(voice_ref::needs_re_cut(&ext), "the extensible tag is the one the server chokes on");
+    assert!(
+        voice_ref::needs_re_cut(&ext),
+        "the extensible tag is the one the server chokes on"
+    );
 
     // Above 48 kHz: also refused, because ffmpeg wrote the extensible header for it.
     let hi = dir.join("hi.wav");
@@ -468,13 +523,28 @@ fn f4_6_s3_a_ref_without_a_base_is_renamed_to_the_base() {
     std::fs::write(&served, wav_bytes(1, 48_000)).expect("write a ref with no base");
 
     let renamed = voice_ref::adopt_existing_reference(&tree);
-    assert_eq!(renamed.as_deref(), Some(base.as_path()), "the ref becomes the base");
-    assert!(base.exists() && !served.exists(), "and it moved rather than being copied");
+    assert_eq!(
+        renamed.as_deref(),
+        Some(base.as_path()),
+        "the ref becomes the base"
+    );
+    assert!(
+        base.exists() && !served.exists(),
+        "and it moved rather than being copied"
+    );
 
     // Nothing to do when the base is already there, or when neither file exists.
-    assert_eq!(voice_ref::adopt_existing_reference(&tree), None, "a base present means nothing to adopt");
+    assert_eq!(
+        voice_ref::adopt_existing_reference(&tree),
+        None,
+        "a base present means nothing to adopt"
+    );
     let _ = std::fs::remove_file(&base);
-    assert_eq!(voice_ref::adopt_existing_reference(&tree), None, "no files at all is not a rename");
+    assert_eq!(
+        voice_ref::adopt_existing_reference(&tree),
+        None,
+        "no files at all is not a rename"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -506,13 +576,30 @@ fn f4_6_s3_the_build_runs_the_configured_binary_and_names_it_when_it_fails() {
     let source = root.join("take.wav");
     std::fs::write(&source, wav_bytes(1, 48_000)).expect("source wav");
 
-    let built = voice_ref::build(&tree, &source.to_string_lossy(), &fake.to_string_lossy(), 2.0)
-        .expect("the fake binary succeeds, so the build succeeds");
-    assert!(built.base.exists(), "voice_ref_base.wav was written by the leg");
-    assert!(built.served.exists(), "voice_ref.wav was written by the leg");
+    let built = voice_ref::build(
+        &tree,
+        &source.to_string_lossy(),
+        &fake.to_string_lossy(),
+        2.0,
+    )
+    .expect("the fake binary succeeds, so the build succeeds");
+    assert!(
+        built.base.exists(),
+        "voice_ref_base.wav was written by the leg"
+    );
+    assert!(
+        built.served.exists(),
+        "voice_ref.wav was written by the leg"
+    );
     let argv = std::fs::read_to_string(&log).expect("the fake recorded its argv");
-    assert!(argv.contains("loudnorm=I=-16"), "the level pass really ran: {argv}");
-    assert!(argv.contains("rubberband="), "the pitch pass really ran: {argv}");
+    assert!(
+        argv.contains("loudnorm=I=-16"),
+        "the level pass really ran: {argv}"
+    );
+    assert!(
+        argv.contains("rubberband="),
+        "the pitch pass really ran: {argv}"
+    );
 
     // A missing binary is named, not swallowed.
     let err = voice_ref::build(&tree, "/nonexistent/take.wav", "/definitely/not/here", 0.0)
@@ -540,7 +627,11 @@ fn f4_6_s4_touching_takes_merge_and_a_subtraction_splits() {
     let merged = naivepost::narrate_screen::add_takes(&[(0.0, 5.0)], (5.0, 9.0));
     assert_eq!(merged, vec![(0.0, 9.0)], "touching takes are one take");
     let split = naivepost::narrate_screen::remove_takes(&[(0.0, 9.0)], (3.0, 5.0));
-    assert_eq!(split, vec![(0.0, 3.0), (5.0, 9.0)], "taking the middle out leaves two takes");
+    assert_eq!(
+        split,
+        vec![(0.0, 3.0), (5.0, 9.0)],
+        "taking the middle out leaves two takes"
+    );
 }
 
 #[test]
@@ -560,7 +651,10 @@ fn f4_6_s4_changing_takes_pitch_or_voice_drops_the_shifted_reference() {
         1,
         "a pitch change costs one file"
     );
-    assert!(base.exists() && !served.exists(), "the base stays for the re-shift");
+    assert!(
+        base.exists() && !served.exists(),
+        "the base stays for the re-shift"
+    );
 
     std::fs::write(&served, b"served").expect("served again");
     // Takes: the base was cut from the old seconds, so both go.
@@ -597,11 +691,21 @@ fn f4_6_s5_the_sample_is_cached_per_voice_and_text() {
     let again = narrate_data::sample_path(&tree, "warm.wav", key_a);
     let other_text = narrate_data::sample_path(&tree, "warm.wav", key_b);
     let other_voice = narrate_data::sample_path(&tree, "cold.wav", key_a);
-    assert_eq!(first, again, "same voice and text is the same file, so hearing it twice costs nothing");
+    assert_eq!(
+        first, again,
+        "same voice and text is the same file, so hearing it twice costs nothing"
+    );
     assert_ne!(first, other_text, "different words are a different sample");
-    assert_ne!(first, other_voice, "a different voice is a different sample even on the same words");
+    assert_ne!(
+        first, other_voice,
+        "a different voice is a different sample even on the same words"
+    );
     assert!(
-        first.file_name().unwrap().to_string_lossy().starts_with("warm.wav_"),
+        first
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("warm.wav_"),
         "the file name carries the voice so two voices' samples sit side by side: {:?}",
         first.file_name()
     );
@@ -668,7 +772,11 @@ pub fn recut_root(tag: &str) -> std::path::PathBuf {
     root
 }
 /// turns and transcript words S2 reads. `tagged` decides whether the project names a recording at all.
-fn recut_session(root: &std::path::Path, tagged: bool, with_turns: bool) -> (naivepost::layout::Tree, String) {
+fn recut_session(
+    root: &std::path::Path,
+    tagged: bool,
+    with_turns: bool,
+) -> (naivepost::layout::Tree, String) {
     let session = root.join("session.naivepost");
     std::fs::create_dir_all(&session).expect("session folder");
     // The recording lives OUTSIDE the project on purpose: a project path is `project:` + root-relative
@@ -689,10 +797,19 @@ fn recut_session(root: &std::path::Path, tagged: bool, with_turns: bool) -> (nai
     naivepost::project::save(&project, tree.dir()).expect("naivepost.json written");
     if with_turns {
         let turns = vec![
-            naivepost::requests::Turn { start_sample: 0, end_sample: 96_000, speaker_id: 1 },
-            naivepost::requests::Turn { start_sample: 200_000, end_sample: 296_000, speaker_id: 1 },
+            naivepost::requests::Turn {
+                start_sample: 0,
+                end_sample: 96_000,
+                speaker_id: 1,
+            },
+            naivepost::requests::Turn {
+                start_sample: 200_000,
+                end_sample: 296_000,
+                speaker_id: 1,
+            },
         ];
-        naivepost::requests::write_turns(&tree, "narrator-mic", &turns).expect("turns.json written");
+        naivepost::requests::write_turns(&tree, "narrator-mic", &turns)
+            .expect("turns.json written");
     }
     (tree, source)
 }
@@ -772,16 +889,21 @@ fn f4_6_s1_s3_the_missing_reference_is_cut_from_the_recorded_seconds() {
         &tree,
         &script.to_string_lossy(),
         &source,
-        &[
-            (0.0, 6.0, 1u32),
-            (12.5, 18.5, 1),
-        ],
+        &[(0.0, 6.0, 1u32), (12.5, 18.5, 1)],
         words_for_window,
         full_span,
     )
     .expect("a tagged recording with clean solo turns builds");
-    assert!(built.base.exists(), "the base was written at {}", built.base.display());
-    assert!(built.served.exists(), "the served copy was written at {}", built.served.display());
+    assert!(
+        built.base.exists(),
+        "the base was written at {}",
+        built.base.display()
+    );
+    assert!(
+        built.served.exists(),
+        "the served copy was written at {}",
+        built.served.display()
+    );
 
     let argv = std::fs::read_to_string(&log).expect("argv recorded");
     // The fake recorded one argument per line, so a call is read by joining with spaces first.
@@ -898,7 +1020,10 @@ fn f4_6_s3_a_lone_voice_ref_wav_is_adopted_as_the_base_before_anything_is_cut() 
     )
     .expect("one clean piece needs no concat and builds straight onto the base");
     assert!(
-        built.said.iter().any(|s| s.contains("no base") && s.contains("renamed")),
+        built
+            .said
+            .iter()
+            .any(|s| s.contains("no base") && s.contains("renamed")),
         "the rename is said, so the log shows the history was kept: {:?}",
         built.said
     );
@@ -960,7 +1085,8 @@ fn band_session(root: &std::path::Path, take: &std::path::Path) -> naivepost::la
 }
 
 #[test]
-fn f4_6_s1_the_take_band_shows_only_for_a_voice_with_a_recording_captions_and_a_missing_file_get_none() {
+fn f4_6_s1_the_take_band_shows_only_for_a_voice_with_a_recording_captions_and_a_missing_file_get_none(
+) {
     let root = std::env::temp_dir().join(format!("np-f46-band-a-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("scratch folder");
@@ -1002,7 +1128,8 @@ fn f4_6_s1_the_take_band_shows_only_for_a_voice_with_a_recording_captions_and_a_
 }
 
 #[test]
-fn f4_6_s1_the_take_band_shows_only_for_a_voice_with_a_recording_spans_the_recording_it_is_drawn_across() {
+fn f4_6_s1_the_take_band_shows_only_for_a_voice_with_a_recording_spans_the_recording_it_is_drawn_across(
+) {
     let root = std::env::temp_dir().join(format!("np-f46-band-b-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("scratch folder");

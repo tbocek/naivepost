@@ -23,7 +23,11 @@ fn f4_4_s4_the_speech_post_speaks_the_projects_language_not_the_prototypes() {
 
     // A known weighted tag: it resolves to eight floats, so it goes out exact.
     let outcome = speak(&fixture, "angry=1", "pl");
-    assert!(outcome.wav().is_some(), "the line was spoken: {:?}", outcome.refused());
+    assert!(
+        outcome.wav().is_some(),
+        "the line was spoken: {:?}",
+        outcome.refused()
+    );
 
     // Wait on the CONDITION -- the speech POST having reached the fake -- rather than on `drain`'s 900 ms socket
     // gap, which can close before the request is handed over on a busy machine and then leave no speech row to
@@ -49,9 +53,15 @@ fn f4_4_s4_the_speech_post_speaks_the_projects_language_not_the_prototypes() {
         .cloned()
         .collect();
     for want in ["model", "input", "voice_ref", "language", "options"] {
-        assert!(keys.iter().any(|k| k == want), "the body carries `{want}`: {keys:?}");
+        assert!(
+            keys.iter().any(|k| k == want),
+            "the body carries `{want}`: {keys:?}"
+        );
     }
-    assert_eq!(body["model"], "my-voice-model", "the model the Settings name");
+    assert_eq!(
+        body["model"], "my-voice-model",
+        "the model the Settings name"
+    );
     assert_eq!(
         body["language"], "pl",
         "P.policy.ttsLanguage is the PROJECT's language, not the prototype's \"en\""

@@ -21,7 +21,10 @@ fn f1_10_s3_a_live_join_call_carries_the_join_message_to_the_llm() {
     // Every ask this scenario serves ends the flow. The loop now runs WITH tools offered (the `None`
     // that used to sit there is the bug this round fixes), and a tool round is not an answer, so a
     // closing `finish` call keeps one seam from costing two sockets. Both are answered.
-    let llm = FakeLlm::start(vec![finish(), chat("the network is live today the network goes live now")]);
+    let llm = FakeLlm::start(vec![
+        finish(),
+        chat("the network is live today the network goes live now"),
+    ]);
     point_at(&llm.url());
     let lines = press(&fixture.tree, &fixture.project);
     let seen = llm.next_seen();
@@ -33,11 +36,13 @@ fn f1_10_s3_a_live_join_call_carries_the_join_message_to_the_llm() {
         clip(&seen.body)
     );
     assert!(
-        seen.body.contains("BEFORE (the end of the take that was interrupted):"),
+        seen.body
+            .contains("BEFORE (the end of the take that was interrupted):"),
         "BEFORE labelled as the spec labels it"
     );
     assert!(
-        seen.body.contains("AFTER (the beginning of the take that follows):"),
+        seen.body
+            .contains("AFTER (the beginning of the take that follows):"),
         "AFTER labelled as the spec labels it"
     );
     assert!(
@@ -60,7 +65,9 @@ fn f1_10_s3_a_live_join_call_carries_the_join_message_to_the_llm() {
         "the template-side thinking flag rode out too"
     );
     assert!(
-        lines.iter().any(|line| line.starts_with(">>> text edit: briefing")),
+        lines
+            .iter()
+            .any(|line| line.starts_with(">>> text edit: briefing")),
         "the pass said its brief line: {lines:?}"
     );
     assert!(

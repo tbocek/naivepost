@@ -72,15 +72,29 @@ fn check_picking_up_replaces_what_was_held(app: &adw::Application) {
     assert!(ui::held_clip().is_none(), "nothing else came with it");
 
     ui::set_held_edge(Some(clip(10.0, 30.0)));
-    assert_eq!(ui::held_now(), Some(Held::Edge), "the edge took the hand from the effect");
-    assert!(ui::held_effect().is_none(), "and the effect is NOT still in hand");
+    assert_eq!(
+        ui::held_now(),
+        Some(Held::Edge),
+        "the edge took the hand from the effect"
+    );
+    assert!(
+        ui::held_effect().is_none(),
+        "and the effect is NOT still in hand"
+    );
 
     ui::set_held_clip(Some(clip(10.0, 30.0)));
-    assert_eq!(ui::held_now(), Some(Held::Clip), "the whole clip took the hand from the edge");
+    assert_eq!(
+        ui::held_now(),
+        Some(Held::Clip),
+        "the whole clip took the hand from the edge"
+    );
     assert!(ui::held_edge().is_none(), "no edge survives the pickup");
     assert!(ui::held_effect().is_none(), "nor does the effect");
     // The clip reader answers for an edge pick too — both name the segment to move — but the KIND says Clip.
-    assert_eq!(ui::held_clip().map(|seg| (seg.s, seg.e)), Some((10.0, 30.0)));
+    assert_eq!(
+        ui::held_clip().map(|seg| (seg.s, seg.e)),
+        Some((10.0, 30.0))
+    );
 
     // Clearing empties the one slot: no half-held remainder anywhere.
     ui::set_held_clip(None);
@@ -94,7 +108,10 @@ fn check_one_undo_per_trim_drag(app: &adw::Application) {
     let window = cut_page(app);
     let trimmer = ui::trim_gesture(&window).expect("the strip carries the trim gesture");
     assert!(
-        trimmer.upcast_ref::<gtk4::EventController>().widget().is_some(),
+        trimmer
+            .upcast_ref::<gtk4::EventController>()
+            .widget()
+            .is_some(),
         "the trim gesture is attached to the strip, not floating unclaimed"
     );
     // The undo button is greyed until an edit exists; the one-step check reads the history through ↶ itself
@@ -126,7 +143,10 @@ fn check_one_undo_per_trim_drag(app: &adw::Application) {
     let mut edges = Vec::new();
     for target in [11.0, 13.0, 15.0] {
         std::thread::sleep(std::time::Duration::from_millis(trim::SCRUB_MS + 40));
-        trimmer.emit_by_name::<()>("drag-update", &[&(target * ui::window::strip_pps()), &0.0f64]);
+        trimmer.emit_by_name::<()>(
+            "drag-update",
+            &[&(target * ui::window::strip_pps()), &0.0f64],
+        );
         settle();
         edges.push(ui::review_cut_segs(&window)[1].s);
     }
@@ -199,8 +219,18 @@ fn check_a_press_resolves_to_the_drawn_lane(app: &adw::Application) {
     let seeded = cut::Cut {
         segs: vec![clip(0.0, 60.0)],
         fx: vec![
-            cut::Fx { kind: "zoom".into(), t: 4.0, dur: 6.0, ..Default::default() },
-            cut::Fx { kind: "zoom".into(), t: 8.0, dur: 6.0, ..Default::default() },
+            cut::Fx {
+                kind: "zoom".into(),
+                t: 4.0,
+                dur: 6.0,
+                ..Default::default()
+            },
+            cut::Fx {
+                kind: "zoom".into(),
+                t: 8.0,
+                dur: 6.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
@@ -208,12 +238,19 @@ fn check_a_press_resolves_to_the_drawn_lane(app: &adw::Application) {
     settle();
 
     let lanes = naivepost::fx_lane::row_count(&seeded.fx);
-    assert!(lanes >= 2, "two overlapping effects need a lane {lanes} deep for this to mean anything");
+    assert!(
+        lanes >= 2,
+        "two overlapping effects need a lane {lanes} deep for this to mean anything"
+    );
     // The lane's own span, off the painter's table: below the ruler and the selection band.
     let bands = naivepost::ui::cut_tracks::bands_for(lanes);
     let shallow = bands.fx.0 + 2.0; // first lane row
     let deep = bands.fx.1 - 2.0; // last lane row, which only exists because the cut has two
-    assert!(deep > shallow, "the lane must span more than one row: {:?}", bands.fx);
+    assert!(
+        deep > shallow,
+        "the lane must span more than one row: {:?}",
+        bands.fx
+    );
     assert_eq!(
         cut_line_press::surface_at_band(&window, shallow),
         Surface::FxLane,
@@ -224,17 +261,25 @@ fn check_a_press_resolves_to_the_drawn_lane(app: &adw::Application) {
         Surface::FxLane,
         "and its bottom — a fixed one-row lane would call this a picture row"
     );
-    let gesture = crate::suite::sec_05_cut_7_hand_widgets::ui::window::band_line_gesture_for_test(&window)
-        .expect("the painted band carries its line-click gesture");
+    let gesture =
+        crate::suite::sec_05_cut_7_hand_widgets::ui::window::band_line_gesture_for_test(&window)
+            .expect("the painted band carries its line-click gesture");
     let x_px = naivepost::ui::cut_view::gutter_px() + 15.0 * naivepost::ui::cut_view::pps();
     ui::set_held_clip(None);
     gesture.emit_by_name::<()>("released", &[&1i32, &x_px, &deep]);
     settle();
-    assert!(ui::held_clip().is_none(), "a press on the drawn lane took no footage into hand");
+    assert!(
+        ui::held_clip().is_none(),
+        "a press on the drawn lane took no footage into hand"
+    );
 
     gesture.emit_by_name::<()>("released", &[&1i32, &x_px, &(bands.fx.1 + 2.0)]);
     settle();
     let held = ui::held_clip().expect("the same press one pixel lower took the scene under it");
-    assert_eq!((held.s, held.e), (0.0, 60.0), "and it is the scene under the click");
+    assert_eq!(
+        (held.s, held.e),
+        (0.0, 60.0),
+        "and it is the scene under the click"
+    );
     drop(window);
 }

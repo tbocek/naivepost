@@ -21,14 +21,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use crate::common;
 use adw::prelude::*;
+use common::fixture_dir;
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
 use naivepost::run::{self, RunBar, Subprocesses, Transport};
 use naivepost::shell::Page;
 use naivepost::{prepare_run, stop_legs, ui};
-use crate::common;
-use common::fixture_dir;
 
 thread_local! {
     static APP: std::cell::RefCell<Option<adw::Application>> = const { std::cell::RefCell::new(None) };
@@ -44,11 +44,20 @@ fn scratch(tag: &str) -> PathBuf {
 }
 
 fn source(path: &str, footage: bool) -> Source {
-    Source { path: path.to_string(), footage, narrator: 0, sepvoice: false, tracks: vec![] }
+    Source {
+        path: path.to_string(),
+        footage,
+        narrator: 0,
+        sepvoice: false,
+        tracks: vec![],
+    }
 }
 
 fn with_sources(paths: &[&str]) -> Project {
-    Project { sources: paths.iter().map(|p| source(p, true)).collect(), ..Project::default() }
+    Project {
+        sources: paths.iter().map(|p| source(p, true)).collect(),
+        ..Project::default()
+    }
 }
 
 /// Lay a session out the way a run stopped inside Describe leaves it: the describing's own working
@@ -114,7 +123,11 @@ fn play_pauses_and_the_next_play_resumes(app: &adw::Application) {
     {
         let held = bar.borrow();
         let running = held.running.as_ref().expect("▶ started a run");
-        assert_eq!(running.step, run::Step::Prepare, "the Prepare page's ▶ runs Prepare");
+        assert_eq!(
+            running.step,
+            run::Step::Prepare,
+            "the Prepare page's ▶ runs Prepare"
+        );
         assert!(!running.paused, "a fresh run is not paused");
     }
 
@@ -142,11 +155,18 @@ fn play_pauses_and_the_next_play_resumes(app: &adw::Application) {
     );
     {
         let held = bar.borrow();
-        let running = held.running.as_ref().expect("the resumed run is still the run");
+        let running = held
+            .running
+            .as_ref()
+            .expect("the resumed run is still the run");
         assert!(!running.paused, "the pause is off again");
-        assert_eq!(running.step, step_after_pause, "one and the same run, not a new one");
         assert_eq!(
-            running.sources, held.running.as_ref().expect("still there").sources,
+            running.step, step_after_pause,
+            "one and the same run, not a new one"
+        );
+        assert_eq!(
+            running.sources,
+            held.running.as_ref().expect("still there").sources,
             "and its source snapshot survived both presses: a restart would take a fresh one"
         );
     }
@@ -194,13 +214,20 @@ fn stop_arms_and_waits_for_the_next_play(app: &adw::Application) {
         run::STOPPING,
         "one press brings the run down and says so"
     );
-    assert!(bar.borrow().stop_flag, "the stop flag is set for the flows between subprocesses");
+    assert!(
+        bar.borrow().stop_flag,
+        "the stop flag is set for the flows between subprocesses"
+    );
     assert!(
         stop_legs::take_describe_restart(),
         "and the press armed the next Prepare run to describe from the start"
     );
     // ⏹ itself deletes nothing: §5's restart happens on the NEXT ▶, not here.
-    assert_eq!(survivors(&tree), before, "⏹ touched no file — the clear is the next ▶'s work");
+    assert_eq!(
+        survivors(&tree),
+        before,
+        "⏹ touched no file — the clear is the next ▶'s work"
+    );
 
     window.close();
     RAN_STOP.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -224,7 +251,11 @@ fn sec_04_prepare_5_rules_b6_stop_mid_describe_restarts_only_the_describing() {
     seed_stopped_describe(&tree);
     let project = with_sources(&["project:sources/lecture.mkv"]);
     let before = survivors(&tree);
-    assert_eq!(before.len(), 6, "the stopped run left six files behind: {before:?}");
+    assert_eq!(
+        before.len(),
+        6,
+        "the stopped run left six files behind: {before:?}"
+    );
 
     // The next ▶, armed by the ⏹ that cut through Describe.
     stop_legs::arm_describe_restart();
@@ -235,13 +266,34 @@ fn sec_04_prepare_5_rules_b6_stop_mid_describe_restarts_only_the_describing() {
     };
 
     // Only the describing: the two working files went, everything finished stayed.
-    assert_eq!(cleared.removed, vec!["events.tsv".to_string(), "state.txt".to_string()]);
-    assert!(cleared.failures.is_empty(), "nothing failed to unlink: {:?}", cleared.failures);
+    assert_eq!(
+        cleared.removed,
+        vec!["events.tsv".to_string(), "state.txt".to_string()]
+    );
+    assert!(
+        cleared.failures.is_empty(),
+        "nothing failed to unlink: {:?}",
+        cleared.failures
+    );
     let after = survivors(&tree);
-    assert!(!after.contains(&"events.tsv".to_string()), "the describing starts again from the start");
-    assert!(!after.contains(&"state.txt".to_string()), "and its running state is gone with it");
-    for kept in ["scaled frame", "extracted frame", ".frames", "transcript.tsv"] {
-        assert!(after.contains(&kept.to_string()), "{kept} is kept — {after:?}");
+    assert!(
+        !after.contains(&"events.tsv".to_string()),
+        "the describing starts again from the start"
+    );
+    assert!(
+        !after.contains(&"state.txt".to_string()),
+        "and its running state is gone with it"
+    );
+    for kept in [
+        "scaled frame",
+        "extracted frame",
+        ".frames",
+        "transcript.tsv",
+    ] {
+        assert!(
+            after.contains(&kept.to_string()),
+            "{kept} is kept — {after:?}"
+        );
     }
     // The log says which two went and which were kept, in §F1.1 S3's own sentence.
     assert_eq!(
@@ -249,7 +301,11 @@ fn sec_04_prepare_5_rules_b6_stop_mid_describe_restarts_only_the_describing() {
         Some(prepare_run::restart_line(&["events.tsv".into(), "state.txt".into()]).as_str()),
         "the restart line names both files and the kept frames: {lines:?}"
     );
-    assert!(lines[0].contains("scaled frames kept"), "as §S3 spells it: {}", lines[0]);
+    assert!(
+        lines[0].contains("scaled frames kept"),
+        "as §S3 spells it: {}",
+        lines[0]
+    );
     // One arming, one run: a second ▶ is not a second restart.
     assert!(
         !stop_legs::take_describe_restart(),
@@ -277,20 +333,33 @@ fn sec_04_prepare_5_rules_b6_a_stop_outside_describe_restarts_nothing() {
         }),
         ..RunBar::default()
     };
-    let stopped = bar.press_stop(Page::Prepare, Transport::default(), false, &mut Subprocesses::default());
-    assert!(matches!(stopped, run::Stopped::RunStopped { .. }), "the run came down: {stopped:?}");
+    let stopped = bar.press_stop(
+        Page::Prepare,
+        Transport::default(),
+        false,
+        &mut Subprocesses::default(),
+    );
+    assert!(
+        matches!(stopped, run::Stopped::RunStopped { .. }),
+        "the run came down: {stopped:?}"
+    );
     assert!(
         !bar.describe_restarts(),
         "and it did NOT arm a restart, because the stage was not Describe"
     );
-    assert!(!stop_legs::take_describe_restart(), "nor did the legs' own flag get armed");
+    assert!(
+        !stop_legs::take_describe_restart(),
+        "nor did the legs' own flag get armed"
+    );
 
     // The next ▶, un-armed. A clean tree means `describes_from_the_start(false, false)`, so the run
     // says nothing about restarting.
     let counts = naivepost::prepare::count(&tree, &project);
     let lines = prepare_run::start_log(&project, &counts);
     assert!(
-        !lines.iter().any(|line| line.contains("describing from the start again")),
+        !lines
+            .iter()
+            .any(|line| line.contains("describing from the start again")),
         "an un-armed run says nothing about restarting: {lines:?}"
     );
     assert_eq!(survivors(&tree), before, "and it removed nothing");
@@ -307,7 +376,10 @@ fn sec_04_prepare_5_rules_b6_the_restart_happens_only_on_the_next_play() {
     let before = survivors(&tree);
 
     // The rule as `prepare_run::begin` computes it: armed OR a marker on disk ⇒ restart; neither ⇒ not.
-    assert!(stop_legs::describes_from_the_start(true, false), "an armed stop restarts the describing");
+    assert!(
+        stop_legs::describes_from_the_start(true, false),
+        "an armed stop restarts the describing"
+    );
     assert!(
         stop_legs::describes_from_the_start(false, true),
         "so does a lane left holding its working files, with no stop at all"
@@ -318,19 +390,29 @@ fn sec_04_prepare_5_rules_b6_the_restart_happens_only_on_the_next_play() {
     );
 
     // Nothing has cleared them yet: the arming sits on the flag, waiting for a press that has not come.
-    assert_eq!(survivors(&tree), before, "the marker stands until a ▶ takes it up");
+    assert_eq!(
+        survivors(&tree),
+        before,
+        "the marker stands until a ▶ takes it up"
+    );
 
     // The next ▶ takes it up: the arming is read-and-cleared there, once.
     let armed = stop_legs::take_describe_restart();
     assert!(armed, "the next ▶ reads the arming");
-    assert!(!stop_legs::take_describe_restart(), "and it is good for exactly one run");
+    assert!(
+        !stop_legs::take_describe_restart(),
+        "and it is good for exactly one run"
+    );
     let cleared = prepare_run::clear_stopped_describe(&tree, &project);
     assert_eq!(
         cleared.removed,
         vec!["events.tsv".to_string(), "state.txt".to_string()],
         "the clear is the ▶'s doing"
     );
-    assert!(!stop_legs::take_describe_restart(), "and a third ▶ restarts nothing");
+    assert!(
+        !stop_legs::take_describe_restart(),
+        "and a third ▶ restarts nothing"
+    );
 }
 
 // ---- the round, and the #[test] that starts it ----------------------------------------
@@ -343,7 +425,8 @@ fn run_round(app: &adw::Application) {
         play_pauses_and_the_next_play_resumes as fn(&adw::Application),
         stop_arms_and_waits_for_the_next_play,
     ] {
-        if let Err(payload) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(app))) {
+        if let Err(payload) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(app)))
+        {
             let why = payload
                 .downcast_ref::<String>()
                 .cloned()
@@ -364,6 +447,12 @@ fn sec_04_prepare_5_rules_b6_the_run_bar_buttons_hold_and_release_the_run() {
         .build();
     app.connect_activate(run_round);
     app.run_with_args::<&str>(&[]);
-    assert!(RAN_PAUSE.load(std::sync::atomic::Ordering::SeqCst), "the ▶/⏸ widget check never ran");
-    assert!(RAN_STOP.load(std::sync::atomic::Ordering::SeqCst), "the ⏹ widget check never ran");
+    assert!(
+        RAN_PAUSE.load(std::sync::atomic::Ordering::SeqCst),
+        "the ▶/⏸ widget check never ran"
+    );
+    assert!(
+        RAN_STOP.load(std::sync::atomic::Ordering::SeqCst),
+        "the ⏹ widget check never ran"
+    );
 }

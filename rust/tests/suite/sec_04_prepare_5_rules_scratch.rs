@@ -20,14 +20,14 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
+use crate::common;
+use common::temp_dir_created as temp_dir;
 use naivepost::align;
 use naivepost::asr::{self, Answer, Silence};
 use naivepost::layout::Tree;
 use naivepost::requests::{self, Turn, Word, WordsDoc};
 use naivepost::separate_media as media;
 use naivepost::transcribe::{self, Align};
-use crate::common;
-use common::temp_dir_created as temp_dir;
 
 const SOURCE: &str = "mic.wav";
 
@@ -68,9 +68,15 @@ fn aligned_word(text: &str, from: f64, to: f64) -> serde_json::Value {
 fn sec_04_prepare_5_rules_s1_the_asr_scratch_goes_on_success_and_survives_failure() {
     // Failure half: the only chunk refuses, so its cut and plan must still be there to read.
     let (_root, tree) = project("s1-asr-fails");
-    let err = asr::run(&tree, SOURCE, 60.0, "nemotron", "en", &loud(60.0), |_file| {
-        Err("the box hung up".to_string())
-    })
+    let err = asr::run(
+        &tree,
+        SOURCE,
+        60.0,
+        "nemotron",
+        "en",
+        &loud(60.0),
+        |_file| Err("the box hung up".to_string()),
+    )
     .expect_err("a refusal reaches the caller");
     assert_eq!(err, "the box hung up");
     assert!(
@@ -78,7 +84,9 @@ fn sec_04_prepare_5_rules_s1_the_asr_scratch_goes_on_success_and_survives_failur
         "survives failure: `asr/` is the record of what was asked"
     );
     assert!(
-        names(&tree.asr_scratch(SOURCE)).iter().any(|n| n.ends_with(".plan")),
+        names(&tree.asr_scratch(SOURCE))
+            .iter()
+            .any(|n| n.ends_with(".plan")),
         "survives failure: the refused chunk's plan is there to read: {:?}",
         names(&tree.asr_scratch(SOURCE))
     );
@@ -86,7 +94,10 @@ fn sec_04_prepare_5_rules_s1_the_asr_scratch_goes_on_success_and_survives_failur
     // Success half: the same stage, everything answered, leaves nothing of itself behind.
     let (_root, tree) = project("s1-asr-ok");
     asr::run(&tree, SOURCE, 60.0, "nemotron", "en", &loud(60.0), |_| {
-        Ok(Answer { text: "one take".into(), words: vec![] })
+        Ok(Answer {
+            text: "one take".into(),
+            words: vec![],
+        })
     })
     .expect("every chunk answered");
     assert!(
@@ -166,7 +177,11 @@ fn sec_04_prepare_5_rules_s1_the_align_scratch_goes_on_success_and_survives_fail
 fn sec_04_prepare_5_rules_s1_the_diar_scratch_goes_on_success_and_survives_failure() {
     let spoken = || WordsDoc {
         text: "hello there".into(),
-        words: vec![Word { word: "hello".into(), start_sample: 0, end_sample: 8000 }],
+        words: vec![Word {
+            word: "hello".into(),
+            start_sample: 0,
+            end_sample: 8000,
+        }],
     };
 
     // Failure half: the diarizer's failure is fatal (bullet 5), and the scratch it wrote on the way out
@@ -174,7 +189,11 @@ fn sec_04_prepare_5_rules_s1_the_diar_scratch_goes_on_success_and_survives_failu
     let (_root, tree) = project("s1-diar-fails");
     requests::write_words(&tree, SOURCE, &spoken()).expect("S3's answer is on disk");
     fs::create_dir_all(tree.diar_scratch(SOURCE)).expect("the diarizer's scratch");
-    fs::write(tree.diar_scratch(SOURCE).join("d0000.wav.plan"), "-ss 0 -t 90\n").expect("its note");
+    fs::write(
+        tree.diar_scratch(SOURCE).join("d0000.wav.plan"),
+        "-ss 0 -t 90\n",
+    )
+    .expect("its note");
     let err = transcribe::run(
         &tree,
         SOURCE,
@@ -186,10 +205,7 @@ fn sec_04_prepare_5_rules_s1_the_diar_scratch_goes_on_success_and_survives_failu
     )
     .expect_err("no turns is fatal, not an empty session");
     assert!(err.contains("diarizer"), "{err}");
-    assert!(
-        !tree.turns_json(SOURCE).exists(),
-        "no answer, so no marker"
-    );
+    assert!(!tree.turns_json(SOURCE).exists(), "no answer, so no marker");
     assert!(
         tree.diar_scratch(SOURCE).is_dir(),
         "survives failure: `diar/` holds the window that failed"
@@ -199,7 +215,11 @@ fn sec_04_prepare_5_rules_s1_the_diar_scratch_goes_on_success_and_survives_failu
     let (_root, tree) = project("s1-diar-ok");
     requests::write_words(&tree, SOURCE, &spoken()).expect("S3's answer is on disk");
     fs::create_dir_all(tree.diar_scratch(SOURCE)).expect("the diarizer's scratch");
-    fs::write(tree.diar_scratch(SOURCE).join("d0000.wav.plan"), "-ss 0 -t 90\n").expect("its note");
+    fs::write(
+        tree.diar_scratch(SOURCE).join("d0000.wav.plan"),
+        "-ss 0 -t 90\n",
+    )
+    .expect("its note");
     transcribe::run(
         &tree,
         SOURCE,
@@ -207,7 +227,13 @@ fn sec_04_prepare_5_rules_s1_the_diar_scratch_goes_on_success_and_survives_failu
         "nemotron",
         |_| Align::None,
         || Ok(spoken()),
-        || Ok(vec![Turn { start_sample: 0, end_sample: 16000, speaker_id: 1 }]),
+        || {
+            Ok(vec![Turn {
+                start_sample: 0,
+                end_sample: 16000,
+                speaker_id: 1,
+            }])
+        },
     )
     .expect("the diarizer answered");
     assert!(

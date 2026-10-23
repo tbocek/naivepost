@@ -21,7 +21,11 @@ pub fn note_startup(lines: &[String]) {
     if let Ok(mut pending) = PENDING_LOGS.lock() {
         pending.extend(lines.iter().cloned());
     }
-    for line in PENDING_LOGS.lock().map(|mut p| p.drain(..).collect::<Vec<_>>()).unwrap_or_default() {
+    for line in PENDING_LOGS
+        .lock()
+        .map(|mut p| p.drain(..).collect::<Vec<_>>())
+        .unwrap_or_default()
+    {
         log_line(&line);
     }
 }

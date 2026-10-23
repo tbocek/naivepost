@@ -20,7 +20,6 @@ use crate::tools;
 /// what each one does.
 pub const NO_LINE: &str = "click a track first \u{2014} the effect needs a moment to happen at";
 
-
 /// F3.1 S1: what pressing ⊕ Zoom did.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Press {
@@ -268,7 +267,13 @@ pub fn form_title(t: f64) -> String {
 
 /// F3.1 S4: the form's fields, in the order `spec/img/06-zoom.png` shows them — Length, then the ending, then the
 /// two fades, then the curve. Order is the sentence a person reads, not a layout detail.
-pub const FORM_FIELDS: [&str; 5] = ["Length (s)", "At the end", "Fade in (s)", "Fade out (s)", "Curve"];
+pub const FORM_FIELDS: [&str; 5] = [
+    "Length (s)",
+    "At the end",
+    "Fade in (s)",
+    "Fade out (s)",
+    "Curve",
+];
 
 /// F3.1 S4 (`At the end: Pull back / Stay on it`): the two endings, and they are a radio pair — one zoom, one
 /// ending. `end_choices` puts the chosen one first so the widget has nothing to decide.
@@ -312,7 +317,8 @@ pub fn curve_stored(name: &str) -> &str {
 /// F3.1 S4: Length's help.
 pub const LENGTH_HELP: &str = "how long the camera move lasts altogether, fades included";
 /// F3.1 S4: Pull back's help.
-pub const PULL_BACK_HELP: &str = "A passing close-up: the picture closes in, holds for its seconds and opens back \
+pub const PULL_BACK_HELP: &str =
+    "A passing close-up: the picture closes in, holds for its seconds and opens back \
                                   out on its own, leaving the rest of the video framed as it was.";
 /// F3.1 S4: Stay on it's help.
 pub const STAY_ON_IT_HELP: &str = "A reframing: from here on the finished video shows this region. This is how a \
@@ -324,9 +330,11 @@ pub const FADE_IN_HELP: &str = concat!(
     "1 glides over a second"
 );
 /// F3.1 S4: Fade out's help — replaced by [`NO_WAY_BACK`] once staying is chosen.
-pub const FADE_OUT_HELP: &str = "how long it takes to come back off the region again: 0 cuts straight back";
+pub const FADE_OUT_HELP: &str =
+    "how long it takes to come back off the region again: 0 cuts straight back";
 /// F3.1 S4: Curve's help.
-pub const CURVE_HELP: &str = "the shape both fades travel in. Straight is all there is so far\u{2026}";
+pub const CURVE_HELP: &str =
+    "the shape both fades travel in. Straight is all there is so far\u{2026}";
 
 /// F3.1 S4: the form's footer, read off `spec/img/06-zoom.png` (image-derived — §A.1 does not spell it). It says
 /// what the form does while it is open: every keystroke is kept, and one ↶ takes the whole edit back.
@@ -412,7 +420,13 @@ pub fn apply(form: &Form) -> Result<Fx, String> {
             form.dur
         ));
     }
-    let mut effect = new_zoom((form.cx, form.cy, form.hf), form.at, form.dur, form.stay, form.row);
+    let mut effect = new_zoom(
+        (form.cx, form.cy, form.hf),
+        form.at,
+        form.dur,
+        form.stay,
+        form.row,
+    );
     if !form.stay {
         let trans = form.trans.max(0.0);
         let tout = form.tout.max(0.0);
@@ -445,7 +459,9 @@ pub fn label(t: f64) -> String {
 pub fn placed_status(t: f64, stay: bool) -> String {
     let name = label(t);
     if stay {
-        return format!("{name} \u{2014} the video shows this region from here on; \u{21b6} Undo takes it back");
+        return format!(
+            "{name} \u{2014} the video shows this region from here on; \u{21b6} Undo takes it back"
+        );
     }
     format!("{name} \u{2014} \u{21b6} Undo takes it back")
 }
@@ -453,7 +469,10 @@ pub fn placed_status(t: f64, stay: bool) -> String {
 /// F3.1 (the rule after S5): the status when a press in the settled preview grabbed the zoom in force and moved it.
 /// Same subject, one more word, because what happened is different: nothing was placed, an existing framing moved.
 pub fn re_frame_status(t: f64) -> String {
-    format!("{} re-framed \u{2014} \u{21b6} Undo takes it back", label(t))
+    format!(
+        "{} re-framed \u{2014} \u{21b6} Undo takes it back",
+        label(t)
+    )
 }
 
 /// F3.1 (the rule after S5): the plate drawn beside the box on the preview, as `spec/img/06-zoom.png` shows it —
@@ -511,7 +530,11 @@ pub struct Camera {
 
 /// F3.1 (`from the centred full-fill slice`): the frame with no zoom on it — the whole source, centred. Every glide
 /// starts here unless a staying zoom has replaced it.
-pub const SETTLED: Camera = Camera { cx: 0.5, cy: 0.5, hf: 1.0 };
+pub const SETTLED: Camera = Camera {
+    cx: 0.5,
+    cy: 0.5,
+    hf: 1.0,
+};
 
 /// F3.1: the zooms, in the order §A.1 walks them — by `t`, since "walk zooms by t" is what makes a lane out of
 /// effects stored in any order.
@@ -557,7 +580,9 @@ pub fn camera_at(fx: &[Fx], t: f64) -> Camera {
         })
         .min_by(|a, b| zooms[*a].t.total_cmp(&zooms[*b].t));
     if let Some(index) = arrival {
-        let effect = *zooms.get(index).expect("the filter just took it from this list");
+        let effect = *zooms
+            .get(index)
+            .expect("the filter just took it from this list");
         let share = (t - effect.t) / effect.trans;
         return mix(start_of(index), rect_of(effect), share);
     }
@@ -573,7 +598,9 @@ pub fn camera_at(fx: &[Fx], t: f64) -> Camera {
 
     match covering {
         Some(index) => {
-            let effect = *zooms.get(index).expect("the filter just took it from this list");
+            let effect = *zooms
+                .get(index)
+                .expect("the filter just took it from this list");
             // Gliding back out unless it stays — a staying camera has no way back, which is why its fade-out is
             // nought and this branch never runs for it.
             if !effect.stay && effect.tout > 0.0 && t > effect.spans().1 - effect.tout {

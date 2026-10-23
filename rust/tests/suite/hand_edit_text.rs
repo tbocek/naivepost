@@ -79,7 +79,11 @@ fn f1_12_s1_the_edited_file_is_read_back_as_words_and_joins() {
         kept,
         words(&["so", "we", "take", "and", "cut", "there", "twice"])
     );
-    assert_eq!(joins, vec![3, 0], "both marks are joins; neither contributes a word");
+    assert_eq!(
+        joins,
+        vec![3, 0],
+        "both marks are joins; neither contributes a word"
+    );
 
     // Deleting the join marks too is the same edit: what goes is in `retakes.tsv`, not in the text.
     let (same, _) = textfmt::read_final("so we take and cut there twice\n");
@@ -91,7 +95,10 @@ fn f1_12_s1_the_file_round_trips_through_the_writer() {
     let tree = tree("roundtrip");
     let surviving = words(&["so", "we", "take", "and", "cut", "there", "twice"]);
     // One join with nothing gone is the bare `|cut|` §6 spells out.
-    write_final(&tree, &textfmt::write_final(&surviving, &[0, 0, 2, 0, 0, 0]));
+    write_final(
+        &tree,
+        &textfmt::write_final(&surviving, &[0, 0, 2, 0, 0, 0]),
+    );
 
     let read = std::fs::read_to_string(tree.final_txt()).unwrap();
     assert!(read.contains("|cut 2|"), "{read}");
@@ -115,7 +122,10 @@ fn f1_12_s1_join_marks_left_in_the_text_are_not_read_as_words() {
     // of its own and adds nothing to the count. P.machine.retakeCeil = 0.4 keeps 3/10 an edit.
     let marked = edit::remake(MARKED, &words(&WORDS), &times(10), |_| None);
     assert_eq!(marked.dropped, 3, "the three the |cut 3| marker stands for");
-    assert_eq!(marked.extra, 0, "a marker is a mark, never a never-said word");
+    assert_eq!(
+        marked.extra, 0,
+        "a marker is a mark, never a never-said word"
+    );
     assert!(!marked.refused, "3 of 10 is under the ceiling");
     assert!(
         marked.marks.iter().all(|mark| !mark.text.contains('|')),
@@ -137,7 +147,11 @@ fn f1_12_s1_join_marks_removed_leaves_the_same_marks_as_keeping_them() {
     );
     assert_eq!(marked.dropped, plain.dropped);
     assert_eq!(marked.extra, plain.extra);
-    assert_eq!(marked.marks.len(), plain.marks.len(), "same number of stretches");
+    assert_eq!(
+        marked.marks.len(),
+        plain.marks.len(),
+        "same number of stretches"
+    );
     for (kept, gone) in marked.marks.iter().zip(plain.marks.iter()) {
         assert_eq!((kept.s, kept.e, kept.to), (gone.s, gone.e, gone.to));
     }
@@ -156,10 +170,17 @@ fn f1_12_s1_before_cut_reads_a_marked_final_txt() {
 
     let outcome = edit::before_cut(&tree, &[SRC.to_string()]).expect("the edited text is newer");
     assert_eq!(outcome.logs[0], edit::EDITED_NOTE);
-    assert_eq!(outcome.dropped, 3, "the markers were read as the deletion they name");
+    assert_eq!(
+        outcome.dropped, 3,
+        "the markers were read as the deletion they name"
+    );
 
     let on_disk = textfmt::read_retakes(&tree.retakes_tsv()).unwrap();
-    assert_eq!(on_disk.len(), outcome.marks.len(), "what was written is what was decided");
+    assert_eq!(
+        on_disk.len(),
+        outcome.marks.len(),
+        "what was written is what was decided"
+    );
     for (row, mark) in on_disk.iter().zip(outcome.marks.iter()) {
         assert_eq!((row.s, row.e, row.to), (mark.s, mark.e, mark.to));
         assert!(!row.text.contains('|'), "{row:?}");
@@ -178,11 +199,23 @@ fn stamp(seconds_ago: u64) -> SystemTime {
 #[test]
 fn f1_12_s2_only_a_newer_text_is_an_edit() {
     let (new, old) = (stamp(0), stamp(60));
-    assert!(edit::edited(Some(new), Some(old)), "the text was edited after Prepare");
-    assert!(!edit::edited(Some(old), Some(new)), "the model's marks stand");
+    assert!(
+        edit::edited(Some(new), Some(old)),
+        "the text was edited after Prepare"
+    );
+    assert!(
+        !edit::edited(Some(old), Some(new)),
+        "the model's marks stand"
+    );
     let same = stamp(30);
-    assert!(!edit::edited(Some(same), Some(same)), "equal times are not newer");
-    assert!(edit::edited(Some(new), None), "nothing marked yet: the edit is waiting");
+    assert!(
+        !edit::edited(Some(same), Some(same)),
+        "equal times are not newer"
+    );
+    assert!(
+        edit::edited(Some(new), None),
+        "nothing marked yet: the edit is waiting"
+    );
     assert!(!edit::edited(None, Some(old)), "no text, nothing to read");
     assert!(!edit::edited(None, None));
 }
@@ -190,7 +223,10 @@ fn f1_12_s2_only_a_newer_text_is_an_edit() {
 #[test]
 fn f1_12_s2_the_files_own_times_are_what_count() {
     let dir = temp("mtimes");
-    let (final_txt, retakes) = (transcript(&dir).join("final.txt"), transcript(&dir).join("retakes.tsv"));
+    let (final_txt, retakes) = (
+        transcript(&dir).join("final.txt"),
+        transcript(&dir).join("retakes.tsv"),
+    );
     std::fs::write(&final_txt, textfmt::write_final(&words(&WORDS), &[])).unwrap();
     textfmt::write_retakes(&[], &retakes).unwrap();
 
@@ -200,7 +236,10 @@ fn f1_12_s2_the_files_own_times_are_what_count() {
 
     // The user saves the file from their editor and it is newer than both.
     let later = SystemTime::now() + Duration::from_secs(2);
-    std::fs::File::open(&final_txt).unwrap().set_modified(later).unwrap();
+    std::fs::File::open(&final_txt)
+        .unwrap()
+        .set_modified(later)
+        .unwrap();
     assert!(edit::edited(mtime(&final_txt), mtime(&retakes)));
 }
 
@@ -227,9 +266,14 @@ fn f1_12_s2_two_words_deleted_become_one_stretch_with_no_model() {
     assert_eq!(mark.text, "cut it");
 
     assert_eq!(outcome.logs[0], edit::EDITED_NOTE);
-    assert_eq!(outcome.logs.last().unwrap(), ">>> text edit: 2 of 10 words removed in 1 stretch(es)");
+    assert_eq!(
+        outcome.logs.last().unwrap(),
+        ">>> text edit: 2 of 10 words removed in 1 stretch(es)"
+    );
     assert!(
-        outcome.logs.contains(&">>> text edit: 00:06-00:07 goes (\"cut it\")".to_string()),
+        outcome
+            .logs
+            .contains(&">>> text edit: 00:06-00:07 goes (\"cut it\")".to_string()),
         "{:?}",
         outcome.logs
     );
@@ -247,7 +291,11 @@ fn f1_12_s2_two_separate_deletions_are_two_stretches() {
     assert_eq!(outcome.dropped, 2);
     assert_eq!(outcome.marks.len(), 2);
     assert_eq!((outcome.marks[0].s, outcome.marks[0].to), (1.0, 1.9));
-    assert_eq!((outcome.marks[1].s, outcome.marks[1].to), (8.0, 8.9), "there went out alone");
+    assert_eq!(
+        (outcome.marks[1].s, outcome.marks[1].to),
+        (8.0, 8.9),
+        "there went out alone"
+    );
 }
 
 #[test]
@@ -255,7 +303,9 @@ fn f1_12_s2_a_word_that_was_never_said_is_left_out_with_a_warning() {
     let outcome = edit::remake(
         // A word nobody spoke, spelled like nothing else in the sentence: the match runs backwards and
         // cannot borrow an earlier word for it, so it is left out rather than shifting anything.
-        &text(&["so", "we", "take", "the", "clip", "and", "cut", "it", "typo", "there", "twice"]),
+        &text(&[
+            "so", "we", "take", "the", "clip", "and", "cut", "it", "typo", "there", "twice",
+        ]),
         &words(&WORDS),
         &times(10),
         |_| None,
@@ -316,7 +366,11 @@ fn f1_12_s2_a_word_only_matching_far_back_was_not_said() {
     // Within the reach it is the same word, and nothing is extra.
     // The same text one step shorter: now every word has its own copy within the reach, and nothing is
     // extra — which is what makes the reach a reach rather than a refusal to match at all.
-    let near: Vec<String> = spoken[..258].iter().cloned().chain(std::iter::once("w0".to_string())).collect();
+    let near: Vec<String> = spoken[..258]
+        .iter()
+        .cloned()
+        .chain(std::iter::once("w0".to_string()))
+        .collect();
     let (kept, extra) = edit::keep_mask(&spoken, &near);
     assert_eq!(extra, 1, "the tail copy is still out of reach");
     assert_eq!(kept.iter().filter(|keep| !**keep).count(), 2);
@@ -345,11 +399,17 @@ fn f1_12_s2_writing_the_marks_once_stops_the_remake() {
     // The fresh file is newer than the text it was made from, so the next Cut ▶ reads the marks and does
     // not ask the model or remake the edit a second time.
     let mtime = |path: &PathBuf| std::fs::metadata(path).unwrap().modified().ok();
-    assert!(!edit::edited(mtime(&tree.final_txt()), mtime(&tree.retakes_tsv())));
+    assert!(!edit::edited(
+        mtime(&tree.final_txt()),
+        mtime(&tree.retakes_tsv())
+    ));
 
     // An empty mark list is still written: "asked, none" is a file, not an absence.
     edit::write_marks(&tree, &[]).unwrap();
-    assert_eq!(textfmt::read_retakes(&tree.retakes_tsv()).unwrap(), Vec::<Retake>::new());
+    assert_eq!(
+        textfmt::read_retakes(&tree.retakes_tsv()).unwrap(),
+        Vec::<Retake>::new()
+    );
 }
 
 #[test]
@@ -361,7 +421,10 @@ fn f1_12_s2_the_sound_moves_an_edge_when_there_is_one_to_ask() {
     // No envelope: the edges stay on the word times.
     let plain = edit::remake(&edited, &spoken, &when, |_| None);
     assert_eq!((plain.marks[0].s, plain.marks[0].to), (6.0, 7.9));
-    assert!(plain.logs.iter().all(|line| !line.contains("the sound before it stops")));
+    assert!(plain
+        .logs
+        .iter()
+        .all(|line| !line.contains("the sound before it stops")));
 
     // An envelope with quiet before the dropped run ends the cut there instead, and says so. A bucket is
     // 5 ms at this rate; the word levels are what F1.11's tests use.
@@ -371,13 +434,22 @@ fn f1_12_s2_the_sound_moves_an_edge_when_there_is_one_to_ask() {
     for bucket in (5.0 * HZ) as usize..(5.9 * HZ) as usize {
         peaks[bucket] = 120;
     }
-    let envelope = naivepost::edges::Edges::new(Wave { hz: HZ, chans: vec![peaks] }, 0.0);
+    let envelope = naivepost::edges::Edges::new(
+        Wave {
+            hz: HZ,
+            chans: vec![peaks],
+        },
+        0.0,
+    );
     let placed = edit::remake(&edited, &spoken, &when, |_| Some(&envelope));
 
     // The last sound bucket ends at 5.9 s, and the pad leaves 0.05 s of it: 5.9 + 0.05.
     assert_eq!((placed.marks[0].s, placed.marks[0].to), (5.95, 7.9));
     assert!(
-        placed.logs.iter().any(|line| line.contains("the sound before it stops")),
+        placed
+            .logs
+            .iter()
+            .any(|line| line.contains("the sound before it stops")),
         "{:?}",
         placed.logs
     );
@@ -416,11 +488,7 @@ fn write_words(tree: &Tree, list: &[&str]) {
 
 /// The marks that stand before the edit: one old stretch nobody is about to keep.
 fn seed_marks(tree: &Tree) -> String {
-    std::fs::write(
-        tree.retakes_tsv(),
-        "1.0\t2.0\t0.0\t2.0\tthe old mark\n",
-    )
-    .unwrap();
+    std::fs::write(tree.retakes_tsv(), "1.0\t2.0\t0.0\t2.0\tthe old mark\n").unwrap();
     std::fs::read_to_string(tree.retakes_tsv()).unwrap()
 }
 
@@ -440,7 +508,10 @@ fn f1_12_s2_before_cut_remakes_and_writes_the_marks() {
     // P.machine.retakeCeil = 0.4: two of ten words removed is an edit, not a refusal.
     write_words(&tree, &WORDS);
     let before = seed_marks(&tree);
-    write_final(&tree, &text(&["so", "we", "take", "the", "clip", "and", "there", "twice"]));
+    write_final(
+        &tree,
+        &text(&["so", "we", "take", "the", "clip", "and", "there", "twice"]),
+    );
     set_stamp(&tree.retakes_tsv(), 60);
     set_stamp(&tree.final_txt(), 0);
 
@@ -461,10 +532,7 @@ fn f1_12_s2_before_cut_remakes_and_writes_the_marks() {
     set_stamp(&tree.retakes_tsv(), 0);
     assert!(
         !edit::edited(
-            std::fs::metadata(tree.final_txt())
-                .unwrap()
-                .modified()
-                .ok(),
+            std::fs::metadata(tree.final_txt()).unwrap().modified().ok(),
             std::fs::metadata(tree.retakes_tsv())
                 .unwrap()
                 .modified()
@@ -492,7 +560,8 @@ fn f1_12_s2_before_cut_refuses_and_leaves_the_marks_alone() {
     set_stamp(&tree.retakes_tsv(), 60);
     set_stamp(&tree.final_txt(), 0);
 
-    let outcome = edit::before_cut(&tree, &[SRC.to_string()]).expect("the text is newer, so it is asked");
+    let outcome =
+        edit::before_cut(&tree, &[SRC.to_string()]).expect("the text is newer, so it is asked");
     assert!(outcome.refused, "more than 40 % removed is refused");
     assert!(
         outcome.logs.iter().any(|line| line.contains("refused")),
@@ -532,7 +601,10 @@ fn f1_12_s2_no_model_is_asked_and_nothing_is_exchanged() {
     // than refused -- and the marking happens without a single request leaving the machine.
     write_words(&tree, &WORDS);
     seed_marks(&tree);
-    write_final(&tree, &text(&["so", "we", "take", "the", "clip", "and", "there", "twice"]));
+    write_final(
+        &tree,
+        &text(&["so", "we", "take", "the", "clip", "and", "there", "twice"]),
+    );
     set_stamp(&tree.retakes_tsv(), 60);
     set_stamp(&tree.final_txt(), 0);
 
@@ -589,7 +661,9 @@ fn f1_12_s2_a_never_said_word_survives_the_disk_path() {
     // only ever been proven against the pure function, never through the door the ▶ uses.
     write_final(
         &tree,
-        &text(&["so", "we", "take", "the", "clip", "and", "typo", "there", "twice"]),
+        &text(&[
+            "so", "we", "take", "the", "clip", "and", "typo", "there", "twice",
+        ]),
     );
     set_stamp(&tree.retakes_tsv(), 60);
     set_stamp(&tree.final_txt(), 0);
@@ -603,7 +677,10 @@ fn f1_12_s2_a_never_said_word_survives_the_disk_path() {
         outcome.logs
     );
     assert!(
-        outcome.logs.iter().any(|line| line.contains("were never said")),
+        outcome
+            .logs
+            .iter()
+            .any(|line| line.contains("were never said")),
         "the warning reached the log: {:?}",
         outcome.logs
     );
@@ -619,7 +696,10 @@ fn f1_12_s2_a_never_said_word_survives_the_disk_path() {
         on_disk.iter().all(|row| !row.text.contains("typo")),
         "{on_disk:?}"
     );
-    assert_eq!(outcome.dropped, 2, "'it' and 'cut' went -- the typo is extra, not a substitute");
+    assert_eq!(
+        outcome.dropped, 2,
+        "'it' and 'cut' went -- the typo is extra, not a substitute"
+    );
 }
 
 // --- F1.11 through this door: does the Cut ▶ actually consult `cache/waves`? ---------------------
@@ -653,9 +733,7 @@ fn stat_like_the_app(path: &Path) -> (i64, i64) {
 }
 
 /// Two words deleted from the middle of ten, so the dropped run starts at second 5.
-const CUT_TWO: [&str; 8] = [
-    "so", "we", "take", "the", "clip", "and", "there", "twice",
-];
+const CUT_TWO: [&str; 8] = ["so", "we", "take", "the", "clip", "and", "there", "twice"];
 
 #[test]
 fn f1_11_s6_before_cut_asks_the_wave_cache_and_the_sound_moves_the_edge() {
@@ -675,18 +753,33 @@ fn f1_11_s6_before_cut_asks_the_wave_cache_and_the_sound_moves_the_edge() {
     for bucket in (5.0 * HZ) as usize..(5.9 * HZ) as usize {
         peaks[bucket] = 120;
     }
-    naivepost::wave::write(&tree, "lecture", &Wave { hz: HZ, chans: vec![peaks] }, size, mtime)
-        .unwrap();
+    naivepost::wave::write(
+        &tree,
+        "lecture",
+        &Wave {
+            hz: HZ,
+            chans: vec![peaks],
+        },
+        size,
+        mtime,
+    )
+    .unwrap();
 
-    let outcome = edit::before_cut(&tree, &[stored])
-        .expect("the text is newer, so the marks are remade");
+    let outcome =
+        edit::before_cut(&tree, &[stored]).expect("the text is newer, so the marks are remade");
     assert_eq!(outcome.marks.len(), 1);
     // WITHOUT the cache this edge would sit on the word time 6.0; the envelope put it at 5.95. That
     // difference is the proof the live path read `cache/waves/lecture.wave`.
-    assert_eq!(outcome.marks[0].s, 5.95, "the cached envelope placed the edge, not the word time");
+    assert_eq!(
+        outcome.marks[0].s, 5.95,
+        "the cached envelope placed the edge, not the word time"
+    );
     assert_ne!(outcome.marks[0].s, 6.0);
     assert!(
-        outcome.logs.iter().any(|line| line.contains("the sound before it stops")),
+        outcome
+            .logs
+            .iter()
+            .any(|line| line.contains("the sound before it stops")),
         "{:?}",
         outcome.logs
     );
@@ -711,11 +804,16 @@ fn f1_11_s6_before_cut_without_a_cache_still_places_on_the_word_times() {
         .expect("a missing cache is not a reason to refuse the remake");
     assert_eq!(outcome.marks.len(), 1);
     // With no envelope to ask, the edge stays on the aligner's own time.
-    assert_eq!(outcome.marks[0].s, 6.0, "no envelope, so the word time stands");
+    assert_eq!(
+        outcome.marks[0].s, 6.0,
+        "no envelope, so the word time stands"
+    );
     assert!(
-        outcome.logs.iter().all(|line| !line.contains("the sound before it stops")),
+        outcome
+            .logs
+            .iter()
+            .all(|line| !line.contains("the sound before it stops")),
         "nothing was asked, so nothing may claim the sound moved it: {:?}",
         outcome.logs
     );
 }
-

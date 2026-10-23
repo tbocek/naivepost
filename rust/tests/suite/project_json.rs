@@ -3,10 +3,10 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::{read_tree as read, temp_dir};
 use naivepost::layout::Tree;
 use naivepost::project::{self, Crop, Publish, Source, TextMark};
-use crate::common;
-use common::{temp_dir, read_tree as read};
 
 /// A project folder holding the given file text; returns its tree and the root.
 fn with_file(tag: &str, text: &str) -> (PathBuf, Tree) {
@@ -16,7 +16,6 @@ fn with_file(tag: &str, text: &str) -> (PathBuf, Tree) {
     std::fs::write(dir.join(project::PROJECT_FILE), text).unwrap();
     (root, Tree::new(&dir).unwrap())
 }
-
 
 #[test]
 fn sec_01_project_and_files_2_naivepostjson_empty_file_holds_the_table_defaults() {
@@ -35,10 +34,7 @@ fn sec_01_project_and_files_2_naivepostjson_empty_file_holds_the_table_defaults(
 
     // P.policy.markingPass defaults to retakes, P.policy.cutMode to model, both
     // with origin default so the User Context can still override them.
-    assert_eq!(
-        p.policy.marking_pass.value,
-        project::MarkingPass::Retakes
-    );
+    assert_eq!(p.policy.marking_pass.value, project::MarkingPass::Retakes);
     assert_eq!(p.policy.marking_pass.origin, project::Origin::Default);
     assert_eq!(p.policy.cut_mode.value, project::CutMode::Model);
     assert_eq!(p.policy.cut_mode.origin, project::Origin::Default);
@@ -93,7 +89,9 @@ fn sec_01_project_and_files_2_naivepostjson_round_trip_keeps_every_written_key()
             cut_mode: project::Field {
                 value: project::CutMode::Words,
                 origin: project::Origin::Model,
-                because: Some("the lecture reads from slides, so the marked words carry the cut".into()),
+                because: Some(
+                    "the lecture reads from slides, so the marked words carry the cut".into(),
+                ),
             },
             ..project::Policy::default()
         },
@@ -196,8 +194,8 @@ fn sec_01_project_and_files_2_naivepostjson_prototype_only_keys_are_ignored_and_
 }
 
 #[test]
-fn sec_01_project_and_files_2_naivepostjson_policy_default_field_origin_is_default_and_survives_a_user_value()
- {
+fn sec_01_project_and_files_2_naivepostjson_policy_default_field_origin_is_default_and_survives_a_user_value(
+) {
     let (_root, t) = with_file("policy", "{}");
     let p = project::load(t.dir()).unwrap();
     assert_eq!(p.policy.marking_pass.value, project::MarkingPass::Retakes);
@@ -256,7 +254,10 @@ fn sec_01_project_and_files_2_naivepostjson_publish_absent_by_default_and_presen
 fn sec_01_project_and_files_2_naivepostjson_chooser_folders_follow_the_path_rule() {
     let root = Path::new("/data/naivepost");
     let mut p = project::Project::default();
-    assert_eq!(p.vid_dir(root), PathBuf::from("/data/naivepost/input_video"));
+    assert_eq!(
+        p.vid_dir(root),
+        PathBuf::from("/data/naivepost/input_video")
+    );
 
     p.vid_dir = Some("shots".to_string());
     p.aud_dir = Some("/srv/mics".to_string());

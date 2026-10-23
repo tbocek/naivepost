@@ -72,12 +72,21 @@ fn scene(cut: &Cut) -> Scene {
         pps: PPS,
         origin: 0.0,
         segs: if cut.segs.is_empty() {
-            vec![Seg { s: 0.0, e: SHOT_W as f64 / PPS, cam: 0, ..Default::default() }]
+            vec![Seg {
+                s: 0.0,
+                e: SHOT_W as f64 / PPS,
+                cam: 0,
+                ..Default::default()
+            }]
         } else {
             cut.segs.clone()
         },
         fx: cut.fx.clone(),
-        recordings: vec![Recording { base: "session-tape".to_string(), start: 0.0, end: 400.0 }],
+        recordings: vec![Recording {
+            base: "session-tape".to_string(),
+            start: 0.0,
+            end: 400.0,
+        }],
         folds: Vec::new(),
         selection: None,
         watched_row: None,
@@ -96,10 +105,27 @@ fn scene(cut: &Cut) -> Scene {
 /// too (`snapshot_effects::paint` seeds the same records), so the two images cannot show different lanes.
 pub fn staged_cut() -> Cut {
     Cut {
-        segs: vec![Seg { s: 0.0, e: 300.0, cam: 0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 300.0,
+            cam: 0,
+            ..Default::default()
+        }],
         fx: vec![
-            Fx { kind: "zoom".to_string(), t: 5.0, dur: 50.0, trans: 1.0, ..Default::default() },
-            Fx { kind: "zoom".to_string(), t: 62.0, dur: 40.0, stay: true, ..Default::default() },
+            Fx {
+                kind: "zoom".to_string(),
+                t: 5.0,
+                dur: 50.0,
+                trans: 1.0,
+                ..Default::default()
+            },
+            Fx {
+                kind: "zoom".to_string(),
+                t: 62.0,
+                dur: 40.0,
+                stay: true,
+                ..Default::default()
+            },
             Fx {
                 kind: "speed".to_string(),
                 t: 108.0,
@@ -115,8 +141,20 @@ pub fn staged_cut() -> Cut {
                 text: "Ethereum in one lecture".to_string(),
                 ..Default::default()
             },
-            Fx { kind: "volume".to_string(), t: 220.0, dur: 40.0, gain: 2.0, ..Default::default() },
-            Fx { kind: "label".to_string(), t: 265.0, dur: 8.0, text: "intro".to_string(), ..Default::default() },
+            Fx {
+                kind: "volume".to_string(),
+                t: 220.0,
+                dur: 40.0,
+                gain: 2.0,
+                ..Default::default()
+            },
+            Fx {
+                kind: "label".to_string(),
+                t: 265.0,
+                dur: 8.0,
+                text: "intro".to_string(),
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }

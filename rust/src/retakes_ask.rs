@@ -25,8 +25,8 @@ use crate::services::{self, Server};
 use crate::settings::{self, Conf, Paths};
 use crate::textfmt::Retake;
 use crate::tool_loop;
-use crate::tools::{self, Tool};
 use crate::tools::retakes::{Line, Mark, Marks, Trim, AGAIN_REACH_SECONDS};
+use crate::tools::{self, Tool};
 
 /// The step name this job's cache entries, timed rows and log lines carry.
 pub const STEP: &str = retakes::STEP;
@@ -105,9 +105,11 @@ pub fn run_pass(
                 // answered. But if NONE of them answers, saying it once is enough — the run-by-run
                 // line is news only when the pool still goes on without that run.
                 if standing + (retakes::RUNS - run - 1) > 0 {
-                    for line in
-                        tools::retakes::run_set_aside_log(run, &reason, standing + (retakes::RUNS - run - 1))
-                    {
+                    for line in tools::retakes::run_set_aside_log(
+                        run,
+                        &reason,
+                        standing + (retakes::RUNS - run - 1),
+                    ) {
                         log(&line);
                     }
                 }
@@ -122,7 +124,9 @@ pub fn run_pass(
     // owed because that is what tells Cut this pass ran (§Failure-is-specific).
     if standing == 0 {
         if let Some(reason) = last {
-            log(&format!("!!! retakes: the fixer answered nothing -- {reason}"));
+            log(&format!(
+                "!!! retakes: the fixer answered nothing -- {reason}"
+            ));
         }
         retakes::write_marks(tree, &[], &[], &[])?;
         return Ok(());
@@ -149,7 +153,10 @@ pub fn run_pass(
                 });
             }
             Outcome::Dropped(reason) | Outcome::Refused(reason) => {
-                log(&format!("!!! retakes: lines {}-{} -- {reason}", mark.from, mark.to));
+                log(&format!(
+                    "!!! retakes: lines {}-{} -- {reason}",
+                    mark.from, mark.to
+                ));
             }
             Outcome::Rehear { from, to } => {
                 // The second hearing (§S4's last clause) — see `rehear` for why it re-asks the
@@ -174,7 +181,11 @@ pub fn run_pass(
     let spoken: Vec<(f64, f64)> = lines.iter().map(|line| (line.start, line.end)).collect();
     let aligned: Vec<AlignedWord> = words
         .iter()
-        .map(|word| AlignedWord { word: word.match_word.clone(), s: word.start, e: word.end })
+        .map(|word| AlignedWord {
+            word: word.match_word.clone(),
+            s: word.start,
+            e: word.end,
+        })
         .collect();
     let as_retakes: Vec<Retake> = applied
         .iter()
@@ -273,8 +284,14 @@ pub fn ask_run(
         return RunOutcome::Cached { marks: named };
     }
     let messages = vec![
-        Message { role: "system".to_string(), parts: vec![Part::Text(system.clone())] },
-        Message { role: "user".to_string(), parts: vec![Part::Text(brief.to_string())] },
+        Message {
+            role: "system".to_string(),
+            parts: vec![Part::Text(system.clone())],
+        },
+        Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text(brief.to_string())],
+        },
     ];
     let offered: Vec<Tool> = tools::offered(Job::Retakes);
     let endpoint = services::llm_endpoint(conf);
@@ -283,7 +300,8 @@ pub fn ask_run(
     let mut final_body: Option<String> = None;
     let mut named = 0usize;
     let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<tool_loop::Turn, String> {
-        let base = crate::server_leg::base_row(Server::Llm, &conf.model, "POST", "", STEP, "retakes");
+        let base =
+            crate::server_leg::base_row(Server::Llm, &conf.model, "POST", "", STEP, "retakes");
         // §2 S5: a server that refuses the `tools` field is asked again without it, once, and never offered the
         // field again — the same door the fixer and the cut use, so no step re-logs the refusal per attempt.
         let sent = crate::llm_tool_refusal_leg::dial_honouring_refusal(
@@ -318,7 +336,10 @@ pub fn ask_run(
         )?;
         let reply = llm_request::reply_from(&sent.content_type, &sent.body)
             .map_err(|why| format!("{STEP}: {why}"))?;
-        let finishing = reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
+        let finishing = reply
+            .tool_calls
+            .iter()
+            .any(|call| call.name == Tool::Finish.name());
         if finishing || reply.tool_calls.is_empty() {
             final_body = Some(sent.body.clone());
         }
@@ -353,8 +374,8 @@ pub fn ask_run(
                 return answer;
             }
         }
-        let args: serde_json::Value = serde_json::from_str(&asked.args)
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let args: serde_json::Value =
+            serde_json::from_str(&asked.args).unwrap_or_else(|_| serde_json::json!({}));
         let number = |key: &str| args.get(key).and_then(|v| v.as_u64()).map(|v| v as u32);
         match asked.name.as_str() {
             // The TOOL decides validity — range, `again` inside the stretch, the reach, the minimum —
@@ -403,11 +424,15 @@ pub fn ask_run(
             for line in &run.logs {
                 crate::ui::window::log_line(line);
             }
-            RunOutcome::Failed { reason: "no answer from it".to_string() }
+            RunOutcome::Failed {
+                reason: "no answer from it".to_string(),
+            }
         }
         tool_loop::Outcome::Finished { .. } => {
             let Some(body) = final_body else {
-                return RunOutcome::Failed { reason: "answered with nothing to read".to_string() };
+                return RunOutcome::Failed {
+                    reason: "answered with nothing to read".to_string(),
+                };
             };
             // Only a readable answer is stored: an unreadable one must go out again rather than be
             // replayed from the slot it failed in. The slot is the one named above.
@@ -420,7 +445,9 @@ pub fn ask_run(
                 ));
             }
             let parsed = apply_answer(&body, marks);
-            RunOutcome::Answered { marks: parsed.max(named) }
+            RunOutcome::Answered {
+                marks: parsed.max(named),
+            }
         }
     }
 }
@@ -446,7 +473,12 @@ fn apply_answer(body: &str, marks: &mut Marks) -> usize {
 /// attempt. No `again` and no repeat means the attempt broke off and was never picked up, which is
 /// only honest for a whole take (the rule `retakes::verify` states); a partial mark claiming no
 /// replacement is a rephrase, and only its broken-off tail goes.
-fn check_against_words(marks: &Marks, words: &[SessionWord], lines: &[Line], mark: &Mark) -> Outcome {
+fn check_against_words(
+    marks: &Marks,
+    words: &[SessionWord],
+    lines: &[Line],
+    mark: &Mark,
+) -> Outcome {
     let attempt = words_in(lines, words, mark.from, mark.to);
     let whole_take = mark.from <= 1 && mark.to >= lines.len() as u32;
     let (tail, rephrase) = match mark.again {
@@ -460,7 +492,9 @@ fn check_against_words(marks: &Marks, words: &[SessionWord], lines: &[Line], mar
     };
     // A mark the words cannot confirm goes through `retakes::reheat`, so the second-hearing rule is
     // stated once, in the module that owns the rule, rather than being implied by this branch.
-    let verdict = retakes::verify(marks, mark.from, mark.to, mark.again, tail, rephrase, whole_take);
+    let verdict = retakes::verify(
+        marks, mark.from, mark.to, mark.again, tail, rephrase, whole_take,
+    );
     if matches!(verdict, Outcome::Refused(_)) && !words.is_empty() {
         return retakes::reheat(mark.from, mark.to);
     }
@@ -547,7 +581,13 @@ pub(crate) fn lines_answer(marks: &Marks, from: u32, to: u32) -> String {
         .lines_with_pause(from, to)
         .into_iter()
         .map(|(line, pause)| {
-            format!("{} [{}-{}] ({}s pause)", line.n, line.start, line.end, trim(pause))
+            format!(
+                "{} [{}-{}] ({}s pause)",
+                line.n,
+                line.start,
+                line.end,
+                trim(pause)
+            )
         })
         .collect();
     tools::ok(&serde_json::json!({ "lines": rows }))
@@ -654,7 +694,10 @@ fn session_words_from_asr(tree: &Tree, project: &Project) -> Vec<SessionWord> {
 
 /// The words a numbered range of lines covers.
 fn words_in(lines: &[Line], words: &[SessionWord], from: u32, to: u32) -> Vec<String> {
-    let first = lines.iter().find(|line| line.n == from).map(|line| line.start);
+    let first = lines
+        .iter()
+        .find(|line| line.n == from)
+        .map(|line| line.start);
     let last = lines.iter().find(|line| line.n == to).map(|line| line.end);
     let (Some(start), Some(end)) = (first, last) else {
         return Vec::new();
@@ -666,8 +709,10 @@ fn words_in(lines: &[Line], words: &[SessionWord], from: u32, to: u32) -> Vec<St
 fn words_window(words: &[SessionWord], start: Option<f64>, end: Option<f64>) -> Vec<String> {
     words
         .iter()
-        .filter(|word| start.map(|at| word.start >= at).unwrap_or(true)
-            && end.map(|at| word.start <= at).unwrap_or(true))
+        .filter(|word| {
+            start.map(|at| word.start >= at).unwrap_or(true)
+                && end.map(|at| word.start <= at).unwrap_or(true)
+        })
         .map(|word| word.match_word.clone())
         .collect()
 }
@@ -687,7 +732,9 @@ fn briefing_log(lines: &[Line]) -> String {
         .iter()
         .filter(|line| {
             let previous = lines.iter().find(|other| other.n + 1 == line.n);
-            previous.is_some_and(|previous| line.start - previous.end >= crate::tools::retakes::RETAKE_PAUSE_SECONDS)
+            previous.is_some_and(|previous| {
+                line.start - previous.end >= crate::tools::retakes::RETAKE_PAUSE_SECONDS
+            })
         })
         .count();
     format!(

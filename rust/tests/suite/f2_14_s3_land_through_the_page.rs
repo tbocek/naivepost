@@ -61,7 +61,12 @@ fn kept_zoom() -> Fx {
 fn base_cut() -> Cut {
     Cut {
         segs: vec![
-            Seg { s: 0.0, e: 60.0, cam: 0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 60.0,
+                cam: 0,
+                ..Default::default()
+            },
             hand_placed_card(),
         ],
         fx: vec![kept_zoom()],
@@ -92,15 +97,27 @@ fn round(app: &adw::Application) {
     // carries `finish_cut`, so one round per ask.
     let llm = harness::FakeLlm::start(vec![
         tool_turn(&[
-            ("add_segment", serde_json::json!({ "start": 4.0, "end": 18.0, "why": "the point" })),
-            ("add_segment", serde_json::json!({ "start": 30.0, "end": 30.5, "why": "a slip" })),
+            (
+                "add_segment",
+                serde_json::json!({ "start": 4.0, "end": 18.0, "why": "the point" }),
+            ),
+            (
+                "add_segment",
+                serde_json::json!({ "start": 30.0, "end": 30.5, "why": "a slip" }),
+            ),
             ("finish_cut", serde_json::json!({})),
         ]),
         tool_turn(&[
             ("remove_segment", serde_json::json!({ "start": 30.0 })),
             ("remove_segment", serde_json::json!({ "start": 4.0 })),
-            ("add_segment", serde_json::json!({ "start": 3.0, "end": 19.0, "why": "the point" })),
-            ("add_segment", serde_json::json!({ "start": 24.0, "end": 40.0, "why": "the second" })),
+            (
+                "add_segment",
+                serde_json::json!({ "start": 3.0, "end": 19.0, "why": "the point" }),
+            ),
+            (
+                "add_segment",
+                serde_json::json!({ "start": 24.0, "end": 40.0, "why": "the second" }),
+            ),
             ("finish_cut", serde_json::json!({})),
         ]),
     ]);
@@ -138,7 +155,11 @@ fn round(app: &adw::Application) {
 
     // --- §S3: the page holds the WALKED-BACK scenes -------------------------------------------
     let on_screen = ui::review_cut_of(&window);
-    let footage: Vec<&Seg> = on_screen.segs.iter().filter(|seg| !seg.is_insert()).collect();
+    let footage: Vec<&Seg> = on_screen
+        .segs
+        .iter()
+        .filter(|seg| !seg.is_insert())
+        .collect();
     assert_eq!(
         footage.len(),
         2,
@@ -177,7 +198,11 @@ fn round(app: &adw::Application) {
         saved.segs,
         base.segs,
         "cut.json was rewritten by the suggestion{}",
-        if before { "" } else { " (there was none to rewrite)" }
+        if before {
+            ""
+        } else {
+            " (there was none to rewrite)"
+        }
     );
     assert_eq!(
         saved.segs, on_screen.segs,
@@ -262,13 +287,19 @@ fn round(app: &adw::Application) {
 #[test]
 fn f2_14_s3_the_page_press_lands_the_walk_back_and_persists() {
     one_round();
-    assert!(RAN_LANDED.load(Ordering::SeqCst), "the landing check never ran");
+    assert!(
+        RAN_LANDED.load(Ordering::SeqCst),
+        "the landing check never ran"
+    );
 }
 
 #[test]
 fn f2_14_s3_the_two_log_lines_print_from_the_press() {
     one_round();
-    assert!(RAN_LOG.load(Ordering::SeqCst), "the log-line check never ran");
+    assert!(
+        RAN_LOG.load(Ordering::SeqCst),
+        "the log-line check never ran"
+    );
 }
 
 #[test]

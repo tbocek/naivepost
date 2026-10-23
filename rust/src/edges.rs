@@ -146,7 +146,11 @@ impl Edges {
     }
 
     fn peaks(&self) -> &[u8] {
-        self.wave.chans.first().map(Vec::as_slice).unwrap_or_default()
+        self.wave
+            .chans
+            .first()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     /// The bucket a session second falls in, or −1 outside the file.
@@ -170,7 +174,10 @@ impl Edges {
         }
         let peaks = self.peaks();
         let reach = (ENVELOPE_WINDOW * self.wave.hz) as usize;
-        let (lo, hi) = (i as usize - (i as usize).min(reach), (i as usize + reach).min(peaks.len()));
+        let (lo, hi) = (
+            i as usize - (i as usize).min(reach),
+            (i as usize + reach).min(peaks.len()),
+        );
         let mut window: Vec<u8> = peaks[lo..hi].to_vec();
         window.sort_unstable();
         if window.is_empty() {
@@ -195,11 +202,16 @@ impl Edges {
     /// including a real dB envelope, so the rewrite does not "fix" the scale.
     fn tail_level(&self, i0: i64, i1: i64) -> u8 {
         let peaks = self.peaks();
-        let (start, end) = (i0.max(0) as usize, (i1.max(0) as usize).min(peaks.len().saturating_sub(1)));
+        let (start, end) = (
+            i0.max(0) as usize,
+            (i1.max(0) as usize).min(peaks.len().saturating_sub(1)),
+        );
         let peak = peaks[start..=end].iter().copied().max().unwrap_or(0);
         let below = EDGE_TAIL_DB * 255.0 / 70.0;
         let thr = i16::from(peak) - i16::try_from(below.round() as u32).unwrap_or(i16::MAX);
-        let room = self.floor(self.off + f64::from(i32::try_from(i0.max(0)).unwrap_or(i32::MAX)) / self.wave.hz);
+        let room = self.floor(
+            self.off + f64::from(i32::try_from(i0.max(0)).unwrap_or(i32::MAX)) / self.wave.hz,
+        );
         thr.max(i16::from(room)).clamp(0, 255) as u8
     }
 
@@ -216,7 +228,11 @@ impl Edges {
             return (w.e + WORD_PAD).min(limit);
         }
         let lim = self.at(limit);
-        let lim = if lim < 0 { self.peaks().len() as i64 - 1 } else { lim };
+        let lim = if lim < 0 {
+            self.peaks().len() as i64 - 1
+        } else {
+            lim
+        };
 
         let thr = self.tail_level(i0, i1);
         let tail_end = (i1 + (EDGE_TAIL_MAX * self.wave.hz) as i64).min(lim);
@@ -326,7 +342,10 @@ impl Edges {
 
 /// The last word ending at or before this second.
 fn last_word(words: &[AlignedWord], t: f64) -> Option<&AlignedWord> {
-    words.iter().filter(|w| w.e <= t).max_by(|a, b| a.e.total_cmp(&b.e))
+    words
+        .iter()
+        .filter(|w| w.e <= t)
+        .max_by(|a, b| a.e.total_cmp(&b.e))
 }
 
 /// Is any word inside this stretch? "Nothing was said between" is what lets the whole gap go.

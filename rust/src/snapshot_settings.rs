@@ -86,7 +86,9 @@ pub fn stage_ffmpeg_row() {
     if verdict.is_err() {
         return;
     }
-    PHASE.with(|held| *held.borrow_mut() = Some(ui::settings::press_test("ffmpeg", &shown, verdict)));
+    PHASE.with(|held| {
+        *held.borrow_mut() = Some(ui::settings::press_test("ffmpeg", &shown, verdict))
+    });
 }
 
 /// Stage what "Fetch models" would have produced, from the ids §2 names for this machine.
@@ -137,10 +139,7 @@ pub fn stage_model_list(dialog: &adw::Window) {
 /// Paint the staged verdict onto the dialog's `badge-ffmpeg`. Silent when nothing was staged.
 pub fn apply_staged_badge() {
     let staged = PHASE.with(|held| held.borrow_mut().take());
-    let (Some(phase), Some(dialog)) = (
-        staged,
-        SETTINGS.with(|held| held.borrow().clone()),
-    ) else {
+    let (Some(phase), Some(dialog)) = (staged, SETTINGS.with(|held| held.borrow().clone())) else {
         return;
     };
     let badge = crate::ui::window::find_widget_by_name(dialog.upcast_ref(), "badge-ffmpeg")

@@ -100,7 +100,11 @@ pub fn split_pictures(fx: &[Fx], seg: &Seg) -> Vec<Picture> {
     // untouched seconds either side of it. Those seconds need no filter, which is why only the middle says anything.
     let mut out = Vec::new();
     let mut from = seg.s;
-    for span in spans.iter().filter(|s| s.to > seg.s && s.from < seg.e).filter(|s| !is_stop_span(s)) {
+    for span in spans
+        .iter()
+        .filter(|s| s.to > seg.s && s.from < seg.e)
+        .filter(|s| !is_stop_span(s))
+    {
         let start = span.from.max(seg.s);
         let end = span.to.min(seg.e);
         if start > from {
@@ -230,7 +234,12 @@ pub fn sound_filters(rate: f64, snd: &str) -> Vec<String> {
 /// S2 (`a still of the frame at t … overlaid with alpha fades for the frozen spans; footage runs on at 1×`): the
 /// freeze is not a rate and never was — giving it one would turn a still into slow motion the moment the cut moved
 /// under it, which is why [`crate::cut_speed`] refuses to clamp it either.
-pub fn still_chain(t: f64, frozen: (f64, f64), fades: (f64, f64), frame: (i32, i32)) -> Vec<String> {
+pub fn still_chain(
+    t: f64,
+    frozen: (f64, f64),
+    fades: (f64, f64),
+    frame: (i32, i32),
+) -> Vec<String> {
     let dur = (frozen.1 - frozen.0).max(0.0);
     vec![
         // The frame at t from the scene's own lens, looped to cover the span and faded in alpha so the picture under
@@ -238,7 +247,10 @@ pub fn still_chain(t: f64, frozen: (f64, f64), fades: (f64, f64), frame: (i32, i
         // full-frame one: `t` says which moment it is and `frame` what shape it must be in when it lands.
         format!("select=eq(n\\,0) at {t},scale={}:{}", frame.0, frame.1),
         format!("tpad=stop_mode=clone:stop_duration={dur}"),
-        format!("format=yuva420p,fade=t=in:st={}:d={}:alpha=1", frozen.0, fades.0),
+        format!(
+            "format=yuva420p,fade=t=in:st={}:d={}:alpha=1",
+            frozen.0, fades.0
+        ),
         format!("fade=t=out:st={}:d={}:alpha=1", frozen.1 - fades.1, fades.1),
         format!(
             "overlay=0:0:eof_action=pass:enable=between(t\\,{}\\,{})",
@@ -288,7 +300,10 @@ pub struct Sample {
 /// camera drifting across the rest of the clip instead of standing still and then releasing.
 pub fn camera_samples(fx: &[Fx], sess_s: f64, span: f64) -> Vec<Sample> {
     let mut at = vec![sess_s, sess_s + span];
-    for zoom in fx.iter().filter(|e| e.effect_kind() == Some(EffectKind::Zoom)) {
+    for zoom in fx
+        .iter()
+        .filter(|e| e.effect_kind() == Some(EffectKind::Zoom))
+    {
         let (tin, tout) = glides(zoom);
         let end = zoom.t + zoom.dur.max(0.0);
         at.extend([zoom.t, zoom.t + tin]);
@@ -356,7 +371,13 @@ pub fn camera_chain(samples: &[Sample], src: (i32, i32), frame: (i32, i32)) -> V
     if is_static(samples) {
         let (x, y, w, h) = rect_px(&samples[0], src, out_a);
         return vec![
-            format!("crop={}:{}:{}:{}", even_f(w), even_f(h), clip_int(x, src.0 - even_f(w)), clip_int(y, src.1 - even_f(h))),
+            format!(
+                "crop={}:{}:{}:{}",
+                even_f(w),
+                even_f(h),
+                clip_int(x, src.0 - even_f(w)),
+                clip_int(y, src.1 - even_f(h))
+            ),
             format!("scale={}:{}", frame.0, frame.1),
         ];
     }
@@ -366,10 +387,7 @@ pub fn camera_chain(samples: &[Sample], src: (i32, i32), frame: (i32, i32)) -> V
     }
     chain.push(format!("zoompan=dur={}:fps={ZOOM_GRID_FPS}", samples.len()));
     let ts: Vec<f64> = samples.iter().map(|s| s.t).collect();
-    let hs: Vec<f64> = samples
-        .iter()
-        .map(|s| s.hf * src.1 as f64)
-        .collect();
+    let hs: Vec<f64> = samples.iter().map(|s| s.hf * src.1 as f64).collect();
     chain.push(format!("zoompan=z='{}'", piece_expr(&ts, &hs)));
     chain
 }
@@ -433,7 +451,11 @@ pub fn piece_expr(ts: &[f64], vs: &[f64]) -> String {
         let seg = if t1 - t0 < 1e-4 || (v1 - v0).abs() < 1e-9 {
             format!("{v1:.4}")
         } else {
-            format!("{v0:.4}+{:.4}*clip((it-{t0:.4})/ {:.4}\\,0\\,1)", v1 - v0, t1 - t0)
+            format!(
+                "{v0:.4}+{:.4}*clip((it-{t0:.4})/ {:.4}\\,0\\,1)",
+                v1 - v0,
+                t1 - t0
+            )
         };
         expr = format!("if(lt(it\\,{t1:.4})\\,{seg}\\,{expr})");
     }
@@ -524,7 +546,12 @@ pub fn picture_order() -> Vec<&'static str> {
 }
 
 /// §4: one title or drawing, from a looped still input, with alpha fades and an enable window.
-pub fn overlay_chain(kind: &str, enable: (f64, f64), fades: (f64, f64), box_px: (i32, i32, i32, i32)) -> Vec<String> {
+pub fn overlay_chain(
+    kind: &str,
+    enable: (f64, f64),
+    fades: (f64, f64),
+    box_px: (i32, i32, i32, i32),
+) -> Vec<String> {
     let dur = (enable.1 - enable.0).max(0.0);
     vec![
         format!("{kind} input looped for {dur}"),
@@ -663,7 +690,10 @@ pub fn all_gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue>
         return Vec::new();
     }
     let mut out = Vec::new();
-    for effect in fx.iter().filter(|e| e.effect_kind() == Some(EffectKind::Volume)) {
+    for effect in fx
+        .iter()
+        .filter(|e| e.effect_kind() == Some(EffectKind::Volume))
+    {
         let start = (effect.t - sess_s) / rate;
         let dur = effect.dur.max(0.0) / rate;
         let (from, to) = (start.clamp(0.0, length), (start + dur).clamp(0.0, length));
@@ -675,7 +705,11 @@ pub fn all_gain_cues(fx: &[Fx], sess_s: f64, rate: f64, length: f64) -> Vec<Cue>
             to,
             gain: effect.gain.clamp(0.0, fx_record::gain_ceiling()),
             fin: effect.trans.max(0.0).min(to - from),
-            fout: effect.tout.max(0.0).max((to - from) - effect.trans.max(0.0)).min(to - from),
+            fout: effect
+                .tout
+                .max(0.0)
+                .max((to - from) - effect.trans.max(0.0))
+                .min(to - from),
             lane: effect.lane().unwrap_or_default().to_string(),
         });
     }
@@ -696,18 +730,10 @@ pub fn gain_expr(cue: &Cue) -> String {
     }
     let value = match ramps.len() {
         1 => format!("1{:+.4}*min(1,{})", g - 1.0, ramps[0]),
-        2 => format!(
-            "1{:+.4}*min(1,min({},{}))",
-            g - 1.0,
-            ramps[0],
-            ramps[1]
-        ),
+        2 => format!("1{:+.4}*min(1,min({},{}))", g - 1.0, ramps[0], ramps[1]),
         _ => format!("{:.4}", g),
     };
-    format!(
-        "if(between(t,{:.3},{:.3}),{},1)",
-        cue.from, cue.to, value
-    )
+    format!("if(between(t,{:.3},{:.3}),{},1)", cue.from, cue.to, value)
 }
 
 /// S5 (`per cue, in turn`): every cue of one clip applied one after another, so two that overlap multiply — which is
@@ -750,7 +776,11 @@ pub fn is_rendered(kind: &str) -> bool {
 /// The filter text one clip carries for its effects — the single place that assembles them, so S6's answer cannot be
 /// forgotten: a label never reaches any of the per-kind builders below.
 pub fn clip_filters(fx: &[Fx], seg: &Seg, src: (i32, i32), frame: (i32, i32)) -> Vec<String> {
-    let drawn: Vec<Fx> = fx.iter().filter(|e| is_rendered(&e.kind)).cloned().collect();
+    let drawn: Vec<Fx> = fx
+        .iter()
+        .filter(|e| is_rendered(&e.kind))
+        .cloned()
+        .collect();
     let mut chain = Vec::new();
     for picture in split_pictures(&drawn, seg) {
         if let Some(step) = picture.setpts {
@@ -763,10 +793,12 @@ pub fn clip_filters(fx: &[Fx], seg: &Seg, src: (i32, i32), frame: (i32, i32)) ->
     if !is_static(&samples) {
         chain.extend(camera_chain(&samples, src, frame));
     }
-    for effect in drawn
-        .iter()
-        .filter(|e| matches!(e.effect_kind(), Some(EffectKind::Text) | Some(EffectKind::Svg)))
-    {
+    for effect in drawn.iter().filter(|e| {
+        matches!(
+            e.effect_kind(),
+            Some(EffectKind::Text) | Some(EffectKind::Svg)
+        )
+    }) {
         chain.extend(overlay_chain(
             &effect.kind,
             (effect.t - seg.s, effect.t + effect.dur - seg.s),

@@ -60,7 +60,12 @@ pub fn program(configured: &str) -> String {
 /// raw stream: naming it `.wav` would put a wav extension on bytes no player will open. The seek inside
 /// [`cut`] is exact on this format, which is why the chunks can be cut from one decode instead of
 /// re-decoding the source per chunk.
-pub fn decode(program: &str, source: &Path, out: &Path, log: &mut impl FnMut(&str)) -> Result<PathBuf, String> {
+pub fn decode(
+    program: &str,
+    source: &Path,
+    out: &Path,
+    log: &mut impl FnMut(&str),
+) -> Result<PathBuf, String> {
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent).map_err(|err| format!("{}: {err}", parent.display()))?;
     }
@@ -100,9 +105,8 @@ pub fn silences(program: &str, decoded: &Path) -> Result<Vec<f64>, String> {
         trim(asr_db()),
         trim(crate::asr::QUIET_MIN)
     );
-    let body = report(program, decoded, &filter).map_err(|err| {
-        format!("{}: silencedetect failed: {err}", decoded.display())
-    })?;
+    let body = report(program, decoded, &filter)
+        .map_err(|err| format!("{}: silencedetect failed: {err}", decoded.display()))?;
     Ok(midpoints(&body))
 }
 
@@ -119,9 +123,8 @@ pub fn spans(program: &str, decoded: &Path) -> Result<Vec<crate::asr::Silence>, 
         trim(asr_db()),
         trim(crate::asr::QUIET_MIN)
     );
-    let body = report(program, decoded, &filter).map_err(|err| {
-        format!("{}: silencedetect failed: {err}", decoded.display())
-    })?;
+    let body = report(program, decoded, &filter)
+        .map_err(|err| format!("{}: silencedetect failed: {err}", decoded.display()))?;
     Ok(fold_spans(&body))
 }
 

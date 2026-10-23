@@ -21,8 +21,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use naivepost::clock::frame_name;
 use naivepost::describe::{self, FRAMES_PER_REQ};
-use naivepost::settings::{self, Conf, Paths};
 use naivepost::services;
+use naivepost::settings::{self, Conf, Paths};
 
 /// The env and the working folder belong to the process, and cargo runs these tests as threads. Every walk
 /// test takes them (see `Scene::enter`), one at a time, exactly as `tests/suite/separation_run.rs` does.
@@ -42,7 +42,6 @@ const FOUR_EVENTS: &str = r#"{"choices":[{"message":{"content":"","tool_calls":[
  {"function":{"name":"finish","arguments":"{}"}}
 ]}}]}"#;
 
-
 /// The §3.2 answer for a batch of ANY size: a `record_event` for every frame of it, then a
 /// `set_state`, then `finish`. One builder rather than one const per chunk size because the last
 /// chunk of nine frames at four a call is a batch of ONE, and an answer written for four frames would
@@ -60,7 +59,6 @@ fn events_answer(frames: usize) -> String {
     calls.push_str("{\"function\":{\"name\":\"finish\",\"arguments\":\"{}\"}}");
     format!("{{\"choices\":[{{\"message\":{{\"content\":\"\",\"tool_calls\":[{calls}]}}}}]}}")
 }
-
 
 /// The reply marker that means "answer each request with exactly the frames it carried"; see `serve`.
 const BY_SIZE: &str = "@by-size";
@@ -153,11 +151,7 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<ChatAsk> {
     let mut reader = std::io::BufReader::new(stream.try_clone().ok()?);
     let mut line = String::new();
     let _ = reader.read_line(&mut line);
-    let path = line
-        .split_whitespace()
-        .nth(1)
-        .unwrap_or("/")
-        .to_string();
+    let path = line.split_whitespace().nth(1).unwrap_or("/").to_string();
     let mut length = 0usize;
     loop {
         let mut header = String::new();
@@ -182,7 +176,11 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<ChatAsk> {
     // "one record_event per picture THIS request carried", which is the only way a chunk-size test can
     // prove the batch the stage chose without the answer giving away the frame count first.
     let text = match answer {
-        BY_SIZE => events_answer(String::from_utf8_lossy(&body).matches("\"image_url\"").count()),
+        BY_SIZE => events_answer(
+            String::from_utf8_lossy(&body)
+                .matches("\"image_url\"")
+                .count(),
+        ),
         fixed => fixed.to_string(),
     };
     let payload = text.as_str();
@@ -330,7 +328,8 @@ impl Scene {
         std::env::set_var("XDG_CONFIG_HOME", self.root.join("cfg"));
         std::env::set_var("XDG_DATA_HOME", self.root.join("data"));
         std::env::set_current_dir(&self.root).expect("the scene is the working folder");
-        settings::save(&self.paths, &conf_at(&self.server)).expect("the scene's conf stands for its walk");
+        settings::save(&self.paths, &conf_at(&self.server))
+            .expect("the scene's conf stands for its walk");
         // The project file too, and only if this scene never changed it: `stage_chunk` reads the session
         // through the CWD (`run_task`'s `session_dir()`), so a sibling binary that leaves these variables
         // pointing at its own root makes this walk load a stranger's project — which answers "0 rows
@@ -393,14 +392,16 @@ impl Scene {
     /// message below only pointed at the last server named — the real question is "does the file say my
     /// fake", and `leg_conf` asserts that against `dial_to`.
     fn server(&self) -> Result<String, String> {
-        let on_disk = settings::read(&self.paths).map_err(|why| format!("{why} -- no conf to dial"))?;
+        let on_disk =
+            settings::read(&self.paths).map_err(|why| format!("{why} -- no conf to dial"))?;
         Ok(services::server_url(&on_disk.server).unwrap_or_else(|| self.server.clone()))
     }
 
     /// The fake's address the stage will reach, for the `conf` argument it is handed: an unwritten settings
     /// folder is this binary's own bug, so it panics here rather than letting a walk dial nothing.
     fn dial_to(&self) -> String {
-        self.server().expect("this scene's fake is in its own settings folder")
+        self.server()
+            .expect("this scene's fake is in its own settings folder")
     }
 
     /// The conf the LEG will actually dial to, read back through the same door `ask` uses (`ask` throws
@@ -419,8 +420,9 @@ impl Scene {
         if let Ok(read) = settings::read(&self.paths) {
             conf = read;
         }
-        let from_env = settings::from_environment()
-            .and_then(|paths| services::server_url(&settings::read(&paths).unwrap_or_default().server));
+        let from_env = settings::from_environment().and_then(|paths| {
+            services::server_url(&settings::read(&paths).unwrap_or_default().server)
+        });
         assert_eq!(
             services::server_url(&conf.server).as_deref().unwrap_or_default(),
             self.dial_to(),
@@ -434,9 +436,15 @@ impl Scene {
         conf
     }
 
-
     fn describe(&self, conf: &Conf, log: &mut impl FnMut(&str)) -> Result<usize, String> {
-        naivepost::describe_call::stage_chunk(&self.tree(), &self.paths, conf, "lecture", Some(0), log)
+        naivepost::describe_call::stage_chunk(
+            &self.tree(),
+            &self.paths,
+            conf,
+            "lecture",
+            Some(0),
+            log,
+        )
     }
 
     /// The frames this scene's footage row holds, as the stage will read them.
@@ -496,7 +504,8 @@ impl Scene {
 /// end to end -- the stage's own `run_task` resolving its tree and settings folder from the environment
 /// and reaching this fake with one ask per footage source.
 #[test]
-fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_screen_plans_a_vision_row() {
+fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_screen_plans_a_vision_row(
+) {
     let fake = Fake::start(FOUR_EVENTS.to_string());
     let scene = Scene::new("plan", 4, &fake.url);
     let _guard = env_lock();
@@ -559,7 +568,8 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     let fake = Fake::start(FOUR_EVENTS.to_string());
     let scene = Scene::new("wire", 4, &fake.url);
     let mut log = Vec::new();
-    let ran = walk(&scene, &mut |line| log.push(line.to_string())).expect("the stage describes the row");
+    let ran =
+        walk(&scene, &mut |line| log.push(line.to_string())).expect("the stage describes the row");
     let asks = fake.waited(1);
     assert_eq!(ran, 1, "one footage row walked");
     assert_eq!(asks.len(), 1, "four frames fit one call: {asks:?}");
@@ -570,7 +580,9 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     );
     let sent: serde_json::Value = serde_json::from_str(&asks[0].body).expect("a JSON body");
     // The system message §8 puts first, so the user turn is the second message on the wire.
-    let parts = sent["messages"][1]["content"].as_array().expect("the user parts");
+    let parts = sent["messages"][1]["content"]
+        .as_array()
+        .expect("the user parts");
     let images: Vec<&serde_json::Value> = parts
         .iter()
         .filter(|part| part["type"].as_str() == Some("image_url"))
@@ -581,16 +593,18 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
         "P.machine.describeFramesPerReq frames go in one call"
     );
     assert!(
-        images
-            .iter()
-            .all(|image| image["image_url"]["url"]
-                .as_str()
-                .is_some_and(|url| url.starts_with("data:image/jpeg;base64,"))),
+        images.iter().all(|image| image["image_url"]["url"]
+            .as_str()
+            .is_some_and(|url| url.starts_with("data:image/jpeg;base64,"))),
         "the frames travel as pictures in the request: {sent}"
     );
     // §2's thinking column for this row is OFF. `llm_request` writes the switch in both places a
     // server reads it, so both copies have to say false.
-    assert_eq!(sent["enable_thinking"], serde_json::json!(false), "thinking OFF: {sent}");
+    assert_eq!(
+        sent["enable_thinking"],
+        serde_json::json!(false),
+        "thinking OFF: {sent}"
+    );
     assert_eq!(
         sent["chat_template_kwargs"]["enable_thinking"],
         serde_json::json!(false),
@@ -603,12 +617,17 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
         .filter_map(|tool| tool["function"]["name"].as_str())
         .collect();
     for name in ["record_event", "set_state", "finish"] {
-        assert!(offered.contains(&name), "{name} is offered to the describe job: {offered:?}");
+        assert!(
+            offered.contains(&name),
+            "{name} is offered to the describe job: {offered:?}"
+        );
     }
     // The message says what §F1.7 S3 says it says, so the frames and the STATE arrive labelled.
     let text = parts[0]["text"].as_str().expect("the text part");
     assert!(
-        text.contains("STATE so far:") && text.contains("FRAME 1 of 4") && text.contains("NEW SCENE"),
+        text.contains("STATE so far:")
+            && text.contains("FRAME 1 of 4")
+            && text.contains("NEW SCENE"),
         "the request stamps its frames and carries the running state: {text}"
     );
     assert!(
@@ -677,7 +696,8 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     let rows: Vec<&str> = events.lines().filter(|line| !line.is_empty()).collect();
     assert_eq!(rows.len(), FRAMES_PER_REQ, "one row per frame: {events}");
     assert!(
-        rows[0].contains("a lecture slide appears") && rows[1].contains("the speaker writes a formula"),
+        rows[0].contains("a lecture slide appears")
+            && rows[1].contains("the speaker writes a formula"),
         "the model's words are what the rows hold: {events}"
     );
     assert!(
@@ -726,11 +746,16 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     assert!(
         second
             .iter()
-            .any(|line| line.contains("1 answered from the cache") || line.contains("from the cache")),
+            .any(|line| line.contains("1 answered from the cache")
+                || line.contains("from the cache")),
         "the pass said the answer came from the cache: {second:?}"
     );
     assert_eq!(
-        scene.events().lines().filter(|line| !line.is_empty()).count(),
+        scene
+            .events()
+            .lines()
+            .filter(|line| !line.is_empty())
+            .count(),
         FRAMES_PER_REQ,
         "a cached resume does not duplicate the rows"
     );
@@ -739,7 +764,8 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
 /// The fourth-frames-a-call bound is a plan, not a hope: nine frames are three chunks of ≤4, and the
 /// walk asks once per chunk — which is also what makes the resume arithmetic (§F1.7 S2) meaningful.
 #[test]
-fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_screen_batches_four_frames_a_call() {
+fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_screen_batches_four_frames_a_call(
+) {
     // Nine frames at four a call is chunks of 4, 4 and 1, and the third has to be answered too: the
     // fake answers each request with a `record_event` for exactly the pictures THAT request carried (see
     // `BY_SIZE`), which is more than any one batch needs only if the stage chose smaller batches than the
@@ -751,7 +777,9 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     scene.point_at(&fake.url);
     assert_eq!(scene.frame_count(), 9, "the scene planted nine frames");
     let project = naivepost::project::load(&scene.session()).expect("the session");
-    let frames: Vec<f64> = (0..9).map(|index| index as f64 * project.interval).collect();
+    let frames: Vec<f64> = (0..9)
+        .map(|index| index as f64 * project.interval)
+        .collect();
     let chunks = describe::chunk_plan(&frames, FRAMES_PER_REQ);
     // Each ask's answer covers only the frames that ask carried: the fake reads its own reply when the
     // request arrives, so the size that reaches it is the size the stage chose.
@@ -763,25 +791,31 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     assert_eq!(asks.len(), 3, "one call per chunk: {asks:?}");
     let third: serde_json::Value = serde_json::from_str(&asks[2].body).expect("a JSON body");
     // Second message again: §8's system message now leads the request.
-    let parts = third["messages"][1]["content"].as_array().expect("the user parts");
+    let parts = third["messages"][1]["content"]
+        .as_array()
+        .expect("the user parts");
     let images = parts
         .iter()
         .filter(|part| part["type"].as_str() == Some("image_url"))
         .count();
-    assert_eq!(images, 1, "the last chunk carries the frames that are left: {images}");
+    assert_eq!(
+        images, 1,
+        "the last chunk carries the frames that are left: {images}"
+    );
 }
 
 /// A chunk the model would not answer whole is not written half: `finish` reporting a frame with no
 /// EVENT is put in front of the model on the next try, and only a complete answer reaches disk. Named
 /// for the row it proves, because "one EVENT per frame" is the row's own wording.
 #[test]
-fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_screen_refuses_a_chunk_missing_an_event() {
+fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_screen_refuses_a_chunk_missing_an_event(
+) {
     let fake = Fake::start(
         r#"{"choices":[{"message":{"content":"","tool_calls":[
           {"function":{"name":"record_event","arguments":"{\"frame\":1,\"text\":\"a slide\"}"}},
           {"function":{"name":"finish","arguments":"{}"}}
         ]}}]}"#
-        .to_string(),
+            .to_string(),
     );
     let scene = Scene::new("missing", 4, &fake.url);
     let walked = walk(&scene, &mut |_line| {});
@@ -795,7 +829,9 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
         "the model was asked, and told what was missing on each try: {asks}"
     );
     assert!(
-        !Path::new(&scene.session()).join("prepare/describe/lecture/events.tsv").exists(),
+        !Path::new(&scene.session())
+            .join("prepare/describe/lecture/events.tsv")
+            .exists(),
         "an incomplete answer writes no event log"
     );
 }
@@ -804,7 +840,8 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
 /// the request's own brief carries -- so a word from the OTHER recording that the brief omitted reaches the
 /// model when it asks.
 #[test]
-fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_speech_around_answers_with_every_recording() {
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_speech_around_answers_with_every_recording(
+) {
     let frames = 1;
     let fake = Fake::start(events_asked(frames, "speech_around"));
     let scene = Scene::new("speechread", frames, &fake.url);
@@ -850,10 +887,15 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_speech_around_answers
     walk(&scene, &mut |line| log.push(line.to_string())).expect("the chunk is described");
     fake.waited(1);
     let answered = answer_of(&log, "speech_around");
-    let body: serde_json::Value = serde_json::from_str(&answered).expect("the read answered in JSON");
-    let spoken = body["lines"].as_array().expect("the lines spoken in the span");
+    let body: serde_json::Value =
+        serde_json::from_str(&answered).expect("the read answered in JSON");
+    let spoken = body["lines"]
+        .as_array()
+        .expect("the lines spoken in the span");
     assert!(
-        spoken.iter().any(|line| line.as_str().is_some_and(|text| text.contains("eigenvalue"))),
+        spoken.iter().any(|line| line
+            .as_str()
+            .is_some_and(|text| text.contains("eigenvalue"))),
         "the other recording's word came back: {answered}"
     );
 }
@@ -864,7 +906,8 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_speech_around_answers
 fn events_asked(frames: usize, name: &str) -> String {
     let args = serde_json::json!({ "from": 0.0, "to": frames as f64 + 1.0 });
     let escaped = args.to_string().replace('"', "\\\"");
-    let mut calls = format!("{{\"function\":{{\"name\":\"{name}\",\"arguments\":\"{escaped}\"}}}},");
+    let mut calls =
+        format!("{{\"function\":{{\"name\":\"{name}\",\"arguments\":\"{escaped}\"}}}},");
     for frame in 1..=frames {
         calls.push_str(&format!(
             "{{\"function\":{{\"name\":\"record_event\",\"arguments\":\"{{\\\"frame\\\":{frame},\\\"text\\\":\\\"frame {frame} of the take\\\"}}\"}}}},"
@@ -891,7 +934,8 @@ fn answer_of(log: &[String], name: &str) -> String {
 /// the retry then told it about frames it had never been given the chance to use. The leg answers a read in
 /// the SAME round that asked, so the chunk is written in full and costs no extra ask.
 #[test]
-fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_the_reads_describe_is_offered_are_answered() {
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_the_reads_describe_is_offered_are_answered(
+) {
     let frames = 4;
     let fake = Fake::start(events_asked(frames, "get_events"));
     let scene = Scene::new("reads", frames, &fake.url);
@@ -906,7 +950,11 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_the_reads_describe_is
     let mut log = Vec::new();
     walk(&scene, &mut |line| log.push(line.to_string())).expect("the chunk is described");
     let asks = fake.waited(1);
-    assert_eq!(asks.len(), 1, "a read answered in the round that asked costs no extra ask: {asks:?}");
+    assert_eq!(
+        asks.len(),
+        1,
+        "a read answered in the round that asked costs no extra ask: {asks:?}"
+    );
 
     // Not a coincidence: the reads were offered on the ask, so the model had a reason to call one.
     let offered: Vec<String> = serde_json::from_str::<serde_json::Value>(&asks[0].body)
@@ -917,24 +965,43 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s3_the_reads_describe_is
         .filter_map(|tool| tool["function"]["name"].as_str().map(str::to_string))
         .collect();
     for name in ["get_events", "get_frames", "get_context", "speech_around"] {
-        assert!(offered.iter().any(|n| n == name), "{name} is offered to describe: {offered:?}");
+        assert!(
+            offered.iter().any(|n| n == name),
+            "{name} is offered to describe: {offered:?}"
+        );
     }
 
     // The read came back with the chunk's own readings, and not as an error.
     let answered = answer_of(&log, "get_events");
-    assert!(!answered.contains("\"error\""), "a well-formed read is not refused: {answered}");
-    let body: serde_json::Value = serde_json::from_str(&answered).expect("the read answered in JSON");
-    let rows = body["events"].as_array().expect("the EVENT lines in the range");
+    assert!(
+        !answered.contains("\"error\""),
+        "a well-formed read is not refused: {answered}"
+    );
+    let body: serde_json::Value =
+        serde_json::from_str(&answered).expect("the read answered in JSON");
+    let rows = body["events"]
+        .as_array()
+        .expect("the EVENT lines in the range");
     assert_eq!(rows.len(), 2, "both readings over 0-5 s: {answered}");
-    assert!(rows[0].as_str().unwrap().contains("slide one is up"), "{answered}");
-    assert!(rows[1].as_str().unwrap().contains("slide two is up"), "{answered}");
+    assert!(
+        rows[0].as_str().unwrap().contains("slide one is up"),
+        "{answered}"
+    );
+    assert!(
+        rows[1].as_str().unwrap().contains("slide two is up"),
+        "{answered}"
+    );
 
     // And the answer still lands: every frame of the chunk got its row beside the readings that stood.
     let events = scene.events();
     let written: Vec<&str> = events.lines().filter(|row| !row.is_empty()).collect();
     assert!(events.contains("frame 1 of the take"), "{events}");
     assert!(events.contains("frame 4 of the take"), "{events}");
-    assert_eq!(written.len(), frames + 2, "four new rows plus the two that stood: {events}");
+    assert_eq!(
+        written.len(),
+        frames + 2,
+        "four new rows plus the two that stood: {events}"
+    );
 }
 
 /// §6 on this job's live path: the chunk's answer is filed under `cache/llm/describe/<sha256 hex>` and
@@ -967,17 +1034,32 @@ fn sec_09_llm_and_tools_6_cache_s7_describe_files_its_answer_and_replays_it_with
         .collect();
     assert_eq!(slots.len(), 1, "one chunk, one slot: {slots:?}");
     let slot = &slots[0];
-    assert_eq!(slot.len(), 64, "the file is named by a sha256 hex digest: {slot}");
+    assert_eq!(
+        slot.len(),
+        64,
+        "the file is named by a sha256 hex digest: {slot}"
+    );
     assert!(
-        slot.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        slot.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "lowercase hex, §6's shape: {slot}"
     );
-    assert!(tree.cache_llm(describe::STEP, slot).exists(), "under cache/llm/describe/");
+    assert!(
+        tree.cache_llm(describe::STEP, slot).exists(),
+        "under cache/llm/describe/"
+    );
 
     // The replay cost nothing on the wire.
     let rows = naivepost::requests::read(&tree).expect("requests.tsv");
-    assert!(!rows.is_empty(), "the request that earned the answer is recorded");
-    assert_eq!(fake.asks.lock().expect("the record lock").bodies.len(), 1, "the second pass made no ask");
+    assert!(
+        !rows.is_empty(),
+        "the request that earned the answer is recorded"
+    );
+    assert_eq!(
+        fake.asks.lock().expect("the record lock").bodies.len(),
+        1,
+        "the second pass made no ask"
+    );
     let wire = rows
         .iter()
         .filter(|row| row.outcome != naivepost::requests::Outcome::Cache)
@@ -992,7 +1074,11 @@ fn sec_09_llm_and_tools_6_cache_s7_describe_files_its_answer_and_replays_it_with
         "the cached pass added no wire row"
     );
     assert_eq!(
-        scene.events().lines().filter(|line| !line.is_empty()).count(),
+        scene
+            .events()
+            .lines()
+            .filter(|line| !line.is_empty())
+            .count(),
         FRAMES_PER_REQ,
         "and the cached pass still writes the whole chunk: {second:?}"
     );
@@ -1048,18 +1134,40 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s12_a_describe_cache_hit_file
     );
 
     let after = naivepost::requests::read(&tree).expect("requests.tsv");
-    assert_eq!(after.len(), before.len() + 1, "the hit added exactly one line: {after:?}");
+    assert_eq!(
+        after.len(),
+        before.len() + 1,
+        "the hit added exactly one line: {after:?}"
+    );
     let hit = after.last().expect("the line the hit appended");
-    assert_eq!(hit.outcome, naivepost::requests::Outcome::Cache, "marked as a cache row");
-    assert_eq!(hit.step, describe::STEP, "it names the step that was served");
+    assert_eq!(
+        hit.outcome,
+        naivepost::requests::Outcome::Cache,
+        "marked as a cache row"
+    );
+    assert_eq!(
+        hit.step,
+        describe::STEP,
+        "it names the step that was served"
+    );
     assert_eq!(hit.job, "describe", "and the job within it");
-    assert_eq!(hit.service, naivepost::requests::Service::Llm, "an LLM row, like the call it replaced");
+    assert_eq!(
+        hit.service,
+        naivepost::requests::Service::Llm,
+        "an LLM row, like the call it replaced"
+    );
     // "No time on the wire" read back as EMPTY fields, not zeros: `0.00` would say a request went out
     // and came back instantly, which is the opposite of what happened (§10).
     assert_eq!(hit.on_wire_s, None, "a hit was never on the wire");
     assert_eq!(hit.first_byte_s, None, "and there was no first byte");
-    assert_eq!(hit.wait_s, None, "nor a wait for a slot: a hit is answered before the gate (§6)");
-    assert!(!hit.started.is_empty(), "the door stamped the moment the answer was read");
+    assert_eq!(
+        hit.wait_s, None,
+        "nor a wait for a slot: a hit is answered before the gate (§6)"
+    );
+    assert!(
+        !hit.started.is_empty(),
+        "the door stamped the moment the answer was read"
+    );
     assert_eq!(
         after
             .iter()

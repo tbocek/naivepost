@@ -41,7 +41,8 @@ pub fn model_required(model: &str) -> Result<&str, String> {
 /// [`crate::services`] stays the one place that knows which kind takes which path. A server with no URL is the
 /// same dead end as no model — nothing to send to.
 pub fn chat_url(server: &str) -> Result<String, String> {
-    let base = services::server_url(server).ok_or_else(|| format!("{server:?}: no server to ask"))?;
+    let base =
+        services::server_url(server).ok_or_else(|| format!("{server:?}: no server to ask"))?;
     Ok(format!("{base}{}", Kind::Chat.path(None)))
 }
 
@@ -166,7 +167,10 @@ pub fn body(
     // The switch merges in rather than nesting: its two copies sit at the top level and inside
     // `chat_template_kwargs`, not under a key of their own.
     let switch = thinking_switch(mode);
-    for (key, value) in switch.as_object().expect("thinking_switch builds an object") {
+    for (key, value) in switch
+        .as_object()
+        .expect("thinking_switch builds an object")
+    {
         body[key] = value.clone();
     }
     if let Some(tools) = tools.filter(|offered| !offered.is_empty()) {
@@ -243,8 +247,14 @@ pub fn parse_reply(reply: &Value) -> Reply {
     let choice = reply.get("choices").and_then(|c| c.get(0));
     let message = choice.and_then(|c| c.get("message"));
     Reply {
-        content: message.and_then(|m| m.get("content")).map(text).unwrap_or_default(),
-        reasoning: message.and_then(|m| m.get("reasoning_content")).map(text).unwrap_or_default(),
+        content: message
+            .and_then(|m| m.get("content"))
+            .map(text)
+            .unwrap_or_default(),
+        reasoning: message
+            .and_then(|m| m.get("reasoning_content"))
+            .map(text)
+            .unwrap_or_default(),
         tool_calls: tool_calls(message.and_then(|m| m.get("tool_calls"))),
         finish_reason: finish(choice.and_then(|c| c.get("finish_reason")))
             .or_else(|| finish(reply.get("finish_reason")))
@@ -254,13 +264,21 @@ pub fn parse_reply(reply: &Value) -> Reply {
 
 /// A finished `tool_calls` array. The result field is empty here: it is filled when the app answers the call.
 fn tool_calls(value: Option<&Value>) -> Vec<ToolCall> {
-    let Some(list) = value.and_then(|v| v.as_array()) else { return Vec::new(); };
+    let Some(list) = value.and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
     list.iter()
         .map(|call| {
             let function = call.get("function");
             ToolCall {
-                name: function.and_then(|f| f.get("name")).map(text).unwrap_or_default(),
-                args: function.and_then(|f| f.get("arguments")).map(text).unwrap_or_default(),
+                name: function
+                    .and_then(|f| f.get("name"))
+                    .map(text)
+                    .unwrap_or_default(),
+                args: function
+                    .and_then(|f| f.get("arguments"))
+                    .map(text)
+                    .unwrap_or_default(),
                 result: String::new(),
             }
         })
@@ -271,7 +289,10 @@ fn tool_calls(value: Option<&Value>) -> Vec<ToolCall> {
 /// `application/json` to a streaming request has answered with one object, and framing it would find no
 /// `data:` line and answer nothing.
 pub fn is_event_stream(content_type: &str) -> bool {
-    content_type.trim().to_ascii_lowercase().starts_with(EVENT_STREAM)
+    content_type
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with(EVENT_STREAM)
 }
 
 /// §1's response contract in one door: read a chat reply the way its `content-type` says.
@@ -329,12 +350,19 @@ pub fn from_events(lines: &[&str]) -> Streamed {
     // Index order, not arrival order: a chunk may repeat an index after another index has appeared.
     let mut calls: Vec<(usize, ToolCall)> = Vec::new();
     for line in lines {
-        let Some(payload) = line.trim().strip_prefix("data:") else { continue };
+        let Some(payload) = line.trim().strip_prefix("data:") else {
+            continue;
+        };
         let payload = payload.trim();
         if payload == DONE {
-            return Streamed { reply: assemble(content, reasoning, calls), ended: Ended::Done };
+            return Streamed {
+                reply: assemble(content, reasoning, calls),
+                ended: Ended::Done,
+            };
         }
-        let Ok(chunk) = serde_json::from_str::<Value>(payload) else { continue };
+        let Ok(chunk) = serde_json::from_str::<Value>(payload) else {
+            continue;
+        };
         let choice = chunk.get("choices").and_then(|c| c.get(0));
         // The reason is read before the delta: a server's last chunk usually carries the final piece of text and
         // its finish_reason together, and reading it only when no delta came along would lose it.
@@ -347,23 +375,44 @@ pub fn from_events(lines: &[&str]) -> Streamed {
         if let Some(piece) = delta.get("reasoning_content").and_then(|c| c.as_str()) {
             reasoning.push_str(piece);
         }
-        for call in delta.get("tool_calls").and_then(|t| t.as_array()).map(|v| v.iter()).unwrap_or_default() {
-            let index = call.get("index").and_then(Value::as_u64).unwrap_or(calls.len() as u64) as usize;
+        for call in delta
+            .get("tool_calls")
+            .and_then(|t| t.as_array())
+            .map(|v| v.iter())
+            .unwrap_or_default()
+        {
+            let index = call
+                .get("index")
+                .and_then(Value::as_u64)
+                .unwrap_or(calls.len() as u64) as usize;
             let slot = match calls.iter_mut().find(|(at, _)| *at == index) {
                 Some((_, call)) => call,
                 None => {
-                    calls.push((index, ToolCall { name: String::new(), args: String::new(), result: String::new() }));
+                    calls.push((
+                        index,
+                        ToolCall {
+                            name: String::new(),
+                            args: String::new(),
+                            result: String::new(),
+                        },
+                    ));
                     &mut calls.last_mut().expect("just pushed").1
                 }
             };
             let function = call.get("function");
             // Set once: a later chunk repeats the name or omits it, and appending would double it.
-            if let Some(name) = function.and_then(|f| f.get("name")).and_then(|n| n.as_str()) {
+            if let Some(name) = function
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+            {
                 if !name.is_empty() {
                     slot.name = name.to_string();
                 }
             }
-            if let Some(piece) = function.and_then(|f| f.get("arguments")).and_then(|a| a.as_str()) {
+            if let Some(piece) = function
+                .and_then(|f| f.get("arguments"))
+                .and_then(|a| a.as_str())
+            {
                 slot.args.push_str(piece);
             }
         }
@@ -371,10 +420,16 @@ pub fn from_events(lines: &[&str]) -> Streamed {
         if let Some(reason) = reason {
             let mut reply = assemble(content, reasoning, calls.clone());
             reply.finish_reason = reason;
-            return Streamed { reply, ended: Ended::Eof };
+            return Streamed {
+                reply,
+                ended: Ended::Eof,
+            };
         }
     }
-    Streamed { reply: assemble(content, reasoning, calls), ended: Ended::Eof }
+    Streamed {
+        reply: assemble(content, reasoning, calls),
+        ended: Ended::Eof,
+    }
 }
 
 /// The marker that ends a stream.
@@ -383,7 +438,12 @@ pub const DONE: &str = "[DONE]";
 fn assemble(content: String, reasoning: String, mut calls: Vec<(usize, ToolCall)>) -> Reply {
     // Back in index order for the caller: the wire may interleave two calls, the model asked for them in a row.
     calls.sort_by_key(|(index, _)| *index);
-    Reply { content, reasoning, tool_calls: calls.drain(..).map(|(_, call)| call).collect(), finish_reason: String::new() }
+    Reply {
+        content,
+        reasoning,
+        tool_calls: calls.drain(..).map(|(_, call)| call).collect(),
+        finish_reason: String::new(),
+    }
 }
 
 // ---- S4: the cancel context ----------------------------------------------------------

@@ -82,8 +82,12 @@ fn spawn_at(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u32, S
     let args = play_back::command_for(files, at_secs);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     log(&crate::subprocess::log_line(&program, &refs));
-    let child = crate::subprocess::spawn_piped(&program, &refs)
-        .map_err(|err| format!("{} failed: {err}", crate::subprocess::shown(&program, &refs)))?;
+    let child = crate::subprocess::spawn_piped(&program, &refs).map_err(|err| {
+        format!(
+            "{} failed: {err}",
+            crate::subprocess::shown(&program, &refs)
+        )
+    })?;
     let pid = child.id();
     // Not waited on: it runs until it is halted. Dropping it here would reap it.
     std::mem::forget(child);
@@ -95,7 +99,10 @@ pub fn cue_clips(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u
     // A still belongs to the process being replaced, so it is forgotten before the new one is trusted.
     let _ = hold_still(false);
     let pid = spawn_at(files, at_secs, log)?;
-    let outgoing = running().lock().expect("the cut-preview player slot").replace(pid);
+    let outgoing = running()
+        .lock()
+        .expect("the cut-preview player slot")
+        .replace(pid);
     if let Some(old) = outgoing {
         // SIGTERM, not KILL, for the reason `play_back::halt` gives: a term lets the pipeline tear itself
         // down instead of leaving the next one to find the file held.
@@ -156,7 +163,10 @@ pub fn drop_spare() -> bool {
 /// The still flag is cleared: a swapped-in process runs, whatever the stop before the jump left behind.
 pub fn swap_spare_in(log: &dyn Fn(&str)) -> Option<u32> {
     let incoming = spare().lock().expect("the spare slot").take()?;
-    let outgoing = running().lock().expect("the cut-preview player slot").replace(incoming);
+    let outgoing = running()
+        .lock()
+        .expect("the cut-preview player slot")
+        .replace(incoming);
     signal(incoming, libc::SIGCONT);
     if let Some(old) = outgoing {
         signal(old, libc::SIGTERM);

@@ -50,7 +50,10 @@ pub fn encode(wave: &Wave, size: i64, mtime: i64) -> Result<Vec<u8>, String> {
     if wave.hz < 1.0 || wave.hz > f64::from(u16::MAX) {
         // `hz` is a whole number in the header and nought means "not a rate" to the reader,
         // so a rate that cannot be stored is a caller's mistake, not a cache miss.
-        return Err(format!("{} peaks per second does not fit the header", wave.hz));
+        return Err(format!(
+            "{} peaks per second does not fit the header",
+            wave.hz
+        ));
     }
 
     let mut out = Vec::with_capacity(HEADER_LEN + wave.chans.len() * count);
@@ -108,11 +111,20 @@ pub fn decode(bytes: &[u8], size: i64, mtime: i64) -> Option<Wave> {
     } else {
         body.chunks(count).map(<[u8]>::to_vec).collect()
     };
-    Some(Wave { hz: f64::from(hz), chans })
+    Some(Wave {
+        hz: f64::from(hz),
+        chans,
+    })
 }
 
 /// Cache one lane's peaks, beside the lane's own file in `cache/waves`.
-pub fn write(tree: &layout::Tree, lane: &str, wave: &Wave, size: i64, mtime: i64) -> Result<(), String> {
+pub fn write(
+    tree: &layout::Tree,
+    lane: &str,
+    wave: &Wave,
+    size: i64,
+    mtime: i64,
+) -> Result<(), String> {
     let bytes = encode(wave, size, mtime)?;
     let path = tree.wave(lane);
     // The path comes from layout and goes through write_file, so §1's 0755 directory spine
@@ -123,7 +135,12 @@ pub fn write(tree: &layout::Tree, lane: &str, wave: &Wave, size: i64, mtime: i64
 
 /// Read one lane's cached peaks: `None` when there is no cache or it does not apply to the
 /// recording that is being drawn now.
-pub fn read(tree: &layout::Tree, lane: &str, size: i64, mtime: i64) -> Result<Option<Wave>, String> {
+pub fn read(
+    tree: &layout::Tree,
+    lane: &str,
+    size: i64,
+    mtime: i64,
+) -> Result<Option<Wave>, String> {
     let path = tree.wave(lane);
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
@@ -136,7 +153,5 @@ pub fn read(tree: &layout::Tree, lane: &str, size: i64, mtime: i64) -> Result<Op
 /// The path as `Tree::write_file` wants it: inside the project, with the project taken off
 /// the front.
 fn relative(path: &Path, dir: &Path) -> std::path::PathBuf {
-    path.strip_prefix(dir)
-        .unwrap_or(path)
-        .to_path_buf()
+    path.strip_prefix(dir).unwrap_or(path).to_path_buf()
 }

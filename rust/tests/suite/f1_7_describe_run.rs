@@ -16,6 +16,8 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
+use crate::common;
+use common::temp_dir_tagged;
 use naivepost::clock::frame_name;
 use naivepost::describe::{self, FRAMES_PER_REQ};
 use naivepost::layout::Tree;
@@ -23,8 +25,6 @@ use naivepost::project::{Project, Source};
 use naivepost::run::{self, Subprocesses};
 use naivepost::run_stages;
 use naivepost::settings::{self, Conf, Paths};
-use crate::common;
-use common::temp_dir_tagged;
 
 /// The lane of every scene here: the stem of the footage row's name, which is what names `events.tsv`,
 /// `state.txt` and `.llmframes/` (§F1.3 stores under the lane).
@@ -88,7 +88,11 @@ impl Fake {
                 });
             }
         });
-        Fake { url: format!("http://127.0.0.1:{port}"), asks, answer: held }
+        Fake {
+            url: format!("http://127.0.0.1:{port}"),
+            asks,
+            answer: held,
+        }
     }
 
     /// The chat requests recorded so far. Recording happens on the connection's own thread, so a reply
@@ -134,11 +138,17 @@ impl Scene {
     /// The same, with the exact seconds to plant — for an every-frame folder, whose spacing at the 250 ms
     /// grid is itself the thing S0 reads.
     fn planted(_interval: f64, seconds: &[f64], llm_url: &str) -> Scene {
-        let root = temp_dir_tagged(&format!("f17-run-{}", COUNTER.fetch_add(1, Ordering::SeqCst)));
+        let root = temp_dir_tagged(&format!(
+            "f17-run-{}",
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ));
         let session = naivepost::startup::session_dir(&root);
         std::fs::create_dir_all(session.join("sources")).expect("the sources folder");
         std::fs::write(session.join("sources/lecture.mkv"), b"mkv-bytes").expect("the recording");
-        let paths = Paths { config_dir: root.join("cfg/naivepost"), data_dir: root.join("data/naivepost") };
+        let paths = Paths {
+            config_dir: root.join("cfg/naivepost"),
+            data_dir: root.join("data/naivepost"),
+        };
         let tools = stubs(&format!("{}", COUNTER.load(Ordering::SeqCst)));
         let mut conf = Conf::default();
         conf.server = llm_url.to_string();
@@ -162,12 +172,18 @@ impl Scene {
         let frames_dir = tree.frames_dir(LANE);
         std::fs::create_dir_all(&frames_dir).expect("the frames folder");
         for at in seconds {
-            std::fs::write(frames_dir.join(format!("{}.jpg", frame_name(*at))), b"jpeg").expect("the frame");
+            std::fs::write(frames_dir.join(format!("{}.jpg", frame_name(*at))), b"jpeg")
+                .expect("the frame");
         }
         // F1.6's marker, so a walk that reaches the frames stage says "already extracted" rather than
         // failing over placeholder bytes: describe's own work is what these tests watch.
         std::fs::write(tree.frames_marker(LANE), "0.25|1.0\n").expect("the marker");
-        Scene { root, paths, tools, tree }
+        Scene {
+            root,
+            paths,
+            tools,
+            tree,
+        }
     }
 
     /// Add a second, non-footage source: the microphone heard alongside the video (S1's log line).
@@ -223,9 +239,16 @@ impl Scene {
         let mut queue = naivepost::runqueue::Queue::new();
         let mut procs = Subprocesses::default();
         let mut log: Vec<String> = Vec::new();
-        let drive = run_stages::drive_walk(&self.stages(), &mut queue, || false, || false, |line| {
-            log.push(line.to_string());
-        }, &mut procs);
+        let drive = run_stages::drive_walk(
+            &self.stages(),
+            &mut queue,
+            || false,
+            || false,
+            |line| {
+                log.push(line.to_string());
+            },
+            &mut procs,
+        );
         run_stages::say_outcome(&drive, |line| log.push(line.to_string()));
         (drive, log)
     }
@@ -259,7 +282,11 @@ impl Scene {
     }
 
     fn event_rows(&self) -> Vec<String> {
-        self.events().lines().filter(|line| !line.is_empty()).map(str::to_string).collect()
+        self.events()
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect()
     }
 
     fn state(&self) -> String {
@@ -306,11 +333,17 @@ fn stubs(tag: &str) -> PathBuf {
         ),
     )
     .expect("the ffmpeg stub");
-    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the script runs");
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("the script runs");
     let ffmpeg = dir.join("ffmpeg");
-    common::write_script(&ffmpeg, format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", script.display())).expect("the wrapper");
+    common::write_script(
+        &ffmpeg,
+        format!("#!/bin/sh\nexec \"{}\" \"$@\"\n", script.display()),
+    )
+    .expect("the wrapper");
     for tool in [&probe, &ffmpeg] {
-        std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the stub runs");
+        std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .expect("the stub runs");
     }
     dir
 }
@@ -325,19 +358,34 @@ fn f1_7_s1_the_frames_are_scaled_once_into_llmframes() {
     let scene = Scene::new(1.0, 4, &fake.url);
     let before = scene.copies().len();
     let (drive, log) = walk(&scene);
-    assert!(matches!(drive, run_stages::Drive::Done { .. }), "the row walked: {drive:?} / {log:?}");
+    assert!(
+        matches!(drive, run_stages::Drive::Done { .. }),
+        "the row walked: {drive:?} / {log:?}"
+    );
     let picked = naivepost::describe::frames_on_disk(&scene.tree.frames_dir(LANE));
     let expected: Vec<String> = picked.iter().map(|at| describe::scaled_name(*at)).collect();
     let copies = scene.copies();
     assert_eq!(before, 0, "nothing is pre-scaled by the test");
-    assert_eq!(copies, expected, "one scaled copy per frame that goes, named by its second: {copies:?}");
+    assert_eq!(
+        copies, expected,
+        "one scaled copy per frame that goes, named by its second: {copies:?}"
+    );
     let calls = scene.calls();
-    let scales: Vec<&String> = calls.iter().filter(|line| line.contains("scale=896:-2")).collect();
-    assert_eq!(scales.len(), picked.len(), "one ffmpeg per scaled frame: {calls:?}");
+    let scales: Vec<&String> = calls
+        .iter()
+        .filter(|line| line.contains("scale=896:-2"))
+        .collect();
+    assert_eq!(
+        scales.len(),
+        picked.len(),
+        "one ffmpeg per scaled frame: {calls:?}"
+    );
     assert_eq!(describe::FRAME_WIDTH, 896, "P.machine.describeFrameWidth");
     // The kept frames keep their own size: no extraction ever scales, only the copies do.
     assert!(
-        !calls.iter().any(|line| line.contains("scale=") && !line.contains("scale=896:-2")),
+        !calls
+            .iter()
+            .any(|line| line.contains("scale=") && !line.contains("scale=896:-2")),
         "only the sent copies are scaled: {calls:?}"
     );
     fake.waited(1);
@@ -360,7 +408,11 @@ fn f1_7_s1_a_second_walk_scales_nothing_again() {
         "the second walk ran no ffmpeg at all: {:?}",
         &scene.calls()[calls_after_first..]
     );
-    assert_eq!(fake.count(), asks_after_first, "and no chat request: {log:?}");
+    assert_eq!(
+        fake.count(),
+        asks_after_first,
+        "and no chat request: {log:?}"
+    );
     assert!(
         log.iter().any(|line| line.contains("event log complete")),
         "it still said what it finished: {log:?}"
@@ -379,16 +431,25 @@ fn f1_7_s0_an_every_frame_folder_is_refused_and_costs_no_request() {
     let scene = Scene::planted(0.25, &seconds, &fake.url);
     let (drive, log) = walk(&scene);
     assert!(
-        log.iter().any(|line| line.contains(&describe::every_frame_refusal(LANE))),
+        log.iter()
+            .any(|line| line.contains(&describe::every_frame_refusal(LANE))),
         "S0's refusal, in its own words: {log:?}"
     );
-    assert_eq!(fake.count(), 0, "an every-frame folder asks nothing of the model: {log:?}");
+    assert_eq!(
+        fake.count(),
+        0,
+        "an every-frame folder asks nothing of the model: {log:?}"
+    );
     assert!(scene.copies().is_empty(), "and scales nothing");
     assert!(
-        !log.iter().any(|line| line.starts_with("!!! describe failed")),
+        !log.iter()
+            .any(|line| line.starts_with("!!! describe failed")),
         "the refusal is local, not the run's end: {log:?}"
     );
-    assert!(matches!(drive, run_stages::Drive::Done { .. }), "the stage completed: {drive:?}");
+    assert!(
+        matches!(drive, run_stages::Drive::Done { .. }),
+        "the stage completed: {drive:?}"
+    );
 }
 
 /// S1's other refusal, and the reason the scaling leg runs BEFORE any request: a frame F1.6 never
@@ -401,18 +462,26 @@ fn f1_7_s1_a_frame_that_was_never_extracted_names_itself() {
     let scene = Scene::new(1.0, 4, &fake.url);
     // Remove one STORED frame before anything runs: the leg must refuse that second by name rather than
     // scale three of four and stamp a batch whose pictures do not all exist.
-    let gone = scene.tree.frames_dir(LANE).join(format!("{}.jpg", frame_name(2.0)));
+    let gone = scene
+        .tree
+        .frames_dir(LANE)
+        .join(format!("{}.jpg", frame_name(2.0)));
     std::fs::remove_file(&gone).expect("one stored frame goes");
     let (drive, log) = walk(&scene);
     assert!(
         matches!(drive, run_stages::Drive::Failed { .. }),
         "a missing source frame fails the row, named: {drive:?}"
     );
-    assert_eq!(fake.count(), 0, "and nothing is asked of the model first: {log:?}");
+    assert_eq!(
+        fake.count(),
+        0,
+        "and nothing is asked of the model first: {log:?}"
+    );
     // A frame F1.6 never extracted is refused by name, before any request: the seconds come from the
     // grid the marker says was used, so a picture missing from the folder is an error, not a short batch.
     assert!(
-        log.iter().any(|line| line.contains("no scaled frame") && line.contains("00-00-02.000")),
+        log.iter()
+            .any(|line| line.contains("no scaled frame") && line.contains("00-00-02.000")),
         "the refusal names the picture that is missing: {log:?}"
     );
 }
@@ -427,11 +496,18 @@ fn f1_7_s1_an_alongside_recording_is_logged_with_its_offset() {
     let (_drive, log) = walk(&scene);
     // The video starts at second nought, so the mic's placement IS its offset.
     let project = scene.project();
-    let names: Vec<&str> = project.sources.iter().map(|s| s.path.rsplit('/').next().unwrap()).collect();
+    let names: Vec<&str> = project
+        .sources
+        .iter()
+        .map(|s| s.path.rsplit('/').next().unwrap())
+        .collect();
     let offsets = naivepost::fix_transcripts::placement(&names);
     let mic = offsets.get(1).copied().unwrap_or(0.0);
     let wanted = describe::hearing_log(LANE, "mic.wav", mic);
-    assert!(log.contains(&wanted), "S1's alongside line, verbatim: wanted {wanted} in {log:?}");
+    assert!(
+        log.contains(&wanted),
+        "S1's alongside line, verbatim: wanted {wanted} in {log:?}"
+    );
     fake.waited(1);
 }
 
@@ -452,10 +528,21 @@ fn f1_7_s5_and_s6_the_answer_lands_as_one_row_per_frame_plus_the_state() {
     let parts = sent["messages"][1]["content"]
         .as_array()
         .expect("the user parts");
-    let images = parts.iter().filter(|part| part["type"].as_str() == Some("image_url")).count();
-    assert_eq!(images, FRAMES_PER_REQ, "P.machine.describeFramesPerReq pictures in one call");
+    let images = parts
+        .iter()
+        .filter(|part| part["type"].as_str() == Some("image_url"))
+        .count();
+    assert_eq!(
+        images, FRAMES_PER_REQ,
+        "P.machine.describeFramesPerReq pictures in one call"
+    );
     let rows = scene.event_rows();
-    assert_eq!(rows.len(), FRAMES_PER_REQ, "one row per frame: {}", scene.events());
+    assert_eq!(
+        rows.len(),
+        FRAMES_PER_REQ,
+        "one row per frame: {}",
+        scene.events()
+    );
     let picked = naivepost::describe::frames_on_disk(&scene.tree.frames_dir(LANE));
     for (index, row) in rows.iter().enumerate() {
         let fields: Vec<&str> = row.split('\t').collect();
@@ -468,9 +555,16 @@ fn f1_7_s5_and_s6_the_answer_lands_as_one_row_per_frame_plus_the_state() {
             index + 1
         );
         assert!(end >= start, "a row ends no earlier than it starts: {row}");
-        assert!(fields[2].starts_with("frame "), "the model's own words: {row}");
+        assert!(
+            fields[2].starts_with("frame "),
+            "the model's own words: {row}"
+        );
     }
-    assert_eq!(scene.state().trim(), "mid-lecture, board half full", "the running STATE landed");
+    assert_eq!(
+        scene.state().trim(),
+        "mid-lecture, board half full",
+        "the running STATE landed"
+    );
 }
 
 // ---- S2 ---------------------------------------------------------------------
@@ -487,7 +581,8 @@ fn f1_7_s2_a_chunk_already_in_events_tsv_is_not_asked_again() {
     let asks = fake.waited(1);
     assert_eq!(asks.len(), 1, "only the second chunk was asked: {log:?}");
     assert!(
-        log.iter().any(|line| line.contains("answered from the cache")),
+        log.iter()
+            .any(|line| line.contains("answered from the cache")),
         "the ending counts the resumed chunk: {log:?}"
     );
     // The rows the earlier run wrote survive: a resume appends, it does not rewrite history.
@@ -507,10 +602,15 @@ fn f1_7_s7_the_pass_ends_with_its_chunk_count() {
     let scene = Scene::new(1.0, 9, &fake.url);
     let (_drive, log) = walk(&scene);
     fake.waited(3);
-    let said: Vec<&str> = log.iter().map(String::as_str).filter(|line| line.starts_with(">>> [")).collect();
+    let said: Vec<&str> = log
+        .iter()
+        .map(String::as_str)
+        .filter(|line| line.starts_with(">>> ["))
+        .collect();
     let last = said.last().copied().unwrap_or_default();
     // Every chunk answered live, so §S7's plain spelling -- the cached variant is S4's test below.
-    assert_eq!(last,
+    assert_eq!(
+        last,
         describe::complete_log_cached(LANE, 3, 0).as_str(),
         "S7's sentence, counted: {log:?}"
     );
@@ -537,9 +637,14 @@ fn f1_7_s4_an_unchanged_run_answers_from_the_cache() {
     let _ = std::fs::remove_file(scene.tree.events_tsv(LANE));
     let _ = std::fs::remove_file(scene.tree.describe_state(LANE));
     let (_second, log) = walk(&scene);
-    assert_eq!(fake.count(), 1, "the second walk made no ask at all: {log:?}");
+    assert_eq!(
+        fake.count(),
+        1,
+        "the second walk made no ask at all: {log:?}"
+    );
     assert!(
-        log.iter().any(|line| line.contains("answered from the cache")),
+        log.iter()
+            .any(|line| line.contains("answered from the cache")),
         "and said where the answer came from: {log:?}"
     );
     // The rows are BACK: the replay wrote one per frame while the wire stayed silent, and this chunk
@@ -547,7 +652,11 @@ fn f1_7_s4_an_unchanged_run_answers_from_the_cache() {
     // landed a cold replay came back one row short, `write_batch` refused to write half an answer, and
     // a cached chunk cost nothing AND wrote nothing while the pass still closed "event log complete".
     let rows = scene.event_rows();
-    assert_eq!(rows.len(), FRAMES_PER_REQ, "the replay wrote one row per frame: {rows:?}");
+    assert_eq!(
+        rows.len(),
+        FRAMES_PER_REQ,
+        "the replay wrote one row per frame: {rows:?}"
+    );
     assert!(
         rows[0].ends_with(naivepost::tools::describe::Batch::SAME_WITHOUT_HISTORY),
         "the cold replay opens on §6's forced line: {rows:?}"
@@ -564,7 +673,8 @@ fn f1_7_s4_an_unchanged_run_answers_from_the_cache() {
         scene.state()
     );
     assert!(
-        log.iter().any(|line| line.starts_with(">>> [lecture] event log complete")),
+        log.iter()
+            .any(|line| line.starts_with(">>> [lecture] event log complete")),
         "the cached pass still closes: {log:?}"
     );
 }

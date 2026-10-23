@@ -43,7 +43,9 @@ pub fn rows_paid(fixture: &Fixture) -> usize {
 pub fn kept(fixture: &Fixture, needle: &str) -> bool {
     let mut stack = vec![fixture.root.join("session.naivepost/cache/llm/captions")];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {

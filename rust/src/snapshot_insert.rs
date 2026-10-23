@@ -40,7 +40,11 @@ use crate::ui;
 /// The tape the flow is staged on: 0–120 s, one take, so every second below is filmed material and a card
 /// dropped between two clips still has its hole to fall in.
 fn tape() -> Vec<Recording> {
-    vec![Recording { base: "session-tape".into(), start: 0.0, end: 120.0 }]
+    vec![Recording {
+        base: "session-tape".into(),
+        start: 0.0,
+        end: 120.0,
+    }]
 }
 
 /// The cut the flow starts from: two clips with a hole at 30–40, so a spliced card and an over card land in
@@ -48,8 +52,18 @@ fn tape() -> Vec<Recording> {
 fn seeded() -> cut::Cut {
     cut::Cut {
         segs: vec![
-            cut::Seg { s: 0.0, e: 30.0, cam: 0, ..Default::default() },
-            cut::Seg { s: 40.0, e: 110.0, cam: 0, ..Default::default() },
+            cut::Seg {
+                s: 0.0,
+                e: 30.0,
+                cam: 0,
+                ..Default::default()
+            },
+            cut::Seg {
+                s: 40.0,
+                e: 110.0,
+                cam: 0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }
@@ -87,17 +101,21 @@ fn pick_mode(window: &adw::ApplicationWindow, name: &str) {
         }
         for child in root.observe_children().iter::<glib::Object>() {
             let Ok(child) = child else { continue };
-            let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+            let Ok(widget) = child.downcast::<gtk::Widget>() else {
+                continue;
+            };
             if let Some(found) = find(&widget, name) {
                 return Some(found);
             }
         }
         None
     }
-    let form =
-        ui::window::find_widget_by_name(window.upcast_ref(), "insert-form").expect("the form holder exists");
+    let form = ui::window::find_widget_by_name(window.upcast_ref(), "insert-form")
+        .expect("the form holder exists");
     let radio = find(&form, name).unwrap_or_else(|| panic!("the insert form drew no {name}"));
-    let radio = radio.downcast::<gtk::CheckButton>().expect("the mode radios are radio buttons");
+    let radio = radio
+        .downcast::<gtk::CheckButton>()
+        .expect("the mode radios are radio buttons");
     radio.set_active(true);
 }
 
@@ -109,8 +127,11 @@ fn video_card(dir: &Path) -> std::path::PathBuf {
     let _ = std::fs::create_dir_all(&assets);
     let path = assets.join("sting.mp4");
     if !path.is_file() {
-        std::fs::write(&path, b"staged for the snapshot: an insert is a FILE, its bytes are never read here")
-            .expect("a card file the chooser could have returned");
+        std::fs::write(
+            &path,
+            b"staged for the snapshot: an insert is a FILE, its bytes are never read here",
+        )
+        .expect("a card file the chooser could have returned");
     }
     path
 }
@@ -239,15 +260,31 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     ui::note_place(true);
     ui::set_line_position(window, LinePos { t: 10.0 });
     ui::clear_selection(window);
-    said.push(ui::insert_chosen_with_length(window, &card_path(dir, "s.svg"), 10.0, Some(5.0)));
+    said.push(ui::insert_chosen_with_length(
+        window,
+        &card_path(dir, "s.svg"),
+        10.0,
+        Some(5.0),
+    ));
     pick_mode(window, "insert-mode-between");
     said.push(ui::press_insert_apply(window));
 
     // 2. OVER: a drawn selection supplies both the length and the overwrite, so the footage under 20-28 is
     // gone and the band shows the dropped stretch the card now covers.
     ui::seed_review_cut(window, &staged);
-    ui::draw_selection(window, crate::cut_select::Surface::PictureRow(0), None, 20.0, 28.0);
-    said.push(ui::insert_chosen_with_length(window, &card_path(dir, "a.svg"), 20.0, Some(8.0)));
+    ui::draw_selection(
+        window,
+        crate::cut_select::Surface::PictureRow(0),
+        None,
+        20.0,
+        28.0,
+    );
+    said.push(ui::insert_chosen_with_length(
+        window,
+        &card_path(dir, "a.svg"),
+        20.0,
+        Some(8.0),
+    ));
     pick_mode(window, "insert-mode-over");
     said.push(ui::press_insert_apply(window));
 
@@ -256,14 +293,24 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     ui::seed_review_cut(window, &staged);
     ui::clear_selection(window);
     ui::set_line_position(window, LinePos { t: 34.0 });
-    said.push(ui::insert_chosen_with_length(window, &video_card(dir), 34.0, Some(8.0)));
+    said.push(ui::insert_chosen_with_length(
+        window,
+        &video_card(dir),
+        34.0,
+        Some(8.0),
+    ));
     pick_mode(window, "insert-mode-lane");
     said.push(ui::press_insert_apply(window));
     // The cancel, before the strip goes back: Cancel closes the form and writes nothing, which is §G's other
     // button and the answer no still can show either.
     ui::note_place(true);
     ui::set_line_position(window, LinePos { t: 12.0 });
-    said.push(ui::insert_chosen_with_length(window, &card_path(dir, "s.svg"), 12.0, Some(5.0)));
+    said.push(ui::insert_chosen_with_length(
+        window,
+        &card_path(dir, "s.svg"),
+        12.0,
+        Some(5.0),
+    ));
     said.push(ui::close_insert_form(window));
     ui::seed_review_cut(window, &staged);
 
@@ -277,9 +324,7 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     ui::clear_selection(window);
     ui::set_line_position(window, LinePos { t: 15.0 });
     let timed = ui::insert_chosen_with_length(window, &timed_card(dir), 15.0, None);
-    let shown = find_form_entry(window, "insert-seconds")
-        .text()
-        .to_string();
+    let shown = find_form_entry(window, "insert-seconds").text().to_string();
     said.push(format!(
         "{timed}; seconds {} (the card's own time, not {})",
         shown,
@@ -290,7 +335,8 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     // unscoped name exists once per tab and a tree-wide walk can land on another tab's empty box.
     ui::set_line_position(window, LinePos { t: 15.0 });
     let stung = ui::insert_chosen_with_length(window, &sound_card(dir), 15.0, Some(3.0));
-    let tick_drawn = crate::ui::window::find_widget_by_name(window.upcast_ref(), "insert-sound-tick").is_some();
+    let tick_drawn =
+        crate::ui::window::find_widget_by_name(window.upcast_ref(), "insert-sound-tick").is_some();
     // The shot's own proof: the tick is on screen or it is not, and a missing one says so in the log rather
     // than leaving a screenshot to be read for it.
     assert!(
@@ -315,11 +361,13 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
 /// An entry the form drew, found under this window's own `insert-form` holder — the same walk [`pick_mode`] does,
 /// on the widget names §G lists.
 fn find_form_entry(window: &adw::ApplicationWindow, name: &str) -> gtk::Entry {
-    let form =
-        ui::window::find_widget_by_name(window.upcast_ref(), "insert-form").expect("the form holder exists");
+    let form = ui::window::find_widget_by_name(window.upcast_ref(), "insert-form")
+        .expect("the form holder exists");
     let found = ui::window::find_widget_by_name(&form, name)
         .unwrap_or_else(|| panic!("the insert form drew no {name}"));
-    found.downcast::<gtk::Entry>().expect("the seconds entry is an entry")
+    found
+        .downcast::<gtk::Entry>()
+        .expect("the seconds entry is an entry")
 }
 
 /// The band's own arithmetic behind the shot, so the log line can say what the strip should be showing:

@@ -18,7 +18,7 @@ use naivepost::diarize::{self, Anchor, Slot};
 use naivepost::params;
 
 use crate::common;
-use common::{all_rows};
+use common::all_rows;
 
 /// Two voices, twelve seconds of each, concatenated in the anchor file: block 0 = [0,12), block 1 =
 /// [12,24).
@@ -62,21 +62,31 @@ fn p_eng_minanchoroverlap_s1_the_bound_is_0_5_and_catalogued_once() {
     let row = params::prepare()
         .into_iter()
         .find(|param| param.id == "P.eng.minAnchorOverlap")
-        .expect("the anchor overlap must be catalogued for Prepare, whose diarization match reads it");
+        .expect(
+            "the anchor overlap must be catalogued for Prepare, whose diarization match reads it",
+        );
     assert_eq!(
-        row.from,
-        "diarize::MIN_ANCHOR_OVERLAP",
+        row.from, "diarize::MIN_ANCHOR_OVERLAP",
         "a row must name the constant its rule reads"
     );
-    assert_eq!(row.spelled, "0.5", "§10 spells it 0.5, so the catalogue must too");
+    assert_eq!(
+        row.spelled, "0.5",
+        "§10 spells it 0.5, so the catalogue must too"
+    );
     assert_eq!(row.spelled.parse::<f64>().unwrap(), 0.5);
 
     // §10 files it among the engineering constants, so the prefix answers to Eng.
-    assert_eq!(params::family("P.eng.minAnchorOverlap"), params::Family::Eng);
+    assert_eq!(
+        params::family("P.eng.minAnchorOverlap"),
+        params::Family::Eng
+    );
 
     // And exactly one row for it across all five lists — one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.minAnchorOverlap").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.minAnchorOverlap")
+            .count(),
         1,
         "P.eng.minAnchorOverlap catalogued more than once"
     );
@@ -87,7 +97,11 @@ fn p_eng_minanchoroverlap_s1_the_bound_is_0_5_and_catalogued_once() {
 fn p_eng_minanchoroverlap_s2_exactly_half_a_second_claims_and_just_under_does_not() {
     // Claim [11.5, 12.0) against block 0 [0,12): min(12.0,12.0) - max(11.5,0.0) = 0.5 exactly, which
     // clears the inclusive bound, so the slot is voice 0's.
-    assert_eq!(owner_of((0, 11.5, 12.0)), Some(0), "exactly 0.5 s reaches: the bound is >=");
+    assert_eq!(
+        owner_of((0, 11.5, 12.0)),
+        Some(0),
+        "exactly 0.5 s reaches: the bound is >="
+    );
 
     // One tenth of a second shorter and it is nothing: two voices merely near each other in time.
     assert_eq!(owner_of((1, 11.6, 12.0)), None, "0.4 s is below the bound");
@@ -100,7 +114,10 @@ fn p_eng_minanchoroverlap_s2_exactly_half_a_second_claims_and_just_under_does_no
     // A claim reaching past the block edge still counts only the intersection: [11.0, 13.0) overlaps
     // block 0 by 1.0 s and block 1 by 1.0 s, so it clears both and takes the first it ranks highest.
     let straddling = owner_of((0, 11.0, 13.0));
-    assert!(straddling.is_some(), "1.0 s into a block clears the bound either way: {straddling:?}");
+    assert!(
+        straddling.is_some(),
+        "1.0 s into a block clears the bound either way: {straddling:?}"
+    );
 }
 
 /// S3: spreading a thin claim over two blocks rescues nothing — the bound is per block, while the
@@ -117,7 +134,11 @@ fn p_eng_minanchoroverlap_s3_a_thin_claim_spread_over_two_blocks_is_still_no_cla
     );
 
     // Widen the same straddle until one side clears: [11.4, 12.2) gives block 0 0.6 s, so it claims.
-    assert_eq!(owner_of((0, 11.4, 12.2)), Some(0), "one side crossing 0.5 is enough");
+    assert_eq!(
+        owner_of((0, 11.4, 12.2)),
+        Some(0),
+        "one side crossing 0.5 is enough"
+    );
     assert_ne!(
         owner_of((0, 11.8, 12.2)),
         owner_of((0, 11.4, 12.2)),
@@ -132,19 +153,28 @@ fn p_eng_minanchoroverlap_s4_a_loser_is_named_while_a_thin_claim_is_nobodys() {
     // Three slots at once: slot 0 buries block 0 (11 s), slot 1 also clears it (6 s) but loses the
     // contest, slot 2 only grazes the seam (0.1 s into block 0, 0.2 s into block 1).
     let a = anchor();
-    let matched = diarize::match_slots(
-        &[(0, 0.0, 11.0), (1, 1.0, 7.0), (2, 11.9, 12.2)],
-        &a,
-    );
+    let matched = diarize::match_slots(&[(0, 0.0, 11.0), (1, 1.0, 7.0), (2, 11.9, 12.2)], &a);
     assert_eq!(matched.len(), 3, "every slot handed in is answered");
 
     // The strong claim wins its block outright.
-    assert_eq!(matched[0], (0, Some(0)), "the strongest claim takes block 0");
+    assert_eq!(
+        matched[0],
+        (0, Some(0)),
+        "the strongest claim takes block 0"
+    );
     // The loser is still recognised as that same voice: the block went to a better match, it was not
     // missed. This is the second use of the bound — naming rather than claiming.
-    assert_eq!(matched[1], (1, Some(0)), "the weaker claim still names the voice it matched");
+    assert_eq!(
+        matched[1],
+        (1, Some(0)),
+        "the weaker claim still names the voice it matched"
+    );
     // The grazer clears neither block, so it is nobody's — and only `None` earns a fresh session id.
-    assert_eq!(matched[2], (2, None), "under the bound on every block: nobody's, despite block 0 being taken");
+    assert_eq!(
+        matched[2],
+        (2, None),
+        "under the bound on every block: nobody's, despite block 0 being taken"
+    );
 
     // One-to-one: block 0 is some slot's WINNER exactly once, so one person's anchor is never read as
     // the whole room.
@@ -153,23 +183,28 @@ fn p_eng_minanchoroverlap_s4_a_loser_is_named_while_a_thin_claim_is_nobodys() {
     let distinct_winners = {
         // Only the slot that actually took it counts as the winner; the named loser did not take it.
         let takers = vec![matched[0].1];
-        assert_eq!(takers.iter().filter(|w| **w == Some(0)).count(), 1, "one taker per block");
+        assert_eq!(
+            takers.iter().filter(|w| **w == Some(0)).count(),
+            1,
+            "one taker per block"
+        );
         takers
     };
     assert_eq!(distinct_winners.len(), 1);
 
     // Order in the answer must not pick the winner: the same three claims reversed settle the same way
     // per slot.
-    let reversed = diarize::match_slots(
-        &[(2, 11.9, 12.2), (1, 1.0, 7.0), (0, 0.0, 11.0)],
-        &a,
-    );
+    let reversed = diarize::match_slots(&[(2, 11.9, 12.2), (1, 1.0, 7.0), (0, 0.0, 11.0)], &a);
     let by_slot = |m: &[(u32, Option<usize>)]| {
         let mut v = m.to_vec();
         v.sort_by_key(|(slot, _)| *slot);
         v
     };
-    assert_eq!(by_slot(&reversed), by_slot(&matched), "claim order does not decide who owns what");
+    assert_eq!(
+        by_slot(&reversed),
+        by_slot(&matched),
+        "claim order does not decide who owns what"
+    );
 }
 
 /// S5: several §10 constants are also 0.5, so the number alone proves nothing — the ids and the homes
@@ -187,9 +222,13 @@ fn p_eng_minanchoroverlap_s5_neighbours_sharing_the_number_are_different_rules()
     assert_eq!(clip.from, "tools::cutpass::MIN_CLIP_SECONDS");
     // P.machine.sceneMinGapSeconds (0.5): scene changes nearer than this merge into the first — and it
     // sits in a DIFFERENT family, so the prefix alone separates it from this item.
-    let scene = params::find("P.machine.sceneMinGapSeconds").expect("sceneMinGapSeconds is catalogued");
+    let scene =
+        params::find("P.machine.sceneMinGapSeconds").expect("sceneMinGapSeconds is catalogued");
     assert_eq!(scene.spelled, "0.5");
-    assert_eq!(params::family("P.machine.sceneMinGapSeconds"), params::Family::Machine);
+    assert_eq!(
+        params::family("P.machine.sceneMinGapSeconds"),
+        params::Family::Machine
+    );
     assert_ne!(
         params::family("P.eng.minAnchorOverlap"),
         params::family("P.machine.sceneMinGapSeconds"),
@@ -211,9 +250,21 @@ fn p_eng_minanchoroverlap_s5_neighbours_sharing_the_number_are_different_rules()
     // (no §10 id of its own here; it is the window minimum) WINDOW_MIN_SECONDS = 10.0.
     assert_eq!(diarize::WINDOW_MIN_SECONDS, 10.0);
 
-    assert_ne!(diarize::MIN_ANCHOR_OVERLAP, diarize::ANCHOR_CUT_SECONDS, "a claim bound is not a cut floor");
-    assert_ne!(diarize::MIN_ANCHOR_OVERLAP, diarize::ANCHOR_MIN_SECONDS, "a claim bound is not a voice threshold");
-    assert_ne!(diarize::MIN_ANCHOR_OVERLAP, diarize::WINDOW_MIN_SECONDS, "a claim bound is not a window size");
+    assert_ne!(
+        diarize::MIN_ANCHOR_OVERLAP,
+        diarize::ANCHOR_CUT_SECONDS,
+        "a claim bound is not a cut floor"
+    );
+    assert_ne!(
+        diarize::MIN_ANCHOR_OVERLAP,
+        diarize::ANCHOR_MIN_SECONDS,
+        "a claim bound is not a voice threshold"
+    );
+    assert_ne!(
+        diarize::MIN_ANCHOR_OVERLAP,
+        diarize::WINDOW_MIN_SECONDS,
+        "a claim bound is not a window size"
+    );
 
     // Building the anchor vs reading it back: 4.0 s decides whether a voice is in the anchor at all,
     // 0.3 s decides whether a piece of it is worth cutting, and 0.5 s decides whether a later slot's

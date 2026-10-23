@@ -120,7 +120,10 @@ fn stop_body(app: &adw::Application) {
     std::fs::create_dir_all(&root).expect("temp root created");
     std::env::set_current_dir(&root).expect("cwd pinned to the stop root");
     naivepost::project::save(
-        &naivepost::project::Project { no_narration: false, ..Default::default() },
+        &naivepost::project::Project {
+            no_narration: false,
+            ..Default::default()
+        },
         &root.join("demo.naivepost"),
     )
     .expect("a narrated project to start from");
@@ -141,7 +144,10 @@ fn stop_body(app: &adw::Application) {
     ui::set_state(running);
     ui::refresh(&window);
     settle();
-    assert!(ui::read_state().playing, "the preview is running before the tick moves");
+    assert!(
+        ui::read_state().playing,
+        "the preview is running before the tick moves"
+    );
     for name in GREYED_WIDGETS {
         assert!(
             widget_in(&window, name).unwrap().is_sensitive(),
@@ -150,9 +156,13 @@ fn stop_body(app: &adw::Application) {
     }
 
     let session_root = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
-    let tree = naivepost::layout::Tree::new(&session_root).expect("the session folder is a project");
+    let tree =
+        naivepost::layout::Tree::new(&session_root).expect("the session folder is a project");
     narration::save(
-        &Narration { entries: staged_entries(), silent: Vec::new() },
+        &Narration {
+            entries: staged_entries(),
+            silent: Vec::new(),
+        },
         &tree,
     )
     .expect("record staged");
@@ -173,12 +183,24 @@ fn stop_body(app: &adw::Application) {
     tick.set_active(false);
     settle();
 
-    assert!(!ui::read_state().playing, "the running preview stopped with the narration");
-    assert!(ui::read_state().narration_off, "and the flag went off with it");
-    assert!(tick.is_sensitive(), "the tick stayed pressable \u{2014} it is the way back");
+    assert!(
+        !ui::read_state().playing,
+        "the running preview stopped with the narration"
+    );
+    assert!(
+        ui::read_state().narration_off,
+        "and the flag went off with it"
+    );
+    assert!(
+        tick.is_sensitive(),
+        "the tick stayed pressable \u{2014} it is the way back"
+    );
     assert_eq!(
         status_text(&window),
-        format!("narration off \u{2014} {} greyed", narrate_screen::off_greys().join(", ")),
+        format!(
+            "narration off \u{2014} {} greyed",
+            narrate_screen::off_greys().join(", ")
+        ),
         "stopping the preview did not change what the tick says"
     );
     assert_eq!(
@@ -231,7 +253,8 @@ fn tick_round_trip(app: &adw::Application) {
 
     // Stage a record in THIS session's project folder, where the page's tree points.
     let session_root = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
-    let tree = naivepost::layout::Tree::new(&session_root).expect("the session folder is a project");
+    let tree =
+        naivepost::layout::Tree::new(&session_root).expect("the session folder is a project");
     let entries = staged_entries();
     narration::save(
         &Narration {
@@ -259,7 +282,9 @@ fn tick_round_trip(app: &adw::Application) {
         "the tick is CHECKED with the narration on"
     );
     // (d) reads this line, so it must show only what (b)'s click prints: clear it before firing.
-    ui::find_status(window.upcast_ref()).expect("the shell has a status line").set_text("");
+    ui::find_status(window.upcast_ref())
+        .expect("the shell has a status line")
+        .set_text("");
     for name in GREYED_WIDGETS {
         assert!(
             widget_in(&window, name).unwrap().is_sensitive(),
@@ -316,7 +341,8 @@ fn tick_round_trip(app: &adw::Application) {
         record_before,
         "narration.json left exactly as it was by the toggle"
     );
-    let saved = std::fs::read_to_string(tree.dir().join("naivepost.json")).expect("project file reads");
+    let saved =
+        std::fs::read_to_string(tree.dir().join("naivepost.json")).expect("project file reads");
     assert!(
         saved.contains("\"no_narration\": true"),
         "the tick wrote its own flag, so it survives a reload: {saved}"
@@ -350,7 +376,8 @@ fn tick_round_trip(app: &adw::Application) {
         "everything written is still there after the round trip"
     );
     assert_eq!(
-        narration::load(&tree).unwrap().entries, entries,
+        narration::load(&tree).unwrap().entries,
+        entries,
         "the lines the tick passed over are the lines that were there"
     );
 

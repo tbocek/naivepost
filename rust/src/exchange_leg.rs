@@ -8,10 +8,9 @@
 //! the keeping of the live page for the session. Everything it returns is already-worded text —
 //! recording can never fail the call it records (§7), so nothing here hands back an error.
 
-
 use serde_json::Value;
 
-use crate::exchanges::{self, Call, Mode, Part, Message, RunLog, ToolCall};
+use crate::exchanges::{self, Call, Message, Mode, Part, RunLog, ToolCall};
 use crate::layout::Tree;
 use crate::llm_request;
 
@@ -80,7 +79,11 @@ pub fn call_of(
     Call {
         step: step.to_string(),
         model: model.to_string(),
-        mode: if thinking { Mode::Thinking } else { Mode::Execute },
+        mode: if thinking {
+            Mode::Thinking
+        } else {
+            Mode::Execute
+        },
         took_secs,
         // The row knows the reasoning split only when the server reported it; §8 prints it when known.
         thinking_secs: None,
@@ -103,7 +106,10 @@ fn message_of(value: &Value) -> Option<Message> {
         Value::Array(list) => list
             .iter()
             .filter_map(|part| match part.get("type").and_then(Value::as_str) {
-                Some("text") => part.get("text").and_then(Value::as_str).map(|t| Part::Text(t.to_string())),
+                Some("text") => part
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(|t| Part::Text(t.to_string())),
                 Some("image_url") => part
                     .get("image_url")
                     .and_then(|url| url.get("url"))
@@ -203,7 +209,12 @@ pub fn call_line(call: &ToolCall) -> String {
 /// round through here). Without it a tool round reached the page only through [`call_of`], which reads a reply's
 /// calls with BLANK results and never sees the answers, so every ask on a live page read `answered nothing` and
 /// the page never said which call had really been used.
-pub fn round_of(step: &str, model: &str, messages: &[Message], turn: &crate::tool_loop::Turn) -> Call {
+pub fn round_of(
+    step: &str,
+    model: &str,
+    messages: &[Message],
+    turn: &crate::tool_loop::Turn,
+) -> Call {
     Call {
         step: step.to_string(),
         model: model.to_string(),
@@ -233,12 +244,17 @@ fn stamp() -> String {
     let days = days + 719_468;
     let era = if days >= 0 { days } else { days - 146_096 } / 146_097;
     let day_of_era = days - era * 146_097;
-    let year_of_day = (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year_of_day =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
     let year = year_of_day + era * 400;
     let day_of_year = day_of_era - (365 * year_of_day + year_of_day / 4 - day_of_era / 100);
     let shifted_month = (5 * day_of_year + 2) / 153;
     let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
-    let month = if shifted_month < 10 { shifted_month + 3 } else { shifted_month - 9 };
+    let month = if shifted_month < 10 {
+        shifted_month + 3
+    } else {
+        shifted_month - 9
+    };
     let year = if month <= 2 { year + 1 } else { year };
     let (hours, rest) = ((millis / 3_600_000) as u32, millis % 3_600_000);
     let (minutes, seconds) = ((rest / 60_000) as u32, (rest % 60_000) / 1000);
@@ -265,8 +281,11 @@ fn stamp() -> String {
 /// The registry is process-wide ONLY as a factory handing each thread its own page; no two runs share a
 /// `RunLog`. It is a map rather than a `thread_local!` because a `thread_local!` cannot be borrowed out of
 /// inside a closure that has to return the value.
-static RUN: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<std::thread::ThreadId, std::sync::Arc<std::sync::Mutex<RunLog>>>>> =
-    std::sync::LazyLock::new(Default::default);
+static RUN: std::sync::LazyLock<
+    std::sync::Mutex<
+        std::collections::HashMap<std::thread::ThreadId, std::sync::Arc<std::sync::Mutex<RunLog>>>,
+    >,
+> = std::sync::LazyLock::new(Default::default);
 
 /// This thread's run page, ready to clone into a hook. Each recorder locks it for ONE operation and never
 /// holds the lock across a `log(...)` call — the log sink is the caller's own thread-local list, and a lock
@@ -372,7 +391,6 @@ impl Live {
         stream_asked(&self.body)
     }
 
-
     /// File this ask's REQUEST on the run's page, open its section, and announce it through `log` (the send
     /// line, plus the once-per-run link if this is the run's first call). Must be called before [`Live::hook`]
     /// can grow anything, and once per attempt: each retry re-opens its own section, which is why the leg calls
@@ -451,7 +469,8 @@ impl Live {
     /// returns — success, refusal or §4 give-up — because a given-up call's reader thread is still alive
     /// (`guarded` detaches it on purpose) and may keep decoding into this closure.
     pub fn close_attempt(&self) {
-        self.closed.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.closed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Every word this call streamed, in arrival order — what the reader watched appear.
@@ -468,7 +487,14 @@ impl Live {
     ///
     /// With nothing open this still files the exchange whole (see [`RunLog::complete`]), which is what lets the
     /// leg drive one path whether or not the attempt ever got a hook.
-    pub fn finish(&self, reply_body: &str, content_type: &str, took_secs: u64, error: Option<String>, log: &dyn Fn(&str)) {
+    pub fn finish(
+        &self,
+        reply_body: &str,
+        content_type: &str,
+        took_secs: u64,
+        error: Option<String>,
+        log: &dyn Fn(&str),
+    ) {
         // Nothing from this attempt may touch the page again once its finished section is written.
         self.close_attempt();
         let call = call_of(
@@ -496,7 +522,6 @@ impl Live {
         }
     }
 }
-
 
 /// File one call in the run's page and hand every line it produced to `log` — the two per-call lines
 /// plus, on the run's first call, the once-per-run link (§7). Returns nothing: a page that could not

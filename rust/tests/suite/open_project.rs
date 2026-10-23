@@ -17,10 +17,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use naivepost::open_project::{self, Choice, CANNOT_OPEN, NOT_A_PROJECT};
-use naivepost::project::PROJECT_FILE;
 use crate::common;
 use common::temp_dir_created as temp_dir;
+use naivepost::open_project::{self, Choice, CANNOT_OPEN, NOT_A_PROJECT};
+use naivepost::project::PROJECT_FILE;
 
 /// A project folder written with `body` as its `naivepost.json`, plus real files for each of the
 /// `present` source names under `sources/`.
@@ -55,7 +55,11 @@ fn f0_9_s1_picking_the_project_file_opens_its_folder() {
     let folder = project_folder(&root.join("show.naivepost"), "{}", &[]);
 
     let picked = folder.join(PROJECT_FILE);
-    assert_eq!(open_project::folder_for(&picked), folder, "the file's own folder");
+    assert_eq!(
+        open_project::folder_for(&picked),
+        folder,
+        "the file's own folder"
+    );
 }
 
 #[test]
@@ -84,21 +88,31 @@ fn f0_9_s1_and_s3_opening_a_real_project_sets_root_out_and_sources() {
 
     let applied = open_project::apply(&folder, |path| path.exists()).expect("opens");
 
-    assert_eq!(applied.root, folder, "S3: the project path is the folder opened");
-    assert_eq!(applied.out, folder, "S3: the folder IS the output folder (§01 §1)");
-    assert_eq!(applied.project.sources.len(), 2, "both sources carried over");
-    assert_eq!(applied.dropped, Vec::<String>::new(), "nothing missing, nothing dropped");
+    assert_eq!(
+        applied.root, folder,
+        "S3: the project path is the folder opened"
+    );
+    assert_eq!(
+        applied.out, folder,
+        "S3: the folder IS the output folder (§01 §1)"
+    );
+    assert_eq!(
+        applied.project.sources.len(),
+        2,
+        "both sources carried over"
+    );
+    assert_eq!(
+        applied.dropped,
+        Vec::<String>::new(),
+        "nothing missing, nothing dropped"
+    );
     // The rest of the apply list came along with the loaded project unchanged.
     assert_eq!(applied.project.interval, 2.5, "S3: interval");
     assert_eq!(applied.project.language, "de", "S3: language");
-    assert!(
-        applied.project.reference_sources,
-        "S3: the reference flag"
-    );
+    assert!(applied.project.reference_sources, "S3: the reference flag");
     assert!(!applied.project.no_narration, "S3: the narration flag");
     assert_eq!(
-        applied.project.context,
-        "a lecture opened from elsewhere",
+        applied.project.context, "a lecture opened from elsewhere",
         "S3: context"
     );
 }
@@ -114,11 +128,18 @@ fn f0_9_s2_an_old_single_file_project_is_refused_by_name() {
 
     let choice = open_project::classify(&file, |path| path.is_file());
     match choice {
-        Choice::NotAFolder { target, log, status } => {
+        Choice::NotAFolder {
+            target,
+            log,
+            status,
+        } => {
             assert_eq!(target, file);
             assert_eq!(
                 log,
-                format!("!!! {} is an old single-file project -- not supported", file.display()),
+                format!(
+                    "!!! {} is an old single-file project -- not supported",
+                    file.display()
+                ),
                 "the spec's literal wording, `!!!` prefix and double hyphen included"
             );
             assert_eq!(status, NOT_A_PROJECT);
@@ -161,7 +182,10 @@ fn f0_9_s4_a_folder_without_a_project_file_fails_generically() {
         .expect_err("a folder with no naivepost.json cannot open");
 
     assert_eq!(failure.status, CANNOT_OPEN);
-    assert_eq!(failure.status, "could not open that project \u{2014} see log", "em dash");
+    assert_eq!(
+        failure.status, "could not open that project \u{2014} see log",
+        "em dash"
+    );
     assert!(
         !failure.log.contains("single-file"),
         "an ordinary folder must not be called an old single-file project: {}",
@@ -180,12 +204,24 @@ fn f0_9_s3_a_missing_source_is_dropped_with_one_line_each() {
 
     let applied = open_project::apply(&folder, |path| path.exists()).expect("opens");
 
-    assert_eq!(applied.dropped, vec!["project:sources/gone.mkv".to_string()]);
-    assert_eq!(applied.project.sources.len(), 1, "only the file that exists is kept");
+    assert_eq!(
+        applied.dropped,
+        vec!["project:sources/gone.mkv".to_string()]
+    );
+    assert_eq!(
+        applied.project.sources.len(),
+        1,
+        "only the file that exists is kept"
+    );
     assert_eq!(applied.project.sources[0].path, "project:sources/keep.mkv");
 
-    let complaint = "!!! project:sources/gone.mkv is not there any more -- dropped from the session";
-    let hits: Vec<_> = applied.lines.iter().filter(|line| *line == complaint).collect();
+    let complaint =
+        "!!! project:sources/gone.mkv is not there any more -- dropped from the session";
+    let hits: Vec<_> = applied
+        .lines
+        .iter()
+        .filter(|line| *line == complaint)
+        .collect();
     assert_eq!(hits.len(), 1, "said once, not twice: {:?}", applied.lines);
 
     // And the paths were settled anyway — the "FIRST" part of S3 holds even when a later step logs.
@@ -201,7 +237,11 @@ fn f0_9_s3_an_exists_closure_of_true_drops_nothing() {
     let folder = project_folder(&root.join("eth.naivepost"), TWO_SOURCES, &[]);
 
     let applied = open_project::apply(&folder, |_| true).expect("opens");
-    assert_eq!(applied.project.sources.len(), 2, "the fake says both are present");
+    assert_eq!(
+        applied.project.sources.len(),
+        2,
+        "the fake says both are present"
+    );
     assert!(applied.dropped.is_empty(), "{:?}", applied.dropped);
 
     // The mirror: a closure answering false drops every source, each named once.
@@ -246,7 +286,11 @@ fn f0_9_s3_the_drop_line_is_the_spec_literal_once_per_missing_file() {
         applied.lines
     );
     assert_eq!(
-        applied.lines.iter().filter(|line| line.contains("is not there any more")).count(),
+        applied
+            .lines
+            .iter()
+            .filter(|line| line.contains("is not there any more"))
+            .count(),
         2,
         "each missing file once, and nothing else said: {:?}",
         applied.lines
@@ -256,7 +300,11 @@ fn f0_9_s3_the_drop_line_is_the_spec_literal_once_per_missing_file() {
         literal,
         "the helper spells the spec's sentence"
     );
-    assert_eq!(applied.project.sources.len(), 1, "only the present file survives");
+    assert_eq!(
+        applied.project.sources.len(),
+        1,
+        "only the present file survives"
+    );
 }
 
 #[test]
@@ -269,7 +317,11 @@ fn f0_9_s3_a_launch_reopen_says_the_dropped_source() {
 
     let (project, lines) = naivepost::ui::launch::load_for_launch(&folder);
 
-    assert_eq!(project.sources.len(), 1, "the gone file is out of the opened session");
+    assert_eq!(
+        project.sources.len(),
+        1,
+        "the gone file is out of the opened session"
+    );
     assert_eq!(
         lines
             .iter()
@@ -304,7 +356,11 @@ fn f0_9_s4_unreadable_project_json_refuses_and_leaves_the_session_where_it_was()
 
     assert_eq!(failure.status, CANNOT_OPEN);
     assert!(failure.log.starts_with("!!! "), "{}", failure.log);
-    assert!(failure.log.len() > 4, "the load's own reason travels behind the prefix: {}", failure.log);
+    assert!(
+        failure.log.len() > 4,
+        "the load's own reason travels behind the prefix: {}",
+        failure.log
+    );
 
     // The previously opened session is byte-for-byte what it was: still one folder, still its own
     // root and out. An open that failed rewrote nothing.
@@ -327,13 +383,22 @@ fn f0_9_s4_remembering_a_project_keys_it_by_root() {
     let folder = project_folder(&root.join("eth.naivepost"), "{}", &[]);
     let mut projects: BTreeMap<String, String> = BTreeMap::new();
 
-    let remembered = open_project::remember(&mut projects, &root, &open_project::project_file_in(&folder));
+    let remembered = open_project::remember(
+        &mut projects,
+        &root,
+        &open_project::project_file_in(&folder),
+    );
 
     assert_eq!(remembered.root, root.display().to_string());
-    assert_eq!(remembered.file, folder.join(PROJECT_FILE).display().to_string());
+    assert_eq!(
+        remembered.file,
+        folder.join(PROJECT_FILE).display().to_string()
+    );
     assert_eq!(projects.len(), 1, "one entry for one root");
     assert_eq!(
-        projects.get(&root.display().to_string()).map(String::as_str),
+        projects
+            .get(&root.display().to_string())
+            .map(String::as_str),
         Some(remembered.file.as_str()),
         "looked up by root, it answers with the project file"
     );
@@ -352,7 +417,9 @@ fn f0_9_s4_reopening_the_same_root_replaces_rather_than_duplicates() {
 
     assert_eq!(projects.len(), 1, "replaced, not stacked");
     assert_eq!(
-        projects.get(&root.display().to_string()).map(String::as_str),
+        projects
+            .get(&root.display().to_string())
+            .map(String::as_str),
         Some(second.join(PROJECT_FILE).display().to_string().as_str()),
         "the newest open wins"
     );
@@ -380,13 +447,19 @@ fn f0_9_s4_finish_moves_the_old_step_folders_and_says_so() {
         migration.lines
     );
     assert!(
-        migration.lines.iter().any(|line| line.starts_with(">>> moved step1/ to ")),
+        migration
+            .lines
+            .iter()
+            .any(|line| line.starts_with(">>> moved step1/ to ")),
         "{:?}",
         migration.lines
     );
     assert!(migration.failures.is_empty(), "{:?}", migration.failures);
     // The old names are gone from disk.
-    assert!(!folder.join("step1").exists(), "step1/ became a named folder");
+    assert!(
+        !folder.join("step1").exists(),
+        "step1/ became a named folder"
+    );
 }
 
 #[test]

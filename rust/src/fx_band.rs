@@ -93,7 +93,14 @@ fn is_band_drag(travel_px: f64) -> bool {
 /// between a click (open the form) and a drag (pick it up), through [`cut_trim::is_click`], which is the same
 /// between a click (open the form) and a drag (pick it up). `grab` is carried into the
 /// `Hold` so the caller knows whether to slide or resize without asking the geometry again.
-pub fn press_band(t: f64, width_px: f64, travel_px: f64, over_kill: bool, lane_hit: bool, grab: Option<bool>) -> Press {
+pub fn press_band(
+    t: f64,
+    width_px: f64,
+    travel_px: f64,
+    over_kill: bool,
+    lane_hit: bool,
+    grab: Option<bool>,
+) -> Press {
     if over_kill && kill_open(width_px) {
         return Press::Kill;
     }
@@ -214,7 +221,10 @@ pub fn refind(fx: &[Fx], kind: &str, t: f64) -> Option<usize> {
 /// The `form_snapshot` argument exists ONLY to make the rule visible in a test and at the call site — whatever it
 /// holds, the answer comes off `live`. A form that redrew from its own earlier copy would happily overwrite a
 /// box someone moved since it opened, which is the exact mistake this clause forbids.
-pub fn live_box(live: &Fx, _form_snapshot: Option<(f64, f64, f64, f64)>) -> (Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
+pub fn live_box(
+    live: &Fx,
+    _form_snapshot: Option<(f64, f64, f64, f64)>,
+) -> (Option<f64>, Option<f64>, Option<f64>, Option<f64>) {
     (live.cx, live.cy, live.wf, live.hf)
 }
 

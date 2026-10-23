@@ -56,7 +56,10 @@ pub struct Reply {
 
 impl Reply {
     pub fn json(status: u16, body: &str) -> Reply {
-        Reply { status, body: body.as_bytes().to_vec() }
+        Reply {
+            status,
+            body: body.as_bytes().to_vec(),
+        }
     }
 }
 
@@ -79,8 +82,14 @@ impl Script {
                 200,
                 r#"{"data":[{"id":"index-tts2","family":"index_tts2","task":"clon"}]}"#,
             )],
-            upload: vec![Reply::json(200, r#"{"path":"/tmp/uploaded/voice_ref.wav"}"#)],
-            speech: vec![Reply { status: 200, body: wav_bytes(2400) }],
+            upload: vec![Reply::json(
+                200,
+                r#"{"path":"/tmp/uploaded/voice_ref.wav"}"#,
+            )],
+            speech: vec![Reply {
+                status: 200,
+                body: wav_bytes(2400),
+            }],
         }
     }
 
@@ -337,7 +346,12 @@ pub fn line(emotion: &str) -> Entry {
 /// Speak one line through the program's OWN legs (`speak_leg::speak`): health asked, reference
 /// uploaded, speech posted, take filed. Nothing injected. `tag` varies the words so two lines of the
 /// same emotion get different keys and land on different takes.
-pub fn speak_tagged(fixture: &Fixture, emotion: &str, language: &str, tag: &str) -> naivepost::narrate_tts::Outcome {
+pub fn speak_tagged(
+    fixture: &Fixture,
+    emotion: &str,
+    language: &str,
+    tag: &str,
+) -> naivepost::narrate_tts::Outcome {
     let entry = Entry {
         text: format!("The chain moved to proof of stake. ({tag})"),
         ..line(emotion)
@@ -404,13 +418,7 @@ pub const ITEM: &str = "f4_4";
 /// Every step id of this item, so a scenario can name which step it covers without restating the
 /// prefix and a reader can grep one file for the whole set.
 pub const STEPS: [&str; 7] = [
-    "f4_4_s1",
-    "f4_4_s2",
-    "f4_4_s3",
-    "f4_4_s4",
-    "f4_4_s5",
-    "f4_4_s6",
-    "f4_4_s7",
+    "f4_4_s1", "f4_4_s2", "f4_4_s3", "f4_4_s4", "f4_4_s5", "f4_4_s6", "f4_4_s7",
 ];
 
 /// Read a file the scenario wrote.

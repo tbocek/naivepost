@@ -8,22 +8,30 @@
 
 use std::collections::BTreeMap;
 
-use naivepost::narration::Entry;
 use crate::common;
 use common::entry_span_default as entry;
 use common::produce_row as row;
+use naivepost::narration::Entry;
 use naivepost::produce_subtitles as sub;
 
 const ITEM: &str = "F5.4";
 
 fn word(text: &str, s: f64, e: f64) -> sub::Word {
-    sub::Word { text: text.to_string(), s, e }
+    sub::Word {
+        text: text.to_string(),
+        s,
+        e,
+    }
 }
 
 fn cue(s: f64, e: f64, text: &str) -> sub::Cue {
-    sub::Cue { s, e, text: text.to_string(), pos: String::new() }
+    sub::Cue {
+        s,
+        e,
+        text: text.to_string(),
+        pos: String::new(),
+    }
 }
-
 
 fn entry_at(s: f64, e: f64, text: &str, pos: &str) -> Entry {
     let mut line = entry(s, e, text);
@@ -33,9 +41,10 @@ fn entry_at(s: f64, e: f64, text: &str, pos: &str) -> Entry {
 
 /// A short word at a natural rhythm: no break, well under two rows.
 fn steady(count: usize) -> Vec<sub::Word> {
-    (0..count).map(|i| word(&format!("w{i}"), i as f64 * 0.3, i as f64 * 0.3 + 0.2)).collect()
+    (0..count)
+        .map(|i| word(&format!("w{i}"), i as f64 * 0.3, i as f64 * 0.3 + 0.2))
+        .collect()
 }
-
 
 // ---- S1: what a clip contributes --------------------------------------------------
 
@@ -48,8 +57,14 @@ fn f5_4_s1_narration_lines_beat_their_own_speech() {
     let words = steady(4);
     let cues = sub::cues(sub::Source::Footage, &lines, &words, 1.0);
     assert_eq!(cues.len(), 1);
-    assert_eq!((cues[0].s, cues[0].e, cues[0].text.as_str()), (1.0, 3.0, "what you wrote"));
-    assert_eq!(cues[0].pos, "top", "the placement the line asked for travels with it");
+    assert_eq!(
+        (cues[0].s, cues[0].e, cues[0].text.as_str()),
+        (1.0, 3.0, "what you wrote")
+    );
+    assert_eq!(
+        cues[0].pos, "top",
+        "the placement the line asked for travels with it"
+    );
 
     // No lines: footage captions its own speech.
     let spoken = sub::cues(sub::Source::Footage, &[], &words, 1.0);
@@ -81,8 +96,13 @@ fn f5_4_s1_inserts_freezes_and_silent_video_give_no_cues() {
             sub::cues(source, &[], &words, 1.0).is_empty(),
             "{source:?} contributes no cues however many words it carries"
         );
-        let reason = source.no_cues_reason().unwrap_or_else(|| panic!("{source:?} says why"));
-        assert!(reason.contains(expected), "{reason} should name the {expected}");
+        let reason = source
+            .no_cues_reason()
+            .unwrap_or_else(|| panic!("{source:?} says why"));
+        assert!(
+            reason.contains(expected),
+            "{reason} should name the {expected}"
+        );
     }
     // Footage has nothing to explain: its speech is worth reading.
     assert_eq!(sub::Source::Footage.no_cues_reason(), None);
@@ -106,7 +126,10 @@ fn f5_4_s1_a_break_of_six_tenths_ends_a_cue() {
     let exact = vec![word("one", 0.0, 1.0), word("two", 1.6, 2.0)];
     let cues = sub::word_cues(&exact, 1.0);
     assert_eq!(cues.len(), 2, "{cues:?}");
-    assert_eq!((cues[0].text.as_str(), cues[1].text.as_str()), ("one", "two"));
+    assert_eq!(
+        (cues[0].text.as_str(), cues[1].text.as_str()),
+        ("one", "two")
+    );
 
     // The break is measured from the previous word's end, not its start.
     let slow = vec![word("long", 0.0, 1.5), word("word", 2.0, 2.2)];
@@ -135,8 +158,16 @@ fn f5_4_s1_two_rows_of_42_characters_end_a_cue() {
 
     // And whatever a cue holds, `wrap` never leaves it on more than two rows.
     for cue in sub::word_cues(&steady(200), 1.0) {
-        assert!(cue.text.lines().count() <= 2 || !cue.text.contains('\n'), "{}", cue.text);
-        assert!(sub::wrap(&cue.text).lines().count() <= 2, "\n{}", sub::wrap(&cue.text));
+        assert!(
+            cue.text.lines().count() <= 2 || !cue.text.contains('\n'),
+            "{}",
+            cue.text
+        );
+        assert!(
+            sub::wrap(&cue.text).lines().count() <= 2,
+            "\n{}",
+            sub::wrap(&cue.text)
+        );
     }
 }
 
@@ -151,16 +182,28 @@ fn f5_4_s1_six_seconds_on_screen_end_a_cue() {
     let cues = sub::word_cues(&words, 1.0);
     assert!(cues.len() > 1, "a run of 40 words cannot be one cue");
     for cue in &cues {
-        assert!(cue.e - cue.s <= sub::MAX_SECONDS + 1e-9, "cue up for {} s", cue.e - cue.s);
+        assert!(
+            cue.e - cue.s <= sub::MAX_SECONDS + 1e-9,
+            "cue up for {} s",
+            cue.e - cue.s
+        );
     }
 
     // A steady run of words, so the ceiling and not the breath between two words is what cuts: no cue is up
     // for more than six seconds, and cues get close to it rather than breaking early.
     // Eighty words at this rhythm run twenty seconds: the ceiling, not the breath, is what cuts them.
     let cues = sub::word_cues(&steady(80), 1.0);
-    assert!(cues.len() > 2, "{:?}", cues.iter().map(|c| c.e - c.s).collect::<Vec<f64>>());
+    assert!(
+        cues.len() > 2,
+        "{:?}",
+        cues.iter().map(|c| c.e - c.s).collect::<Vec<f64>>()
+    );
     for cue in &cues {
-        assert!(cue.e - cue.s <= sub::MAX_SECONDS + 1e-9, "up for {} s", cue.e - cue.s);
+        assert!(
+            cue.e - cue.s <= sub::MAX_SECONDS + 1e-9,
+            "up for {} s",
+            cue.e - cue.s
+        );
     }
 
     // The ceiling is counted on the PRODUCED clock: these same eighty words at 2× are only ten seconds of
@@ -168,12 +211,19 @@ fn f5_4_s1_six_seconds_on_screen_end_a_cue() {
     let sped = sub::word_cues(&steady(80), 2.0);
     assert!(sped[0].text.split_whitespace().count() > cues[0].text.split_whitespace().count());
     for cue in &sped {
-        assert!(cue.e - cue.s <= 2.0 * sub::MAX_SECONDS + 1e-9, "clip seconds at 2x: {}", cue.e - cue.s);
+        assert!(
+            cue.e - cue.s <= 2.0 * sub::MAX_SECONDS + 1e-9,
+            "clip seconds at 2x: {}",
+            cue.e - cue.s
+        );
     }
 
     // A rate of nought is not a clock: a stopped clip runs on at 1× rather than ending every cue at once.
     let stopped = vec![word("one", 0.0, 1.0), word("two", 11.9, 12.0)];
-    assert_eq!(sub::word_cues(&stopped, 0.0).len(), sub::word_cues(&stopped, 1.0).len());
+    assert_eq!(
+        sub::word_cues(&stopped, 0.0).len(),
+        sub::word_cues(&stopped, 1.0).len()
+    );
 }
 
 #[test]
@@ -181,7 +231,11 @@ fn f5_4_s1_an_empty_cue_extends_the_previous() {
     assert_eq!(ITEM, "F5.4");
     // A word respelled into the one in front, or a line deleted on purpose: it holds seconds and says
     // nothing, so it lengthens what is already up instead of flashing an empty caption.
-    let mut cues = vec![cue(0.0, 1.0, "the words"), cue(0.0, 3.0, ""), cue(0.0, 4.0, "   ")];
+    let mut cues = vec![
+        cue(0.0, 1.0, "the words"),
+        cue(0.0, 3.0, ""),
+        cue(0.0, 4.0, "   "),
+    ];
     sub::extend_previous(&mut cues);
     assert_eq!(cues.len(), 1, "{cues:?}");
     assert_eq!((cues[0].s, cues[0].e), (0.0, 4.0));
@@ -207,7 +261,11 @@ fn f5_4_s1_an_empty_cue_extends_the_previous() {
     let cues = sub::word_cues(&[word("said", 0.0, 0.4), word("", 0.5, 3.0)], 1.0);
     assert_eq!(cues.len(), 1, "{cues:?}");
     assert_eq!(cues[0].text, "said");
-    assert!(cues[0].e > 0.4, "the folded word's seconds are held: {:?}", cues[0]);
+    assert!(
+        cues[0].e > 0.4,
+        "the folded word's seconds are held: {:?}",
+        cues[0]
+    );
 }
 
 // ---- S2: the produced clock --------------------------------------------------------
@@ -232,7 +290,12 @@ fn f5_4_s2_the_produced_clock_moves_every_cue() {
     let last = sub::on_clock(&cues, 61.5, 1.0);
     assert_eq!(last[1].s, 63.5);
     assert_eq!(last[1].text, "second");
-    let placed = sub::Cue { s: 0.0, e: 1.0, text: "top line".into(), pos: "top".into() };
+    let placed = sub::Cue {
+        s: 0.0,
+        e: 1.0,
+        text: "top line".into(),
+        pos: "top".into(),
+    };
     assert_eq!(sub::on_clock(&[placed], 5.0, 1.0)[0].pos, "top");
 }
 
@@ -261,7 +324,10 @@ fn f5_4_s2_a_gap_under_1_2_s_is_held() {
     assert_eq!(sub::HOLD_SECONDS, 1.2);
 
     let held = sub::tidy(&[cue(0.0, 5.0, "first"), cue(6.0, 12.0, "second")]);
-    assert_eq!(held[0].e, 6.0, "the caption already up is held across the gap");
+    assert_eq!(
+        held[0].e, 6.0,
+        "the caption already up is held across the gap"
+    );
 
     // A real pause stays a pause: nothing is held over four seconds of silence.
     let broken = sub::tidy(&[cue(0.0, 5.0, "first"), cue(9.0, 12.0, "second")]);
@@ -280,20 +346,39 @@ fn f5_4_s2_a_cue_under_0_8_s_folds_into_the_next() {
     assert_eq!(sub::MIN_SECONDS, 0.8);
 
     // Folded into what follows: its words join with a newline and its start is taken.
-    let folded = sub::tidy(&[cue(2.0, 10.0, "first"), cue(10.4, 10.7, "brief"), cue(20.0, 30.0, "next")]);
+    let folded = sub::tidy(&[
+        cue(2.0, 10.0, "first"),
+        cue(10.4, 10.7, "brief"),
+        cue(20.0, 30.0, "next"),
+    ]);
     assert_eq!(folded.len(), 2, "{folded:?}");
-    assert_eq!((folded[1].s, folded[1].text.as_str()), (10.4, "brief\nnext"));
+    assert_eq!(
+        (folded[1].s, folded[1].text.as_str()),
+        (10.4, "brief\nnext")
+    );
 
     // The last cue has nothing after it to fold into, so it is given the time a reader needs instead.
     let last = sub::tidy(&[cue(0.0, 10.0, "first"), cue(20.0, 20.3, "brief")]);
-    assert_eq!(last.last().unwrap().text, "brief", "the last cue keeps its own words: {:?}", last.last());
+    assert_eq!(
+        last.last().unwrap().text,
+        "brief",
+        "the last cue keeps its own words: {:?}",
+        last.last()
+    );
     let tail = last.last().unwrap();
-    assert!(tail.e - tail.s >= sub::MIN_SECONDS - 1e-9, "lengthened to the floor: {tail:?}");
+    assert!(
+        tail.e - tail.s >= sub::MIN_SECONDS - 1e-9,
+        "lengthened to the floor: {tail:?}"
+    );
 
     // A single short cue is lengthened too — there is nothing else to do with it.
     let only = sub::tidy(&[cue(0.0, 0.2, "hi")]);
     assert_eq!(only.len(), 1);
-    assert!((only[0].e - only[0].s - sub::MIN_SECONDS).abs() < 1e-9, "{:?}", only[0]);
+    assert!(
+        (only[0].e - only[0].s - sub::MIN_SECONDS).abs() < 1e-9,
+        "{:?}",
+        only[0]
+    );
 }
 
 #[test]
@@ -301,14 +386,19 @@ fn f5_4_s2_wrapped_at_42_and_never_more_than_2_rows() {
     assert_eq!(ITEM, "F5.4");
     // Short text is left alone entirely, and so is text that already holds a newline.
     assert_eq!(sub::wrap("one two three"), "one two three");
-    assert_eq!(sub::wrap("the first row\nthe second"), "the first row\nthe second");
+    assert_eq!(
+        sub::wrap("the first row\nthe second"),
+        "the first row\nthe second"
+    );
     assert_eq!(sub::wrap("short\nrow\nrows"), "short\nrow\nrows");
 
     // Long text breaks at a word boundary, every row inside the width, never more than two rows.
     // Text that fits one row is left alone; text that needs two rows breaks at a word boundary with every
     // row inside the width.
     let long = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma";
-    assert!(long.split_whitespace().all(|w| w.chars().count() <= sub::ROW_CHARS));
+    assert!(long
+        .split_whitespace()
+        .all(|w| w.chars().count() <= sub::ROW_CHARS));
     let wrapped = sub::wrap(long);
     assert_eq!(wrapped.lines().count(), 2, "{wrapped}");
     let rows: Vec<&str> = wrapped.lines().collect();
@@ -321,7 +411,10 @@ fn f5_4_s2_wrapped_at_42_and_never_more_than_2_rows() {
     }
     // No word was cut: every word of the input is still whole somewhere in the output.
     for word in long.split_whitespace() {
-        assert!(wrapped.split_whitespace().any(|part| part == word), "{word} was broken");
+        assert!(
+            wrapped.split_whitespace().any(|part| part == word),
+            "{word} was broken"
+        );
     }
 
     // A word that is itself longer than a row gets its own row rather than being cut in half, and the text
@@ -330,7 +423,10 @@ fn f5_4_s2_wrapped_at_42_and_never_more_than_2_rows() {
     let giant = "z".repeat(60);
     let wrapped = sub::wrap(&format!("aa {giant} bb"));
     assert!(wrapped.lines().count() <= 2, "{wrapped}");
-    assert!(wrapped.split_whitespace().any(|part| part == giant), "{wrapped}");
+    assert!(
+        wrapped.split_whitespace().any(|part| part == giant),
+        "{wrapped}"
+    );
 }
 
 #[test]
@@ -339,23 +435,42 @@ fn f5_4_s2_top_and_centre_carry_their_tag() {
     // The accepted spellings are narrate_pass's, so a model's answer and a person's choice agree here.
     assert_eq!(sub::placement("top"), Some(r"{\an8}"));
     for centre in ["center", "centre", "middle", "Centre", " TOP "] {
-        let want = if centre.trim().eq_ignore_ascii_case("top") { r"{\an8}" } else { r"{\an5}" };
+        let want = if centre.trim().eq_ignore_ascii_case("top") {
+            r"{\an8}"
+        } else {
+            r"{\an5}"
+        };
         assert_eq!(sub::placement(centre), Some(want), "{centre}");
     }
     for bottom in ["", "bottom", "somewhere else"] {
-        assert_eq!(sub::placement(bottom), None, "{bottom} is where a caption sits anyway");
+        assert_eq!(
+            sub::placement(bottom),
+            None,
+            "{bottom} is where a caption sits anyway"
+        );
     }
 
     // Both cue sheets: the timecode format each format uses, and the tag on the text line.
-    let cues = [sub::Cue { s: 1.5, e: 3.25, text: "the words".into(), pos: "top".into() }];
+    let cues = [sub::Cue {
+        s: 1.5,
+        e: 3.25,
+        text: "the words".into(),
+        pos: "top".into(),
+    }];
     let srt = sub::srt_text(&cues);
     assert!(srt.contains("00:00:01,500 --> 00:00:03,250"), "{srt}");
-    assert!(srt.contains(r"{\an8}the words"), "the tag leads the text line: {srt}");
+    assert!(
+        srt.contains(r"{\an8}the words"),
+        "the tag leads the text line: {srt}"
+    );
     assert!(srt.starts_with("1\n"), "SubRip numbers its cues: {srt}");
 
     let vtt = sub::vtt_text(&cues);
     assert!(vtt.starts_with("WEBVTT\n\n"), "{vtt}");
-    assert!(vtt.contains("00:00:01.500 --> 00:00:03.250"), "a vtt timecode uses a dot: {vtt}");
+    assert!(
+        vtt.contains("00:00:01.500 --> 00:00:03.250"),
+        "a vtt timecode uses a dot: {vtt}"
+    );
     assert!(!vtt.contains(','), "{vtt}");
 
     // A bottom cue carries no tag, and an empty track writes a header and nothing else.
@@ -444,7 +559,10 @@ fn f5_4_s3_translate_line_accepts_a_numbered_answer_and_refuses_two_kinds() {
     let mut second = sub::Batch::new((150, 152));
     assert!(second.translate_line(0, "nought").is_err());
     assert!(second.translate_line(150, "einhundertfunfzig").is_err());
-    assert_eq!(second.translate_line(151, "eins einundfunfzig").ok(), Some(()));
+    assert_eq!(
+        second.translate_line(151, "eins einundfunfzig").ok(),
+        Some(())
+    );
     assert_eq!(second.missing(), vec![152]);
 }
 
@@ -468,7 +586,10 @@ fn f5_4_s3_missing_numbers_are_asked_once_more_with_their_original_numbers() {
     assert!(ask.contains("151\tline 151"), "{ask}");
     assert!(ask.contains("153\tline 153"), "{ask}");
     // Only the missing ones, and none of what already arrived.
-    assert!(!ask.contains("152"), "the line that answered is not asked for again: {ask}");
+    assert!(
+        !ask.contains("152"),
+        "the line that answered is not asked for again: {ask}"
+    );
     assert!(ask.contains("their numbers do not start at 1"), "{ask}");
 
     // Answered, and the batch is complete.
@@ -496,7 +617,9 @@ fn f5_4_s3_a_line_still_missing_ships_the_original_with_a_warning() {
     assert_eq!(merge.lines[3], "line 4");
     assert_eq!(merge.still_missing, vec![2, 4]);
 
-    let warning = merge.warning.expect("the log names the lines still in the other language");
+    let warning = merge
+        .warning
+        .expect("the log names the lines still in the other language");
     assert!(warning.starts_with("!!!"), "{warning}");
     assert!(warning.contains("German"), "{warning}");
     assert!(warning.contains("2") && warning.contains("4"), "{warning}");
@@ -519,7 +642,10 @@ fn f5_4_s3_a_line_still_missing_ships_the_original_with_a_warning() {
 fn f5_4_s3_only_a_complete_answer_is_cached() {
     assert_eq!(ITEM, "F5.4");
     assert!(sub::cached(true));
-    assert!(!sub::cached(false), "a partial answer cached is a partial answer forever");
+    assert!(
+        !sub::cached(false),
+        "a partial answer cached is a partial answer forever"
+    );
 
     // One line out of three is not an answer worth keeping: the next run must be free to ask again.
     let mut batch = sub::Batch::new((0, 3));
@@ -550,13 +676,23 @@ fn f5_4_s3_the_placement_tag_never_travels_and_never_comes_back() {
     assert_eq!(ITEM, "F5.4");
     // §3.10's two must-fixes. The prototype sent `{\an8}` into the translation as a word and never checked it
     // came back, so a model that dropped it silently lost that caption's placement.
-    let top = sub::Cue { s: 0.0, e: 1.0, text: "the words".into(), pos: "top".into() };
+    let top = sub::Cue {
+        s: 0.0,
+        e: 1.0,
+        text: "the words".into(),
+        pos: "top".into(),
+    };
     let sent = sub::sent_text(&top);
     assert!(!sent.contains('{'), "{sent}");
     assert_eq!(sent, "the words");
 
     // A cue whose text still carries a tag from an older file loses it on the way out too.
-    let tagged = sub::Cue { s: 0.0, e: 1.0, text: format!("{}the words", r"{\an8}"), pos: "top".into() };
+    let tagged = sub::Cue {
+        s: 0.0,
+        e: 1.0,
+        text: format!("{}the words", r"{\an8}"),
+        pos: "top".into(),
+    };
     assert_eq!(sub::sent_text(&tagged), "the words");
 
     // Dropped by the model: the app puts its own placement back.
@@ -567,7 +703,11 @@ fn f5_4_s3_the_placement_tag_never_travels_and_never_comes_back() {
     // Handed back as a word: stripped and reported, never trusted — a model told to translate is not a model
     // told to lay out.
     let (text, carried) = sub::keep_placement(&top, &format!("{}die worte", r"{\an5}"));
-    assert_eq!(text, format!("{}die worte", r"{\an8}"), "the original placement wins");
+    assert_eq!(
+        text,
+        format!("{}die worte", r"{\an8}"),
+        "the original placement wins"
+    );
     assert!(carried);
 
     // A bottom cue asks for no tag and gets none, even if the model volunteered one.
@@ -588,7 +728,10 @@ fn f5_4_s3_the_models_own_line_breaks_survive() {
     // and moves a break the model chose — usually into the middle of a phrase it split on purpose.
     let translated = "der erste satz\nder zweite";
     assert_eq!(sub::keep_breaks(translated), translated);
-    assert!(translated.contains('\n'), "the answer is two rows: {translated}");
+    assert!(
+        translated.contains('\n'),
+        "the answer is two rows: {translated}"
+    );
 
     // Filed as the line it is, still two rows — even though each row is shorter than the width and a re-wrap
     // would have joined them.
@@ -601,7 +744,10 @@ fn f5_4_s3_the_models_own_line_breaks_survive() {
     let mut batch = sub::Batch::new((0, 1));
     batch.translate_line(1, translated).unwrap();
     assert_eq!(batch.answers()[&1], translated);
-    assert!(sub::wrap(translated) == translated, "a wrapped cue is never re-wrapped");
+    assert!(
+        sub::wrap(translated) == translated,
+        "a wrapped cue is never re-wrapped"
+    );
 
     // The source text going the other way IS wrapped once, by S2 — that is the app's own line.
     assert_eq!(sub::wrap("one two three four").lines().count(), 1);

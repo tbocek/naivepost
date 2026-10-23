@@ -16,16 +16,14 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
-use crate::{
-    clock, cut, cut_fold, cut_screen, cut_trim, fx_lane, layout, timeline, tools,
-};
+use crate::{clock, cut, cut_fold, cut_screen, cut_trim, fx_lane, layout, timeline, tools};
 
 /// The band's tints come from [`cut_colours`], catalogued by `params::cut()` under `cut.colour.*`: §6 lists
 /// "colours" among the values a tuning pass may move, so no drawing helper holds one of its own any more.
 use crate::ui::cut_colours::{
-    EDGE_AMBER, GROUND, INSERT_VIOLET, JOIN_WASH, KEPT_BORDER, KEPT_TINT, LANE_BORDER, LANE_GROUND,
-    GUTTER_EDGE, GUTTER_GROUND, MARK_IN_GREEN, MARK_OUT_RED, OVER_EATEN, PLAYHEAD_RGB, RULER_INK,
-    SELECTION_BLUE, WATCH_OUTLINE,
+    EDGE_AMBER, GROUND, GUTTER_EDGE, GUTTER_GROUND, INSERT_VIOLET, JOIN_WASH, KEPT_BORDER,
+    KEPT_TINT, LANE_BORDER, LANE_GROUND, MARK_IN_GREEN, MARK_OUT_RED, OVER_EATEN, PLAYHEAD_RGB,
+    RULER_INK, SELECTION_BLUE, WATCH_OUTLINE,
 };
 /// §1's playhead width: "2 px line on its own layer". Its colour is [`PLAYHEAD_RGB`].
 pub const PLAYHEAD_PX: f64 = 2.0;
@@ -54,7 +52,9 @@ pub const ROWS_PITCH_PX: i32 = (THUMB_DEFAULT_PX as i32) + (PICTURE_ROW_EXTRA_PX
 /// least 70 px apart — a label every 30 px would be a grey bar, and every 700 px a ruler with no marks.
 /// Kept here rather than in `cut_screen` because nothing but the painter asks for it.
 pub fn tick_step_seconds(pps: f64) -> f64 {
-    const LADDER: [f64; 11] = [0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0];
+    const LADDER: [f64; 11] = [
+        0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0,
+    ];
     LADDER
         .into_iter()
         .find(|step| step * pps >= 70.0)
@@ -145,7 +145,11 @@ pub fn band_boxes(scene: &Scene) -> Vec<(f64, f64)> {
         .iter()
         .map(|seg| {
             let shift = shift_of_camera(&scene.shift, seg.cam);
-            band_span_px(scene, session_second(seg.s, shift), session_second(seg.e, shift))
+            band_span_px(
+                scene,
+                session_second(seg.s, shift),
+                session_second(seg.e, shift),
+            )
         })
         .collect()
 }
@@ -280,7 +284,13 @@ pub fn install(
         // under (a window that has never been laid out, which is every headless test).
         BAND_WIDTH_PX,
     );
-    attach(&band.surface, &band.playhead, &band.layers, with_thumbs, THUMB_DEFAULT_PX);
+    attach(
+        &band.surface,
+        &band.playhead,
+        &band.layers,
+        with_thumbs,
+        THUMB_DEFAULT_PX,
+    );
     // §1's band grows with every row an edit adds; the page's own redraw doors find these surfaces again
     // through [`band_of`], so nothing has to be remembered here.
     // §1's tape also WIDENS with the page: the surface's draw is clipped to its allocation, so the first frame
@@ -344,7 +354,13 @@ pub fn attach(
     surface.set_draw_func(move |_, cr, width, height| {
         let held = for_band();
         fit_band_height(&overlay, &band_area, &held);
-        paint_at(cr, &held, width.max(1) as f64, height.max(1) as f64, thumb_px);
+        paint_at(
+            cr,
+            &held,
+            width.max(1) as f64,
+            height.max(1) as f64,
+            thumb_px,
+        );
     });
     let for_head = scene.clone();
     playhead.set_draw_func(move |_, cr, _width, height| {
@@ -530,8 +546,12 @@ pub fn fit_band_height(layers: &gtk::Overlay, band: &gtk::DrawingArea, scene: &S
     // Every other drawing area in the stack — the red line's layer — follows the band's height.
     let held = layers.observe_children();
     for index in 0..held.n_items() {
-        let Some(child) = held.item(index) else { continue };
-        let Ok(area) = child.downcast::<gtk::DrawingArea>() else { continue };
+        let Some(child) = held.item(index) else {
+            continue;
+        };
+        let Ok(area) = child.downcast::<gtk::DrawingArea>() else {
+            continue;
+        };
         if area != *band {
             area.set_size_request(-1, tall);
         }
@@ -580,7 +600,15 @@ fn draw_lane_rows(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
         let _ = cr.fill();
         let (x0, width) = band_span_px(scene, lane.at, lane.at + lane.dur);
         if width > 0.0 {
-            fill(cr, INSERT_VIOLET, x0, top + 2.0, width, rows.row_h - 4.0, 0.75);
+            fill(
+                cr,
+                INSERT_VIOLET,
+                x0,
+                top + 2.0,
+                width,
+                rows.row_h - 4.0,
+                0.75,
+            );
         }
         cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
         cr.set_font_size(9.0);
@@ -824,7 +852,15 @@ fn draw_kept_bars(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
         if b.insert {
             continue;
         }
-        fill(cr, KEPT_TINT, b.x, rows.selection, b.w.max(1.0), SELECTION_BAND_PX, 1.0);
+        fill(
+            cr,
+            KEPT_TINT,
+            b.x,
+            rows.selection,
+            b.w.max(1.0),
+            SELECTION_BAND_PX,
+            1.0,
+        );
     }
     ink(cr, KEPT_BORDER);
     for (x, _, _) in cut_trim::border_positions(&boxes) {
@@ -846,7 +882,6 @@ fn draw_kept_bars(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     }
 }
 
-
 /// The effects lane: one row per overlapping group, each bar in its kind's colour.
 fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     for bar in fx_lane::lane_layout(&scene.fx) {
@@ -860,7 +895,11 @@ fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
         // of this file's own: §A.8 gives every kind something to print on its bar, and a band that only tints
         // cannot show it. Clipped to the bar's painted span so a bar running off the surface paints nothing past
         // the tape.
-        let view = crate::ui::cut_lane_paint::view_for(&scene.fx[bar.index], width.max(1.0), fx_lane::lane_height_px(1));
+        let view = crate::ui::cut_lane_paint::view_for(
+            &scene.fx[bar.index],
+            width.max(1.0),
+            fx_lane::lane_height_px(1),
+        );
         let _ = cr.save();
         cr.rectangle(x0, y, width.max(0.0), fx_lane::lane_height_px(1));
         cr.clip();
@@ -996,7 +1035,15 @@ fn draw_recording_edges(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f6
                 continue;
             }
             for stripe in 0..3i32 {
-                fill(cr, EDGE_AMBER, x + stripe as f64, rows.pictures, 1.0, height, 1.0);
+                fill(
+                    cr,
+                    EDGE_AMBER,
+                    x + stripe as f64,
+                    rows.pictures,
+                    1.0,
+                    height,
+                    1.0,
+                );
             }
         }
     }
@@ -1010,7 +1057,10 @@ fn draw_recording_edges(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f6
 fn draw_join_washes(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     let height = (rows.row_h * scene.row_count.max(1) as f64).max(rows.row_h);
     for (from, to) in crate::cut_play_leg::dimmed(
-        &cut::Cut { segs: scene.segs.clone(), ..Default::default() },
+        &cut::Cut {
+            segs: scene.segs.clone(),
+            ..Default::default()
+        },
         &scene.runs(),
     ) {
         let (x0, width) = band_span_px(scene, from, to);
@@ -1037,15 +1087,7 @@ fn draw_join_washes(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
         if x0 >= tape || x0 + width < 0.0 {
             continue;
         }
-        fill(
-            cr,
-            rose,
-            x0,
-            rows.pictures,
-            width,
-            height,
-            0.35,
-        );
+        fill(cr, rose, x0, rows.pictures, width, height, 0.35);
     }
 }
 
@@ -1070,7 +1112,9 @@ fn draw_watched_row(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
 
 /// The selection: blue with its ends (§1's badge 27). The ✕ is a button in the page, not ink here.
 fn draw_selection(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
-    let Some((from, to)) = scene.selection else { return };
+    let Some((from, to)) = scene.selection else {
+        return;
+    };
     let (x0, width) = band_span_px(scene, from, to);
     if x0 >= tape || x0 + width < 0.0 {
         return;
@@ -1161,9 +1205,25 @@ fn draw_insert_bands(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
         // full row height — or the violet band would sit on footage that is no longer in the cut and the two
         // modes would be indistinguishable on the surface the page actually shows.
         if scene.segs[b.index].is_overwrite_insert() {
-            fill(cr, OVER_EATEN, b.x, rows.pictures, b.w.max(2.0), height, 1.0);
+            fill(
+                cr,
+                OVER_EATEN,
+                b.x,
+                rows.pictures,
+                b.w.max(2.0),
+                height,
+                1.0,
+            );
         }
-        fill(cr, INSERT_VIOLET, b.x, rows.pictures, b.w.max(2.0), height, 0.6);
+        fill(
+            cr,
+            INSERT_VIOLET,
+            b.x,
+            rows.pictures,
+            b.w.max(2.0),
+            height,
+            0.6,
+        );
         if scene.segs[b.index].s == scene.segs[b.index].e {
             // Spliced: four slants say so without needing a colour §1 did not list.
             ink(cr, (0.35, 0.2, 0.5));
@@ -1188,7 +1248,9 @@ fn draw_insert_bands(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
 /// The in/out marks: 3 px lines with flag triangles across the whole band, green in, red out. The marks
 /// ARE the selection's ends, so the flags and the readout cannot disagree (`cut_select::marks`).
 fn draw_in_out_marks(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
-    let Some((from, to)) = scene.selection else { return };
+    let Some((from, to)) = scene.selection else {
+        return;
+    };
     let height = rows.pictures + rows.row_h;
     // No clamp to the tape: `band_x` runs linearly past the last filmed second, so a selection that reaches
     // beyond the recording still shows both of its marks at their own seconds.
@@ -1266,9 +1328,9 @@ pub fn frame_paths(tree: &layout::Tree, base: &str) -> Vec<std::path::PathBuf> {
                 // and lets anything that renders a frame — the snapshot bench, a test fixture — plant
                 // a decodable file under its proper stamp instead of mislabelling PNG bytes `.jpg`.
                 .filter(|path| {
-                    path.file_name().and_then(|n| n.to_str()).is_some_and(|name| {
-                        name.ends_with(".jpg") || name.ends_with(".png")
-                    })
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|name| name.ends_with(".jpg") || name.ends_with(".png"))
                 })
                 .collect()
         })

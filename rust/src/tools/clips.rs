@@ -204,7 +204,9 @@ impl Clips {
             }
         };
         if kind == "volume" && gain == Some(1.0) {
-            return crate::tools::error("a volume gain of 1 changes nothing -- leave the audio alone");
+            return crate::tools::error(
+                "a volume gain of 1 changes nothing -- leave the audio alone",
+            );
         }
         let length = self.clips[at].length;
         let placed = (start.clamp(0.0, length), end.clamp(0.0, length));
@@ -289,7 +291,6 @@ impl Clips {
             None => &[],
         }
     }
-
 }
 
 /// One frame this pass can show, named by the clip and the offset it was asked for.

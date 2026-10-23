@@ -19,13 +19,15 @@ use crate::layout;
 use crate::narrate_data;
 use crate::narrate_details;
 use crate::narrate_off::{self};
-use crate::narrate_run::{self, JOBS, JOB_NARRATION, JOB_SPEAKING, SPEAKING_STATUS, STAGE_THINKING};
-use crate::ui::narrate_run_speak as narrate_speak;
+use crate::narrate_run::{
+    self, JOBS, JOB_NARRATION, JOB_SPEAKING, SPEAKING_STATUS, STAGE_THINKING,
+};
 use crate::narrate_screen;
 use crate::narration::{self, Narration};
-use crate::run;
 use crate::project::Project;
+use crate::run;
 use crate::runqueue;
+use crate::ui::narrate_run_speak as narrate_speak;
 use crate::ui::window as ui;
 
 // --- F4.1 ▶ Write and speak -----------------------------------------------------------------
@@ -132,9 +134,7 @@ pub(crate) fn live_narrate_reply(
             if crate::cancel_leg::cancelled() {
                 return Err("stopped while writing".into());
             }
-            let Some((start, end)) =
-                bounds.get(clip.saturating_sub(1) as usize).copied()
-            else {
+            let Some((start, end)) = bounds.get(clip.saturating_sub(1) as usize).copied() else {
                 continue;
             };
             written.push(narrate_run::Written {
@@ -160,15 +160,14 @@ pub(crate) fn live_narrate_reply(
 ///
 /// Handing this an EMPTY list does not disarm it: the door stores an `Option`, so `&[]` still leaves an
 /// (empty) slow script armed and [`narrate_script_loaded`] keeps answering true.
-pub fn set_narrate_script_slow(
-    reply: &[(u32, f64, &str, &str)],
-    per_clip: std::time::Duration,
-) {
+pub fn set_narrate_script_slow(reply: &[(u32, f64, &str, &str)], per_clip: std::time::Duration) {
     SLOW_NARRATE_SCRIPT.with(|cell| {
         *cell.borrow_mut() = Some((
             reply
                 .iter()
-                .map(|(clip, at, text, emotion)| (*clip, *at, text.to_string(), emotion.to_string()))
+                .map(|(clip, at, text, emotion)| {
+                    (*clip, *at, text.to_string(), emotion.to_string())
+                })
                 .collect(),
             per_clip,
         ))
@@ -186,7 +185,9 @@ pub fn set_narrate_script(reply: &[(u32, f64, &str, &str)]) {
         cell.replace(
             reply
                 .iter()
-                .map(|(clip, at, text, emotion)| (*clip, *at, text.to_string(), emotion.to_string()))
+                .map(|(clip, at, text, emotion)| {
+                    (*clip, *at, text.to_string(), emotion.to_string())
+                })
                 .collect(),
         )
     });
@@ -203,10 +204,7 @@ pub fn narrate_script_loaded() -> bool {
 /// shell's ▶ — come through here, so the two cannot drift apart.
 pub(crate) fn run_narrate_on<FReply>(window: &adw::ApplicationWindow, reply: FReply) -> String
 where
-    FReply: FnMut(
-        &layout::Tree,
-        &[(f64, f64)],
-    ) -> Result<Vec<narrate_run::Written>, String>,
+    FReply: FnMut(&layout::Tree, &[(f64, f64)]) -> Result<Vec<narrate_run::Written>, String>,
 {
     let project = live_project();
     // A bar already holding a run means the press arriving here opened it (the shell's ▶ forwards
@@ -240,7 +238,9 @@ where
 /// Repaint ▶ and ⏹ from the bar's current state after a narrate run closed it, so neither button is
 /// left showing the face of a run that has ended.
 pub(crate) fn repaint_play_button(window: &adw::ApplicationWindow) {
-    let Some(bar) = ui::RUN_BARS.with(|bars| bars.borrow().last().cloned()) else { return };
+    let Some(bar) = ui::RUN_BARS.with(|bars| bars.borrow().last().cloned()) else {
+        return;
+    };
     let drawn = run::controls(&bar.borrow().running, None);
     if let Some(play) = ui::play_button(window) {
         play.set_icon_name(drawn.icon);
@@ -255,7 +255,8 @@ pub(crate) fn repaint_play_button(window: &adw::ApplicationWindow) {
 
 /// Whether this window's run bar currently holds a run — the same slot [`clear_narrate_bar`] empties.
 pub(crate) fn bar_is_running() -> bool {
-    ui::RUN_BARS.with(|bars| bars.borrow().last().cloned())
+    ui::RUN_BARS
+        .with(|bars| bars.borrow().last().cloned())
         .is_some_and(|bar| bar.borrow().running.is_some())
 }
 
@@ -290,10 +291,7 @@ pub(crate) fn run_narrate_with<FReply>(
     mut reply: FReply,
 ) -> String
 where
-    FReply: FnMut(
-        &layout::Tree,
-        &[(f64, f64)],
-    ) -> Result<Vec<narrate_run::Written>, String>,
+    FReply: FnMut(&layout::Tree, &[(f64, f64)]) -> Result<Vec<narrate_run::Written>, String>,
 {
     let Some(tree) = narrate_session_tree() else {
         let said = narrate_run::failed_status("narration");
@@ -359,7 +357,9 @@ where
     stage_queue.borrow_mut().reset();
     stage_queue.borrow_mut().phase(0.0, 0.5);
     stage_queue.borrow_mut().job(0, JOB_NARRATION, 1, JOBS);
-    stage_queue.borrow_mut().push(0, plan.clips.len().max(1), "clip");
+    stage_queue
+        .borrow_mut()
+        .push(0, plan.clips.len().max(1), "clip");
     stage_queue.borrow_mut().prog(0, 0.0, STAGE_THINKING);
     stage_queue.borrow_mut().job(1, JOB_SPEAKING, 2, JOBS);
     NARRATE_QUEUE.with(|queue| *queue.borrow_mut() = stage_queue.borrow().clone());
@@ -406,7 +406,9 @@ where
     // hand (§07-narrate#3-data: it is the PREVIOUS generation). A call that failed, answered nothing or was
     // stopped never reaches here, so it cannot throw away a good file on the way to producing nothing.
     if let Err(why) = narrate_data::keep_previous(&tree) {
-        ui::log_line(&format!("!!! could not keep the previous narration -- {why}"));
+        ui::log_line(&format!(
+            "!!! could not keep the previous narration -- {why}"
+        ));
         let said = narrate_run::failed_status("narration");
         say_on_status(window, &said);
         return said;
@@ -427,7 +429,11 @@ where
     }
     // The bar's stage follows the clips as they close; headless they all arrive with the one reply, so
     // this is the final count in one step.
-    set_narrate_stage(window, &narrate_run::writing(written.len(), plan.clips.len()), false);
+    set_narrate_stage(
+        window,
+        &narrate_run::writing(written.len(), plan.clips.len()),
+        false,
+    );
     ui::log_line(&narrate_run::written_log(written.len()));
     // This run's own queue — the window's when a shell is open (see `run_narrate_with`), so the bar,
     // the timer and the stage painter all read the fraction this run advances.
@@ -475,7 +481,11 @@ where
     // ⏹ cut the pass short between two lines: the summary says what got done, and the ending names the
     // stage that stopped rather than claiming a finished narration (§S7).
     if run.stopped {
-        for line in run.lines.iter().filter_map(|line| narrate_speak::refused(line)) {
+        for line in run
+            .lines
+            .iter()
+            .filter_map(|line| narrate_speak::refused(line))
+        {
             ui::log_line(&format!("!!! narrate: {line}"));
         }
         ui::log_line(&narrate_speak::stopped_speaking_log(&run));
@@ -517,7 +527,9 @@ where
 pub fn pull_half_typed(window: &adw::ApplicationWindow, existing: &Narration) -> Narration {
     let mut record = existing.clone();
     for index in 0..record.entries.len() {
-        let Some(found) = ui::find_widget_by_name(window.upcast_ref(), &format!("line-text-{index}")) else {
+        let Some(found) =
+            ui::find_widget_by_name(window.upcast_ref(), &format!("line-text-{index}"))
+        else {
             continue;
         };
         let Ok(entry_box) = found.downcast::<gtk::Entry>() else {
@@ -618,7 +630,11 @@ pub fn narrate_pulsed() -> bool {
 /// so `arm_pulse`, `paint_progress` and [`set_narrate_stage`] read one fraction; the private
 /// [`NARRATE_QUEUE`] copy when the door was called with no shell behind it.
 fn live_stage_queue(window: &adw::ApplicationWindow) -> Rc<RefCell<runqueue::Queue>> {
-    ui::run_queue(window).unwrap_or_else(|| Rc::new(RefCell::new(NARRATE_QUEUE.with(|queue| queue.borrow().clone()))))
+    ui::run_queue(window).unwrap_or_else(|| {
+        Rc::new(RefCell::new(
+            NARRATE_QUEUE.with(|queue| queue.borrow().clone()),
+        ))
+    })
 }
 
 /// A `glib`-free handle pair the run's bar and queue travel in.
@@ -660,7 +676,9 @@ pub fn narrate_wrote() -> bool {
 pub fn show_narrate_progress(window: &adw::ApplicationWindow, written: u32, of: usize) {
     let stage = narrate_run::writing(written as usize, of);
     let stage_queue = live_stage_queue(window);
-    stage_queue.borrow_mut().prog(0, written as f64 / of.max(1) as f64, &stage);
+    stage_queue
+        .borrow_mut()
+        .prog(0, written as f64 / of.max(1) as f64, &stage);
     NARRATE_QUEUE.with(|queue| *queue.borrow_mut() = stage_queue.borrow().clone());
     set_narrate_stage(window, &stage, false);
 }
@@ -677,7 +695,15 @@ pub fn show_narrate_stage(window: &adw::ApplicationWindow, written: usize, of: u
         queue.phase(0.0, 0.5);
         queue.job(0, JOB_NARRATION, 1, JOBS);
         queue.push(0, of.max(1), "clip");
-        queue.prog(0, if of == 0 { 0.0 } else { written as f64 / of as f64 }, &narrate_run::writing(written, of));
+        queue.prog(
+            0,
+            if of == 0 {
+                0.0
+            } else {
+                written as f64 / of as f64
+            },
+            &narrate_run::writing(written, of),
+        );
         queue.job(1, JOB_SPEAKING, 2, JOBS);
     });
     set_narrate_stage(window, &narrate_run::writing(written, of), false);

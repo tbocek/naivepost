@@ -75,7 +75,11 @@ impl FakeLlm {
                 std::thread::spawn(move || serve(stream, &serving, &sender));
             }
         });
-        FakeLlm { port, received, script }
+        FakeLlm {
+            port,
+            received,
+            script,
+        }
     }
 
     fn url(&self) -> String {
@@ -95,7 +99,11 @@ fn serve(mut stream: TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender
 
 /// Records the request BEFORE answering: the program's next call follows the answer, so a record
 /// sent after the reply would let that call's thread report first, out of order.
-fn serve_inner(stream: &mut TcpStream, script: &Arc<Mutex<Script>>, seen: &mpsc::Sender<Seen>) -> Option<()> {
+fn serve_inner(
+    stream: &mut TcpStream,
+    script: &Arc<Mutex<Script>>,
+    seen: &mpsc::Sender<Seen>,
+) -> Option<()> {
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).ok()?;
@@ -151,7 +159,8 @@ fn tool_calls(calls: &[(&str, Value)]) -> String {
             })
         })
         .collect();
-    serde_json::json!({ "choices": [ { "message": { "content": "", "tool_calls": list } } ] }).to_string()
+    serde_json::json!({ "choices": [ { "message": { "content": "", "tool_calls": list } } ] })
+        .to_string()
 }
 
 /// The `tools` array of a request body, as the names the server was handed.
@@ -184,7 +193,6 @@ fn roles_of(body: &str) -> Vec<String> {
 }
 
 // ---- the scenario folder -------------------------------------------------------------
-
 
 struct Fixture {
     root: PathBuf,
@@ -222,7 +230,11 @@ fn fixture(tag: &str, address: &str) -> Fixture {
     conf.sd_server = "http://127.0.0.1:1".to_string();
     settings::save(&paths, &conf).expect("settings written");
     let tree = naivepost::layout::Tree::new(&session).expect("a .naivepost folder is a project");
-    Fixture { root, tree, _scenario: scenario }
+    Fixture {
+        root,
+        tree,
+        _scenario: scenario,
+    }
 }
 
 fn cancelled() -> impl Fn() -> bool {
@@ -250,8 +262,12 @@ fn clips_with(n: usize, lines: usize) -> Vec<up::BriefClip> {
                 tools::mm_ss(i as f64 * 12.0),
                 tools::mm_ss(i as f64 * 12.0 + 12.0)
             ),
-            seen: (0..lines).map(|k| format!("clip {} event {}", i + 1, k + 1)).collect(),
-            said: (0..lines).map(|k| format!("clip {} spoken {}", i + 1, k + 1)).collect(),
+            seen: (0..lines)
+                .map(|k| format!("clip {} event {}", i + 1, k + 1))
+                .collect(),
+            said: (0..lines)
+                .map(|k| format!("clip {} spoken {}", i + 1, k + 1))
+                .collect(),
             rate: 1.0,
             marked: Vec::new(),
         })
@@ -303,8 +319,16 @@ fn p_machine_briefmaxchars_s1_the_bound_is_the_number_the_catalogue_names() {
         .iter()
         .filter(|row| row.id == "P.machine.briefMaxChars")
         .collect();
-    assert_eq!(rows.len(), 1, "the catalogue lists this id {} times", rows.len());
-    assert_eq!(rows[0].from, "produce_upload::BRIEF_MAX_CHARS", "one home for the number");
+    assert_eq!(
+        rows.len(),
+        1,
+        "the catalogue lists this id {} times",
+        rows.len()
+    );
+    assert_eq!(
+        rows[0].from, "produce_upload::BRIEF_MAX_CHARS",
+        "one home for the number"
+    );
 }
 
 /// Under the bound nothing is folded: every seen and said line reaches the brief, and the fold
@@ -313,10 +337,15 @@ fn p_machine_briefmaxchars_s1_the_bound_is_the_number_the_catalogue_names() {
 fn p_machine_briefmaxchars_s1_a_brief_under_the_bound_is_not_folded() {
     let clips = clips_with(3, 5);
     let shown = up::brief(&clips, &[], up::BRIEF_MAX_CHARS);
-    assert!(!shown.contains("(folded"), "an under-bound brief must not fold:\n{shown}");
+    assert!(
+        !shown.contains("(folded"),
+        "an under-bound brief must not fold:\n{shown}"
+    );
     assert_eq!(count(&shown, "  SEEN: "), 15, "three clips x five events");
     assert_eq!(count(&shown, "  SAID: "), 15, "three clips x five lines");
-    assert!(shown.starts_with("THE FINISHED VIDEO: 3 clips, 00:36 long.\n\nWHAT IS IN EACH CLIP:\n"));
+    assert!(
+        shown.starts_with("THE FINISHED VIDEO: 3 clips, 00:36 long.\n\nWHAT IS IN EACH CLIP:\n")
+    );
     assert!(shown.contains("CLIP 2 (at 00:12 in the video, 12.0 s): session 00:12\u{2013}00:24"));
     assert!(shown.contains("THE NARRATION SPOKEN OVER IT, at its time in the finished video:"));
     assert!(shown.contains("(no narration has been written for this video)"));
@@ -331,7 +360,11 @@ fn p_machine_briefmaxchars_s1_over_the_bound_each_clip_folds_to_its_first_lines(
     // shown by asking for a bound above that estimate (the app's real one) and the fold is forced by
     // asking for one character less than the estimate needs. No size of this fixture is hard-coded.
     let full = up::brief(&clips, &[], up::BRIEF_MAX_CHARS * 2);
-    assert_eq!(count(&full, "  SAID: "), 24, "nothing folded when nothing has to be");
+    assert_eq!(
+        count(&full, "  SAID: "),
+        24,
+        "nothing folded when nothing has to be"
+    );
     // A bound of 1 is "this session's brief cannot fit in anything": every clip folds. The point the
     // test pins is HOW it folds (first FOLDED_LINES, and the sentence naming get_lines), not the size.
     let folded = up::brief(&clips, &[], 1);
@@ -341,16 +374,26 @@ fn p_machine_briefmaxchars_s1_over_the_bound_each_clip_folds_to_its_first_lines(
         "each clip keeps its first {} said lines: {folded}",
         up::FOLDED_LINES
     );
-    assert_eq!(count(&folded, "  SEEN: "), 4 * up::FOLDED_LINES, "and the same for events");
+    assert_eq!(
+        count(&folded, "  SEEN: "),
+        4 * up::FOLDED_LINES,
+        "and the same for events"
+    );
     assert_eq!(
         count(&folded, "  (folded \u{2014} read the rest with get_lines)"),
         4,
         "every folded clip says so"
     );
-    assert!(folded.contains("get_lines"), "the escape hatch is named: {folded}");
+    assert!(
+        folded.contains("get_lines"),
+        "the escape hatch is named: {folded}"
+    );
     // The kept ones are the FIRST ones, not an arbitrary slice.
     assert!(folded.contains("clip 1 spoken 1"), "{folded}");
-    assert!(!folded.contains("clip 1 spoken 6"), "the tail is what got folded: {folded}");
+    assert!(
+        !folded.contains("clip 1 spoken 6"),
+        "the tail is what got folded: {folded}"
+    );
 }
 
 /// The narration side folds too, and says so; with no lines at all the brief still answers the
@@ -358,9 +401,15 @@ fn p_machine_briefmaxchars_s1_over_the_bound_each_clip_folds_to_its_first_lines(
 #[test]
 fn p_machine_briefmaxchars_s1_the_fold_says_so_on_the_narration_side_too() {
     let clips = clips_with(1, 1);
-    let lines: Vec<Entry> = (0..7).map(|i| entry(i as f64 * 3.0, &format!("spoken line {i}"))).collect();
+    let lines: Vec<Entry> = (0..7)
+        .map(|i| entry(i as f64 * 3.0, &format!("spoken line {i}")))
+        .collect();
     let full = up::brief(&clips, &lines, up::BRIEF_MAX_CHARS * 2);
-    assert_eq!(count(&full, "spoken line "), 7, "under the bound every line prints");
+    assert_eq!(
+        count(&full, "spoken line "),
+        7,
+        "under the bound every line prints"
+    );
     // Same seam as above: one character below the estimate is what folds.
     let folded = up::brief(&clips, &lines, unbounded_estimate(&clips, &lines) - 1);
     assert_eq!(
@@ -392,8 +441,14 @@ fn p_machine_briefmaxchars_s2_read_back_returns_what_the_fold_dropped() {
     ];
     let answer = up::read_back(&rows, 20.0, 30.0);
     let parsed: Value = serde_json::from_str(&answer).expect("the answer is JSON");
-    let lines = parsed["lines"].as_array().expect("the answer carries lines");
-    assert_eq!(lines.len(), 3, "exactly the three rows in the window: {answer}");
+    let lines = parsed["lines"]
+        .as_array()
+        .expect("the answer carries lines");
+    assert_eq!(
+        lines.len(),
+        3,
+        "exactly the three rows in the window: {answer}"
+    );
     assert_eq!(parsed["from"], serde_json::json!(20.0));
     assert_eq!(parsed["to"], serde_json::json!(30.0));
     assert_eq!(
@@ -422,7 +477,11 @@ fn p_machine_briefmaxchars_s2_read_back_returns_what_the_fold_dropped() {
         naivepost::narrate_pass::GET_LINES_MAX_ROWS,
         "one row cap, the one narrate_pass already sets"
     );
-    assert_eq!(capped["truncated"], serde_json::json!(true), "and it is admitted: {capped}");
+    assert_eq!(
+        capped["truncated"],
+        serde_json::json!(true),
+        "and it is admitted: {capped}"
+    );
 }
 
 /// THE wire proof: the live `youtube` call answers `get_lines` itself. The fake LLM asks for the
@@ -433,8 +492,14 @@ fn p_machine_briefmaxchars_s2_the_live_upload_call_answers_get_lines_over_the_wi
     let llm = FakeLlm::start(vec![
         tool_calls(&[("get_lines", serde_json::json!({ "from": 20.0, "to": 30.0 }))]),
         tool_calls(&[
-            ("set_title", serde_json::json!({ "text": "A title that fits" })),
-            ("set_description", serde_json::json!({ "text": "the description body" })),
+            (
+                "set_title",
+                serde_json::json!({ "text": "A title that fits" }),
+            ),
+            (
+                "set_description",
+                serde_json::json!({ "text": "the description body" }),
+            ),
         ]),
         tool_calls(&[("finish", serde_json::json!({}))]),
     ]);
@@ -470,22 +535,40 @@ fn p_machine_briefmaxchars_s2_the_live_upload_call_answers_get_lines_over_the_wi
         !said.contains("no such tool"),
         "the fold's escape hatch fell through: {said}"
     );
-    let expected = format!("{} {}: {}", tools::mm_ss(21.0), "Ann", "the line the fold dropped");
+    let expected = format!(
+        "{} {}: {}",
+        tools::mm_ss(21.0),
+        "Ann",
+        "the line the fold dropped"
+    );
     assert!(
-        collected.answers.iter().any(|answer| answer.contains(&expected)),
+        collected
+            .answers
+            .iter()
+            .any(|answer| answer.contains(&expected)),
         "the read-back carries the stamped line: {said}"
     );
     assert!(
-        !collected.answers.iter().any(|answer| answer.contains("well past it")),
+        !collected
+            .answers
+            .iter()
+            .any(|answer| answer.contains("well past it")),
         "the window bounded the answer: {said}"
     );
-    assert_eq!(collected.publish.thumb_title, "A title that fits", "the conversation continued");
+    assert_eq!(
+        collected.publish.thumb_title, "A title that fits",
+        "the conversation continued"
+    );
     assert_eq!(collected.publish.description, "the description body");
 
     // (b) the second request carried the tool result back, and still offered the tool. The fake
     // records every request in order and the call is synchronous, so all rounds are recorded by now.
     let bodies: Vec<String> = drain_bodies(&llm);
-    assert!(bodies.len() >= 2, "the call made at least two requests: {}", bodies.len());
+    assert!(
+        bodies.len() >= 2,
+        "the call made at least two requests: {}",
+        bodies.len()
+    );
     let second = &bodies[1];
     assert!(
         roles_of(second).contains(&"tool".to_string()),

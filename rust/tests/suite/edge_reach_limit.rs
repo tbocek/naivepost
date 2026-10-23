@@ -15,11 +15,11 @@
 // built from the constants (`2.0 + edge::EDGE_PAD`) rather than bare literals, so a re-tuned neighbour
 // moves the expectation with it instead of failing for the wrong reason.
 
+use crate::common;
+use common::{all_rows, anywhere};
 use naivepost::edges::{self as edge, Edges};
 use naivepost::params;
 use naivepost::textfmt::Retake;
-use crate::common;
-use common::{all_rows, anywhere};
 
 const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
@@ -34,7 +34,14 @@ fn edges(total: f64, spans: &[(f64, f64, u8)]) -> Edges {
 /// shape-parity with `tests/suite/word_pad_room.rs` rather than used here.
 #[allow(dead_code)]
 fn mark(s: f64, e: f64, again: f64, to: f64) -> Retake {
-    Retake { s, e, again, to, text: String::new(), whole: String::new() }
+    Retake {
+        s,
+        e,
+        again,
+        to,
+        text: String::new(),
+        whole: String::new(),
+    }
 }
 
 /// No envelope anywhere. This round's rule is the envelope-only walk, so every case supplies one; kept for
@@ -59,16 +66,25 @@ fn p_eng_edgereachseconds_s1_the_reach_is_0_8_and_catalogued_once() {
         .into_iter()
         .find(|param| param.id == "P.eng.edgeReachSeconds")
         .expect("the reach must be catalogued for Prepare, whose edge placement reads it");
-    assert_eq!(row.from, "edges::EDGE_REACH", "a row must name the constant its rule reads");
+    assert_eq!(
+        row.from, "edges::EDGE_REACH",
+        "a row must name the constant its rule reads"
+    );
     assert_eq!(row.spelled, "0.8");
     assert_eq!(row.spelled.parse::<f64>().unwrap(), 0.8);
 
     // §10 files it among the engineering constants, so the prefix answers to Eng.
-    assert_eq!(params::family("P.eng.edgeReachSeconds"), params::Family::Eng);
+    assert_eq!(
+        params::family("P.eng.edgeReachSeconds"),
+        params::Family::Eng
+    );
 
     // And exactly one row for it across all five lists — one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.edgeReachSeconds").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.edgeReachSeconds")
+            .count(),
         1,
         "P.eng.edgeReachSeconds catalogued more than once"
     );
@@ -78,10 +94,15 @@ fn p_eng_edgereachseconds_s1_the_reach_is_0_8_and_catalogued_once() {
 /// within 0.8 s, so the walk steps out of the quiet, back over the sound run that stays, and lands just
 /// past where that run ended — plus the post-envelope pad.
 #[test]
-fn p_eng_edgereachseconds_s2_a_quiet_gap_inside_the_reach_moves_the_cut_to_where_the_sound_stopped() {
+fn p_eng_edgereachseconds_s2_a_quiet_gap_inside_the_reach_moves_the_cut_to_where_the_sound_stopped()
+{
     // P.eng.edgeReachSeconds: 0.5 s of quiet < 0.8 s, so the cut moves off its stamp.
     let e = edges(8.0, &[(1.0, 2.0, WORD)]);
-    assert_eq!(e.end_before(2.5), 2.0 + edge::EDGE_PAD, "where the sound before it stopped, plus the pad");
+    assert_eq!(
+        e.end_before(2.5),
+        2.0 + edge::EDGE_PAD,
+        "where the sound before it stopped, plus the pad"
+    );
     assert!(
         e.end_before(2.5) < 2.5,
         "inside the reach the envelope answers, so the cut ends earlier than the stamp"
@@ -96,7 +117,11 @@ fn p_eng_edgereachseconds_s2_a_quiet_gap_inside_the_reach_moves_the_cut_to_where
 fn p_eng_edgereachseconds_s3_a_sound_further_off_than_the_reach_leaves_the_stamp_alone() {
     // P.eng.edgeReachSeconds: 1.0 s of quiet > 0.8 s, so nothing moves.
     let e = edges(8.0, &[(1.0, 2.0, WORD)]);
-    assert_eq!(e.end_before(3.0), 3.0, "out of reach: the cut stays where the stamp says");
+    assert_eq!(
+        e.end_before(3.0),
+        3.0,
+        "out of reach: the cut stays where the stamp says"
+    );
 
     // The boundary is the reach itself: the nearer gap moved, this one did not.
     assert_ne!(e.end_before(2.5), 2.5, "0.5 s away IS within the reach");
@@ -105,7 +130,10 @@ fn p_eng_edgereachseconds_s3_a_sound_further_off_than_the_reach_leaves_the_stamp
     // Through the flow too: no word times, so the envelope alone is asked, and being out of reach means
     // the mark keeps its own second and no note is written.
     let (marks, notes) = edge::place_edges(vec![mark(3.0, 4.0, 0.0, 4.0)], &[], |_| Some(&e), &[]);
-    assert_eq!(marks[0].s, 3.0, "out of reach, the stamp stands through place_edges as well");
+    assert_eq!(
+        marks[0].s, 3.0,
+        "out of reach, the stamp stands through place_edges as well"
+    );
     assert!(notes.is_empty(), "a stamp that did not move writes no note");
 }
 
@@ -119,15 +147,24 @@ fn p_eng_edgereachseconds_s4_the_resume_side_walks_back_over_the_sound_only_insi
     // The answer is a bucket boundary: `off + j/hz - EDGE_PAD`, so it lands on 4.545 (bucket 910) and
     // not on the round 4.55 — the envelope quantises the placement to its own 5 ms grid.
     let e = edges(8.0, &[(4.6, 4.9, WORD)]);
-    assert!((e.start_at(5.0) - (4.6 - edge::EDGE_PAD)).abs() < 1.0 / HZ + 1e-9,
-        "at the retake's onset, less the pad, within one bucket of quantisation");
+    assert!(
+        (e.start_at(5.0) - (4.6 - edge::EDGE_PAD)).abs() < 1.0 / HZ + 1e-9,
+        "at the retake's onset, less the pad, within one bucket of quantisation"
+    );
     assert_eq!(e.start_at(5.0), 4.545, "the exact bucket the walk stops on");
-    assert!(e.start_at(5.0) < 5.0, "inside the reach the envelope pulls the resume earlier");
+    assert!(
+        e.start_at(5.0) < 5.0,
+        "inside the reach the envelope pulls the resume earlier"
+    );
 
     // The same call with the onset 2 s back: the walk hits the EDGE_REACH limit and hands the stamp back
     // rather than swallowing two seconds of speech.
     let long = edges(8.0, &[(3.0, 5.0, WORD)]);
-    assert_eq!(long.start_at(5.0), 5.0, "past the reach the resume stays where the stamp says");
+    assert_eq!(
+        long.start_at(5.0),
+        5.0,
+        "past the reach the resume stays where the stamp says"
+    );
 }
 
 /// S5: the reach is its own bound, distinct from the three numbers that sit next to it on a cut edge.
@@ -137,8 +174,15 @@ fn p_eng_edgereachseconds_s5_the_reach_is_not_the_late_stamp_window_nor_the_pad(
     // quiet is too long to be a late stamp's tail and the reach does NOT rescue it — moving forward to
     // the next sound would clip the very word the stamp names.
     let e = edges(8.0, &[(3.7, 4.3, WORD)]);
-    assert_eq!(e.start_at(5.0), 5.0, "the late-stamp window decides here, not the reach");
-    assert!(edge::LATE_STAMP < edge::EDGE_REACH, "0.6 < 0.8: the window is the tighter of the two");
+    assert_eq!(
+        e.start_at(5.0),
+        5.0,
+        "the late-stamp window decides here, not the reach"
+    );
+    assert!(
+        edge::LATE_STAMP < edge::EDGE_REACH,
+        "0.6 < 0.8: the window is the tighter of the two"
+    );
 
     // Each neighbour is a separate constant with a separate question.
     // P.eng.edgePadSeconds (0.05): what is left of a sound once the envelope has placed it.
@@ -149,10 +193,26 @@ fn p_eng_edgereachseconds_s5_the_reach_is_not_the_late_stamp_window_nor_the_pad(
     // too, but inside a fence the words set, so not this item.
     assert_eq!(edge::TROUGH_REACH, 0.4);
 
-    assert_ne!(edge::EDGE_REACH, edge::EDGE_PAD, "how far to look is not what to leave behind");
-    assert_ne!(edge::EDGE_REACH, edge::WORD_PAD, "the envelope's reach is not the word's room");
-    assert_ne!(edge::EDGE_REACH, edge::LATE_STAMP, "the walk's bound is not the stamp-lateness bound");
-    assert_ne!(edge::EDGE_REACH, edge::TROUGH_REACH, "the stamp-side reach is not the in-fence trough reach");
+    assert_ne!(
+        edge::EDGE_REACH,
+        edge::EDGE_PAD,
+        "how far to look is not what to leave behind"
+    );
+    assert_ne!(
+        edge::EDGE_REACH,
+        edge::WORD_PAD,
+        "the envelope's reach is not the word's room"
+    );
+    assert_ne!(
+        edge::EDGE_REACH,
+        edge::LATE_STAMP,
+        "the walk's bound is not the stamp-lateness bound"
+    );
+    assert_ne!(
+        edge::EDGE_REACH,
+        edge::TROUGH_REACH,
+        "the stamp-side reach is not the in-fence trough reach"
+    );
 
     // And this row points at the reach, not at any neighbour's constant.
     assert_eq!(anywhere("P.eng.edgeReachSeconds").from, "edges::EDGE_REACH");

@@ -9,12 +9,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::common;
+use common::temp_dir_created as temp_dir;
 use naivepost::clock::{self, read_frame};
 use naivepost::frames::{self, GRID, SCENE_MIN_GAP, SCENE_THRESHOLD, TINY_JOB_FRAMES, WORKERS_MAX};
 use naivepost::layout::Tree;
 use naivepost::requests;
-use crate::common;
-use common::temp_dir_created as temp_dir;
 
 const SOURCE: &str = "mic.wav";
 const BASE: &str = "mic";
@@ -116,13 +116,28 @@ impl Extract {
 #[test]
 fn f1_6_s1_a_marker_matching_grid_and_threshold_skips_the_pass() {
     // Both numbers, exactly. `P.eng.frameGridSeconds` and P.machine.sceneThreshold.
-    assert!(frames::marker_matches(Some((GRID, SCENE_THRESHOLD)), GRID, SCENE_THRESHOLD));
-    assert!(!frames::marker_matches(None, GRID, SCENE_THRESHOLD), "no marker, no skip");
+    assert!(frames::marker_matches(
+        Some((GRID, SCENE_THRESHOLD)),
+        GRID,
+        SCENE_THRESHOLD
+    ));
+    assert!(
+        !frames::marker_matches(None, GRID, SCENE_THRESHOLD),
+        "no marker, no skip"
+    );
     // A different grid means frames that were never extracted at this spacing.
-    assert!(!frames::marker_matches(Some((0.5, SCENE_THRESHOLD)), GRID, SCENE_THRESHOLD));
+    assert!(!frames::marker_matches(
+        Some((0.5, SCENE_THRESHOLD)),
+        GRID,
+        SCENE_THRESHOLD
+    ));
     // And a marker written at another threshold re-runs the scene pass: those frames are missing
     // exactly the changes this threshold would have found.
-    assert!(!frames::marker_matches(Some((GRID, 2.0)), GRID, SCENE_THRESHOLD));
+    assert!(!frames::marker_matches(
+        Some((GRID, 2.0)),
+        GRID,
+        SCENE_THRESHOLD
+    ));
 
     let already = frames::already_log(BASE, GRID, SCENE_THRESHOLD);
     // The exact sentence. Its parenthesised part is the spec's `…`, filled with the two numbers the
@@ -138,7 +153,15 @@ fn f1_6_s1_a_marker_matching_grid_and_threshold_skips_the_pass() {
 fn f1_6_s1_a_skip_rewrites_nothing() {
     let (_root, tree) = project("s1-skip");
     requests::write_frames_marker(&tree, SOURCE, GRID, SCENE_THRESHOLD).unwrap();
-    requests::write_scenes(&tree, SOURCE, &[requests::SceneChange { time: 9.0, score: 9.0 }]).unwrap();
+    requests::write_scenes(
+        &tree,
+        SOURCE,
+        &[requests::SceneChange {
+            time: 9.0,
+            score: 9.0,
+        }],
+    )
+    .unwrap();
     let before = fs::read_to_string(tree.frames_marker(SOURCE)).unwrap();
 
     let mut extract = Extract::new(tree.frames_marker(SOURCE));
@@ -157,10 +180,16 @@ fn f1_6_s1_a_skip_rewrites_nothing() {
     .expect("a skip is not a failure");
 
     assert!(outcome.skipped);
-    assert_eq!(outcome.logs, vec![frames::already_log(BASE, GRID, SCENE_THRESHOLD)]);
+    assert_eq!(
+        outcome.logs,
+        vec![frames::already_log(BASE, GRID, SCENE_THRESHOLD)]
+    );
     assert!(extract.calls().is_empty(), "the tool was asked anyway");
     assert!(extract.mid_run().is_empty());
-    assert_eq!(fs::read_to_string(tree.frames_marker(SOURCE)).unwrap(), before);
+    assert_eq!(
+        fs::read_to_string(tree.frames_marker(SOURCE)).unwrap(),
+        before
+    );
     // scenes.tsv still holds the one row it held, not the ones this pass would have found.
     let scenes = requests::read_scenes(&tree, SOURCE).unwrap();
     assert_eq!(scenes.len(), 1);
@@ -184,7 +213,10 @@ fn f1_6_s2_the_scene_pass_is_four_frames_a_second_with_every_score_reported() {
     assert!(filter.contains("metadata=print"), "{filter}");
     // The whole video, and the pixels thrown away: only the scores are wanted.
     assert!(plan.contains(&"-an".to_string()), "{plan:?}");
-    assert!(plan.windows(2).any(|pair| pair == ["-f", "null"]), "{plan:?}");
+    assert!(
+        plan.windows(2).any(|pair| pair == ["-f", "null"]),
+        "{plan:?}"
+    );
 
     // And the delivered frames carry none of that scaling: every frame stays at the video's own size,
     // because the model's smaller copies are F1.7's to make.
@@ -193,7 +225,10 @@ fn f1_6_s2_the_scene_pass_is_four_frames_a_second_with_every_score_reported() {
         let text = command.join(" ");
         assert!(!text.contains("scale"), "{text}");
         assert!(!text.contains("fps"), "{text}");
-        assert!(!command.iter().any(|arg| arg == "-s" || arg == "-vf"), "{text}");
+        assert!(
+            !command.iter().any(|arg| arg == "-s" || arg == "-vf"),
+            "{text}"
+        );
     }
 }
 
@@ -214,7 +249,10 @@ fn f1_6_s2_a_change_is_a_score_over_the_threshold_and_near_ones_merge_into_the_f
     // Three over-threshold frames inside the transition become one change, at the first of them; then
     // the 5.0 s change, which is more than P.machine.sceneMinGapSeconds away.
     assert_eq!(times, vec![1.0, 5.0], "{changes:?}");
-    assert_eq!(changes[0].score, 58.310, "the first of the merged frames keeps its score");
+    assert_eq!(
+        changes[0].score, 58.310,
+        "the first of the merged frames keeps its score"
+    );
 
     // Exactly on the threshold is not over it.
     let on = [(2.0, 1.0)];
@@ -263,21 +301,34 @@ fn f1_6_s3_frames_come_on_the_grid_and_the_grid_restarts_at_every_change() {
     for pair in at.windows(2) {
         assert!(pair[1] > pair[0], "strictly increasing: {at:?}");
     }
-    assert!(at.iter().all(|second| *second < 3.0), "nothing past the end: {at:?}");
+    assert!(
+        at.iter().all(|second| *second < 3.0),
+        "nothing past the end: {at:?}"
+    );
     // Between changes the spacing is exactly the grid.
     let steps: Vec<f64> = at.windows(2).map(|pair| pair[1] - pair[0]).collect();
-    assert!(steps.iter().all(|step| (*step - GRID).abs() < 1e-9), "{steps:?}");
+    assert!(
+        steps.iter().all(|step| (*step - GRID).abs() < 1e-9),
+        "{steps:?}"
+    );
 
     // A take shorter than one grid step is its first frame alone.
     assert!(frames::short_take_seconds(0.1, GRID));
     assert_eq!(frames::frame_seconds(&[], 0.1, GRID), vec![0.0]);
-    assert!(frames::frame_seconds(&[], 0.0, GRID).is_empty(), "nothing to name");
+    assert!(
+        frames::frame_seconds(&[], 0.0, GRID).is_empty(),
+        "nothing to name"
+    );
     // A change pair inside the merge gap costs one extra frame, which is what the spec says a false
     // trigger is worth — not the scene's whole run of pictures.
     let pair = frames::frame_seconds(&[1.0, 1.1], 2.0, GRID);
     assert!(pair.contains(&1.0) && pair.contains(&1.1), "{pair:?}");
     // The next grid step after the second change is 1.35 rather than 1.25: the grid restarted there.
-    assert_eq!(pair.iter().filter(|second| **second >= 1.2).count(), 3, "{pair:?}");
+    assert_eq!(
+        pair.iter().filter(|second| **second >= 1.2).count(),
+        3,
+        "{pair:?}"
+    );
 }
 
 /// S3: how the extraction is split across workers.
@@ -287,18 +338,37 @@ fn f1_6_s3_extraction_runs_in_parallel_chunks_and_reports_progress() {
     assert_eq!(frames::workers(8, TINY_JOB_FRAMES + 1), 2);
     assert_eq!(frames::workers(16, TINY_JOB_FRAMES + 1), 4);
     assert_eq!(frames::workers(100, TINY_JOB_FRAMES + 1), WORKERS_MAX);
-    assert_ne!(frames::workers(1, TINY_JOB_FRAMES + 1), 0, "no machine has no workers");
-    assert_eq!(frames::workers(1, TINY_JOB_FRAMES + 1), 2, "the floor holds");
-    assert_eq!(frames::workers(64, TINY_JOB_FRAMES), 1, "a tiny job is one worker's");
+    assert_ne!(
+        frames::workers(1, TINY_JOB_FRAMES + 1),
+        0,
+        "no machine has no workers"
+    );
+    assert_eq!(
+        frames::workers(1, TINY_JOB_FRAMES + 1),
+        2,
+        "the floor holds"
+    );
+    assert_eq!(
+        frames::workers(64, TINY_JOB_FRAMES),
+        1,
+        "a tiny job is one worker's"
+    );
 
     let indexes: Vec<usize> = (0..23).collect();
     let chunks = frames::chunks(&indexes, 2);
     assert_eq!(chunks.len(), 2, "{chunks:?}");
-    assert_eq!(chunks.concat(), indexes, "each frame exactly once, in order");
+    assert_eq!(
+        chunks.concat(),
+        indexes,
+        "each frame exactly once, in order"
+    );
     assert!(chunks.iter().all(|chunk| !chunk.is_empty()), "{chunks:?}");
     // Even chunks: one worker taking twenty frames while another takes three is a pass that waits.
     let spread = chunks.iter().map(|chunk| chunk.len()).collect::<Vec<_>>();
-    assert!(spread[0].abs_diff(*spread.last().unwrap()) <= 1, "{spread:?}");
+    assert!(
+        spread[0].abs_diff(*spread.last().unwrap()) <= 1,
+        "{spread:?}"
+    );
     // Never more chunks than frames, none empty, and no workers at all for nothing to do.
     assert_eq!(frames::chunks(&[0, 1], 8).len(), 2);
     assert_eq!(frames::chunks(&[0], 4), vec![vec![0usize]]);
@@ -341,27 +411,44 @@ fn f1_6_s3_extraction_runs_in_parallel_chunks_and_reports_progress() {
 #[test]
 fn f1_6_s4_every_frame_is_named_by_its_exact_second_on_the_files_clock() {
     // The session clock's zero, in its own shape.
-    assert!(frames::frame_file(0.0, 0.0).starts_with("1970-01-01_00-00-00.000"), "{:?}", frames::frame_file(0.0, 0.0));
+    assert!(
+        frames::frame_file(0.0, 0.0).starts_with("1970-01-01_00-00-00.000"),
+        "{:?}",
+        frames::frame_file(0.0, 0.0)
+    );
 
     // A recording stamped at two o'clock on the afternoon of 2026-09-18: the frame's name is that stamp
     // plus the second within it, never a position in a list — extracting one more frame must not rename
     // the ones already there.
     let start = 1_789_740_000.0;
-    assert_eq!(frames::frame_file(start, 0.0), "2026-09-18_14-00-00.000.jpg");
-    assert_eq!(frames::frame_file(start, 0.25), "2026-09-18_14-00-00.250.jpg");
-    assert_eq!(frames::frame_file(start, 3661.5), "2026-09-18_15-01-01.500.jpg");
+    assert_eq!(
+        frames::frame_file(start, 0.0),
+        "2026-09-18_14-00-00.000.jpg"
+    );
+    assert_eq!(
+        frames::frame_file(start, 0.25),
+        "2026-09-18_14-00-00.250.jpg"
+    );
+    assert_eq!(
+        frames::frame_file(start, 3661.5),
+        "2026-09-18_15-01-01.500.jpg"
+    );
 
     // And the name reads back as the second it claims, which is what lets Cut place a picture from its
     // file name alone.
     for at in [0.0, 0.25, 3661.5] {
-        let name = frames::frame_file(start, at).trim_end_matches(".jpg").to_string();
+        let name = frames::frame_file(start, at)
+            .trim_end_matches(".jpg")
+            .to_string();
         let back = read_frame(&name).unwrap_or_else(|| panic!("{name} does not read back"));
         assert!((back - (start + at)).abs() < 0.001, "{name} -> {back}");
     }
 
     // A quarter-second grid and a millisecond stamp cannot ask for the same name twice — which is why
     // no `-n` collision suffix is needed anywhere in the plan.
-    let names: Vec<String> = (0..8).map(|step| frames::frame_file(start, step as f64 * GRID)).collect();
+    let names: Vec<String> = (0..8)
+        .map(|step| frames::frame_file(start, step as f64 * GRID))
+        .collect();
     let unique: std::collections::HashSet<&String> = names.iter().collect();
     assert_eq!(unique.len(), names.len(), "{names:?}");
 
@@ -372,9 +459,18 @@ fn f1_6_s4_every_frame_is_named_by_its_exact_second_on_the_files_clock() {
     assert_eq!(plan.len(), 2, "one command per frame");
     for (index, command) in plan.iter().enumerate() {
         assert_eq!(command[0], "-ss", "{command:?}");
-        let input = command.iter().position(|arg| arg == "-i").expect("an input");
-        assert!(command[0] == "-ss" && input > 1, "the seek leads: {command:?}");
-        let frames_at = command.iter().position(|arg| arg == "-frames:v").expect("one frame");
+        let input = command
+            .iter()
+            .position(|arg| arg == "-i")
+            .expect("an input");
+        assert!(
+            command[0] == "-ss" && input > 1,
+            "the seek leads: {command:?}"
+        );
+        let frames_at = command
+            .iter()
+            .position(|arg| arg == "-frames:v")
+            .expect("one frame");
         assert_eq!(command[frames_at + 1], "1", "{command:?}");
         assert!(
             command.last().unwrap().contains(dir.to_str().unwrap()),
@@ -448,7 +544,9 @@ fn f1_6_s5_the_marker_is_written_last_and_the_pass_says_what_it_made() {
     .expect("a static recording is a normal recording");
     assert_eq!(outcome.changes, 0);
     assert_eq!(outcome.logs, vec![">>> [mic] 4 frames, 0 scene changes"]);
-    assert!(requests::read_frames_marker(&tree, SOURCE).unwrap().is_some());
+    assert!(requests::read_frames_marker(&tree, SOURCE)
+        .unwrap()
+        .is_some());
 
     // And a failure leaves no marker, so the next run extracts rather than skipping.
     let (_root, tree) = project("s5-failed");
@@ -467,6 +565,8 @@ fn f1_6_s5_the_marker_is_written_last_and_the_pass_says_what_it_made() {
     )
     .expect_err("a failed extraction is not a success");
     assert_eq!(err, "ffmpeg exited 1");
-    assert!(requests::read_frames_marker(&tree, SOURCE).unwrap().is_none());
+    assert!(requests::read_frames_marker(&tree, SOURCE)
+        .unwrap()
+        .is_none());
     assert!(!tree.frames_marker(SOURCE).exists());
 }

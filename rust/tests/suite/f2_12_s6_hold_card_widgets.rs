@@ -16,13 +16,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use naivepost::cut::{self, Seg};
-use naivepost::ui::cut_card_hold as hold;
 use naivepost::shell::Page;
 use naivepost::timeline::Recording;
 use naivepost::ui;
+use naivepost::ui::cut_card_hold as hold;
 
 use crate::common;
-use common::{clip, cut_button as button, fixture_dir, hold_last_window, release_last_window, settle, status_text, tape};
+use common::{
+    clip, cut_button as button, fixture_dir, hold_last_window, release_last_window, settle,
+    status_text, tape,
+};
 
 static RAN_DOUBLE: AtomicBool = AtomicBool::new(false);
 static RAN_RIGHT: AtomicBool = AtomicBool::new(false);
@@ -32,7 +35,13 @@ static RAN_RULE: AtomicBool = AtomicBool::new(false);
 
 /// A spliced card: `s == e` with a `dur`, which is what makes it an insert (`Seg::is_insert`).
 fn card(at: f64, dur: f64, path: &str) -> Seg {
-    Seg { s: at, e: at, dur, ins: path.to_string(), ..Default::default() }
+    Seg {
+        s: at,
+        e: at,
+        dur,
+        ins: path.to_string(),
+        ..Default::default()
+    }
 }
 
 /// A button's word, as the page's own accessor reads it (`label` is an Option on a button built from icon
@@ -42,7 +51,11 @@ fn word(window: &adw::ApplicationWindow, name: &str) -> String {
 }
 
 /// A window sitting on the Cut tab with this tape and cut, the way `insert_form_widgets.rs` builds one.
-fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &cut::Cut) -> adw::ApplicationWindow {
+fn cut_page(
+    app: &adw::Application,
+    tape: &[Recording],
+    seeded: &cut::Cut,
+) -> adw::ApplicationWindow {
     release_last_window();
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
@@ -87,27 +100,46 @@ fn f2_12_s6_a_double_click_on_a_card_holds_it(app: &adw::Application) {
         ..Default::default()
     };
     let window = cut_page(app, &tape(), &seeded);
-    assert_eq!(ui::held_clip(), None, "the page opened with nothing in hand");
+    assert_eq!(
+        ui::held_clip(),
+        None,
+        "the page opened with nothing in hand"
+    );
     assert_eq!(word(&window, "insert-button"), "Insert");
 
     // 31 s is one second into the card, which runs 30..34 (`s == e`, so its seconds are `s .. s + dur`).
     press_left(&window, x_of(&window, 31.0), 2);
 
     let held = ui::held_clip().expect("the double click took the card up");
-    assert_eq!(held.ins, "assets/tier.svg", "the card under the ink came into the hand");
-    assert_eq!(held.s, 30.0, "and it is that card, not its neighbour: {:?}", held);
+    assert_eq!(
+        held.ins, "assets/tier.svg",
+        "the card under the ink came into the hand"
+    );
+    assert_eq!(
+        held.s, 30.0,
+        "and it is that card, not its neighbour: {:?}",
+        held
+    );
     assert_eq!(
         word(&window, "insert-button"),
         naivepost::cut_insert::edit_verb(true),
         "S6: Insert becomes Edit under a held card"
     );
-    assert!(status_text(&window).contains("tier.svg"), "{}", status_text(&window));
+    assert!(
+        status_text(&window).contains("tier.svg"),
+        "{}",
+        status_text(&window)
+    );
     let held_now = ui::held_clip().expect("the gesture left the card in hand");
     assert!(
         naivepost::cut_insert::hold(Some(&held_now)),
         "a card held by the double click is a card to the button's own predicate: {held_now:?}"
     );
-    assert!(status_text(&window).contains("Edit"), "the line names the new word: {}", status_text(&window));
+    assert!(
+        status_text(&window).contains("Edit"),
+        "the line names the new word: {}",
+        status_text(&window)
+    );
     window.close();
 }
 
@@ -122,13 +154,22 @@ fn f2_12_s6_a_right_click_holds_a_card_too(app: &adw::Application) {
     let window = cut_page(app, &tape(), &seeded);
     assert!(hold::holds_card(3, 1), "one right press is a hold");
     // Same second, same span, same `press` the gesture forwards to: a first press is a hold, so it holds.
-    let said = hold::press(&window, ui::cut_card_hold::seconds_at_for_test(&window, x_of(&window, 32.0)));
+    let said = hold::press(
+        &window,
+        ui::cut_card_hold::seconds_at_for_test(&window, x_of(&window, 32.0)),
+    );
     let held = ui::held_clip().expect("a first right press takes the card up");
     assert_eq!(held.ins, "assets/tier.svg");
-    assert!(said.contains("Edit"), "the sentence names the new word: {said}");
+    assert!(
+        said.contains("Edit"),
+        "the sentence names the new word: {said}"
+    );
     assert_eq!(word(&window, "insert-button"), "Edit");
     assert!(hold::holds_card(1, 2), "a second left click is a hold");
-    assert!(!hold::holds_card(1, 1), "a lone left click is the line's, not this rule's");
+    assert!(
+        !hold::holds_card(1, 1),
+        "a lone left click is the line's, not this rule's"
+    );
     window.close();
 }
 
@@ -146,9 +187,17 @@ fn f2_12_s6_a_press_on_footage_holds_nothing(app: &adw::Application) {
 
     press_left(&window, x_of(&window, 10.0), 2);
 
-    assert_eq!(ui::held_clip().map(|seg| seg.ins).as_deref(), Some("assets/tier.svg"), "a miss keeps the hand");
+    assert_eq!(
+        ui::held_clip().map(|seg| seg.ins).as_deref(),
+        Some("assets/tier.svg"),
+        "a miss keeps the hand"
+    );
     assert_eq!(ui::held_clip().unwrap().s, before.s);
-    assert_eq!(status_text(&window), hold::NOTHING, "the refusal is the module's sentence, verbatim");
+    assert_eq!(
+        status_text(&window),
+        hold::NOTHING,
+        "the refusal is the module's sentence, verbatim"
+    );
     assert_eq!(
         word(&window, "insert-button"),
         "Edit",
@@ -172,16 +221,30 @@ fn f2_12_s6_a_held_card_presses_as_edit(app: &adw::Application) {
         naivepost::cut_insert::hold(Some(&held)),
         "the press's own predicate must call a card held by the gesture a card: {held:?}"
     );
-    assert_eq!(word(&window, "insert-button"), naivepost::cut_insert::edit_verb(true));
+    assert_eq!(
+        word(&window, "insert-button"),
+        naivepost::cut_insert::edit_verb(true)
+    );
     // And the hand is the card the band was aimed at, not the footage around it: same `s`, same file.
     // The hand is the card the band was aimed at, not the footage around it: same `s`, same file.
-    assert_eq!((held.s, held.e, held.dur), (30.0, 30.0, 4.0), "the spliced card, whole: {held:?}");
+    assert_eq!(
+        (held.s, held.e, held.dur),
+        (30.0, 30.0, 4.0),
+        "the spliced card, whole: {held:?}"
+    );
     // With the card gone from the hand the same predicate stops answering yes, so the word follows the hand
     // back -- which is the other side of the same door the gesture pressed.
     ui::set_held_clip(None);
     ui::refresh_insert_button(&window);
-    assert!(!naivepost::cut_insert::hold(ui::held_clip().as_ref()), "no hand, no card");
-    assert_eq!(word(&window, "insert-button"), "Insert", "the word follows the hand back");
+    assert!(
+        !naivepost::cut_insert::hold(ui::held_clip().as_ref()),
+        "no hand, no card"
+    );
+    assert_eq!(
+        word(&window, "insert-button"),
+        "Insert",
+        "the word follows the hand back"
+    );
     window.close();
 }
 
@@ -190,11 +253,20 @@ fn f2_12_s6_a_held_card_presses_as_edit(app: &adw::Application) {
 /// click count allows; a LONE left click answers false, because that press belongs to F2.4's line.
 fn f2_12_s6_the_gate_is_the_rule(app: &adw::Application) {
     assert!(hold::holds_card(3, 1), "one right press is a hold");
-    assert!(hold::holds_card(3, 2), "a double right press is still a hold — holds the same card twice");
+    assert!(
+        hold::holds_card(3, 2),
+        "a double right press is still a hold — holds the same card twice"
+    );
     assert!(hold::holds_card(1, 2), "a second left click is a hold");
     assert!(hold::holds_card(1, 3), "and a third is");
-    assert!(!hold::holds_card(1, 1), "a lone left click is the line's, not this rule's");
-    assert!(!hold::holds_card(0, 1), "no button and one click is nothing (a synthetic emit's answer)");
+    assert!(
+        !hold::holds_card(1, 1),
+        "a lone left click is the line's, not this rule's"
+    );
+    assert!(
+        !hold::holds_card(0, 1),
+        "no button and one click is nothing (a synthetic emit's answer)"
+    );
     // The refusal sentence, once, with the word for what it is not aimed at.
     assert!(hold::NOTHING.contains("footage"), "{}", hold::NOTHING);
     let _ = app;
@@ -225,9 +297,21 @@ fn f2_12_s6_hold_card_wire() {
     std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
 
     window_round();
-    assert!(RAN_DOUBLE.load(Ordering::SeqCst), "the double-click check never ran");
-    assert!(RAN_RIGHT.load(Ordering::SeqCst), "the right-click check never ran");
-    assert!(RAN_FOOTAGE.load(Ordering::SeqCst), "the footage-miss check never ran");
-    assert!(RAN_PRESSED.load(Ordering::SeqCst), "the held-card Edit check never ran");
+    assert!(
+        RAN_DOUBLE.load(Ordering::SeqCst),
+        "the double-click check never ran"
+    );
+    assert!(
+        RAN_RIGHT.load(Ordering::SeqCst),
+        "the right-click check never ran"
+    );
+    assert!(
+        RAN_FOOTAGE.load(Ordering::SeqCst),
+        "the footage-miss check never ran"
+    );
+    assert!(
+        RAN_PRESSED.load(Ordering::SeqCst),
+        "the held-card Edit check never ran"
+    );
     assert!(RAN_RULE.load(Ordering::SeqCst), "the gate check never ran");
 }

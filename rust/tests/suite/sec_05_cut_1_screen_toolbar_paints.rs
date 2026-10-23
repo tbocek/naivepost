@@ -8,11 +8,11 @@
 //! what `snapshot.rs` presses too) rather than poking state, so a future change that forces a widget visible
 //! or hides one the geometry asks for fails here.
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, hold_last_window, release_last_window, settle};
 use gtk4 as gtk;
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle};
 
 static RAN_PAINTS: AtomicBool = AtomicBool::new(false);
 static RAN_S31: AtomicBool = AtomicBool::new(false);
@@ -22,7 +22,10 @@ static RAN_S15_S16: AtomicBool = AtomicBool::new(false);
 const BAR_CONTROLS: [(&str, &str); 18] = [
     ("play-recording-button", "5 \u{25b6} the recording"),
     ("play-cut-button", "6 \u{25b6}\u{2702} the cut"),
-    ("review-cuts-button", "7 \u{25b6}\u{2702}\u{2702} review every cut"),
+    (
+        "review-cuts-button",
+        "7 \u{25b6}\u{2702}\u{2702} review every cut",
+    ),
     ("line-step-back-five", "8 frame steps"),
     ("preview-volume", "9 preview volume"),
     ("add-button", "10 Add"),
@@ -40,7 +43,6 @@ const BAR_CONTROLS: [(&str, &str); 18] = [
     ("zoom-in-button", "22 zoom +"),
 ];
 
-
 /// A Cut page over a session with footage, at §1's own minimum size — the size at which the toolbar must
 /// show everything, and the size `just snapshot 05-cut` renders at. Shape of
 /// `sec_05_cut_1_screen_toolbar_fits.rs::cut_page`.
@@ -52,7 +54,9 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
     std::env::set_current_dir(&root).expect("cwd pinned away from rust/");
     let session = naivepost::startup::session_dir(&root);
     let mut seed = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    seed.sources.iter_mut().for_each(|source| source.footage = true);
+    seed.sources
+        .iter_mut()
+        .for_each(|source| source.footage = true);
     std::fs::create_dir_all(&session).expect("session folder");
     naivepost::project::save(&seed, &session).expect("the session is a real project on disk");
 
@@ -70,7 +74,11 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
         end: 120.0,
     }]);
     let seeded = naivepost::cut::Cut {
-        segs: vec![naivepost::cut::Seg { s: 0.0, e: 60.0, ..Default::default() }],
+        segs: vec![naivepost::cut::Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     naivepost::ui::seed_review_cut(&window, &seeded);
@@ -81,10 +89,7 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
 
 /// The scroller inside a control's `group-‹name›` box: its bounds are the hole the buttons show through, so
 /// a control past its right edge is PAINTED clipped even while it sits inside the bar.
-fn viewport_of(
-    window: &adw::ApplicationWindow,
-    widget: &gtk::Widget,
-) -> (String, f64, f64) {
+fn viewport_of(window: &adw::ApplicationWindow, widget: &gtk::Widget) -> (String, f64, f64) {
     let mut owner: Option<gtk::Widget> = Some(widget.clone().upcast());
     while let Some(node) = owner {
         let name = node.widget_name().to_string();
@@ -96,7 +101,11 @@ fn viewport_of(
             let bounds = scroll
                 .compute_bounds(window.upcast_ref::<gtk::Widget>())
                 .expect("the group's scroller has bounds once laid out");
-            return (name, f64::from(bounds.x()), f64::from(bounds.x() + bounds.width()));
+            return (
+                name,
+                f64::from(bounds.x()),
+                f64::from(bounds.x() + bounds.width()),
+            );
         }
         owner = node.parent();
     }
@@ -154,8 +163,10 @@ fn check_the_scrollbar_paints_a_geared_thumb(app: &adw::Application) {
         .expect("badge 31 is on the page")
         .downcast::<gtk::Scrollbar>()
         .expect("`track-scrollbar` is a scrollbar");
-    let zoom_in = common::find_named(&window, "zoom-in-button").expect("\u{a7}1 item 22 is on the bar");
-    let zoom_out = common::find_named(&window, "zoom-out-button").expect("\u{a7}1 item 22's twin is on the bar");
+    let zoom_in =
+        common::find_named(&window, "zoom-in-button").expect("\u{a7}1 item 22 is on the bar");
+    let zoom_out = common::find_named(&window, "zoom-out-button")
+        .expect("\u{a7}1 item 22's twin is on the bar");
     let view = naivepost::ui::cut_view::surface_width(&window);
 
     // Walk all the way down with the page's own − door: the ladder's floor is the film length fitting.
@@ -169,7 +180,10 @@ fn check_the_scrollbar_paints_a_geared_thumb(app: &adw::Application) {
         naivepost::ui::cut_view::fits(total_floor, view_floor),
         "at the zoom floor the whole session fits the view: {total_floor} <= {view_floor}"
     );
-    assert!(!bar.is_visible(), "\u{a7}A: the bar is hidden when everything fits");
+    assert!(
+        !bar.is_visible(),
+        "\u{a7}A: the bar is hidden when everything fits"
+    );
 
     // Zoom in through the button until the tape outgrows the view.
     for _ in 0..12 {
@@ -179,7 +193,9 @@ fn check_the_scrollbar_paints_a_geared_thumb(app: &adw::Application) {
             break;
         }
     }
-    common::wait_until("the scrollbar is shown once the tape overflows", || bar.is_visible());
+    common::wait_until("the scrollbar is shown once the tape overflows", || {
+        bar.is_visible()
+    });
     let (total, view_now) = naivepost::ui::cut_view::extents(view);
     assert!(
         !naivepost::ui::cut_view::fits(total, view_now),
@@ -205,21 +221,23 @@ fn check_the_scrollbar_paints_a_geared_thumb(app: &adw::Application) {
         view_now * geared
     );
     assert_eq!(
-        naivepost::ui::cut_view::DRAG_PER_SCREENFUL_PX, 40.0,
+        naivepost::ui::cut_view::DRAG_PER_SCREENFUL_PX,
+        40.0,
         "\u{a7}B spells the gearing as 40 px of drag per screenful"
     );
 
     // And back down: the same door that showed the bar hides it again, because the geometry says so.
-    // Measured against `zoom_surface_width`, the width the ladder's own floor is worked out over (the −
-    // handler says so in `window_history_zoom::press_zoom`): the band beside it is as wide as the paned
-    // makes it, which is wider than the window whenever another page's painted widgets ask for more, and a
-    // fit asked of that width is a statement about the band, not about §A's rule.
+    // Measured against `surface_width` — §1's band, the tape a person actually looks at — because that is what
+    // decides whether badge 31 has to show. The − ladder's own floor is deliberately narrower (the strip's
+    // DECLARED fit, see `window_history_zoom::press_zoom`), and since §1's tracks became ONE stack the band is
+    // the wider of the two: at the ladder's floor the film still overflows the full-page band, so the bar
+    // stays up and only the wheel/scrollbar can go shallower. Asking "did − reach its floor" of the band is
+    // therefore a question about a surface the ladder never promised; asking the band's fit is §A's rule.
     for _ in 0..20 {
         zoom_out.emit_by_name::<()>("clicked", &[]);
     }
     settle();
-    let ladder = naivepost::ui::cut_view::zoom_surface_width(&window);
-    let (total_back, view_back) = naivepost::ui::cut_view::extents(ladder);
+    let (total_back, view_back) = naivepost::ui::cut_view::extents(view);
     assert!(
         naivepost::ui::cut_view::fits(total_back, view_back),
         "walking − back to the floor fits the session again: {total_back} <= {view_back}"
@@ -237,7 +255,9 @@ fn round() {
     common::one_app_round(|app| {
         println!("CHECK 1 every \u{a7}1 control 5-22 paints inside its own group");
         check_every_control_paints_inside_its_group(app);
-        println!("CHECK 2 badge 31 shows a geared thumb when the tape overflows, and hides at the floor");
+        println!(
+            "CHECK 2 badge 31 shows a geared thumb when the tape overflows, and hides at the floor"
+        );
         check_the_scrollbar_paints_a_geared_thumb(app);
         RAN_S31.store(true, Ordering::SeqCst);
         println!("CHECK 3 the row list (\u{a7}1's name plates and sound switches) is painted");
@@ -268,7 +288,10 @@ fn check_the_row_list_is_painted(app: &adw::Application) {
     settle();
     let rows = common::find_named(&window, "camera-rows")
         .expect("`camera-rows` (§1's row list) is missing from the page");
-    assert!(rows.is_mapped(), "`camera-rows` is on the page but never mapped");
+    assert!(
+        rows.is_mapped(),
+        "`camera-rows` is on the page but never mapped"
+    );
     assert!(
         common::find_named(&window, "watch-row-1").is_some(),
         "the row list drew no name plate for the session's recording"
@@ -289,7 +312,9 @@ fn cut_page_as_shot(app: &adw::Application) -> adw::ApplicationWindow {
     std::env::set_current_dir(&root).expect("cwd pinned away from rust/");
     let session = naivepost::startup::session_dir(&root);
     let mut seed = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    seed.sources.iter_mut().for_each(|source| source.footage = true);
+    seed.sources
+        .iter_mut()
+        .for_each(|source| source.footage = true);
     std::fs::create_dir_all(&session).expect("session folder");
     naivepost::project::save(&seed, &session).expect("the session is a real project on disk");
 
@@ -309,8 +334,18 @@ fn cut_page_as_shot(app: &adw::Application) -> adw::ApplicationWindow {
     }]);
     let folded = naivepost::cut::Cut {
         segs: vec![
-            naivepost::cut::Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() },
-            naivepost::cut::Seg { s: 40.0, e: 60.0, cam: 0, ..Default::default() },
+            naivepost::cut::Seg {
+                s: 10.0,
+                e: 30.0,
+                cam: 0,
+                ..Default::default()
+            },
+            naivepost::cut::Seg {
+                s: 40.0,
+                e: 60.0,
+                cam: 0,
+                ..Default::default()
+            },
         ],
         lanes: vec![naivepost::cut::Lane {
             name: "mic-lav".to_string(),
@@ -355,7 +390,11 @@ fn check_the_verbs_fit_without_clipping(app: &adw::Application) {
         let widget = common::find_named(&window, name)
             .unwrap_or_else(|| panic!("\u{a7}1 item {what} is missing from the page: `{name}`"));
         let group = group_of(&widget);
-        println!("BTN {name}: visible={} mapped={} in {group:?}", widget.is_visible(), widget.is_mapped());
+        println!(
+            "BTN {name}: visible={} mapped={} in {group:?}",
+            widget.is_visible(),
+            widget.is_mapped()
+        );
         if !widget.is_visible() {
             wrong.push(format!("{name} ({what}) is not visible on the shot's page"));
         }
@@ -380,7 +419,10 @@ fn check_the_verbs_fit_without_clipping(app: &adw::Application) {
         .map(|tool| tool.name.to_string())
         .collect();
     println!("VERBS row: {:?}", names);
-    assert_eq!(names, wanted, "the verbs row is not \u{a7}1's controls in \u{a7}1's order");
+    assert_eq!(
+        names, wanted,
+        "the verbs row is not \u{a7}1's controls in \u{a7}1's order"
+    );
     assert!(
         wrong.is_empty(),
         "{} of \u{a7}1's two last verb controls are not on the shot's page in their own group: {}",

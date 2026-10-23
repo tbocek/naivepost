@@ -86,7 +86,10 @@ pub fn press(selection: Option<(f64, f64)>, line: Option<f64>) -> Pressed {
         if to - from > cut_speed::MIN_MARKED_SECONDS
             || (to - from - cut_speed::MIN_MARKED_SECONDS).abs() < 1e-9
         {
-            return Pressed::Stretched { t: from, dur: to - from };
+            return Pressed::Stretched {
+                t: from,
+                dur: to - from,
+            };
         }
     }
     match line {
@@ -132,20 +135,30 @@ pub fn initial_at_line(line: f64) -> Fx {
 /// its form has to say which. The dash is §F3.6's en dash, not a hyphen. Through [`tools::mm_ss`], which pads — so it
 /// reads `Volume 00:12 – 00:16`, matching every other status line on the page rather than the prototype's `0:12`.
 pub fn form_title(t: f64, dur: f64) -> String {
-    format!("Volume {} \u{2013} {}", tools::mm_ss(t), tools::mm_ss(t + dur))
+    format!(
+        "Volume {} \u{2013} {}",
+        tools::mm_ss(t),
+        tools::mm_ss(t + dur)
+    )
 }
 
 /// F3.6 S3 (`Volume % … Length (s) … Fade in … Fade out … Curve`): the fields, in the order §A.6's sentence reads
 /// them. Order is the sentence a person reads, not a layout detail — as in [`cut_speed::FORM_FIELDS`] and
 /// [`crate::fx_text::FORM_FIELDS`]. The percent comes first because it is the only answer that says what happens to
 /// the sound; everything after it is when.
-pub const FORM_FIELDS: [&str; 5] =
-    ["Volume %", "Length (s)", "Fade in (s)", "Fade out (s)", "Curve"];
+pub const FORM_FIELDS: [&str; 5] = [
+    "Volume %",
+    "Length (s)",
+    "Fade in (s)",
+    "Fade out (s)",
+    "Curve",
+];
 
 /// F3.6 S3 (`"…up to 1000 for a passage recorded too quietly to hear — though a passage lifted that far brings its
 /// hiss up with it"`): §F3.6's own quote, the part after the ellipsis. The 1000 in it is [`max_percent`], i.e. playbin
 /// by another name, which is why this is one sentence and not a number someone has to keep agreeing with the ceiling.
-pub const VOLUME_HELP: &str = "up to 1000 for a passage recorded too quietly to hear \u{2014} though a passage lifted \
+pub const VOLUME_HELP: &str =
+    "up to 1000 for a passage recorded too quietly to hear \u{2014} though a passage lifted \
                                that far brings its hiss up with it";
 
 /// F3.6 S3 (§A.6's fuller wording of the same tooltip): the three readings a person actually uses, in percent because
@@ -161,7 +174,8 @@ pub const VOLUME_HELP_FULL: &str = "how loud these seconds are played, against h
 pub const FADE_IN_HELP: &str = "0 is the hard step, which on a big change is audible as a click";
 
 /// F3.6 S3 (`Fade out`): §A.6's wording — the way back to what was recorded, on the same terms as the way in.
-pub const FADE_OUT_HELP: &str = "how long it takes to come back to the recorded loudness at the end, on the same terms";
+pub const FADE_OUT_HELP: &str =
+    "how long it takes to come back to the recorded loudness at the end, on the same terms";
 
 /// F3.6 S3: what the form holds when Apply is pressed — the percent as typed (the field's unit, not the record's),
 /// the seconds and fades as typed, and the curve's display name.
@@ -233,7 +247,10 @@ pub fn apply(form: &Form) -> Result<Fx, String> {
 /// means ✂ Copy / ✎ Edit of an existing band keep saying the same thing the band said.
 pub fn lane_for_press(lanes: &[crate::cut::Lane], t: f64, dur: f64) -> String {
     let inside = |lane: &crate::cut::Lane| lane.at <= t && t + dur <= lane.at + lane.dur;
-    let mut names = lanes.iter().filter(|lane| inside(lane)).map(|lane| lane.name.clone());
+    let mut names = lanes
+        .iter()
+        .filter(|lane| inside(lane))
+        .map(|lane| lane.name.clone());
     match (names.next(), names.next()) {
         (Some(one), None) => one,
         _ => String::new(),

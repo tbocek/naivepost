@@ -14,12 +14,12 @@ use naivepost::cut::Fx;
 use naivepost::cut_captions::{self as captions, Call, Reply};
 use naivepost::fx_record::{self, Field};
 use naivepost::params;
-use naivepost::tools::clips::{self, Clips};
 use naivepost::roles::Job;
+use naivepost::tools::clips::{self, Clips};
 use naivepost::tools::Tool;
 
 use crate::common;
-use common::{EPS, assert_close, row};
+use common::{assert_close, row, EPS};
 
 /// One row of the catalogue, by id. Both of this flow's ids are catalogued — `P.machine.captionBatch` in §4's list
 /// (which [`params::find`] answers) and `P.policy.captionMinSeconds` in §6's (`params::cut`) — so this looks through
@@ -39,7 +39,12 @@ fn session() -> Vec<(u32, f64)> {
 }
 
 fn call(clip: u32, start: f64, end: f64, text: &str) -> Call {
-    Call { clip, start, end, text: text.to_string() }
+    Call {
+        clip,
+        start,
+        end,
+        text: text.to_string(),
+    }
 }
 
 /// The captions of a reply, or the reason it was thrown away.
@@ -62,14 +67,20 @@ fn f3_9_s1_clips_are_asked_about_at_a_time() {
     let batch_row = row("P.machine.captionBatch");
     assert_eq!(batch_row.spelled, captions::BATCH.to_string());
     assert_eq!(batch_row.from, "cut_captions::BATCH");
-    assert_eq!(params::family("P.machine.captionBatch"), params::Family::Machine);
+    assert_eq!(
+        params::family("P.machine.captionBatch"),
+        params::Family::Machine
+    );
 
     // P.policy.captionMinSeconds: the floor a proposed caption has to clear, catalogued from §3.7's tool — the one
     // place 0.3 is written for this rule.
     let floor = row("P.policy.captionMinSeconds");
     assert_eq!(floor.spelled, "0.3");
     assert_eq!(floor.from, "tools::clips::CAPTION_MIN_SECONDS");
-    assert_eq!(params::family("P.policy.captionMinSeconds"), params::Family::Policy);
+    assert_eq!(
+        params::family("P.policy.captionMinSeconds"),
+        params::Family::Policy
+    );
 
     // An empty cut asks nothing: no request, so no cost and no log line.
     assert_eq!(captions::batches(0), Vec::<(u32, u32)>::new());
@@ -86,12 +97,26 @@ fn f3_9_s1_clips_are_asked_about_at_a_time() {
         let ranges = captions::batches(count);
         let mut next = 1u32;
         for (first, last) in &ranges {
-            assert_eq!(*first, next, "{count} clips: a gap or an overlap at {first}");
-            assert!(last >= first, "{count} clips: {first}–{last} is not inclusive-forward");
-            assert!(last - first < captions::BATCH as u32, "{count} clips: {first}–{last} is over a batch");
+            assert_eq!(
+                *first, next,
+                "{count} clips: a gap or an overlap at {first}"
+            );
+            assert!(
+                last >= first,
+                "{count} clips: {first}–{last} is not inclusive-forward"
+            );
+            assert!(
+                last - first < captions::BATCH as u32,
+                "{count} clips: {first}–{last} is over a batch"
+            );
             next = last + 1;
         }
-        assert_eq!(next, count as u32 + 1, "{count} clips: the clips stop at {}", next - 1);
+        assert_eq!(
+            next,
+            count as u32 + 1,
+            "{count} clips: the clips stop at {}",
+            next - 1
+        );
     }
 }
 
@@ -103,7 +128,11 @@ fn f3_9_s1_clips_are_asked_about_at_a_time() {
 fn f3_9_s2_the_message_shows_clips_and_words_as_offsets() {
     // §F3.9's own example line: one decimal, a space before `s`, and the number is the CLIP's length.
     assert_eq!(captions::clip_line(1, 14.2), "CLIP 1: 14.2 s long");
-    assert_eq!(captions::clip_line(12, 8.0), "CLIP 12: 8.0 s long", "one decimal even on a whole length");
+    assert_eq!(
+        captions::clip_line(12, 8.0),
+        "CLIP 12: 8.0 s long",
+        "one decimal even on a whole length"
+    );
 
     // The `+` says which way the offset runs; brackets and `s` are §F3.9's example exactly (`[+0.4s] …`).
     assert_eq!(captions::offset_line(0.4, "the words"), "[+0.4s] the words");
@@ -114,10 +143,15 @@ fn f3_9_s2_the_message_shows_clips_and_words_as_offsets() {
 
     // The order is the spec's sentence: context, header, then each clip with its own words under it.
     assert!(text.starts_with("the user context\n"), "{text}");
-    let at = text.find(captions::CLIPS_HEADER).expect("the header opens the clip list");
+    let at = text
+        .find(captions::CLIPS_HEADER)
+        .expect("the header opens the clip list");
     let clips_at = text.find("CLIP 1:").expect("the first clip");
     assert!(at < clips_at, "{text}: the header comes after a clip line");
-    assert_eq!(captions::CLIPS_HEADER, "THE CLIPS, AND WHAT WAS SAID OVER EACH:");
+    assert_eq!(
+        captions::CLIPS_HEADER,
+        "THE CLIPS, AND WHAT WAS SAID OVER EACH:"
+    );
     let lines: Vec<&str> = text.lines().skip(2).collect();
     assert_eq!(
         lines,
@@ -137,14 +171,23 @@ fn f3_9_s2_the_message_shows_clips_and_words_as_offsets() {
     let later_words = [(3u32, 0.4f64, "hello")];
     let shown = captions::message("", &later, &later_words);
     assert!(shown.contains("[+0.4s] hello"), "{shown}");
-    assert!(!shown.contains("60.4"), "{shown}: a session second leaked into the request");
-    assert!(!shown.contains("+60"), "{shown}: an absolute second leaked into the request");
+    assert!(
+        !shown.contains("60.4"),
+        "{shown}: a session second leaked into the request"
+    );
+    assert!(
+        !shown.contains("+60"),
+        "{shown}: an absolute second leaked into the request"
+    );
 
     // An empty User Context adds nothing at all — no blank block to be ignored — and words for a clip this batch
     // does not contain are left out rather than sent unlabelled.
     let bare = captions::message("   ", &clips, &words);
     assert!(bare.starts_with(captions::CLIPS_HEADER), "{bare}");
-    assert!(!bare.starts_with('\n'), "{bare}: a blank block opens the message");
+    assert!(
+        !bare.starts_with('\n'),
+        "{bare}: a blank block opens the message"
+    );
     let foreign = [(1u32, 0.4f64, "kept"), (9u32, 0.0, "not in this batch")];
     let filtered = captions::message("", &clips, &foreign);
     assert!(filtered.contains("[+0.4s] kept"), "{filtered}");
@@ -199,31 +242,53 @@ fn f3_9_s4_a_clip_outside_the_batch_loses_the_whole_reply() {
     // Inside the range at both ends, outside either side of it. The wording is §F3.6's flowchart box: the clip number
     // the model has to correct, and the range it should have stayed inside.
     assert_eq!(captions::clip_outside(9, 6, 10), None);
-    assert_eq!(captions::clip_outside(6, 6, 10), None, "the batch's first clip is one of them");
+    assert_eq!(
+        captions::clip_outside(6, 6, 10),
+        None,
+        "the batch's first clip is one of them"
+    );
     assert_eq!(captions::clip_outside(10, 6, 10), None, "and its last");
-    assert_eq!(captions::clip_outside(5, 6, 10), Some("clip 5 is not one of the clips given (6 to 10)".to_string()));
-    assert_eq!(captions::clip_outside(11, 6, 10), Some("clip 11 is not one of the clips given (6 to 10)".to_string()));
+    assert_eq!(
+        captions::clip_outside(5, 6, 10),
+        Some("clip 5 is not one of the clips given (6 to 10)".to_string())
+    );
+    assert_eq!(
+        captions::clip_outside(11, 6, 10),
+        Some("clip 11 is not one of the clips given (6 to 10)".to_string())
+    );
 
     // The good caption first, then the impossible one: nothing from this reply survives, which is what a batch means
     // as one answer about a known set of clips. Asserted as an empty result rather than as "one fewer".
-    let mixed = vec![call(6, 1.0, 3.0, "fine"), call(3, 1.0, 3.0, "counted from the wrong end")];
+    let mixed = vec![
+        call(6, 1.0, 3.0, "fine"),
+        call(3, 1.0, 3.0, "counted from the wrong end"),
+    ];
     match captions::place(&batch(), &mixed) {
         Reply::Rejected(reason) => {
             assert_eq!(reason, "clip 3 is not one of the clips given (6 to 10)");
         }
-        Reply::Accepted(fxs) => panic!("a reply naming clip 3 was accepted with {} caption(s): {fxs:?}", fxs.len()),
+        Reply::Accepted(fxs) => panic!(
+            "a reply naming clip 3 was accepted with {} caption(s): {fxs:?}",
+            fxs.len()
+        ),
     }
 
     // The order does not matter either: membership is checked over the whole reply before anything is placed, so a
     // bad number in first place loses the good one that follows just as completely.
     let reversed = vec![call(3, 1.0, 3.0, "wrong"), call(6, 1.0, 3.0, "fine")];
-    assert!(matches!(captions::place(&batch(), &reversed), Reply::Rejected(_)));
+    assert!(matches!(
+        captions::place(&batch(), &reversed),
+        Reply::Rejected(_)
+    ));
 
     // Retried once: after one rejection the batch goes out again, and after two it does not — S6's line is what is
     // left of a batch that keeps failing.
     assert!(captions::retries(1), "one attempt made, so one retry owed");
     assert!(!captions::retries(2), "two attempts made: never a third");
-    assert!(!captions::retries(0), "nothing asked yet, so nothing to retry");
+    assert!(
+        !captions::retries(0),
+        "nothing asked yet, so nothing to retry"
+    );
 }
 
 // --- S5: the floor, the fades, and whose seconds these are ---------------------------------------------------------
@@ -258,8 +323,16 @@ fn f3_9_s5_short_or_wordless_captions_are_skipped_quietly() {
 
     // The session second is the app's arithmetic: clip 7 sits after clip 6, which is ten seconds long, so its 4.0 s
     // offset is session 14.0 — the model was never asked where clip 7 begins and could not have answered.
-    assert_close("clip 6 starts at 0.0", captions::session_start(&batch(), 6), 0.0);
-    assert_close("clip 7 starts after ten seconds", captions::session_start(&batch(), 7), 10.0);
+    assert_close(
+        "clip 6 starts at 0.0",
+        captions::session_start(&batch(), 6),
+        0.0,
+    );
+    assert_close(
+        "clip 7 starts after ten seconds",
+        captions::session_start(&batch(), 7),
+        10.0,
+    );
     assert_close("the caption's session second", fx.t, 14.0);
     // The same rule with positions the caller knows: 60.0 + 0.4 = 60.4.
     let at = captions::on_the_timeline_at(60.0, (0.4, 1.6), "words");
@@ -280,11 +353,16 @@ fn f3_9_s5_short_or_wordless_captions_are_skipped_quietly() {
     // A short one fades by d/4 instead — and it is NOT §3.7's tool fade (0.15), which stays what the tool reports.
     let brief = captions::on_the_timeline_at(0.0, (0.0, 0.8), "brief");
     assert_close("a short caption fades by d/4", brief.trans, 0.2);
-    assert!((brief.trans - clips::FADE_SECONDS).abs() > EPS, "S5's fade is not the tool's 0.15");
+    assert!(
+        (brief.trans - clips::FADE_SECONDS).abs() > EPS,
+        "S5's fade is not the tool's 0.15"
+    );
 
     // Silence at nought gain is nothing to do with this flow, but a caption is not silence either: an accepted reply
     // never leaves a caption-less record behind when the model sent only refusals.
-    assert!(matches!(captions::place(&batch(), &[call(6, 1.0, 1.2, "x")]), Reply::Accepted(ref fxs) if fxs.is_empty()));
+    assert!(
+        matches!(captions::place(&batch(), &[call(6, 1.0, 1.2, "x")]), Reply::Accepted(ref fxs) if fxs.is_empty())
+    );
 }
 
 // --- S6: the batch that keeps failing --------------------------------------------------------------------------------
@@ -303,7 +381,10 @@ fn f3_9_s6_a_batch_that_keeps_failing_is_dropped_and_said_so() {
     let line = captions::skipped(1, 5);
     assert!(line.contains("1\u{2013}5"), "{line}");
     let between = &line[line.find("clips ").unwrap() + 6..line.find(" skipped").unwrap()];
-    assert!(!between.contains('-'), "{between}: an ASCII hyphen in the range");
+    assert!(
+        !between.contains('-'),
+        "{between}: an ASCII hyphen in the range"
+    );
     assert!(line.starts_with("!!! captions: "), "{line}");
 
     // The flow read whole. One batch is asked twice and both replies name a clip outside it, so it contributes no
@@ -323,7 +404,9 @@ fn f3_9_s6_a_batch_that_keeps_failing_is_dropped_and_said_so() {
     let hopeless = call(5, 1.0, 3.0, "counted from the wrong end");
     for runs in 1..=2 {
         match captions::place(&first_batch, std::slice::from_ref(&hopeless)) {
-            Reply::Accepted(fxs) => panic!("clip 5 is not in 6\u{2013}10: {} caption(s)", fxs.len()),
+            Reply::Accepted(fxs) => {
+                panic!("clip 5 is not in 6\u{2013}10: {} caption(s)", fxs.len())
+            }
             // The first rejection owes a retry; the second does not, and that is when S6's line is written.
             Reply::Rejected(_) if captions::retries(runs) => continue,
             Reply::Rejected(_) => log.push(captions::skipped(6, 10)),
@@ -339,11 +422,23 @@ fn f3_9_s6_a_batch_that_keeps_failing_is_dropped_and_said_so() {
         Reply::Accepted(fxs) => kept = fxs,
         Reply::Rejected(reason) => panic!("a reply inside its batch was rejected: {reason}"),
     }
-    assert_eq!(second_batch.first(), Some(&(11, 10.0)), "the batch asked about starts at clip 11");
+    assert_eq!(
+        second_batch.first(),
+        Some(&(11, 10.0)),
+        "the batch asked about starts at clip 11"
+    );
     assert_eq!(log, vec![captions::skipped(6, 10).to_string()], "{log:?}");
-    assert_eq!(kept.len(), 1, "the cut stands: one caption from the batch that answered");
+    assert_eq!(
+        kept.len(),
+        1,
+        "the cut stands: one caption from the batch that answered"
+    );
     assert_eq!(kept[0].text, "words");
     // Ten clips of ten seconds came before clip 11, so its 1.0 s offset is session 101.0 — computed here, and never
     // something the model was shown or asked for.
-    assert_close("session second of the surviving caption", kept[0].t, 100.0 + 1.0);
+    assert_close(
+        "session second of the surviving caption",
+        kept[0].t,
+        100.0 + 1.0,
+    );
 }

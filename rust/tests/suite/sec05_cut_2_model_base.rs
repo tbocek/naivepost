@@ -29,8 +29,16 @@ static RAN_WIRE: AtomicBool = AtomicBool::new(false);
 fn suggested_cut() -> Cut {
     Cut {
         segs: vec![
-            Seg { s: 0.0, e: 30.0, ..Default::default() },
-            Seg { s: 40.0, e: 60.0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 30.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 40.0,
+                e: 60.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }
@@ -51,11 +59,18 @@ fn answer() -> Applied {
 fn check_the_suggestion_is_the_base() {
     // The page opened on one long take: that was the base before anything happened.
     let opened = Cut {
-        segs: vec![Seg { s: 0.0, e: 100.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 100.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     let mut history = History::open(&opened);
-    assert!(history.base_is_the_screen(&opened), "the page opens on its own cut");
+    assert!(
+        history.base_is_the_screen(&opened),
+        "the page opens on its own cut"
+    );
 
     // A hand edit before the suggestion: the model's answer lands, and the base moves WITH it (§2).
     let landed = suggested_cut();
@@ -74,11 +89,17 @@ fn check_the_suggestion_is_the_base() {
     let mut after_hand = suggested_cut();
     after_hand.segs[1].e = 55.0;
     history.note_change(&after_hand);
-    assert!(!history.base_is_the_screen(&after_hand), "the hand edit is not the base");
+    assert!(
+        !history.base_is_the_screen(&after_hand),
+        "the hand edit is not the base"
+    );
 
     // Revert: the hand edit disappears, the suggestion stands.
     let back = history.revert();
-    assert_eq!(back.segs, landed.segs, "Revert lands exactly the suggested scenes");
+    assert_eq!(
+        back.segs, landed.segs,
+        "Revert lands exactly the suggested scenes"
+    );
     assert_ne!(back.segs, opened.segs, "and not the pre-suggestion take");
     assert_ne!(back.segs, after_hand.segs, "and not the hand-trimmed tail");
     RAN_LOGIC.store(true, Ordering::SeqCst);
@@ -86,7 +107,11 @@ fn check_the_suggestion_is_the_base() {
 
 /// A tape long enough that the Cut tab unlocks and the page has something to cut.
 fn tape() -> Vec<Recording> {
-    vec![Recording { base: "session-tape".into(), start: 0.0, end: 120.0 }]
+    vec![Recording {
+        base: "session-tape".into(),
+        start: 0.0,
+        end: 120.0,
+    }]
 }
 
 fn cut_page(app: &adw::Application, seeded: &Cut) -> adw::ApplicationWindow {
@@ -122,7 +147,11 @@ fn hand_trimmed() -> Cut {
 /// the walk-back rule produces, because a test cannot dial a model it is not pointed at.
 fn check_revert_after_a_suggestion_keeps_the_suggestion(app: &adw::Application) {
     let opened = Cut {
-        segs: vec![Seg { s: 0.0, e: 100.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 100.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     let window = cut_page(app, &opened);
@@ -135,7 +164,8 @@ fn check_revert_after_a_suggestion_keeps_the_suggestion(app: &adw::Application) 
         "the landed suggestion is what the page shows"
     );
     // And the page knows it: Revert went live, because a step was recorded as well as a base moved.
-    let revert = ui::line_step_button(&window, "revert-button").expect("the toolbar carries revert-button");
+    let revert =
+        ui::line_step_button(&window, "revert-button").expect("the toolbar carries revert-button");
     assert!(revert.is_sensitive(), "Revert is live after a suggestion");
 
     // A hand edit on top of it, through the same door every hand edit uses (a trim of the second clip).
@@ -170,15 +200,23 @@ fn round() {
 }
 
 #[test]
-fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s1_a_suggestion_becomes_what_revert_goes_back_to() {
+fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s1_a_suggestion_becomes_what_revert_goes_back_to(
+) {
     common::pin_private_cwd();
     round();
-    assert!(RAN_LOGIC.load(Ordering::SeqCst), "the base-moves-with-a-suggestion check never ran");
+    assert!(
+        RAN_LOGIC.load(Ordering::SeqCst),
+        "the base-moves-with-a-suggestion check never ran"
+    );
 }
 
 #[test]
-fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s2_a_revert_after_a_suggestion_keeps_the_suggested_work_and_drops_only_hand_edits() {
+fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s2_a_revert_after_a_suggestion_keeps_the_suggested_work_and_drops_only_hand_edits(
+) {
     common::pin_private_cwd();
     round();
-    assert!(RAN_WIRE.load(Ordering::SeqCst), "the Revert-button check never ran");
+    assert!(
+        RAN_WIRE.load(Ordering::SeqCst),
+        "the Revert-button check never ran"
+    );
 }

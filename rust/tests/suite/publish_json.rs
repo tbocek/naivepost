@@ -7,11 +7,11 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::temp_dir;
+use naivepost::layout::Tree;
 use naivepost::project::{self, Crop, Publish, TextMark, TitleBox};
 use naivepost::publish;
-use naivepost::layout::Tree;
-use crate::common;
-use common::{temp_dir};
 
 /// A project folder inside a throwaway root, holding the given file text at wherever
 /// this project's publish.json lives (or no file).
@@ -54,13 +54,24 @@ fn sec_01_project_and_files_5_producepublishpublishjson_the_specs_example_round_
     assert!(!p.own);
     assert_eq!(
         p.title_box,
-        Some(TitleBox { cx: 0.5, cy: 0.25, wf: 1.0, hf: 0.4 })
+        Some(TitleBox {
+            cx: 0.5,
+            cy: 0.25,
+            wf: 1.0,
+            hf: 0.4
+        })
     );
     assert_eq!(p.thumb_title, "…");
     assert!(p.title_seeded);
     assert_eq!(
         p.texts,
-        [TextMark { cx: 0.3, cy: 0.8, wf: 0.4, hf: 0.1, text: "…".to_string() }]
+        [TextMark {
+            cx: 0.3,
+            cy: 0.8,
+            wf: 0.4,
+            hf: 0.1,
+            text: "…".to_string()
+        }]
     );
     assert_eq!((p.title.as_str(), p.prompt.as_str()), ("…", "…"));
     assert_eq!((p.negative.as_str(), p.description.as_str()), ("…", "…"));
@@ -71,13 +82,20 @@ fn sec_01_project_and_files_5_producepublishpublishjson_the_specs_example_round_
 }
 
 #[test]
-fn sec_01_project_and_files_5_producepublishpublishjson_the_first_frame_is_the_base_and_the_rest_are_references() {
+fn sec_01_project_and_files_5_producepublishpublishjson_the_first_frame_is_the_base_and_the_rest_are_references(
+) {
     let frames = ["f0", "f1", "f2"];
-    let p = Publish { frames: frames.iter().map(|f| f.to_string()).collect(), ..Default::default() };
+    let p = Publish {
+        frames: frames.iter().map(|f| f.to_string()).collect(),
+        ..Default::default()
+    };
 
     // Order is the whole answer: the base is the first, and there is no index beside it.
     assert_eq!(publish::base(&p), Some("f0"));
-    assert_eq!(publish::references(&p), ["f1".to_string(), "f2".to_string()]);
+    assert_eq!(
+        publish::references(&p),
+        ["f1".to_string(), "f2".to_string()]
+    );
 
     let none = Publish::default();
     assert_eq!(publish::base(&none), None);
@@ -89,11 +107,17 @@ fn sec_01_project_and_files_5_producepublishpublishjson_the_first_frame_is_the_b
     assert!(publish::set_base(&mut chosen, "f2"));
     assert_eq!(chosen.frames, ["f2", "f0", "f1"]);
     assert_eq!(publish::base(&chosen), Some("f2"));
-    assert_eq!(publish::references(&chosen), ["f0".to_string(), "f1".to_string()]);
+    assert_eq!(
+        publish::references(&chosen),
+        ["f0".to_string(), "f1".to_string()]
+    );
 
     // A name that is not one of the frames chooses nothing.
     let mut stranger = p.clone();
-    assert!(!publish::set_base(&mut stranger, "project:sources/nope.jpg"));
+    assert!(!publish::set_base(
+        &mut stranger,
+        "project:sources/nope.jpg"
+    ));
     assert_eq!(stranger.frames, p.frames);
 
     // And the choice is what reaches the file: the base on disk is the first entry.
@@ -105,7 +129,8 @@ fn sec_01_project_and_files_5_producepublishpublishjson_the_first_frame_is_the_b
 }
 
 #[test]
-fn sec_01_project_and_files_5_producepublishpublishjson_own_says_the_picture_was_chosen_not_drawn() {
+fn sec_01_project_and_files_5_producepublishpublishjson_own_says_the_picture_was_chosen_not_drawn()
+{
     let p = Publish {
         frames: vec!["project:prepare/inputs/frames/a/2026-09-16_17-25-30.jpg".to_string()],
         own: true,
@@ -125,7 +150,10 @@ fn sec_01_project_and_files_5_producepublishpublishjson_own_says_the_picture_was
     // Not chosen, so said as false: unlike §3 and §4, this record writes every key it
     // has (§5's example shows `"own": false` too), which is what lets a save agree with
     // §2's byte comparison. Absent reads back false all the same.
-    let drawn = Publish { frames: p.frames.clone(), ..Default::default() };
+    let drawn = Publish {
+        frames: p.frames.clone(),
+        ..Default::default()
+    };
     publish::save(&drawn, &t).unwrap();
     assert!(read(&t).contains("\"own\": false"), "{}", read(&t));
     assert!(!publish::load(&t).unwrap().own);
@@ -138,7 +166,8 @@ fn sec_01_project_and_files_5_producepublishpublishjson_own_says_the_picture_was
 }
 
 #[test]
-fn sec_01_project_and_files_5_producepublishpublishjson_an_existing_publish_json_means_the_upload_text_is_written() {
+fn sec_01_project_and_files_5_producepublishpublishjson_an_existing_publish_json_means_the_upload_text_is_written(
+) {
     // Neither folder: nothing written.
     let (_root, t) = with_file("flag", None);
     assert!(!publish::is_written(&t));
@@ -164,9 +193,14 @@ fn sec_01_project_and_files_5_producepublishpublishjson_an_existing_publish_json
 fn sec_01_project_and_files_5_producepublishpublishjson_deleting_the_folder_starts_the_step_over() {
     let (_root, t) = with_file("start-over", None);
     // Something of the cut beside it, to show only the publish folder goes.
-    t.write_file(std::path::Path::new("cut/cut.json"), br#"{"segs":[]}"#).unwrap();
+    t.write_file(std::path::Path::new("cut/cut.json"), br#"{"segs":[]}"#)
+        .unwrap();
 
-    let p = Publish { title: "…".to_string(), description: "…".to_string(), ..Default::default() };
+    let p = Publish {
+        title: "…".to_string(),
+        description: "…".to_string(),
+        ..Default::default()
+    };
     publish::save(&p, &t).unwrap();
     assert!(publish::is_written(&t));
     assert!(t.description_txt().exists());
@@ -195,10 +229,17 @@ fn sec_01_project_and_files_5_producepublishpublishjson_deleting_the_folder_star
 }
 
 #[test]
-fn sec_01_project_and_files_5_producepublishpublishjson_the_description_goes_beside_the_json_and_only_when_there_is_one() {
+fn sec_01_project_and_files_5_producepublishpublishjson_the_description_goes_beside_the_json_and_only_when_there_is_one(
+) {
     let (_root, t) = with_file("description", None);
-    publish::save(&Publish { description: "the upload text".to_string(), ..Default::default() }, &t)
-        .unwrap();
+    publish::save(
+        &Publish {
+            description: "the upload text".to_string(),
+            ..Default::default()
+        },
+        &t,
+    )
+    .unwrap();
 
     // The copy the uploader selects and pastes, beside the file it belongs to.
     let txt = t.description_txt();
@@ -216,19 +257,39 @@ fn sec_01_project_and_files_5_producepublishpublishjson_the_description_goes_bes
     // the folder (see start_over), so a save that has nothing to say leaves the previous
     // text standing rather than destroying a file this record does not own.
     let (_root, stale) = with_file("description-stale", None);
-    publish::save(&Publish { description: "first".to_string(), ..Default::default() }, &stale)
-        .unwrap();
+    publish::save(
+        &Publish {
+            description: "first".to_string(),
+            ..Default::default()
+        },
+        &stale,
+    )
+    .unwrap();
     publish::save(&Publish::default(), &stale).unwrap();
-    assert_eq!(std::fs::read_to_string(stale.description_txt()).unwrap(), "first\n");
+    assert_eq!(
+        std::fs::read_to_string(stale.description_txt()).unwrap(),
+        "first\n"
+    );
 }
 
 #[test]
-fn sec_01_project_and_files_5_producepublishpublishjson_the_file_lands_where_publish_dir_says_and_at_0644() {
+fn sec_01_project_and_files_5_producepublishpublishjson_the_file_lands_where_publish_dir_says_and_at_0644(
+) {
     // A project written by this build keeps it under produce/.
     let (_root, t) = with_file("new-place", None);
     std::fs::create_dir_all(t.dir().join("produce/publish")).unwrap();
-    publish::save(&Publish { title: "new".to_string(), ..Default::default() }, &t).unwrap();
-    assert_eq!(t.publish_json(), t.dir().join("produce/publish/publish.json"));
+    publish::save(
+        &Publish {
+            title: "new".to_string(),
+            ..Default::default()
+        },
+        &t,
+    )
+    .unwrap();
+    assert_eq!(
+        t.publish_json(),
+        t.dir().join("produce/publish/publish.json")
+    );
     assert!(t.publish_json().exists());
     assert_eq!(mode(&t.publish_json()), 0o644);
 
@@ -239,14 +300,26 @@ fn sec_01_project_and_files_5_producepublishpublishjson_the_file_lands_where_pub
     let p = publish::load(&old).unwrap();
     assert_eq!(p.title, "old");
 
-    publish::save(&Publish { title: "still old".to_string(), ..Default::default() }, &old).unwrap();
+    publish::save(
+        &Publish {
+            title: "still old".to_string(),
+            ..Default::default()
+        },
+        &old,
+    )
+    .unwrap();
     assert!(old.dir().join("publish/publish.json").exists());
-    assert!(!old.dir().join("produce/publish").exists(), "{} was migrated", old.publish_json().display());
+    assert!(
+        !old.dir().join("produce/publish").exists(),
+        "{} was migrated",
+        old.publish_json().display()
+    );
     assert_eq!(publish::load(&old).unwrap().title, "still old");
 }
 
 #[test]
-fn sec_01_project_and_files_5_producepublishpublishjson_a_missing_file_is_no_upload_text_and_one_function_writes_it() {
+fn sec_01_project_and_files_5_producepublishpublishjson_a_missing_file_is_no_upload_text_and_one_function_writes_it(
+) {
     let (_root, t) = with_file("io", None);
     // No file yet: nothing was written and nothing was drawn, which is not an error.
     let empty = publish::load(&t).unwrap();
@@ -255,7 +328,10 @@ fn sec_01_project_and_files_5_producepublishpublishjson_a_missing_file_is_no_upl
     assert!(empty.frames.is_empty());
     assert_eq!(empty.title_box, None);
 
-    let p = Publish { frames: vec!["f0".to_string()], ..Default::default() };
+    let p = Publish {
+        frames: vec!["f0".to_string()],
+        ..Default::default()
+    };
     publish::save(&p, &t).unwrap();
     assert_eq!(publish::load(&t).unwrap(), p);
     assert_eq!(mode(&t.publish_json()), 0o644);
@@ -273,7 +349,8 @@ fn sec_01_project_and_files_5_producepublishpublishjson_a_missing_file_is_no_upl
 }
 
 #[test]
-fn sec_01_project_and_files_5_producepublishpublishjson_the_legacy_base_index_and_title_off_are_read_and_never_written_again() {
+fn sec_01_project_and_files_5_producepublishpublishjson_the_legacy_base_index_and_title_off_are_read_and_never_written_again(
+) {
     // The old radio's answer: which frame was the base, read as an index into the list.
     let (_root, t) = with_file(
         "legacy-base",
@@ -317,15 +394,24 @@ fn sec_01_project_and_files_5_producepublishpublishjson_the_legacy_base_index_an
 }
 
 #[test]
-fn sec_01_project_and_files_5_producepublishpublishjson_the_record_written_here_is_the_one_naivepost_json_holds() {
+fn sec_01_project_and_files_5_producepublishpublishjson_the_record_written_here_is_the_one_naivepost_json_holds(
+) {
     // §2 embeds this record in naivepost.json and §5 keeps it in a file of its own. One
     // struct, so the two cannot drift: what publish::save writes, project::load reads
     // back as the same value.
     let p = Publish {
-        frames: vec!["project:prepare/inputs/frames/a/f.jpg".to_string(), "f1".to_string()],
+        frames: vec![
+            "project:prepare/inputs/frames/a/f.jpg".to_string(),
+            "f1".to_string(),
+        ],
         crop: Crop { x: 0.4, y: 0.6 },
         own: true,
-        title_box: Some(TitleBox { cx: 0.5, cy: 0.25, wf: 1.0, hf: 0.4 }),
+        title_box: Some(TitleBox {
+            cx: 0.5,
+            cy: 0.25,
+            wf: 1.0,
+            hf: 0.4,
+        }),
         thumb_title: "printed".to_string(),
         title_seeded: true,
         texts: vec![TextMark {

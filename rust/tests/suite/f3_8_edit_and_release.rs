@@ -34,10 +34,7 @@ static RAN_DEBOUNCE: AtomicBool = AtomicBool::new(false);
 /// A placed zoom's rectangle in the preview's px, through the same door the panel paints with (`camera_at`'s
 /// reading of the record), so a test presses where the frame actually is rather than where it guesses it is.
 fn camera_box(record: &Fx, fit: (f64, f64)) -> (f64, f64, f64, f64) {
-    naivepost::ui::cut_preview_frame::camera_rect_px(
-        &naivepost::fx_zoom::rect_of(record),
-        fit,
-    )
+    naivepost::ui::cut_preview_frame::camera_rect_px(&naivepost::fx_zoom::rect_of(record), fit)
 }
 
 /// A cut with ONE placed zoom at 20 s, wide enough that its rectangle covers a useful part of the preview and the
@@ -157,7 +154,11 @@ fn round(app: &adw::Application) {
     let before = ui::review_cut_of(&window).fx.len();
     ui::set_held_effect(Some(wide_zoom(20.0)));
     let said = click_insert(&window);
-    assert_eq!(said, fx_band::GONE, "the miss sentence, whole, printed by the real button");
+    assert_eq!(
+        said,
+        fx_band::GONE,
+        "the miss sentence, whole, printed by the real button"
+    );
     assert_eq!(
         ui::review_cut_of(&window).fx.len(),
         before,
@@ -176,14 +177,24 @@ fn round(app: &adw::Application) {
         ui::held_effect().is_some(),
         "a line moved to the band's own start keeps the hold \u{2014} pick-up depends on this"
     );
-    ui::set_line_position(&window, LinePos { t: 20.0 + 10.0 + 1.0 });
+    ui::set_line_position(
+        &window,
+        LinePos {
+            t: 20.0 + 10.0 + 1.0,
+        },
+    );
     assert!(
         ui::held_effect().is_none(),
         "a line a full second past the band's end must have dropped the hold"
     );
     // And the near miss: a frame outside keeps it, so a mid-drag crossing does not snatch the band away.
     ui::set_held_effect(Some(wide_zoom(20.0)));
-    ui::set_line_position(&window, LinePos { t: 30.0 + fx_band::HOLD_RELEASE_SECONDS * 0.5 });
+    ui::set_line_position(
+        &window,
+        LinePos {
+            t: 30.0 + fx_band::HOLD_RELEASE_SECONDS * 0.5,
+        },
+    );
     assert!(
         ui::held_effect().is_some(),
         "half a frame past the end is inside the slack \u{2014} the hand still holds it"
@@ -244,7 +255,11 @@ fn round(app: &adw::Application) {
         (on_edge.0, on_edge.1 - 40.0),
     )
     .expect("a press on the bottom line sizes the camera");
-    assert_eq!(said, fx_band::resized("Zoom"), "§S3's resize sentence, whole");
+    assert_eq!(
+        said,
+        fx_band::resized("Zoom"),
+        "§S3's resize sentence, whole"
+    );
     let sized = ui::review_cut_of(&window).fx[0].clone();
     assert!(
         sized.hf.unwrap() < before.hf.unwrap(),
@@ -325,7 +340,10 @@ fn round(app: &adw::Application) {
     settle();
     ui::text_drag_ended_with_source(&window, (240.0, 200.0), (240.0, 200.0), (300.0, 600.0));
     settle();
-    assert!(ui::text_form_open().is_some(), "the caption form is open to type into");
+    assert!(
+        ui::text_form_open().is_some(),
+        "the caption form is open to type into"
+    );
     // Type twice, quickly, through the real entry: each keystroke restamps, one timer waits.
     let length = entry_in(&window, "text-field-length");
     length.set_text("4");
@@ -396,61 +414,94 @@ fn entry_in(window: &adw::ApplicationWindow, name: &str) -> gtk::Entry {
 #[test]
 fn f3_8_s4_edit_door_reopens_the_held_effect_form() {
     run_round();
-    assert!(RAN_EDIT_DOOR.load(Ordering::SeqCst), "S4 edit-door check never ran");
+    assert!(
+        RAN_EDIT_DOOR.load(Ordering::SeqCst),
+        "S4 edit-door check never ran"
+    );
 }
 
 #[test]
 fn f3_8_s4_edit_says_gone_and_writes_nothing() {
     run_round();
-    assert!(RAN_EDIT_GONE.load(Ordering::SeqCst), "S4 gone-check never ran");
+    assert!(
+        RAN_EDIT_GONE.load(Ordering::SeqCst),
+        "S4 gone-check never ran"
+    );
 }
 
 #[test]
 fn f3_8_s2_hold_survives_inside_the_frame_slack() {
     // The pure rule, no widgets: `fx_band::hold_survives` over the band and its one-frame slack.
     let frame = fx_band::HOLD_RELEASE_SECONDS;
-    assert!(fx_band::hold_survives(25.0, 20.0, 10.0), "inside the band the hold stands");
+    assert!(
+        fx_band::hold_survives(25.0, 20.0, 10.0),
+        "inside the band the hold stands"
+    );
     assert!(
         fx_band::hold_survives(20.0, 20.0, 10.0),
         "pick-up puts the line ON the band's start, so the rule must keep that hold"
     );
-    assert!(fx_band::hold_survives(20.0 - frame, 20.0, 10.0), "one frame before the start survives");
-    assert!(fx_band::hold_survives(30.0 + frame, 20.0, 10.0), "one frame past the end survives");
+    assert!(
+        fx_band::hold_survives(20.0 - frame, 20.0, 10.0),
+        "one frame before the start survives"
+    );
+    assert!(
+        fx_band::hold_survives(30.0 + frame, 20.0, 10.0),
+        "one frame past the end survives"
+    );
     assert!(
         !fx_band::hold_survives(20.0 - frame - 0.01, 20.0, 10.0),
         "past a frame outside, the hold is behind the viewer and drops"
     );
-    assert!(!fx_band::hold_survives(31.0, 20.0, 10.0), "a second past the end drops");
+    assert!(
+        !fx_band::hold_survives(31.0, 20.0, 10.0),
+        "a second past the end drops"
+    );
 }
 
 #[test]
 fn f3_8_s2_line_walking_off_the_band_drops_the_hold() {
     run_round();
-    assert!(RAN_HOLD_DROPS.load(Ordering::SeqCst), "S2 line-walks-off check never ran");
+    assert!(
+        RAN_HOLD_DROPS.load(Ordering::SeqCst),
+        "S2 line-walks-off check never ran"
+    );
 }
 
 #[test]
 fn f3_8_s3_dragging_a_placed_zoom_box_records_and_says_moved() {
     run_round();
-    assert!(RAN_ZOOM_MOVED.load(Ordering::SeqCst), "S3 camera-move check never ran");
+    assert!(
+        RAN_ZOOM_MOVED.load(Ordering::SeqCst),
+        "S3 camera-move check never ran"
+    );
 }
 
 #[test]
 fn f3_8_s3_dragging_a_zoom_edge_says_resized() {
     run_round();
-    assert!(RAN_ZOOM_RESIZED.load(Ordering::SeqCst), "S3 camera-resize check never ran");
+    assert!(
+        RAN_ZOOM_RESIZED.load(Ordering::SeqCst),
+        "S3 camera-resize check never ran"
+    );
 }
 
 #[test]
 fn f3_8_s3_armed_or_held_press_is_not_a_camera_drag() {
     run_round();
-    assert!(RAN_ZOOM_REFUSALS.load(Ordering::SeqCst), "S3 camera-drag refusals never ran");
+    assert!(
+        RAN_ZOOM_REFUSALS.load(Ordering::SeqCst),
+        "S3 camera-drag refusals never ran"
+    );
 }
 
 #[test]
 fn f3_8_s5_a_burst_of_keystrokes_commits_once_after_the_pause() {
     run_round();
-    assert!(RAN_DEBOUNCE.load(Ordering::SeqCst), "S5 debounced-keystroke check never ran");
+    assert!(
+        RAN_DEBOUNCE.load(Ordering::SeqCst),
+        "S5 debounced-keystroke check never ran"
+    );
 }
 
 /// The checks all live in ONE application activation: `g_application_run` refuses a second claimant of the default
@@ -472,4 +523,3 @@ fn run_round() {
         app.run_with_args::<&str>(&[]);
     });
 }
-

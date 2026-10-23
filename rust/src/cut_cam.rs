@@ -86,7 +86,11 @@ pub fn next_filming_row(current: i32, filming: &[i32]) -> Option<i32> {
         .copied()
         .collect();
     // Wrap rather than stop: a scene on the top camera must still be able to get back to the bottom one.
-    rotating.iter().find(|row| **row > current).or_else(|| rotating.first()).copied()
+    rotating
+        .iter()
+        .find(|row| **row > current)
+        .or_else(|| rotating.first())
+        .copied()
 }
 
 // --- S1: which row a scene's picture comes from -------------------------------------------------------------
@@ -111,7 +115,13 @@ pub fn scene_row(scene: &Seg) -> i32 {
 /// `None` for an insert: a card, a still or an overlaid sound has no picture of its own to be shown from a row,
 /// so asking it which camera it uses has no answer and its `cam` stays as it was rather than becoming a number
 /// nothing reads.
-pub fn show_scene_from(cut: &mut Cut, scene: usize, row: i32, recordings: &[Recording], rows: &[usize]) -> Option<String> {
+pub fn show_scene_from(
+    cut: &mut Cut,
+    scene: usize,
+    row: i32,
+    recordings: &[Recording],
+    rows: &[usize],
+) -> Option<String> {
     let seg = cut.segs.get_mut(scene)?;
     if !seg.ins.is_empty() {
         return None;
@@ -168,7 +178,11 @@ pub fn name_plate(base: &str, shift: f64, off: f64) -> String {
 /// Returns the map for [`Cut::rows`]; every pin already in `cut_rows` is carried over untouched (a pin read
 /// from the file stays literal — the editor moved that recording knowing what was under it). The caller
 /// re-runs the colouring and redraws; nothing here decides rows.
-pub fn pin_for_drag(base: &str, row: usize, cut_rows: &BTreeMap<String, i32>) -> BTreeMap<String, i32> {
+pub fn pin_for_drag(
+    base: &str,
+    row: usize,
+    cut_rows: &BTreeMap<String, i32>,
+) -> BTreeMap<String, i32> {
     let mut rows = cut_rows.clone();
     rows.insert(base.to_string(), row as i32);
     rows
@@ -227,7 +241,9 @@ pub fn watch_status(watch: &mut Watch, segs: &[Seg], line: Option<f64>) -> Optio
     // The half-open reading is cut_hear::scene_at's, and "kept" means a scene with footage under it — an insert
     // brings its own picture and answers to no row.
     let at = line?;
-    let scene = segs.iter().find(|seg| seg.ins.is_empty() && seg.s <= at && at < seg.e)?;
+    let scene = segs
+        .iter()
+        .find(|seg| seg.ins.is_empty() && seg.s <= at && at < seg.e)?;
     if scene.cam == watched {
         return None;
     }

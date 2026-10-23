@@ -84,7 +84,8 @@ pub fn values_for(row: &str) -> Option<Vec<String>> {
         "Narration" | "Copy into project" | "Frame timing" | "Channels" | "Frame edges" => {
             Some(TICK_VALUES.iter().map(|v| (*v).to_string()).collect())
         }
-        other => produce_screen::options(other).map(|list| list.iter().map(|v| (*v).to_string()).collect()),
+        other => produce_screen::options(other)
+            .map(|list| list.iter().map(|v| (*v).to_string()).collect()),
     }
 }
 
@@ -205,7 +206,10 @@ fn tick(on: bool) -> String {
 /// The Freq stops as labels, in stop order, printed by [`prepare::freq_label`]: a
 /// fraction of a second bare, a second and up with its unit.
 fn freq_labels() -> Vec<String> {
-    prepare::FREQ_STOPS.iter().map(|stop| prepare::freq_label(*stop)).collect()
+    prepare::FREQ_STOPS
+        .iter()
+        .map(|stop| prepare::freq_label(*stop))
+        .collect()
 }
 
 /// The stop list as §3 writes it: `0.25, 0.5, 1, 2, 3, 4, 5` — whole seconds without

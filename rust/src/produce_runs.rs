@@ -26,11 +26,13 @@ pub const ONLY_THUMBNAIL: &str = "⊙ Thumbnail only";
 
 /// Its tooltip. Written from the ticked side because that is what the box is for: ticking it is the deliberate
 /// act, and the sentence has to say what the tick *saves*.
-pub const ONLY_THUMBNAIL_TIP: &str = "Ticked: the next run draws the picture again and re-asks for the words \
+pub const ONLY_THUMBNAIL_TIP: &str =
+    "Ticked: the next run draws the picture again and re-asks for the words \
 too. Leave it ticked to redraw from the instruction as it stands.";
 
 /// What a press with the box ticked costs and keeps, in the log.
-pub const DRAW_AGAIN_LOG: &str = "publish: drawing the thumbnail again — one sd.cpp call, nothing rewritten";
+pub const DRAW_AGAIN_LOG: &str =
+    "publish: drawing the thumbnail again — one sd.cpp call, nothing rewritten";
 
 /// The words box when a redraw is about to ask for them again: the previous text is offered back rather than an
 /// empty field, because the usual reason for a second run is that the picture was wrong, not the words.
@@ -154,7 +156,8 @@ pub fn redraw(only_thumbnail: bool) -> Redraw {
 
 /// The one-LLM-call run's log line. Naming the three answers is the point: a reader of the log can tell this
 /// press from a redraw without knowing which button was pressed.
-pub const REWORD_LOG: &str = "publish: rewriting the title, instruction and description — one LLM call";
+pub const REWORD_LOG: &str =
+    "publish: rewriting the title, instruction and description — one LLM call";
 
 /// What a re-word costs and keeps.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,7 +182,8 @@ pub fn reword() -> Reword {
 
 /// The tooltip on a chosen picture. Two halves because the copy is what makes it survive and the redraw is
 /// what makes it not a file operation: the app never edits the user's own file.
-pub const CHOSEN_TIP: &str = "A copy of this picture is kept, so it survives reopening the project. Use it to \
+pub const CHOSEN_TIP: &str =
+    "A copy of this picture is kept, so it survives reopening the project. Use it to \
 redraw from — it does not replace your file.";
 
 /// What the row says when the copy has gone missing between sessions. The choice stays; only its answer is gone.
@@ -210,9 +214,7 @@ pub fn take_from_image(file: &str, wide: u32, high: u32, at_seconds: f64) -> Cho
     Chosen {
         stored: format!("{}/{stem}.png", images_dir()),
         box_: (w, h),
-        log: format!(
-            "thumbnail taken from {name} — scaled to {w}×{h} at {at_seconds:.1}s"
-        ),
+        log: format!("thumbnail taken from {name} — scaled to {w}×{h} at {at_seconds:.1}s"),
     }
 }
 
@@ -267,25 +269,34 @@ pub const WORDS_DIALOG: &str = "Words on the thumbnail";
 
 /// Its hint: one line, resized to fill whatever box is marked. A longer line therefore comes out smaller — the
 /// only lever a person has once the box is set.
-pub const WORDS_DIALOG_TIP: &str = "Printed to fill the box you marked — a longer line comes out smaller.";
+pub const WORDS_DIALOG_TIP: &str =
+    "Printed to fill the box you marked — a longer line comes out smaller.";
 
 /// Why the box stops on a line: words that run off the picture are words a player crops or its controls cover.
-pub const WORDS_SNAP_TIP: &str = "The box snaps to a grid, and back inside the picture when it would leave it.";
+pub const WORDS_SNAP_TIP: &str =
+    "The box snaps to a grid, and back inside the picture when it would leave it.";
 
 /// What the preview promises: it is drawn with the export's text, width and position, not with whatever sd.cpp
 /// painted. The model writes no letters (the instruction asks for none), so there is nothing to disagree with.
-pub const WORDS_PREVIEW_TIP: &str = "The same text, width and position as the exported picture — this is what \
+pub const WORDS_PREVIEW_TIP: &str =
+    "The same text, width and position as the exported picture — this is what \
 will be printed, over the drawn image.";
 
 /// Where the words land relative to the drawn picture.
-pub const WORDS_PLACEMENT: &str = "Printed over the drawn one — the machine never re-asks the model to write them";
+pub const WORDS_PLACEMENT: &str =
+    "Printed over the drawn one — the machine never re-asks the model to write them";
 
 /// The box a press starts with when the project has never had one: the lower third, the same default every other
 /// words box in the app opens at ([`crate::fx_text::LOWER_THIRD`] — named here so this page's geometry is read
 /// from that module rather than copied).
 pub const fn words_box() -> TitleBox {
     let lower = crate::fx_text::LOWER_THIRD;
-    TitleBox { cx: lower.cx, cy: lower.cy, wf: lower.wf, hf: lower.hf }
+    TitleBox {
+        cx: lower.cx,
+        cy: lower.cy,
+        wf: lower.wf,
+        hf: lower.hf,
+    }
 }
 
 /// A press inside the words dialog.
@@ -307,7 +318,12 @@ pub struct Reprint {
 /// picture ([`words_box`]) and comes out in pixels here, because the preview and the export are the same draw at
 /// different scales and only the fractions travel between them.
 pub fn reprint(words: &str, box_: TitleBox) -> Reprint {
-    let band = crate::fx_text::Box_ { cx: box_.cx, cy: box_.cy, wf: box_.wf, hf: box_.hf };
+    let band = crate::fx_text::Box_ {
+        cx: box_.cx,
+        cy: box_.cy,
+        wf: box_.wf,
+        hf: box_.hf,
+    };
     let (x, y, wide, high) = band.to_px(f64::from(WIDTH), f64::from(HEIGHT));
     // One call to the Cut page's own fitter: the thumbnail prints words exactly as an effect prints them, so a
     // second size rule here would be two answers to "how big can these letters get".
@@ -363,7 +379,9 @@ pub fn jpeg_target(bytes: u64) -> Result<(), String> {
         .collect::<Vec<_>>()
         .join("/");
     let mib = JPEG_MAX_BYTES / (1024 * 1024);
-    Err(format!("JPEG exceeds {mib} MiB after {tried} — check the sd.cpp encoder"))
+    Err(format!(
+        "JPEG exceeds {mib} MiB after {tried} — check the sd.cpp encoder"
+    ))
 }
 
 /// S6's default name: `<stem>.jpg` beside the video, so the exported file is a sibling of the `.html` and the
@@ -374,7 +392,8 @@ pub fn export_name(video_stem: &str) -> String {
 
 /// What ⤓ says when there is no picture to export. Naming both ways out of it is the point — one of the two is
 /// usually what the user meant.
-pub const EXPORT_NO_PICTURE: &str = "nothing to export yet — draw a thumbnail, or use one of the images";
+pub const EXPORT_NO_PICTURE: &str =
+    "nothing to export yet — draw a thumbnail, or use one of the images";
 
 /// The name ⤓ offers in the save dialog: the project's own name rather than the video's stem, because at this
 /// point the user is naming a picture they are about to upload somewhere else. `⊕ Set from image` keeps its own
@@ -491,7 +510,11 @@ pub fn transcode_args(source: &str, out: &str, settings: &Produce) -> Vec<String
         "-b:a".into(),
         format!("{}k", settings.audio_kbps),
         "-ac".into(),
-        if settings.mono { "1".into() } else { "2".into() },
+        if settings.mono {
+            "1".into()
+        } else {
+            "2".into()
+        },
     ]);
     // `track in file` is deliberately not consulted: the render's mux adds a caption track from sidecars this
     // transcode has never written, and a file picked off disk has no transcript beside it to mux.

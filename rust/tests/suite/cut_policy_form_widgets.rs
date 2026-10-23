@@ -12,14 +12,14 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use gtk4 as gtk;
 use naivepost::policy;
 use naivepost::project::Origin;
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, settle};
 
 static RAN_GEAR: AtomicBool = AtomicBool::new(false);
 static RAN_ROWS: AtomicBool = AtomicBool::new(false);
@@ -55,8 +55,7 @@ fn form_button(name: &str) -> gtk::Button {
 /// Find a named widget anywhere under the open policy form — which is its own top-level, so it comes
 /// from `ui::open_policy_form` rather than the main window's tree.
 fn form_widget(name: &str) -> Option<gtk::Widget> {
-    ui::open_policy_form()
-        .and_then(|form| find_by_name_recursive(form.upcast_ref(), name))
+    ui::open_policy_form().and_then(|form| find_by_name_recursive(form.upcast_ref(), name))
 }
 
 /// Walk every descendant of `root` looking for the widget name. Written against `gtk::Widget`'s own
@@ -148,7 +147,11 @@ fn check_every_field_has_a_row_with_value_source_and_reason(app: &adw::Applicati
     settle();
 
     let rows = policy::derived_fields();
-    assert_eq!(rows.len(), 6, "six settable fields (five switches + the target length)");
+    assert_eq!(
+        rows.len(),
+        6,
+        "six settable fields (five switches + the target length)"
+    );
     for entry in rows {
         assert!(
             form_widget(&format!("policy-row-{}", entry.field)).is_some(),
@@ -164,7 +167,11 @@ fn check_every_field_has_a_row_with_value_source_and_reason(app: &adw::Applicati
             "{} shows source {source:?}, which is not one of the three",
             entry.field
         );
-        assert!(!reason.is_empty(), "{} shows no reason line at all", entry.field);
+        assert!(
+            !reason.is_empty(),
+            "{} shows no reason line at all",
+            entry.field
+        );
     }
 
     // And the two fields touched above print exactly what the state holds, not a generic string.
@@ -174,9 +181,15 @@ fn check_every_field_has_a_row_with_value_source_and_reason(app: &adw::Applicati
         "// P.policy.markingPass"
     );
     assert_eq!(label_text("policy-source-markingPass"), "model");
-    assert_eq!(label_text("policy-reason-markingPass"), "shot in one take per slide");
+    assert_eq!(
+        label_text("policy-reason-markingPass"),
+        "shot in one take per slide"
+    );
     assert_eq!(edit_value("policy-edit-speedPass"), "off"); // P.policy.speedPass
-    assert_eq!(label_text("policy-reason-speedPass"), "no time-lapse wanted");
+    assert_eq!(
+        label_text("policy-reason-speedPass"),
+        "no time-lapse wanted"
+    );
     // An untouched field still reads as a default, with no invented reason.
     assert_eq!(label_text("policy-source-cutMode"), "default"); // P.policy.cutMode
     assert_eq!(label_text("policy-reason-cutMode"), "the default");
@@ -212,7 +225,11 @@ fn check_a_hand_set_field_still_reads_user_after_a_later_derivation(app: &adw::A
         "the context sounds like a model cut",
         Origin::Model,
     );
-    assert_eq!(outcome, policy::Applied::KeptUser, "F0.7 S4 refused the overwrite");
+    assert_eq!(
+        outcome,
+        policy::Applied::KeptUser,
+        "F0.7 S4 refused the overwrite"
+    );
     assert_eq!(
         ui::session_policy(&window).cut_mode.value,
         naivepost::project::CutMode::Words,
@@ -353,7 +370,11 @@ fn check_the_four_columns_and_the_two_buttons(app: &adw::Application) {
     assert_eq!(edit_value("policy-edit-cutMode"), "words"); // P.policy.cutMode
     reset.emit_clicked();
     settle();
-    assert_eq!(edit_value("policy-edit-cutMode"), "model", "// P.policy.cutMode");
+    assert_eq!(
+        edit_value("policy-edit-cutMode"),
+        "model",
+        "// P.policy.cutMode"
+    );
     assert_eq!(label_text("policy-source-cutMode"), "default");
     assert_eq!(label_text("policy-reason-cutMode"), "the default");
     assert_eq!(
@@ -375,7 +396,10 @@ fn f0_7_s5_policy_form_reopens_from_the_menu_through_a_real_click() {
     common::pin_private_cwd();
     window_round();
     assert!(RAN_GEAR.load(Ordering::SeqCst), "the ⚙ check never ran");
-    assert!(RAN_ROWS.load(Ordering::SeqCst), "the row-by-row check never ran");
+    assert!(
+        RAN_ROWS.load(Ordering::SeqCst),
+        "the row-by-row check never ran"
+    );
     assert!(
         RAN_USER_STICKS.load(Ordering::SeqCst),
         "the hand-set-field check never ran"
@@ -414,22 +438,28 @@ fn check_the_gear_derives_before_it_paints(app: &adw::Application) {
     );
 
     // The model answers one field, with a reason we can look for on screen.
-    ui::set_policy_sender_for_tests(move |_req: &policy::DerivationRequest, refusals: &[String]| {
-        if !refusals.is_empty() {
-            return Vec::new();
-        }
-        vec![Proposal {
-            field: "cutMode".into(),
-            value: "words".into(),
-            because: "cut on the words, not the model".into(),
-        }]
-    });
+    ui::set_policy_sender_for_tests(
+        move |_req: &policy::DerivationRequest, refusals: &[String]| {
+            if !refusals.is_empty() {
+                return Vec::new();
+            }
+            vec![Proposal {
+                field: "cutMode".into(),
+                value: "words".into(),
+                because: "cut on the words, not the model".into(),
+            }]
+        },
+    );
 
     button(&window, "policy-button").emit_clicked();
     settle();
 
     // P.policy.cutMode — derived, sourced to the model, carrying its reason.
-    assert_eq!(edit_value("policy-edit-cutMode"), "words", "// P.policy.cutMode");
+    assert_eq!(
+        edit_value("policy-edit-cutMode"),
+        "words",
+        "// P.policy.cutMode"
+    );
     assert_eq!(label_text("policy-source-cutMode"), "model");
     assert_eq!(
         label_text("policy-reason-cutMode"),

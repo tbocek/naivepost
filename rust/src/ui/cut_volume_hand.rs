@@ -13,9 +13,9 @@ use crate::fx_volume;
 use crate::fx_zoom;
 use crate::shell::Page;
 use crate::ui::window::{
-    find_status, find_widget_by_name, INSERT_PLACE_KNOWN, line_step_button,
-    live_form_answer_is_undo, live_form_refused, log_line, paste_line, record_edit,
-    refresh_effects_lane, review_cut_of, save_insert_cut, selection, trim_seconds, zoom_field_row,
+    find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo,
+    live_form_refused, log_line, paste_line, record_edit, refresh_effects_lane, review_cut_of,
+    save_insert_cut, selection, trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
 };
 
 // --- F3.6 Volume by hand: the press, the form, the Apply -------------------------------------------------
@@ -259,8 +259,7 @@ fn volume_entry(name: &str) -> Option<gtk::Entry> {
 
 /// The same lookup with the window passed in: a debounced commit only has the window it was handed.
 fn volume_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
-    find_widget_by_name(window.upcast_ref(), name)
-        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+    find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
 }
 
 /// This window's Curve dropdown.
@@ -278,7 +277,8 @@ fn volume_dropdown(name: &str) -> Option<gtk::DropDown> {
 /// the result on the cut as ONE edit.
 pub fn press_volume_apply(window: &adw::ApplicationWindow) -> String {
     if !volume_form_owner(window) {
-        return "no volume form on this page \u{2014} mark a stretch or put the line down first".to_string();
+        return "no volume form on this page \u{2014} mark a stretch or put the line down first"
+            .to_string();
     }
     let Some(stored) = volume_form_open() else {
         return "no volume to apply \u{2014} press \u{1f50a} Volume first".to_string();
@@ -351,7 +351,9 @@ pub fn press_volume_esc(window: &adw::ApplicationWindow) -> Option<String> {
 /// The debounced commit: this volume form's percent and seconds into its stored state, then the kept reading on the
 /// status row. Form state only — the cut waits for Apply (§F3.8 S5, `wire_live_fields`).
 fn keep_volume_fields(window: &adw::ApplicationWindow) {
-    let Some(stored) = volume_form_open() else { return };
+    let Some(stored) = volume_form_open() else {
+        return;
+    };
     let read = |name: &str, keep: f64| -> f64 {
         volume_entry_of(window, name)
             .map(|entry| entry.text().trim().to_string())
@@ -377,7 +379,10 @@ fn keep_volume_fields(window: &adw::ApplicationWindow) {
 
 /// Wire the form's two buttons BY NAME. Each forwards one press and prints what comes back; neither holds a rule.
 fn wire_volume_buttons(window: &adw::ApplicationWindow) {
-    for (name, door) in [("volume-apply-button", true), ("volume-cancel-button", false)] {
+    for (name, door) in [
+        ("volume-apply-button", true),
+        ("volume-cancel-button", false),
+    ] {
         if let Some(button) = line_step_button(window, name) {
             let win = window.clone();
             button.connect_clicked(move |_| {

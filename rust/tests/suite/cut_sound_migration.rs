@@ -5,7 +5,8 @@
 
 use std::path::PathBuf;
 
-use naivepost::cut::{self};use naivepost::layout::Tree;
+use naivepost::cut::{self};
+use naivepost::layout::Tree;
 
 use crate::common;
 use common::{fixture_dir, hold_last_window, release_last_window, settle, temp_dir};
@@ -38,13 +39,24 @@ fn sec_01_project_and_files_3_cutcutjson_s1_a_save_migrates_the_legacy_sound_key
     let loaded = cut::load(&tree).expect("the legacy file reads");
     // Reading is lossless: `load` migrates the `fx` spellings only, so there IS something for a save
     // to migrate, which is what makes "on first save" a statement rather than a no-op.
-    assert_eq!(loaded.sound.as_deref(), Some("mic"), "reading left the key alone");
+    assert_eq!(
+        loaded.sound.as_deref(),
+        Some("mic"),
+        "reading left the key alone"
+    );
 
     cut::save(&loaded, &tree).expect("the one writer");
     let text = read(&tree);
-    assert!(!text.contains("\"sound\""), "the legacy key is gone for good: {text}");
+    assert!(
+        !text.contains("\"sound\""),
+        "the legacy key is gone for good: {text}"
+    );
     let after = cut::load(&tree).expect("and the file reads back");
-    assert_eq!(after.segs[0].quiet, ["cam-2".to_string()], "the silent scene was set by the migration");
+    assert_eq!(
+        after.segs[0].quiet,
+        ["cam-2".to_string()],
+        "the silent scene was set by the migration"
+    );
     assert_eq!(
         after.segs[1].quiet,
         ["cam-2".to_string()],
@@ -59,7 +71,11 @@ fn sec_01_project_and_files_3_cutcutjson_s1_a_save_migrates_the_legacy_sound_key
 
     // And the caller's cut is untouched: the migration belongs to the file, not to the page that asked
     // for a write.
-    assert_eq!(loaded.sound.as_deref(), Some("mic"), "the in-memory cut kept what it was handed");
+    assert_eq!(
+        loaded.sound.as_deref(),
+        Some("mic"),
+        "the in-memory cut kept what it was handed"
+    );
 }
 
 #[test]
@@ -82,7 +98,11 @@ fn sec_01_project_and_files_3_cutcutjson_s2_the_migration_is_said_on_the_log() {
     // A cut with nothing to migrate says nothing: the log is not a heartbeat.
     let quiet = cut::load(&tree).unwrap();
     cut::save(&quiet, &tree).unwrap();
-    assert_eq!(naivepost::ui::window_logs().len(), before + 1, "no second note");
+    assert_eq!(
+        naivepost::ui::window_logs().len(),
+        before + 1,
+        "no second note"
+    );
 }
 
 /// The wire: the Cut page's gutter badge writes the file, so it is the press that must migrate.
@@ -91,7 +111,7 @@ fn sec_01_project_and_files_3_cutcutjson_s3_a_fold_press_writes_the_migrated_cut
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
         use adw::prelude::*;
-        
+
         let app = adw::Application::builder()
             .application_id(naivepost::ui::APP_ID)
             .flags(gio::ApplicationFlags::NON_UNIQUE)
@@ -112,7 +132,7 @@ thread_local! {
 
 fn press_folds_the_file(app: &adw::Application) {
     use adw::prelude::*;
-    
+
     use naivepost::shell::Page;
     use naivepost::ui;
 
@@ -161,13 +181,20 @@ fn press_folds_the_file(app: &adw::Application) {
     let holder = naivepost::ui::cut_tracks::gutter_badges_box(&window)
         .or_else(|| ui::fold_badges_box(&window))
         .expect("the Cut page drew its fold-badges holder");
-    let all = find_button(holder.upcast_ref(), "fold-all-button").expect("the gutter badge is there");
+    let all =
+        find_button(holder.upcast_ref(), "fold-all-button").expect("the gutter badge is there");
     all.emit_by_name::<()>("clicked", &[]);
     settle();
 
     let text = read(&tree);
-    assert!(text.contains("\"folds\""), "the press saved its fold: {text}");
-    assert!(!text.contains("\"sound\""), "and the same write migrated the legacy key: {text}");
+    assert!(
+        text.contains("\"folds\""),
+        "the press saved its fold: {text}"
+    );
+    assert!(
+        !text.contains("\"sound\""),
+        "and the same write migrated the legacy key: {text}"
+    );
     let after = cut::load(&tree).expect("and it reads back");
     // The one lane this file names is `mic`, which is what the whole cut was heard on, so nothing else
     // is left to silence — the migration's job here is that the KEY went through the press's own write.
@@ -188,7 +215,9 @@ fn find_button(node: &gtk4::Widget, name: &str) -> Option<gtk4::Button> {
     }
     for child in node.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk4::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk4::Widget>() else {
+            continue;
+        };
         if let Some(found) = find_button(&widget, name) {
             return Some(found);
         }

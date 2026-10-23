@@ -17,6 +17,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
+use crate::common;
+use common::temp_dir_tagged;
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
 use naivepost::requests;
@@ -24,8 +26,6 @@ use naivepost::run::{self, Subprocesses};
 use naivepost::run_stages;
 use naivepost::settings::{self, Conf, Paths};
 use naivepost::{clock, frames, params};
-use crate::common;
-use common::temp_dir_tagged;
 
 /// The stamp the recording's name carries, which is what puts its frames on the file's own clock (§S4).
 /// OBS's spelling, the one `clock::name_stamp` reads year-first; it is the head of [`LANE`].
@@ -91,13 +91,20 @@ impl Scene {
         )
         .expect("the project file");
         let tree = Tree::new(session).expect("the session tree");
-        Scene { root, paths, tools, tree, last_log: Mutex::new(Vec::new()) }
+        Scene {
+            root,
+            paths,
+            tools,
+            tree,
+            last_log: Mutex::new(Vec::new()),
+        }
     }
 
     /// Lay out a scene whose row names a video that is NOT on disk: the honest-failure case.
     fn missing_video() -> Self {
         let scene = Scene::new("20.0");
-        std::fs::remove_file(naivepost::startup::session_dir(&scene.root).join(recording())).expect("gone");
+        std::fs::remove_file(naivepost::startup::session_dir(&scene.root).join(recording()))
+            .expect("gone");
         scene
     }
 
@@ -116,7 +123,8 @@ impl Scene {
 
     /// The frames stage only, planned from the project file the way ▶ plans it.
     fn stages(&self) -> Vec<run_stages::Stage> {
-        let project = naivepost::project::load(&naivepost::startup::session_dir(&self.root)).expect("the project");
+        let project = naivepost::project::load(&naivepost::startup::session_dir(&self.root))
+            .expect("the project");
         run_stages::plan(run::Step::Prepare, &project)
             .into_iter()
             .filter(|stage| stage.name == "frames")
@@ -132,9 +140,16 @@ impl Scene {
         let mut queue = naivepost::runqueue::Queue::new();
         let mut procs = Subprocesses::default();
         let mut log: Vec<String> = Vec::new();
-        let drive = run_stages::drive_walk(&self.stages(), &mut queue, || false, || false, |line| {
-            log.push(line.to_string());
-        }, &mut procs);
+        let drive = run_stages::drive_walk(
+            &self.stages(),
+            &mut queue,
+            || false,
+            || false,
+            |line| {
+                log.push(line.to_string());
+            },
+            &mut procs,
+        );
         run_stages::say_outcome(&drive, |line| log.push(line.to_string()));
         *self.last_log.lock().expect("the log lock") = log.clone();
         (drive, log)
@@ -177,7 +192,9 @@ impl Scene {
 fn said(log: &[String]) -> Vec<&str> {
     log.iter()
         .map(String::as_str)
-        .filter(|line| line.starts_with(">>> [") || line.starts_with("!!! ") || line.starts_with("extracting "))
+        .filter(|line| {
+            line.starts_with(">>> [") || line.starts_with("!!! ") || line.starts_with("extracting ")
+        })
         .collect()
 }
 
@@ -193,13 +210,17 @@ fn walk(scene: &Scene) -> (run_stages::Drive, Vec<String>) {
 /// The seconds the source starts at on the session clock — the offset the door names frames by. Computed
 /// the same way the door computes it: the placement over the WHOLE session's base names.
 fn clock_start(scene: &Scene) -> f64 {
-    let project = naivepost::project::load(&naivepost::startup::session_dir(&scene.root)).expect("the project");
+    let project = naivepost::project::load(&naivepost::startup::session_dir(&scene.root))
+        .expect("the project");
     let names: Vec<&str> = project
         .sources
         .iter()
         .map(|source| source.path.rsplit('/').next().unwrap_or(&source.path))
         .collect();
-    naivepost::fix_transcripts::placement(&names).into_iter().next().unwrap_or(0.0)
+    naivepost::fix_transcripts::placement(&names)
+        .into_iter()
+        .next()
+        .unwrap_or(0.0)
 }
 
 /// ffmpeg's `metadata=print` output for a short clip, copied from `tests/suite/frames.rs`: four frames a
@@ -241,7 +262,8 @@ fn stubs(tag: &str, duration: &str) -> PathBuf {
     // stubs a previous scene's conf still names.
     let dir = temp_dir_tagged(&format!("np-f16-tools-{tag}"));
     let probe = dir.join("ffprobe");
-    common::write_script(&probe, format!("#!/bin/sh\necho \"{duration}\"\n")).expect("the probe stub");
+    common::write_script(&probe, format!("#!/bin/sh\necho \"{duration}\"\n"))
+        .expect("the probe stub");
     // Base64 keeps the score report (quotes, tabs, newlines) out of the shell quoting entirely.
     let report = base64_line(&scene_log());
     // The frame's path is the argument BEFORE `-progress` (`extract_plan` ends with the output and the
@@ -255,7 +277,8 @@ fn stubs(tag: &str, duration: &str) -> PathBuf {
         ),
     )
     .expect("the ffmpeg stub");
-    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the script runs");
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("the script runs");
     // The path Settings holds: short, no spaces, execs the script with every argument quoted.
     let ffmpeg = dir.join("ffmpeg");
     common::write_script(
@@ -264,7 +287,8 @@ fn stubs(tag: &str, duration: &str) -> PathBuf {
     )
     .expect("the ffmpeg wrapper");
     for tool in [&probe, &ffmpeg] {
-        std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("the stub runs");
+        std::fs::set_permissions(tool, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .expect("the stub runs");
     }
     dir
 }
@@ -303,44 +327,91 @@ fn catalogued(id: &str) -> String {
 /// for the score that merely reached the threshold.
 #[test]
 fn f1_6_s2_the_scene_pass_runs_over_the_whole_video_and_scenes_tsv_holds_each_change() {
-    assert_eq!(catalogued("P.machine.sceneThreshold"), "1", "the row spells 1.0 as §10 does");
-    assert_eq!(catalogued("P.machine.sceneMinGapSeconds"), "0.5", "and the gap as §10 does");
+    assert_eq!(
+        catalogued("P.machine.sceneThreshold"),
+        "1",
+        "the row spells 1.0 as §10 does"
+    );
+    assert_eq!(
+        catalogued("P.machine.sceneMinGapSeconds"),
+        "0.5",
+        "and the gap as §10 does"
+    );
     let scene = Scene::new("20.0");
     let (drive, log) = walk(&scene);
-    assert!(matches!(drive, run_stages::Drive::Done { .. }), "the frames stage finished: {drive:?} / {log:?}");
+    assert!(
+        matches!(drive, run_stages::Drive::Done { .. }),
+        "the frames stage finished: {drive:?} / {log:?}"
+    );
     // Every tool the walk ran came from the folder the conf names — proof the door read its ffmpeg (and
     // ffprobe, which `services::ffprobe_for` takes from the same folder) from Settings rather than from
     // whatever happens to be on PATH. The log lines are the walk's command echoes, indented four.
-    let box_dir = Path::new(&scene.conf().ffmpeg).parent().expect("a tool folder").to_path_buf();
+    let box_dir = Path::new(&scene.conf().ffmpeg)
+        .parent()
+        .expect("a tool folder")
+        .to_path_buf();
     let commands: Vec<String> = scene
         .log_lines()
         .into_iter()
         .filter(|line| line.starts_with("    "))
         .collect();
-    assert!(commands.len() >= 2, "the walk logged no commands: {:?}", commands);
     assert!(
-        commands.iter().all(|line| line.contains(&box_dir.display().to_string())),
+        commands.len() >= 2,
+        "the walk logged no commands: {:?}",
+        commands
+    );
+    assert!(
+        commands
+            .iter()
+            .all(|line| line.contains(&box_dir.display().to_string())),
         "a tool off PATH was called: {commands:?}"
     );
 
     // Exactly one sweep, built by `frames::scene_pass_plan`: 4 fps, the throwaway 640-wide scale, and
     // the detector reporting EVERY score so the threshold is applied once, in the program.
-    let sweeps: Vec<String> = scene.calls().into_iter().filter(|line| line.contains("scdet")).collect();
-    assert_eq!(sweeps.len(), 1, "one sweep over the whole video: {sweeps:?}");
+    let sweeps: Vec<String> = scene
+        .calls()
+        .into_iter()
+        .filter(|line| line.contains("scdet"))
+        .collect();
+    assert_eq!(
+        sweeps.len(),
+        1,
+        "one sweep over the whole video: {sweeps:?}"
+    );
     let sweep = &sweeps[0];
     assert!(sweep.contains("fps=4"), "four frames a second: {sweep}");
-    assert!(sweep.contains("scale=640"), "the throwaway stream is 640 wide: {sweep}");
-    assert!(sweep.contains("scdet=threshold=0"), "every score is reported: {sweep}");
-    assert!(sweep.contains("-i"), "the sweep is asked about the video itself: {sweep}");
+    assert!(
+        sweep.contains("scale=640"),
+        "the throwaway stream is 640 wide: {sweep}"
+    );
+    assert!(
+        sweep.contains("scdet=threshold=0"),
+        "every score is reported: {sweep}"
+    );
+    assert!(
+        sweep.contains("-i"),
+        "the sweep is asked about the video itself: {sweep}"
+    );
 
     // `scenes.tsv`: the two changes the log holds, merged across the gap, and NOT the 2.0 s score that
     // sits exactly on `P.machine.sceneThreshold` (over it is the bound).
     let scenes = requests::read_scenes(&scene.tree, LANE).expect("readable");
     let times: Vec<f64> = scenes.iter().map(|change| change.time).collect();
-    assert_eq!(times, vec![1.0, 5.0], "the merged changes, and no row for the start: {scenes:?}");
-    assert_eq!(scenes[0].score, 58.310, "the FIRST of a merged run keeps its score");
+    assert_eq!(
+        times,
+        vec![1.0, 5.0],
+        "the merged changes, and no row for the start: {scenes:?}"
+    );
+    assert_eq!(
+        scenes[0].score, 58.310,
+        "the FIRST of a merged run keeps its score"
+    );
     let text = std::fs::read_to_string(scene.tree.scenes_tsv(LANE)).expect("on disk");
-    assert_eq!(text, "1.00\t58.31\n5.00\t77.4\n", "`time\\tscore` per row: {text:?}");
+    assert_eq!(
+        text, "1.00\t58.31\n5.00\t77.4\n",
+        "`time\\tscore` per row: {text:?}"
+    );
     // And the merge is the parameterised one: nearer than the gap merges, further apart does not.
     assert_eq!(
         frames::scene_changes(&frames::parse_scores(&scene_log()), 1.0, 0.5).len(),
@@ -354,17 +425,26 @@ fn f1_6_s2_the_scene_pass_runs_over_the_whole_video_and_scenes_tsv_holds_each_ch
 /// reading — proof the door parsed it rather than ignoring it.
 #[test]
 fn f1_6_s3_frames_land_on_the_grid_restarted_at_every_change_and_the_pass_reports_progress() {
-    assert_eq!(catalogued("P.eng.frameGridSeconds"), "0.25", "the grid is §10's 0.25 s");
+    assert_eq!(
+        catalogued("P.eng.frameGridSeconds"),
+        "0.25",
+        "the grid is §10's 0.25 s"
+    );
     let scene = Scene::new("20.0");
     let (drive, log) = walk(&scene);
-    assert!(matches!(drive, run_stages::Drive::Done { .. }), "{drive:?} / {log:?}");
+    assert!(
+        matches!(drive, run_stages::Drive::Done { .. }),
+        "{drive:?} / {log:?}"
+    );
 
     let changes: Vec<f64> = requests::read_scenes(&scene.tree, LANE)
         .expect("scenes.tsv")
         .into_iter()
         .map(|change| change.time)
         .collect();
-    let grid: f64 = catalogued("P.eng.frameGridSeconds").parse().expect("a number");
+    let grid: f64 = catalogued("P.eng.frameGridSeconds")
+        .parse()
+        .expect("a number");
     let wanted = frames::frame_seconds(&changes, 20.0, grid);
     let on_disk = scene.frames_on_disk();
     assert_eq!(
@@ -378,22 +458,36 @@ fn f1_6_s3_frames_land_on_the_grid_restarted_at_every_change_and_the_pass_report
     let start = clock_start(&scene);
     for change in &changes {
         let name = frames::frame_file(start, *change);
-        assert!(on_disk.contains(&name), "the first picture of a new scene is there: {name} not in {on_disk:?}");
+        assert!(
+            on_disk.contains(&name),
+            "the first picture of a new scene is there: {name} not in {on_disk:?}"
+        );
     }
     // Worker progress AND ffmpeg's own `-progress`: the second is only in the log if the door read it.
     assert!(
-        log.iter().any(|line| line.starts_with("extracting frames 1/")),
+        log.iter()
+            .any(|line| line.starts_with("extracting frames 1/")),
         "the chunk progress never reached the run: {log:?}"
     );
     assert!(
-        log.iter().any(|line| line.contains("frames extracted (ffmpeg ") && line.contains(" s)")),
+        log.iter()
+            .any(|line| line.contains("frames extracted (ffmpeg ") && line.contains(" s)")),
         "ffmpeg's -progress was never parsed: {log:?}"
     );
     // No frame extraction scales or re-times the video: the model's copies are made in F1.7.
     for line in scene.calls().iter().filter(|line| !line.contains("scdet")) {
-        assert!(!line.contains("scale="), "an extraction scaled the frame: {line}");
-        assert!(!line.contains("fps="), "an extraction re-timed the video: {line}");
-        assert!(line.contains("-progress"), "an extraction reported no progress: {line}");
+        assert!(
+            !line.contains("scale="),
+            "an extraction scaled the frame: {line}"
+        );
+        assert!(
+            !line.contains("fps="),
+            "an extraction re-timed the video: {line}"
+        );
+        assert!(
+            line.contains("-progress"),
+            "an extraction reported no progress: {line}"
+        );
     }
 }
 
@@ -403,34 +497,60 @@ fn f1_6_s3_frames_land_on_the_grid_restarted_at_every_change_and_the_pass_report
 fn f1_6_s4_every_frame_is_named_by_its_second_on_the_files_clock() {
     let scene = Scene::new("20.0");
     let (drive, log) = walk(&scene);
-    assert!(matches!(drive, run_stages::Drive::Done { .. }), "{drive:?} / {log:?}");
+    assert!(
+        matches!(drive, run_stages::Drive::Done { .. }),
+        "{drive:?} / {log:?}"
+    );
     let start = clock_start(&scene);
-    assert!(start.abs() < 1e-9, "the only source is its own zero: {start}");
+    assert!(
+        start.abs() < 1e-9,
+        "the only source is its own zero: {start}"
+    );
     assert!(
         clock::name_stamp(&recording()).is_some(),
         "the row's name has to carry a stamp for this to mean anything"
     );
-    assert_eq!(STAMP.split(' ').next().unwrap(), "2026-05-01", "the date half first, §8's rule");
+    assert_eq!(
+        STAMP.split(' ').next().unwrap(),
+        "2026-05-01",
+        "the date half first, §8's rule"
+    );
 
     let changes: Vec<f64> = requests::read_scenes(&scene.tree, LANE)
         .expect("scenes.tsv")
         .into_iter()
         .map(|change| change.time)
         .collect();
-    let grid: f64 = catalogued("P.eng.frameGridSeconds").parse().expect("a number");
+    let grid: f64 = catalogued("P.eng.frameGridSeconds")
+        .parse()
+        .expect("a number");
     let wanted = frames::frame_seconds(&changes, 20.0, grid);
     let on_disk = scene.frames_on_disk();
     for at in [wanted[0], *wanted.last().expect("more than one frame")] {
         let name = frames::frame_file(start, at);
-        assert!(on_disk.contains(&name), "{name} ({at} s) is not among {on_disk:?}");
-        assert_eq!(name.len(), "YYYY-MM-DD_HH-MM-SS.mmm.jpg".len(), "{name} is not the shape");
+        assert!(
+            on_disk.contains(&name),
+            "{name} ({at} s) is not among {on_disk:?}"
+        );
+        assert_eq!(
+            name.len(),
+            "YYYY-MM-DD_HH-MM-SS.mmm.jpg".len(),
+            "{name} is not the shape"
+        );
         // The name reads back as the instant it claims, which is what keeps a later frame from renaming
         // the ones already on disk.
         let read_back = clock::read_frame(name.trim_end_matches(".jpg")).expect("a readable stamp");
-        assert!((read_back - (start + at)).abs() < 0.001, "{name} reads back as {read_back}");
+        assert!(
+            (read_back - (start + at)).abs() < 0.001,
+            "{name} reads back as {read_back}"
+        );
     }
     // The first frame is the recording's own start, down to the millisecond field.
-    assert_eq!(on_disk[0], format!("{}.jpg", clock::frame_name(start)), "the first picture: {on_disk:?}");
+    assert_eq!(
+        on_disk[0],
+        format!("{}.jpg", clock::frame_name(start)),
+        "the first picture: {on_disk:?}"
+    );
 }
 
 /// §F1.6 S5 and S1 through the real door: the marker is written last and says what the pass did, and a
@@ -439,9 +559,14 @@ fn f1_6_s4_every_frame_is_named_by_its_second_on_the_files_clock() {
 fn f1_6_s5_the_marker_is_written_last_and_a_second_walk_skips_the_pass() {
     let scene = Scene::new("20.0");
     let (drive, log) = walk(&scene);
-    assert!(matches!(drive, run_stages::Drive::Done { .. }), "{drive:?} / {log:?}");
+    assert!(
+        matches!(drive, run_stages::Drive::Done { .. }),
+        "{drive:?} / {log:?}"
+    );
     let on_disk = scene.frames_on_disk();
-    let changes = requests::read_scenes(&scene.tree, LANE).expect("scenes.tsv").len();
+    let changes = requests::read_scenes(&scene.tree, LANE)
+        .expect("scenes.tsv")
+        .len();
     assert_eq!(
         said(&log).last().copied().unwrap_or_default(),
         frames::done_log(LANE, on_disk.len(), changes).as_str(),
@@ -451,28 +576,45 @@ fn f1_6_s5_the_marker_is_written_last_and_a_second_walk_skips_the_pass() {
     let marker = requests::read_frames_marker(&scene.tree, LANE).expect("readable");
     let grid: f64 = catalogued("P.eng.frameGridSeconds").parse().unwrap();
     let threshold: f64 = catalogued("P.machine.sceneThreshold").parse().unwrap();
-    assert_eq!(marker, Some((grid, threshold)), "the marker holds `<grid>|<threshold>`");
-    assert!(scene.tree.frames_marker(LANE).is_file(), "and the file is there");
+    assert_eq!(
+        marker,
+        Some((grid, threshold)),
+        "the marker holds `<grid>|<threshold>`"
+    );
+    assert!(
+        scene.tree.frames_marker(LANE).is_file(),
+        "and the file is there"
+    );
 
     // Second walk: S1's skip. The skip asks NOTHING of ffmpeg — not even the sweep, because the marker
     // already says these scenes are these scenes — so `argv.log` must not gain one line.
     let before = scene.calls().len();
     let (_drive, log) = walk(&scene);
     assert!(
-        log.iter().any(|line| line.contains("frames already extracted") && line.contains("skipping")),
+        log.iter()
+            .any(|line| line.contains("frames already extracted") && line.contains("skipping")),
         "the skip was never said: {log:?}"
     );
     assert_eq!(
-        log.iter().filter(|line| line.contains("frames already extracted")).count(),
+        log.iter()
+            .filter(|line| line.contains("frames already extracted"))
+            .count(),
         1,
         "exactly one skip line: {log:?}"
     );
     assert_eq!(
-        log.iter().find(|line| line.contains("frames already extracted")).map(String::as_str),
+        log.iter()
+            .find(|line| line.contains("frames already extracted"))
+            .map(String::as_str),
         Some(frames::already_log(LANE, grid, threshold).as_str()),
         "the skip names the grid and threshold it matched"
     );
-    assert_eq!(scene.calls().len(), before, "nothing was re-extracted: {:?}", &scene.calls()[before.min(scene.calls().len())..]);
+    assert_eq!(
+        scene.calls().len(),
+        before,
+        "nothing was re-extracted: {:?}",
+        &scene.calls()[before.min(scene.calls().len())..]
+    );
 }
 
 /// §F1.6 S3's short branch through the real door: a take shorter than one grid step has one picture,
@@ -484,17 +626,30 @@ fn f1_6_s5_the_marker_is_written_last_and_a_second_walk_skips_the_pass() {
 fn f1_6_s2_a_short_take_gets_its_first_frame_alone() {
     let scene = Scene::new("0.1");
     let (drive, log) = walk(&scene);
-    assert!(matches!(drive, run_stages::Drive::Done { .. }), "{drive:?} / {:?}", said(&log));
+    assert!(
+        matches!(drive, run_stages::Drive::Done { .. }),
+        "{drive:?} / {:?}",
+        said(&log)
+    );
     let on_disk = scene.frames_on_disk();
-    assert_eq!(on_disk, vec![frames::frame_file(clock_start(&scene), 0.0)], "one frame, the first: {on_disk:?}");
+    assert_eq!(
+        on_disk,
+        vec![frames::frame_file(clock_start(&scene), 0.0)],
+        "one frame, the first: {on_disk:?}"
+    );
     // One chunk's worth of work for one frame: no grid means nothing to split.
     assert_eq!(
-        said(&log).iter().filter(|line| line.starts_with("extracting frames")).count(),
+        said(&log)
+            .iter()
+            .filter(|line| line.starts_with("extracting frames"))
+            .count(),
         1,
         "one worker for one frame: {:?}",
         said(&log)
     );
-    let changes = requests::read_scenes(&scene.tree, LANE).expect("scenes.tsv").len();
+    let changes = requests::read_scenes(&scene.tree, LANE)
+        .expect("scenes.tsv")
+        .len();
     assert_eq!(
         said(&log).last().copied().unwrap_or_default(),
         frames::done_log(LANE, 1, changes).as_str(),
@@ -512,8 +667,14 @@ fn f1_6_s2_a_missing_video_names_itself_and_fails_the_stage() {
     match drive {
         run_stages::Drive::Failed { stage, error } => {
             assert_eq!(stage, "frames", "the frames stage failed: {stage}");
-            assert!(error.contains("no video to frame"), "it named the reason: {error}");
-            assert!(error.contains(&format!("{LANE}:")), "it named the row: {error}");
+            assert!(
+                error.contains("no video to frame"),
+                "it named the reason: {error}"
+            );
+            assert!(
+                error.contains(&format!("{LANE}:")),
+                "it named the row: {error}"
+            );
             assert!(
                 error.contains(&recording()),
                 "it named the missing file: {error}"
@@ -522,7 +683,10 @@ fn f1_6_s2_a_missing_video_names_itself_and_fails_the_stage() {
         other => panic!("a missing video must fail the stage, not {other:?} / {log:?}"),
     }
     // Nothing was written for a row that could not be framed.
-    assert!(!scene.tree.frames_marker(LANE).exists(), "no marker without frames");
+    assert!(
+        !scene.tree.frames_marker(LANE).exists(),
+        "no marker without frames"
+    );
     assert!(scene.frames_on_disk().is_empty(), "no pictures either");
 }
 

@@ -28,7 +28,10 @@ use naivepost::ui;
 
 use crate::common;
 pub use common::find_in;
-use common::{assert_close, entry, settle, status_text, widget, label_text, click, cut_page_unpainted as cut_page};
+use common::{
+    assert_close, click, cut_page_unpainted as cut_page, entry, label_text, settle, status_text,
+    widget,
+};
 
 static RAN_REFUSED: AtomicBool = AtomicBool::new(false);
 static RAN_LINE: AtomicBool = AtomicBool::new(false);
@@ -57,7 +60,6 @@ fn form_holder(window: &adw::ApplicationWindow) -> gtk::Box {
 fn form_visible(window: &adw::ApplicationWindow) -> bool {
     form_holder(window).get_visible()
 }
-
 
 /// Mark a stretch on the ruler/selection ground — the same seam a drag leaves behind — so S1 has a band.
 fn mark_band(window: &adw::ApplicationWindow, from: f64, to: f64) {
@@ -103,7 +105,10 @@ fn open_over_band(app: &adw::Application, from: f64, to: f64) -> adw::Applicatio
     let window = cut_page(app, &Cut::default());
     mark_band(&window, from, to);
     click(&window, "effect-item-label");
-    assert!(form_visible(&window), "a marked stretch opens the label form");
+    assert!(
+        form_visible(&window),
+        "a marked stretch opens the label form"
+    );
     window
 }
 
@@ -145,13 +150,21 @@ fn label_round(app: &adw::Application) {
         let form = ui::label_form_open().expect("the press left a form waiting");
         assert_close("at the line", form.t, 42.0);
         // P.policy.effectDefaultSeconds ("stop/speed/volume/label 2"): two seconds off the red line.
-        assert_close("P.policy.effectDefaultSeconds", form.dur, fx_label::LINE_SECONDS);
+        assert_close(
+            "P.policy.effectDefaultSeconds",
+            form.dur,
+            fx_label::LINE_SECONDS,
+        );
         assert_eq!(
             form.name, "",
             "the name arrives EMPTY -- it is the question the form asks, and §F3.7 refuses an unnamed mark"
         );
         let title = fx_label::form_title(42.0);
-        assert_eq!(label_text(&window, "label-heading"), title, "the heading IS the module's title");
+        assert_eq!(
+            label_text(&window, "label-heading"),
+            title,
+            "the heading IS the module's title"
+        );
         assert!(
             status_text(&window).starts_with(&title),
             "and the status line opens with it too, got {}",
@@ -172,7 +185,10 @@ fn label_round(app: &adw::Application) {
             fx_label::LINE_SECONDS,
             "a stretch is marked over its own seconds, not over the line default"
         );
-        assert_eq!(label_text(&window, "label-heading"), fx_label::form_title(10.0));
+        assert_eq!(
+            label_text(&window, "label-heading"),
+            fx_label::form_title(10.0)
+        );
         window.close();
 
         // A band under every effect's floor is not a band: with a placed line the line answers instead of
@@ -182,7 +198,10 @@ fn label_round(app: &adw::Application) {
         ui::set_line_position(&thin, LinePos { t: 42.0 });
         mark_band(&thin, 30.0, 30.0 + MIN_MARKED_SECONDS * 0.5);
         click(&thin, "effect-item-label");
-        assert!(form_visible(&thin), "a slipped band falls through to the line rather than refusing");
+        assert!(
+            form_visible(&thin),
+            "a slipped band falls through to the line rather than refusing"
+        );
         let fell = ui::label_form_open().expect("the line answered");
         assert_close("at the line, not at the slipped band", fell.t, 42.0);
         assert_close("the line's two seconds", fell.dur, fx_label::LINE_SECONDS);
@@ -223,9 +242,19 @@ fn label_round(app: &adw::Application) {
 
         // Tooltips are the module's sentences, whole -- including the promise that placing one is safe.
         let name_tip = tooltip(&window, "label-field-name");
-        assert_eq!(name_tip, fx_label::NAME_HELP, "the Name tooltip IS the module's sentence");
-        assert!(name_tip.contains("brief"), "and it says where the name goes: {name_tip}");
-        assert!(name_tip.contains("changes nothing"), "...and that placing one is safe: {name_tip}");
+        assert_eq!(
+            name_tip,
+            fx_label::NAME_HELP,
+            "the Name tooltip IS the module's sentence"
+        );
+        assert!(
+            name_tip.contains("brief"),
+            "and it says where the name goes: {name_tip}"
+        );
+        assert!(
+            name_tip.contains("changes nothing"),
+            "...and that placing one is safe: {name_tip}"
+        );
         assert_eq!(
             tooltip(&window, "label-field-length"),
             fx_label::LENGTH_HELP,
@@ -233,7 +262,11 @@ fn label_round(app: &adw::Application) {
         );
 
         // The name starts empty and the field itself caps at the tag's budget.
-        assert_eq!(entry(&window, "label-field-name").text(), "", "prefilled with nothing: the name is asked for");
+        assert_eq!(
+            entry(&window, "label-field-name").text(),
+            "",
+            "prefilled with nothing: the name is asked for"
+        );
         assert_eq!(
             entry(&window, "label-field-name").max_length(),
             fx_label::NAME_MAX_CHARS as i32,
@@ -241,7 +274,10 @@ fn label_round(app: &adw::Application) {
             fx_label::NAME_MAX_CHARS
         );
         // The heading is the module's title for the band's own second.
-        assert_eq!(label_text(&window, "label-heading"), fx_label::form_title(10.0));
+        assert_eq!(
+            label_text(&window, "label-heading"),
+            fx_label::form_title(10.0)
+        );
         RAN_FIELDS.store(true, Ordering::SeqCst);
         window.close();
     }
@@ -257,7 +293,12 @@ fn label_round(app: &adw::Application) {
         );
         assert_eq!(
             status_text(&window),
-            fx_label::apply(&fx_label::Form { t: 10.0, name: String::new(), dur: 15.0 }).unwrap_err(),
+            fx_label::apply(&fx_label::Form {
+                t: 10.0,
+                name: String::new(),
+                dur: 15.0
+            })
+            .unwrap_err(),
             "the page prints the rule's own error, not a second wording of it"
         );
         assert!(
@@ -265,13 +306,23 @@ fn label_round(app: &adw::Application) {
             "a refused Apply keeps the form OPEN: closing it would throw away the moment being named"
         );
         assert!(form_visible(&window), "still on screen, still editable");
-        assert!(ui::review_cut_of(&window).fx.is_empty(), "\"nothing is placed until then\" means NOTHING");
+        assert!(
+            ui::review_cut_of(&window).fx.is_empty(),
+            "\"nothing is placed until then\" means NOTHING"
+        );
 
         // Whitespace is not a name either: it would draw an empty tag.
         entry(&window, "label-field-name").set_text("   ");
         click(&window, "label-apply-button");
-        assert_eq!(status_text(&window), fx_label::NO_NAME, "spaces are trimmed away and leave no name");
-        assert!(ui::review_cut_of(&window).fx.is_empty(), "and still nothing was placed");
+        assert_eq!(
+            status_text(&window),
+            fx_label::NO_NAME,
+            "spaces are trimmed away and leave no name"
+        );
+        assert!(
+            ui::review_cut_of(&window).fx.is_empty(),
+            "and still nothing was placed"
+        );
         RAN_NO_NAME.store(true, Ordering::SeqCst);
         window.close();
     }
@@ -297,8 +348,15 @@ fn label_round(app: &adw::Application) {
             ui::label_form_open().is_some(),
             "the form stays open with the name still typed in it"
         );
-        assert_eq!(entry(&window, "label-field-name").text(), "boss fight", "the name was not thrown away");
-        assert!(ui::review_cut_of(&window).fx.is_empty(), "and it wrote nothing");
+        assert_eq!(
+            entry(&window, "label-field-name").text(),
+            "boss fight",
+            "the name was not thrown away"
+        );
+        assert!(
+            ui::review_cut_of(&window).fx.is_empty(),
+            "and it wrote nothing"
+        );
         RAN_FLOOR.store(true, Ordering::SeqCst);
         window.close();
     }
@@ -318,11 +376,26 @@ fn label_round(app: &adw::Application) {
         assert_close("over the band's own second", fx.t, 10.0);
         assert_close("...of its own length", fx.dur, 3.0);
         // Nothing else on the record: no fades, no ease, no box, no lane.
-        assert_eq!((fx.trans, fx.tout, fx.ease.as_str()), (0.0, 0.0, ""), "a label fades nothing");
-        assert_eq!((fx.cx, fx.cy, fx.hf, fx.wf), (None, None, None, None), "and draws no box");
+        assert_eq!(
+            (fx.trans, fx.tout, fx.ease.as_str()),
+            (0.0, 0.0, ""),
+            "a label fades nothing"
+        );
+        assert_eq!(
+            (fx.cx, fx.cy, fx.hf, fx.wf),
+            (None, None, None, None),
+            "and draws no box"
+        );
         assert_eq!(fx.lane, "");
-        for denied in [fx_record::Field::Trans, fx_record::Field::Cx, fx_record::Field::Gain] {
-            assert!(!fx_record::uses(EffectKind::Label, denied), "§1 denies a label {denied:?}");
+        for denied in [
+            fx_record::Field::Trans,
+            fx_record::Field::Cx,
+            fx_record::Field::Gain,
+        ] {
+            assert!(
+                !fx_record::uses(EffectKind::Label, denied),
+                "§1 denies a label {denied:?}"
+            );
         }
         assert_eq!(
             status_text(&window),
@@ -330,7 +403,8 @@ fn label_round(app: &adw::Application) {
             "the status IS the module's placed_status"
         );
         assert!(
-            status_text(&window).contains("nothing changes in the video; the narration is told about it"),
+            status_text(&window)
+                .contains("nothing changes in the video; the narration is told about it"),
             "...ending in the reassurance §A.7 quotes: {}",
             status_text(&window)
         );
@@ -364,8 +438,14 @@ fn label_round(app: &adw::Application) {
             "and carries the kind class the lane's CSS colours a label tag by"
         );
         // Drawn while paused -- a label IS visible to be judged -- yet never rendered into the video.
-        assert!(fx_lane::drawn_paused(EffectKind::Label), "§A.7's grey-white tag shows on the lane");
-        assert!(fx_label::never_rendered(&cut_marker()), "but the render gets no filter from it");
+        assert!(
+            fx_lane::drawn_paused(EffectKind::Label),
+            "§A.7's grey-white tag shows on the lane"
+        );
+        assert!(
+            fx_label::never_rendered(&cut_marker()),
+            "but the render gets no filter from it"
+        );
         RAN_TAG.store(true, Ordering::SeqCst);
         window.close();
     }
@@ -375,10 +455,19 @@ fn label_round(app: &adw::Application) {
         let window = open_over_band(app, 10.0, 25.0);
         entry(&window, "label-field-name").set_text("abandoned idea");
         click(&window, "label-cancel-button");
-        assert!(ui::label_form_open().is_none(), "Cancel cleared the held form");
+        assert!(
+            ui::label_form_open().is_none(),
+            "Cancel cleared the held form"
+        );
         assert!(!form_visible(&window), "and hid the holder");
-        assert!(ui::review_cut_of(&window).fx.is_empty(), "Cancel records nothing");
-        assert_eq!(status_text(&window), "left as it was \u{2014} nothing marked");
+        assert!(
+            ui::review_cut_of(&window).fx.is_empty(),
+            "Cancel records nothing"
+        );
+        assert_eq!(
+            status_text(&window),
+            "left as it was \u{2014} nothing marked"
+        );
         window.close();
     }
 
@@ -388,7 +477,12 @@ fn label_round(app: &adw::Application) {
 
 /// A placed mark for the render-side claim, built by the rule rather than hand-rolled.
 fn cut_marker() -> naivepost::cut::Fx {
-    fx_label::apply(&fx_label::Form { t: 10.0, name: "boss fight".into(), dur: 2.0 }).unwrap()
+    fx_label::apply(&fx_label::Form {
+        t: 10.0,
+        name: "boss fight".into(),
+        dur: 2.0,
+    })
+    .unwrap()
 }
 
 #[test]
@@ -410,15 +504,36 @@ fn f3_7_the_label_form_is_wired_through_the_real_widgets() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_REFUSED.load(Ordering::SeqCst), "the S1 refusal check never ran");
-    assert!(RAN_LINE.load(Ordering::SeqCst), "the S1/S2 line-branch check never ran");
-    assert!(RAN_BAND.load(Ordering::SeqCst), "the S1 band-branch check never ran");
-    assert!(RAN_FIELDS.load(Ordering::SeqCst), "the S3 two-field check never ran");
-    assert!(RAN_NO_NAME.load(Ordering::SeqCst), "the S2 empty-name refusal check never ran");
-    assert!(RAN_FLOOR.load(Ordering::SeqCst), "the S4 length-floor check never ran");
+    assert!(
+        RAN_REFUSED.load(Ordering::SeqCst),
+        "the S1 refusal check never ran"
+    );
+    assert!(
+        RAN_LINE.load(Ordering::SeqCst),
+        "the S1/S2 line-branch check never ran"
+    );
+    assert!(
+        RAN_BAND.load(Ordering::SeqCst),
+        "the S1 band-branch check never ran"
+    );
+    assert!(
+        RAN_FIELDS.load(Ordering::SeqCst),
+        "the S3 two-field check never ran"
+    );
+    assert!(
+        RAN_NO_NAME.load(Ordering::SeqCst),
+        "the S2 empty-name refusal check never ran"
+    );
+    assert!(
+        RAN_FLOOR.load(Ordering::SeqCst),
+        "the S4 length-floor check never ran"
+    );
     assert!(
         RAN_APPLY_UNDO.load(Ordering::SeqCst),
         "the S5 apply-and-undo check never ran"
     );
-    assert!(RAN_TAG.load(Ordering::SeqCst), "the S5 tag-drawn check never ran");
+    assert!(
+        RAN_TAG.load(Ordering::SeqCst),
+        "the S5 tag-drawn check never ran"
+    );
 }

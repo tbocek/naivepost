@@ -13,8 +13,10 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, screen: &str) -> bool {
         state.frames = (1..=3)
             .map(|n| format!("project:produce/publish/frame-{n}.jpg"))
             .collect();
-        state.instruction = "Make the speaker mid-gesture at the whiteboard, keep the room dark \u{2014} \
-no words, no logos.".into();
+        state.instruction =
+            "Make the speaker mid-gesture at the whiteboard, keep the room dark \u{2014} \
+no words, no logos."
+                .into();
         state.negative = "watermarks, lettering, extra limbs".into();
         state.title = "Ethereum, one lecture at a time".into();
         state.thumb_title = state.title.clone();
@@ -33,9 +35,11 @@ no words, no logos.".into();
         // video's, and both are unknown in the fixture, so a bare shot shows no crop box at all.
         state.base_shape = Some((1080, 1920));
         state.video_shape = (1920, 1080);
-        state.description = "Lecture two of the series: gas, smart contracts and accounts, with the \
+        state.description =
+            "Lecture two of the series: gas, smart contracts and accounts, with the \
 architecture behind them.
-".into();
+"
+            .into();
         // §A's Default column, spelled from the rules module so the shot agrees with the tests.
         for (row, value) in crate::produce_screen::defaults() {
             match row {
@@ -82,7 +86,6 @@ architecture behind them.
 
     false
 }
-
 
 /// Write one encoder row's default into the page's state, by the row name §A gives it. The page keeps
 /// its settings as spelled strings, so this is the one place that maps a §A row to its field.

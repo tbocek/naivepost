@@ -39,18 +39,27 @@ struct Reply {
 
 impl Reply {
     fn ok(content: &str) -> Reply {
-        Reply { status: 200, body: good(content) }
+        Reply {
+            status: 200,
+            body: good(content),
+        }
     }
 
     /// A mid-call death: the endpoint was asked, the connection is cut with nothing written back. §3's first-listed
     /// failure, and what a container killed while replying looks like from the client.
     fn died() -> Reply {
-        Reply { status: 0, body: String::new() }
+        Reply {
+            status: 0,
+            body: String::new(),
+        }
     }
 
     /// A status carrying an `error.message`, the shape llama.cpp-family servers answer with.
     fn error(status: u16, message: &str) -> Reply {
-        Reply { status, body: serde_json::json!({ "error": { "message": message } }).to_string() }
+        Reply {
+            status,
+            body: serde_json::json!({ "error": { "message": message } }).to_string(),
+        }
     }
 }
 
@@ -131,7 +140,13 @@ fn serve(mut stream: TcpStream, script: &Mutex<Script>) -> Option<String> {
             break;
         }
         if line.to_ascii_lowercase().starts_with("content-length:") {
-            length = line.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = line
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
         if line.trim().is_empty() {
             break;
@@ -157,7 +172,11 @@ fn serve(mut stream: TcpStream, script: &Mutex<Script>) -> Option<String> {
         let _ = stream.shutdown(std::net::Shutdown::Both);
         return Some(String::from_utf8_lossy(&payload).to_string());
     }
-    let reason = if reply.status == 200 { "OK" } else { "Server Error" };
+    let reason = if reply.status == 200 {
+        "OK"
+    } else {
+        "Server Error"
+    };
     let framed = format!(
         "HTTP/1.1 {} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         reply.status,
@@ -218,7 +237,12 @@ fn fixture(tag: &str, address: &str) -> Fixture {
     let tree = naivepost::layout::Tree::new(&session).expect("a .naivepost folder is a project");
     // Resolved exactly as a flow resolves it, from the settings just written.
     let endpoint = services::llm_endpoint(&conf);
-    Fixture { root, tree, endpoint, _scenario: scenario }
+    Fixture {
+        root,
+        tree,
+        endpoint,
+        _scenario: scenario,
+    }
 }
 
 /// The lines the door logged. `Vec` behind a `Mutex` because `log` reaches the sink as a shared `&dyn Fn`.
@@ -339,10 +363,26 @@ fn f6_2_s1_a_mid_call_death_walks_the_ladder_and_asks_the_same_request_again() {
     // itself when a call answers — so this scenario hands its fresh port that history up front rather than earning
     // it with a call that would have to be answered by the same fake.
     naivepost::llm_retry_leg::note_answer(&scene.endpoint.url);
-    let outcome = ask(&scene, &scene.endpoint, "same question", &sink, &waits.recorder());
-    assert!(outcome.is_err(), "five deaths and the step fails: {outcome:?}");
-    assert!(outcome.is_err(), "five deaths and the step fails: {outcome:?}");
-    assert_eq!(waits.seconds(), vec![5, 20, 60, 120, 240], "§3's ladder in full, in order, no sixth wait");
+    let outcome = ask(
+        &scene,
+        &scene.endpoint,
+        "same question",
+        &sink,
+        &waits.recorder(),
+    );
+    assert!(
+        outcome.is_err(),
+        "five deaths and the step fails: {outcome:?}"
+    );
+    assert!(
+        outcome.is_err(),
+        "five deaths and the step fails: {outcome:?}"
+    );
+    assert_eq!(
+        waits.seconds(),
+        vec![5, 20, 60, 120, 240],
+        "§3's ladder in full, in order, no sixth wait"
+    );
     let gone = sink.gone_lines();
     assert_eq!(gone.len(), 5, "one line per rung: {gone:?}");
     assert!(
@@ -361,7 +401,10 @@ fn f6_2_s1_a_mid_call_death_walks_the_ladder_and_asks_the_same_request_again() {
     // §3's five retries, and one more ask that got out before the ladder ran out), all carrying the identical body.
     let asked = llm.all(std::time::Duration::from_millis(800));
     assert_eq!(asked.len(), 6, "six asks reached the wire: {}", asked.len());
-    assert!(asked.windows(2).all(|pair| pair[0] == pair[1]), "every retry sent the identical body");
+    assert!(
+        asked.windows(2).all(|pair| pair[0] == pair[1]),
+        "every retry sent the identical body"
+    );
 }
 
 /// The ladder ends — and ⏹ ends it sooner. A four-minute wait nobody can interrupt is a button that does nothing,
@@ -377,15 +420,33 @@ fn f6_2_s1_the_ladder_ends_and_a_stop_ends_it_early() {
     // away MID-CALL); nothing about it is asserted.
     let warm = Sink::default();
     let warm_waits = Waits::default();
-    let _ = ask(&scene, &scene.endpoint, "warm", &warm, &warm_waits.recorder());
+    let _ = ask(
+        &scene,
+        &scene.endpoint,
+        "warm",
+        &warm,
+        &warm_waits.recorder(),
+    );
     let sink = Sink::default();
     let waits = Waits::default();
     let outcome = ask(&scene, &scene.endpoint, "q", &sink, &waits.stopping_at(3));
     assert!(outcome.is_err(), "a stopped run gets no answer");
-    assert_eq!(waits.seconds(), vec![5, 20, 60], "it stopped on the third rung, not the fifth");
+    assert_eq!(
+        waits.seconds(),
+        vec![5, 20, 60],
+        "it stopped on the third rung, not the fifth"
+    );
     let why = outcome.unwrap_err();
-    assert!(why.contains("cancelled"), "the reason says the run was stopped, not that the server broke: {why}");
-    assert_eq!(sink.gone_lines().len(), 3, "one line per rung it got through: {:?}", sink.gone_lines());
+    assert!(
+        why.contains("cancelled"),
+        "the reason says the run was stopped, not that the server broke: {why}"
+    );
+    assert_eq!(
+        sink.gone_lines().len(),
+        3,
+        "one line per rung it got through: {:?}",
+        sink.gone_lines()
+    );
 }
 
 /// A server this app has NEVER got an answer from is not "gone away mid-call": §02-services#1's down service
@@ -395,17 +456,37 @@ fn f6_2_s1_the_ladder_ends_and_a_stop_ends_it_early() {
 fn f6_2_s1_a_server_that_never_answered_is_not_waited_through() {
     // Nothing listens at this port at all: refused from the first contact, with no answer ever.
     let listener = TcpListener::bind("127.0.0.1:0").expect("hand out a dead port");
-    let dead = format!("http://127.0.0.1:{}", listener.local_addr().expect("a local address").port());
+    let dead = format!(
+        "http://127.0.0.1:{}",
+        listener.local_addr().expect("a local address").port()
+    );
     drop(listener);
     let scene = fixture("never", &dead);
     let sink = Sink::default();
     let waits = Waits::default();
     let outcome = ask(&scene, &scene.endpoint, "q", &sink, &waits.recorder());
     let why = outcome.expect_err("a server that never answers still does not answer");
-    assert_eq!(waits.seconds(), vec![2], "one short retry, no ladder: {:?}", waits.seconds());
-    assert!(sink.gone_lines().is_empty(), "no mid-call claim for a server never in one: {:?}", sink.gone_lines());
-    assert_eq!(sink.short_lines().len(), 1, "the short retry is said once: {:?}", sink.short_lines());
-    assert!(why.contains("not answering"), "the reason names the server: {why}");
+    assert_eq!(
+        waits.seconds(),
+        vec![2],
+        "one short retry, no ladder: {:?}",
+        waits.seconds()
+    );
+    assert!(
+        sink.gone_lines().is_empty(),
+        "no mid-call claim for a server never in one: {:?}",
+        sink.gone_lines()
+    );
+    assert_eq!(
+        sink.short_lines().len(),
+        1,
+        "the short retry is said once: {:?}",
+        sink.short_lines()
+    );
+    assert!(
+        why.contains("not answering"),
+        "the reason names the server: {why}"
+    );
 }
 
 // ---- s2: anything else gets one short retry ------------------------------------------------------
@@ -419,10 +500,26 @@ fn f6_2_s2_a_400_is_asked_again_once_after_2_s_then_stops() {
     let sink = Sink::default();
     let waits = Waits::default();
     let outcome = ask(&scene, &scene.endpoint, "q", &sink, &waits.recorder());
-    assert!(outcome.is_err(), "a 400 that keeps answering 400 fails the step");
-    assert_eq!(waits.seconds(), vec![2], "the one short retry, and only that one");
-    assert_eq!(sink.short_lines().len(), 1, "said once: {:?}", sink.short_lines());
-    assert!(sink.gone_lines().is_empty(), "a status is never \"the server went away\": {:?}", sink.gone_lines());
+    assert!(
+        outcome.is_err(),
+        "a 400 that keeps answering 400 fails the step"
+    );
+    assert_eq!(
+        waits.seconds(),
+        vec![2],
+        "the one short retry, and only that one"
+    );
+    assert_eq!(
+        sink.short_lines().len(),
+        1,
+        "said once: {:?}",
+        sink.short_lines()
+    );
+    assert!(
+        sink.gone_lines().is_empty(),
+        "a status is never \"the server went away\": {:?}",
+        sink.gone_lines()
+    );
     let asked = llm.all(std::time::Duration::from_millis(600));
     assert_eq!(asked.len(), 2, "two asks, never a third: {}", asked.len());
     assert_eq!(asked[0], asked[1], "the retry sent the identical body");
@@ -443,13 +540,36 @@ fn f6_2_s2_a_down_server_is_asked_exactly_twice_over_the_wire() {
     let sink = Sink::default();
     let waits = Waits::default();
     let outcome = ask(&scene, &scene.endpoint, "q", &sink, &waits.recorder());
-    let why = outcome.expect_err("a server that dies on every ask leaves the step without an answer");
-    assert_eq!(waits.seconds(), vec![2], "one wait of 2 s, and no ladder: {:?}", waits.seconds());
-    assert_eq!(sink.short_lines().len(), 1, "the short retry is said once: {:?}", sink.short_lines());
-    assert!(sink.gone_lines().is_empty(), "no death line for the short branch: {:?}", sink.gone_lines());
-    assert!(why.contains("not answering"), "the reason names the server: {why}");
+    let why =
+        outcome.expect_err("a server that dies on every ask leaves the step without an answer");
+    assert_eq!(
+        waits.seconds(),
+        vec![2],
+        "one wait of 2 s, and no ladder: {:?}",
+        waits.seconds()
+    );
+    assert_eq!(
+        sink.short_lines().len(),
+        1,
+        "the short retry is said once: {:?}",
+        sink.short_lines()
+    );
+    assert!(
+        sink.gone_lines().is_empty(),
+        "no death line for the short branch: {:?}",
+        sink.gone_lines()
+    );
+    assert!(
+        why.contains("not answering"),
+        "the reason names the server: {why}"
+    );
     let asked = llm.all(std::time::Duration::from_millis(800));
-    assert_eq!(asked.len(), 2, "two asks over the wire, never a third: {}", asked.len());
+    assert_eq!(
+        asked.len(),
+        2,
+        "two asks over the wire, never a third: {}",
+        asked.len()
+    );
 }
 
 // ---- s3: the new rule — a 5xx naming a device ----------------------------------------------------
@@ -462,25 +582,47 @@ fn f6_2_s3_a_500_naming_a_device_backs_off_and_a_plain_500_does_not() {
     // ONE fixture for both halves: a second [`fixture`] call while this one is alive would wait forever on the
     // scenario lock it holds. The plain-500 half therefore drives the door at a SECOND fake by handing its address
     // to `chat_on` directly — which the door accepts as a parameter and never re-reads from settings.
-    let oom = FakeLlm::start(vec![Reply::error(500, "CUDA out of memory. Tried to allocate 2.00 GiB")]);
+    let oom = FakeLlm::start(vec![Reply::error(
+        500,
+        "CUDA out of memory. Tried to allocate 2.00 GiB",
+    )]);
     let scene = fixture("device", &oom.url());
     let sink = Sink::default();
     let waits = Waits::default();
     let outcome = ask(&scene, &scene.endpoint, "q", &sink, &waits.recorder());
-    assert!(outcome.is_err(), "an out-of-memory that keeps failing fails the step");
+    assert!(
+        outcome.is_err(),
+        "an out-of-memory that keeps failing fails the step"
+    );
     assert_eq!(
-        waits.seconds()[0], 5,
+        waits.seconds()[0],
+        5,
         "a device failure backs off like a death rather than resending at 2 s: {:?}",
         waits.seconds()
     );
 
     // Plain 500: an answer, so the short patience.
     let plain = FakeLlm::start(vec![Reply::error(500, "internal server error")]);
-    let plain_endpoint = Endpoint { url: plain.url(), key: scene.endpoint.key.clone() };
+    let plain_endpoint = Endpoint {
+        url: plain.url(),
+        key: scene.endpoint.key.clone(),
+    };
     let sink2 = Sink::default();
     let waits2 = Waits::default();
     let outcome2 = ask(&scene, &plain_endpoint, "q", &sink2, &waits2.recorder());
-    assert!(outcome2.is_err(), "a plain 500 fails the step after its one retry");
-    assert_eq!(waits2.seconds(), vec![2], "a plain 500 is resent soon, not waited through: {:?}", waits2.seconds());
-    assert!(sink2.gone_lines().is_empty(), "a status is never a death: {:?}", sink2.gone_lines());
+    assert!(
+        outcome2.is_err(),
+        "a plain 500 fails the step after its one retry"
+    );
+    assert_eq!(
+        waits2.seconds(),
+        vec![2],
+        "a plain 500 is resent soon, not waited through: {:?}",
+        waits2.seconds()
+    );
+    assert!(
+        sink2.gone_lines().is_empty(),
+        "a status is never a death: {:?}",
+        sink2.gone_lines()
+    );
 }

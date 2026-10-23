@@ -62,10 +62,16 @@ where
     D: serde::Deserializer<'de>,
 {
     let block = serde_json::Value::deserialize(deserializer)?;
-    let Some(map) = block.as_object() else { return Ok(RawProduce::default()) };
+    let Some(map) = block.as_object() else {
+        return Ok(RawProduce::default());
+    };
     let only = READ_KEYS
         .iter()
-        .filter_map(|key| map.get(*key).cloned().and_then(|value| keep_readable(key, value)))
+        .filter_map(|key| {
+            map.get(*key)
+                .cloned()
+                .and_then(|value| keep_readable(key, value))
+        })
         .collect::<serde_json::Map<String, serde_json::Value>>();
     Ok(serde_json::from_value(serde_json::Value::Object(only)).unwrap_or_default())
 }
@@ -85,7 +91,14 @@ fn keep_readable(key: &str, value: serde_json::Value) -> Option<(String, serde_j
 
 /// The six names this raw view reads: §6's four legacy spellings plus the two current keys whose stored word
 /// may be one the app no longer offers. Spelled once so the filter above and [`RawProduce`] cannot disagree.
-const READ_KEYS: [&str; 6] = ["subs", "subs_from", "game_vol", "bare", "subtitles", "resolution"];
+const READ_KEYS: [&str; 6] = [
+    "subs",
+    "subs_from",
+    "game_vol",
+    "bare",
+    "subtitles",
+    "resolution",
+];
 
 /// The stored `produce` block, read as plain JSON so the loader can keep the rows it understands when one
 /// row's word is not one this app writes.
@@ -269,19 +282,28 @@ pub fn fold_legacy(settings: &mut Produce, legacy: &RawProduce) -> Vec<String> {
     if let Some(subs) = legacy.subs.as_deref() {
         if subs == "sidecar" {
             settings.subtitles = Subtitles::None;
-            report.push("produce.subs \"sidecar\": subtitles now \"none in the video\"".to_string());
+            report
+                .push("produce.subs \"sidecar\": subtitles now \"none in the video\"".to_string());
         } else {
-            report.push(format!("produce.subs {subs:?}: ignored, not a spelling this app knows"));
+            report.push(format!(
+                "produce.subs {subs:?}: ignored, not a spelling this app knows"
+            ));
         }
     }
     if legacy.subs_from.is_some() {
-        report.push("produce.subs_from: dropped, the cues are built on the produced clock".to_string());
+        report.push(
+            "produce.subs_from: dropped, the cues are built on the produced clock".to_string(),
+        );
     }
     // Present-and-zero is silence, which is what the file said; absent leaves the default alone, because the
     // default IS §4's answer for a project that never set the bed's level.
     if let Some(volume) = legacy.game_vol {
         settings.game_volume = volume;
-        let said = if volume == 0.0 { "silence" } else { "the bed under the narration" };
+        let said = if volume == 0.0 {
+            "silence"
+        } else {
+            "the bed under the narration"
+        };
         report.push(format!("produce.game_vol {volume}: {said}"));
     }
     if let Some(bare) = legacy.bare {

@@ -59,7 +59,10 @@ fn f1_10_s3_a_live_answer_is_matched_back_and_both_files_are_written() {
     );
     assert!(!text.contains("today"), "the dropped word is gone: {text}");
     let marks = read(&fixture.tree.retakes_tsv());
-    assert!(!marks.trim().is_empty(), "the dropped run is a mark: {marks}");
+    assert!(
+        !marks.trim().is_empty(),
+        "the dropped run is a mark: {marks}"
+    );
     assert!(
         lines.iter().any(|line| line.contains("off BEFORE")),
         "the applied seam said what it took: {lines:?}"

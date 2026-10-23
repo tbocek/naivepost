@@ -24,7 +24,13 @@ fn turn(slot: u32, from: f64, to: f64) -> Turn {
 /// (`diarize::ANCHOR_MIN_SECONDS`) rather than a flicker.
 fn speaks(slot: u32, from: f64, every: f64, seconds: f64, times: usize) -> Vec<Turn> {
     (0..times)
-        .map(|at| turn(slot, from + at as f64 * every, from + at as f64 * every + seconds))
+        .map(|at| {
+            turn(
+                slot,
+                from + at as f64 * every,
+                from + at as f64 * every + seconds,
+            )
+        })
         .collect()
 }
 
@@ -117,11 +123,12 @@ fn fake_by_order<'a>(
 ) -> impl FnMut(&[(f64, f64)]) -> Result<Vec<Vec<Turn>>, String> + 'a {
     move |windows: &[(f64, f64)]| {
         let call = recorder.call();
-        recorder
-            .asked
-            .lock()
-            .expect("the recorder")
-            .push(windows.iter().map(|(from, to)| to - from).fold(0.0f64, f64::max));
+        recorder.asked.lock().expect("the recorder").push(
+            windows
+                .iter()
+                .map(|(from, to)| to - from)
+                .fold(0.0f64, f64::max),
+        );
         if call < refusals {
             return Ok(windows.iter().map(|_| crowded_room()).collect());
         }
@@ -160,7 +167,11 @@ fn sec_02_services_2_model_roles_s3_ladder_a_fitting_room_is_asked_about_once_at
     assert_eq!(rung.window, 90.0);
     // Pass 1 strides two thirds of the window (`P.machine.diarHopShare`), so 600 s of recording is ten
     // 90 s windows, the last one ending at the end rather than padded out.
-    assert_eq!(rung.scan.len(), 10, "90 s windows over 600 s at a two-thirds stride");
+    assert_eq!(
+        rung.scan.len(),
+        10,
+        "90 s windows over 600 s at a two-thirds stride"
+    );
     assert!(
         !rung.turns.is_empty(),
         "the rung's answers are the turns the run gets"
@@ -184,8 +195,15 @@ fn sec_02_services_2_model_roles_s3_ladder_moves_on_past_a_rung_whose_anchor_eat
     )
     .expect("the rung that fits serves after a refusal");
 
-    assert_eq!(recorder.trail(), vec![90, 45], "asked in ladder order, stopping where it served");
-    assert_eq!(rung.window, 45.0, "the rung that planned is the rung that serves");
+    assert_eq!(
+        recorder.trail(),
+        vec![90, 45],
+        "asked in ladder order, stopping where it served"
+    );
+    assert_eq!(
+        rung.window, 45.0,
+        "the rung that planned is the rung that serves"
+    );
     assert!(
         !rung.turns.is_empty(),
         "the serving rung's answers are the turns the run gets"
@@ -209,11 +227,12 @@ fn sec_02_services_2_model_roles_s3_ladder_refused_everywhere_names_the_model_an
     )
     .expect_err("no rung can hold six voices' anchor");
 
-    assert_eq!(recorder.trail(), vec![90, 45, 25], "every rung was tried before failing");
-    assert!(
-        why.contains("sortformer-diar"),
-        "the model is named: {why}"
+    assert_eq!(
+        recorder.trail(),
+        vec![90, 45, 25],
+        "every rung was tried before failing"
     );
+    assert!(why.contains("sortformer-diar"), "the model is named: {why}");
     // `diarize::anchor_too_long` spells "anchor too long (X s of Y s window)" — the last refusal's numbers.
     assert!(
         why.contains("anchor too long (") && why.ends_with(" s of 25 s window)"),
@@ -238,7 +257,11 @@ fn sec_02_services_2_model_roles_s3_ladder_returns_the_serving_rungs_answers() {
     )
     .expect("the next rung holds the anchor the top one could not");
 
-    assert_eq!(recorder.trail(), vec![90, 45], "stopped at the rung that served");
+    assert_eq!(
+        recorder.trail(),
+        vec![90, 45],
+        "stopped at the rung that served"
+    );
 
     assert_eq!(rung.window, 45.0, "the 90 s rung refused");
     // Every window of the serving rung answers with the same room, so the turns are that answer repeated

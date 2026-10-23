@@ -93,7 +93,9 @@ pub fn is_folded(folds: &[[f64; 2]], gap: (f64, f64)) -> bool {
 pub fn whole_run(gap: (f64, f64), runs: &[(f64, f64)], segs: &[Seg]) -> bool {
     runs.iter().any(|(from, to)| {
         let covers = gap.0 <= from + 0.01 && gap.1 >= to - 0.01;
-        let kept_here = segs.iter().any(|seg| seg.ins.is_empty() && seg.e > *from && seg.s < *to);
+        let kept_here = segs
+            .iter()
+            .any(|seg| seg.ins.is_empty() && seg.e > *from && seg.s < *to);
         covers && !kept_here
     })
 }
@@ -110,7 +112,8 @@ pub fn whole_run(gap: (f64, f64), runs: &[(f64, f64)], segs: &[Seg]) -> bool {
 pub fn toggle_fold(cut: &mut Cut, gap: (f64, f64)) -> String {
     if is_folded(&cut.folds, gap) {
         // Drop every fold overlapping the gap: one press cannot be expected to leave a second seam behind.
-        cut.folds.retain(|fold| !(fold[0] < gap.1 && fold[1] > gap.0));
+        cut.folds
+            .retain(|fold| !(fold[0] < gap.1 && fold[1] > gap.0));
         return unfold_status(gap);
     }
     cut.folds.push([gap.0, gap.1]);
@@ -191,7 +194,11 @@ pub struct Badge {
 /// than another bar, and which therefore go inside the neighbouring bar ([`BADGE_INSIDE_PX`], no further in than
 /// its middle). Every x is clamped to [`BADGE_PLATE_PX`] from either end.
 pub fn badges(folds: &[[f64; 2]], runs: &[(f64, f64)], segs: &[Seg], span: &Span) -> Vec<Badge> {
-    let bars: Vec<(f64, f64)> = segs.iter().filter(|seg| seg.ins.is_empty()).map(|seg| (seg.s, seg.e)).collect();
+    let bars: Vec<(f64, f64)> = segs
+        .iter()
+        .filter(|seg| seg.ins.is_empty())
+        .map(|seg| (seg.s, seg.e))
+        .collect();
     let mut out = Vec::new();
     for gap in dropped_gaps(runs, segs) {
         let folded = is_folded(folds, gap);
@@ -199,8 +206,15 @@ pub fn badges(folds: &[[f64; 2]], runs: &[(f64, f64)], segs: &[Seg], span: &Span
         if folded {
             // The seam: the x the tape resumes at after the fold. `x_of` answers that for the fold's own start,
             // because every second of a folded cell shares it; clamped so the + stays pressable at the front edge.
-            let seam = span.x_of(gap.0).clamp(BADGE_PLATE_PX, (span.total_px() - BADGE_PLATE_PX).max(BADGE_PLATE_PX));
-            out.push(Badge { gap, x: seam, folded });
+            let seam = span.x_of(gap.0).clamp(
+                BADGE_PLATE_PX,
+                (span.total_px() - BADGE_PLATE_PX).max(BADGE_PLATE_PX),
+            );
+            out.push(Badge {
+                gap,
+                x: seam,
+                folded,
+            });
             continue;
         }
         let (x0, x1) = (span.x_of(gap.0), span.x_of(gap.1));
@@ -226,7 +240,10 @@ pub fn badges(folds: &[[f64; 2]], runs: &[(f64, f64)], segs: &[Seg], span: &Span
             let step = inside_seconds(bar, span.pps);
             x = span.x_of(bar.1 - step);
         }
-        x = x.clamp(BADGE_PLATE_PX, (span.total_px() - BADGE_PLATE_PX).max(BADGE_PLATE_PX));
+        x = x.clamp(
+            BADGE_PLATE_PX,
+            (span.total_px() - BADGE_PLATE_PX).max(BADGE_PLATE_PX),
+        );
         out.push(Badge { gap, x, folded });
     }
     out
@@ -244,13 +261,22 @@ fn inside_seconds(bar: (f64, f64), pps: f64) -> f64 {
 /// the rest of the cut, and would be moved off its own middle by a rule about size.
 fn opening_bar(bars: &[(f64, f64)], gap: (f64, f64)) -> Option<(f64, f64)> {
     let first = bars.iter().map(|bar| bar.0).fold(f64::INFINITY, f64::min);
-    (gap.1 <= first + 0.01).then(|| bars.iter().find(|bar| (bar.0 - gap.1).abs() < 0.01)).flatten().copied()
+    (gap.1 <= first + 0.01)
+        .then(|| bars.iter().find(|bar| (bar.0 - gap.1).abs() < 0.01))
+        .flatten()
+        .copied()
 }
 
 /// …or closes it — is there no kept clip after it, so its badge would hang over the bar that ends the page?
 fn closing_bar(bars: &[(f64, f64)], gap: (f64, f64)) -> Option<(f64, f64)> {
-    let last = bars.iter().map(|bar| bar.1).fold(f64::NEG_INFINITY, f64::max);
-    (gap.0 >= last - 0.01).then(|| bars.iter().find(|bar| (bar.1 - gap.0).abs() < 0.01)).flatten().copied()
+    let last = bars
+        .iter()
+        .map(|bar| bar.1)
+        .fold(f64::NEG_INFINITY, f64::max);
+    (gap.0 >= last - 0.01)
+        .then(|| bars.iter().find(|bar| (bar.1 - gap.0).abs() < 0.01))
+        .flatten()
+        .copied()
 }
 
 // --- S2: rows ----------------------------------------------------------------------------------------------
@@ -262,8 +288,13 @@ fn closing_bar(bars: &[(f64, f64)], gap: (f64, f64)) -> Option<(f64, f64)> {
 /// makes it a row of that camera whether or not anything was cut from it yet, which is why "empty" is asked of the
 /// layout and not of the scenes alone.
 pub fn row_is_empty(row: usize, recordings: &[Recording], rows: &[usize], segs: &[Seg]) -> bool {
-    let coloured = recordings.iter().zip(rows).any(|(_, placed)| *placed == row);
-    let shown = segs.iter().any(|seg| seg.ins.is_empty() && seg.cam as usize == row);
+    let coloured = recordings
+        .iter()
+        .zip(rows)
+        .any(|(_, placed)| *placed == row);
+    let shown = segs
+        .iter()
+        .any(|seg| seg.ins.is_empty() && seg.cam as usize == row);
     !coloured && !shown
 }
 
@@ -273,7 +304,12 @@ pub fn row_is_empty(row: usize, recordings: &[Recording], rows: &[usize], segs: 
 /// Only an EMPTY row has this way off the band: a row with footage has its own exits (a cut lane's ✕, Prepare),
 /// each of which says what happens to the footage, and this deliberately has no answer for that. And only while
 /// more than one row is drawn — a page with no rows is not a page, so the last row survives however empty.
-pub fn kill_row(cut: &mut Cut, row: usize, recordings: &[Recording], rows: &[usize]) -> Option<String> {
+pub fn kill_row(
+    cut: &mut Cut,
+    row: usize,
+    recordings: &[Recording],
+    rows: &[usize],
+) -> Option<String> {
     let drawn = timeline::row_count(recordings, cut);
     // The ✕ is drawn over an empty row the page shows, so a row number nothing is drawn at has none over it — and
     // taking one away would spend a floor that was never holding anything.
@@ -298,13 +334,20 @@ pub fn kill_row(cut: &mut Cut, row: usize, recordings: &[Recording], rows: &[usi
 /// byte-stability rule) and make an unchanged cut look edited. An unknown name says the same sentence and changes
 /// nothing — the ✕ was pressed over a lane that is already gone.
 pub fn remove_lane(cut: &mut Cut, name: &str) -> String {
-    let sources: Vec<String> = cut.lanes.iter().filter(|lane| lane.name == name).map(|lane| lane.src.clone()).collect();
+    let sources: Vec<String> = cut
+        .lanes
+        .iter()
+        .filter(|lane| lane.name == name)
+        .map(|lane| lane.src.clone())
+        .collect();
     cut.lanes.retain(|lane| lane.name != name);
     cut.rows.remove(name);
     cut.shift.remove(name);
     cut.segs.retain(|seg| {
         let its_sound = seg.lane == name;
-        let its_picture = sources.iter().any(|src| !seg.ins.is_empty() && &seg.ins == src);
+        let its_picture = sources
+            .iter()
+            .any(|src| !seg.ins.is_empty() && &seg.ins == src);
         !(its_sound || its_picture)
     });
     format!("removed the {name} lane")

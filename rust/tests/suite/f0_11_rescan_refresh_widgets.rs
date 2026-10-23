@@ -12,6 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{self, Cut, Seg};
@@ -21,7 +22,6 @@ use naivepost::project::{self, Project, Source};
 use naivepost::rescan::RESCANNED;
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
 
 /// One application for the whole binary, entered once; the checks run sequentially inside its single
 /// `activate` (GTK allows one `g_application_run` per process) and each records that it finished.
@@ -103,8 +103,17 @@ fn plant(name: &str) -> (PathBuf, Tree) {
     cut::save(
         &Cut {
             segs: vec![
-                Seg { s: 0.0, e: 4.0, ..Default::default() },
-                Seg { s: 4.0, e: 9.0, cam: 1, ..Default::default() },
+                Seg {
+                    s: 0.0,
+                    e: 4.0,
+                    ..Default::default()
+                },
+                Seg {
+                    s: 4.0,
+                    e: 9.0,
+                    cam: 1,
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         },
@@ -114,8 +123,18 @@ fn plant(name: &str) -> (PathBuf, Tree) {
     narration::save(
         &Narration {
             entries: vec![
-                Entry { s: 0.0, e: 4.0, text: "line one".into(), ..Default::default() },
-                Entry { s: 4.0, e: 9.0, text: "line two".into(), ..Default::default() },
+                Entry {
+                    s: 0.0,
+                    e: 4.0,
+                    text: "line one".into(),
+                    ..Default::default()
+                },
+                Entry {
+                    s: 4.0,
+                    e: 9.0,
+                    text: "line two".into(),
+                    ..Default::default()
+                },
             ],
             silent: vec![],
         },
@@ -132,7 +151,11 @@ fn cut_window(app: &adw::Application, dir: &Path) -> adw::ApplicationWindow {
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_by_name::<()>("clicked", &[]);
-    assert_eq!(ui::state(&window).page, Page::Cut, "the check starts on Cut");
+    assert_eq!(
+        ui::state(&window).page,
+        Page::Cut,
+        "the check starts on Cut"
+    );
     window
 }
 
@@ -175,7 +198,9 @@ fn narrate_row_count(window: &adw::ApplicationWindow) -> usize {
     let list = common::widget_in(window, "narrate-lines")
         .and_then(|w| w.downcast::<gtk::ListBox>().ok())
         .expect("the Narrate page carries its line list");
-    (0..).take_while(|i| list.row_at_index(*i).is_some()).count()
+    (0..)
+        .take_while(|i| list.row_at_index(*i).is_some())
+        .count()
 }
 
 /// S2 clause 1: the readouts come off the refreshed session, on a press where nothing vanished.
@@ -193,7 +218,11 @@ fn check_readouts_refreshed(app: &adw::Application) {
 
     press_rescan(&window);
 
-    assert_eq!(ui::state(&window).status, RESCANNED, "S3 said it whatever the scan found");
+    assert_eq!(
+        ui::state(&window).status,
+        RESCANNED,
+        "S3 said it whatever the scan found"
+    );
     assert_eq!(
         ui::state(&window).page,
         Page::Prepare,
@@ -216,7 +245,10 @@ fn check_readouts_refreshed(app: &adw::Application) {
         "the readout followed the drop"
     );
     retire(window);
-    fs::remove_dir_all(naivepost::startup::session_dir(&std::env::current_dir().unwrap())).ok();
+    fs::remove_dir_all(naivepost::startup::session_dir(
+        &std::env::current_dir().unwrap(),
+    ))
+    .ok();
 }
 
 /// S2 clause 2: the Cut page shows the cut on disk, not the stale one the window held.
@@ -228,23 +260,46 @@ fn check_cut_rebuilt(app: &adw::Application) {
         &window,
         &Cut {
             segs: vec![
-                Seg { s: 0.0, e: 1.0, ..Default::default() },
-                Seg { s: 1.0, e: 2.0, ..Default::default() },
-                Seg { s: 2.0, e: 3.0, ..Default::default() },
+                Seg {
+                    s: 0.0,
+                    e: 1.0,
+                    ..Default::default()
+                },
+                Seg {
+                    s: 1.0,
+                    e: 2.0,
+                    ..Default::default()
+                },
+                Seg {
+                    s: 2.0,
+                    e: 3.0,
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         },
     );
-    assert_eq!(ui::review_cut_segs_count(&window), 3, "the stale cut is what the window holds");
+    assert_eq!(
+        ui::review_cut_segs_count(&window),
+        3,
+        "the stale cut is what the window holds"
+    );
 
     press_rescan(&window);
 
     let held = ui::review_cut_segs(&window);
-    assert_eq!(held.len(), 2, "the strip now paints the cut that is on disk");
+    assert_eq!(
+        held.len(),
+        2,
+        "the strip now paints the cut that is on disk"
+    );
     assert_eq!((held[0].s, held[0].e), (0.0, 4.0));
     assert_eq!((held[1].s, held[1].e), (4.0, 9.0));
     retire(window);
-    fs::remove_dir_all(naivepost::startup::session_dir(&std::env::current_dir().unwrap())).ok();
+    fs::remove_dir_all(naivepost::startup::session_dir(
+        &std::env::current_dir().unwrap(),
+    ))
+    .ok();
 }
 
 /// S2 clause 3: Narrate's rows come from the file it just re-read, not from what was published before.
@@ -264,7 +319,11 @@ fn check_narrate_reread(app: &adw::Application) {
     }];
     ui::set_state(stale);
     ui::refresh(&window);
-    assert_eq!(narrate_row_count(&window), 1, "the page shows the stale publication");
+    assert_eq!(
+        narrate_row_count(&window),
+        1,
+        "the page shows the stale publication"
+    );
 
     press_rescan(&window);
 
@@ -284,8 +343,7 @@ fn check_narrate_reread(app: &adw::Application) {
             break;
         };
         texts.push(
-            box_
-                .downcast::<gtk::Entry>()
+            box_.downcast::<gtk::Entry>()
                 .expect("a line's text box is an Entry")
                 .text()
                 .to_string(),
@@ -299,11 +357,16 @@ fn check_narrate_reread(app: &adw::Application) {
         );
     }
     assert!(
-        !texts.iter().any(|t| t.contains("a line the file does not have")),
+        !texts
+            .iter()
+            .any(|t| t.contains("a line the file does not have")),
         "the stale line is off the page: {texts:?}"
     );
     retire(window);
-    fs::remove_dir_all(naivepost::startup::session_dir(&std::env::current_dir().unwrap())).ok();
+    fs::remove_dir_all(naivepost::startup::session_dir(
+        &std::env::current_dir().unwrap(),
+    ))
+    .ok();
 }
 
 /// S1's persistence half: the pruned list reaches `naivepost.json`, or the next launch shows the dead
@@ -315,10 +378,21 @@ fn check_pruned_list_written_back(app: &adw::Application) {
     press_rescan(&window);
 
     let saved = project::load(&dir).expect("the session file reads back");
-    let paths: Vec<&str> = saved.sources.iter().map(|source| source.path.as_str()).collect();
-    assert_eq!(paths, vec!["project:sources/talk.mkv"], "only the survivor is stored");
+    let paths: Vec<&str> = saved
+        .sources
+        .iter()
+        .map(|source| source.path.as_str())
+        .collect();
+    assert_eq!(
+        paths,
+        vec!["project:sources/talk.mkv"],
+        "only the survivor is stored"
+    );
     retire(window);
-    fs::remove_dir_all(naivepost::startup::session_dir(&std::env::current_dir().unwrap())).ok();
+    fs::remove_dir_all(naivepost::startup::session_dir(
+        &std::env::current_dir().unwrap(),
+    ))
+    .ok();
 }
 
 /// S1's other half through the button: slot 1 lost its holder, so the survivor takes it AND the
@@ -351,38 +425,63 @@ fn check_slot_1_persisted(app: &adw::Application) {
         .iter()
         .find(|source| source.narrator == 1)
         .expect("slot 1 has a holder again");
-    assert_eq!(holder.path, "project:sources/mic.wav", "the survivor took slot 1");
-    assert_eq!(saved.sources.len(), 1, "the dead row did not survive either");
+    assert_eq!(
+        holder.path, "project:sources/mic.wav",
+        "the survivor took slot 1"
+    );
+    assert_eq!(
+        saved.sources.len(),
+        1,
+        "the dead row did not survive either"
+    );
     retire(window);
-    fs::remove_dir_all(naivepost::startup::session_dir(&std::env::current_dir().unwrap())).ok();
+    fs::remove_dir_all(naivepost::startup::session_dir(
+        &std::env::current_dir().unwrap(),
+    ))
+    .ok();
 }
 
 #[test]
 fn f0_11_s2_a_rescan_refreshes_the_readouts_without_the_page_being_locked() {
     window_round();
-    assert!(RAN_READOUTS.load(Ordering::SeqCst), "the readouts check never ran");
+    assert!(
+        RAN_READOUTS.load(Ordering::SeqCst),
+        "the readouts check never ran"
+    );
 }
 
 #[test]
 fn f0_11_s2_a_rescan_rebuilds_the_cut_page_from_what_is_on_disk() {
     window_round();
-    assert!(RAN_CUT.load(Ordering::SeqCst), "the Cut-rebuild check never ran");
+    assert!(
+        RAN_CUT.load(Ordering::SeqCst),
+        "the Cut-rebuild check never ran"
+    );
 }
 
 #[test]
 fn f0_11_s2_a_rescan_makes_narrate_re_read_its_file() {
     window_round();
-    assert!(RAN_NARRATE.load(Ordering::SeqCst), "the Narrate re-read check never ran");
+    assert!(
+        RAN_NARRATE.load(Ordering::SeqCst),
+        "the Narrate re-read check never ran"
+    );
 }
 
 #[test]
 fn f0_11_s1_the_pruned_list_is_written_back() {
     window_round();
-    assert!(RAN_WRITEBACK.load(Ordering::SeqCst), "the write-back check never ran");
+    assert!(
+        RAN_WRITEBACK.load(Ordering::SeqCst),
+        "the write-back check never ran"
+    );
 }
 
 #[test]
 fn f0_11_s1_a_rescan_reassigns_slot_1_and_persists_it() {
     window_round();
-    assert!(RAN_SLOT1.load(Ordering::SeqCst), "the slot-1 check never ran");
+    assert!(
+        RAN_SLOT1.load(Ordering::SeqCst),
+        "the slot-1 check never ran"
+    );
 }

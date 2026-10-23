@@ -14,8 +14,8 @@
 
 use crate::cut::Seg;
 use crate::layout::Tree;
-use crate::narrate_run;
 use crate::narrate_rewrite;
+use crate::narrate_run;
 use crate::narration::{Entry, Narration};
 
 /// The four numbers §1's Inputs line prints after the clip count and the length.

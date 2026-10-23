@@ -76,7 +76,9 @@ fn session_tree() -> Option<layout::Tree> {
 /// "or", read from `P.policy.markingPass`; the joins count is the seams the pass would actually repair
 /// — source changes in the session word list ([`joins::seams`]), the same list F1.10 works from.
 pub fn prepare_bill(project: &Project, tree: Option<&layout::Tree>) -> model_calls::Summary {
-    let counts = tree.map_or_else(prepare::Counts::default, |tree| prepare::count(tree, project));
+    let counts = tree.map_or_else(prepare::Counts::default, |tree| {
+        prepare::count(tree, project)
+    });
     let marking = policy::marking_pass_of(&project.policy);
     let joins = tree.map_or(0, seam_count);
     model_calls::prepare(counts.frames, counts.lines, marking, joins)
@@ -86,7 +88,9 @@ pub fn prepare_bill(project: &Project, tree: Option<&layout::Tree>) -> model_cal
 /// switches it on. The switches are the same three `policy::pass_runs` answers the run-bar buttons
 /// grey from, so a bill can never promise a pass the bar refuses to run.
 pub fn cut_bill(project: &Project, tree: Option<&layout::Tree>) -> model_calls::Summary {
-    let held = tree.and_then(|tree| cut::load(tree).ok()).unwrap_or_default();
+    let held = tree
+        .and_then(|tree| cut::load(tree).ok())
+        .unwrap_or_default();
     model_calls::cut(
         held.segs.len(),
         policy::cut_mode_of(&project.policy),
@@ -113,7 +117,9 @@ pub fn narrate_bill(tree: Option<&layout::Tree>) -> model_calls::Summary {
 /// and a step with no ticked language therefore shows no translate row, which is true either way.
 pub fn produce_bill(project: &Project, tree: Option<&layout::Tree>) -> model_calls::Summary {
     let languages = project.produce.translate.len();
-    let held = tree.and_then(|tree| cut::load(tree).ok()).unwrap_or_default();
+    let held = tree
+        .and_then(|tree| cut::load(tree).ok())
+        .unwrap_or_default();
     let publish = project.publish.clone().unwrap_or_default();
     model_calls::produce(
         &publish.prompt,
@@ -138,7 +144,10 @@ fn seam_count(tree: &layout::Tree) -> usize {
 /// three numbers against them.
 pub fn divisors_for_test() -> [(&'static str, usize); 3] {
     [
-        ("describe frames per request", roles::VISION_FRAMES_PER_CALL as usize),
+        (
+            "describe frames per request",
+            roles::VISION_FRAMES_PER_CALL as usize,
+        ),
         ("fix lines per block", prepare::FIX_BLOCK_LINES),
         ("caption clips per batch", cut_captions::BATCH),
     ]

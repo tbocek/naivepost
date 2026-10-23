@@ -28,7 +28,11 @@ const ITEM: &str = "F5.1";
 /// speak leg derives the take's name from the words, the emotion and the voice, so a plan that names a
 /// different file for the same line is a real bug this test would see.
 fn to_speak(text: &str) -> ToSpeak {
-    ToSpeak { index: 0, text: text.into(), wav: std::path::PathBuf::from("unused.wav") }
+    ToSpeak {
+        index: 0,
+        text: text.into(),
+        wav: std::path::PathBuf::from("unused.wav"),
+    }
 }
 
 #[test]
@@ -59,7 +63,11 @@ fn f5_1_s4_a_line_with_no_wav_is_spoken_for_real_by_the_render_leg() {
     // F4.6's reference, so the speak door has a voice to clone (S1).
     let reference = tree.voice_ref_wav();
     std::fs::create_dir_all(reference.parent().expect("narrate/ has a parent")).unwrap();
-    std::fs::write(&reference, b"RIFF fake reference, forty-odd bytes long, not empty").unwrap();
+    std::fs::write(
+        &reference,
+        b"RIFF fake reference, forty-odd bytes long, not empty",
+    )
+    .unwrap();
 
     // (1) THE FAILURE PATH FIRST: nothing listens anywhere, so the refusal has to name the server.
     // `conf.audio_server` is still the loopback default, which nothing here serves.
@@ -127,10 +135,16 @@ fn f5_1_s4_a_line_with_no_wav_is_spoken_for_real_by_the_render_leg() {
     let expected = naivepost::produce_stamp::wav_of(&tree, &entry, Some("narrator1"), 0)
         .expect("a line with words has a take path");
     assert_eq!(spoken, expected, "the leg reports the file it wrote");
-    assert!(expected.is_file(), "the take is on disk at {}", expected.display());
+    assert!(
+        expected.is_file(),
+        "the take is on disk at {}",
+        expected.display()
+    );
     assert_eq!(
         expected.parent().expect("narrate/tts"),
-        tree.tts_wav("x").parent().expect("narrate/tts has a parent"),
+        tree.tts_wav("x")
+            .parent()
+            .expect("narrate/tts has a parent"),
         "and it is in narrate/tts, where the next run's cache check looks"
     );
     // A take is only ever filed from a reply of at least MIN_WAV_BYTES (`narrate_tts::reply_problem`),
@@ -145,7 +159,8 @@ fn f5_1_s4_a_line_with_no_wav_is_spoken_for_real_by_the_render_leg() {
     // (c) the same line again costs nothing: the plan's own cache check now finds the take.
     let again = naivepost::narration::key_for(&entry, Some("narrator1"));
     assert!(
-        tree.tts_wav(&naivepost::narration::tts_file(&again)).is_file(),
+        tree.tts_wav(&naivepost::narration::tts_file(&again))
+            .is_file(),
         "the key the stamp builds names the same take, so no line is spoken twice"
     );
 }

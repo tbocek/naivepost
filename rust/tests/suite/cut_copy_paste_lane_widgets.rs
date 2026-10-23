@@ -17,7 +17,7 @@ use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, settle, status_text, clip};
+use common::{clip, fixture_dir, settle, status_text};
 
 static RAN_SHORT: AtomicBool = AtomicBool::new(false);
 static RAN_TAKEN: AtomicBool = AtomicBool::new(false);
@@ -65,7 +65,10 @@ fn cut_of(window: &adw::ApplicationWindow) -> cut::Cut {
 /// state the surface would have written rather than poking a thread-local.
 fn seed_band(window: &adw::ApplicationWindow, from: f64, to: f64) {
     let band = ui::draw_selection(window, Surface::PictureRow(0), None, from, to);
-    assert!(band.is_some(), "a picture-row drag must produce a footage band");
+    assert!(
+        band.is_some(),
+        "a picture-row drag must produce a footage band"
+    );
 }
 
 /// Empty the hand between checks without going through Esc (Esc has its own check below).
@@ -93,7 +96,8 @@ fn press_key(controller: &gtk::EventControllerKey, key: gtk::gdk::Key) {
     // The handler answers with `glib::Propagation`, which has no FromValue for a returned Value, so the
     // signal is emitted for its side effect and the state below is what the check reads.
     let _ = controller.emit_by_name::<bool>(
-        "key-pressed", &[&key, &0u32, &gtk::gdk::ModifierType::empty()],
+        "key-pressed",
+        &[&key, &0u32, &gtk::gdk::ModifierType::empty()],
     );
 }
 
@@ -114,7 +118,8 @@ fn check_a_short_or_absent_selection_never_reaches_the_hand(app: &adw::Applicati
     let window = cut_window(app);
     remember_esc(&window);
 
-    let copy_ = ui::line_step_button(&window, "copy-button").expect("the Cut page carries copy-button");
+    let copy_ =
+        ui::line_step_button(&window, "copy-button").expect("the Cut page carries copy-button");
     assert!(
         !copy_.is_sensitive(),
         "with no selection ⧉ Copy must be greyed, not live-and-empty"
@@ -129,11 +134,12 @@ fn check_a_short_or_absent_selection_never_reaches_the_hand(app: &adw::Applicati
         "the short band was drawn before the refusal is asked for"
     );
     let said = ui::press_copy(&window);
-    assert!(
-        said.contains("under 1 s"),
-        "the refusal says why: {said}"
+    assert!(said.contains("under 1 s"), "the refusal says why: {said}");
+    assert_eq!(
+        ui::copy_hand(),
+        None,
+        "a refused copy leaves nothing in hand"
     );
-    assert_eq!(ui::copy_hand(), None, "a refused copy leaves nothing in hand");
     assert_eq!(
         said,
         format!(
@@ -142,7 +148,10 @@ fn check_a_short_or_absent_selection_never_reaches_the_hand(app: &adw::Applicati
         ),
         "// P.policy.minSceneSeconds is the floor the sentence quotes"
     );
-    assert!(ui::selection(&window).is_some(), "refusing copies did not clear the band either");
+    assert!(
+        ui::selection(&window).is_some(),
+        "refusing copies did not clear the band either"
+    );
     let _ = MIN_SCENE_SECONDS;
     window.close();
 }
@@ -200,15 +209,19 @@ fn check_a_footage_paste_splices_at_the_line_and_consumes_the_copy(app: &adw::Ap
 
     // The line inside kept footage, well clear of a border.
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 35.0 });
-    let paste_ = ui::line_step_button(&window, "paste-button")
-        .expect("the Cut page carries paste-button");
+    let paste_ =
+        ui::line_step_button(&window, "paste-button").expect("the Cut page carries paste-button");
     assert!(paste_.is_sensitive(), "a hand held makes ⧉ Paste live");
 
     paste_.emit_clicked();
     settle();
 
     let after = ui::review_cut_segs(&window);
-    assert_eq!(after.len(), before_segs + 1, "the spliced insert joined the list");
+    assert_eq!(
+        after.len(),
+        before_segs + 1,
+        "the spliced insert joined the list"
+    );
     let spliced = after
         .iter()
         .find(|seg| seg.ins.contains("copy:"))
@@ -223,8 +236,14 @@ fn check_a_footage_paste_splices_at_the_line_and_consumes_the_copy(app: &adw::Ap
     );
     assert_eq!(ui::copy_hand(), None, "pasting consumes the copy: S2");
     let said = status_text(&window);
-    assert!(said.starts_with("pasted "), "the sentence opens with the act: {said}");
-    assert!(said.contains("was "), "and names what the cut used to be: {said}");
+    assert!(
+        said.starts_with("pasted "),
+        "the sentence opens with the act: {said}"
+    );
+    assert!(
+        said.contains("was "),
+        "and names what the cut used to be: {said}"
+    );
     assert!(
         !paste_.is_sensitive(),
         "with the copy gone ⧉ Paste greys again rather than lying about having something"
@@ -249,7 +268,8 @@ fn check_a_lane_gives_the_copy_its_own_row_without_cutting(app: &adw::Applicatio
     let before_segs = ui::review_cut_segs_count(&window);
     // Inside a filmed run, so `lane_start` accepts the second.
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 15.0 });
-    let lane_ = ui::line_step_button(&window, "lane-button").expect("the Cut page carries lane-button");
+    let lane_ =
+        ui::line_step_button(&window, "lane-button").expect("the Cut page carries lane-button");
     assert!(lane_.is_sensitive(), "a hand held makes ⇲ Lane live");
 
     lane_.emit_clicked();
@@ -278,9 +298,15 @@ fn check_a_lane_gives_the_copy_its_own_row_without_cutting(app: &adw::Applicatio
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 16.0 });
     lane_.emit_clicked();
     settle();
-    let names: Vec<String> = ui::review_lanes(&window).iter().map(|l| l.name.clone()).collect();
+    let names: Vec<String> = ui::review_lanes(&window)
+        .iter()
+        .map(|l| l.name.clone())
+        .collect();
     assert_eq!(names.len(), 2, "a second row arrived");
-    assert_ne!(names[0], names[1], "and it does not reuse the first row's name: {names:?}");
+    assert_ne!(
+        names[0], names[1],
+        "and it does not reuse the first row's name: {names:?}"
+    );
     window.close();
 }
 
@@ -295,7 +321,10 @@ fn check_esc_drops_the_copy(app: &adw::Application) {
         .expect("copy-button exists")
         .emit_clicked();
     settle();
-    assert!(ui::copy_hand().is_some(), "a copy is in hand before the key");
+    assert!(
+        ui::copy_hand().is_some(),
+        "a copy is in hand before the key"
+    );
 
     let controller = COPY_ESC
         .with(|cell| cell.borrow().clone())
@@ -345,11 +374,23 @@ fn window_round() {
 fn f2_9_s1_s2_s3_copy_paste_and_lane_reach_the_window_through_real_widgets() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_SHORT.load(Ordering::SeqCst), "the short-selection check never ran");
-    assert!(RAN_TAKEN.load(Ordering::SeqCst), "the taken-in-hand check never ran");
-    assert!(RAN_PASTED.load(Ordering::SeqCst), "the footage-paste check never ran");
+    assert!(
+        RAN_SHORT.load(Ordering::SeqCst),
+        "the short-selection check never ran"
+    );
+    assert!(
+        RAN_TAKEN.load(Ordering::SeqCst),
+        "the taken-in-hand check never ran"
+    );
+    assert!(
+        RAN_PASTED.load(Ordering::SeqCst),
+        "the footage-paste check never ran"
+    );
     assert!(RAN_LANE.load(Ordering::SeqCst), "the lane check never ran");
-    assert!(RAN_ESC.load(Ordering::SeqCst), "the Esc-drops-the-copy check never ran");
+    assert!(
+        RAN_ESC.load(Ordering::SeqCst),
+        "the Esc-drops-the-copy check never ran"
+    );
     assert!(
         RAN_PASTE_LENGTHENS.load(Ordering::SeqCst),
         "the copy-then-paste-lengthens check never ran"
@@ -378,8 +419,15 @@ fn check_copy_then_paste_lengthens_through_the_real_buttons(app: &adw::Applicati
     copy_.emit_clicked();
     settle();
     let hand = ui::copy_hand().expect("the click put the seconds in hand");
-    assert_eq!((hand.from, hand.length), (20.0, 6.0), "the hand holds the whole band");
-    assert!(paste_.is_sensitive(), "holding a copy makes \u{29c9} Paste live");
+    assert_eq!(
+        (hand.from, hand.length),
+        (20.0, 6.0),
+        "the hand holds the whole band"
+    );
+    assert!(
+        paste_.is_sensitive(),
+        "holding a copy makes \u{29c9} Paste live"
+    );
     assert!(
         ui::selection(&window).is_some(),
         "S1: taking a copy leaves the selection on the band"
@@ -393,7 +441,11 @@ fn check_copy_then_paste_lengthens_through_the_real_buttons(app: &adw::Applicati
     settle();
 
     let after_segs = ui::review_cut_segs_count(&window);
-    assert_eq!(after_segs, before_segs + 1, "the spliced insert joined the cut");
+    assert_eq!(
+        after_segs,
+        before_segs + 1,
+        "the spliced insert joined the cut"
+    );
     let card = ui::review_cut_segs(&window)
         .into_iter()
         .find(|seg| seg.ins.contains("copy:"))
@@ -406,7 +458,10 @@ fn check_copy_then_paste_lengthens_through_the_real_buttons(app: &adw::Applicati
         naivepost::cut_screen::cut_seconds(&cut_of(&window))
     );
     // S2: pasting CONSUMES the copy -- and the buttons go grey again on their own.
-    assert!(ui::copy_hand().is_none(), "a successful paste consumed the copy");
+    assert!(
+        ui::copy_hand().is_none(),
+        "a successful paste consumed the copy"
+    );
     assert!(
         !paste_.is_sensitive(),
         "Paste greyed again once nothing is in hand"

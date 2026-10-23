@@ -7,16 +7,22 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::seg as clip;
 use naivepost::cut::{Cut, Seg};
 use naivepost::cut_insert as ins;
 use naivepost::subprocess;
 use naivepost::ui::cut_card_preview as cards;
-use crate::common;
-use common::seg as clip;
 
 /// A spliced card: `s == e` with a `dur`, which is what makes it one.
 fn card(at: f64, dur: f64, path: &str) -> Seg {
-    Seg { s: at, e: at, dur, ins: path.into(), ..Default::default() }
+    Seg {
+        s: at,
+        e: at,
+        dur,
+        ins: path.into(),
+        ..Default::default()
+    }
 }
 
 /// A throwaway folder, unique per test name so two tests never share a resume marker.
@@ -139,7 +145,11 @@ fn f2_12_s7_a_still_renders_one_frame() {
     assert_eq!(frames.len(), 1, "one frame, not a strip of identical ones");
     // A 1600-px source is drawn inside the cap, so the texture is never wider than the column can show.
     let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file(&frames[0]).expect("a readable frame");
-    assert!(pixbuf.width() <= 960, "capped at 960 px, got {}", pixbuf.width());
+    assert!(
+        pixbuf.width() <= 960,
+        "capped at 960 px, got {}",
+        pixbuf.width()
+    );
     assert!(pixbuf.height() > 0, "the aspect is kept, not flattened");
 }
 
@@ -149,7 +159,11 @@ fn f2_12_s7_the_nearest_rendered_frame_is_the_one_shown() {
     let ladder: Vec<f64> = ins::frame_times(2.0, 8.0);
     assert_eq!(ins::nearest_rendered(&ladder, 0.31), Some(0.25));
     assert_eq!(ins::nearest_rendered(&ladder, 0.4), Some(0.375));
-    assert_eq!(ins::nearest_rendered(&[], 0.4), None, "nothing rendered shows nothing");
+    assert_eq!(
+        ins::nearest_rendered(&[], 0.4),
+        None,
+        "nothing rendered shows nothing"
+    );
     // Past the last rendered frame the last one is what stands, so a card still has a picture.
     assert_eq!(ins::nearest_rendered(&ladder, 99.0), Some(1.875));
 }
@@ -159,19 +173,30 @@ fn f2_12_s7_the_nearest_rendered_frame_is_the_one_shown() {
 #[test]
 fn f2_12_s7_a_spliced_card_holds_the_footage() {
     let cut_ = Cut {
-        segs: vec![clip(0.0, 30.0), card(30.0, 4.0, "assets/tier.svg?S=Dust%20II")],
+        segs: vec![
+            clip(0.0, 30.0),
+            card(30.0, 4.0, "assets/tier.svg?S=Dust%20II"),
+        ],
         ..Default::default()
     };
     // The card answers for the four seconds after the footage ends and for no second before it.
     let held = cards::card_under(&cut_, 31.0).expect("the line is on the card");
     assert_eq!(held.ins, "assets/tier.svg?S=Dust%20II");
-    assert_eq!(cards::card_hold_advance(Some(held), 0.1, 1.0), 0.0, "held: the footage waits");
+    assert_eq!(
+        cards::card_hold_advance(Some(held), 0.1, 1.0),
+        0.0,
+        "held: the footage waits"
+    );
     assert_eq!(cards::card_hold_advance(Some(held), 3.5, 2.0), 0.0);
     // Footage under the line is not held, and runs at the player's own rate.
     let footage = cards::card_under(&cut_, 10.0);
     assert!(footage.is_none(), "a plain clip is not a card");
     assert_eq!(cards::card_hold_advance(None, 3.5, 1.0), 3.5);
-    assert_eq!(cards::card_hold_advance(None, 3.5, 0.5), 1.75, "half speed, half the ground");
+    assert_eq!(
+        cards::card_hold_advance(None, 3.5, 0.5),
+        1.75,
+        "half speed, half the ground"
+    );
     // And the sentence the page prints while it waits.
     assert_eq!(
         ins::held_status("assets/tier.svg?S=Dust%20II"),
@@ -185,12 +210,29 @@ fn f2_12_s7_a_spliced_card_holds_the_footage() {
 #[test]
 fn f2_12_s7_the_card_sound_is_its_own_pipeline() {
     let spliced = card(30.0, 4.0, "assets/sting.mp4");
-    assert!(cards::card_sound(&spliced), "a video card brings its own sound");
-    let silent = Seg { mute: true, ..spliced.clone() };
-    assert!(!cards::card_sound(&silent), "the tick means silent, and silent means no pipeline");
+    assert!(
+        cards::card_sound(&spliced),
+        "a video card brings its own sound"
+    );
+    let silent = Seg {
+        mute: true,
+        ..spliced.clone()
+    };
+    assert!(
+        !cards::card_sound(&silent),
+        "the tick means silent, and silent means no pipeline"
+    );
     let board = card(30.0, 4.0, "assets/tier.svg");
-    assert!(!cards::card_sound(&board), "a drawn card has no sound to answer for");
-    let laid = Seg { s: 30.0, e: 34.0, ins: "assets/song.mp3".into(), ..Default::default() };
+    assert!(
+        !cards::card_sound(&board),
+        "a drawn card has no sound to answer for"
+    );
+    let laid = Seg {
+        s: 30.0,
+        e: 34.0,
+        ins: "assets/song.mp3".into(),
+        ..Default::default()
+    };
     assert!(cards::card_sound(&laid), "a sound insert is the sound");
     // The footage's own pipeline is held only for a SPLICED card: an over card replaced the picture and,
     // with the tick off, nothing else.
@@ -249,7 +291,10 @@ fn f2_12_s7_a_card_that_will_not_render_names_itself() {
     )
     .expect_err("a missing file cannot render");
     assert!(err.contains("no-such-card"), "names the card: {err}");
-    assert!(cards::rendered_frames(&out).is_empty(), "and leaves no pretend frame");
+    assert!(
+        cards::rendered_frames(&out).is_empty(),
+        "and leaves no pretend frame"
+    );
 }
 
 /// The preview panel's frame for a card: `show_card_frame` needs a window, and its rule is proven by the

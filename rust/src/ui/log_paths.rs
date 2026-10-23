@@ -35,7 +35,10 @@ pub const LOOSE_FILE: &str = "requests.tsv";
 /// would turn that path into two words and lose its root.
 fn is_delimiter(c: char) -> bool {
     c.is_whitespace()
-        || matches!(c, ',' | '(' | ')' | '[' | ']' | '"' | '\u{201c}' | '\u{201d}' | '\u{2014}' | ';')
+        || matches!(
+            c,
+            ',' | '(' | ')' | '[' | ']' | '"' | '\u{201c}' | '\u{201d}' | '\u{2014}' | ';'
+        )
 }
 
 /// Whether one token, as written, names a path. See the module docs for the three shapes.
@@ -58,7 +61,9 @@ pub fn looks_like_path(token: &str) -> bool {
         return true;
     }
     let mut parts = token.split('/');
-    let Some(first) = parts.next() else { return false };
+    let Some(first) = parts.next() else {
+        return false;
+    };
     // Both a known root AND a second part: `produce/` alone is a folder the log points at with no file,
     // and `cache` alone is a word in a sentence.
     ROOTS.contains(&first) && parts.next().is_some()

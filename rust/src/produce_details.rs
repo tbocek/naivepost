@@ -60,7 +60,10 @@ pub const LABELLED_LINES_MAX: usize = 3;
 /// "clip N copies footage at T s that falls in no recording — skipped": a pasted stretch points at session
 /// seconds, and session seconds with no file behind them cannot be decoded.
 pub fn copy_in_no_recording_log(no: usize, at: f64) -> String {
-    format!("clip {no} copies footage at {} that falls in no recording \u{2014} skipped", tools::tenths(at))
+    format!(
+        "clip {no} copies footage at {} that falls in no recording \u{2014} skipped",
+        tools::tenths(at)
+    )
 }
 
 /// "clip N copies past the end of <base> — shortened to X s": the paste runs off the file it belongs to, so the
@@ -97,13 +100,19 @@ pub fn insert_plays_silent_log(no: usize) -> String {
 /// "a stop at T s falls in no recording — its still is skipped": a freeze needs one frame to hold, and with no
 /// file there is no frame to take.
 pub fn stop_in_no_recording_log(at: f64) -> String {
-    format!("a stop at {} falls in no recording \u{2014} its still is skipped", tools::tenths(at))
+    format!(
+        "a stop at {} falls in no recording \u{2014} its still is skipped",
+        tools::tenths(at)
+    )
 }
 
 /// A clip with no line over it is not a failure; the log says so because "why does this clip still talk" is the
 /// next question, and its answer is that nothing was ever written for it.
 pub fn no_entry_keeps_own_audio_log(no: usize, at: f64) -> String {
-    format!("clip {no} at {} has no narration entry \u{2014} it keeps its own audio", tools::tenths(at))
+    format!(
+        "clip {no} at {} has no narration entry \u{2014} it keeps its own audio",
+        tools::tenths(at)
+    )
 }
 
 /// A line nobody synthesised still gets read by whoever asked for captions: the cue is real, the voice is not.
@@ -148,7 +157,8 @@ pub fn heard_via_lane_mix(tracks: &[u32], stream: u32) -> bool {
 /// rule in [`render::matches`] cannot answer this: a card and its line are both points, and half of nothing is
 /// nothing.
 pub fn bounds_match(line_s: f64, line_e: f64, clip_s: f64, clip_e: f64) -> bool {
-    (line_s - clip_s).abs() <= BOUNDS_TOLERANCE_SECONDS && (line_e - clip_e).abs() <= BOUNDS_TOLERANCE_SECONDS
+    (line_s - clip_s).abs() <= BOUNDS_TOLERANCE_SECONDS
+        && (line_e - clip_e).abs() <= BOUNDS_TOLERANCE_SECONDS
 }
 
 /// The planned 1× read head opens only where the sound would drift by at least [`DRIFT_SECONDS`]; below that the
@@ -176,7 +186,12 @@ pub fn held_cue_end(line_start: f64, next_line_start: Option<f64>, clip_end: f64
 /// output layout (a mono voice otherwise lands in one speaker), delay in whole milliseconds — every filter of it
 /// is [`crate::produce_render`]'s audio chain and [`render_fx`]'s tempo chains; this names the four steps so §6's
 /// sentence has a single test target. `hush` is the clip's own volume cues, in output seconds.
-pub fn spoken_line_filters(clip: &render::Clip, settings: &Produce, lanes: usize, hush: &[(f64, f64)]) -> Vec<String> {
+pub fn spoken_line_filters(
+    clip: &render::Clip,
+    settings: &Produce,
+    lanes: usize,
+    hush: &[(f64, f64)],
+) -> Vec<String> {
     render::audio_chain(clip, settings, lanes, hush)
 }
 
@@ -268,19 +283,28 @@ pub fn mux(
 
 /// After a webm mux. The container refuses an `srt` stream outright, so the tracks are not lost — they were
 /// always written beside the video, and this is the log line that says where to look.
-pub const WEBM_SRT_LOG: &str = "webm cannot carry an srt track \u{2014} the subtitles are the files beside the video";
+pub const WEBM_SRT_LOG: &str =
+    "webm cannot carry an srt track \u{2014} the subtitles are the files beside the video";
 
 /// An unknown stored subtitle mode reads as *none in the video*. Guessing "burned in" would letter somebody's
 /// picture on a run they pressed for something else entirely, and the row's own third choice is the one that
 /// promises nothing.
 pub fn stored_subtitle_mode(known: bool) -> Subtitles {
-    if known { Subtitles::TrackInFile } else { Subtitles::None }
+    if known {
+        Subtitles::TrackInFile
+    } else {
+        Subtitles::None
+    }
 }
 
 /// A stored resolution the page no longer offers falls back to the row's default rather than being passed to
 /// ffmpeg as a word it has to fail on. The default is `Produce`'s own, so the two cannot drift apart.
 pub fn stored_resolution(known: bool) -> project::Resolution {
-    if known { project::Resolution::P1080 } else { Produce::default().resolution }
+    if known {
+        project::Resolution::P1080
+    } else {
+        Produce::default().resolution
+    }
 }
 
 // ---- S5: legacy `produce` keys -------------------------------------------------------
@@ -318,7 +342,11 @@ pub fn legacy_bare(blurred_edges: bool) -> bool {
 /// whole rest of the line is the translation, dots inside it included — splitting on the first `.` would eat
 /// "3. drei" and turn an abbreviation into a lost line.
 pub fn answer_number(line: &str) -> Option<(usize, &str)> {
-    let digits = line.trim_start().chars().take_while(char::is_ascii_digit).collect::<String>();
+    let digits = line
+        .trim_start()
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>();
     if digits.is_empty() {
         return None;
     }
@@ -361,7 +389,11 @@ pub fn thumbnail_box_without_aspect() -> (u32, u32) {
 /// A frame box derivable from nothing is the chosen height at 16:9 — and 1080 when even that is unset, which is
 /// [`render_fx::TIER_SHORT_SIDE`], the same edge [`render_fx::frame_box`] names a tier by.
 pub fn frame_box_from_nothing(height: i32) -> (i32, i32) {
-    let high = if height > 0 { height } else { render_fx::TIER_SHORT_SIDE };
+    let high = if height > 0 {
+        height
+    } else {
+        render_fx::TIER_SHORT_SIDE
+    };
     let wide = even_side(high * 16 / 9);
     (wide, even_side(high))
 }
@@ -384,7 +416,13 @@ pub fn apply_legacy_base(frames: &[String], index: usize) -> Vec<String> {
         return frames.to_vec();
     }
     let mut out = vec![frames[index].clone()];
-    out.extend(frames.iter().enumerate().filter(|(n, _)| *n != index).map(|(_, frame)| frame.clone()));
+    out.extend(
+        frames
+            .iter()
+            .enumerate()
+            .filter(|(n, _)| *n != index)
+            .map(|(_, frame)| frame.clone()),
+    );
     out
 }
 
@@ -397,7 +435,11 @@ pub fn title_off_reads_once(stored: Option<bool>, already_read: bool) -> Option<
 /// A one-line instruction that is nothing but a frame reference drew nothing and said nothing: the frame moved to
 /// where it belongs and the instruction is cleared, so the row does not offer to edit a picture from no words.
 pub fn clear_frame_only_instruction(instruction: &str) -> String {
-    let lines: Vec<&str> = instruction.lines().map(str::trim).filter(|line| !line.is_empty()).collect();
+    let lines: Vec<&str> = instruction
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
     if lines.len() == 1 && frame_line(lines[0]).is_some() {
         return String::new();
     }
@@ -469,7 +511,9 @@ pub fn frame_line(line: &str) -> Option<FrameAt> {
 pub fn frame_moment(named: FrameAt, starts: &[f64]) -> Option<f64> {
     match named {
         FrameAt::Seconds(at) => Some(at),
-        FrameAt::Clip(number, offset) => starts.get(number.checked_sub(1)?).map(|start| start + offset),
+        FrameAt::Clip(number, offset) => starts
+            .get(number.checked_sub(1)?)
+            .map(|start| start + offset),
     }
 }
 
@@ -559,7 +603,8 @@ pub fn candidate_frames(kept: &[(f64, f64)], extracted: &[f64]) -> Vec<f64> {
     for (from, to) in kept {
         let span = (to - from).max(0.0);
         for band in 0..LABELLED_LINES_MAX {
-            let middle = from + span * (2.0 * band as f64 + 1.0) / (2.0 * LABELLED_LINES_MAX as f64);
+            let middle =
+                from + span * (2.0 * band as f64 + 1.0) / (2.0 * LABELLED_LINES_MAX as f64);
             if middle > *from && middle < *to {
                 wanted.push(middle);
             }
@@ -580,7 +625,8 @@ pub fn under_insert(at: f64, inserts: &[(f64, f64)]) -> bool {
 
 /// Nothing to choose from either: the picture is drawn from words alone, and the log says so because the person
 /// pressed a button expecting a frame of their own video.
-pub const NO_FRAMES_LOG: &str = "    publish: no frames extracted either \u{2014} drawing from the instruction alone";
+pub const NO_FRAMES_LOG: &str =
+    "    publish: no frames extracted either \u{2014} drawing from the instruction alone";
 
 /// A base image that has gone missing is an error, not a fallback: the person pointed at that file and editing
 /// something else would be a different picture than the one they agreed to.
@@ -596,7 +642,15 @@ pub fn reference_skipped_log(path: &str) -> String {
 
 /// The request line: what size, what base, how many images, and how the base was cropped. Everything a person
 /// needs to tell "it ignored my crop" from "the crop went off and came back wrong".
-pub fn request_log(wide: u32, high: u32, base: &str, images: usize, percent: u32, cx: f64, cy: f64) -> String {
+pub fn request_log(
+    wide: u32,
+    high: u32,
+    base: &str,
+    images: usize,
+    percent: u32,
+    cx: f64,
+    cy: f64,
+) -> String {
     format!(
         "    publish: {wide}x{high} editing {base}, {images} image(s) sent, base cropped to {percent}% of its width around {cx:.2},{cy:.2}"
     )
@@ -633,7 +687,8 @@ pub fn title_band_is_box(carries_words: bool) -> bool {
 
 /// Remove keeps the printed line off for good — the difference between clearing the text (which re-seeds from
 /// the title, [`screen::seed_title`]) and saying this picture has no words.
-pub const REMOVE_IS_PERMANENT: &str = "Remove keeps it off for good; clearing the line only lets the next seed refill it";
+pub const REMOVE_IS_PERMANENT: &str =
+    "Remove keeps it off for good; clearing the line only lets the next seed refill it";
 
 /// The YouTube title never re-prints the picture: it is metadata, and a person fixing a typo in it should not
 /// wait on an image model or lose a frame they chose.
@@ -660,7 +715,11 @@ pub fn drag_marks(moved_px: f64) -> bool {
 /// A box saved empty is not created, and an existing one emptied is removed: an empty text effect would be a box
 /// in the list that draws nothing and has to be found before anyone can use the row again.
 pub fn box_saved_empty(existed: bool) -> BoxSave {
-    if existed { BoxSave::Removed } else { BoxSave::NotCreated }
+    if existed {
+        BoxSave::Removed
+    } else {
+        BoxSave::NotCreated
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

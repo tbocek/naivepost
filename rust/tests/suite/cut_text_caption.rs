@@ -8,8 +8,8 @@
 use naivepost::cut::Fx;
 use naivepost::fx_lane;
 use naivepost::fx_text::{self, BoxChoice, Edge, Form, LOWER_THIRD};
-use naivepost::tools;
 use naivepost::fx_zoom;
+use naivepost::tools;
 
 /// The preview is a 640 × 360 window on a 1920 × 1080 finished frame throughout: the box's fractions are always of
 /// the FINISHED frame (§06#1), while the hand drags in PREVIEW pixels. Keeping the two sizes apart in every test is
@@ -25,7 +25,12 @@ fn lower_third_box() -> naivepost::fx_text::Box_ {
 /// only 0…128 px of legal x against its own 64, so any snap landing past 128 is slid back and what a test would then
 /// measure is the clamp, not the rule. At this width the legal range is 0…384 in x and 0…302.4 in y, which every
 /// snap below stays inside.
-const NARROW: naivepost::fx_text::Box_ = naivepost::fx_text::Box_ { cx: 0.5, cy: 0.78, wf: 0.4, hf: 0.16 };
+const NARROW: naivepost::fx_text::Box_ = naivepost::fx_text::Box_ {
+    cx: 0.5,
+    cy: 0.78,
+    wf: 0.4,
+    hf: 0.16,
+};
 
 // --- S1: press ❝ Text -------------------------------------------------------------------------------------------
 
@@ -87,16 +92,28 @@ fn f3_4_s2_a_click_takes_the_lower_third() {
         hf: fx.hf.unwrap(),
     };
     assert_eq!(box_, LOWER_THIRD);
-    assert_eq!((LOWER_THIRD.cx, LOWER_THIRD.cy, LOWER_THIRD.wf, LOWER_THIRD.hf), (0.5, 0.78, 0.8, 0.16));
+    assert_eq!(
+        (
+            LOWER_THIRD.cx,
+            LOWER_THIRD.cy,
+            LOWER_THIRD.wf,
+            LOWER_THIRD.hf
+        ),
+        (0.5, 0.78, 0.8, 0.16)
+    );
 
     // A marked stretch is the length instead of the default; the box is still the one §S2 called the default.
-    let stretched = fx_text::place(BoxChoice::Click, Some(12.0), Some((30.0, 47.5)), FRAME).unwrap();
+    let stretched =
+        fx_text::place(BoxChoice::Click, Some(12.0), Some((30.0, 47.5)), FRAME).unwrap();
     assert_eq!((stretched.t, stretched.dur), (30.0, 17.5));
     assert_eq!(stretched.wf, Some(0.8));
 
     // §06#1's no-box default and this box are the same box: `Fx::centre` answers {0.5, 0.78} for a text that stored
     // nothing, which is where a caption from before the box existed still lands.
-    let bare = Fx { kind: "text".into(), ..Default::default() };
+    let bare = Fx {
+        kind: "text".into(),
+        ..Default::default()
+    };
     assert_eq!(bare.centre(), (LOWER_THIRD.cx, LOWER_THIRD.cy));
 }
 
@@ -107,7 +124,12 @@ fn f3_4_s2_a_click_takes_the_lower_third() {
 fn f3_4_s2_a_drag_keeps_the_box_and_tiny_drag_is_a_click() {
     // A box from (64, 240), 512 × 60 preview px on a 640 × 360 preview: centre (0.5, 0.75), size (0.8, 0.166…).
     let dragged = fx_text::place(
-        BoxChoice::Dragged { x: 64.0, y: 240.0, w: 512.0, h: 60.0 },
+        BoxChoice::Dragged {
+            x: 64.0,
+            y: 240.0,
+            w: 512.0,
+            h: 60.0,
+        },
         Some(4.0),
         None,
         FRAME,
@@ -119,18 +141,34 @@ fn f3_4_s2_a_drag_keeps_the_box_and_tiny_drag_is_a_click() {
 
     // The same box measured on a 1920 × 1080 preview lands on the same fractions — the frame cancels out.
     let bigger = fx_text::place(
-        BoxChoice::Dragged { x: 192.0, y: 720.0, w: 1536.0, h: 180.0 },
+        BoxChoice::Dragged {
+            x: 192.0,
+            y: 720.0,
+            w: 1536.0,
+            h: 180.0,
+        },
         Some(4.0),
         None,
         (1920.0, 1080.0),
     )
     .unwrap();
-    assert_eq!((bigger.cx.unwrap(), bigger.cy.unwrap()), (dragged.cx.unwrap(), dragged.cy.unwrap()));
-    assert_eq!((bigger.wf.unwrap(), bigger.hf.unwrap()), (dragged.wf.unwrap(), dragged.hf.unwrap()));
+    assert_eq!(
+        (bigger.cx.unwrap(), bigger.cy.unwrap()),
+        (dragged.cx.unwrap(), dragged.cy.unwrap())
+    );
+    assert_eq!(
+        (bigger.wf.unwrap(), bigger.hf.unwrap()),
+        (dragged.wf.unwrap(), dragged.hf.unwrap())
+    );
 
     // 11 px of travel is not a box; it is the press that did not move.
     let tiny = fx_text::place(
-        BoxChoice::Dragged { x: 300.0, y: 40.0, w: fx_zoom::DRAG_MIN_PX - 1.0, h: 200.0 },
+        BoxChoice::Dragged {
+            x: 300.0,
+            y: 40.0,
+            w: fx_zoom::DRAG_MIN_PX - 1.0,
+            h: 200.0,
+        },
         Some(4.0),
         None,
         FRAME,
@@ -150,8 +188,14 @@ fn f3_4_s2_a_drag_keeps_the_box_and_tiny_drag_is_a_click() {
 #[test]
 fn f3_4_s3_the_form_is_titled_by_its_second() {
     // `mm_ss` is the app's one spelling of a second, so the title is asserted through it rather than re-typed.
-    assert_eq!(fx_text::form_title(75.0), format!("Text at {}", tools::mm_ss(75.0)));
-    assert!(fx_text::form_title(0.0).starts_with("Text at "), "Text at 0:00");
+    assert_eq!(
+        fx_text::form_title(75.0),
+        format!("Text at {}", tools::mm_ss(75.0))
+    );
+    assert!(
+        fx_text::form_title(0.0).starts_with("Text at "),
+        "Text at 0:00"
+    );
     assert!(fx_text::form_title(75.0).ends_with(&tools::mm_ss(75.0)));
 }
 
@@ -161,7 +205,13 @@ fn f3_4_s3_the_form_is_titled_by_its_second() {
 fn f3_4_s3_the_form_asks_for_the_words_first() {
     assert_eq!(
         fx_text::FORM_FIELDS,
-        ["Words", "Length (s)", "Fade in (s)", "Fade out (s)", "Curve"]
+        [
+            "Words",
+            "Length (s)",
+            "Fade in (s)",
+            "Fade out (s)",
+            "Curve"
+        ]
     );
     assert_eq!(fx_text::WORDS_ROWS, 3);
     assert_eq!(
@@ -189,7 +239,10 @@ fn f3_4_s3_empty_words_are_not_placed() {
     };
 
     for blank in ["", "   ", "\n"] {
-        let empty = Form { words: blank.into(), ..base.clone() };
+        let empty = Form {
+            words: blank.into(),
+            ..base.clone()
+        };
         assert_eq!(
             fx_text::apply(&empty),
             Err(fx_text::NO_WORDS.to_string()),
@@ -202,18 +255,47 @@ fn f3_4_s3_empty_words_are_not_placed() {
     );
 
     // length ≥ 0.3: the floor itself is taken, a hundredth under it is not.
-    assert!(fx_text::apply(&Form { dur: 0.3, ..base.clone() }).is_ok());
-    let short = fx_text::apply(&Form { dur: 0.29, ..base.clone() }).unwrap_err();
+    assert!(fx_text::apply(&Form {
+        dur: 0.3,
+        ..base.clone()
+    })
+    .is_ok());
+    let short = fx_text::apply(&Form {
+        dur: 0.29,
+        ..base.clone()
+    })
+    .unwrap_err();
     assert!(short.contains("0.3 s"), "{short}");
 
-    let written = fx_text::apply(&Form { words: "one\ntwo".into(), curve: "Glide".into(), ..base.clone() }).unwrap();
+    let written = fx_text::apply(&Form {
+        words: "one\ntwo".into(),
+        curve: "Glide".into(),
+        ..base.clone()
+    })
+    .unwrap();
     assert_eq!(written.kind, "text");
     // Typed newlines survive: §S4 breaks on them rather than re-deciding where the lines fall.
     assert_eq!(written.text, "one\ntwo");
-    assert_eq!((written.cx.unwrap(), written.cy.unwrap(), written.wf.unwrap(), written.hf.unwrap()), (0.5, 0.78, 0.8, 0.16));
+    assert_eq!(
+        (
+            written.cx.unwrap(),
+            written.cy.unwrap(),
+            written.wf.unwrap(),
+            written.hf.unwrap()
+        ),
+        (0.5, 0.78, 0.8, 0.16)
+    );
     // Linear stays unwritten (§06#1: an empty ease is what makes a byte-identical re-save), Glide is named.
     assert_eq!(written.ease, fx_zoom::curve_stored("Glide"));
-    assert_eq!(fx_text::apply(&Form { curve: "Linear".into(), ..base }).unwrap().ease, "");
+    assert_eq!(
+        fx_text::apply(&Form {
+            curve: "Linear".into(),
+            ..base
+        })
+        .unwrap()
+        .ease,
+        ""
+    );
 }
 
 /// S3's fades go through §A.2's `clampFades` — the function zoom and speed already use, so an overrunning pair is
@@ -238,7 +320,13 @@ fn f3_4_s3_two_overrunning_fades_are_shared_once() {
 
     // A one-sided overrun is the same rule with different numbers: the fade that asked for more keeps the larger
     // share of the band, and neither goes negative. 3.0 + 0.5 over a 1 s band shares it in that same 6:1 ratio.
-    let one_sided = fx_text::apply(&Form { dur: 1.0, trans: 3.0, tout: 0.5, ..base }).unwrap();
+    let one_sided = fx_text::apply(&Form {
+        dur: 1.0,
+        trans: 3.0,
+        tout: 0.5,
+        ..base
+    })
+    .unwrap();
     assert!(one_sided.trans > one_sided.tout);
     assert!(one_sided.trans + one_sided.tout <= 1.0 + 1e-12);
     assert_eq!((one_sided.trans, one_sided.tout), (6.0 / 7.0, 1.0 / 7.0));
@@ -350,7 +438,11 @@ fn f3_4_s4_the_preview_is_the_render() {
     assert!(fx_text::preview_is_the_render());
     let words = "a caption that has to be broken across a few lines";
     for (w, h) in [(200.0, 60.0), (320.0, 40.0), (90.0, 200.0)] {
-        assert_eq!(fx_text::fit(words, w, h), fx_text::fit(words, w, h), "{w}×{h}");
+        assert_eq!(
+            fx_text::fit(words, w, h),
+            fx_text::fit(words, w, h),
+            "{w}×{h}"
+        );
     }
 }
 
@@ -411,10 +503,22 @@ fn f3_4_s5_a_moved_box_snaps_to_the_frame_lines() {
 
     // Snapping on its own: within reach it takes the nearest line, beyond the reach nothing is snapped. The bound is
     // inclusive (`<=`), which 310 shows and 309 — one pixel further out — does not.
-    assert_eq!(fx_text::snap_to(324.0, &fx_text::frame_lines(640.0), fx_text::SNAP_PX), 320.0);
-    assert_eq!(fx_text::snap_to(315.0, &fx_text::frame_lines(640.0), fx_text::SNAP_PX), 320.0);
-    assert_eq!(fx_text::snap_to(310.0, &fx_text::frame_lines(640.0), fx_text::SNAP_PX), 320.0);
-    assert_eq!(fx_text::snap_to(309.0, &fx_text::frame_lines(640.0), fx_text::SNAP_PX), 309.0);
+    assert_eq!(
+        fx_text::snap_to(324.0, &fx_text::frame_lines(640.0), fx_text::SNAP_PX),
+        320.0
+    );
+    assert_eq!(
+        fx_text::snap_to(315.0, &fx_text::frame_lines(640.0), fx_text::SNAP_PX),
+        320.0
+    );
+    assert_eq!(
+        fx_text::snap_to(310.0, &fx_text::frame_lines(640.0), fx_text::SNAP_PX),
+        320.0
+    );
+    assert_eq!(
+        fx_text::snap_to(309.0, &fx_text::frame_lines(640.0), fx_text::SNAP_PX),
+        309.0
+    );
 }
 
 /// S5 (`and resizes (independent axes, 16 px floor)`): one edge moves and only its axis changes; the box never goes

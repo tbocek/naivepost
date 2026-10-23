@@ -46,7 +46,8 @@ fn click(window: &adw::ApplicationWindow, name: &str) {
         settle();
         return;
     }
-    if let Some(check) = widget_in(window, name).and_then(|w| w.downcast::<gtk::CheckButton>().ok()) {
+    if let Some(check) = widget_in(window, name).and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+    {
         check.set_active(true);
         settle();
         return;
@@ -107,10 +108,7 @@ thread_local! {
 fn drag_panel(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) {
     let gesture = ui::zoom_gesture(window).expect("the page wired a drag onto the preview panel");
     gesture.emit_by_name::<()>("drag-begin", &[&from.0, &from.1]);
-    gesture.emit_by_name::<()>(
-        "drag-end",
-        &[&(to.0 - from.0), &(to.1 - from.1)],
-    );
+    gesture.emit_by_name::<()>("drag-end", &[&(to.0 - from.0), &(to.1 - from.1)]);
     settle();
 }
 
@@ -151,7 +149,6 @@ fn f3_1_s1_armed_before_a_line_refuses_instead_of_arming(app: &adw::Application)
     RAN_NO_LINE.store(true, Ordering::SeqCst);
     window.close();
     settle();
-
 }
 
 /// The class and the rect's opacity here come from `ui::set_camera_layer_down`, NOT from a lane rebuild: arming
@@ -162,7 +159,10 @@ fn f3_1_s1_the_arm_lowers_the_camera_layer_and_shows_the_whole_source(app: &adw:
     let window = cut_page(app, &tape(), &Cut::default());
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 42.0 });
     click(&window, "effect-item-zoom");
-    assert!(ui::zoom_armed(), "⊕ Zoom armed the drag instead of recording an effect");
+    assert!(
+        ui::zoom_armed(),
+        "⊕ Zoom armed the drag instead of recording an effect"
+    );
     assert_eq!(
         ui::review_cut_of(&window).fx.len(),
         0,
@@ -189,7 +189,6 @@ fn f3_1_s1_the_arm_lowers_the_camera_layer_and_shows_the_whole_source(app: &adw:
         "and its tail names where the zoom will go, got {said}"
     );
     RAN_ARMED.store(true, Ordering::SeqCst);
-
 }
 
 fn f3_1_s1_a_second_press_disarms_and_esc_releases_it(app: &adw::Application) {
@@ -205,7 +204,10 @@ fn f3_1_s1_a_second_press_disarms_and_esc_releases_it(app: &adw::Application) {
     assert!(ui::zoom_armed(), "armed first, so there is an arm to lose");
     let panel = widget_in(&window, "preview-panel").expect("the page drew the preview panel");
     let rect = widget_in(&window, "preview-camera-rect").expect("the panel drew its camera rect");
-    assert!(panel.has_css_class("zoom-camera-down"), "armed, so the layer is down");
+    assert!(
+        panel.has_css_class("zoom-camera-down"),
+        "armed, so the layer is down"
+    );
     click(&window, "effect-item-zoom");
     assert!(!ui::zoom_armed(), "a second press takes the arm off (§S1)");
     assert!(
@@ -230,7 +232,6 @@ fn f3_1_s1_a_second_press_disarms_and_esc_releases_it(app: &adw::Application) {
     RAN_DISARMED.store(true, Ordering::SeqCst);
     window.close();
     settle();
-
 }
 
 fn f3_1_s2_a_drag_under_the_minimum_is_ignored(app: &adw::Application) {
@@ -260,7 +261,6 @@ fn f3_1_s2_a_drag_under_the_minimum_is_ignored(app: &adw::Application) {
     RAN_TOO_SMALL.store(true, Ordering::SeqCst);
     window.close();
     settle();
-
 }
 
 fn f3_1_s2_a_free_rectangle_drag_lands_a_form_at_the_red_line(app: &adw::Application) {
@@ -270,8 +270,15 @@ fn f3_1_s2_a_free_rectangle_drag_lands_a_form_at_the_red_line(app: &adw::Applica
     // Dragged right-to-left on purpose: the box must come out the same shape whichever way the hand went.
     drag_panel(&window, (90.0, 70.0), (40.0, 30.0));
     let form = ui::zoom_form_open().expect("a finished drag leaves a form to settle");
-    assert_eq!(form.at, 42.0, "the form belongs at the red line the arm was holding");
-    assert_eq!(form.dur, zoom::DEFAULT_SECONDS, "3 s until the form says otherwise");
+    assert_eq!(
+        form.at, 42.0,
+        "the form belongs at the red line the arm was holding"
+    );
+    assert_eq!(
+        form.dur,
+        zoom::DEFAULT_SECONDS,
+        "3 s until the form says otherwise"
+    );
     assert_eq!(form.trans, zoom::GLIDE_SECONDS, "glide 1 s in");
     assert_eq!(form.tout, zoom::GLIDE_SECONDS, "glide 1 s out");
     // And the box itself is the free rectangle's fractions of whatever source size THIS window's panel
@@ -386,7 +393,9 @@ fn f3_1_s4_the_form_names_the_second_it_belongs_to(app: &adw::Application) {
     // The holder is the heading's parent, not some global box: walking UP from the heading proves the fields
     // belong to the form that was just drawn here (a closed window keeps its widgets, so a global search by
     // name alone could land on another window's copy).
-    let holder = heading.parent().expect("the heading sits inside the form holder");
+    let holder = heading
+        .parent()
+        .expect("the heading sits inside the form holder");
     // Walk the holder's own subtree rather than the window's: the assertion is about THIS form's children.
     fn inside(node: &gtk::Widget, name: &str) -> bool {
         if node.widget_name() == name {
@@ -412,7 +421,10 @@ fn f3_1_s4_the_form_names_the_second_it_belongs_to(app: &adw::Application) {
         "zoom-cancel-button",
         "zoom-form-footer",
     ] {
-        assert!(inside(&holder, name), "the form drew no {name} inside its own holder");
+        assert!(
+            inside(&holder, name),
+            "the form drew no {name} inside its own holder"
+        );
     }
     assert_eq!(
         entry_text(&window, "zoom-field-length"),
@@ -471,7 +483,10 @@ fn f3_1_s4_the_form_names_the_second_it_belongs_to(app: &adw::Application) {
     // And WHICH page of that stack holds the form: compare structurally -- the stack's direct child whose
     // subtree holds the form must be the SAME sibling as the one holding the preview panel. Only the Cut page
     // draws a panel, so a form resolved into another tab's box would make these differ and fail here.
-    fn page_of(stack: &adw::ViewStack, needle: *mut gtk::ffi::GtkWidget) -> Option<*mut gtk::ffi::GtkWidget> {
+    fn page_of(
+        stack: &adw::ViewStack,
+        needle: *mut gtk::ffi::GtkWidget,
+    ) -> Option<*mut gtk::ffi::GtkWidget> {
         fn holds(node: &gtk::Widget, needle: *mut gtk::ffi::GtkWidget) -> bool {
             if node.as_ptr() == needle {
                 return true;
@@ -495,8 +510,10 @@ fn f3_1_s4_the_form_names_the_second_it_belongs_to(app: &adw::Application) {
         None
     }
     let stack = stack.expect("the form sits inside the window's page stack");
-    let form_page = page_of(&stack, holder_widget.as_ptr()).expect("no page of the stack holds the zoom form");
-    let panel_page = page_of(&stack, panel.as_ptr()).expect("no page of the stack holds the preview panel");
+    let form_page =
+        page_of(&stack, holder_widget.as_ptr()).expect("no page of the stack holds the zoom form");
+    let panel_page =
+        page_of(&stack, panel.as_ptr()).expect("no page of the stack holds the preview panel");
     assert_eq!(
         form_page, panel_page,
         "the zoom form lives on the same page as the preview panel; different pages means the holder was          resolved into a hidden tab"
@@ -549,7 +566,10 @@ fn f3_1_s4_apply_under_the_floor_refuses_and_keeps_the_form_open(app: &adw::Appl
     click(&window, "zoom-apply-button");
     let said = status_text(&window);
     let want = fx_apply_error(0.1, 42.0, false);
-    assert_eq!(said, want, "the refusal is `fx_zoom::apply`'s own text, unedited");
+    assert_eq!(
+        said, want,
+        "the refusal is `fx_zoom::apply`'s own text, unedited"
+    );
     assert_eq!(
         ui::review_cut_of(&window).fx.len(),
         before.len(),
@@ -621,8 +641,14 @@ fn f3_1_s5_apply_places_the_zoom_and_says_so(app: &adw::Application) {
         zoom::placed_status(42.0, false),
         "the status line is §S5's own sentence"
     );
-    assert!(!form_visible(&window), "the form closed once it had been applied");
-    assert!(ui::zoom_form_open().is_none(), "and nothing is left pending");
+    assert!(
+        !form_visible(&window),
+        "the form closed once it had been applied"
+    );
+    assert!(
+        ui::zoom_form_open().is_none(),
+        "and nothing is left pending"
+    );
     RAN_APPLIED.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -686,8 +712,14 @@ fn f3_1_s1_s2_arm_the_zoom_and_drag_a_box_through_the_real_widgets() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_NO_LINE.load(Ordering::SeqCst), "the no-line refusal check never ran");
-    assert!(RAN_ARMED.load(Ordering::SeqCst), "the armed check never ran");
+    assert!(
+        RAN_NO_LINE.load(Ordering::SeqCst),
+        "the no-line refusal check never ran"
+    );
+    assert!(
+        RAN_ARMED.load(Ordering::SeqCst),
+        "the armed check never ran"
+    );
     assert!(
         RAN_DISARMED.load(Ordering::SeqCst),
         "the disarm / Esc check never ran"

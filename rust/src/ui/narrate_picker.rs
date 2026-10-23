@@ -20,7 +20,10 @@ thread_local! {
 /// [`narrate_screen::voice_options`] so the wire and the paint can never disagree about which row is
 /// which voice.
 fn options(narrators: usize, files: &[String]) -> Vec<VoiceOption> {
-    narrate_screen::voice_options(narrators, &files.iter().map(String::as_str).collect::<Vec<_>>())
+    narrate_screen::voice_options(
+        narrators,
+        &files.iter().map(String::as_str).collect::<Vec<_>>(),
+    )
 }
 
 /// Show `row` in the voice picker as the page's own choice, not the person's: the flag keeps the

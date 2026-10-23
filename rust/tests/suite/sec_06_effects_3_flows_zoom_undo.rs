@@ -93,7 +93,12 @@ fn form_visible(window: &adw::ApplicationWindow) -> bool {
 /// A timeline long enough that a zoom at 81 s has room, with footage so the Cut tab is unlocked.
 fn seeded() -> Cut {
     Cut {
-        segs: vec![Seg { s: 0.0, e: 600.0, cam: 0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 600.0,
+            cam: 0,
+            ..Default::default()
+        }],
         ..Default::default()
     }
 }
@@ -113,7 +118,10 @@ fn open_zoom_form(app: &adw::Application, tag: &str) -> adw::ApplicationWindow {
     assert!(ui::zoom_armed(), "⊕ Zoom did not arm -- {said}");
     drag_panel(&window, (90.0, 70.0), (40.0, 30.0));
     let form = ui::zoom_form_open().expect("the drag landed a form");
-    assert_eq!(form.at, 81.0, "the form belongs at the red line this check parked");
+    assert_eq!(
+        form.at, 81.0,
+        "the form belongs at the red line this check parked"
+    );
     wait_until("the zoom form is on screen", || form_visible(&window));
     window
 }
@@ -133,14 +141,21 @@ fn a_refused_apply_spends_no_undo_entry(app: &adw::Application) {
         nothing_behind_undo(&window),
         "a page that has taken no edit starts with nothing behind ↶"
     );
-    set_entry("zoom-field-length", &format!("{}", fx_zoom::MIN_SECONDS / 2.0));
+    set_entry(
+        "zoom-field-length",
+        &format!("{}", fx_zoom::MIN_SECONDS / 2.0),
+    );
     let said = ui::press_zoom_apply(&window);
     settle();
     assert!(
         said.contains(&format!("{}", fx_zoom::MIN_SECONDS)),
         "the refusal names the floor it broke: {said}"
     );
-    assert_eq!(zoom_count(&window), before, "a refused Apply wrote no record");
+    assert_eq!(
+        zoom_count(&window),
+        before,
+        "a refused Apply wrote no record"
+    );
     assert!(form_visible(&window), "and leaves the form open to correct");
     assert!(
         nothing_behind_undo(&window),
@@ -148,10 +163,17 @@ fn a_refused_apply_spends_no_undo_entry(app: &adw::Application) {
     );
     // And the correction that follows is still the visit's FIRST answer: the same Apply that would have been the
     // first had the refusal never happened places its zoom and earns its own ↶.
-    set_entry("zoom-field-length", &format!("{}", fx_zoom::MIN_SECONDS * 4.0));
+    set_entry(
+        "zoom-field-length",
+        &format!("{}", fx_zoom::MIN_SECONDS * 4.0),
+    );
     let applied = ui::press_zoom_apply(&window);
     settle();
-    assert_eq!(zoom_count(&window), before + 1, "the corrected Apply placed one zoom ({applied})");
+    assert_eq!(
+        zoom_count(&window),
+        before + 1,
+        "the corrected Apply placed one zoom ({applied})"
+    );
     assert!(
         !nothing_behind_undo(&window),
         "the placement earned its undo step: {applied}"
@@ -169,7 +191,11 @@ fn an_accepted_apply_earns_the_undo_it_promises(app: &adw::Application) {
     let before = zoom_count(&window);
     let applied = ui::press_zoom_apply(&window);
     settle();
-    assert_eq!(zoom_count(&window), before + 1, "Apply landed one zoom ({applied})");
+    assert_eq!(
+        zoom_count(&window),
+        before + 1,
+        "Apply landed one zoom ({applied})"
+    );
     // The promise is in the sentence Apply RETURNS. The label is not asserted here: a second window on the same
     // shell leaves more than one `status-line` in this process (a closed window survives) and `common::status_text`
     // finds the first, which need not be ours — `zoom_drag_widgets.rs` pins that write against its own page.
@@ -182,7 +208,11 @@ fn an_accepted_apply_earns_the_undo_it_promises(app: &adw::Application) {
         .expect("the toolbar drew undo-button")
         .emit_by_name::<()>("clicked", &[]);
     settle();
-    assert_eq!(zoom_count(&window), before, "↶ pressed on the toolbar took the zoom back");
+    assert_eq!(
+        zoom_count(&window),
+        before,
+        "↶ pressed on the toolbar took the zoom back"
+    );
     assert!(
         nothing_behind_undo(&window),
         "and the stack is empty again -- one step in, one step out"
@@ -193,8 +223,14 @@ fn an_accepted_apply_earns_the_undo_it_promises(app: &adw::Application) {
 }
 
 fn round(app: &adw::Application) {
-    step!("s4 refused apply", a_refused_apply_spends_no_undo_entry(app));
-    step!("s5 accepted apply", an_accepted_apply_earns_the_undo_it_promises(app));
+    step!(
+        "s4 refused apply",
+        a_refused_apply_spends_no_undo_entry(app)
+    );
+    step!(
+        "s5 accepted apply",
+        an_accepted_apply_earns_the_undo_it_promises(app)
+    );
 }
 
 #[test]
@@ -215,6 +251,12 @@ fn sec_06_effects_3_flows_s4_a_refused_zoom_apply_spends_no_undo_entry() {
         .clone()
         .map(|why| format!(" -- {why}"))
         .unwrap_or_default();
-    assert!(RAN_REFUSED.load(Ordering::SeqCst), "the refused-apply check never ran{stopped}");
-    assert!(RAN_APPLIED.load(Ordering::SeqCst), "the accepted-apply check never ran{stopped}");
+    assert!(
+        RAN_REFUSED.load(Ordering::SeqCst),
+        "the refused-apply check never ran{stopped}"
+    );
+    assert!(
+        RAN_APPLIED.load(Ordering::SeqCst),
+        "the accepted-apply check never ran{stopped}"
+    );
 }

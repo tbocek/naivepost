@@ -13,7 +13,9 @@ use crate::ui::cut_preview_frame::{self as picture, Frame};
 
 /// Install the painter on `narrate-picture`. Called from the page's `wire`, once.
 pub fn install_draw(window: &adw::ApplicationWindow) {
-    let Some(area) = picture_of(window) else { return };
+    let Some(area) = picture_of(window) else {
+        return;
+    };
     let win = window.clone();
     area.set_draw_func(move |_area, cr, width, height| {
         paint(&win, cr, width.max(1) as f64, height.max(1) as f64);
@@ -102,5 +104,9 @@ pub fn queued_line_for_test(tree: &crate::layout::Tree, from: f64) -> Option<usi
 /// The take wav the preview played for one line, or `None` when it had nothing to play. A door for the
 /// wire test, which has to check that a real press reached a REAL file rather than a sentence.
 pub fn line_take_for_test(tree: &crate::layout::Tree, line: usize) -> Option<std::path::PathBuf> {
-    crate::narrate_preview_leg::line_take(tree, &crate::ui::narrate_page::read_state().entries, line)
+    crate::narrate_preview_leg::line_take(
+        tree,
+        &crate::ui::narrate_page::read_state().entries,
+        line,
+    )
 }

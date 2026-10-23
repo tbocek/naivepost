@@ -30,7 +30,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use crate::common;
 use adw::prelude::*;
+use common::{
+    fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle,
+};
 use naivepost::cut::Seg;
 use naivepost::layout::Tree;
 use naivepost::narration::{self, Entry};
@@ -38,8 +42,6 @@ use naivepost::produce_stamp as stamp;
 use naivepost::project::{self, Produce};
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle};
 
 /// One slot per check, holding that block's failure text if it failed. Written from inside the activate
 /// callback and read after `run_with_args` returns, so a failing assert never unwinds into GTK.
@@ -78,7 +80,7 @@ fn record(
 /// session folder while cwd is what the page reads. Returns the check's own failure text, if any, so
 /// `record` can take ownership of it instead of borrowing a local that dies at the end of the block.
 fn in_root(name: String, check: fn(&Path)) -> impl FnOnce() -> Result<(), String> {
-  move || {
+    move || {
         let base = std::env::current_dir().expect("cwd pinned before the run");
         let root = base.join(&name);
         std::fs::create_dir_all(&root).map_err(|why| format!("{name} root: {why}"))?;
@@ -132,7 +134,8 @@ fn write_line(tree: &Tree, text: &str, size: usize) -> Entry {
     line.e = 5.0;
     line.text = text.to_string();
     line.roll = 0;
-    let wav = stamp::wav_of(tree, &line, Some("1"), line.roll).expect("a line with words has a take path");
+    let wav = stamp::wav_of(tree, &line, Some("1"), line.roll)
+        .expect("a line with words has a take path");
     std::fs::create_dir_all(wav.parent().unwrap()).unwrap();
     std::fs::write(&wav, vec![7u8; size]).unwrap();
     line
@@ -155,7 +158,11 @@ fn current_stamp(tree: &Tree, settings: &Produce, segs: &[Seg]) -> String {
     stamp::gate_stamp(
         tree,
         settings,
-        &naivepost::cut::Cut { segs: segs.to_vec(), aspect: "16:9".to_string(), ..Default::default() },
+        &naivepost::cut::Cut {
+            segs: segs.to_vec(),
+            aspect: "16:9".to_string(),
+            ..Default::default()
+        },
         &project.sources,
         Some("1"),
         project.no_narration,
@@ -218,11 +225,14 @@ fn seed_page(_window: &adw::ApplicationWindow) {
 /// from the same two segments the stamp was built over, so the page's cut and this test's cut are one
 /// answer. Must run on the window's own thread — `seed_review_cut` writes a thread-local slot.
 fn seed_live_cut(window: &adw::ApplicationWindow) {
-    seed_live_cut_with(window, &naivepost::cut::Cut {
-        segs: two_segs(),
-        aspect: "16:9".to_string(),
-        ..Default::default()
-    });
+    seed_live_cut_with(
+        window,
+        &naivepost::cut::Cut {
+            segs: two_segs(),
+            aspect: "16:9".to_string(),
+            ..Default::default()
+        },
+    );
 }
 
 /// …the same, with any cut: an effect-only change is made by seeding the page's live cut with one zoom on
@@ -246,7 +256,10 @@ fn check_up_to_date(root: &Path) {
     std::fs::write(&video, b"a finished video of some length").unwrap();
     stamp::write_stamp(&tree, &current).expect("the stamp is written beside the video");
     // Both halves of the gate before the press touches either: the same hash, and a file behind it.
-    assert!(stamp::skip_encode(Some(&current), &current), "S8: the same hash");
+    assert!(
+        stamp::skip_encode(Some(&current), &current),
+        "S8: the same hash"
+    );
     assert_eq!(
         stamp::read_stamp(&tree).as_deref(),
         Some(current.as_str()),
@@ -309,7 +322,15 @@ fn check_effect_makes_it_stale(root: &Path) {
         }
     };
     assert_ne!(
-        stamp::gate_stamp(&tree, &settings, &with_zoom, &fixture_sources(), Some("1"), false, (1920, 1080)),
+        stamp::gate_stamp(
+            &tree,
+            &settings,
+            &with_zoom,
+            &fixture_sources(),
+            Some("1"),
+            false,
+            (1920, 1080)
+        ),
         stale,
         "the stamp must move when an effect is added — that is the rule the gate reads"
     );
@@ -326,7 +347,10 @@ fn check_effect_makes_it_stale(root: &Path) {
     // open right now — which is the other half of "not skipped": it neither proceeds nor declines on its own.
     assert_eq!(
         said,
-        format!("Overwrite {}?", video.file_name().unwrap().to_string_lossy()),
+        format!(
+            "Overwrite {}?",
+            video.file_name().unwrap().to_string_lossy()
+        ),
         "an effect-only change falls to the overwrite question: {said:?}"
     );
     let dialog = naivepost::ui::produce_confirm::open_dialog()
@@ -567,5 +591,6 @@ fn f5_3_s12_a_press_still_skips_when_nothing_moved() {
 fn stamp_is_beside_the_video(tree: &Tree) -> bool {
     let stamp_file: PathBuf = stamp::stamp_path(tree);
     let video = tree.final_video("mp4");
-    stamp_file.parent() == video.parent() && stamp_file.file_name().map(|n| n == "final.stamp") == Some(true)
+    stamp_file.parent() == video.parent()
+        && stamp_file.file_name().map(|n| n == "final.stamp") == Some(true)
 }

@@ -74,7 +74,10 @@ fn fixture(tag: &str) -> Scenario {
     }
     let paths = settings::from_environment().expect("settings from the pinned env");
     settings::save(&paths, &Conf::default()).expect("settings written");
-    Scenario { root, _scenario: scenario }
+    Scenario {
+        root,
+        _scenario: scenario,
+    }
 }
 
 /// A fake server on a loopback port: answers `answer(path)` to every request and records each request line
@@ -98,11 +101,24 @@ impl Fake {
                 std::thread::spawn(move || {
                     let mut reader = BufReader::new(stream.try_clone().expect("a socket clone"));
                     let mut request_line = String::new();
-                    if reader.read_line(&mut request_line).ok().filter(|n| *n > 0).is_none() {
+                    if reader
+                        .read_line(&mut request_line)
+                        .ok()
+                        .filter(|n| *n > 0)
+                        .is_none()
+                    {
                         return;
                     }
-                    let method = request_line.split_whitespace().next().unwrap_or("").to_string();
-                    let path = request_line.split_whitespace().nth(1).unwrap_or("").to_string();
+                    let method = request_line
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_string();
+                    let path = request_line
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("")
+                        .to_string();
                     let mut length = 0usize;
                     loop {
                         let mut header = String::new();
@@ -117,7 +133,10 @@ impl Fake {
                     if length > 0 {
                         let _ = reader.read_exact(&mut body);
                     }
-                    let _ = sent.send((format!("{method} {path}"), String::from_utf8_lossy(&body).into_owned()));
+                    let _ = sent.send((
+                        format!("{method} {path}"),
+                        String::from_utf8_lossy(&body).into_owned(),
+                    ));
                     let (status, text) = answer(&path);
                     let reply = format!(
                         "HTTP/1.1 {status} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
@@ -172,7 +191,8 @@ fn never() -> bool {
 
 /// The rows the open project's `requests.tsv` holds now.
 fn rows() -> Vec<requests::Request> {
-    let tree = Tree::new(startup::session_dir(&std::env::current_dir().unwrap())).expect("session tree");
+    let tree =
+        Tree::new(startup::session_dir(&std::env::current_dir().unwrap())).expect("session tree");
     requests::read(&tree).expect("requests.tsv reads back")
 }
 
@@ -193,13 +213,19 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s0_the_item_under_test_is_nam
 fn sec_09_llm_and_tools_10_every_request_timed_new_s1_the_model_listing_lands_in_requests_tsv() {
     let project = fixture("listing-row");
     let fake = Fake::start(|path| {
-        assert_eq!(path, "/v1/models", "§9 asks for the listing and nothing else");
+        assert_eq!(
+            path, "/v1/models",
+            "§9 asks for the listing and nothing else"
+        );
         (200, r#"{"data":[{"id":"qwen2.5vl:7b"}]}"#.to_string())
     });
     point_llm_at(&fake.url);
 
     let body = settings_probe::fetch_models(&fake.url).expect("the listing came back");
-    assert!(body.contains("qwen2.5vl:7b"), "the body arrived as the server wrote it: {body}");
+    assert!(
+        body.contains("qwen2.5vl:7b"),
+        "the body arrived as the server wrote it: {body}"
+    );
     let asked = fake.next_seen();
     assert_eq!(asked.0, "GET /v1/models", "one GET, on §9's path");
 
@@ -208,8 +234,15 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s1_the_model_listing_lands_in
         .iter()
         .find(|row| row.kind == "GET" && row.service == Service::Llm)
         .expect("the listing wrote a row: {written:?}");
-    assert_eq!(row.step, "settings", "the dialog asked, outside any run's step");
-    assert_eq!(row.outcome, Outcome::Ok, "a listing that arrived is not a failure");
+    assert_eq!(
+        row.step, "settings",
+        "the dialog asked, outside any run's step"
+    );
+    assert_eq!(
+        row.outcome,
+        Outcome::Ok,
+        "a listing that arrived is not a failure"
+    );
     assert!(
         row.on_wire_s.unwrap_or(-1.0) >= 0.0,
         "timed like every other request, got {:?}",
@@ -228,7 +261,8 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s1_the_model_listing_lands_in
 
 /// §10's second half: a listing that FAILED is a row too, with the failure in the outcome column.
 #[test]
-fn sec_09_llm_and_tools_10_every_request_timed_new_s2_a_failed_model_listing_still_leaves_its_row() {
+fn sec_09_llm_and_tools_10_every_request_timed_new_s2_a_failed_model_listing_still_leaves_its_row()
+{
     let project = fixture("listing-error");
     let dead = dead_url();
     point_llm_at(&dead);
@@ -263,7 +297,8 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s2_a_failed_model_listing_sti
 /// `NAIVEPOST_RETRY_SCALE` shrinks the bound for this check — the hook §3's waits already use — because a test
 /// that had to sit through the full fifteen seconds would be skipped rather than run.
 #[test]
-fn sec_09_llm_and_tools_10_every_request_timed_new_s3_the_listing_keeps_its_fifteen_second_ceiling_under_a_tree() {
+fn sec_09_llm_and_tools_10_every_request_timed_new_s3_the_listing_keeps_its_fifteen_second_ceiling_under_a_tree(
+) {
     let project = fixture("listing-budget");
     unsafe { std::env::set_var("NAIVEPOST_RETRY_SCALE", "15") };
     let tree = Tree::new(startup::session_dir(&project.root)).expect("session tree");
@@ -286,15 +321,25 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s3_the_listing_keeps_its_fift
         &Some(tree.clone()),
     );
     let took = began.elapsed();
-    assert!(answer.is_err(), "a server that never answers must not read as a listing: {answer:?}");
+    assert!(
+        answer.is_err(),
+        "a server that never answers must not read as a listing: {answer:?}"
+    );
     assert!(
         took < Duration::from_secs(6),
         "§9's bound ends the logged path too (scaled here to 1 s); the call took {took:?}",
     );
     // And the ceiling gave up AFTER the row was filed, so §10 keeps the abandoned request too.
     let written = requests::read(&tree).expect("requests.tsv reads back");
-    assert_eq!(written.len(), 1, "the given-up listing left its row: {written:?}");
-    assert!(matches!(written[0].outcome, Outcome::Error(_)), "as an error row");
+    assert_eq!(
+        written.len(),
+        1,
+        "the given-up listing left its row: {written:?}"
+    );
+    assert!(
+        matches!(written[0].outcome, Outcome::Error(_)),
+        "as an error row"
+    );
     drop(sink);
     unsafe { std::env::remove_var("NAIVEPOST_RETRY_SCALE") };
     drop(project);
@@ -303,11 +348,15 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s3_the_listing_keeps_its_fift
 /// audio.cpp's catalogue asked by a RUN (the missing-model sentence, and the aligner's choice) goes out
 /// through the recorded door when there is a tree to record into — the same door every other audio call rides.
 #[test]
-fn sec_09_llm_and_tools_10_every_request_timed_new_s4_the_audio_catalogue_dials_through_the_recorded_door() {
+fn sec_09_llm_and_tools_10_every_request_timed_new_s4_the_audio_catalogue_dials_through_the_recorded_door(
+) {
     let project = fixture("audio-catalogue");
     let fake = Fake::start(|path| {
         assert_eq!(path, "/v1/models", "§2's audio listing");
-        (200, r#"{"data":[{"id":"nemotron-asr","family":"qwen3","task":"asr"}]}"#.to_string())
+        (
+            200,
+            r#"{"data":[{"id":"nemotron-asr","family":"qwen3","task":"asr"}]}"#.to_string(),
+        )
     });
     let paths = settings::from_environment().expect("settings folder");
     let mut conf = settings::read(&paths).unwrap_or_default();
@@ -315,7 +364,8 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s4_the_audio_catalogue_dials_
     settings::save(&paths, &conf).expect("the audio address is written");
     let tree = Tree::new(startup::session_dir(&project.root)).expect("session tree");
 
-    let models = naivepost::audio_task::catalog(&Some(tree.clone()), &paths, "Prepare").expect("the listing arrives");
+    let models = naivepost::audio_task::catalog(&Some(tree.clone()), &paths, "Prepare")
+        .expect("the listing arrives");
     assert!(
         models.iter().any(|model| model.id == "nemotron-asr"),
         "the run reads the ids the server declared, got {models:?}"
@@ -329,14 +379,19 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s4_the_audio_catalogue_dials_
         .find(|row| row.service == Service::Audio && row.step == "Prepare")
         .expect("the catalogue is logged under the step that asked: {written:?}");
     assert_eq!(row.outcome, Outcome::Ok);
-    assert!(row.on_wire_s.unwrap_or(-1.0) >= 0.0, "timed, got {:?}", row.on_wire_s);
+    assert!(
+        row.on_wire_s.unwrap_or(-1.0) >= 0.0,
+        "timed, got {:?}",
+        row.on_wire_s
+    );
     drop(project);
 }
 
 /// The same catalogue with NO tree keeps working — §00 rule 8, a missing log never refuses the work — and
 /// writes nothing, because there is no project folder to write into.
 #[test]
-fn sec_09_llm_and_tools_10_every_request_timed_new_s5_a_catalogue_with_no_project_answers_and_files_nothing() {
+fn sec_09_llm_and_tools_10_every_request_timed_new_s5_a_catalogue_with_no_project_answers_and_files_nothing(
+) {
     let project = fixture("audio-catalogue-lost");
     let fake = Fake::start(|_| (200, r#"{"data":[]}"#.to_string()));
     let paths = settings::from_environment().expect("settings folder");
@@ -347,11 +402,18 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s5_a_catalogue_with_no_projec
     let session = startup::session_dir(&project.root);
     std::fs::remove_dir_all(&session).expect("session folder removed");
 
-    let models = naivepost::audio_task::catalog(&None, &paths, "Prepare").expect("an empty listing is an answer");
-    assert!(models.is_empty(), "the server served nothing, and that arrived as an empty list");
+    let models = naivepost::audio_task::catalog(&None, &paths, "Prepare")
+        .expect("an empty listing is an answer");
+    assert!(
+        models.is_empty(),
+        "the server served nothing, and that arrived as an empty list"
+    );
     let asked = fake.next_seen();
     assert_eq!(asked.0, "GET /v1/models");
-    assert!(!session.exists(), "the unrecorded door creates no project folder");
+    assert!(
+        !session.exists(),
+        "the unrecorded door creates no project folder"
+    );
     drop(project);
 }
 
@@ -361,7 +423,8 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s5_a_catalogue_with_no_projec
 /// 8), and its row landed in the session beside the working root, which did not exist before the call.
 /// The row for the same call inside an opened project is `tests/suite/web_requests_tsv.rs` s25/s26.
 #[test]
-fn sec_09_llm_and_tools_10_every_request_timed_new_s6_a_web_call_outside_an_opened_project_lands_in_the_session() {
+fn sec_09_llm_and_tools_10_every_request_timed_new_s6_a_web_call_outside_an_opened_project_lands_in_the_session(
+) {
     let scenario = fixture("web-no-project");
     let session = startup::session_dir(&scenario.root);
     std::fs::remove_dir_all(&session).expect("session folder removed");
@@ -374,7 +437,10 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s6_a_web_call_outside_an_open
     );
     // The browser is pointed at a page with no result markup: the ladder runs, finds nothing, and answers
     // with §2's own sentence. What this scenario asks is where the ROW went.
-    let stub = stub_browser(&scenario.root, "<html><body><p>Nothing here at all.</p></body></html>");
+    let stub = stub_browser(
+        &scenario.root,
+        "<html><body><p>Nothing here at all.</p></body></html>",
+    );
     let call = naivepost::exchanges::ToolCall {
         name: "web_search".to_string(),
         args: r#"{"broad":"a","medium":"b","narrow":"c"}"#.to_string(),
@@ -388,7 +454,8 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s6_a_web_call_outside_an_open
     );
     // §10's half: the row exists, filed in the session that belongs to this working root (§03 F0.6 gives a
     // launch with nothing to open a blank session there, so a headless leg always has somewhere to file).
-    let outside = naivepost::web_request_log::session_tree().expect("a headless leg always has its session");
+    let outside =
+        naivepost::web_request_log::session_tree().expect("a headless leg always has its session");
     let written = requests::read(&outside).expect("the session's requests.tsv reads back");
     let row = written
         .iter()
@@ -417,12 +484,16 @@ fn stub_browser(dir: &std::path::Path, dom: &str) -> std::path::PathBuf {
     let path = dir.join("fake-firefox.sh");
     let dom_path = dir.join("dom.html");
     std::fs::write(&dom_path, dom).expect("dom written");
-    common::write_script(&path, format!("#!/bin/sh\ncat \"{}\"\nexit 0\n", dom_path.display()))
-        .expect("stub written");
+    common::write_script(
+        &path,
+        format!("#!/bin/sh\ncat \"{}\"\nexit 0\n", dom_path.display()),
+    )
+    .expect("stub written");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("stub executable");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("stub executable");
     }
     path
 }
@@ -458,7 +529,10 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s7_a_budgeted_call_is_recorde
         &never,
     );
     let took = began.elapsed();
-    assert!(reply.is_err(), "a server that says nothing must not answer: {reply:?}");
+    assert!(
+        reply.is_err(),
+        "a server that says nothing must not answer: {reply:?}"
+    );
     assert!(
         took < Duration::from_secs(5),
         "the per-call ceiling ended it, it did not sit on the socket: {took:?}",
@@ -516,7 +590,10 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s8_a_retry_is_a_line_of_its_o
         },
     );
     let why = outcome.expect_err("a server that refuses every try is not an answer: {outcome:?}");
-    assert!(why.contains("500"), "the caller gets the status back: {why}");
+    assert!(
+        why.contains("500"),
+        "the caller gets the status back: {why}"
+    );
     // One wait, and it is §3's short retry (`RETRY_SECONDS`), not the dead-server ladder: a status is never
     // "the server went away".
     assert_eq!(
@@ -530,15 +607,25 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s8_a_retry_is_a_line_of_its_o
         .into_iter()
         .filter(|row| row.step == "s8step")
         .collect();
-    assert_eq!(mine.len(), 2, "two attempts went out, so two lines: {mine:?}");
+    assert_eq!(
+        mine.len(),
+        2,
+        "two attempts went out, so two lines: {mine:?}"
+    );
     assert_eq!(mine[0].attempt, 1, "the first line is the first try");
-    assert_eq!(mine[1].attempt, 2, "and the retry is a line of its own, numbered");
+    assert_eq!(
+        mine[1].attempt, 2,
+        "and the retry is a line of its own, numbered"
+    );
     for row in &mine {
         match &row.outcome {
             Outcome::Error(reason) => assert!(reason.contains("500"), "{reason}"),
             other => panic!("a refused response is an error row, got {other:?}"),
         }
-        assert!(row.on_wire_s.unwrap_or(-1.0) >= 0.0, "and each is timed: {row:?}");
+        assert!(
+            row.on_wire_s.unwrap_or(-1.0) >= 0.0,
+            "and each is timed: {row:?}"
+        );
     }
     drop(project);
 }
@@ -548,7 +635,8 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s8_a_retry_is_a_line_of_its_o
 /// a stop that keeps a request from going out at all still has to leave its line. `send_pinged`'s guard is that
 /// path ("chat: cancelled before sending"), and `call_dialed` must not swallow it.
 #[test]
-fn sec_09_llm_and_tools_10_every_request_timed_new_s9_a_request_stopped_by_the_stop_key_leaves_its_cancelled_row() {
+fn sec_09_llm_and_tools_10_every_request_timed_new_s9_a_request_stopped_by_the_stop_key_leaves_its_cancelled_row(
+) {
     let project = fixture("cancelled-row");
     let tree = Tree::new(startup::session_dir(&project.root)).expect("session tree");
     let base = server_leg::base_row(Server::Llm, "s9model", "chat", "", "s9step", "");
@@ -565,8 +653,15 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s9_a_request_stopped_by_the_s
         &|| true,
     );
     let why = result.expect_err("a stopped call has no reply: {result:?}");
-    assert!(why.contains("cancelled"), "the caller is told it was stopped: {why}");
-    assert_eq!(_row.outcome, Outcome::Cancelled, "the row says which ending this was");
+    assert!(
+        why.contains("cancelled"),
+        "the caller is told it was stopped: {why}"
+    );
+    assert_eq!(
+        _row.outcome,
+        Outcome::Cancelled,
+        "the row says which ending this was"
+    );
     let mine: Vec<requests::Request> = requests::read(&tree)
         .expect("requests.tsv reads back")
         .into_iter()
@@ -578,6 +673,10 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s9_a_request_stopped_by_the_s
         "⏹ is an ending the log records, not a request that never happened: {:?}",
         mine[0].outcome
     );
-    assert!(mine[0].on_wire_s.unwrap_or(-1.0) >= 0.0, "and it is timed all the same: {:?}", mine[0].on_wire_s);
+    assert!(
+        mine[0].on_wire_s.unwrap_or(-1.0) >= 0.0,
+        "and it is timed all the same: {:?}",
+        mine[0].on_wire_s
+    );
     drop(project);
 }

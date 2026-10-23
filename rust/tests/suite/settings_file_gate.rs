@@ -15,14 +15,14 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use naivepost::checks;
 use naivepost::machine_store;
 use naivepost::settings::{self, Paths};
 use naivepost::ui;
 use naivepost::ui::settings as ui_settings;
-use crate::common;
-use common::{fixture_dir, settle};
 
 /// The item's id, interpolated into every assertion message so a failure names the item.
 const ITEM: &str = "sec_03_shell_6_the_settings_file";
@@ -95,7 +95,11 @@ fn echoing() -> ui_settings::Provider {
 }
 
 fn mode(path: &Path) -> u32 {
-    fs::metadata(path).expect("the file is there").permissions().mode() & 0o777
+    fs::metadata(path)
+        .expect("the file is there")
+        .permissions()
+        .mode()
+        & 0o777
 }
 
 fn read(path: &Path) -> String {
@@ -145,7 +149,10 @@ fn check_main_window_close_lands_the_settings(app: &adw::Application) {
     let before = ui::window_logs().len();
     window.close();
     pump_until(checks::CONF_SAVE_WAIT * 6, || {
-        settings::read(&paths).map(|conf| conf.model).unwrap_or_default() == "qwen3.8:14b"
+        settings::read(&paths)
+            .map(|conf| conf.model)
+            .unwrap_or_default()
+            == "qwen3.8:14b"
     });
 
     assert!(
@@ -154,11 +161,17 @@ fn check_main_window_close_lands_the_settings(app: &adw::Application) {
         paths.conf_path().display()
     );
     assert_eq!(
-        settings::read(&paths).expect("{ITEM} S6: the conf reads back").model,
+        settings::read(&paths)
+            .expect("{ITEM} S6: the conf reads back")
+            .model,
         "qwen3.8:14b",
         "{ITEM} S6: the typed setting was lost when the main window closed"
     );
-    assert_eq!(mode(&paths.conf_path()), 0o600, "{ITEM} S6: the key stays a secret");
+    assert_eq!(
+        mode(&paths.conf_path()),
+        0o600,
+        "{ITEM} S6: the key stays a secret"
+    );
     assert_eq!(
         mode(&paths.config_dir),
         0o700,
@@ -180,7 +193,10 @@ fn check_an_unchanged_setting_is_not_rewritten(app: &adw::Application) {
         body.contains("LLM_MODEL=\"qwen3.8:14b\""),
         "{ITEM} S6: the previous check's write should still be the file: {body:?}"
     );
-    let stamp = fs::metadata(paths.conf_path()).expect("the conf is there").modified().unwrap();
+    let stamp = fs::metadata(paths.conf_path())
+        .expect("the conf is there")
+        .modified()
+        .unwrap();
 
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
@@ -206,7 +222,8 @@ fn check_an_unchanged_setting_is_not_rewritten(app: &adw::Application) {
 }
 
 #[test]
-fn sec_03_shell_6_the_settings_file_s6_a_setting_typed_into_the_dialog_is_on_disk_after_the_main_window_closes() {
+fn sec_03_shell_6_the_settings_file_s6_a_setting_typed_into_the_dialog_is_on_disk_after_the_main_window_closes(
+) {
     common::pin_private_cwd();
     window_round();
     assert!(
@@ -242,7 +259,8 @@ fn sec_03_shell_6_the_settings_file_s7_a_launch_with_no_conf_but_a_legacy_one_wr
         "{ITEM} S7: this is the launch right after the merge"
     );
 
-    let conf = machine_store::open_and_recover(&d.paths, &d.root).expect("{ITEM} S7: the launch reads its settings");
+    let conf = machine_store::open_and_recover(&d.paths, &d.root)
+        .expect("{ITEM} S7: the launch reads its settings");
     assert_eq!(
         conf.server, "http://old-box:8731/v1",
         "{ITEM} S7: the legacy endpoint did not reach the store"
@@ -257,15 +275,33 @@ fn sec_03_shell_6_the_settings_file_s7_a_launch_with_no_conf_but_a_legacy_one_wr
         body.contains("LLM_SERVER=\"http://old-box:8731/v1\""),
         "{ITEM} S7: the migrated file does not carry the endpoint: {body:?}"
     );
-    assert_eq!(mode(&d.paths.conf_path()), 0o600, "{ITEM} S7: a copied key is still 0600");
-    assert_eq!(mode(&d.paths.config_dir), 0o700, "{ITEM} S7: and its folder 0700");
+    assert_eq!(
+        mode(&d.paths.conf_path()),
+        0o600,
+        "{ITEM} S7: a copied key is still 0600"
+    );
+    assert_eq!(
+        mode(&d.paths.config_dir),
+        0o700,
+        "{ITEM} S7: and its folder 0700"
+    );
 
     // "Migrated once": a second launch reads the config folder's own file and leaves it untouched.
-    let stamp = fs::metadata(d.paths.conf_path()).unwrap().modified().unwrap();
-    let again = machine_store::open_and_recover(&d.paths, &d.root).expect("{ITEM} S7: the second launch reads too");
-    assert_eq!(again.server, conf.server, "{ITEM} S7: the file answers the second launch");
+    let stamp = fs::metadata(d.paths.conf_path())
+        .unwrap()
+        .modified()
+        .unwrap();
+    let again = machine_store::open_and_recover(&d.paths, &d.root)
+        .expect("{ITEM} S7: the second launch reads too");
     assert_eq!(
-        fs::metadata(d.paths.conf_path()).unwrap().modified().unwrap(),
+        again.server, conf.server,
+        "{ITEM} S7: the file answers the second launch"
+    );
+    assert_eq!(
+        fs::metadata(d.paths.conf_path())
+            .unwrap()
+            .modified()
+            .unwrap(),
         stamp,
         "{ITEM} S7: a second launch re-migrated the legacy file"
     );
@@ -283,7 +319,8 @@ fn sec_03_shell_6_the_settings_file_s7_the_file_is_the_layer_under_the_dialog_bo
 
     // No environment at all: the file's own value wins over the shipped loopback.
     let no_env = |_: &str| None;
-    let endpoint = naivepost::services::endpoint_for(&d.paths, naivepost::services::Server::Audio, no_env);
+    let endpoint =
+        naivepost::services::endpoint_for(&d.paths, naivepost::services::Server::Audio, no_env);
     assert_eq!(
         endpoint.url, "http://cpp-box:8765",
         "{ITEM} S7: the reader ignored the file and took a default"
@@ -293,7 +330,8 @@ fn sec_03_shell_6_the_settings_file_s7_the_file_is_the_layer_under_the_dialog_bo
     let mut cleared = settings::Conf::default();
     cleared.audio_server = String::new();
     settings::save(&d.paths, &cleared).expect("{ITEM} S7: setup writes the cleared file");
-    let defaulted = naivepost::services::endpoint_for(&d.paths, naivepost::services::Server::Audio, no_env);
+    let defaulted =
+        naivepost::services::endpoint_for(&d.paths, naivepost::services::Server::Audio, no_env);
     assert_eq!(
         defaulted.url,
         naivepost::services::audio_default(),
@@ -302,10 +340,15 @@ fn sec_03_shell_6_the_settings_file_s7_the_file_is_the_layer_under_the_dialog_bo
 
     // And the environment sits BELOW the box but above the default (§6's own sentence).
     let env = |name: &str| (name == "NAIVEPOST_TTS_URL").then(|| "http://env-box:9000".to_string());
-    let from_env = naivepost::services::endpoint_for(&d.paths, naivepost::services::Server::Audio, env);
-    assert_eq!(from_env.url, "http://env-box:9000", "{ITEM} S7: the env variable was skipped");
+    let from_env =
+        naivepost::services::endpoint_for(&d.paths, naivepost::services::Server::Audio, env);
+    assert_eq!(
+        from_env.url, "http://env-box:9000",
+        "{ITEM} S7: the env variable was skipped"
+    );
     settings::save(&d.paths, &conf).expect("{ITEM} S7: setup writes the box value back");
-    let from_box = naivepost::services::endpoint_for(&d.paths, naivepost::services::Server::Audio, env);
+    let from_box =
+        naivepost::services::endpoint_for(&d.paths, naivepost::services::Server::Audio, env);
     assert_eq!(
         from_box.url, "http://cpp-box:8765",
         "{ITEM} S7: a filled box must outrank the environment"

@@ -33,17 +33,32 @@ fn temp_root(tag: &str) -> PathBuf {
 /// assert below would compare the wrong channels. One known pixel of one known file settles the question for both
 /// decodes (this helper is the only reader in this file), so no expectation here rests on a guess.
 fn decode(path: &Path) -> (Vec<u8>, usize, i32, i32) {
-    let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file(path).unwrap_or_else(|why| panic!("{}: {why}", path.display()));
-    assert_eq!(pixbuf.n_channels(), 3, "cairo's opaque PNG decodes to RGB, alpha dropped");
+    let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file(path)
+        .unwrap_or_else(|why| panic!("{}: {why}", path.display()));
+    assert_eq!(
+        pixbuf.n_channels(),
+        3,
+        "cairo's opaque PNG decodes to RGB, alpha dropped"
+    );
     assert!(!pixbuf.has_alpha(), "and any alpha it carried is gone");
     // `pixels()`' slice is only valid while the pixbuf lives, so it is copied out here and nothing borrows past it.
-    let bytes = unsafe { std::slice::from_raw_parts(pixbuf.pixels().as_ptr(), (pixbuf.height() * pixbuf.rowstride()) as usize) }.to_vec();
+    let bytes = unsafe {
+        std::slice::from_raw_parts(
+            pixbuf.pixels().as_ptr(),
+            (pixbuf.height() * pixbuf.rowstride()) as usize,
+        )
+    }
+    .to_vec();
     let (width, height, stride) = (pixbuf.width(), pixbuf.height(), pixbuf.rowstride() as usize);
     drop(pixbuf);
     if path.file_name().is_some_and(|name| name == PROBE_FILE) {
         // The one pixel whose colour cannot be ambiguous: pure red at the top-left of a file this function wrote.
         let first = (0..3).map(|i| bytes[i]).collect::<Vec<_>>();
-        assert_eq!(first, vec![255, 0, 0], "the decoded bytes are not R,G,B -- fix `pixel` before trusting a colour");
+        assert_eq!(
+            first,
+            vec![255, 0, 0],
+            "the decoded bytes are not R,G,B -- fix `pixel` before trusting a colour"
+        );
     }
     (bytes, stride, width, height)
 }
@@ -85,7 +100,11 @@ fn near(a: (u32, u32, u32), b: (u32, u32, u32), within: u32) -> bool {
 /// spelled once so no test hardcodes a blended triple.
 fn over(colour: (f64, f64, f64), alpha: f64, onto: (f64, f64, f64)) -> (u32, u32, u32) {
     let mix = |c: f64, o: f64| ((c * alpha + o * (1.0 - alpha)) * 255.0).round() as u32;
-    (mix(colour.0, onto.0), mix(colour.1, onto.1), mix(colour.2, onto.2))
+    (
+        mix(colour.0, onto.0),
+        mix(colour.1, onto.1),
+        mix(colour.2, onto.2),
+    )
 }
 
 /// A second whose lane pixel is the bare ground: past the last staged bar, inside the tape the shot paints.
@@ -98,7 +117,10 @@ fn clear_second(cut: &Cut, painted_width: i32) -> f64 {
         .map(|effect| effect.spans().1)
         .fold(0.0_f64, f64::max);
     let after = last + 1.0;
-    assert!(after * snapshot_lane::PPS < painted_width as f64, "the sample must sit inside the painted tape");
+    assert!(
+        after * snapshot_lane::PPS < painted_width as f64,
+        "the sample must sit inside the painted tape"
+    );
     after
 }
 
@@ -127,11 +149,19 @@ fn lane_geo() -> LaneGeo {
 /// the bar's mark glyph and caption are inked on the row's centre line -- so a centre sample reads white or glyph,
 /// never the wash. A few px under the top border gets the bare wash: `paint_bar` fills the whole row and strokes
 /// only a 1 px edge, so everything between that edge and the first glyph is pure composite.
-fn bar_sample(scene: &naivepost::ui::cut_tracks::Scene, cut: &Cut, index: usize, row: usize) -> (i32, i32) {
+fn bar_sample(
+    scene: &naivepost::ui::cut_tracks::Scene,
+    cut: &Cut,
+    index: usize,
+    row: usize,
+) -> (i32, i32) {
     let geo = lane_geo();
     let (from, to) = cut.fx[index].spans();
     let (x0, width) = naivepost::ui::cut_tracks::band_span_px(scene, from, to);
-    ((x0 + width / 2.0) as i32, (geo.top + row as f64 * geo.row_h + 4.0) as i32)
+    (
+        (x0 + width / 2.0) as i32,
+        (geo.top + row as f64 * geo.row_h + 4.0) as i32,
+    )
 }
 
 /// The same cut with ONE effect left in it, painted into `dir` and decoded: the only ink on that surface is the bar
@@ -181,12 +211,21 @@ fn probe_scene(cut: &Cut, width: i32) -> naivepost::ui::cut_tracks::Scene {
         pps: snapshot_lane::PPS,
         origin: 0.0,
         segs: if cut.segs.is_empty() {
-            vec![Seg { s: 0.0, e: width as f64 / snapshot_lane::PPS, cam: 0, ..Default::default() }]
+            vec![Seg {
+                s: 0.0,
+                e: width as f64 / snapshot_lane::PPS,
+                cam: 0,
+                ..Default::default()
+            }]
         } else {
             cut.segs.clone()
         },
         fx: Vec::new(),
-        recordings: vec![naivepost::timeline::Recording { base: "session-tape".into(), start: 0.0, end: 400.0 }],
+        recordings: vec![naivepost::timeline::Recording {
+            base: "session-tape".into(),
+            start: 0.0,
+            end: 400.0,
+        }],
         folds: Vec::new(),
         selection: None,
         watched_row: None,
@@ -206,19 +245,34 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_lane_shot_is_the_lane_the_sp
     // §2's three images are the lane, the framed preview and the popover. Each module answers for its own subject;
     // `snapshot_subjects` joins them up. If a door ever returns true for someone else's screen, `snapshot::run`
     // would paint two subjects into one asked name, so disjointness is the property, not each answer alone.
-    assert!(snapshot_lane::is_lane_subject("06-lane"), "§2's first picture IS the lane");
+    assert!(
+        snapshot_lane::is_lane_subject("06-lane"),
+        "§2's first picture IS the lane"
+    );
     assert!(
         snapshot_preview_frame::is_frame_subject("06-preview"),
         "and its second IS the framed preview"
     );
     for other in ["06-effect-menu", "06-preview", "05-cut", "03-window"] {
-        assert!(!snapshot_lane::is_lane_subject(other), "{other}'s picture is not the lane");
+        assert!(
+            !snapshot_lane::is_lane_subject(other),
+            "{other}'s picture is not the lane"
+        );
     }
     for other in ["06-lane", "05-cut", "03-window"] {
-        assert!(!snapshot_preview_frame::is_frame_subject(other), "{other}'s picture is not the frame");
+        assert!(
+            !snapshot_preview_frame::is_frame_subject(other),
+            "{other}'s picture is not the frame"
+        );
     }
     // Exactly one subject per screen, across all three doors.
-    for screen in ["06-lane", "06-preview", "06-effect-menu", "05-cut", "03-window"] {
+    for screen in [
+        "06-lane",
+        "06-preview",
+        "06-effect-menu",
+        "05-cut",
+        "03-window",
+    ] {
         let claimed = [
             snapshot_lane::is_lane_subject(screen),
             snapshot_preview_frame::is_frame_subject(screen),
@@ -227,12 +281,16 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_lane_shot_is_the_lane_the_sp
         .iter()
         .filter(|takes| **takes)
         .count();
-        assert!(claimed <= 1, "{screen} claims {claimed} subjects at once -- the shot could not pick one");
+        assert!(
+            claimed <= 1,
+            "{screen} claims {claimed} subjects at once -- the shot could not pick one"
+        );
     }
 }
 
 #[test]
-fn sec_06_effects_2_the_lane_and_the_preview_s2_the_renamed_lane_file_keeps_the_page_shot_beside_it() {
+fn sec_06_effects_2_the_lane_and_the_preview_s2_the_renamed_lane_file_keeps_the_page_shot_beside_it(
+) {
     // `snapshot::run`'s naming rule, asserted on the doors themselves so there is ONE source of truth: a screen
     // whose subject takes `<name>.png` pushes the page to `<name>-page.png`, and only a subject that staging
     // painted into a sidecar is renamed over the asked name. The popover is deliberately NOT in the rename table:
@@ -263,13 +321,19 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_renamed_lane_file_keeps_the_
             !naivepost::snapshot_subjects::subject_takes_the_name(ordinary),
             "{ordinary} is a picture OF THE PAGE, so the window keeps its asked name"
         );
-        assert_eq!(naivepost::snapshot_subjects::subject_sidecar(ordinary), None);
+        assert_eq!(
+            naivepost::snapshot_subjects::subject_sidecar(ordinary),
+            None
+        );
     }
     // And the filenames the rule produces, spelled out once so a future change to either extension is seen here.
     let asked = Path::new("shots").join("06-lane.png");
     // `-page.png` (a DOT, not a dash) is what `snapshot::run` writes -- and it sorts BEFORE `<name>.png`, so the
     // subject stays the file a viewer puts beside the spec's picture.
-    assert_eq!(asked.with_extension("page.png"), Path::new("shots").join("06-lane.page.png"));
+    assert_eq!(
+        asked.with_extension("page.png"),
+        Path::new("shots").join("06-lane.page.png")
+    );
 }
 
 // --- S2: the lane FILE shows a wash per effect -------------------------------------------------------------
@@ -284,10 +348,16 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_lane_file_shows_a_wash_per_e
     let cut = snapshot_lane::staged_cut();
     let said = snapshot_lane::write_png(&cut, &out).expect("the lane paints");
     assert!(out.is_file(), "{out:?} was never written");
-    assert!(out.metadata().expect("read it").len() > 2000, "a lane with bars is not a blank plate: {said}");
+    assert!(
+        out.metadata().expect("read it").len() > 2000,
+        "a lane with bars is not a blank plate: {said}"
+    );
 
     let (bytes, stride, width, height) = decode(&out);
-    assert!(width > 1000, "the lane shot is the spec image's own width, got {width}");
+    assert!(
+        width > 1000,
+        "the lane shot is the spec image's own width, got {width}"
+    );
     assert!(height > 100, "the band asks its rows' height: {said}");
 
     // Where the lane is, asked of the same geometry the painter used: ruler + selection band, then one row each.
@@ -316,11 +386,19 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_lane_file_shows_a_wash_per_e
         // The bar's own pixels, from the shot that holds ONLY this record (`alone_shot`): its span's middle, just
         // under the top border, where only the wash is.
         let (x, y) = bar_sample(&scene, &cut, bar.index, bar.row);
-        assert!(x < width && y < height, "the sample for bar {} fell off the shot", bar.index);
+        assert!(
+            x < width && y < height,
+            "the sample for bar {} fell off the shot",
+            bar.index
+        );
         // The wash over whatever the band laid down THERE, which is what "a rose wash on the pictures" means in
         // bytes -- derived from the same two doors the painter reads, never retyped.
         let ground = grounds[x as usize];
-        let want = over(bar.colour, fx_lane::bar_wash_alpha(bar.kind), ground_to_f64(ground));
+        let want = over(
+            bar.colour,
+            fx_lane::bar_wash_alpha(bar.kind),
+            ground_to_f64(ground),
+        );
         let (alone_bytes, alone_stride) = &alone[bar.index];
         let got = pixel(alone_bytes, *alone_stride, x, y);
         assert!(
@@ -340,15 +418,17 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_lane_file_shows_a_wash_per_e
         );
         checked += 1;
     }
-    assert!(checked >= 4, "only {checked} bars were sampled; the lane lost kinds");
+    assert!(
+        checked >= 4,
+        "only {checked} bars were sampled; the lane lost kinds"
+    );
 
     // The negative half: at a second with NO effect the pixel is the plain ground. Without this a flat image of
     // one colour would satisfy every assert above.
     let empty_x = (clear_second(&cut, width) * snapshot_lane::PPS) as i32;
     let bare = pixel(&bytes, stride, empty_x, (geo.top + geo.row_h / 2.0) as i32);
     assert_eq!(
-        bare,
-        grounds[empty_x as usize],
+        bare, grounds[empty_x as usize],
         "at a second with no effect the lane must read exactly as the lane with no effects at all"
     );
 }
@@ -358,7 +438,12 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_lane_file_shows_a_wash_per_e
 /// One stop standing on `t`, plus the zoom whose camera frames it: the minimum cut that can show §2's still.
 fn stop_cut(t: f64) -> Cut {
     Cut {
-        segs: vec![Seg { s: 0.0, e: 300.0, cam: 0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 300.0,
+            cam: 0,
+            ..Default::default()
+        }],
         fx: vec![
             Fx {
                 kind: "zoom".to_string(),
@@ -393,15 +478,26 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_frame_file_shows_the_still_a
     let dir = temp_root("frame").join("session.naivepost");
     std::fs::create_dir_all(&dir).expect("project folder");
     let t = 20.0;
-    let frame = snapshot_face::seed_structured_frame(&dir, "session-tape", t).expect("a staged frame is written");
+    let frame = snapshot_face::seed_structured_frame(&dir, "session-tape", t)
+        .expect("a staged frame is written");
     assert!(frame.is_file(), "the staged frame landed at {frame:?}");
 
     let cut = stop_cut(t);
     let out = dir.join("06-preview.png");
-    let said = snapshot_preview_frame::write_png(&cut, t, Some(&frame), false, &out).expect("the frame paints");
-    assert!(said.contains("stop still: true"), "the log says no still: {said}");
+    let said = snapshot_preview_frame::write_png(&cut, t, Some(&frame), false, &out)
+        .expect("the frame paints");
+    assert!(
+        said.contains("stop still: true"),
+        "the log says no still: {said}"
+    );
     let (bytes, stride, width, height) = decode(&out);
-    assert_eq!((width, height), (snapshot_face::STRUCTURED_FRAME_W, snapshot_face::STRUCTURED_FRAME_H));
+    assert_eq!(
+        (width, height),
+        (
+            snapshot_face::STRUCTURED_FRAME_W,
+            snapshot_face::STRUCTURED_FRAME_H
+        )
+    );
 
     // The geometry, asked of the same doors: the footage fitted into the shot's box (a no-op at this size), and the
     // camera rect that divides the still's region from the dimmed surround.
@@ -413,22 +509,40 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_frame_file_shows_the_still_a
     );
     let camera = naivepost::fx_zoom::camera_at(&cut.fx, t);
     let (rx, ry, rw, rh) = naivepost::ui::cut_preview_frame::camera_rect_px(&camera, fit);
-    assert!(rw < fit.0 - 10.0, "a camera that fills the frame leaves nothing to dim: {camera:?}");
+    assert!(
+        rw < fit.0 - 10.0,
+        "a camera that fills the frame leaves nothing to dim: {camera:?}"
+    );
     // And the still's box really is a crop of the frame: `stop_px` borrows the scene's camera, so its box IS the
     // rect above, and if it ever came out full-frame again the crop asserts below would be comparing a frame with
     // itself.
-    let still = naivepost::ui::cut_preview_frame::stop_px(&cut.fx, t, fit).expect("a stop stands on this second");
-    assert_eq!(still, (rx, ry, rw, rh), "the still is not the scene's own camera box");
+    let still = naivepost::ui::cut_preview_frame::stop_px(&cut.fx, t, fit)
+        .expect("a stop stands on this second");
+    assert_eq!(
+        still,
+        (rx, ry, rw, rh),
+        "the still is not the scene's own camera box"
+    );
 
     // INSIDE the camera rect: the record, undimmed -- one of the staged bands, and NOT letterbox black. Sampled
     // away from the rect's white stroke so the assert is about the picture, not about the outline.
-    let inside = pixel(&bytes, stride, (rx + rw * 0.4) as i32, (ry + rh * 0.4) as i32);
+    let inside = pixel(
+        &bytes,
+        stride,
+        (rx + rw * 0.4) as i32,
+        (ry + rh * 0.4) as i32,
+    );
     let sky: (f64, f64, f64) = snapshot_face::BAND_SKY;
     let mid: (f64, f64, f64) = snapshot_face::BAND_MID;
     let lower: (f64, f64, f64) = snapshot_face::BAND_LOWER;
     let bright: (f64, f64, f64) = snapshot_face::BLOCK_BRIGHT;
-    let a_band = [sky, mid, lower, bright].iter().any(|band| near(inside, over(*band, 1.0, *band), 3));
-    assert!(a_band, "inside the camera rect should be the record undimmed, got {inside:?}");
+    let a_band = [sky, mid, lower, bright]
+        .iter()
+        .any(|band| near(inside, over(*band, 1.0, *band), 3));
+    assert!(
+        a_band,
+        "inside the camera rect should be the record undimmed, got {inside:?}"
+    );
     assert!(
         !near(inside, (0, 0, 0), 12),
         "the still's region came out letterbox black, so no still is on it: {inside:?}"
@@ -459,5 +573,8 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_frame_file_shows_the_still_a
 
     // The stroked rect itself: white somewhere along its left edge, the third thing §2 lists for the paused frame.
     let stroke = pixel(&bytes, stride, rx as i32, (ry + rh / 2.0) as i32);
-    assert!(stroke.0 > 200 && stroke.1 > 200 && stroke.2 > 200, "the camera rect is not stroked white: {stroke:?}");
+    assert!(
+        stroke.0 > 200 && stroke.1 > 200 && stroke.2 > 200,
+        "the camera rect is not stroked white: {stroke:?}"
+    );
 }

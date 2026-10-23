@@ -14,12 +14,26 @@ use naivepost::tools::cutpass;
 
 /// A speed over its own seconds, no ramps.
 fn rate_at(t: f64, dur: f64, rate: f64) -> Fx {
-    Fx { kind: "speed".into(), t, dur, rate, ..Default::default() }
+    Fx {
+        kind: "speed".into(),
+        t,
+        dur,
+        rate,
+        ..Default::default()
+    }
 }
 
 /// The form as it would be handed to Apply.
 fn form(t: f64, dur: f64, rate: f64, trans: f64, tout: f64) -> speed::Form {
-    speed::Form { t, dur, rate, trans, tout, curve: "Linear".into(), snd: "" }
+    speed::Form {
+        t,
+        dur,
+        rate,
+        trans,
+        tout,
+        curve: "Linear".into(),
+        snd: "",
+    }
 }
 
 /// F3.3 S1 — a marked stretch of at least 0.2 s gives its seconds and rate 0.5; only a line gives a stop; neither
@@ -43,11 +57,20 @@ fn f3_3_s1_a_band_a_line_or_neither() {
     assert_eq!(speed::press(Some((42.0, 30.0)), None), band);
 
     // A fifth of a second under the pointer is a click that slipped: not a band, so the line answers.
-    assert_eq!(speed::press(Some((30.0, 30.19)), Some(50.0)), speed::Pressed::StopAtLine);
+    assert_eq!(
+        speed::press(Some((30.0, 30.19)), Some(50.0)),
+        speed::Pressed::StopAtLine
+    );
     // The floor is where a band starts counting. 0.2 is not representable in binary, so the width is built from the
     // bound itself — writing `30.2 - 30.0` here would ask for a hair under the floor and lose it to rounding.
     let (from, to) = (30.0, 30.0 + speed::MIN_MARKED_SECONDS);
-    assert_eq!(speed::press(Some((from, to)), None), speed::Pressed::Stretched { t: from, dur: to - from });
+    assert_eq!(
+        speed::press(Some((from, to)), None),
+        speed::Pressed::Stretched {
+            t: from,
+            dur: to - from
+        }
+    );
 
     // A stop at the line: 2 s with 0.5 s fades.
     // P.policy.effectDefaultSeconds (stop/speed/volume/label 2) and P.policy.effectDefaultFades (stop 0.5).
@@ -60,7 +83,10 @@ fn f3_3_s1_a_band_a_line_or_neither() {
 
     // Neither: the refusal, whole — and nothing placed.
     assert_eq!(speed::press(None, None), speed::Pressed::Refused);
-    assert_eq!(speed::press(Some((30.0, 30.1)), None), speed::Pressed::Refused);
+    assert_eq!(
+        speed::press(Some((30.0, 30.1)), None),
+        speed::Pressed::Refused
+    );
     assert_eq!(
         speed::NO_SECONDS,
         "click a track or mark a stretch first \u{2014} speed needs seconds to work on"
@@ -73,12 +99,19 @@ fn f3_3_s1_a_band_a_line_or_neither() {
 fn f3_3_s2_the_form_asks_six_questions() {
     assert_eq!(speed::form_title(12.0, 5.0), "Speed 00:12 \u{2013} 00:17");
 
-    assert_eq!(speed::RATES, [0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0, 8.0, 20.0, 100.0]);
+    assert_eq!(
+        speed::RATES,
+        [0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0, 8.0, 20.0, 100.0]
+    );
     assert_eq!(speed::CUSTOM, "Custom\u{2026}");
     assert_eq!(speed::rate_label(0.0), "\u{00d7}0 \u{2014} stop");
     assert_eq!(speed::rate_label(1.0), "\u{00d7}1 \u{2014} as filmed");
     assert_eq!(speed::rate_label(0.25), "\u{00d7}0.25");
-    assert_eq!(speed::rate_label(100.0), "\u{00d7}100", "no trailing .0 on a whole rate");
+    assert_eq!(
+        speed::rate_label(100.0),
+        "\u{00d7}100",
+        "no trailing .0 on a whole rate"
+    );
 
     // The listed rows by index, and everything else landing on Custom with its own number kept.
     assert_eq!(speed::rate_index(0.0), 0);
@@ -86,12 +119,23 @@ fn f3_3_s2_the_form_asks_six_questions() {
     assert_eq!(speed::rate_index(1.0), 4);
     assert_eq!(speed::rate_index(100.0), 10);
     for unlisted in [3.0, 0.6, -1.0] {
-        assert_eq!(speed::rate_index(unlisted), speed::RATES.len(), "{unlisted} is Custom");
+        assert_eq!(
+            speed::rate_index(unlisted),
+            speed::RATES.len(),
+            "{unlisted} is Custom"
+        );
     }
 
     assert_eq!(
         speed::FORM_FIELDS,
-        ["Speed \u{00d7}", "Sound", "Length (s)", "Fade in (s)", "Fade out (s)", "Curve"]
+        [
+            "Speed \u{00d7}",
+            "Sound",
+            "Length (s)",
+            "Fade in (s)",
+            "Fade out (s)",
+            "Curve"
+        ]
     );
     assert_eq!(
         speed::SOUND_CHOICES,
@@ -107,11 +151,41 @@ fn f3_3_s2_the_form_asks_six_questions() {
     // The two lists are one list read twice: each row stores the key fx_record reads, in order.
     let stored = speed::SOUND_CHOICES.map(speed::sound_stored);
     assert_eq!(stored, ["", "pitch", "own", "scene", "mute"]);
-    assert_eq!(fx_record::snd_of(&Fx { snd: stored[0].into(), ..Default::default() }), fx_record::Snd::Default);
-    assert_eq!(fx_record::snd_of(&Fx { snd: stored[1].into(), ..Default::default() }), fx_record::Snd::Pitch);
-    assert_eq!(fx_record::snd_of(&Fx { snd: stored[2].into(), ..Default::default() }), fx_record::Snd::Own);
-    assert_eq!(fx_record::snd_of(&Fx { snd: stored[3].into(), ..Default::default() }), fx_record::Snd::Scene);
-    assert_eq!(fx_record::snd_of(&Fx { snd: stored[4].into(), ..Default::default() }), fx_record::Snd::Mute);
+    assert_eq!(
+        fx_record::snd_of(&Fx {
+            snd: stored[0].into(),
+            ..Default::default()
+        }),
+        fx_record::Snd::Default
+    );
+    assert_eq!(
+        fx_record::snd_of(&Fx {
+            snd: stored[1].into(),
+            ..Default::default()
+        }),
+        fx_record::Snd::Pitch
+    );
+    assert_eq!(
+        fx_record::snd_of(&Fx {
+            snd: stored[2].into(),
+            ..Default::default()
+        }),
+        fx_record::Snd::Own
+    );
+    assert_eq!(
+        fx_record::snd_of(&Fx {
+            snd: stored[3].into(),
+            ..Default::default()
+        }),
+        fx_record::Snd::Scene
+    );
+    assert_eq!(
+        fx_record::snd_of(&Fx {
+            snd: stored[4].into(),
+            ..Default::default()
+        }),
+        fx_record::Snd::Mute
+    );
 
     // Fade in's help states the stair price, computed from the bound rather than repeated.
     let help = speed::fade_in_help();
@@ -190,8 +264,14 @@ fn f3_3_s3_a_stop_is_not_a_rate() {
     // Apply: overrunning fades share the band in proportion, both still positive.
     let ramped = speed::apply(&form(0.0, 3.0, 2.0, 2.0, 2.0));
     assert!(ramped.trans > 0.0 && ramped.tout > 0.0, "{ramped:?}");
-    assert!(ramped.trans + ramped.tout <= ramped.dur + 1e-9, "{ramped:?}");
-    assert!((ramped.trans - ramped.tout).abs() < 1e-9, "shared equally because both were asked equally");
+    assert!(
+        ramped.trans + ramped.tout <= ramped.dur + 1e-9,
+        "{ramped:?}"
+    );
+    assert!(
+        (ramped.trans - ramped.tout).abs() < 1e-9,
+        "shared equally because both were asked equally"
+    );
     // A negative fade is nought, not a backwards ramp.
     let hard = speed::apply(&form(0.0, 4.0, 2.0, -1.0, 0.5));
     assert_eq!((hard.trans, hard.tout), (0.0, 0.5));
@@ -214,7 +294,10 @@ fn f3_3_s4_what_the_page_says() {
     assert_eq!(speed::label(&stopped), "stop at 01:15 for 2.0s");
 
     let status = speed::placed_status(&fast);
-    assert!(status.starts_with("01:15 sped up \u{00d7}2 for 6.0s \u{2014} "), "{status}");
+    assert!(
+        status.starts_with("01:15 sped up \u{00d7}2 for 6.0s \u{2014} "),
+        "{status}"
+    );
     assert!(
         status.ends_with(
             "the footage plays at that rate there and the cut gets longer or shorter to match; \u{21b6} Undo takes it back"
@@ -223,7 +306,10 @@ fn f3_3_s4_what_the_page_says() {
     );
 
     let stopped_status = speed::placed_status(&stopped);
-    assert!(stopped_status.starts_with("stop at 01:15 for 2.0s \u{2014} "), "{stopped_status}");
+    assert!(
+        stopped_status.starts_with("stop at 01:15 for 2.0s \u{2014} "),
+        "{stopped_status}"
+    );
     assert!(
         stopped_status.ends_with(
             "the picture stands still there while the clock runs; \u{21b6} Undo takes it back"
@@ -245,10 +331,21 @@ fn f3_3_s5_overlapping_rates_average_per_span() {
     let spans = speed::rate_spans(&fx);
     assert_eq!(spans.len(), 3, "{spans:?}");
     assert_eq!((spans[0].from, spans[0].to, spans[0].rate), (0.0, 5.0, 2.0));
-    assert_eq!((spans[1].from, spans[1].to, spans[1].rate), (5.0, 10.0, 3.0), "the mean of ×2 and ×4");
-    assert_eq!((spans[2].from, spans[2].to, spans[2].rate), (10.0, 15.0, 4.0));
+    assert_eq!(
+        (spans[1].from, spans[1].to, spans[1].rate),
+        (5.0, 10.0, 3.0),
+        "the mean of ×2 and ×4"
+    );
+    assert_eq!(
+        (spans[2].from, spans[2].to, spans[2].rate),
+        (10.0, 15.0, 4.0)
+    );
     for span in &spans {
-        assert!((span.to - span.from) / speed::applied_rate(span.rate) >= cutpass::MIN_CLIP_SECONDS - 1e-9, "{span:?}");
+        assert!(
+            (span.to - span.from) / speed::applied_rate(span.rate)
+                >= cutpass::MIN_CLIP_SECONDS - 1e-9,
+            "{span:?}"
+        );
     }
 
     // The render's clock follows the spans; seconds no effect covers are simply ×1.
@@ -258,7 +355,12 @@ fn f3_3_s5_overlapping_rates_average_per_span() {
 
     // Two effects agreeing on a rate do not cut the video: one stretch comes back.
     let same = [rate_at(0.0, 10.0, 2.0), rate_at(10.0, 10.0, 2.0)];
-    assert_eq!(speed::rate_spans(&same).len(), 1, "{:?}", speed::rate_spans(&same));
+    assert_eq!(
+        speed::rate_spans(&same).len(),
+        1,
+        "{:?}",
+        speed::rate_spans(&same)
+    );
 
     // Nothing placed at all is no clock to speak of.
     assert!(speed::rate_spans(&[]).is_empty());
@@ -274,7 +376,8 @@ fn f3_3_s5b_a_sliver_heals_into_the_longer_neighbour() {
     assert!(!spans.is_empty(), "{spans:?}");
     for span in &spans {
         assert!(
-            (span.to - span.from) / speed::applied_rate(span.rate) >= cutpass::MIN_CLIP_SECONDS - 1e-9,
+            (span.to - span.from) / speed::applied_rate(span.rate)
+                >= cutpass::MIN_CLIP_SECONDS - 1e-9,
             "{span:?} renders under the floor"
         );
     }
@@ -285,11 +388,21 @@ fn f3_3_s5b_a_sliver_heals_into_the_longer_neighbour() {
     // The head [10, 10.1) at ×2 is the thinnest and its right neighbour (10.1–15 at ×3, then 4) is longer, so the
     // first returned stretch starts at the band's start and runs at the neighbour's rate.
     assert_eq!(spans[0].from, 10.0);
-    assert!(spans[0].to > 10.1, "the sliver was taken by its longer neighbour: {:?}", spans[0]);
+    assert!(
+        spans[0].to > 10.1,
+        "the sliver was taken by its longer neighbour: {:?}",
+        spans[0]
+    );
 
     // A short stop on its own cuts nothing — it is the only thing there and both neighbours are ×1 — so healing
     // leaves it alone rather than deleting someone's still.
-    let stop = [Fx { kind: "speed".into(), t: 4.0, dur: 0.2, rate: 0.0, ..Default::default() }];
+    let stop = [Fx {
+        kind: "speed".into(),
+        t: 4.0,
+        dur: 0.2,
+        rate: 0.0,
+        ..Default::default()
+    }];
     let spans = speed::rate_spans(&stop);
     assert_eq!(spans.len(), 1, "a lone stop is not healed away: {spans:?}");
     assert_eq!((spans[0].from, spans[0].to, spans[0].rate), (4.0, 4.2, 0.0));
@@ -299,7 +412,13 @@ fn f3_3_s5b_a_sliver_heals_into_the_longer_neighbour() {
 /// preview's flat one (§06#2).
 #[test]
 fn f3_3_s5c_footage_under_a_still_runs_at_1x() {
-    let stop = [Fx { kind: "speed".into(), t: 10.0, dur: 2.0, rate: 0.0, ..Default::default() }];
+    let stop = [Fx {
+        kind: "speed".into(),
+        t: 10.0,
+        dur: 2.0,
+        rate: 0.0,
+        ..Default::default()
+    }];
     assert!(fx_record::is_stop(&stop[0]));
     // The mean keeps the 0 (that is what makes it a still); what plays underneath is ×1.
     assert_eq!(speed::rate_spans(&stop)[0].rate, 0.0);
@@ -316,9 +435,24 @@ fn f3_3_s5c_footage_under_a_still_runs_at_1x() {
     // change is a flushing seek, while the render follows the stairs.
     assert!(fx_lane::previews_flat_rate());
     assert!(fx_lane::render_follows_ramps());
-    let ramped = [Fx { kind: "speed".into(), t: 0.0, dur: 20.0, rate: 8.0, trans: 8.0, tout: 0.0, ..Default::default() }];
-    assert!(speed::steps_of(&ramped[0]).len() > 1, "the render has stairs to follow");
-    assert_eq!(cut_hear::rate_under(&ramped, 2.0), 8.0, "the preview stays flat at the effect's own rate");
+    let ramped = [Fx {
+        kind: "speed".into(),
+        t: 0.0,
+        dur: 20.0,
+        rate: 8.0,
+        trans: 8.0,
+        tout: 0.0,
+        ..Default::default()
+    }];
+    assert!(
+        speed::steps_of(&ramped[0]).len() > 1,
+        "the render has stairs to follow"
+    );
+    assert_eq!(
+        cut_hear::rate_under(&ramped, 2.0),
+        8.0,
+        "the preview stays flat at the effect's own rate"
+    );
 }
 
 /// §F3.3 (`ramps are geometric staircases, each stair ≥ P.eng.rampStepSeconds (0.6) on screen, built whole or not at
@@ -341,23 +475,35 @@ fn f3_3_s5d_a_staircase_is_built_whole_or_not_at_all() {
     assert!(steps.len() >= 3, "{steps:?}");
     for pair in steps.windows(2) {
         let forward = pair[1].rate / pair[0].rate;
-        assert!((forward - 1.0).abs() > 1e-9, "two stairs at the same rate are one stair: {steps:?}");
+        assert!(
+            (forward - 1.0).abs() > 1e-9,
+            "two stairs at the same rate are one stair: {steps:?}"
+        );
     }
     for span in &steps {
         let on_screen = (span.to - span.from) / speed::applied_rate(span.rate);
-        assert!(on_screen >= speed::RAMP_STEP_SECONDS - 1e-9, "{span:?} is a stair the render would drop");
+        assert!(
+            on_screen >= speed::RAMP_STEP_SECONDS - 1e-9,
+            "{span:?} is a stair the render would drop"
+        );
     }
 
     // Ramps asked to cover more than the effect holds share it in proportion \u2026
     let (inp, out) = speed::ramps(2.0, 3.0, 2.0, 2.0);
     assert!(inp > 0.0 && out > 0.0, "{inp}, {out}");
-    assert!(inp + out <= 3.0 + 1e-9, "the band is the limit: {inp} + {out}");
+    assert!(
+        inp + out <= 3.0 + 1e-9,
+        "the band is the limit: {inp} + {out}"
+    );
     assert!((inp - out).abs() < 1e-9, "asked equally, shared equally");
 
     // \u2026 and a flat middle that would render under the floor disappears into them: 4 s at ×2 leaves 1 s of flat
     // middle, which is 0.5 s on screen — exactly the floor — so one tenth of a second off it makes the ramps fill.
     let (inp, out) = speed::ramps(2.0, 3.9, 1.5, 1.5);
-    assert!((inp + out - 3.9).abs() < 1e-9, "the ramps fill the band: {inp} + {out}");
+    assert!(
+        (inp + out - 3.9).abs() < 1e-9,
+        "the ramps fill the band: {inp} + {out}"
+    );
 
     // A staircase that cannot be built whole is not built at all: one flat stretch at the effect's own rate.
     let plain = speed::stairs(8.0, 0.6, 0.5, 0.5);
@@ -365,13 +511,24 @@ fn f3_3_s5d_a_staircase_is_built_whole_or_not_at_all() {
     assert_eq!((plain[0].from, plain[0].to, plain[0].rate), (0.0, 0.6, 8.0));
 
     // No ramps at all is one flat stretch too — the same answer by a different road.
-    assert_eq!(speed::stairs(2.0, 5.0, 0.0, 0.0), vec![speed::Span { from: 0.0, to: 5.0, rate: 2.0 }]);
+    assert_eq!(
+        speed::stairs(2.0, 5.0, 0.0, 0.0),
+        vec![speed::Span {
+            from: 0.0,
+            to: 5.0,
+            rate: 2.0
+        }]
+    );
 }
 
 // --- the render's pass: the split that §08 S3 promises and `plan_clips` was never given ----------------------
 
 fn seg(s: f64, e: f64) -> naivepost::cut::Seg {
-    naivepost::cut::Seg { s, e, ..Default::default() }
+    naivepost::cut::Seg {
+        s,
+        e,
+        ..Default::default()
+    }
 }
 
 /// F3.3 (the arithmetic after S4), run by the program: the segments handed to the render are CUT where the clock
@@ -407,7 +564,12 @@ fn f3_3_s5e_the_render_splits_segments_at_rate_boundaries() {
     // A cut with no speed effect comes back unchanged, piece for piece: nothing was re-timed, so nothing was cut.
     let plain = [seg(0.0, 12.0), seg(12.0, 30.0)];
     assert_eq!(split::sped_segs(&plain, &[]), plain.to_vec());
-    let text_only = [Fx { kind: "text".into(), t: 2.0, dur: 4.0, ..Default::default() }];
+    let text_only = [Fx {
+        kind: "text".into(),
+        t: 2.0,
+        dur: 4.0,
+        ..Default::default()
+    }];
     assert_eq!(split::sped_segs(&plain, &text_only), plain.to_vec());
 }
 
@@ -460,9 +622,16 @@ fn f3_3_s5e_a_stop_gives_the_render_a_rate_of_nought() {
         .iter()
         .find(|piece| piece.s >= 10.0 && piece.e <= 14.0)
         .expect("a piece inside the stop");
-    assert_eq!(held.rate, 0.0, "a stop must arrive as rate 0, not as 1x: {held:?}");
+    assert_eq!(
+        held.rate, 0.0,
+        "a stop must arrive as rate 0, not as 1x: {held:?}"
+    );
     for piece in pieces.iter().filter(|p| p.e <= 10.0 || p.s >= 14.0) {
-        assert_eq!(speed::applied_rate(piece.rate), 1.0, "plain footage: {piece:?}");
+        assert_eq!(
+            speed::applied_rate(piece.rate),
+            1.0,
+            "plain footage: {piece:?}"
+        );
     }
 
     // All the way into the plan: the CLIP over the stop is 1× for the encoder and holds the stop's own seconds on
@@ -480,14 +649,19 @@ fn f3_3_s5e_a_stop_gives_the_render_a_rate_of_nought() {
         exists,
         &[],
         &[],
-        (1920, 1080), true, naivepost::produce_render::unknown_footage,
+        (1920, 1080),
+        true,
+        naivepost::produce_render::unknown_footage,
     );
     assert!(logs.is_empty(), "nothing should be dropped: {logs:?}");
     let clip = clips
         .iter()
         .find(|clip| clip.seg_s >= 10.0 && clip.seg_s < 14.0)
         .expect("a clip over the stop");
-    assert_eq!(clip.rate, 1.0, "the encoder gets 1x under a still: {clip:?}");
+    assert_eq!(
+        clip.rate, 1.0,
+        "the encoder gets 1x under a still: {clip:?}"
+    );
     assert_eq!(clip.on_screen, 4.0, "and the still's own seconds: {clip:?}");
 }
 
@@ -506,12 +680,28 @@ fn f3_3_s6_the_preview_runs_one_flat_rate() {
     assert_eq!(play::flat_rate_at(&fx, 2.0), 2.0);
     assert_eq!(play::flat_rate_at(&fx, 12.0), 4.0);
     assert_eq!(play::flat_rate_at(&fx, 99.0), 1.0);
-    assert_eq!(play::flat_rate_at(&[], 5.0), 1.0, "no speed at all is \u{d7}1");
+    assert_eq!(
+        play::flat_rate_at(&[], 5.0),
+        1.0,
+        "no speed at all is \u{d7}1"
+    );
 
     // One tick of the line moves by that rate, which is what makes a hand-drawn speed observable without a render.
-    assert_eq!(play::advance(&fx, 2.0, 0.1), 2.2, "\u{d7}2 for one tenth of a second");
-    assert_eq!(play::advance(&fx, 7.0, 0.1), 7.3, "the averaged stretch advances by the average");
-    assert_eq!(play::advance(&[], 4.0, 0.1), 4.1, "plain footage still walks at wall clock");
+    assert_eq!(
+        play::advance(&fx, 2.0, 0.1),
+        2.2,
+        "\u{d7}2 for one tenth of a second"
+    );
+    assert_eq!(
+        play::advance(&fx, 7.0, 0.1),
+        7.3,
+        "the averaged stretch advances by the average"
+    );
+    assert_eq!(
+        play::advance(&[], 4.0, 0.1),
+        4.1,
+        "plain footage still walks at wall clock"
+    );
 }
 
 /// §06 §2's deliberate difference, pinned from both sides: inside a ramp the render changes rate stair by stair
@@ -526,15 +716,25 @@ fn f3_3_s6_the_preview_ignores_the_staircase() {
     ramped.tout = 4.0;
     let fx = [ramped.clone()];
     let stairs = speed::stairs(ramped.rate, ramped.dur, ramped.trans, ramped.tout);
-    assert!(stairs.len() > 1, "this band must be worth a staircase: {stairs:?}");
+    assert!(
+        stairs.len() > 1,
+        "this band must be worth a staircase: {stairs:?}"
+    );
 
     // The preview: one flat rate everywhere on the band.
     for t in [0.5, 2.0, 6.0, 10.0, 11.5] {
-        assert_eq!(play::flat_rate_at(&fx, t), 8.0, "flat over the whole band at {t}");
+        assert_eq!(
+            play::flat_rate_at(&fx, t),
+            8.0,
+            "flat over the whole band at {t}"
+        );
     }
     // The render: a different rate inside the glide-in, because that is where the stairs are.
     let inside_glide = stairs[0].rate;
-    assert_ne!(inside_glide, 8.0, "the first stair is not the effect's rate");
+    assert_ne!(
+        inside_glide, 8.0,
+        "the first stair is not the effect's rate"
+    );
     assert_eq!(speed::rate_at(&fx, 0.5), speed::applied_rate(inside_glide));
     assert!(
         speed::rate_at(&fx, 0.5) != play::flat_rate_at(&fx, 0.5),
@@ -552,19 +752,43 @@ fn f3_3_s6_a_stop_holds_one_frame_while_the_clock_runs() {
     let fx = [stop.clone()];
     assert_eq!(play::still_band_at(&fx, 10.0), Some((10.0, 14.0)));
     assert_eq!(play::still_band_at(&fx, 13.9), Some((10.0, 14.0)));
-    assert_eq!(play::still_band_at(&fx, 14.0), None, "the stop ends with its last second");
+    assert_eq!(
+        play::still_band_at(&fx, 14.0),
+        None,
+        "the stop ends with its last second"
+    );
     assert_eq!(play::still_band_at(&fx, 9.9), None);
 
     // Inside it the panel shows the stop's FIRST second; outside it the clock's own second.
-    assert_eq!(play::picture_second(&fx, 12.5), 10.0, "one held frame, not twelve seconds of them");
+    assert_eq!(
+        play::picture_second(&fx, 12.5),
+        10.0,
+        "one held frame, not twelve seconds of them"
+    );
     assert_eq!(play::picture_second(&fx, 9.0), 9.0);
     assert_eq!(play::picture_second(&fx, 20.0), 20.0);
-    assert_eq!(play::picture_second(&[], 5.0), 5.0, "a cut with no stop is unchanged");
+    assert_eq!(
+        play::picture_second(&[], 5.0),
+        5.0,
+        "a cut with no stop is unchanged"
+    );
 
     // And the clock does not stop: under a still the footage runs at 1\u{d7}, so one tick is one tick.
-    assert_eq!(play::flat_rate_at(&fx, 12.0), 1.0, "\u{d7}0 is not a rate anything plays at");
-    assert_eq!(play::advance(&fx, 12.0, 0.1), 12.1, "the line keeps walking across the still");
+    assert_eq!(
+        play::flat_rate_at(&fx, 12.0),
+        1.0,
+        "\u{d7}0 is not a rate anything plays at"
+    );
+    assert_eq!(
+        play::advance(&fx, 12.0, 0.1),
+        12.1,
+        "the line keeps walking across the still"
+    );
     // Two stops overlapping: earliest `t` wins, the same tie-break every other overlapping answer uses.
     let pair = [rate_at(12.0, 4.0, 0.0), rate_at(10.0, 4.0, 0.0)];
-    assert_eq!(play::still_band_at(&pair, 13.0), Some((10.0, 14.0)), "earliest start decides");
+    assert_eq!(
+        play::still_band_at(&pair, 13.0),
+        Some((10.0, 14.0)),
+        "earliest start decides"
+    );
 }

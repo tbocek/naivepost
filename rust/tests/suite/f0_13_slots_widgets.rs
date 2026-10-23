@@ -9,14 +9,14 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use gtk4 as gtk;
 use naivepost::checks;
-use naivepost::{machine_store, services, settings, slot_gate};
 use naivepost::ui;
 use naivepost::ui::settings::Provider;
-use crate::common;
-use common::{fixture_dir, settle};
+use naivepost::{machine_store, services, settings, slot_gate};
 
 /// The item's id, interpolated into every assertion message so a failure names the item.
 const ITEM: &str = "f0_13";
@@ -65,10 +65,7 @@ static RAN_ID: AtomicBool = AtomicBool::new(false);
 /// A config/data pair under the temp dir named for THIS binary and pid — a pid alone collides across
 /// test binaries, which all share one process name length and often one pid namespace.
 fn pin_config_home() -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "np-f113-{}-slots",
-        std::process::id()
-    ));
+    let root = std::env::temp_dir().join(format!("np-f113-{}-slots", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(root.join("cfg")).expect("config root");
     std::fs::create_dir_all(root.join("data")).expect("data root");
@@ -90,7 +87,10 @@ fn open_dialog(app: &adw::Application) -> adw::ApplicationWindow {
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
     ui::open_settings(&window, silent());
-    assert!(ui::dialog_open(&window), "{ITEM}: the settings dialog is open");
+    assert!(
+        ui::dialog_open(&window),
+        "{ITEM}: the settings dialog is open"
+    );
     window
 }
 
@@ -108,7 +108,9 @@ fn walk(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     }
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if let Some(found) = walk(&widget, name) {
             return Some(found);
         }
@@ -139,7 +141,10 @@ fn check_every_model_box_has_a_spin(app: &adw::Application) {
             (1.0, 16.0, 1.0),
             "{ITEM} S14: slots-{key} spans §5's 1..=16 in steps of one"
         );
-        let tip = spin.tooltip_text().map(|text| text.to_string()).unwrap_or_default();
+        let tip = spin
+            .tooltip_text()
+            .map(|text| text.to_string())
+            .unwrap_or_default();
         assert!(
             tip.contains("--parallel"),
             "{ITEM} S14: slots-{key} says in words what the number means: {tip:?}"
@@ -194,9 +199,18 @@ fn check_a_written_count_lands_in_the_conf(app: &adw::Application) {
 
     let paths = settings::from_environment().expect("{ITEM}: the pinned config home resolves");
     let conf = settings::read(&paths).expect("{ITEM}: the conf is readable after close");
-    assert_eq!(conf.slots.llm, 3, "{ITEM} S16: the LLM box's count wrote through");
-    assert_eq!(conf.slots.asr, 2, "{ITEM} S16: the ASR box's count wrote through");
-    assert_eq!(conf.slots.diar, 1, "{ITEM} S16: a count nobody touched stays at 1");
+    assert_eq!(
+        conf.slots.llm, 3,
+        "{ITEM} S16: the LLM box's count wrote through"
+    );
+    assert_eq!(
+        conf.slots.asr, 2,
+        "{ITEM} S16: the ASR box's count wrote through"
+    );
+    assert_eq!(
+        conf.slots.diar, 1,
+        "{ITEM} S16: a count nobody touched stays at 1"
+    );
 
     // And the main log carries §5's no-Save line naming the file, which is how a user knows the
     // spin's click was written without pressing anything.
@@ -261,7 +275,8 @@ fn check_the_health_line_carries_a_time() {
         family: "index_tts2".to_string(),
         task: "clon".to_string(),
     }];
-    let line = checks::audio_health_verdict(412, &models).expect("{ITEM} S18: a healthy server passes");
+    let line =
+        checks::audio_health_verdict(412, &models).expect("{ITEM} S18: a healthy server passes");
     assert!(
         line.contains("healthy in 412 ms"),
         "{ITEM} S18: the verdict spells the measured milliseconds: {line:?}"
@@ -304,16 +319,28 @@ fn check_the_id_box_keeps_its_id(app: &adw::Application) {
             .unwrap_or_else(|| panic!("{ITEM} S19: no entry-{key} on the dialog"))
             .text()
             .to_string();
-        assert_eq!(shown, id, "{ITEM} S19: the {key} id box shows its id, not its slot count");
+        assert_eq!(
+            shown, id,
+            "{ITEM} S19: the {key} id box shows its id, not its slot count"
+        );
     }
     // And beside each, its own count — the two controls seeded from two fields of one row.
-    assert_eq!(spin(&window, "tts").value(), 6.0, "{ITEM} S19: the TTS spin holds 6");
-    assert_eq!(spin(&window, "asr").value(), 4.0, "{ITEM} S19: the ASR spin holds 4");
+    assert_eq!(
+        spin(&window, "tts").value(),
+        6.0,
+        "{ITEM} S19: the TTS spin holds 6"
+    );
+    assert_eq!(
+        spin(&window, "asr").value(),
+        4.0,
+        "{ITEM} S19: the ASR spin holds 4"
+    );
     settle();
 }
 
 /// Close the dialog the way the user does, so `close_store` lands whatever the last change owes.
-fn close_dialog(_window: &adw::ApplicationWindow) {    let Some(dialog) = ui::settings::open_settings_window() else {
+fn close_dialog(_window: &adw::ApplicationWindow) {
+    let Some(dialog) = ui::settings::open_settings_window() else {
         return;
     };
     dialog.close();
@@ -324,40 +351,58 @@ fn close_dialog(_window: &adw::ApplicationWindow) {    let Some(dialog) = ui::se
 fn f0_13_s14_a_slots_spin_sits_beside_every_model_box_and_only_there() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_SPINS.load(Ordering::SeqCst), "{ITEM} S14: the spin check never ran");
+    assert!(
+        RAN_SPINS.load(Ordering::SeqCst),
+        "{ITEM} S14: the spin check never ran"
+    );
 }
 
 #[test]
 fn f0_13_s15_a_spin_defaults_to_one_and_stops_at_sixteen_on_disk() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_RANGE.load(Ordering::SeqCst), "{ITEM} S15: the range check never ran");
+    assert!(
+        RAN_RANGE.load(Ordering::SeqCst),
+        "{ITEM} S15: the range check never ran"
+    );
 }
 
 #[test]
 fn f0_13_s16_a_spin_written_by_the_dialog_lands_in_llm_conf() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_SAVE.load(Ordering::SeqCst), "{ITEM} S16: the save check never ran");
+    assert!(
+        RAN_SAVE.load(Ordering::SeqCst),
+        "{ITEM} S16: the save check never ran"
+    );
 }
 
 #[test]
 fn f0_13_s17_the_written_slot_is_the_number_the_request_doors_hold() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_GATE.load(Ordering::SeqCst), "{ITEM} S17: the gate check never ran");
+    assert!(
+        RAN_GATE.load(Ordering::SeqCst),
+        "{ITEM} S17: the gate check never ran"
+    );
 }
 
 #[test]
 fn f0_13_s18_the_audio_row_says_how_long_health_took() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_HEALTH.load(Ordering::SeqCst), "{ITEM} S18: the health-line check never ran");
+    assert!(
+        RAN_HEALTH.load(Ordering::SeqCst),
+        "{ITEM} S18: the health-line check never ran"
+    );
 }
 
 #[test]
 fn f0_13_s19_the_id_box_keeps_its_id_while_its_spin_holds_the_count() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_ID.load(Ordering::SeqCst), "{ITEM} S19: the id-box check never ran");
+    assert!(
+        RAN_ID.load(Ordering::SeqCst),
+        "{ITEM} S19: the id-box check never ran"
+    );
 }

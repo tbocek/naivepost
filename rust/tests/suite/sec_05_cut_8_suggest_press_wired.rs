@@ -41,15 +41,27 @@ fn round(app: &adw::Application) {
     // a rejection, which is what §8 counts the web tools against), the second repairs it and finishes.
     let llm = harness::FakeLlm::start(vec![
         tool_turn(&[
-            ("add_segment", serde_json::json!({ "start": 4.0, "end": 18.0, "why": "the point" })),
-            ("add_segment", serde_json::json!({ "start": 30.0, "end": 30.5, "why": "a slip" })),
+            (
+                "add_segment",
+                serde_json::json!({ "start": 4.0, "end": 18.0, "why": "the point" }),
+            ),
+            (
+                "add_segment",
+                serde_json::json!({ "start": 30.0, "end": 30.5, "why": "a slip" }),
+            ),
             ("finish_cut", serde_json::json!({})),
         ]),
         tool_turn(&[
             ("remove_segment", serde_json::json!({ "start": 30.0 })),
             ("remove_segment", serde_json::json!({ "start": 4.0 })),
-            ("add_segment", serde_json::json!({ "start": 3.0, "end": 19.0, "why": "the point" })),
-            ("add_segment", serde_json::json!({ "start": 24.0, "end": 40.0, "why": "the second" })),
+            (
+                "add_segment",
+                serde_json::json!({ "start": 3.0, "end": 19.0, "why": "the point" }),
+            ),
+            (
+                "add_segment",
+                serde_json::json!({ "start": 24.0, "end": 40.0, "why": "the second" }),
+            ),
             ("finish_cut", serde_json::json!({})),
         ]),
     ]);
@@ -75,7 +87,11 @@ fn round(app: &adw::Application) {
     // because the first answer was refused. It carries the correction, and it carries no web tools — the same
     // rule `cut_suggest::offers_web` states, proved against bytes on the wire rather than against a log line.
     let seen = llm.drain();
-    assert!(seen.len() >= 2, "a refused first plan means a second ask: {} seen", seen.len());
+    assert!(
+        seen.len() >= 2,
+        "a refused first plan means a second ask: {} seen",
+        seen.len()
+    );
     let second = &seen[1];
     assert!(
         second.body.contains("That is not a valid cut"),
@@ -96,11 +112,13 @@ fn round(app: &adw::Application) {
     // than a stale one — the page visibly knows a suggest ran.
     let logs = ui::window_logs();
     assert!(
-        logs.iter().any(|line| line.starts_with(">>> suggested ") && line.contains(" segments, ")),
+        logs.iter()
+            .any(|line| line.starts_with(">>> suggested ") && line.contains(" segments, ")),
         "§S3's landing line is in the log: {logs:?}"
     );
     assert!(
-        logs.iter().any(|line| line.contains("without the web tools")),
+        logs.iter()
+            .any(|line| line.contains("without the web tools")),
         "§8's withdrawal line reached the log with the click: {logs:?}"
     );
     let said = status_text(&window);
@@ -116,7 +134,8 @@ fn round(app: &adw::Application) {
 }
 
 #[test]
-fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s3_the_suggest_lines_reach_the_page() {
+fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s3_the_suggest_lines_reach_the_page(
+) {
     let app = adw::Application::builder()
         .application_id(ui::APP_ID)
         .flags(gio::ApplicationFlags::NON_UNIQUE)
@@ -127,5 +146,8 @@ fn sec_05_cut_8_details_confirmed_against_the_code_verification_pass_s3_the_sugg
         inner.quit();
     });
     app.run_with_args::<String>(&[]);
-    assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the click round ran");
+    assert!(
+        RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the click round ran"
+    );
 }

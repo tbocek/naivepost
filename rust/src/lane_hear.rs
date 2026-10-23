@@ -81,8 +81,12 @@ pub fn start_lane(
     let args = lane_command(file, from_secs, gain);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     log(&crate::subprocess::log_line(&program, &refs));
-    let child = crate::subprocess::spawn_piped(&program, &refs)
-        .map_err(|err| format!("{} failed: {err}", crate::subprocess::shown(&program, &refs)))?;
+    let child = crate::subprocess::spawn_piped(&program, &refs).map_err(|err| {
+        format!(
+            "{} failed: {err}",
+            crate::subprocess::shown(&program, &refs)
+        )
+    })?;
     let pid = child.id();
     held()
         .lock()
@@ -139,7 +143,11 @@ pub fn stop_lane(name: &str) -> bool {
 
 /// The pid running this lane, if any.
 pub fn lane_pid(name: &str) -> Option<u32> {
-    held().lock().expect("the lane pipeline slot").get(name).copied()
+    held()
+        .lock()
+        .expect("the lane pipeline slot")
+        .get(name)
+        .copied()
 }
 
 /// Every live lane pipeline as `(name, pid)`, sorted by name. Test-only reader: the program addresses a
@@ -306,8 +314,14 @@ fn apply_with(
         .collect();
     for (name, action) in plan_lanes(mix, lanes, &files, gain) {
         match action {
-            LaneAction::Started { from, stop: _, gain } => {
-                let Some(file) = files.get(&name) else { continue };
+            LaneAction::Started {
+                from,
+                stop: _,
+                gain,
+            } => {
+                let Some(file) = files.get(&name) else {
+                    continue;
+                };
                 let text = file.display().to_string();
                 // Two doors, one argv: the live call resolves the program itself, the test hands one over.
                 let asked = match program {
@@ -366,10 +380,8 @@ pub fn apply_for_test(
 pub fn stop_past_boundary(mix: &cut_hear::Mix, at_session_s: f64, lanes: &[Lane]) -> Vec<String> {
     let mut stopped = Vec::new();
     for lane in lanes {
-        let Some((_, LaneStart::Seek { stop, .. })) = mix
-            .lane_starts
-            .iter()
-            .find(|(name, _)| *name == lane.name)
+        let Some((_, LaneStart::Seek { stop, .. })) =
+            mix.lane_starts.iter().find(|(name, _)| *name == lane.name)
         else {
             continue;
         };

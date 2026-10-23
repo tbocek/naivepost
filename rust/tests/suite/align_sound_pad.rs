@@ -19,7 +19,7 @@ use naivepost::requests::Word;
 use naivepost::transcribe::SAMPLE_RATE;
 
 use crate::common;
-use common::{all_rows};
+use common::all_rows;
 
 /// A word spoken between two seconds, in the samples the ASR sidecar carries.
 fn word(text: &str, from: f64, to: f64) -> Word {
@@ -42,8 +42,7 @@ fn p_eng_alignsoundpadseconds_s1_the_pad_is_a_quarter_second_and_catalogued_once
         .find(|param| param.id == "P.eng.alignSoundPadSeconds")
         .expect("the alignment pad must be catalogued for Prepare, whose align pass reads it");
     assert_eq!(
-        row.from,
-        "align::PAD",
+        row.from, "align::PAD",
         "a row must name the constant its rule reads"
     );
     // num() keeps the decimal for a non-whole value, which is how §10 spells this one: "0.25".
@@ -59,7 +58,10 @@ fn p_eng_alignsoundpadseconds_s1_the_pad_is_a_quarter_second_and_catalogued_once
 
     // And exactly one row for it across all five lists -- one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.alignSoundPadSeconds").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.alignSoundPadSeconds")
+            .count(),
         1,
         "P.eng.alignSoundPadSeconds catalogued more than once"
     );
@@ -72,15 +74,29 @@ fn p_eng_alignsoundpadseconds_s2_the_pad_reaches_into_the_quiet_on_both_sides() 
     // Quiet from 0..5 and from 25..30 leaves one sounding stretch, 5.0..25.0. Each end takes PAD of
     // the neighbouring quiet with it, so the piece is 4.75..25.25.
     let silences = [
-        Silence { start: 0.0, end: 5.0 },
-        Silence { start: 25.0, end: 30.0 },
+        Silence {
+            start: 0.0,
+            end: 5.0,
+        },
+        Silence {
+            start: 25.0,
+            end: 30.0,
+        },
     ];
     let piece = align::trim((0.0, 30.0), &silences).expect("something has sound");
     assert_eq!(piece, (4.75, 25.25), "both ends padded by PAD: {piece:?}");
 
     // Each delta is exactly the item's number -- not a rounding of it, not some other slack.
-    assert_eq!(5.0 - piece.0, align::PAD, "the head took PAD of the leading quiet");
-    assert_eq!(piece.1 - 25.0, align::PAD, "the tail took PAD of the trailing quiet");
+    assert_eq!(
+        5.0 - piece.0,
+        align::PAD,
+        "the head took PAD of the leading quiet"
+    );
+    assert_eq!(
+        piece.1 - 25.0,
+        align::PAD,
+        "the tail took PAD of the trailing quiet"
+    );
     // Which makes the piece longer than the speech it carries by twice the pad.
     assert_eq!(
         (piece.1 - piece.0) - (25.0 - 5.0),
@@ -96,27 +112,59 @@ fn p_eng_alignsoundpadseconds_s2_the_pad_reaches_into_the_quiet_on_both_sides() 
 fn p_eng_alignsoundpadseconds_s3_the_pad_is_clamped_to_the_window() {
     // Head clamp: silence starts at 0.1, so a sliver of sound (0.0..0.1) survives at the very front.
     // first = 0.0 and (0.0 - 0.25).max(0.0) must land on 0.0, never negative.
-    let head = align::trim((0.0, 30.0), &[Silence { start: 0.1, end: 5.0 }]).expect("sliver counts");
-    assert_eq!(head.0, 0.0, "the pad cannot reach before the window opens: {head:?}");
+    let head = align::trim(
+        (0.0, 30.0),
+        &[Silence {
+            start: 0.1,
+            end: 5.0,
+        }],
+    )
+    .expect("sliver counts");
+    assert_eq!(
+        head.0, 0.0,
+        "the pad cannot reach before the window opens: {head:?}"
+    );
     // The tail still gets its full pad (sound runs to 30.0, so it too is clamped, not exceeded).
-    assert!(head.1 <= 30.0, "nothing extends past the window's end: {head:?}");
+    assert!(
+        head.1 <= 30.0,
+        "nothing extends past the window's end: {head:?}"
+    );
 
     // Tail clamp: sounding 5.0..29.9 wants 29.9 + 0.25 = 30.15, but t1 is 30.0.
     let tail = align::trim(
         (0.0, 30.0),
         &[
-            Silence { start: 0.0, end: 5.0 },
-            Silence { start: 29.9, end: 30.0 },
+            Silence {
+                start: 0.0,
+                end: 5.0,
+            },
+            Silence {
+                start: 29.9,
+                end: 30.0,
+            },
         ],
     )
     .expect("something has sound");
-    assert_eq!(tail.1, 30.0, "the pad is cut off at the window's end, not 30.15: {tail:?}");
-    assert_ne!(tail.1, 30.15, "the unclamped sum would have been 30.15: {tail:?}");
-    assert_eq!(tail.0, 5.0 - align::PAD, "and the head still got its full pad: {tail:?}");
+    assert_eq!(
+        tail.1, 30.0,
+        "the pad is cut off at the window's end, not 30.15: {tail:?}"
+    );
+    assert_ne!(
+        tail.1, 30.15,
+        "the unclamped sum would have been 30.15: {tail:?}"
+    );
+    assert_eq!(
+        tail.0,
+        5.0 - align::PAD,
+        "and the head still got its full pad: {tail:?}"
+    );
 
     // Both fixtures: the result stays inside [t0, t1].
     for piece in [head, tail] {
-        assert!(piece.0 >= 0.0 && piece.1 <= 30.0, "piece outside its window: {piece:?}");
+        assert!(
+            piece.0 >= 0.0 && piece.1 <= 30.0,
+            "piece outside its window: {piece:?}"
+        );
     }
 }
 
@@ -144,7 +192,7 @@ fn p_eng_alignsoundpadseconds_s3_the_pad_is_clamped_to_the_window() {
 /// 1.5, the tail past the last pad exposes 0.75, and the head exposes 0.75 -- word A's pad opens at
 /// 0.75, so 0.0..0.75 is uncovered sound. 1.5 + 0.75 + 0.75 = 3.0.
 #[test]
-fn p_eng_alignsoundpadseconds_s4_the_same_pad_shows_up_as_bare_seconds(){
+fn p_eng_alignsoundpadseconds_s4_the_same_pad_shows_up_as_bare_seconds() {
     // Fixture: duration 8.0, two words at 1.0..3.0 and 5.0..7.0, NOTHING listed as quiet so all eight
     // seconds count as sounding. Padded coverage is [0.75, 3.25] and [4.75, 7.25], giving three
     // uncovered legs: the head 0.0..0.75, the gap 3.25..4.75, and the tail 7.25..8.0. Bare is their
@@ -164,8 +212,18 @@ fn p_eng_alignsoundpadseconds_s4_the_same_pad_shows_up_as_bare_seconds(){
     // Counter-check tying the deduction to PAD: list the inter-word gap as silence (3.0..5.0) and
     // nothing else. That leg now holds no sound, so it drops out and bare falls to 1.5 -- the two outer
     // slivers. What came off is exactly `gap - 2*PAD`, the ground the pads had left exposed there.
-    let mid_quiet = align::bare_voiced(&w, 8.0, &[Silence { start: 3.0, end: 5.0 }]);
-    assert!((mid_quiet - 1.5).abs() < 1e-9, "listing the gap removes its share: got {mid_quiet}");
+    let mid_quiet = align::bare_voiced(
+        &w,
+        8.0,
+        &[Silence {
+            start: 3.0,
+            end: 5.0,
+        }],
+    );
+    assert!(
+        (mid_quiet - 1.5).abs() < 1e-9,
+        "listing the gap removes its share: got {mid_quiet}"
+    );
     assert!(
         (all_sound - mid_quiet - ((5.0 - 3.0) - 2.0 * align::PAD)).abs() < 1e-9,
         "what came off is the gap minus one PAD per side: {all_sound} -> {mid_quiet}"
@@ -174,9 +232,22 @@ fn p_eng_alignsoundpadseconds_s4_the_same_pad_shows_up_as_bare_seconds(){
     // The mirror on the tail: list 7.0..8.0 as quiet instead and the gap keeps sounding, so bare is
     // 3.0 - 0.75 = 2.25. The amount that disappears is always the sounding part of the leg just
     // listed as silent -- never a fixed allowance taken off the pause itself.
-    let tail_quiet = align::bare_voiced(&w, 8.0, &[Silence { start: 7.0, end: 8.0 }]);
-    assert!((tail_quiet - 2.25).abs() < 1e-9, "quieting the tail removes its 0.75: got {tail_quiet}");
-    assert!((all_sound - tail_quiet - 0.75).abs() < 1e-9, "exactly the tail's worth: {all_sound} -> {tail_quiet}");
+    let tail_quiet = align::bare_voiced(
+        &w,
+        8.0,
+        &[Silence {
+            start: 7.0,
+            end: 8.0,
+        }],
+    );
+    assert!(
+        (tail_quiet - 2.25).abs() < 1e-9,
+        "quieting the tail removes its 0.75: got {tail_quiet}"
+    );
+    assert!(
+        (all_sound - tail_quiet - 0.75).abs() < 1e-9,
+        "exactly the tail's worth: {all_sound} -> {tail_quiet}"
+    );
 
     // And the pad's actual job, measured: quiet next to speech must not read as a missing word. List
     // everything outside the two words as silent and bare is 0, since no uncovered stretch contains
@@ -185,12 +256,24 @@ fn p_eng_alignsoundpadseconds_s4_the_same_pad_shows_up_as_bare_seconds(){
         &w,
         8.0,
         &[
-            Silence { start: 0.0, end: 1.0 },
-            Silence { start: 3.0, end: 5.0 },
-            Silence { start: 7.0, end: 8.0 },
+            Silence {
+                start: 0.0,
+                end: 1.0,
+            },
+            Silence {
+                start: 3.0,
+                end: 5.0,
+            },
+            Silence {
+                start: 7.0,
+                end: 8.0,
+            },
         ],
     );
-    assert_eq!(hushed, 0.0, "nothing sounding outside the words leaves nothing bare: got {hushed}");
+    assert_eq!(
+        hushed, 0.0,
+        "nothing sounding outside the words leaves nothing bare: got {hushed}"
+    );
 }
 
 /// S5: the neighbours. Several constants sit near this number or share the word "pad"; the ids and
@@ -229,7 +312,8 @@ fn p_eng_alignsoundpadseconds_s5_neighbours_by_home_not_by_number() {
     // P.eng.alignCutSeekSeconds (4, `align::CUT_SEEK`) decides WHERE a piece starts; PAD decides how
     // much quiet travels with it. Different questions, and the pad is much the smaller of the two --
     // otherwise the pad would be large enough to overlap the reach that placed the edge.
-    let cut_seek = params::find("P.eng.alignCutSeekSeconds").expect("alignCutSeekSeconds is catalogued");
+    let cut_seek =
+        params::find("P.eng.alignCutSeekSeconds").expect("alignCutSeekSeconds is catalogued");
     assert_eq!(cut_seek.from, "align::CUT_SEEK");
     assert!(
         align::PAD < align::CUT_SEEK,

@@ -55,7 +55,10 @@ fn round(app: &adw::Application) {
         click(&window, "speed-apply-button");
         let cut_ = ui::review_cut_of(&window);
         assert_eq!(cut_.fx.len(), 1, "Apply placed exactly one record");
-        assert_eq!(cut_.fx[0].snd, "own", "the sound answer the dropdown was left on");
+        assert_eq!(
+            cut_.fx[0].snd, "own",
+            "the sound answer the dropdown was left on"
+        );
         // The notice is its OWN line in the log: the placement sentence stays what §F3.3 fixes
         // and §9's promise is said beside it, not instead of it. Among the lines since Apply, not
         // the last: the autosave writes its own line whenever its beat comes.
@@ -73,7 +76,11 @@ fn round(app: &adw::Application) {
     {
         // One kept scene from 0 to 10 s: everything past it is a hole the cut does not keep.
         let seeded = Cut {
-            segs: vec![naivepost::cut::Seg { s: 0.0, e: 10.0, ..Default::default() }],
+            segs: vec![naivepost::cut::Seg {
+                s: 0.0,
+                e: 10.0,
+                ..Default::default()
+            }],
             ..Default::default()
         };
         let window = common::cut_page(app, &seeded);
@@ -84,7 +91,8 @@ fn round(app: &adw::Application) {
         click(&window, "speed-apply-button");
         let said = ui::window::window_logs()[before..].to_vec();
         assert!(
-            said.iter().any(|line| *line == effect_overlap::no_frame(20.0)),
+            said.iter()
+                .any(|line| *line == effect_overlap::no_frame(20.0)),
             "the refusal names the moment and why: {said:?}"
         );
         assert!(
@@ -110,6 +118,12 @@ fn sec_06_effects_9_where_recordings_overlap_s5_widgets_say_the_sound_and_stop_p
         .build();
     app.connect_activate(round);
     app.run_with_args::<&str>(&[]);
-    assert!(RAN_OWN_NOTICE.load(Ordering::SeqCst), "the own-clock notice never ran");
-    assert!(RAN_REFUSED_STOP.load(Ordering::SeqCst), "the refused stop never ran");
+    assert!(
+        RAN_OWN_NOTICE.load(Ordering::SeqCst),
+        "the own-clock notice never ran"
+    );
+    assert!(
+        RAN_REFUSED_STOP.load(Ordering::SeqCst),
+        "the refused stop never ran"
+    );
 }

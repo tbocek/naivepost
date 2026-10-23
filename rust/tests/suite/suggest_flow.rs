@@ -11,7 +11,12 @@ use naivepost::suggest::{self, Refuse};
 use naivepost::tools::{self, cutpass};
 
 fn zoom(t: f64, dur: f64) -> Fx {
-    Fx { kind: "zoom".into(), t, dur, ..Default::default() }
+    Fx {
+        kind: "zoom".into(),
+        t,
+        dur,
+        ..Default::default()
+    }
 }
 
 // --- S1: the guards -------------------------------------------------------------------------------------
@@ -21,7 +26,10 @@ fn f2_14_s1_busy_beats_every_other_refusal() {
     // All three things wrong at once, and only the busy answer comes back: a run under way may be about
     // to write the very timeline whose absence would otherwise be reported.
     assert_eq!(suggest::refuse(true, true, false), Some(Refuse::Busy));
-    assert_eq!(suggest::refuse(true, false, false).map(|r| r.said()), Some(suggest::BUSY));
+    assert_eq!(
+        suggest::refuse(true, false, false).map(|r| r.said()),
+        Some(suggest::BUSY)
+    );
     assert_eq!(
         suggest::refuse(true, true, false).map(|r| r.said()),
         Some(suggest::BUSY),
@@ -53,10 +61,18 @@ fn f2_14_s1_no_timeline_refuses_naming_describe() {
 fn f2_14_s2a_trim_to_words_never_leaves_the_run() {
     // suggest.trimReachSeconds 0.4 -- the reach is CLAMPED into the run, which is the whole of the
     // "never outside the run" rule.
-    let tight = suggest::SpokenRun { span: (10.0, 40.0), first_spoken: 10.05, last_spoken: 39.9 };
+    let tight = suggest::SpokenRun {
+        span: (10.0, 40.0),
+        first_spoken: 10.05,
+        last_spoken: 39.9,
+    };
     assert_eq!(suggest::trim_run_to_words(&tight), (10.0, 40.0));
 
-    let roomy = suggest::SpokenRun { span: (10.0, 40.0), first_spoken: 20.0, last_spoken: 25.0 };
+    let roomy = suggest::SpokenRun {
+        span: (10.0, 40.0),
+        first_spoken: 20.0,
+        last_spoken: 25.0,
+    };
     assert_eq!(suggest::trim_run_to_words(&roomy), (19.6, 25.4));
 }
 
@@ -126,7 +142,10 @@ fn f2_14_s2a_the_words_cut_status_and_log_are_exact() {
     }];
     let out = suggest::words_cut(&runs, &[], &[(20.0, 30.0)]);
 
-    assert_eq!(out.status, format!("cut by the words: {} segments", out.segs.len()));
+    assert_eq!(
+        out.status,
+        format!("cut by the words: {} segments", out.segs.len())
+    );
     let total: f64 = out.segs.iter().map(|(a, b)| b - a).sum();
     assert_eq!(
         out.log,
@@ -151,9 +170,16 @@ fn f2_14_s2a_the_words_cut_status_and_log_are_exact() {
 fn f2_14_s2b_target_window_present_and_absent() {
     // P.policy.targetLengthSeconds
     assert!(suggest::has_target(300.0));
-    assert_eq!(suggest::target_window(300.0), cutpass::footage_window(300.0));
+    assert_eq!(
+        suggest::target_window(300.0),
+        cutpass::footage_window(300.0)
+    );
     assert!(!suggest::has_target(0.0));
-    assert_eq!(suggest::target_window(0.0), (0.0, 0.0), "no target collapses the window");
+    assert_eq!(
+        suggest::target_window(0.0),
+        (0.0, 0.0),
+        "no target collapses the window"
+    );
 }
 
 #[test]
@@ -187,11 +213,19 @@ fn f2_14_s2b_the_message_orders_context_length_target_timeline() {
         300.0,
         "[0.0s-5.0s] A: hi",
     );
-    let ctx = msg.find("a lecture about routers").expect("context present");
-    let len = msg.find("SESSION LENGTH: 1200 seconds").expect("length present");
+    let ctx = msg
+        .find("a lecture about routers")
+        .expect("context present");
+    let len = msg
+        .find("SESSION LENGTH: 1200 seconds")
+        .expect("length present");
     let tgt = msg.find("KEEP between").expect("target present");
-    let head = msg.find("SESSION TIMELINE:").expect("timeline heading present");
-    let body = msg.find("[0.0s-5.0s] A: hi").expect("timeline body present");
+    let head = msg
+        .find("SESSION TIMELINE:")
+        .expect("timeline heading present");
+    let body = msg
+        .find("[0.0s-5.0s] A: hi")
+        .expect("timeline body present");
     assert!(ctx < len, "the person's context leads: {msg}");
     assert!(len < tgt, "then the finished length: {msg}");
     assert!(tgt < head, "then what to read: {msg}");
@@ -202,7 +236,6 @@ fn f2_14_s2b_the_message_orders_context_length_target_timeline() {
         "the length is said once: {msg}"
     );
 }
-
 
 #[test]
 fn f2_14_s2b_a_context_ruling_out_all_three_passes_asks_for_none() {
@@ -228,7 +261,10 @@ fn f2_14_s2b_a_context_ruling_out_all_three_passes_asks_for_none() {
     captions_off.captions_pass.value = false;
     assert_eq!(
         suggest::passes_switched_on(&captions_off),
-        vec![naivepost::policy::Pass::Speeds, naivepost::policy::Pass::Decorations]
+        vec![
+            naivepost::policy::Pass::Speeds,
+            naivepost::policy::Pass::Decorations
+        ]
     );
 }
 
@@ -260,7 +296,11 @@ fn f2_14_s2b_the_whole_cut_answer_lists_every_fault_worst_first() {
         problems.len() >= 2,
         "footage under the low bound AND segments under the floor: {problems:?}"
     );
-    assert!(suggest::answer(&problems).contains("; "), "every fault at once: {:?}", problems);
+    assert!(
+        suggest::answer(&problems).contains("; "),
+        "every fault at once: {:?}",
+        problems
+    );
 
     // Within every window: ok, and nothing else. 300 s of footage sits inside the [180, 720] window a
     // 300 s target accepts, and 4 segments is exactly min_segments(300) -- one fewer and the count
@@ -315,7 +355,10 @@ fn f2_14_s3_edge_snap_prefers_the_highest_weight_inside_five_seconds() {
         "26.0 is outside the 5 s reach"
     );
     // Exactly the tolerance is already outside (half-open reach).
-    assert_eq!(suggest::snap_edge(&[(25.0, Candidate::VisualCut)], stamp, false), stamp);
+    assert_eq!(
+        suggest::snap_edge(&[(25.0, Candidate::VisualCut)], stamp, false),
+        stamp
+    );
 
     // A candidate inside the reach IS taken.
     assert_eq!(
@@ -326,7 +369,10 @@ fn f2_14_s3_edge_snap_prefers_the_highest_weight_inside_five_seconds() {
     // Weight wins over nearness when the gap in weight outweighs the distance penalty: a VisualCut
     // (1.0) 0.6 s away beats a SilenceMidpoint (0.8) 0.1 s away.
     let chosen = suggest::snap_edge(
-        &[(20.1, Candidate::SilenceMidpoint), (20.6, Candidate::VisualCut)],
+        &[
+            (20.1, Candidate::SilenceMidpoint),
+            (20.6, Candidate::VisualCut),
+        ],
         stamp,
         false,
     );
@@ -351,7 +397,12 @@ fn f2_14_s3_edge_snap_prefers_the_highest_weight_inside_five_seconds() {
 /// Two model scenes plus a hand insert, with one effect sitting on kept footage and one pointed at a
 /// stretch the walk-back removes.
 fn apply_fixture() -> suggest::Applied {
-    let inserts = vec![Seg { s: 100.0, e: 100.0, dur: 4.0, ..Default::default() }];
+    let inserts = vec![Seg {
+        s: 100.0,
+        e: 100.0,
+        dur: 4.0,
+        ..Default::default()
+    }];
     let fx = vec![zoom(12.0, 3.0), zoom(75.0, 3.0)];
     let walk = suggest::Walk {
         talked: vec![(20.0, 21.0)],
@@ -365,7 +416,11 @@ fn apply_fixture() -> suggest::Applied {
 #[test]
 fn f2_14_s3_apply_keeps_the_inserts_and_replaces_the_effects_as_a_list() {
     let out = apply_fixture();
-    assert_eq!(out.kept_inserts.len(), 1, "the hand insert survived the walk");
+    assert_eq!(
+        out.kept_inserts.len(),
+        1,
+        "the hand insert survived the walk"
+    );
     assert!(out.kept_inserts[0].is_insert());
     // The mark took (70, 80) out, so the scene ends at 70 and the zoom at 75 has no footage under it.
     assert_eq!(
@@ -384,8 +439,8 @@ fn f2_14_s3_apply_keeps_the_inserts_and_replaces_the_effects_as_a_list() {
 #[test]
 fn f2_14_s3_the_three_log_lines_are_exact() {
     let out = apply_fixture();
-    let total: f64 =
-        out.segs.iter().map(|(a, b)| b - a).sum::<f64>() + out.kept_inserts.iter().map(|s| s.dur).sum::<f64>();
+    let total: f64 = out.segs.iter().map(|(a, b)| b - a).sum::<f64>()
+        + out.kept_inserts.iter().map(|s| s.dur).sum::<f64>();
     assert_eq!(
         out.log[0],
         format!(

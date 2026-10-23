@@ -115,7 +115,8 @@ pub fn glued(source: &str, tokens: &[Token]) -> Vec<Word> {
             }
             continue;
         }
-        let starts_word = !pieces || token.word.starts_with(' ') || boundary_before || out.is_empty();
+        let starts_word =
+            !pieces || token.word.starts_with(' ') || boundary_before || out.is_empty();
         if starts_word {
             out.push(Word::new(source, text.to_string(), token.start, token.end));
         } else if let Some(last) = out.last_mut() {
@@ -148,7 +149,9 @@ pub fn retimed(
     for source in sources {
         // Every word of this recording, in order — the neighbour a word is timed against is the word
         // before it, whether or not there was sound enough to measure either of them.
-        let mine: Vec<usize> = (0..words.len()).filter(|&i| words[i].source == source).collect();
+        let mine: Vec<usize> = (0..words.len())
+            .filter(|&i| words[i].source == source)
+            .collect();
         let loud: Vec<Option<i32>> = mine
             .iter()
             .map(|&i| peak(source.as_str(), words[i].start, words[i].end))
@@ -156,7 +159,9 @@ pub fn retimed(
         // The median is over the words that have a peak: one unmeasured word neither lifts it nor drags
         // it down. A recording with nothing measured has no median and no strays.
         let measured: Vec<i32> = loud.iter().flatten().copied().collect();
-        let Some(median) = median(&measured) else { continue };
+        let Some(median) = median(&measured) else {
+            continue;
+        };
         for row in 1..mine.len() {
             let this = mine[row];
             // No envelope under this word's seconds: it is not evidence of anything.
@@ -364,7 +369,8 @@ fn named_forms(token: &str) -> Vec<String> {
 /// since a fold empties the words behind it, against what is written as well.
 pub fn owns(words: &[Word], printed: &str) -> Option<usize> {
     words.iter().position(|word| {
-        !word.written.is_empty() && (joins_token(&word.written, printed) || joins_token(&word.match_word, printed))
+        !word.written.is_empty()
+            && (joins_token(&word.written, printed) || joins_token(&word.match_word, printed))
     })
 }
 
@@ -406,10 +412,18 @@ pub fn row(project: &crate::project::Project) -> Option<crate::run_stages::Task>
 /// test that moves the process gets THIS session and not the launcher's.
 pub fn run_task(_task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let session = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
-    let tree = crate::layout::Tree::new(&session)
-        .map_err(|_| format!("{}: not a project folder to write a word list into", session.display()))?;
+    let tree = crate::layout::Tree::new(&session).map_err(|_| {
+        format!(
+            "{}: not a project folder to write a word list into",
+            session.display()
+        )
+    })?;
     let project = crate::project::load(tree.dir()).unwrap_or_default();
-    for line in press_word_list(&tree, &project, crate::policy::marking_pass_of(&project.policy)) {
+    for line in press_word_list(
+        &tree,
+        &project,
+        crate::policy::marking_pass_of(&project.policy),
+    ) {
         log(&line);
     }
     Ok(())
@@ -438,7 +452,9 @@ pub fn list(
         // asked for at its first word, so a line never covers the same word twice.
         let mut at = 0usize;
         while at < mine.len() {
-            let Some(line) = fixed(source, mine[at].start, mine[at].end) else { break };
+            let Some(line) = fixed(source, mine[at].start, mine[at].end) else {
+                break;
+            };
             let end = mine[at].end;
             let span = mine[at..]
                 .iter()
@@ -531,12 +547,18 @@ pub fn press_word_list(
     match resume_line(tree) {
         Ok(Some(line)) => return vec![line],
         Ok(None) => (),
-        Err(error) => return vec![format!("!!! words: could not read the saved list -- {error}")],
+        Err(error) => {
+            return vec![format!(
+                "!!! words: could not read the saved list -- {error}"
+            )]
+        }
     }
     let sources = match gather(tree, project) {
         Ok(sources) => sources,
         Err(error) => {
-            return vec![format!("!!! words: could not build the session word list -- {error}")]
+            return vec![format!(
+                "!!! words: could not build the session word list -- {error}"
+            )]
         }
     };
     // No tokens means the stages have not produced anything to glue (this row ran before the speech
@@ -558,7 +580,9 @@ pub fn press_word_list(
     let (words, mut logs) = match built {
         Ok(pair) => pair,
         Err(error) => {
-            return vec![format!("!!! words: could not build the session word list -- {error}")]
+            return vec![format!(
+                "!!! words: could not build the session word list -- {error}"
+            )]
         }
     };
     let retimed = words.iter().filter(|word| word.stray).count();
@@ -606,7 +630,9 @@ fn gather(
         // app computed.
         let timed = match crate::requests::read_aligned(tree, &lane)? {
             Some(doc) if !doc.words.is_empty() => doc.words,
-            _ => crate::requests::read_words(tree, &lane)?.map(|doc| doc.words).unwrap_or_default(),
+            _ => crate::requests::read_words(tree, &lane)?
+                .map(|doc| doc.words)
+                .unwrap_or_default(),
         };
         if timed.is_empty() {
             // Nothing transcribed for this source: it contributes no words, which is a real answer
@@ -635,10 +661,7 @@ struct LaneWave {
 }
 
 /// Read every lane's wave ONCE. Per-word reads would be thousands of opens per press for one number.
-fn lane_stats(
-    tree: &crate::layout::Tree,
-    project: &crate::project::Project,
-) -> Vec<LaneWave> {
+fn lane_stats(tree: &crate::layout::Tree, project: &crate::project::Project) -> Vec<LaneWave> {
     // The WHOLE session's stamped file names go into the clock together: leaving one out moves zero
     // and slides every other recording to a different second, which would put each envelope at the
     // wrong place on the timeline.
@@ -671,7 +694,9 @@ fn lane_stats(
 fn peak_in(lanes: &[LaneWave], lane: &str, start: f64, end: f64) -> Option<i32> {
     let held = lanes.iter().find(|held| held.lane == lane)?;
     let peaks = held.wave.as_ref()?.chans.first()?;
-    let lo = ((start - held.off) * held.wave.as_ref()?.hz).floor().max(0.0) as usize;
+    let lo = ((start - held.off) * held.wave.as_ref()?.hz)
+        .floor()
+        .max(0.0) as usize;
     let hi = ((end - held.off) * held.wave.as_ref()?.hz).ceil().max(0.0) as usize;
     let slice = peaks.get(lo..hi.min(peaks.len()))?;
     slice.iter().map(|peak| i32::from(*peak)).max()
@@ -692,7 +717,10 @@ fn fixed_spelling(
     start: f64,
     end: f64,
 ) -> Option<Vec<String>> {
-    let paths = [tree.transcript_fixed_tsv(lane), tree.commentary_fixed_tsv(lane)];
+    let paths = [
+        tree.transcript_fixed_tsv(lane),
+        tree.commentary_fixed_tsv(lane),
+    ];
     for path in paths {
         let Ok(lines) = crate::textfmt::read_lines(&path) else {
             continue;

@@ -143,8 +143,14 @@ pub fn describes_from_the_start(armed: bool, resume_marker_present: bool) -> boo
 /// when the page has no preview (Prepare, Produce) or none was playing, so the caller changes nothing.
 /// `started` is carried through untouched: a stopped-but-still-loaded preview stays loaded, which is
 /// what makes ▶ mean "resume" rather than "start over".
-pub fn stop_page_preview(page: crate::shell::Page, transport: run::Transport) -> Option<run::Transport> {
+pub fn stop_page_preview(
+    page: crate::shell::Page,
+    transport: run::Transport,
+) -> Option<run::Transport> {
     run::transport_for(page, transport)
         .filter(|t| t.playing)
-        .map(|t| run::Transport { playing: false, started: t.started })
+        .map(|t| run::Transport {
+            playing: false,
+            started: t.started,
+        })
 }

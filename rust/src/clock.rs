@@ -166,8 +166,14 @@ pub fn clock(names: &[&str]) -> Clock {
         // An unstamped file sits at the session's start — never at its mtime — where a drag
         // on the row can line it up by ear.
         .map(|t| match t {
-            Some(at) => Source { at: *at, stamped: true },
-            None => Source { at: zero, stamped: false },
+            Some(at) => Source {
+                at: *at,
+                stamped: true,
+            },
+            None => Source {
+                at: zero,
+                stamped: false,
+            },
         })
         .collect();
     Clock { zero, sources }
@@ -185,7 +191,11 @@ pub fn frame_name(seconds: f64) -> String {
     // Rounded up here rather than truncated: 1.9999 s is the third millisecond of the second
     // it is in, and printing `.999` for it would name a frame that never was.
     let millis = ((seconds - whole) * 1000.0).round() as i64;
-    let (whole, millis) = if millis == 1000 { (whole + 1.0, 0) } else { (whole, millis) };
+    let (whole, millis) = if millis == 1000 {
+        (whole + 1.0, 0)
+    } else {
+        (whole, millis)
+    };
     // Rounding to nearest after a floor can land on -0.001 of the second below, and `floor`
     // of that is the second before; clamping keeps a frame inside its own second.
     let millis = millis.clamp(0, 999);

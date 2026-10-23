@@ -22,7 +22,10 @@ fn effect_rows() -> Vec<params::Param> {
 
 /// The list as ids only.
 fn effect_ids() -> Vec<String> {
-    effect_rows().into_iter().map(|row| row.id.to_string()).collect()
+    effect_rows()
+        .into_iter()
+        .map(|row| row.id.to_string())
+        .collect()
 }
 
 /// Every id this flow could be catalogued under — §06's own list, the §05 one it shares bounds with, and Prepare's,
@@ -50,7 +53,10 @@ fn row(id: &str) -> params::Param {
 /// A number §6 writes with a decimal point (`0.05`, `4.0`) compared as a number: `params::num` trims the trailing
 /// zero, so comparing strings would pin a spelling neither side chose.
 fn number(id: &str) -> f64 {
-    row(id).spelled.parse().unwrap_or_else(|_| panic!("{id} spells a number"))
+    row(id)
+        .spelled
+        .parse()
+        .unwrap_or_else(|_| panic!("{id} spells a number"))
 }
 
 /// The same for a row found through the chain.
@@ -66,7 +72,8 @@ fn number_anywhere(id: &str) -> f64 {
 /// §06-effects#6-parameters-used — `minRate, maxRate, minClipSeconds, rampStepSeconds`: the four clamps §6 opens
 /// with, each holding its §10 value and naming the constant that holds it.
 #[test]
-fn sec_06_effects_6_parameters_used_s1_the_speed_and_volume_clamps_are_catalogued_with_their_values() {
+fn sec_06_effects_6_parameters_used_s1_the_speed_and_volume_clamps_are_catalogued_with_their_values(
+) {
     assert_eq!(number("P.eng.minRate"), 0.05);
     assert_eq!(number("P.eng.maxRate"), 100.0);
     assert_eq!(number("P.eng.minClipSeconds"), 0.5);
@@ -75,15 +82,24 @@ fn sec_06_effects_6_parameters_used_s1_the_speed_and_volume_clamps_are_catalogue
     // A row that names no constant is a row nobody can follow back to its rule.
     assert_eq!(row("P.eng.minRate").from, "cut_speed::MIN_RATE");
     assert_eq!(row("P.eng.maxRate").from, "cut_speed::MAX_RATE");
-    assert_eq!(row("P.eng.minClipSeconds").from, "tools::cutpass::MIN_CLIP_SECONDS");
-    assert_eq!(row("P.eng.rampStepSeconds").from, "cut_speed::RAMP_STEP_SECONDS");
+    assert_eq!(
+        row("P.eng.minClipSeconds").from,
+        "tools::cutpass::MIN_CLIP_SECONDS"
+    );
+    assert_eq!(
+        row("P.eng.rampStepSeconds").from,
+        "cut_speed::RAMP_STEP_SECONDS"
+    );
 
     // And the spelled number is the one the rule reads, not a copy that can drift: clamp_speed's floor and ceiling
     // come from cut_speed, the render's shortest clip from cutpass.
     assert_eq!(number("P.eng.minRate"), cut_speed::MIN_RATE);
     assert_eq!(number("P.eng.maxRate"), cut_speed::MAX_RATE);
     assert_eq!(number("P.eng.minClipSeconds"), cutpass::MIN_CLIP_SECONDS);
-    assert_eq!(number("P.eng.rampStepSeconds"), cut_speed::RAMP_STEP_SECONDS);
+    assert_eq!(
+        number("P.eng.rampStepSeconds"),
+        cut_speed::RAMP_STEP_SECONDS
+    );
 }
 
 // --- S2: the bounds §05's §6 names too ------------------------------------------------------------------------
@@ -94,13 +110,26 @@ fn sec_06_effects_6_parameters_used_s1_the_speed_and_volume_clamps_are_catalogue
 #[test]
 fn sec_06_effects_6_parameters_used_s2_the_bounds_shared_with_the_cut_page_are_catalogued_once() {
     assert_eq!(number_anywhere("P.eng.maxGain"), 10.0);
-    assert_eq!(number_anywhere("P.policy.speedGapSeconds"), cut_speed_pass::GAP_SECONDS);
+    assert_eq!(
+        number_anywhere("P.policy.speedGapSeconds"),
+        cut_speed_pass::GAP_SECONDS
+    );
     assert_eq!(number_anywhere("P.machine.captionBatch"), 5.0);
-    assert_eq!(number_anywhere("P.policy.captionMinSeconds"), clips::CAPTION_MIN_SECONDS);
-    assert_eq!(number_anywhere("P.eng.effectMinSurvivingSeconds"), cut_clamp::MIN_SURVIVING_SECONDS);
+    assert_eq!(
+        number_anywhere("P.policy.captionMinSeconds"),
+        clips::CAPTION_MIN_SECONDS
+    );
+    assert_eq!(
+        number_anywhere("P.eng.effectMinSurvivingSeconds"),
+        cut_clamp::MIN_SURVIVING_SECONDS
+    );
 
     assert_eq!(anywhere("P.eng.maxGain").from, "fx_record::gain_ceiling");
-    assert_eq!(cut_hear::MAX_GAIN, 10.0, "playbin's own ceiling is what §6 writes as maxGain (10)");
+    assert_eq!(
+        cut_hear::MAX_GAIN,
+        10.0,
+        "playbin's own ceiling is what §6 writes as maxGain (10)"
+    );
 
     let listed = effect_ids();
     for shared in [
@@ -125,7 +154,10 @@ fn sec_06_effects_6_parameters_used_s2_the_bounds_shared_with_the_cut_page_are_c
 #[test]
 fn sec_06_effects_6_parameters_used_s3_the_family_defaults_are_spelled_as_section_10_spells_them() {
     let lengths = row("P.policy.effectDefaultSeconds");
-    assert_eq!(lengths.spelled, "zoom/text/svg 3; stop/speed/volume/label 2");
+    assert_eq!(
+        lengths.spelled,
+        "zoom/text/svg 3; stop/speed/volume/label 2"
+    );
     assert_eq!(fx_zoom::DEFAULT_SECONDS, 3.0);
     assert_eq!(fx_volume::LINE_SECONDS, 2.0);
 
@@ -136,8 +168,14 @@ fn sec_06_effects_6_parameters_used_s3_the_family_defaults_are_spelled_as_sectio
     assert_eq!(fx_volume::FADE_SECONDS, 0.25);
     assert_eq!(cut_speed::STOP_FADE_SECONDS, 0.5);
 
-    assert_eq!(number_anywhere("effects.defaultGain"), fx_volume::DEFAULT_GAIN);
-    assert_eq!(number_anywhere("effects.defaultRate"), cut_speed::DEFAULT_RATE);
+    assert_eq!(
+        number_anywhere("effects.defaultGain"),
+        fx_volume::DEFAULT_GAIN
+    );
+    assert_eq!(
+        number_anywhere("effects.defaultRate"),
+        cut_speed::DEFAULT_RATE
+    );
 
     // One constant answering two ids: §10's row and §F3.11's own name for the same height fraction. Both rows read
     // it, so the two spellings cannot disagree about what a proposed zoom's height is.
@@ -145,8 +183,16 @@ fn sec_06_effects_6_parameters_used_s3_the_family_defaults_are_spelled_as_sectio
     let proposed = anywhere("effects.proposedZoomHeight");
     assert_eq!(suggested.spelled, "0.6");
     assert_eq!(proposed.spelled, suggested.spelled);
-    assert!(suggested.from.ends_with("cut_effects_pass::ZOOM_HEIGHT"), "{}", suggested.from);
-    assert!(proposed.from.ends_with("cut_effects_pass::ZOOM_HEIGHT"), "{}", proposed.from);
+    assert!(
+        suggested.from.ends_with("cut_effects_pass::ZOOM_HEIGHT"),
+        "{}",
+        suggested.from
+    );
+    assert!(
+        proposed.from.ends_with("cut_effects_pass::ZOOM_HEIGHT"),
+        "{}",
+        proposed.from
+    );
     assert_eq!(cut_effects_pass::ZOOM_HEIGHT, 0.6);
 }
 
@@ -159,8 +205,14 @@ fn sec_06_effects_6_parameters_used_s3_the_family_defaults_are_spelled_as_sectio
 fn sec_06_effects_6_parameters_used_s4_the_forms_typed_floors_are_the_numbers_apply_holds_to() {
     assert_eq!(number("effects.zoomFloorSeconds"), fx_zoom::MIN_SECONDS);
     assert_eq!(number("effects.textMinSeconds"), fx_text::MIN_SECONDS);
-    assert_eq!(number_anywhere("effects.volumeMinSeconds"), fx_volume::MIN_SECONDS);
-    assert_eq!(number("effects.markedBandMinSeconds"), cut_speed::MIN_MARKED_SECONDS);
+    assert_eq!(
+        number_anywhere("effects.volumeMinSeconds"),
+        fx_volume::MIN_SECONDS
+    );
+    assert_eq!(
+        number("effects.markedBandMinSeconds"),
+        cut_speed::MIN_MARKED_SECONDS
+    );
 
     // The stop's 0.5 gets no row of its own: §10 says outright that minClipSeconds is "also the speed clamp floor",
     // and cut_speed::apply holds a stop's Length to exactly that constant, so a second id would be two names for one
@@ -182,18 +234,28 @@ fn sec_06_effects_6_parameters_used_s4_the_forms_typed_floors_are_the_numbers_ap
 /// `spec/10-parameters.md`'s `P.policy.decorationDensity` row ("three or four per five minutes", home `fxRules`)
 /// makes it a catalogued parameter, and its row points at the prompt clause.
 #[test]
-fn sec_06_effects_6_parameters_used_s5_the_drawing_numbers_are_here_and_the_unowned_items_are_not() {
+fn sec_06_effects_6_parameters_used_s5_the_drawing_numbers_are_here_and_the_unowned_items_are_not()
+{
     assert_eq!(number_anywhere("layout.effectRowPx"), 26.0);
     // §6's "snap 8/10 px" is a pair on two surfaces: the lane's 8 px pulls a band onto a word edge, the preview's
     // 10 px drags a text box across a picture. Both rows exist and they are not the same rule.
     assert_eq!(number_anywhere("layout.snapPx"), 8.0);
     assert_eq!(number("effects.snapPx"), fx_text::SNAP_PX);
-    assert_eq!(number_anywhere("effects.previewRasterPx"), fx_svg::PREVIEW_RASTER_PX);
+    assert_eq!(
+        number_anywhere("effects.previewRasterPx"),
+        fx_svg::PREVIEW_RASTER_PX
+    );
 
     // §06-effects#5's card numbers, spelled as the spec writes them.
-    assert_eq!(number_anywhere("card.stillnessSeconds"), cut_cards::STILLNESS_SECONDS);
+    assert_eq!(
+        number_anywhere("card.stillnessSeconds"),
+        cut_cards::STILLNESS_SECONDS
+    );
     assert_eq!(number_anywhere("card.bakeFps"), 25.0);
-    assert_eq!(anywhere("card.canvas").spelled, format!("{}×{}", cut_cards::CANVAS.0, cut_cards::CANVAS.1));
+    assert_eq!(
+        anywhere("card.canvas").spelled,
+        format!("{}×{}", cut_cards::CANVAS.0, cut_cards::CANVAS.1)
+    );
 
     let listed: Vec<String> = params::prepare()
         .into_iter()
@@ -217,16 +279,30 @@ fn sec_06_effects_6_parameters_used_s5_the_drawing_numbers_are_here_and_the_unow
     // with the shipped prompt clause, which is what `tests/suite/decoration_density.rs` pins.
     let density = anywhere("P.policy.decorationDensity");
     assert_eq!(
-        listed.iter().filter(|id| *id == "P.policy.decorationDensity").count(),
+        listed
+            .iter()
+            .filter(|id| *id == "P.policy.decorationDensity")
+            .count(),
         1,
         "the density is §10's row and must appear exactly once"
     );
     assert_eq!(density.from, "cut_effects_pass::DENSITY_GUIDE");
-    assert!(density.spelled.contains("three or four"), "{}", density.spelled);
-    assert!(density.spelled.contains("five minutes"), "{}", density.spelled);
+    assert!(
+        density.spelled.contains("three or four"),
+        "{}",
+        density.spelled
+    );
+    assert!(
+        density.spelled.contains("five minutes"),
+        "{}",
+        density.spelled
+    );
     assert!(naivepost::cut_effects_pass::DENSITY_GUIDE.contains("three or four"));
     assert!(naivepost::cut_effects_pass::DENSITY_GUIDE.contains("five minutes"));
-    assert_eq!(naivepost::cut_effects_pass::DENSITY_PER_FIVE_MINUTES, (3, 4));
+    assert_eq!(
+        naivepost::cut_effects_pass::DENSITY_PER_FIVE_MINUTES,
+        (3, 4)
+    );
     // §I's killMin 32, fxMinBand 30 and fxGrab 9: no constant here holds them. Matched case-sensitively on whole
     // names — `layout.edgeGrabPx` already contains "grab", and the 10 px hit radius is §10's list's business.
     // F3.8's kill width WAS in this list as a number nothing read -- §A.9 states it, no module used it. That is
@@ -249,19 +325,37 @@ fn sec_06_effects_6_parameters_used_s5_the_drawing_numbers_are_here_and_the_unow
 fn sec_06_effects_6_parameters_used_s6_every_row_names_where_its_value_lives() {
     let listed = effect_ids();
     for id in &listed {
-        assert_eq!(listed.iter().filter(|other| *other == id).count(), 1, "{id} catalogued twice");
+        assert_eq!(
+            listed.iter().filter(|other| *other == id).count(),
+            1,
+            "{id} catalogued twice"
+        );
     }
     for param in effect_rows() {
         assert!(!param.from.is_empty(), "{} names no constant", param.id);
-        assert!(param.from.contains("::"), "{}: {} is not module::CONST", param.id, param.from);
+        assert!(
+            param.from.contains("::"),
+            "{}: {} is not module::CONST",
+            param.id,
+            param.from
+        );
         assert!(!param.spelled.is_empty(), "{} spells nothing", param.id);
     }
 
     // The families §10 files the ids under — including that this flow's unrowed numbers answer to no family.
     assert_eq!(params::family("P.eng.minRate"), params::Family::Eng);
-    assert_eq!(params::family("P.policy.effectDefaultSeconds"), params::Family::Policy);
-    assert_eq!(params::family("P.machine.captionBatch"), params::Family::Machine);
-    assert_eq!(params::family("effects.zoomFloorSeconds"), params::Family::Other);
+    assert_eq!(
+        params::family("P.policy.effectDefaultSeconds"),
+        params::Family::Policy
+    );
+    assert_eq!(
+        params::family("P.machine.captionBatch"),
+        params::Family::Machine
+    );
+    assert_eq!(
+        params::family("effects.zoomFloorSeconds"),
+        params::Family::Other
+    );
     assert_eq!(params::family("layout.gripPx"), params::Family::Other);
 
     // §6's own order, as far as it goes: the clamps first, then the defaults and the suggested height, then the
@@ -285,6 +379,11 @@ fn sec_06_effects_6_parameters_used_s6_every_row_names_where_its_value_lives() {
         "effects.edgeRadius",
     ];
     for pair in order.windows(2) {
-        assert!(at(pair[0]) < at(pair[1]), "{} should come before {}", pair[0], pair[1]);
+        assert!(
+            at(pair[0]) < at(pair[1]),
+            "{} should come before {}",
+            pair[0],
+            pair[1]
+        );
     }
 }

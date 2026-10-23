@@ -15,7 +15,7 @@ use naivepost::align;
 use naivepost::params;
 
 use crate::common;
-use common::{all_rows};
+use common::all_rows;
 
 /// The constants read through a call, so a comparison against one is a run-time check rather than a
 /// value clippy folds at compile time (`assertions_on_constants` fires on const-vs-const compares).
@@ -44,8 +44,7 @@ fn p_eng_alignbarewarnseconds_s1_the_floor_is_10_and_catalogued_once() {
         .find(|param| param.id == "P.eng.alignBareWarnSeconds")
         .expect("the bare-audio floor must be catalogued for Prepare, whose align pass reads it");
     assert_eq!(
-        row.from,
-        "align::BARE_WARN",
+        row.from, "align::BARE_WARN",
         "a row must name the constant its rule reads"
     );
     // num() takes the integer branch for a whole value, which is how §10 spells this one: "10".
@@ -61,7 +60,10 @@ fn p_eng_alignbarewarnseconds_s1_the_floor_is_10_and_catalogued_once() {
 
     // And exactly one row for it across all five lists -- one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.alignBareWarnSeconds").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.alignBareWarnSeconds")
+            .count(),
         1,
         "P.eng.alignBareWarnSeconds catalogued more than once"
     );
@@ -73,10 +75,7 @@ fn p_eng_alignbarewarnseconds_s1_the_floor_is_10_and_catalogued_once() {
 fn p_eng_alignbarewarnseconds_s2_the_floor_is_inclusive_at_ten_seconds() {
     // 10.0 >= BARE_WARN and 10.0 >= 0.08 * 100 = 8.0: both conditions met at the round number, which
     // is why the fixture uses 10.0 rather than 10.1 -- the boundary itself has to warn.
-    assert!(
-        align::bare_warns(10.0, 100.0),
-        "exactly the floor warns"
-    );
+    assert!(align::bare_warns(10.0, 100.0), "exactly the floor warns");
 
     // One hundredth under it does not, even though the share test alone passes comfortably
     // (9.99 >= 8.0). So what refuses here is this constant, not the share.
@@ -134,11 +133,17 @@ fn p_eng_alignbarewarnseconds_s4_zero_spoken_never_warns_and_small_clips_bind_on
         !align::bare_warns(50.0, 0.0),
         "nothing spoken raises no warning"
     );
-    assert!(!align::bare_warns(10.0, 0.0), "not even at exactly the floor");
+    assert!(
+        !align::bare_warns(10.0, 0.0),
+        "not even at exactly the floor"
+    );
 
     // On a tiny clip the floor binds first: ten bare seconds of twelve spoken is most of the recording
     // and warns (10 >= 10 and 10 >= 0.96).
-    assert!(align::bare_warns(10.0, 12.0), "ten bare of twelve spoken is a real error");
+    assert!(
+        align::bare_warns(10.0, 12.0),
+        "ten bare of twelve spoken is a real error"
+    );
 
     // Nine bare seconds of ten clears the share easily (9 >= 0.8) but not this floor -- so it stays
     // quiet. The pair differs only in the seconds, which is what makes the floor's own effect visible
@@ -204,8 +209,14 @@ fn p_eng_alignbarewarnseconds_s5_neighbours_by_home_not_by_number() {
     // spelled out as such, so the log line and the rule cannot drift.
     let text = align::bare_warning(10.0, 100.0);
     assert!(text.starts_with("!!! align: "), "{text}");
-    assert!(text.contains("10 s"), "the floor's number appears in the message: {text}");
-    assert!(text.contains("100 s"), "and so does the spoken total: {text}");
+    assert!(
+        text.contains("10 s"),
+        "the floor's number appears in the message: {text}"
+    );
+    assert!(
+        text.contains("100 s"),
+        "and so does the spoken total: {text}"
+    );
     assert!(
         text.contains("no word over it"),
         "and what it means: {text}"

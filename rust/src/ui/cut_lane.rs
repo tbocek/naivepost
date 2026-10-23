@@ -19,7 +19,8 @@ pub fn lane_for_footage_file(window: &adw::ApplicationWindow) -> String {
         return cut_copy::NO_LANE_LINE_YET.to_string();
     };
     let Some(file) = footage_source_path(window) else {
-        return "no source is marked as footage \u{2014} Inputs says which files are tape".to_string();
+        return "no source is marked as footage \u{2014} Inputs says which files are tape"
+            .to_string();
     };
     let seconds = match probe_file_seconds(&file) {
         Ok(seconds) => seconds,
@@ -98,7 +99,10 @@ fn probe_file_seconds(file: &str) -> Result<f64, String> {
         .unwrap_or_default();
     match crate::cut_lanes::probe_duration(&configured, file, &mut |line| window::log_line(line)) {
         Ok(seconds) if seconds > 0.0 => Ok(seconds),
-        Ok(_) => Err(crate::cut_lanes::no_probe_status(file, "ffprobe answered 0 seconds")),
+        Ok(_) => Err(crate::cut_lanes::no_probe_status(
+            file,
+            "ffprobe answered 0 seconds",
+        )),
         Err(why) => Err(crate::cut_lanes::no_probe_status(file, &why)),
     }
 }

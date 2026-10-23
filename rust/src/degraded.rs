@@ -105,11 +105,7 @@ fn push_run(spans: &mut Vec<(f64, f64)>, from: usize, to: usize, hz: f64, min_se
 /// edge. `None` is the mode's own limitation stated honestly: "unable to cut between two words of one
 /// breath" — with no word timings there is nothing between them to aim at, and inventing an edge there
 /// would be a click.
-pub fn cut_points(
-    wanted: &[f64],
-    silences: &[(f64, f64)],
-    tolerance: f64,
-) -> Vec<Option<f64>> {
+pub fn cut_points(wanted: &[f64], silences: &[(f64, f64)], tolerance: f64) -> Vec<Option<f64>> {
     wanted
         .iter()
         .map(|edge| {
@@ -207,7 +203,8 @@ pub fn finish_render(sd_down: bool, thumbnail: Result<(), String>) -> (RenderOut
         return (RenderOutcome::ThumbnailFailed(line.clone()), vec![line]);
     }
     if sd_down {
-        let line = "sd.cpp is down -- the thumbnail was not drawn, the video is complete".to_string();
+        let line =
+            "sd.cpp is down -- the thumbnail was not drawn, the video is complete".to_string();
         return (RenderOutcome::ThumbnailFailed(line.clone()), vec![line]);
     }
     (RenderOutcome::Complete, Vec::new())
@@ -305,7 +302,10 @@ pub fn refused_answer(status: u16, body: &str) -> bool {
 /// The refusal as a caller reads it back: enough that [`crate::tool_loop::retry_without_tools`] recognises it as
 /// a field refusal, and the server's own sentence beside it so the log line can name the reason.
 pub fn refused_reason(status: u16, body: &str) -> String {
-    format!("the request with tools was answered {status}: {}", body.trim())
+    format!(
+        "the request with tools was answered {status}: {}",
+        body.trim()
+    )
 }
 
 /// What a `tools` problem means for the call.

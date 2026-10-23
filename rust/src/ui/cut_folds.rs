@@ -32,7 +32,13 @@ use crate::ui::window::{
 /// input. Row COLOURING keeps reading `kept_footage_recordings` (F2.10's rows are the cameras the cut
 /// actually shows), so only the fold half and the row-emptiness half ask here.
 pub fn page_recordings() -> Vec<crate::timeline::Recording> {
-    SESSION_RECORDINGS.with(|slots| slots.borrow().last().map(|slot| slot.borrow().clone()).unwrap_or_default())
+    SESSION_RECORDINGS.with(|slots| {
+        slots
+            .borrow()
+            .last()
+            .map(|slot| slot.borrow().clone())
+            .unwrap_or_default()
+    })
 }
 
 /// Replace this window's session recordings with the ones the page should lay out. Newest slot only, so
@@ -46,7 +52,9 @@ pub fn set_session_recordings(recordings: &[crate::timeline::Recording]) {
     match held {
         Some(slot) => *slot.borrow_mut() = recordings.to_vec(),
         None => SESSION_RECORDINGS.with(|slots| {
-            slots.borrow_mut().push(Rc::new(RefCell::new(recordings.to_vec())))
+            slots
+                .borrow_mut()
+                .push(Rc::new(RefCell::new(recordings.to_vec())))
         }),
     }
     SESSION_DECLARED.with(|flags| match flags.borrow().last() {
@@ -121,7 +129,13 @@ pub fn folded_gap_at(window: &adw::ApplicationWindow, index: usize) -> Option<(f
 /// The gaps this window currently wears a badge over, in tape order.
 pub fn fold_gaps(window: &adw::ApplicationWindow) -> Vec<(f64, f64)> {
     let _ = window;
-    FOLD_TABLES.with(|slots| slots.borrow().last().map(|t| t.borrow().clone()).unwrap_or_default())
+    FOLD_TABLES.with(|slots| {
+        slots
+            .borrow()
+            .last()
+            .map(|t| t.borrow().clone())
+            .unwrap_or_default()
+    })
 }
 
 /// The band's own badge holder, scoped to THIS window exactly as [`fold_badges_box`] is (a closed window's
@@ -201,7 +215,10 @@ pub fn refresh_fold_badges(window: &adw::ApplicationWindow) {
             .filter(|child| child.widget_name().starts_with("fold-button-")),
     );
     for old in stale {
-        if let Some(parent) = old.parent().and_then(|node| node.downcast::<gtk::Box>().ok()) {
+        if let Some(parent) = old
+            .parent()
+            .and_then(|node| node.downcast::<gtk::Box>().ok())
+        {
             parent.remove(&old);
         }
     }
@@ -215,7 +232,9 @@ pub fn refresh_fold_badges(window: &adw::ApplicationWindow) {
         button.set_tooltip_text(Some(&format!(
             "{} {}",
             if badge.folded { "unfold" } else { "fold" },
-            cut_fold::fold_status(badge.gap).replace("folded ", "").as_str()
+            cut_fold::fold_status(badge.gap)
+                .replace("folded ", "")
+                .as_str()
         )));
         // Over the bar, at the x the rule answered: a child of a top-left-pinned row, pushed right by its
         // own margin, so the badge's left edge IS `badge.x` in band pixels.
@@ -264,7 +283,10 @@ pub fn review_fold_rows(window: &adw::ApplicationWindow) -> cut::Cut {
 
 /// F2.11 S1 (`\u{2212} in such a gap folds it to a seam \u00b7 + on the seam unfolds`): the seam a
 /// badge forwards to. Saves the cut afterwards, because a fold is a view but IS kept in `cut.json`.
-#[expect(clippy::question_mark, reason = "no badge at that index means nothing to fold, and no status line")]
+#[expect(
+    clippy::question_mark,
+    reason = "no badge at that index means nothing to fold, and no status line"
+)]
 pub fn press_fold_gap(window: &adw::ApplicationWindow, index: usize) -> Option<String> {
     let Some(gap) = folded_gap_at(window, index) else {
         return None;

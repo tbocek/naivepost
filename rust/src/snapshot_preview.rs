@@ -23,14 +23,19 @@ const ZOOM_HF: f64 = 0.62;
 /// Paint the preview mid-zoom-and-caption onto `window`. Returns true when this module owned `screen`.
 /// `out` is the PNG this run writes; §2's own frame image goes beside it as `<name>-frame.png`.
 pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, screen: &str) -> bool {
-            // §06-effects#2's own screen (`spec/img/06-preview.png`): the preview DURING a zoom and a caption at
-            // 1:22 — the camera rect framing the lecturer, the caption fitted into its box, the plate a delayed
-            // sound earns. The fixture cannot show any of it (its `cut/cut.json` has `fx: []`), so the two records
-            // are seeded here the way `06-lane` seeds its bars, and the caption is then placed through ❝ Text's own
-            // doors rather than pushed in: what the panel paints must be what the app would paint.
+    // §06-effects#2's own screen (`spec/img/06-preview.png`): the preview DURING a zoom and a caption at
+    // 1:22 — the camera rect framing the lecturer, the caption fitted into its box, the plate a delayed
+    // sound earns. The fixture cannot show any of it (its `cut/cut.json` has `fx: []`), so the two records
+    // are seeded here the way `06-lane` seeds its bars, and the caption is then placed through ❝ Text's own
+    // doors rather than pushed in: what the panel paints must be what the app would paint.
     if screen == "06-preview" {
         let staged = cut::Cut {
-            segs: vec![cut::Seg { s: 0.0, e: 300.0, cam: 0, ..Default::default() }],
+            segs: vec![cut::Seg {
+                s: 0.0,
+                e: 300.0,
+                cam: 0,
+                ..Default::default()
+            }],
             fx: vec![
                 // A zoom standing at the line's second, framed off-centre and tighter than the full frame:
                 // `fx_zoom::SETTLED` is hf 1.0, which hides nothing, so the dim would have no bands outside its
@@ -157,9 +162,13 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, scr
         );
         println!("snapshot: 06-preview | caption box: {moved_box}");
         let after = ui::review_cut_of(window);
-        println!("snapshot: 06-preview | staged cut: {} records", after.fx.len());
-        if let Some(view) = crate::ui::window::find_widget_by_name(window.upcast_ref(), "text-field-words")
-            .and_then(|w| w.downcast::<gtk::TextView>().ok())
+        println!(
+            "snapshot: 06-preview | staged cut: {} records",
+            after.fx.len()
+        );
+        if let Some(view) =
+            crate::ui::window::find_widget_by_name(window.upcast_ref(), "text-field-words")
+                .and_then(|w| w.downcast::<gtk::TextView>().ok())
         {
             view.buffer().insert_at_cursor("Ethereum in one lecture");
         }
@@ -187,7 +196,8 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, scr
         // staged colour a crop of it and all of it are the same pixels. So this screen stages the structured frame
         // (three bands + one bright block) and paints THAT; `frame_shown()` stays the fallback for when nothing
         // could be written, so the shot still lands rather than going out blank.
-        let picture = crate::snapshot_face::seed_structured_frame(dir, "session-tape", 82.0).or_else(|| still.clone());
+        let picture = crate::snapshot_face::seed_structured_frame(dir, "session-tape", 82.0)
+            .or_else(|| still.clone());
         match crate::snapshot_preview_frame::write_png(
             &staged_with_caption(window),
             82.0,

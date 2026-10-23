@@ -134,7 +134,14 @@ pub fn seek_preview(
     // The CUE is snapped as well, to the clip's boundary rather than the edge inside it: a player asked for a
     // second outside the footage answers no frame.
     let cue = narrate_preview::snap_seek(target, &segs.segs, forward);
-    if narrate_preview_leg::seek(&tree, &segs, cue, forward, &mut narrate_preview_leg::spawn_player).is_none()
+    if narrate_preview_leg::seek(
+        &tree,
+        &segs,
+        cue,
+        forward,
+        &mut narrate_preview_leg::spawn_player,
+    )
+    .is_none()
     {
         // Nothing to cue (no recording reaches the cut). The clock already moved; the reason is said, not
         // swallowed — a seek that landed in a gap would otherwise read as a broken button.

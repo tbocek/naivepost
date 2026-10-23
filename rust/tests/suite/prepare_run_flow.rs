@@ -53,7 +53,10 @@ fn f1_1_s1_no_sources_refuses() {
     assert!(project.sources.is_empty());
     let (log, status) = prepare_run::refuse(&project).expect("an empty session must refuse");
     assert_eq!(status, prepare_run::NO_SOURCES);
-    assert_eq!(status, "add at least one source", "the spec's wording, verbatim");
+    assert_eq!(
+        status, "add at least one source",
+        "the spec's wording, verbatim"
+    );
     assert!(
         log.starts_with("!!!"),
         "a refusal logs like every other failure in this app: {log:?}"
@@ -66,15 +69,18 @@ fn f1_1_s1_a_name_clash_refuses_and_names_the_shared_folder() {
     // `sources::clash` compares whole file names including the extension (that is what makes
     // `project:sources/clip.mkv` clash with `/media/clip.mkv`), so the two rows must share one.
     let project = with_sources(&["project:sources/clip.mkv", "/media/clip.mkv"]);
-    let (log, status) = prepare_run::refuse(&project).expect("one base name across two rows refuses");
-    assert_eq!(log, sources::clash_log("project:sources/clip.mkv", "/media/clip.mkv"));
+    let (log, status) =
+        prepare_run::refuse(&project).expect("one base name across two rows refuses");
+    assert_eq!(
+        log,
+        sources::clash_log("project:sources/clip.mkv", "/media/clip.mkv")
+    );
     assert!(
         log.contains("both inputs/clip"),
         "the log names the folder both would write into: {log:?}"
     );
     assert_eq!(
-        status,
-        "clip.mkv and clip.mkv have the same name \u{2014} rename one",
+        status, "clip.mkv and clip.mkv have the same name \u{2014} rename one",
         "the status asks for the rename, in §4's words"
     );
 }
@@ -128,7 +134,10 @@ fn f1_1_s2_the_project_is_saved_before_the_run_starts() {
         matches!(started, Start::Started { .. }),
         "a valid project starts: {started:?}"
     );
-    assert!(file.exists(), "S2 wrote the project before anything else ran");
+    assert!(
+        file.exists(),
+        "S2 wrote the project before anything else ran"
+    );
     let saved = naivepost::project::load(tree.dir()).expect("what was saved loads back");
     assert_eq!(saved.sources.len(), 1, "and it is the same project");
 }
@@ -174,7 +183,10 @@ fn f1_1_s3_a_stopped_describe_is_cleared_and_the_frames_are_kept() {
     let project = with_sources(&["project:sources/lecture.mkv"]);
     let cleared = prepare_run::clear_stopped_describe(&tree, &project);
 
-    assert_eq!(cleared.removed, vec!["events.tsv".to_string(), "state.txt".to_string()]);
+    assert_eq!(
+        cleared.removed,
+        vec!["events.tsv".to_string(), "state.txt".to_string()]
+    );
     assert!(cleared.failures.is_empty());
     assert!(!tree.events_tsv(lane).exists(), "events.tsv is gone");
     assert!(!tree.describe_state(lane).exists(), "state.txt is gone");
@@ -245,7 +257,10 @@ fn f1_1_s3_a_failed_clear_is_logged_and_the_run_resumes() {
             && lines[0].ends_with("-- resuming it"),
         "§F1.1's exact shape: {lines:?}"
     );
-    assert!(lines[0].contains("events.tsv"), "it names which file: {lines:?}");
+    assert!(
+        lines[0].contains("events.tsv"),
+        "it names which file: {lines:?}"
+    );
 }
 
 /// S3 through `begin`: the clear notices come BEFORE the opening lines, so the person reads "starting
@@ -266,7 +281,9 @@ fn f1_1_s3_the_clear_notice_precedes_the_opening_log() {
                 "the restart notice is first: {lines:?}"
             );
             assert!(
-                lines.iter().any(|l| l.starts_with(">>> prepare: 1 input file")),
+                lines
+                    .iter()
+                    .any(|l| l.starts_with(">>> prepare: 1 input file")),
                 "then the opening lines follow: {lines:?}"
             );
         }
@@ -288,7 +305,10 @@ fn f1_1_s4_the_opening_log_says_inputs_files_summary_and_context() {
 
     let lines = prepare_run::start_log(&project, &counts);
     assert_eq!(lines[0], ">>> prepare: 2 input file(s)");
-    assert_eq!(lines[1], ">>>   lecture.mkv", "each file by name, not by path");
+    assert_eq!(
+        lines[1], ">>>   lecture.mkv",
+        "each file by name, not by path"
+    );
     assert_eq!(lines[2], ">>>   mic.wav");
     assert_eq!(
         lines[3],
@@ -296,8 +316,7 @@ fn f1_1_s4_the_opening_log_says_inputs_files_summary_and_context() {
         "the inputs summary is the same sentence the page shows"
     );
     assert_eq!(
-        lines[4],
-        ">>> prepare: sending the session context from Prepare (37 characters)",
+        lines[4], ">>> prepare: sending the session context from Prepare (37 characters)",
         "the context line carries its character count"
     );
     assert_eq!(lines.len(), 5);
@@ -310,9 +329,7 @@ fn f1_1_s4_an_empty_context_sends_no_line() {
     assert!(project.context.is_empty());
     let lines = prepare_run::start_log(&project, &prepare::Counts::default());
     assert!(
-        !lines
-            .iter()
-            .any(|line| line.contains("session context")),
+        !lines.iter().any(|line| line.contains("session context")),
         "no context, no claim that one was sent: {lines:?}"
     );
     assert_eq!(lines.len(), 3, "count + file + summary: {lines:?}");
@@ -341,7 +358,10 @@ fn f1_1_s5_a_healthy_server_set_passes() {
         None,
         "no separation asked, so its absence is not a problem"
     );
-    assert_eq!(prepare_run::preflight_error(true, true, true, true, true), None);
+    assert_eq!(
+        prepare_run::preflight_error(true, true, true, true, true),
+        None
+    );
 }
 
 /// S5: the dead server is named first, before any model question.
@@ -349,18 +369,25 @@ fn f1_1_s5_a_healthy_server_set_passes() {
 fn f1_1_s5_a_dead_audio_server_is_named_first() {
     let err = prepare_run::preflight_error(false, false, false, true, false).expect("an error");
     assert!(err.contains("audio.cpp"), "names the server: {err:?}");
-    assert!(!err.contains("ASR"), "and stops there — the models are unknown behind a dead server");
+    assert!(
+        !err.contains("ASR"),
+        "and stops there — the models are unknown behind a dead server"
+    );
 }
 
 /// S5: each missing model is named in turn once the server answers.
 #[test]
 fn f1_1_s5_each_missing_model_is_named_in_turn() {
-    assert!(prepare_run::preflight_error(true, false, true, false, false)
-        .expect("asr")
-        .contains("ASR"));
-    assert!(prepare_run::preflight_error(true, true, false, false, false)
-        .expect("diar")
-        .contains("diarization"));
+    assert!(
+        prepare_run::preflight_error(true, false, true, false, false)
+            .expect("asr")
+            .contains("ASR")
+    );
+    assert!(
+        prepare_run::preflight_error(true, true, false, false, false)
+            .expect("diar")
+            .contains("diarization")
+    );
     assert!(prepare_run::preflight_error(true, true, true, true, false)
         .expect("sep")
         .contains("separation"));
@@ -401,7 +428,11 @@ fn f1_1_s6_the_phase_shares_tile_the_bar() {
     let (s_from, s_to) = prepare_run::share(Phase::Separate, true);
     let (i_from, i_to) = prepare_run::share(Phase::Ingest, true);
     let (u_from, u_to) = prepare_run::share(Phase::Understand, true);
-    assert_eq!((s_from, s_to), (0.0, 0.10), "voice separation 0\u{2013}10 %");
+    assert_eq!(
+        (s_from, s_to),
+        (0.0, 0.10),
+        "voice separation 0\u{2013}10 %"
+    );
     assert_eq!((i_from, i_to), (0.10, 0.30), "ingest to 30 %");
     assert_eq!((u_from, u_to), (0.30, 1.0), "understand 30\u{2013}100 %");
     assert_eq!(s_to, i_from, "no gap between separate and ingest");
@@ -429,8 +460,15 @@ fn f1_1_s7_success_names_the_three_folders_and_counts_the_files() {
     let log = prepare_run::finished_log();
     assert_eq!(log[0], ">>> prepare wrote:");
     let joined = log.join("\n");
-    for folder in ["prepare/inputs/", "prepare/describe/", "prepare/transcript/"] {
-        assert!(joined.contains(folder), "the log names {folder}: {joined:?}");
+    for folder in [
+        "prepare/inputs/",
+        "prepare/describe/",
+        "prepare/transcript/",
+    ] {
+        assert!(
+            joined.contains(folder),
+            "the log names {folder}: {joined:?}"
+        );
     }
     assert_eq!(
         prepare_run::finished_status(9378),
@@ -498,7 +536,10 @@ fn f0_3_s5_a_stop_inside_describe_arms_the_next_prepare_run() {
     // idle-safe and clears nothing.
     match prepare_run::begin(&project, &tree) {
         Start::Started { cleared, .. } => {
-            assert!(cleared.quiet(), "one stop arms one run, no further: {cleared:?}");
+            assert!(
+                cleared.quiet(),
+                "one stop arms one run, no further: {cleared:?}"
+            );
         }
         other => panic!("expected Started, got {other:?}"),
     }
@@ -574,5 +615,8 @@ fn f1_1_s6_the_press_puts_the_bar_in_prepare_slices() {
         app.quit();
     });
     app.run_with_args::<String>(&[]);
-    assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the press check never ran");
+    assert!(
+        RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the press check never ran"
+    );
 }

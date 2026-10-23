@@ -5,21 +5,22 @@
 //! ground §1 names, that a notch over them moves the same state the logic test checks, and that the − / +
 //! buttons re-scale the band instead of only logging a number.
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle, status_text, widget_in};
 use gtk4 as gtk;
 use naivepost::cut::{self, Seg};
 use naivepost::cut_screen::{self, WheelOver};
 use naivepost::shell::Page;
 use naivepost::timeline::{self, Recording};
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, settle, status_text, widget_in};
 
 static RAN_CONTROLLERS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_STEP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_ZOOM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_BUTTONS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static RAN_BAND_CONTROLLER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_BAND_CONTROLLER: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 static RAN_BAND_EMIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// A tape long enough that the view has somewhere to go: 20 minutes at any zoom is more timeline than a
@@ -46,7 +47,11 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
         .emit_clicked();
     assert_eq!(ui::state(&window).page, Page::Cut);
     let seeded = cut::Cut {
-        segs: vec![Seg { s: 0.0, e: 60.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     ui::seed_review_cut(&window, &seeded);
@@ -81,20 +86,25 @@ fn check_the_three_gestures_are_attached(app: &adw::Application) {
 fn check_a_notch_over_the_transport_steps_the_line(app: &adw::Application) {
     let window = cut_window(app);
     let before = ui::line_position(&window).t;
-    let said = ui::cut_view::apply_wheel(&window, WheelOver::Transport, false, 1.0, 0.0, |frames| {
-        let _ = ui::step_frames_of(&window, frames);
-    });
+    let said =
+        ui::cut_view::apply_wheel(&window, WheelOver::Transport, false, 1.0, 0.0, |frames| {
+            let _ = ui::step_frames_of(&window, frames);
+        });
     settle();
-    assert!(said.is_none(), "a step says nothing here — the transport owns that sentence");
+    assert!(
+        said.is_none(),
+        "a step says nothing here — the transport owns that sentence"
+    );
     let after = ui::line_position(&window).t;
     assert!(
         after > before,
         "a notch forward moved the red line: {before} -> {after}"
     );
     // Shift makes it five, exactly as the button's Shift does.
-    let shifted = ui::cut_view::apply_wheel(&window, WheelOver::Transport, true, 1.0, 0.0, |frames| {
-        let _ = ui::step_frames_of(&window, frames);
-    });
+    let shifted =
+        ui::cut_view::apply_wheel(&window, WheelOver::Transport, true, 1.0, 0.0, |frames| {
+            let _ = ui::step_frames_of(&window, frames);
+        });
     settle();
     assert!(shifted.is_none());
     assert!(
@@ -131,7 +141,10 @@ fn check_a_notch_over_the_tracks_zooms_and_shift_pans(app: &adw::Application) {
     );
 
     let total = ui::cut_view::total_px(1200.0, ui::cut_view::pps());
-    assert!(!ui::cut_view::fits(total, view), "20 min at the open zoom needs the bar");
+    assert!(
+        !ui::cut_view::fits(total, view),
+        "20 min at the open zoom needs the bar"
+    );
 
     let said = ui::cut_view::apply_wheel(&window, WheelOver::Tracks, false, -1.0, 0.0, |_| {})
         .expect("a zoom has a sentence");
@@ -237,7 +250,10 @@ fn check_the_drawn_band_carries_the_tracks_controller(app: &adw::Application) {
     );
     // Exactly one: a second one would answer one notch as two steps.
     assert_eq!(
-        names.iter().filter(|name| *name == "wheel-track-band").count(),
+        names
+            .iter()
+            .filter(|name| *name == "wheel-track-band")
+            .count(),
         1,
         "the band answers a notch more than once: {names:?}"
     );
@@ -276,7 +292,10 @@ fn check_a_notch_emitted_on_the_band_zooms_and_pans(app: &adw::Application) {
     // answered" means.
     let handled = controller.emit_by_name::<bool>("scroll", &[&0.0f64, &-1.0f64]);
     settle();
-    assert!(handled, "the band's wheel controller did not claim the emitted notch");
+    assert!(
+        handled,
+        "the band's wheel controller did not claim the emitted notch"
+    );
     let pps_after = ui::cut_view::pps();
     assert!(
         pps_after > pps_before,
@@ -333,7 +352,8 @@ fn sec_05_cut_1_screen_s4_the_drawn_band_carries_the_tracks_wheel_controller() {
 }
 
 #[test]
-fn sec_05_cut_1_screen_s5_a_wheel_notch_on_the_band_zooms_around_the_cursor_and_a_shift_notch_pans_an_eighth() {
+fn sec_05_cut_1_screen_s5_a_wheel_notch_on_the_band_zooms_around_the_cursor_and_a_shift_notch_pans_an_eighth(
+) {
     round();
     assert!(
         RAN_BAND_EMIT.load(std::sync::atomic::Ordering::SeqCst),
@@ -365,13 +385,20 @@ fn sec_05_cut_1_screen_s4_a_wheel_over_the_transport_and_the_picture_carries_a_s
         RAN_CONTROLLERS.load(std::sync::atomic::Ordering::SeqCst),
         "the controller check never ran"
     );
-    assert!(RAN_STEP.load(std::sync::atomic::Ordering::SeqCst), "the step check never ran");
+    assert!(
+        RAN_STEP.load(std::sync::atomic::Ordering::SeqCst),
+        "the step check never ran"
+    );
 }
 
 #[test]
-fn sec_05_cut_1_screen_s5_a_wheel_over_the_tracks_zooms_around_the_cursor_and_shift_pans_an_eighth() {
+fn sec_05_cut_1_screen_s5_a_wheel_over_the_tracks_zooms_around_the_cursor_and_shift_pans_an_eighth()
+{
     round();
-    assert!(RAN_ZOOM.load(std::sync::atomic::Ordering::SeqCst), "the zoom/pan check never ran");
+    assert!(
+        RAN_ZOOM.load(std::sync::atomic::Ordering::SeqCst),
+        "the zoom/pan check never ran"
+    );
     assert!(
         RAN_BUTTONS.load(std::sync::atomic::Ordering::SeqCst),
         "the zoom-button check never ran"

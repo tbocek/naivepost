@@ -7,9 +7,9 @@
 use adw::prelude::*;
 
 use crate::preview::{self, Press};
+use crate::ui::cut_folds;
 use crate::ui::window::log_line;
 use crate::{layout, play_back, timeline, ui};
-use crate::ui::cut_folds;
 
 /// The label the toolbar ships (§1's transport table): ▶ while nothing of ours runs.
 pub const PLAY_LABEL: &str = crate::cut_screen::PLAY_GLYPH_RECORDING;
@@ -38,7 +38,9 @@ pub fn files_for(window: &adw::ApplicationWindow, runs: &[(f64, f64)]) -> Vec<St
     let _ = window;
     let mut files: Vec<String> = Vec::new();
     for (start, _) in runs {
-        let Some(base) = base_at(&cut_folds::page_recordings(), *start) else { continue };
+        let Some(base) = base_at(&cut_folds::page_recordings(), *start) else {
+            continue;
+        };
         let written = ui::session_sources(window)
             .into_iter()
             .find(|path| file_stem(path.rsplit('/').next().unwrap_or(path)) == base);
@@ -97,13 +99,20 @@ pub fn after_press(window: &adw::ApplicationWindow, pressed: &Press, runs: &[(f6
 /// three buttons — and the ⏸ itself additionally needs the transport to be actually playing: a parked
 /// recording is still the recording's turn but owes a ▶, not a ⏸.
 pub fn paint_button(window: &adw::ApplicationWindow) {
-    let Some(button) = ui::play_recording_button(window) else { return };
+    let Some(button) = ui::play_recording_button(window) else {
+        return;
+    };
     let player = ui::preview_player(window);
-    let [ours_lit, _cut_lit, _review_lit] = crate::tab_states::preview_lits(&crate::cut_screen::Preview {
-        cut_only: player.cut_only,
-        reviewing: player.reviewing,
+    let [ours_lit, _cut_lit, _review_lit] =
+        crate::tab_states::preview_lits(&crate::cut_screen::Preview {
+            cut_only: player.cut_only,
+            reviewing: player.reviewing,
+        });
+    button.set_label(if ours_lit && player.transport.playing {
+        PAUSE_LABEL
+    } else {
+        PLAY_LABEL
     });
-    button.set_label(if ours_lit && player.transport.playing { PAUSE_LABEL } else { PLAY_LABEL });
 }
 
 fn startup_session_dir() -> std::path::PathBuf {

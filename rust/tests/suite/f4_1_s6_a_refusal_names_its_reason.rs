@@ -29,14 +29,22 @@ fn line(s: f64, e: f64, text: &str) -> Entry {
 #[test]
 fn f4_1_s6_a_refusal_is_said_and_writes_no_take() {
     let fixture = fixture("f41-s6-refuse");
-    write_reference(&fixture, b"RIFF fake reference, forty-odd bytes long, not empty");
-    let audio = FakeAudio::start(
-        Script::healthy().speech_with(vec![Reply::json(500, r#"{"error":"no memory for a take"}"#)]),
+    write_reference(
+        &fixture,
+        b"RIFF fake reference, forty-odd bytes long, not empty",
     );
+    let audio = FakeAudio::start(Script::healthy().speech_with(vec![Reply::json(
+        500,
+        r#"{"error":"no memory for a take"}"#,
+    )]));
     point_at(&audio.url());
 
     let entries = vec![
-        line(0.0, 20.0, "Welcome back: lecture two is all about Ethereum."),
+        line(
+            0.0,
+            20.0,
+            "Welcome back: lecture two is all about Ethereum.",
+        ),
         line(20.0, 40.0, ""),
         line(40.0, 60.0, "First a quick look back at Bitcoin."),
     ];
@@ -44,7 +52,10 @@ fn f4_1_s6_a_refusal_is_said_and_writes_no_take() {
         &entries,
         |entry| {
             let key = naivepost::narration::key_for(entry, Some("narrator1"));
-            fixture.tree.tts_wav(&naivepost::narration::tts_file(&key)).is_file()
+            fixture
+                .tree
+                .tts_wav(&naivepost::narration::tts_file(&key))
+                .is_file()
         },
         |entry| narrate_run_speak::dial_line(&fixture.tree, "narrator1", "en", entry),
     );
@@ -52,8 +63,15 @@ fn f4_1_s6_a_refusal_is_said_and_writes_no_take() {
     assert!(!run.stopped, "a refusal is not a stop");
     assert_eq!(spoken, 0, "nothing was spoken: {lines:?}");
     assert_eq!(cached, 0);
-    let refusals: Vec<&str> = lines.iter().filter_map(narrate_run_speak::refused).collect();
-    assert_eq!(refusals.len(), 2, "each line with words got its own refusal: {lines:?}");
+    let refusals: Vec<&str> = lines
+        .iter()
+        .filter_map(narrate_run_speak::refused)
+        .collect();
+    assert_eq!(
+        refusals.len(),
+        2,
+        "each line with words got its own refusal: {lines:?}"
+    );
     for why in &refusals {
         assert!(
             !why.trim().is_empty(),
@@ -62,10 +80,21 @@ fn f4_1_s6_a_refusal_is_said_and_writes_no_take() {
     }
     let tts_home = fixture.tree.tts_wav("");
     let tts = tts_home.parent().expect("tts folder has a parent");
-    let written = std::fs::read_dir(tts).map(|entries| entries.count()).unwrap_or(0);
-    assert_eq!(written, 0, "a refused reply never becomes a take: {written} files in {}", tts.display());
+    let written = std::fs::read_dir(tts)
+        .map(|entries| entries.count())
+        .unwrap_or(0);
+    assert_eq!(
+        written,
+        0,
+        "a refused reply never becomes a take: {written} files in {}",
+        tts.display()
+    );
     // Both lines still asked: the first refusal does not stop the pass walking the rest.
-    assert_eq!(audio.hits("/v1/audio/speech"), 2, "the pass carried on past the first refusal");
+    assert_eq!(
+        audio.hits("/v1/audio/speech"),
+        2,
+        "the pass carried on past the first refusal"
+    );
     // And the summary the run logs says zero spoken, which is the truth of it.
     assert_eq!(
         narrate_run::spoken_log(spoken, cached),
@@ -99,6 +128,10 @@ fn f4_1_s6_verdicts_match_the_classification() {
         },
     );
     let (lines, spoken, cached) = (run.lines, run.spoken, run.cached);
-    assert_eq!(dialed.borrow().as_slice(), &[0.0], "only the uncached line reached the leg");
+    assert_eq!(
+        dialed.borrow().as_slice(),
+        &[0.0],
+        "only the uncached line reached the leg"
+    );
     assert_eq!((spoken, cached), (1, 1), "{lines:?}");
 }

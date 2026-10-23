@@ -71,12 +71,7 @@ pub fn track(
 
 /// One language, start to finish: numbered originals, batches, the one re-ask, then the merge put back
 /// onto the original cues. Every word it says goes out through `log` — the run's own log line, never a print.
-fn one_track(
-    cues: &[subs::Cue],
-    language: &str,
-    ask: &Ask,
-    log: &mut impl FnMut(&str),
-) -> Tracked {
+fn one_track(cues: &[subs::Cue], language: &str, ask: &Ask, log: &mut impl FnMut(&str)) -> Tracked {
     // 1-based numbers (the contract is what the model sees printed), and `sent_text` strips the
     // placement tag so `{\an8}` never travels as a word — §3.10's first must-fix.
     let original: Vec<(usize, String)> = (1..=cues.len())
@@ -91,7 +86,11 @@ fn one_track(
         let mut batch = subs::Batch::new(range);
         // The request is §3.10's sentence PLUS the numbered lines themselves: `subs::message` is only the
         // heading, so sending it alone asks for a translation of lines the model never got.
-        let request = format!("{}\n{}", subs::message(part.len(), language), subs::numbered(&part));
+        let request = format!(
+            "{}\n{}",
+            subs::message(part.len(), language),
+            subs::numbered(&part)
+        );
         if let Ok(answers) = ask(&request, &numbers) {
             for (number, text) in answers {
                 // A line the batch rejects (a number it never asked for, empty text) leaves that line
@@ -130,17 +129,18 @@ fn one_track(
         .iter()
         .enumerate()
         .map(|(index, cue)| {
-            let body = merged
-                .lines
-                .get(index)
-                .map(String::as_str)
-                .unwrap_or("");
+            let body = merged.lines.get(index).map(String::as_str).unwrap_or("");
             // Placement comes from the ORIGINAL cue whatever came back (§3.10's first must-fix, other
             // half), and the model's own row breaks are kept rather than re-wrapped at
             // P.policy.subtitleRowChars (§3.10's second).
             let (text, _) = subs::keep_placement(cue, body);
             let text = subs::keep_breaks(&text).to_string();
-            subs::Cue { s: cue.s, e: cue.e, text, pos: cue.pos.clone() }
+            subs::Cue {
+                s: cue.s,
+                e: cue.e,
+                text,
+                pos: cue.pos.clone(),
+            }
         })
         .collect();
 

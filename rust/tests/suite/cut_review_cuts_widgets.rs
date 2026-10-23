@@ -7,13 +7,13 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::fixture_dir;
 use naivepost::cut::{Cut, Seg};
 use naivepost::run::Transport;
 use naivepost::shell::Page;
 use naivepost::{cut_review, ui};
-use crate::common;
-use common::{fixture_dir};
 
 static RAN_START: AtomicBool = AtomicBool::new(false);
 static RAN_END: AtomicBool = AtomicBool::new(false);
@@ -60,9 +60,21 @@ fn settle() {
 fn three_clips() -> Cut {
     Cut {
         segs: vec![
-            Seg { s: 0.0, e: 10.0, ..Default::default() },
-            Seg { s: 20.0, e: 30.0, ..Default::default() },
-            Seg { s: 40.0, e: 50.0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 10.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 20.0,
+                e: 30.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 40.0,
+                e: 50.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }
@@ -83,9 +95,20 @@ fn check_s2_starts_through_the_widget(app: &adw::Application) {
         button.height(),
         button.is_mapped()
     );
-    assert!(button.is_mapped(), "\u{25b6}\u{2702}\u{2702} is mapped on the visible Cut page");
-    assert!(button.width() >= 16, "wide enough to click its \u{a7}A glyph, got {} px", button.width());
-    assert!(button.height() > 16, "tall enough to click, got {} px", button.height());
+    assert!(
+        button.is_mapped(),
+        "\u{25b6}\u{2702}\u{2702} is mapped on the visible Cut page"
+    );
+    assert!(
+        button.width() >= 16,
+        "wide enough to click its \u{a7}A glyph, got {} px",
+        button.width()
+    );
+    assert!(
+        button.height() > 16,
+        "tall enough to click, got {} px",
+        button.height()
+    );
     assert_eq!(
         button.tooltip_text().as_deref(),
         Some(naivepost::cut_screen::REVIEW_TIP),
@@ -96,14 +119,28 @@ fn check_s2_starts_through_the_widget(app: &adw::Application) {
     // spans 10 s either side of the join at 10 s, clamped to the clips).
     let cut = three_clips();
     ui::seed_review_cut(&window, &cut);
-    ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        Transport {
+            playing: false,
+            started: false,
+        },
+    );
     ui::set_playhead(&window, 5.0);
 
     button.emit_by_name::<()>("clicked", &[]);
     let after = ui::preview_player(&window);
     assert!(after.reviewing, "S2: the review is running");
-    assert!(after.cut_only, "and it IS the cut preview with one more hand on the line");
-    assert!(after.transport.playing && after.transport.started, "starting means playing");
+    assert!(
+        after.cut_only,
+        "and it IS the cut preview with one more hand on the line"
+    );
+    assert!(
+        after.transport.playing && after.transport.started,
+        "starting means playing"
+    );
     assert_eq!(
         ui::state(&window).status,
         cut_review::reviewing_status(&cut, 0),
@@ -115,11 +152,25 @@ fn check_s2_starts_through_the_widget(app: &adw::Application) {
     // later window would inherit this one's join. It goes FIRST: `press_review_cuts` re-arms on a Started
     // press and clears on a PausedAndEnded one itself, which is what the next two presses exercise.
     naivepost::ui::cut_review_play::clear();
-    ui::set_preview_state(&window, true, true, Transport { playing: true, started: true });
+    ui::set_preview_state(
+        &window,
+        true,
+        true,
+        Transport {
+            playing: true,
+            started: true,
+        },
+    );
     button.emit_by_name::<()>("clicked", &[]);
     let ended = ui::preview_player(&window);
-    assert!(!ended.reviewing, "pressing \u{25b6}\u{2702}\u{2702} while it runs ends the review");
-    assert!(!ended.transport.playing, "and pauses it -- that press is the pause");
+    assert!(
+        !ended.reviewing,
+        "pressing \u{25b6}\u{2702}\u{2702} while it runs ends the review"
+    );
+    assert!(
+        !ended.transport.playing,
+        "and pauses it -- that press is the pause"
+    );
     assert_eq!(
         ui::state(&window).status,
         cut_review::PAUSE_STATUS,
@@ -139,7 +190,11 @@ fn check_s1_refuses_with_one_clip(app: &adw::Application) {
         "an empty cut cannot be reviewed"
     );
     let one_clip = Cut {
-        segs: vec![Seg { s: 0.0, e: 10.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     assert!(
@@ -160,7 +215,10 @@ fn check_s1_refuses_with_one_clip(app: &adw::Application) {
         "nothing to review \u{2014} a cut needs two clips to have a join between them",
         "and the refusal is what the status line says"
     );
-    assert!(!ui::preview_player(&window).reviewing, "a refused press starts nothing");
+    assert!(
+        !ui::preview_player(&window).reviewing,
+        "a refused press starts nothing"
+    );
     window.close();
 }
 
@@ -197,19 +255,33 @@ fn check_s7_the_press_leaves_a_running_player(app: &adw::Application) {
     let button = ui::review_cuts_button(&window).expect("the Cut page carries review-cuts-button");
     let cut = three_clips();
     ui::seed_review_cut(&window, &cut);
-    ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        Transport {
+            playing: false,
+            started: false,
+        },
+    );
     ui::set_playhead(&window, 5.0);
     // Nothing running yet: the press is what has to start one. The stub player must be found where it is
     // looked for — `cut_record_play::files_for` resolves session sources against the process cwd.
     std::env::set_current_dir(&root).expect("cwd pinned to the scratch session");
     naivepost::cut_play_back::halt();
-    assert!(naivepost::cut_play_back::playing_pid().is_none(), "nothing cued before the press");
+    assert!(
+        naivepost::cut_play_back::playing_pid().is_none(),
+        "nothing cued before the press"
+    );
 
     match ui::press_review_cuts(&window, &cut) {
         cut_review::Pressed::Started { .. } => {}
         other => panic!("the review must start, got {other:?}"),
     }
-    assert!(ui::preview_player(&window).reviewing, "and the window says a review is running");
+    assert!(
+        ui::preview_player(&window).reviewing,
+        "and the window says a review is running"
+    );
     assert!(
         naivepost::ui::cut_review_play::armed_for_test(),
         "and the review's own tick has been handed the state to advance"
@@ -223,7 +295,10 @@ fn check_s7_the_press_leaves_a_running_player(app: &adw::Application) {
     // ENDS the review rather than owning the player, which hands it to ▶✂'s own pause door. So the slot
     // still holds this press's process — what the review owes is a RUNNING player, not its teardown.
     button.emit_by_name::<()>("clicked", &[]);
-    assert!(!ui::preview_player(&window).reviewing, "and the second press ends the review");
+    assert!(
+        !ui::preview_player(&window).reviewing,
+        "and the second press ends the review"
+    );
     naivepost::cut_play_back::halt();
     RAN_RUNNING.store(true, Ordering::SeqCst);
     // Hand the original cwd back: this binary's other checks load the fixture by a manifest-relative
@@ -241,11 +316,23 @@ fn check_s1_grey_and_pause_face(app: &adw::Application) {
 
     // S1: one clip has no join, so ▶✂✂ greys BEFORE any press, in the same place its refusal answers later.
     let one_clip = Cut {
-        segs: vec![Seg { s: 0.0, e: 10.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     ui::seed_review_cut(&window, &one_clip);
-    ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        Transport {
+            playing: false,
+            started: false,
+        },
+    );
     naivepost::ui::cut_review_play::paint(&window);
     assert!(!button.is_sensitive(), "S1: with one clip ▶✂✂ is greyed");
     assert_eq!(
@@ -258,17 +345,36 @@ fn check_s1_grey_and_pause_face(app: &adw::Application) {
     let cut = three_clips();
     ui::seed_review_cut(&window, &cut);
     naivepost::ui::cut_review_play::paint(&window);
-    assert!(button.is_sensitive(), "two clips make a join, so ▶✂✂ is live");
+    assert!(
+        button.is_sensitive(),
+        "two clips make a join, so ▶✂✂ is live"
+    );
 
     // The ⏸ face arrives ONLY with a running review (the other two buttons give theirs back at once).
-    ui::set_preview_state(&window, true, true, Transport { playing: true, started: true });
+    ui::set_preview_state(
+        &window,
+        true,
+        true,
+        Transport {
+            playing: true,
+            started: true,
+        },
+    );
     naivepost::ui::cut_review_play::paint(&window);
     assert_eq!(
         button.label().as_deref(),
         Some(naivepost::ui::cut_review_play::PAUSE_LABEL),
         "while a review runs the button wears ⏸"
     );
-    ui::set_preview_state(&window, true, false, Transport { playing: true, started: true });
+    ui::set_preview_state(
+        &window,
+        true,
+        false,
+        Transport {
+            playing: true,
+            started: true,
+        },
+    );
     naivepost::ui::cut_review_play::paint(&window);
     assert_eq!(
         button.label().as_deref(),
@@ -297,8 +403,14 @@ fn f2_3_s2_review_button_starts_the_review_through_the_widget() {
     // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_START.load(Ordering::SeqCst), "the S2 start-through-the-click check never ran");
-    assert!(RAN_END.load(Ordering::SeqCst), "the S5 end / S1 refusal checks never ran");
+    assert!(
+        RAN_START.load(Ordering::SeqCst),
+        "the S2 start-through-the-click check never ran"
+    );
+    assert!(
+        RAN_END.load(Ordering::SeqCst),
+        "the S5 end / S1 refusal checks never ran"
+    );
     assert!(RAN_REFUSED.load(Ordering::SeqCst) || RAN_END.load(Ordering::SeqCst));
 }
 
@@ -343,7 +455,15 @@ fn check_s3_the_tick_drives_the_review(app: &adw::Application) {
     let button = ui::review_cuts_button(&window).expect("the Cut page carries review-cuts-button");
     let cut = three_clips();
     ui::seed_review_cut(&window, &cut);
-    ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        Transport {
+            playing: false,
+            started: false,
+        },
+    );
     naivepost::ui::cut_review_play::clear();
     // Join 0 spans [50,110]; start inside it so the first answer is play-on rather than a seek.
     ui::set_playhead(&window, 70.0);
@@ -355,7 +475,10 @@ fn check_s3_the_tick_drives_the_review(app: &adw::Application) {
         Some(naivepost::ui::cut_review_play::PAUSE_LABEL),
         "\u{25b6}\u{2702}\u{2702} wears \u{23f8} while its own review runs (exactly one is lit)"
     );
-    assert!(ui::preview_player(&window).reviewing, "and the preview is the review");
+    assert!(
+        ui::preview_player(&window).reviewing,
+        "and the preview is the review"
+    );
     assert!(
         naivepost::cut_play_back::playing_pid().is_some(),
         "the press cued a real player over the session's footage"
@@ -382,12 +505,23 @@ fn check_s5_a_hand_on_the_line_ends_the_review(app: &adw::Application) {
     let button = ui::review_cuts_button(&window).expect("the Cut page carries review-cuts-button");
     let cut = three_clips();
     ui::seed_review_cut(&window, &cut);
-    ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        Transport {
+            playing: false,
+            started: false,
+        },
+    );
     naivepost::ui::cut_review_play::clear();
     ui::set_playhead(&window, 70.0);
 
     button.emit_by_name::<()>("clicked", &[]);
-    assert!(ui::preview_player(&window).reviewing, "the press started the review");
+    assert!(
+        ui::preview_player(&window).reviewing,
+        "the press started the review"
+    );
 
     // A hand on the line ENDS the review (S5). This window's own glib timer fires the same tick loop and a
     // test cannot stop it, so driving that race from here would measure who won rather than the rule; the
@@ -395,7 +529,10 @@ fn check_s5_a_hand_on_the_line_ends_the_review(app: &adw::Application) {
     // (`f2_3_s5_a_hand_on_the_line_after_the_review_was_inside_the_window_ends_it`). What is checked here is
     // the wire around it: pausing out of a review hands the button's face back.
     button.emit_by_name::<()>("clicked", &[]);
-    assert!(!ui::preview_player(&window).reviewing, "pressing \u{25b6}\u{2702}\u{2702} again ends the review");
+    assert!(
+        !ui::preview_player(&window).reviewing,
+        "pressing \u{25b6}\u{2702}\u{2702} again ends the review"
+    );
     assert_eq!(
         button.label().as_deref(),
         Some(naivepost::ui::cut_review_play::PLAY_LABEL),

@@ -67,7 +67,6 @@ impl Default for Project {
     }
 }
 
-
 impl Project {
     /// The last video chooser folder. Its default is root-relative, so `None`
     /// stays `None` in the file and only resolves against a root here — which
@@ -186,19 +185,46 @@ pub struct Policy {
 impl Default for Policy {
     fn default() -> Self {
         Self {
-            marking_pass: Field { value: MarkingPass::Retakes, origin: Origin::Default, because: None },
-            cut_mode: Field { value: CutMode::Model, origin: Origin::Default, because: None },
-            narration_rewrite: Field { value: false, origin: Origin::Default, because: None },
-            keep_swearing: Field { value: true, origin: Origin::Default, because: None },
-            captions_pass: Field { value: true, origin: Origin::Default, because: None },
-            speed_pass: Field { value: true, origin: Origin::Default, because: None },
+            marking_pass: Field {
+                value: MarkingPass::Retakes,
+                origin: Origin::Default,
+                because: None,
+            },
+            cut_mode: Field {
+                value: CutMode::Model,
+                origin: Origin::Default,
+                because: None,
+            },
+            narration_rewrite: Field {
+                value: false,
+                origin: Origin::Default,
+                because: None,
+            },
+            keep_swearing: Field {
+                value: true,
+                origin: Origin::Default,
+                because: None,
+            },
+            captions_pass: Field {
+                value: true,
+                origin: Origin::Default,
+                because: None,
+            },
+            speed_pass: Field {
+                value: true,
+                origin: Origin::Default,
+                because: None,
+            },
             target_length_seconds: Field {
                 value: crate::tools::cutpass::NO_TARGET,
                 origin: Origin::Default,
                 because: None,
             },
-            decorations_pass: Field { value: true, origin: Origin::Default, because: None },
-
+            decorations_pass: Field {
+                value: true,
+                origin: Origin::Default,
+                because: None,
+            },
         }
     }
 }
@@ -400,7 +426,12 @@ impl Default for Crop {
 
 impl Default for TitleBox {
     fn default() -> Self {
-        Self { cx: 0.5, cy: 0.25, wf: 1.0, hf: 0.4 }
+        Self {
+            cx: 0.5,
+            cy: 0.25,
+            wf: 1.0,
+            hf: 0.4,
+        }
     }
 }
 
@@ -511,7 +542,11 @@ struct Raw {
     // copies the object there before `Raw` is deserialized). It keeps only the four legacy names (`subs`,
     // `subs_from`, `game_vol`, `bare`): serde drops them with every other unknown key otherwise, and one field
     // cannot be read twice, so `Produce` takes the current names and this one the legacy ones.
-    #[serde(rename = "$produce_alias", default, deserialize_with = "crate::project_produce::from_object")]
+    #[serde(
+        rename = "$produce_alias",
+        default,
+        deserialize_with = "crate::project_produce::from_object"
+    )]
     produce_legacy: crate::project_produce::RawProduce,
     publish: Option<RawPublish>,
 
@@ -644,7 +679,11 @@ const HINT_FOLDS: [(&str, &str, &str); 4] = [
 ///
 /// `dir` is the project folder being loaded: only it can say whether a legacy
 /// `out_dir` named this folder or somewhere else (§03-shell.md §8).
-fn migrate(mut raw: Raw, dir: &Path, mut stored: crate::project_produce::Stored) -> (Project, Vec<String>) {
+fn migrate(
+    mut raw: Raw,
+    dir: &Path,
+    mut stored: crate::project_produce::Stored,
+) -> (Project, Vec<String>) {
     let mut report = Vec::new();
     // Taken before the moves below: each migration needs to know whether the file
     // carried the new key or only its legacy spelling.
@@ -689,7 +728,10 @@ fn migrate(mut raw: Raw, dir: &Path, mut stored: crate::project_produce::Stored)
 /// The stored `produce` block's legacy keys, read through a raw view of the same object `Produce` was
 /// deserialized from and folded by [`crate::project_produce::fold_legacy`]. A block that is absent or carries
 /// none of them adds no note, so a current project loads exactly as it did before this fold existed.
-fn migrate_produce(settings: &mut Produce, legacy: &crate::project_produce::RawProduce) -> Vec<String> {
+fn migrate_produce(
+    settings: &mut Produce,
+    legacy: &crate::project_produce::RawProduce,
+) -> Vec<String> {
     // A file whose `produce` block carried none of the four keys: nothing to fold and nothing to say.
     if legacy.is_empty() {
         return Vec::new();
@@ -699,7 +741,10 @@ fn migrate_produce(settings: &mut Produce, legacy: &crate::project_produce::RawP
 
 /// `videos` and `audios` become sources; the first recording is narrator 1.
 fn migrate_sources(project: &mut Project, raw: &Raw, report: &mut Vec<String>) {
-    let legacy = raw.videos.as_deref().unwrap_or(&[])
+    let legacy = raw
+        .videos
+        .as_deref()
+        .unwrap_or(&[])
         .iter()
         .chain(raw.audios.as_deref().unwrap_or(&[]))
         .count();
@@ -743,10 +788,7 @@ fn writes_elsewhere(stored: &str, dir: &Path) -> bool {
     if stored.is_empty() || stored == "." {
         return false;
     }
-    let name = dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("");
+    let name = dir.file_name().and_then(|name| name.to_str()).unwrap_or("");
     !stored.is_empty() && stored != name && Path::new(stored) != dir
 }
 
@@ -778,7 +820,9 @@ fn migrate_style(project: &mut Project, has_policy: bool, raw: &Raw, report: &mu
         return;
     };
     if has_policy {
-        report.push(format!("style {style:?}: ignored, the file carries a policy"));
+        report.push(format!(
+            "style {style:?}: ignored, the file carries a policy"
+        ));
         return;
     }
     // P.policy.markingPass and P.policy.cutMode, exactly as §2 spells the mapping.
@@ -786,12 +830,22 @@ fn migrate_style(project: &mut Project, has_policy: bool, raw: &Raw, report: &mu
         "read" => (MarkingPass::Joins, CutMode::Words),
         "" => (MarkingPass::Retakes, CutMode::Model),
         other => {
-            report.push(format!("style {other:?}: unknown, the policy defaults stand"));
+            report.push(format!(
+                "style {other:?}: unknown, the policy defaults stand"
+            ));
             return;
         }
     };
-    project.policy.marking_pass = Field { value: marking_pass, origin: Origin::Default, because: None };
-    project.policy.cut_mode = Field { value: cut_mode, origin: Origin::Default, because: None };
+    project.policy.marking_pass = Field {
+        value: marking_pass,
+        origin: Origin::Default,
+        because: None,
+    };
+    project.policy.cut_mode = Field {
+        value: cut_mode,
+        origin: Origin::Default,
+        because: None,
+    };
     report.push(format!(
         "style {style:?}: markingPass {}, cutMode {}",
         serde_json::to_value(marking_pass).unwrap_or_default(),
@@ -829,7 +883,10 @@ fn migrate_prompts(raw: &Raw, report: &mut Vec<String>) {
         return;
     }
     let keys = adopted_prompt_keys(raw);
-    report.push(format!("prompts: adopt where the machine has none: {}", keys.join(", ")));
+    report.push(format!(
+        "prompts: adopt where the machine has none: {}",
+        keys.join(", ")
+    ));
 }
 
 fn adopted_prompt_keys(raw: &Raw) -> Vec<String> {
@@ -909,7 +966,9 @@ impl Autosave {
 
     /// Seed with what is on disk, so the first tick after a load writes nothing.
     pub fn from_project(project: &Project) -> Result<Self, String> {
-        Ok(Self { last_written: Some(marshal(project)?) })
+        Ok(Self {
+            last_written: Some(marshal(project)?),
+        })
     }
 
     pub fn save_if_changed(&mut self, project: &Project, dir: &Path) -> Result<bool, String> {

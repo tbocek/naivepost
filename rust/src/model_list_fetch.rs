@@ -56,7 +56,10 @@ pub fn budget() -> Duration {
 /// the slow thing on those servers, but §9 puts fifteen seconds on THIS one because a person is standing
 /// at the dialog waiting for the dropdown. A list is cheap — no weights load, no generation — so fifteen
 /// silent seconds means the address is wrong, and saying so beats a spinner nobody can explain.
-pub fn models_at(endpoint: &Endpoint, tree: &Option<crate::layout::Tree>) -> Result<String, String> {
+pub fn models_at(
+    endpoint: &Endpoint,
+    tree: &Option<crate::layout::Tree>,
+) -> Result<String, String> {
     models_ask(endpoint, tree)
 }
 

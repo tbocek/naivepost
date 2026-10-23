@@ -8,11 +8,11 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use gtk4 as gtk;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, settle};
 
 /// The bench writes through the settings folder, so this binary points the app at its own: the same
 /// `XDG_CONFIG_HOME` every settings test uses, set before GTK starts and never read from `$HOME`.
@@ -105,8 +105,11 @@ fn seed_session_files() {
         .frames_dir(lane);
     std::fs::create_dir_all(&frames).expect("frames dir");
     for i in 0..9 {
-        std::fs::write(frames.join(format!("2026-09-16_18-43-0{i}.000.jpg")), b"jpg")
-            .expect("frame");
+        std::fs::write(
+            frames.join(format!("2026-09-16_18-43-0{i}.000.jpg")),
+            b"jpg",
+        )
+        .expect("frame");
     }
     let tsv = naivepost::layout::Tree::new(&folder)
         .expect("project")
@@ -250,7 +253,11 @@ fn check_readouts_and_reset(app: &adw::Application) {
     let restored = naivepost::bench::reset(&settings_paths(), row)
         .expect("a second reset still answers")
         .expect("a prompt row always has shipped wording to restore");
-    assert_eq!(text_of(&buffer), restored, "the box shows the shipped wording again");
+    assert_eq!(
+        text_of(&buffer),
+        restored,
+        "the box shows the shipped wording again"
+    );
 
     // ---- badge 6: the Inputs readout says the sentence AND carries the per-file tooltip ----
     let inputs = ui::inputs_readout(&window).expect("the bar has an Inputs readout");
@@ -264,14 +271,14 @@ fn check_readouts_and_reset(app: &adw::Application) {
     );
     assert_eq!(
         inputs.tooltip_text().as_deref(),
-        Some(
-            naivepost::prepare::inputs_tip(&tree, &model)
-                .as_str()
-        ),
+        Some(naivepost::prepare::inputs_tip(&tree, &model).as_str()),
         "badge 6's per-file tooltip is the same string `prepare::inputs_tip` builds"
     );
     assert!(
-        inputs.tooltip_text().unwrap_or_default().contains("lecture.mkv"),
+        inputs
+            .tooltip_text()
+            .unwrap_or_default()
+            .contains("lecture.mkv"),
         "and it names the file, not just numbers"
     );
 
@@ -318,7 +325,10 @@ fn check_readouts_and_reset(app: &adw::Application) {
         "§6's \"newest <ago>\" is the row's tooltip"
     );
     assert!(
-        outputs_label.tooltip_text().unwrap_or_default().starts_with("newest "),
+        outputs_label
+            .tooltip_text()
+            .unwrap_or_default()
+            .starts_with("newest "),
         "and it reads as an age: {:?}",
         outputs_label.tooltip_text()
     );
@@ -327,13 +337,20 @@ fn check_readouts_and_reset(app: &adw::Application) {
         .tooltip_text()
         .map(|tip| tip.to_string())
         .unwrap_or_default();
-    for sub in ["prepare/inputs/", "prepare/describe/", "prepare/transcript/"] {
+    for sub in [
+        "prepare/inputs/",
+        "prepare/describe/",
+        "prepare/transcript/",
+    ] {
         assert!(
             tip.contains(sub),
             "badge 7 wants the tooltip to name {sub}; it says {tip:?}"
         );
     }
-    assert!(folder_button.is_sensitive(), "there IS a folder to open now");
+    assert!(
+        folder_button.is_sensitive(),
+        "there IS a folder to open now"
+    );
 
     // ---- Freq through the widget reaches the field `set_freq` writes ----
     let freq = find(&window, "freq-control")
@@ -381,8 +398,14 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
     assert_eq!(shown, model.context, "the box holds the project's note");
 
     // The User Context hides mark and Reset: there is no built-in wording for it to differ from.
-    assert!(!find(&window, "bench-mark").expect("mark").is_visible(), "no mark on row 0");
-    assert!(!find(&window, "bench-reset").expect("reset").is_visible(), "no Reset on row 0");
+    assert!(
+        !find(&window, "bench-mark").expect("mark").is_visible(),
+        "no mark on row 0"
+    );
+    assert!(
+        !find(&window, "bench-reset").expect("reset").is_visible(),
+        "no Reset on row 0"
+    );
 
     // **1** §4's row controls, on the Prepare page: the 🗣 split toggle is there and a press lands on
     // the same field the logic test checks (`sources::set_sepvoice` writes `Source::sepvoice`).
@@ -395,7 +418,10 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
         "lecture.mkv is not a split product, so the toggle answers"
     );
     assert!(separate.is_sensitive(), "and it is live on this row");
-    assert!(!session_of(&window).borrow().sources[0].sepvoice, "it starts off");
+    assert!(
+        !session_of(&window).borrow().sources[0].sepvoice,
+        "it starts off"
+    );
     separate.emit_clicked();
     settle();
     assert!(
@@ -464,7 +490,8 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
         Some(naivepost::bench::tooltip(&naivepost::bench::ROWS[0]).as_str()),
         "and it is not still the first row's sentence stuck on the face"
     );
-    let describe_shipped = naivepost::prompts::shipped_text("describe").expect("describe ships a file");
+    let describe_shipped =
+        naivepost::prompts::shipped_text("describe").expect("describe ships a file");
     assert_eq!(
         text_of(&buffer),
         describe_shipped,
@@ -475,7 +502,10 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
         "You describe screen-recorded footage for a video editor.",
         "and it is the spec's own wording, first line and all"
     );
-    assert!(!describe_shipped.is_empty(), "a fresh machine never opens on an empty box");
+    assert!(
+        !describe_shipped.is_empty(),
+        "a fresh machine never opens on an empty box"
+    );
     picker.set_selected(4);
     assert_eq!(
         title.text().as_str(),
@@ -487,14 +517,21 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
     // comes the ✎ mark and a live Reset.
     buffer.set_text("cut on the sentence boundary");
     let key = naivepost::bench::ROWS[4].key;
-    let saved = std::fs::read_to_string(settings_paths().prompt_file(key)).expect("the keystroke was stored");
+    let saved = std::fs::read_to_string(settings_paths().prompt_file(key))
+        .expect("the keystroke was stored");
     assert_eq!(saved, "cut on the sentence boundary");
-    assert!(find(&window, "bench-mark").expect("mark").is_visible(), "✎ appears with the edit");
+    assert!(
+        find(&window, "bench-mark").expect("mark").is_visible(),
+        "✎ appears with the edit"
+    );
     let reset = find(&window, "bench-reset")
         .expect("reset")
         .downcast::<gtk::Button>()
         .expect("Reset is a button");
-    assert!(reset.is_visible() && reset.is_sensitive(), "Reset is live while an edit is held");
+    assert!(
+        reset.is_visible() && reset.is_sensitive(),
+        "Reset is live while an edit is held"
+    );
 
     // **4** Reset restores the shipped wording and forgets this machine's file.
     reset.emit_clicked();
@@ -510,7 +547,10 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
         "the box shows the shipped wording after a reset, not an empty box: {}",
         text_of(&buffer)
     );
-    assert!(!find(&window, "bench-mark").expect("mark").is_visible(), "the mark goes with the edit");
+    assert!(
+        !find(&window, "bench-mark").expect("mark").is_visible(),
+        "the mark goes with the edit"
+    );
 
     // Back to row 0: typing there edits the project's note and writes no file at all. A keystroke
     // changes only the box; §1 asks for storage, and `bench::store` is what stores it — so this
@@ -528,8 +568,14 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
             .is_none(),
         "the User Context belongs to the project, not to this machine"
     );
-    assert!(!find(&window, "bench-mark").expect("mark").is_visible(), "no mark on row 0");
-    assert!(!find(&window, "bench-reset").expect("reset").is_visible(), "no Reset on row 0");
+    assert!(
+        !find(&window, "bench-mark").expect("mark").is_visible(),
+        "no mark on row 0"
+    );
+    assert!(
+        !find(&window, "bench-reset").expect("reset").is_visible(),
+        "no Reset on row 0"
+    );
 }
 
 /// §1's badges **2**–**5** on a machine that holds NO edit: the box opens on the wording this build
@@ -558,7 +604,11 @@ fn check_shipped_wording_and_reset(app: &adw::Application) {
         .expect("the box is a text view")
         .buffer();
     let shipped = naivepost::prompts::shipped_text(row.key).expect("every prompt row ships a file");
-    assert!(!shipped.trim().is_empty(), "{} ships wording, so a fresh machine opens on something", row.key);
+    assert!(
+        !shipped.trim().is_empty(),
+        "{} ships wording, so a fresh machine opens on something",
+        row.key
+    );
     assert_eq!(
         text_of(&buffer),
         shipped,
@@ -570,8 +620,14 @@ fn check_shipped_wording_and_reset(app: &adw::Application) {
         "the box and the rule behind it cannot disagree about what a row shows"
     );
     // The idle pair: no mark, no live Reset, and Reset says "unchanged" rather than promising a restore.
-    assert!(!find(&window, "bench-mark").expect("mark").is_visible(), "no ✎ without an edit");
-    assert!(!find(&window, "bench-reset").expect("reset").is_visible(), "no live Reset either");
+    assert!(
+        !find(&window, "bench-mark").expect("mark").is_visible(),
+        "no ✎ without an edit"
+    );
+    assert!(
+        !find(&window, "bench-reset").expect("reset").is_visible(),
+        "no live Reset either"
+    );
     assert_eq!(
         naivepost::bench::reset_tip(row, false),
         naivepost::bench::UNCHANGED_TIP,
@@ -580,15 +636,28 @@ fn check_shipped_wording_and_reset(app: &adw::Application) {
     // Type something: every keystroke is stored, and the mark and Reset come up with it.
     buffer.set_text("cut where the speaker pauses");
     settle();
-    assert!(naivepost::bench::edited(&paths, row), "the keystroke reached this machine's prompts");
+    assert!(
+        naivepost::bench::edited(&paths, row),
+        "the keystroke reached this machine's prompts"
+    );
     let saved = std::fs::read_to_string(paths.prompt_file(row.key)).expect("the edit is on disk");
-    assert_eq!(saved.trim(), "cut where the speaker pauses", "and holds what was typed");
-    assert!(find(&window, "bench-mark").expect("mark").is_visible(), "the ✎ came up with it");
+    assert_eq!(
+        saved.trim(),
+        "cut where the speaker pauses",
+        "and holds what was typed"
+    );
+    assert!(
+        find(&window, "bench-mark").expect("mark").is_visible(),
+        "the ✎ came up with it"
+    );
     let reset = find(&window, "bench-reset")
         .expect("Reset is drawn")
         .downcast::<gtk::Button>()
         .expect("Reset is a button");
-    assert!(reset.is_visible() && reset.is_sensitive(), "and Reset went live beside it");
+    assert!(
+        reset.is_visible() && reset.is_sensitive(),
+        "and Reset went live beside it"
+    );
     assert_eq!(
         naivepost::bench::reset_tip(row, true),
         naivepost::bench::RESET_TIP,
@@ -597,16 +666,29 @@ fn check_shipped_wording_and_reset(app: &adw::Application) {
     // The press itself, fired the way the toolkit fires it.
     reset.emit_clicked();
     settle();
-    assert_eq!(text_of(&buffer), shipped, "Reset gave the shipped words back, not an empty box");
-    assert!(!naivepost::bench::edited(&paths, row), "and cleared the override");
+    assert_eq!(
+        text_of(&buffer),
+        shipped,
+        "Reset gave the shipped words back, not an empty box"
+    );
+    assert!(
+        !naivepost::bench::edited(&paths, row),
+        "and cleared the override"
+    );
     assert!(
         naivepost::settings::read_prompt(&paths, row.key)
             .expect("the prompts folder is readable")
             .is_none(),
         "nothing of this row's is left on the machine"
     );
-    assert!(!find(&window, "bench-mark").expect("mark").is_visible(), "the ✎ went with it");
-    assert!(!find(&window, "bench-reset").expect("reset").is_visible(), "and so did Reset");
+    assert!(
+        !find(&window, "bench-mark").expect("mark").is_visible(),
+        "the ✎ went with it"
+    );
+    assert!(
+        !find(&window, "bench-reset").expect("reset").is_visible(),
+        "and so did Reset"
+    );
     window.close();
     settle();
 }
@@ -631,13 +713,24 @@ fn sec_04_prepare_1_screen_s_the_box_holds_the_shipped_wording_and_reset_returns
         "with no edit on this machine the bench draws the shipped wording"
     );
     // Typing something else makes it this machine's edit; resetting gives the built-in words back.
-    naivepost::bench::store(&paths, &mut naivepost::project::Project::default(), row, "mine")
-        .expect("storing an edit works");
-    assert!(naivepost::bench::edited(&paths, row), "and the ✎ condition is met");
+    naivepost::bench::store(
+        &paths,
+        &mut naivepost::project::Project::default(),
+        row,
+        "mine",
+    )
+    .expect("storing an edit works");
+    assert!(
+        naivepost::bench::edited(&paths, row),
+        "and the ✎ condition is met"
+    );
     let restored = naivepost::bench::reset(&paths, row)
         .expect("reset answers")
         .expect("a prompt row has shipped wording to restore");
-    assert_eq!(restored, describe, "Reset restores the shipped wording, not an empty box");
+    assert_eq!(
+        restored, describe,
+        "Reset restores the shipped wording, not an empty box"
+    );
     assert_eq!(
         naivepost::bench::text(&paths, &project, row),
         describe,
@@ -646,17 +739,21 @@ fn sec_04_prepare_1_screen_s_the_box_holds_the_shipped_wording_and_reset_returns
 }
 
 #[test]
-fn sec_04_prepare_1_screen_s_a_fresh_machine_opens_on_the_shipped_wording_and_reset_goes_back_to_it() {
+fn sec_04_prepare_1_screen_s_a_fresh_machine_opens_on_the_shipped_wording_and_reset_goes_back_to_it(
+) {
     window_round();
 }
 
 #[test]
-fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_s_the_page_shows_the_bench_and_frame_controls() {
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_s_the_page_shows_the_bench_and_frame_controls(
+) {
     window_round();
 }
 
 /// The window's own session — the state every row press writes through.
-fn session_of(window: &adw::ApplicationWindow) -> std::rc::Rc<std::cell::RefCell<naivepost::project::Project>> {
+fn session_of(
+    window: &adw::ApplicationWindow,
+) -> std::rc::Rc<std::cell::RefCell<naivepost::project::Project>> {
     ui::session_handle(window)
 }
 
@@ -671,7 +768,9 @@ fn find(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
 
 /// The strings a `StringList` holds, in order.
 fn strings(model: &glib::Object) -> Vec<String> {
-    let list = model.downcast_ref::<gtk::StringList>().expect("a list of strings");
+    let list = model
+        .downcast_ref::<gtk::StringList>()
+        .expect("a list of strings");
     (0..list.n_items())
         .map(|index| {
             list.item(index)

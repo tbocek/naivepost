@@ -145,7 +145,10 @@ pub fn paint(window: &adw::ApplicationWindow, out: &Path) -> Result<(usize, Stri
 /// `visible=false` through `present()` and through the button's own `toggled`, and gtk4-rs 0.11 exposes neither
 /// `DropDown::popover` nor a `native` toggle to force it inside the window's surface. Nothing about the rows is
 /// restated — names, order and tick come from the live window, and the list is placed off the picker's OWN box.
-pub fn paint_open_over_window(window: &adw::ApplicationWindow, out: &Path) -> Result<(usize, String), String> {
+pub fn paint_open_over_window(
+    window: &adw::ApplicationWindow,
+    out: &Path,
+) -> Result<(usize, String), String> {
     let chosen = chosen_row(window)?;
     let picker = ui::find_source_widget(window, "bench-picker")
         .ok_or("the Prepare page drew no bench-picker")?;
@@ -155,7 +158,11 @@ pub fn paint_open_over_window(window: &adw::ApplicationWindow, out: &Path) -> Re
     let (asked_w, asked_h) = crate::snapshot_face::asked_shot_wh();
     let (w, h) = (
         if asked_w > 0 { asked_w } else { window.width() },
-        if asked_h > 0 { asked_h } else { window.height() },
+        if asked_h > 0 {
+            asked_h
+        } else {
+            window.height()
+        },
     );
     let list = picker_list(chosen);
     let width = panel_width();
@@ -182,8 +189,8 @@ pub fn paint_open_over_window(window: &adw::ApplicationWindow, out: &Path) -> Re
     holder.set_child(Some(&list));
     holder.present();
     crate::snapshot_face::pump_context(64);
-    let painted = crate::snapshot_face::render_surface(list.upcast_ref(), width, height)
-        .and_then(|panel| {
+    let painted =
+        crate::snapshot_face::render_surface(list.upcast_ref(), width, height).and_then(|panel| {
             cr.set_source_surface(
                 &panel,
                 panel_x(bounds.x(), bounds.width(), width, w).floor() as f64,
@@ -195,10 +202,15 @@ pub fn paint_open_over_window(window: &adw::ApplicationWindow, out: &Path) -> Re
     holder.close();
     painted?;
     let mut file = std::fs::File::create(out).map_err(|err| err.to_string())?;
-    surface.write_to_png(&mut file).map_err(|err| err.to_string())?;
+    surface
+        .write_to_png(&mut file)
+        .map_err(|err| err.to_string())?;
     Ok((
         bench::picker_rows().len(),
-        format!("04-prompt-picker tick on row {chosen} ({})", row_name(chosen)),
+        format!(
+            "04-prompt-picker tick on row {chosen} ({})",
+            row_name(chosen)
+        ),
     ))
 }
 
@@ -273,8 +285,16 @@ pub fn probe(picker: &gtk::Widget) -> String {
     format!(
         "{} button(s) under the picker; popover {} before opening, {} shown by the live widget",
         buttons_of(picker).len(),
-        if popover_window_of(picker).is_some() { "there" } else { "absent" },
-        if popover_under(picker).is_some() { "can be" } else { "cannot be" }
+        if popover_window_of(picker).is_some() {
+            "there"
+        } else {
+            "absent"
+        },
+        if popover_under(picker).is_some() {
+            "can be"
+        } else {
+            "cannot be"
+        }
     )
 }
 
@@ -307,7 +327,9 @@ fn buttons_of(root: &gtk::Widget) -> Vec<gtk::Button> {
     let mut out = Vec::new();
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if let Ok(button) = widget.clone().downcast::<gtk::Button>() {
             out.push(button);
         }
@@ -333,7 +355,10 @@ fn paint_on_top_level(list: &gtk::Box, out: &Path) -> Result<(), String> {
     list.set_halign(gtk::Align::Fill);
     list.set_hexpand(true);
     holder.set_decorated(false);
-    holder.set_default_size(LIST_SHOT_W, list.measure(gtk::Orientation::Vertical, -1).3 + 12);
+    holder.set_default_size(
+        LIST_SHOT_W,
+        list.measure(gtk::Orientation::Vertical, -1).3 + 12,
+    );
     holder.set_child(Some(list));
     holder.present();
     // The map must happen before the frame is taken; `write_png` reads the widget's allocated size.

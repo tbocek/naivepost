@@ -105,11 +105,9 @@ pub fn rows_for_effects(fx: &[Fx]) -> Vec<usize> {
             rows.push(0);
             continue;
         }
-        let free = taken.iter().position(|busy| {
-            !busy
-                .iter()
-                .any(|held| timeline::spans_overlap(*held, span))
-        });
+        let free = taken
+            .iter()
+            .position(|busy| !busy.iter().any(|held| timeline::spans_overlap(*held, span)));
         let row = free.unwrap_or_else(|| {
             taken.push(Vec::new());
             taken.len() - 1
@@ -357,14 +355,25 @@ pub struct PausedScene {
 /// §06-effects#2-the-lane-and-the-preview: the paused frame. Outside the camera rect is dimmed black at
 /// [`DIM_ALPHA`], the rect is stroked, and visible overlays sit at their real alpha — except the one in the
 /// hand, which is drawn full with the dashed violet outline and therefore left out of `overlays`.
-pub fn paused_scene(fx: &[Fx], t: f64, held_index: Option<usize>, drawing_box: bool) -> PausedScene {
+pub fn paused_scene(
+    fx: &[Fx],
+    t: f64,
+    held_index: Option<usize>,
+    drawing_box: bool,
+) -> PausedScene {
     let overlays = fx
         .iter()
         .enumerate()
         .filter(|(index, effect)| {
             Some(*index) != held_index && effect.effect_kind().is_some_and(drawn_paused)
         })
-        .map(|(index, effect)| (index, effect.effect_kind().expect("filtered above"), visibility_at(effect, t)))
+        .map(|(index, effect)| {
+            (
+                index,
+                effect.effect_kind().expect("filtered above"),
+                visibility_at(effect, t),
+            )
+        })
         .collect();
     PausedScene {
         dim_alpha: DIM_ALPHA,
@@ -385,7 +394,13 @@ pub fn playing_scene(fx: &[Fx], t: f64) -> Vec<(usize, EffectKind, f64)> {
     fx.iter()
         .enumerate()
         .filter(|(_, effect)| effect.effect_kind().is_some_and(drawn_while_playing))
-        .map(|(index, effect)| (index, effect.effect_kind().expect("filtered above"), visibility_at(effect, t)))
+        .map(|(index, effect)| {
+            (
+                index,
+                effect.effect_kind().expect("filtered above"),
+                visibility_at(effect, t),
+            )
+        })
         .collect()
 }
 
@@ -461,7 +476,11 @@ pub fn room_px(allocated: f64, requested: f64) -> f64 {
 pub fn plate_debt_at(fx: &[Fx], t: f64) -> f64 {
     let Some(winner) = fx
         .iter()
-        .filter(|effect| effect.effect_kind().is_some_and(|kind| fx_record::uses(kind, fx_record::Field::Snd)))
+        .filter(|effect| {
+            effect
+                .effect_kind()
+                .is_some_and(|kind| fx_record::uses(kind, fx_record::Field::Snd))
+        })
         .filter(|effect| !effect.snd.is_empty())
         .filter(|effect| {
             let (from, to) = effect.spans();

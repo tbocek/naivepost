@@ -44,15 +44,16 @@ fn sec_03_shell_1_the_window_s10_a_live_window_keeps_the_beat_and_stays_quiet() 
             common::hold_last_window(window.clone());
             // `build_window` armed the heartbeat; wait for the timer to have actually fired rather than
             // guessing a number of turns.
-            wait_until("the window's heartbeat timer fired", || watchdog::beats() > 0);
+            wait_until("the window's heartbeat timer fired", || {
+                watchdog::beats() > 0
+            });
             let beats_at_window = watchdog::beats();
             // Now pump the main context for longer than the silence limit: if the beat were not real,
             // this is where the dump would land. The condition waited for is the shared clock passing the
             // limit — no guessed number of turns, and `wait_until` pumps the context while it waits.
-            wait_until(
-                "the main context had turned past the silence limit",
-                || watchdog::clock() > SHORT_LIMIT * 3,
-            );
+            wait_until("the main context had turned past the silence limit", || {
+                watchdog::clock() > SHORT_LIMIT * 3
+            });
             assert!(
                 watchdog::beats() > beats_at_window,
                 "a live window keeps beating: {} -> {}",
@@ -66,7 +67,10 @@ fn sec_03_shell_1_the_window_s10_a_live_window_keeps_the_beat_and_stays_quiet() 
             );
             // And the beat it rings is the GTK timer's own, not a test's: the marker moved on its own
             // between the two reads above.
-            assert!(watchdog::last_beat().is_some(), "the thread has said it was there");
+            assert!(
+                watchdog::last_beat().is_some(),
+                "the thread has said it was there"
+            );
             window.close();
             common::release_last_window();
             RAN.store(true, Ordering::SeqCst);
@@ -74,5 +78,8 @@ fn sec_03_shell_1_the_window_s10_a_live_window_keeps_the_beat_and_stays_quiet() 
         });
         app.run_with_args::<String>(&[]);
     });
-    assert!(RAN.load(Ordering::SeqCst), "the live watchdog round never ran");
+    assert!(
+        RAN.load(Ordering::SeqCst),
+        "the live watchdog round never ran"
+    );
 }

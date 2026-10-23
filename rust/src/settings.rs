@@ -91,7 +91,8 @@ impl Paths {
 
     /// The desktop entry, under `$XDG_DATA_HOME/applications` (§7).
     pub fn desktop_file(&self) -> PathBuf {
-        self.data_dir.join("applications/ch.bocek.naivepost.desktop")
+        self.data_dir
+            .join("applications/ch.bocek.naivepost.desktop")
     }
 
     /// Whether a dump with this stamp is already there. §7 names the file `hang-*.txt`, and one
@@ -122,7 +123,15 @@ pub struct Slots {
 
 impl Default for Slots {
     fn default() -> Self {
-        Self { llm: 1, asr: 1, diar: 1, align: 1, tts: 1, sep: 1, sd: 1 }
+        Self {
+            llm: 1,
+            asr: 1,
+            diar: 1,
+            align: 1,
+            tts: 1,
+            sep: 1,
+            sd: 1,
+        }
     }
 }
 
@@ -218,7 +227,6 @@ impl Conf {
 
     /// The remembered projects, ordered by folder — the order `PROJECT_<n>` is numbered in.
     pub fn projects(&self) -> Vec<ProjectRef> {
-
         remembered(&self.projects)
     }
 
@@ -371,16 +379,15 @@ pub fn parse(text: &str) -> Result<Conf, String> {
             continue;
         }
         if Slots::KEYS.iter().any(|(k, _)| *k == key) {
-            let parsed = value.parse::<u32>().map_err(|_| {
-                format!("line {}: {key}={value:?} is not a number", n + 1)
-            })?;
+            let parsed = value
+                .parse::<u32>()
+                .map_err(|_| format!("line {}: {key}={value:?} is not a number", n + 1))?;
             set_slot(&mut conf.slots, key, parsed);
             continue;
         }
         if key.starts_with("PROJECT_") {
-            let (number, which) = pair_key(key).ok_or_else(|| {
-                format!("line {}: {key} is not PROJECT_<n>_ROOT or _FILE", n + 1)
-            })?;
+            let (number, which) = pair_key(key)
+                .ok_or_else(|| format!("line {}: {key} is not PROJECT_<n>_ROOT or _FILE", n + 1))?;
             match which {
                 Which::Root => drop(roots.insert(number, value)),
                 Which::File => drop(files.insert(number, value)),
@@ -591,7 +598,10 @@ pub fn remembered(projects: &BTreeMap<String, String>) -> Vec<ProjectRef> {
     projects
         .iter()
         .filter(|(root, file)| !root.is_empty() && !file.is_empty())
-        .map(|(root, file)| ProjectRef { root: root.clone(), file: file.clone() })
+        .map(|(root, file)| ProjectRef {
+            root: root.clone(),
+            file: file.clone(),
+        })
         .collect()
 }
 
@@ -641,7 +651,12 @@ pub const DEFAULT_VOICES: &str = "/mnt/models/audiocpp/voices";
 /// The voice library: `AUDIOCPP_VOICES`, else the `voices/` subfolder of the legacy
 /// `AUDIOCPP_MODELS` root (§8: that key is read and ignored, except for exactly
 /// this), else the platform's own folder.
-pub fn voices_folder(conf_value: &str, models_dir: &str, flatpak: bool, data_dir: &Path) -> PathBuf {
+pub fn voices_folder(
+    conf_value: &str,
+    models_dir: &str,
+    flatpak: bool,
+    data_dir: &Path,
+) -> PathBuf {
     // An override that is not absolute is not a folder: it would resolve against whatever
     // the process happens to be started from. The legacy root is trusted the same way —
     // `voices/` under a relative path would move with the process too.

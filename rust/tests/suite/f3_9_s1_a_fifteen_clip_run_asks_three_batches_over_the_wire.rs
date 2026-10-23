@@ -12,7 +12,8 @@ use harness::*;
 use naivepost::captions_ask;
 
 #[test]
-fn f3_9_s1_a_fifteen_clip_run_asks_three_batches_over_the_wire_and_re_reads_the_address_each_time() {
+fn f3_9_s1_a_fifteen_clip_run_asks_three_batches_over_the_wire_and_re_reads_the_address_each_time()
+{
     let fixture = fixture("batches");
     // Every kept clip of this run, ten seconds each, so the batch ranges are (1–5) (6–10) (11–15).
     let all: Vec<(u32, f64)> = (1..=15).map(|n| (n, 10.0)).collect();
@@ -28,7 +29,14 @@ fn f3_9_s1_a_fifteen_clip_run_asks_three_batches_over_the_wire_and_re_reads_the_
     let empty = FakeLlm::start(vec![finish_json()]);
     point_at(&empty.url());
     let first_batch = &all[0..5];
-    let asked = captions_ask::ask(&fixture.tree, "Caption nothing in these.", first_batch, &[], 1, &|| false);
+    let asked = captions_ask::ask(
+        &fixture.tree,
+        "Caption nothing in these.",
+        first_batch,
+        &[],
+        1,
+        &|| false,
+    );
     assert!(
         !asked.failed && asked.calls.is_empty(),
         "a `finish`-only answer is the prompt's own no-caption answer, not a wire failure: {:?}",
@@ -48,8 +56,19 @@ fn f3_9_s1_a_fifteen_clip_run_asks_three_batches_over_the_wire_and_re_reads_the_
     let second = FakeLlm::start(vec![finish_json()]);
     point_at(&second.url());
     let second_batch = &all[5..10];
-    let asked = captions_ask::ask(&fixture.tree, "Caption nothing in these.", second_batch, &[], 1, &|| false);
-    assert!(!asked.failed, "the second batch reached the new address: {:?}", asked.reason);
+    let asked = captions_ask::ask(
+        &fixture.tree,
+        "Caption nothing in these.",
+        second_batch,
+        &[],
+        1,
+        &|| false,
+    );
+    assert!(
+        !asked.failed,
+        "the second batch reached the new address: {:?}",
+        asked.reason
+    );
     let seen = second.next_seen();
     assert!(
         seen.body.contains("CLIP 6: 10.0 s long") && seen.body.contains("CLIP 10: 10.0 s long"),
@@ -62,7 +81,11 @@ fn f3_9_s1_a_fifteen_clip_run_asks_three_batches_over_the_wire_and_re_reads_the_
 
     // requests.tsv holds one timed row per ask that went out -- two here, both captions, both LLM.
     let rows = read(&fixture.tree.requests_tsv());
-    let data_rows: Vec<&str> = rows.lines().skip(1).filter(|line| !line.trim().is_empty()).collect();
+    let data_rows: Vec<&str> = rows
+        .lines()
+        .skip(1)
+        .filter(|line| !line.trim().is_empty())
+        .collect();
     assert_eq!(
         data_rows.len(),
         2,

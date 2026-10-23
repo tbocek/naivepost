@@ -14,7 +14,7 @@ use naivepost::requests::Turn;
 use naivepost::transcribe;
 
 use crate::common;
-use common::{all_rows};
+use common::all_rows;
 
 /// A diarizer turn built from seconds, counted in samples at the one rate every sidecar uses.
 fn turn(start: f64, end: f64, speaker: u32) -> Turn {
@@ -47,11 +47,13 @@ fn p_eng_turngapseconds_s1_the_gap_is_0_5_and_catalogued_once() {
         .find(|param| param.id == "P.eng.turnGapSeconds")
         .expect("the turn gap must be catalogued for Prepare, whose transcription reads it");
     assert_eq!(
-        row.from,
-        "transcribe::TURN_GLUE",
+        row.from, "transcribe::TURN_GLUE",
         "a row must name the constant its rule reads"
     );
-    assert_eq!(row.spelled, "0.5", "§10 spells it 0.5, so the catalogue must too");
+    assert_eq!(
+        row.spelled, "0.5",
+        "§10 spells it 0.5, so the catalogue must too"
+    );
     assert_eq!(row.spelled.parse::<f64>().unwrap(), 0.5);
 
     // §10 files it among the engineering constants, so the prefix answers to Eng.
@@ -59,7 +61,10 @@ fn p_eng_turngapseconds_s1_the_gap_is_0_5_and_catalogued_once() {
 
     // And exactly one row for it across all five lists — one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.turnGapSeconds").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.turnGapSeconds")
+            .count(),
         1,
         "P.eng.turnGapSeconds catalogued more than once"
     );
@@ -71,14 +76,21 @@ fn p_eng_turngapseconds_s2_exactly_half_a_second_of_silence_still_glues() {
     // Gap = 1.5 - 1.0 = 0.5 exactly, which clears the inclusive `<=`, so the two pieces are one turn
     // spanning the whole of both.
     let glued = spoken(&[(0.0, 1.0, 0), (1.5, 2.5, 0)]);
-    assert_eq!(glued.len(), 1, "exactly 0.5 s of gap: still one turn: {glued:?}");
+    assert_eq!(
+        glued.len(),
+        1,
+        "exactly 0.5 s of gap: still one turn: {glued:?}"
+    );
     assert_eq!(glued[0], (0.0, 2.5, "SPEAKER_00".to_string()));
 
     // One tenth over the bound and the turn ends there.
     let split = spoken(&[(0.0, 1.0, 0), (1.6, 2.5, 0)]);
     assert_eq!(split.len(), 2, "0.6 s of gap: the turn ended: {split:?}");
     assert_eq!(split[0].1, 1.0, "the first turn keeps its own end");
-    assert_eq!(split[1].0, 1.6, "the second starts where the diarizer put it");
+    assert_eq!(
+        split[1].0, 1.6,
+        "the second starts where the diarizer put it"
+    );
 
     // 0.1 s of breath decides between one speaker's sentence and two turns.
     assert_ne!(glued.len(), split.len());
@@ -102,21 +114,38 @@ fn p_eng_turngapseconds_s3_same_speaker_chains_and_another_speaker_never_joins()
     // The FIRST gap alone pushed past the bound (0.7) cuts the chain at once and nothing downstream
     // rejoins it: the split falls where the silence is, and the later pieces keep their own span.
     let broken = spoken(&[(0.0, 1.0, 0), (1.7, 2.0, 0), (2.3, 3.0, 0)]);
-    assert_eq!(broken.len(), 2, "gap of 0.7 before the second piece ends the first turn: {broken:?}");
-    assert_eq!(broken[0], (0.0, 1.0, "SPEAKER_00".to_string()), "the first turn stops where the silence began");
+    assert_eq!(
+        broken.len(),
+        2,
+        "gap of 0.7 before the second piece ends the first turn: {broken:?}"
+    );
+    assert_eq!(
+        broken[0],
+        (0.0, 1.0, "SPEAKER_00".to_string()),
+        "the first turn stops where the silence began"
+    );
     // The last two DID glue (0.3 between them), so they came out as one turn spanning both.
-    assert_eq!(broken[1], (1.7, 3.0, "SPEAKER_00".to_string()), "pieces two and three glued to each other");
+    assert_eq!(
+        broken[1],
+        (1.7, 3.0, "SPEAKER_00".to_string()),
+        "pieces two and three glued to each other"
+    );
 }
 
 /// S4: the two guards inside the glue arm — a shorter later turn does not pull the end back, and only
 /// the previous KEPT turn is compared, so the input's order is what makes this work.
 #[test]
-fn p_eng_turngapseconds_s4_a_shorter_later_turn_never_shortens_and_only_the_previous_turn_is_compared() {
+fn p_eng_turngapseconds_s4_a_shorter_later_turn_never_shortens_and_only_the_previous_turn_is_compared(
+) {
     // (a) The second turn lies inside the first's span and starts 0.1 after its end: it glues, but its
     // end (2.0) is BEFORE the kept end (3.0), so the `end > previous.1` guard leaves the span alone.
     // A turn keeps the widest span it has been shown, never the narrowest.
     let inside = spoken(&[(0.0, 3.0, 0), (3.1, 2.0, 0)]);
-    assert_eq!(inside.len(), 1, "0.1 s apart, same speaker: one turn: {inside:?}");
+    assert_eq!(
+        inside.len(),
+        1,
+        "0.1 s apart, same speaker: one turn: {inside:?}"
+    );
     assert_eq!(inside[0].1, 3.0, "the earlier, wider end survives");
     assert_eq!(inside[0].0, 0.0);
 
@@ -126,7 +155,11 @@ fn p_eng_turngapseconds_s4_a_shorter_later_turn_never_shortens_and_only_the_prev
     // compares against the previous kept turn only — reordering the input would change the result,
     // which is why it is fed what the diarizer wrote in order, and why running it twice changes nothing.
     let interleaved = spoken(&[(0.0, 1.0, 0), (5.0, 6.0, 1), (6.2, 7.0, 0)]);
-    assert_eq!(interleaved.len(), 3, "no adjacent same-speaker pair: {interleaved:?}");
+    assert_eq!(
+        interleaved.len(),
+        3,
+        "no adjacent same-speaker pair: {interleaved:?}"
+    );
     assert_eq!(
         interleaved.iter().map(|t| t.2.as_str()).collect::<Vec<_>>(),
         vec!["SPEAKER_00", "SPEAKER_01", "SPEAKER_00"]
@@ -157,20 +190,35 @@ fn p_eng_turngapseconds_s5_neighbours_are_tighter_looser_and_differently_owned()
     // exact. P.eng.mergeMaxSeconds (12.0) caps a segment's length; neither is a turn boundary.
     assert_eq!(transcribe::MERGE_NEAR, 1.0);
     assert_eq!(transcribe::MERGE_MAX_LEN, 12.0);
-    assert_ne!(transcribe::TURN_GLUE, transcribe::MERGE_NEAR, "a turn gap is not a word's reach for a speaker");
-    assert_ne!(transcribe::TURN_GLUE, transcribe::MERGE_MAX_LEN, "a turn gap is not a segment cap");
+    assert_ne!(
+        transcribe::TURN_GLUE,
+        transcribe::MERGE_NEAR,
+        "a turn gap is not a word's reach for a speaker"
+    );
+    assert_ne!(
+        transcribe::TURN_GLUE,
+        transcribe::MERGE_MAX_LEN,
+        "a turn gap is not a segment cap"
+    );
 
     // Other 0.5 constants, told apart by home rather than by value:
     // P.eng.minAnchorOverlap — anchor-block overlap that claims a slot (diarize::MIN_ANCHOR_OVERLAP).
     let anchor = params::find("P.eng.minAnchorOverlap").expect("minAnchorOverlap is catalogued");
     assert_eq!(anchor.spelled, "0.5");
     assert_eq!(anchor.from, "diarize::MIN_ANCHOR_OVERLAP");
-    assert_ne!(anchor.from, "transcribe::TURN_GLUE", "same number, different rule and module");
+    assert_ne!(
+        anchor.from, "transcribe::TURN_GLUE",
+        "same number, different rule and module"
+    );
     // P.machine.sceneMinGapSeconds — scene changes nearer than this merge into the first; a different
     // FAMILY as well, so the prefix alone separates it.
-    let scene = params::find("P.machine.sceneMinGapSeconds").expect("sceneMinGapSeconds is catalogued");
+    let scene =
+        params::find("P.machine.sceneMinGapSeconds").expect("sceneMinGapSeconds is catalogued");
     assert_eq!(scene.spelled, "0.5");
-    assert_eq!(params::family("P.machine.sceneMinGapSeconds"), params::Family::Machine);
+    assert_eq!(
+        params::family("P.machine.sceneMinGapSeconds"),
+        params::Family::Machine
+    );
     assert_ne!(
         params::family("P.eng.turnGapSeconds"),
         params::family("P.machine.sceneMinGapSeconds"),
@@ -184,7 +232,10 @@ fn p_eng_turngapseconds_s5_neighbours_are_tighter_looser_and_differently_owned()
         .expect("minClipSeconds is catalogued (Effects page)");
     assert_eq!(clip.spelled, "0.5");
     assert_eq!(clip.from, "tools::cutpass::MIN_CLIP_SECONDS");
-    assert!(params::find("P.eng.minClipSeconds").is_none(), "`find` searches Prepare only");
+    assert!(
+        params::find("P.eng.minClipSeconds").is_none(),
+        "`find` searches Prepare only"
+    );
 
     // Three 0.5s answering three questions: when a turn stops, when an anchor block counts as a voice's,
     // and how short a rendered clip may be.

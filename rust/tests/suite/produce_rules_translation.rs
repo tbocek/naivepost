@@ -145,13 +145,12 @@ fn drive(
     let source = spoken;
     let answer: &'static dyn Fn(&[usize]) -> std::collections::BTreeMap<usize, String> =
         Box::leak(answer);
-    let ask: &'static naivepost::produce_translate::Ask = Box::leak(Box::new(
-        move |message: &str, numbers: &[usize]| {
+    let ask: &'static naivepost::produce_translate::Ask =
+        Box::leak(Box::new(move |message: &str, numbers: &[usize]| {
             // A re-ask says "again" in §6's own wording; the answers it expects keep the original numbering.
             let _ = message;
             Ok(answer(numbers))
-        },
-    ));
+        }));
     let mats = Mats {
         settings,
         session_language: session_language.to_string(),
@@ -230,7 +229,10 @@ fn sec_08_produce_5_rules_s2_a_gap_is_re_asked_once_and_then_named_on_the_log() 
         if numbers.len() > 1 {
             *seen.borrow_mut() += 1;
             // Only the first line comes back: the rest "came back missing".
-            return numbers[..1].iter().map(|n| (*n, format!("eins {n}"))).collect();
+            return numbers[..1]
+                .iter()
+                .map(|n| (*n, format!("eins {n}")))
+                .collect();
         }
         *seen.borrow_mut() += 1;
         all_translated(numbers)
@@ -247,7 +249,11 @@ fn sec_08_produce_5_rules_s2_a_gap_is_re_asked_once_and_then_named_on_the_log() 
         "en",
     );
     assert_eq!(got.ran.failed, None, "{:?}", got.ran.failed);
-    assert_eq!(asks.borrow().clone(), 2, "one round plus exactly ONE re-ask");
+    assert_eq!(
+        asks.borrow().clone(),
+        2,
+        "one round plus exactly ONE re-ask"
+    );
     let missing = reask_line(&[2]);
     assert!(
         got.logs.contains(&missing),
@@ -267,7 +273,10 @@ fn sec_08_produce_5_rules_s2_a_gap_is_re_asked_once_and_then_named_on_the_log() 
         got.logs
     );
     let sheet = std::fs::read_to_string(got.tree.final_srt(Some("de"))).expect("the German sheet");
-    assert!(sheet.contains("uebersetzt 2"), "the re-ask's answer is in the file: {sheet}");
+    assert!(
+        sheet.contains("uebersetzt 2"),
+        "the re-ask's answer is in the file: {sheet}"
+    );
     let _ = std::fs::remove_dir_all(&got.root);
 }
 
@@ -294,7 +303,11 @@ fn sec_08_produce_5_rules_s2_a_gap_the_re_ask_cannot_fill_is_left_and_said() {
         words(LOUD, 0.0),
         "en",
     );
-    assert_eq!(got.ran.failed, None, "a hole costs a warning, not the video: {:?}", got.ran.failed);
+    assert_eq!(
+        got.ran.failed, None,
+        "a hole costs a warning, not the video: {:?}",
+        got.ran.failed
+    );
     let warn = left_line(&[2]);
     assert_eq!(
         warn,
@@ -307,7 +320,10 @@ fn sec_08_produce_5_rules_s2_a_gap_the_re_ask_cannot_fill_is_left_and_said() {
     );
     // And the file agrees with the log: line 2 is the English that was already there.
     let sheet = std::fs::read_to_string(got.tree.final_srt(Some("de"))).expect("the German sheet");
-    assert!(sheet.contains("lecture"), "the original line survives: {sheet}");
+    assert!(
+        sheet.contains("lecture"),
+        "the original line survives: {sheet}"
+    );
     assert!(!sheet.contains("uebersetzt 2"), "{sheet}");
     let _ = std::fs::remove_dir_all(&got.root);
 }
@@ -356,7 +372,11 @@ fn sec_08_produce_5_rules_s2_a_tick_named_twice_costs_no_ask() {
         "en",
     );
     assert_eq!(got.ran.failed, None, "{:?}", got.ran.failed);
-    assert_eq!(asks.borrow().clone(), 1, "the one real translation was asked for");
+    assert_eq!(
+        asks.borrow().clone(),
+        1,
+        "the one real translation was asked for"
+    );
     assert!(
         got.tree.final_srt(Some("German")).is_file(),
         "the language that IS a translation gets its sheet"
@@ -395,7 +415,9 @@ fn sec_08_produce_5_rules_s2_a_tick_named_twice_costs_no_ask() {
                 .filter_map(|e| e.ok())
                 .map(|e| e.file_name().to_string_lossy().to_string())
                 .filter(|n| {
-                    n.ends_with(".srt") && *n != "final.srt" && *n != render::sidecar_names("final", Some("German"))[0]
+                    n.ends_with(".srt")
+                        && *n != "final.srt"
+                        && *n != render::sidecar_names("final", Some("German"))[0]
                 })
                 .collect()
         })
@@ -436,7 +458,10 @@ fn sec_08_produce_5_rules_s2_a_webm_says_where_its_subtitles_are_after_the_mux()
     assert!(note > at, "the note comes after the mux: {:?}", webm.logs);
     // The cue sheet still exists beside the video, which is what the note points at.
     assert!(
-        webm.tree.clips_dir().join(render::final_srt_name()).is_file(),
+        webm.tree
+            .clips_dir()
+            .join(render::final_srt_name())
+            .is_file(),
         "the files the note names are real"
     );
 
@@ -482,7 +507,10 @@ fn sec_08_produce_5_rules_s2_a_run_with_nothing_to_say_explains_nothing() {
     );
     assert_eq!(silent.ran.failed, None, "{:?}", silent.ran.failed);
     assert!(
-        silent.logs.iter().any(|l| *l == render::no_subtitle_cue_log()),
+        silent
+            .logs
+            .iter()
+            .any(|l| *l == render::no_subtitle_cue_log()),
         "the emptiness is said: {:?}",
         silent.logs
     );

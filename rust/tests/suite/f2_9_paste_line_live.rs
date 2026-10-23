@@ -24,7 +24,12 @@ static RAN_PARKED: AtomicBool = AtomicBool::new(false);
 static RAN_PLAYING: AtomicBool = AtomicBool::new(false);
 
 fn clip(s: f64, e: f64) -> Seg {
-    Seg { s, e, cam: 0, ..Default::default() }
+    Seg {
+        s,
+        e,
+        cam: 0,
+        ..Default::default()
+    }
 }
 
 /// The Cut page with footage seeded, plus a preview that has been STARTED AND PARKED at `parked_at` — the
@@ -54,17 +59,33 @@ fn park(window: &adw::ApplicationWindow, at: f64) {
         window,
         false,
         false,
-        Transport { playing: false, started: true },
+        Transport {
+            playing: false,
+            started: true,
+        },
     );
     let player = ui::preview_player(window);
-    assert_eq!(player.playhead, Some(at), "the preview holds the parked second");
-    assert!(!player.transport.playing, "and it is NOT playing — that is the stale case");
+    assert_eq!(
+        player.playhead,
+        Some(at),
+        "the preview holds the parked second"
+    );
+    assert!(
+        !player.transport.playing,
+        "and it is NOT playing — that is the stale case"
+    );
     settle();
 }
 
 /// Copy twelve seconds of footage into hand, so a paste has something to place.
 fn take_footage_hand(window: &adw::ApplicationWindow) {
-    ui::draw_selection(window, naivepost::cut_select::Surface::PictureRow(0), None, 12.0, 24.0);
+    ui::draw_selection(
+        window,
+        naivepost::cut_select::Surface::PictureRow(0),
+        None,
+        12.0,
+        24.0,
+    );
     let said = ui::press_copy(window);
     assert!(said.starts_with("copied "), "⧉ Copy took the band: {said}");
     assert!(ui::copy_hand().is_some(), "the seconds are in hand");
@@ -153,7 +174,10 @@ fn s2_a_band_click_moves_where_the_paste_goes_while_the_preview_is_parked() {
         app.quit();
     });
     app.run_with_args::<String>(&[]);
-    assert!(RAN_PARKED.load(Ordering::SeqCst), "the parked-preview check ran");
+    assert!(
+        RAN_PARKED.load(Ordering::SeqCst),
+        "the parked-preview check ran"
+    );
 }
 
 /// The other side: while the transport IS playing, its playhead is what the eye is watching, so the paste
@@ -170,8 +194,19 @@ fn s2_a_playing_preview_leads_the_paste() {
         ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 44.0 });
         // Then the preview runs, standing at 12.0.
         ui::set_playhead(&window, 12.0);
-        ui::set_preview_state(&window, false, false, Transport { playing: true, started: true });
-        assert!(ui::preview_player(&window).transport.playing, "the preview is playing");
+        ui::set_preview_state(
+            &window,
+            false,
+            false,
+            Transport {
+                playing: true,
+                started: true,
+            },
+        );
+        assert!(
+            ui::preview_player(&window).transport.playing,
+            "the preview is playing"
+        );
         settle();
         take_footage_hand(&window);
         let said = ui::press_paste(&window);
@@ -180,13 +215,19 @@ fn s2_a_playing_preview_leads_the_paste() {
             said.contains("at 00:12 "),
             "a running preview leads the paste to the second on screen: {said}"
         );
-        assert!(!said.contains("at 00:44 "), "and not to the older click: {said}");
+        assert!(
+            !said.contains("at 00:44 "),
+            "and not to the older click: {said}"
+        );
         RAN_PLAYING.store(true, Ordering::SeqCst);
         out.borrow_mut().replace(app.clone());
         app.quit();
     });
     app.run_with_args::<String>(&[]);
-    assert!(RAN_PLAYING.load(Ordering::SeqCst), "the playing-preview check ran");
+    assert!(
+        RAN_PLAYING.load(Ordering::SeqCst),
+        "the playing-preview check ran"
+    );
 }
 
 #[test]

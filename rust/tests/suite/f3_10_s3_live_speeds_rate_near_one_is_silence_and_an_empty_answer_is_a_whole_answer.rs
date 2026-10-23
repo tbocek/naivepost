@@ -11,9 +11,9 @@
 #[path = "captions_wire_harness.rs"]
 mod harness;
 
-use harness::*;
 use crate::common;
 use common::three_clips;
+use harness::*;
 use naivepost::cut_speed_pass::{self, Answer, Call};
 use naivepost::speeds_ask;
 
@@ -42,15 +42,39 @@ fn f3_10_s3_live_speeds_rate_near_one_is_silence_and_an_empty_answer_is_a_whole_
     let llm = FakeLlm::start(vec![speeds_json(&[(1, 1.0), (2, 1.005)])]);
     point_at(&llm.url());
 
-    let asked = speeds_ask::ask(&fixture.tree, "Speed what drags.", &three_clips(), &captioned(), 1, &|| false);
+    let asked = speeds_ask::ask(
+        &fixture.tree,
+        "Speed what drags.",
+        &three_clips(),
+        &captioned(),
+        1,
+        &|| false,
+    );
     assert!(!asked.failed, "the ask was answered: {:?}", asked.reason);
     // The ask reports what the model ASKED for, rates included. Deciding that a rate says nothing is the
     // pass's judgement, made once, rather than something the wire quietly filters out on the way in.
-    assert_eq!(asked.calls, vec![Call { clip: 1, rate: 1.0 }, Call { clip: 2, rate: 1.005 }]);
+    assert_eq!(
+        asked.calls,
+        vec![
+            Call { clip: 1, rate: 1.0 },
+            Call {
+                clip: 2,
+                rate: 1.005
+            }
+        ]
+    );
 
     let reply = cut_speed_pass::place(&batch(), &asked.calls);
-    assert!(reply.usable(), "a rate of about 1 is not an unusable reply: {:?}", reply.fault);
-    assert!(reply.effects.is_empty(), "and nothing is placed over it, got {:?}", reply.effects);
+    assert!(
+        reply.usable(),
+        "a rate of about 1 is not an unusable reply: {:?}",
+        reply.fault
+    );
+    assert!(
+        reply.effects.is_empty(),
+        "and nothing is placed over it, got {:?}",
+        reply.effects
+    );
     assert_eq!(
         reply.answers,
         vec![Answer::Ignored, Answer::Ignored],
@@ -68,7 +92,10 @@ fn f3_10_s3_live_speeds_rate_near_one_is_silence_and_an_empty_answer_is_a_whole_
     // the ask must NOT report a failure — only a wire fault does that — and the give-up line the pass prints
     // when it truly has nothing is the spec's own bytes, em dash U+2014 and all.
     let empty = speeds_ask::parse_speeds(&envelope_of(r#"{"speeds":[]}"#));
-    assert!(empty.is_empty(), "an empty SPEEDS document parses to no calls");
+    assert!(
+        empty.is_empty(),
+        "an empty SPEEDS document parses to no calls"
+    );
     assert_eq!(
         cut_speed_pass::no_answer(),
         "!!! speed: no usable answer \u{2014} every clip plays at 1",

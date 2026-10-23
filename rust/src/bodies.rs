@@ -94,7 +94,13 @@ pub fn speech_body(
     emotion: &[f64],
     seed: i64,
 ) -> Value {
-    speech_request(model, text, voice_ref, language, json!({ "emotion": emotion, "seed": seed }))
+    speech_request(
+        model,
+        text,
+        voice_ref,
+        language,
+        json!({ "emotion": emotion, "seed": seed }),
+    )
 }
 
 /// The one envelope `POST /v1/audio/speech` takes: `{"model","input","voice_ref","language","options"}`.
@@ -179,10 +185,12 @@ pub struct SdWait {
 /// either queued, drawing, or gone. `timeout_for` answers "may this kind run for an hour", this
 /// answers "how long until sd.cpp has said something".
 pub fn sd_waits(kind: Kind) -> Option<SdWait> {
-    let wait = |seconds: u64, interval: Option<Duration>| Some(SdWait {
-        timeout: Duration::from_secs(seconds),
-        interval,
-    });
+    let wait = |seconds: u64, interval: Option<Duration>| {
+        Some(SdWait {
+            timeout: Duration::from_secs(seconds),
+            interval,
+        })
+    };
     match kind {
         // Fifteen seconds is the slowest a healthy server takes to describe itself; longer means
         // it is starting up or not sd.cpp at all.

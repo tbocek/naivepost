@@ -11,13 +11,13 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{self};
-use naivepost::cut_verbs;
 use naivepost::cut_screen::{self, HISTORY_BUTTONS, TRANSPORT_BUTTONS, VERB_BUTTONS, ZOOM_BUTTONS};
+use naivepost::cut_verbs;
 use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, settle, status_text, seg, cut_button_carries as button};
+use common::{cut_button_carries as button, fixture_dir, seg, settle, status_text};
 
 static RAN_ORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_UNDO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -52,14 +52,15 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 
 /// Let the main context run what the widget emissions queued.
 
-
 fn find_first(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     if widget.widget_name() == name {
         return Some(widget.clone());
     }
     for child in widget.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
+        let Some(child) = child.downcast_ref::<gtk::Widget>() else {
+            continue;
+        };
         if let Some(found) = find_first(child, name) {
             return Some(found);
         }
@@ -72,11 +73,14 @@ fn find_first(widget: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
 /// group holds a labelled row around the slider) and collects only the controls that carry a widget
 /// name, which is what §A actually enumerates.
 fn toolbar_names(window: &adw::ApplicationWindow) -> Vec<String> {
-    let toolbar = find_first(window.upcast_ref(), "cut-toolbar").expect("the Cut page has a cut-toolbar");
+    let toolbar =
+        find_first(window.upcast_ref(), "cut-toolbar").expect("the Cut page has a cut-toolbar");
     let mut found: Vec<String> = Vec::new();
     for group in toolbar.observe_children().iter::<glib::Object>() {
         let Ok(group) = group else { continue };
-        let Some(group) = group.downcast_ref::<gtk::Widget>() else { continue };
+        let Some(group) = group.downcast_ref::<gtk::Widget>() else {
+            continue;
+        };
         collect_named(group, &mut found);
     }
     found
@@ -102,7 +106,9 @@ fn collect_named(widget: &gtk::Widget, out: &mut Vec<String>) {
     }
     for child in widget.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Some(child) = child.downcast_ref::<gtk::Widget>() else { continue };
+        let Some(child) = child.downcast_ref::<gtk::Widget>() else {
+            continue;
+        };
         collect_named(child, out);
     }
 }
@@ -134,13 +140,20 @@ fn check_the_group_order_is_the_table_order(app: &adw::Application) {
     );
     // Insert sits where §1 puts it: after Paste, before Lane.
     let at = |n: &str| found.iter().position(|x| x == n).expect(n);
-    assert!(at("paste-button") + 1 == at("insert-button"), "Insert follows Paste");
-    assert!(at("insert-button") + 1 == at("lane-button"), "Lane follows Insert");
+    assert!(
+        at("paste-button") + 1 == at("insert-button"),
+        "Insert follows Paste"
+    );
+    assert!(
+        at("insert-button") + 1 == at("lane-button"),
+        "Lane follows Insert"
+    );
 
     // The effects dropdown's six rows exist by name. Asserted on their existence and order rather than
     // on the popover being shown: popping a popover needs a mapped, focused surface, and headless that
     // depends on the window manager rather than on anything this page owns.
-    let menu = find_first(window.upcast_ref(), "effect-menu").expect("effect-button has an effect-menu");
+    let menu =
+        find_first(window.upcast_ref(), "effect-menu").expect("effect-button has an effect-menu");
     // `observe_children().iter::<T>()` asserts T against the container's actual element type before it
     // yields anything, so iterating a gtk::Widget view of a Box whose elements are Buttons trips gio's
     // own check. Iterating glib::Object and downcasting is the shape that works (and the one
@@ -153,7 +166,10 @@ fn check_the_group_order_is_the_table_order(app: &adw::Application) {
         .map(|w| w.widget_name().to_string())
         .collect();
     let kinds: Vec<&str> = cut_screen::EFFECT_ITEMS.iter().map(|i| i.name).collect();
-    assert_eq!(items, kinds, "the dropdown lists the six effects in spec order");
+    assert_eq!(
+        items, kinds,
+        "the dropdown lists the six effects in spec order"
+    );
 }
 
 fn check_undo_redo_reach_the_history(app: &adw::Application) {
@@ -177,7 +193,10 @@ fn check_undo_redo_reach_the_history(app: &adw::Application) {
         40.0,
     )
     .expect("a drag on a picture row selects that row's footage");
-    assert!(band.start < band.end, "the band has an inside for the split to fall in");
+    assert!(
+        band.start < band.end,
+        "the band has an inside for the split to fall in"
+    );
     let outcome = ui::press_split(&window);
     settle();
     assert!(
@@ -200,7 +219,9 @@ fn check_undo_redo_reach_the_history(app: &adw::Application) {
         said.contains("undone \u{2014}") && said.ends_with("segment(s) left"),
         "the click printed the undo sentence: {said}"
     );
-    assert!(ui::window_logs().iter().any(|l| l.contains("undone \u{2014}")));
+    assert!(ui::window_logs()
+        .iter()
+        .any(|l| l.contains("undone \u{2014}")));
 
     button(&window, "redo-button").emit_by_name::<()>("clicked", &[]);
     settle();
@@ -230,6 +251,9 @@ fn sec_05_cut_1_screen_widgets_the_toolbar_history_zoom_and_form_reach_the_windo
         (&RAN_ORDER, "the toolbar-order check"),
         (&RAN_UNDO, "the undo/redo click check"),
     ] {
-        assert!(flag.load(std::sync::atomic::Ordering::SeqCst), "{what} never ran");
+        assert!(
+            flag.load(std::sync::atomic::Ordering::SeqCst),
+            "{what} never ran"
+        );
     }
 }

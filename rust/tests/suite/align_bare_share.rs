@@ -17,7 +17,7 @@ use naivepost::align;
 use naivepost::params;
 
 use crate::common;
-use common::{all_rows};
+use common::all_rows;
 
 /// The constants read through a call, so a comparison against one is a run-time check rather than a
 /// value clippy folds at compile time (`assertions_on_constants` fires on const-vs-const compares).
@@ -49,8 +49,7 @@ fn p_eng_alignbareshare_s1_the_share_is_008_and_catalogued_once() {
         .find(|param| param.id == "P.eng.alignBareShare")
         .expect("the bare-audio share must be catalogued for Prepare, whose align pass reads it");
     assert_eq!(
-        row.from,
-        "align::BARE_SHARE",
+        row.from, "align::BARE_SHARE",
         "a row must name the constant its rule reads"
     );
     // num() keeps the decimal for a non-whole value, which is how §10 spells this one: "0.08".
@@ -66,7 +65,10 @@ fn p_eng_alignbareshare_s1_the_share_is_008_and_catalogued_once() {
 
     // And exactly one row for it across all five lists -- one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.alignBareShare").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.alignBareShare")
+            .count(),
         1,
         "P.eng.alignBareShare catalogued more than once"
     );
@@ -79,7 +81,11 @@ fn p_eng_alignbareshare_s1_the_share_is_008_and_catalogued_once() {
 fn p_eng_alignbareshare_s2_the_share_lands_exactly_on_the_floor_at_125_seconds() {
     // 0.08 * 125.0 = 10.0 exactly: the share asks for precisely what BARE_WARN already requires, so a
     // bare total of 10.0 satisfies both and the inclusive `>=` lets it through.
-    assert_eq!(align::BARE_SHARE * 125.0, 10.0, "the share meets the floor exactly at 125 s");
+    assert_eq!(
+        align::BARE_SHARE * 125.0,
+        10.0,
+        "the share meets the floor exactly at 125 s"
+    );
     assert!(
         align::bare_warns(10.0, 125.0),
         "ten bare of one hundred twenty-five spoken warns"
@@ -92,9 +98,15 @@ fn p_eng_alignbareshare_s2_the_share_lands_exactly_on_the_floor_at_125_seconds()
         "one more second of speech lifts the share's ask above the bare total"
     );
     let ask_126 = bare_share() * 126.0;
-    assert!(ask_126 > 10.0, "the share now asks for more than ten seconds: {ask_126}");
+    assert!(
+        ask_126 > 10.0,
+        "the share now asks for more than ten seconds: {ask_126}"
+    );
     let floor = floor_seconds();
-    assert!(10.0 >= floor, "and the absolute floor is still satisfied -- the share is what stopped it");
+    assert!(
+        10.0 >= floor,
+        "and the absolute floor is still satisfied -- the share is what stopped it"
+    );
 }
 
 /// S3: the share is relative, not a fixed allowance. The same bare figure is decided by how much speech
@@ -102,14 +114,23 @@ fn p_eng_alignbareshare_s2_the_share_lands_exactly_on_the_floor_at_125_seconds()
 #[test]
 fn p_eng_alignbareshare_s3_doubling_the_session_doubles_the_bare_audio_required() {
     // Twenty bare of two hundred fifty spoken is exactly eight percent, and warns.
-    assert!(align::bare_warns(20.0, 250.0), "twenty of 250 is eight percent");
+    assert!(
+        align::bare_warns(20.0, 250.0),
+        "twenty of 250 is eight percent"
+    );
     // Twenty of 251 falls just short -- the ask moved to 20.08 while the bare total stood still.
-    assert!(!align::bare_warns(20.0, 251.0), "251 s of speech asks for 20.08");
+    assert!(
+        !align::bare_warns(20.0, 251.0),
+        "251 s of speech asks for 20.08"
+    );
     let ask_251 = bare_share() * 251.0;
     assert!(ask_251 > 20.0, "the ask grew with the session: {ask_251}");
 
     // Double everything and the shape repeats: forty of five hundred warns, forty of 501 does not.
-    assert!(align::bare_warns(40.0, 500.0), "forty of 500 is eight percent too");
+    assert!(
+        align::bare_warns(40.0, 500.0),
+        "forty of 500 is eight percent too"
+    );
     assert!(!align::bare_warns(40.0, 501.0), "and 501 s asks for 40.08");
 
     // So the bare audio needed for a warning scales with the session rather than staying put: twice the
@@ -139,7 +160,10 @@ fn p_eng_alignbareshare_s4_neither_half_of_the_rule_warns_alone() {
     assert!(!align::bare_warns(30.0, 1000.0), "so the AND refuses again");
 
     // Together: each half passing alone is not enough, and both passing together is.
-    assert!(align::bare_warns(20.0, 250.0), "both halves satisfied warns");
+    assert!(
+        align::bare_warns(20.0, 250.0),
+        "both halves satisfied warns"
+    );
     assert_ne!(
         align::bare_warns(20.0, 250.0),
         align::bare_warns(8.0, 100.0),
@@ -148,8 +172,15 @@ fn p_eng_alignbareshare_s4_neither_half_of_the_rule_warns_alone() {
 
     // The zero-spoken guard belongs to the guard, not to the share: with no speech the share's product is
     // zero, which any bare figure would clear, so `spoken > 0.0` is what actually refuses.
-    assert_eq!(align::BARE_SHARE * 0.0, 0.0, "the share would let anything pass against no speech");
-    assert!(!align::bare_warns(1.0, 0.0), "the guard is what stops it, not the share");
+    assert_eq!(
+        align::BARE_SHARE * 0.0,
+        0.0,
+        "the share would let anything pass against no speech"
+    );
+    assert!(
+        !align::bare_warns(1.0, 0.0),
+        "the guard is what stops it, not the share"
+    );
 }
 
 /// S5: the neighbours. Several constants sit near this number in `align.rs`; the ids and homes are what
@@ -158,7 +189,8 @@ fn p_eng_alignbareshare_s4_neither_half_of_the_rule_warns_alone() {
 fn p_eng_alignbareshare_s5_neighbours_by_home_not_by_number() {
     // The paired constant: same rule, different kind of quantity. Both have their own row and their own
     // spelling, and neither substitutes for the other.
-    let warn = params::find("P.eng.alignBareWarnSeconds").expect("alignBareWarnSeconds is catalogued");
+    let warn =
+        params::find("P.eng.alignBareWarnSeconds").expect("alignBareWarnSeconds is catalogued");
     let share = params::find("P.eng.alignBareShare").expect("alignBareShare is catalogued");
     assert_eq!(warn.from, "align::BARE_WARN");
     assert_eq!(share.from, "align::BARE_SHARE");

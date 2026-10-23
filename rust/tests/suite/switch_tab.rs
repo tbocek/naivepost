@@ -9,14 +9,14 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::common;
+use common::temp_dir_noclean as temp_dir;
 use naivepost::cut::{self, Seg};
 use naivepost::layout::Tree;
 use naivepost::narration::{self, Entry};
 use naivepost::project::{Project, Publish, Source};
 use naivepost::publish;
 use naivepost::shell::{self, Move, Outcome, Page, Pending, Refresh, Shell, NARRATION_AUTOSAVE};
-use crate::common;
-use common::temp_dir_noclean as temp_dir;
 
 /// A project folder plus the tree inside it, created so the two refreshes that read disk have
 /// something to read. Same fixture shape as tests/suite/layout.rs.
@@ -33,7 +33,11 @@ fn fixture(tag: &str) -> (PathBuf, Tree) {
 /// A project with one footage source — the state every page is unlocked in.
 fn with_footage() -> Project {
     Project {
-        sources: vec![Source { path: "cam.mp4".to_string(), footage: true, ..Default::default() }],
+        sources: vec![Source {
+            path: "cam.mp4".to_string(),
+            footage: true,
+            ..Default::default()
+        }],
         ..Default::default()
     }
 }
@@ -41,7 +45,10 @@ fn with_footage() -> Project {
 /// A project with a source that is not footage: Cut is locked on it, and so is an empty project.
 fn without_footage() -> Project {
     Project {
-        sources: vec![Source { path: "voice.wav".to_string(), ..Default::default() }],
+        sources: vec![Source {
+            path: "voice.wav".to_string(),
+            ..Default::default()
+        }],
         ..Default::default()
     }
 }
@@ -71,7 +78,11 @@ fn f0_1_s1_a_click_moves_to_the_page() {
         let mut shell = Shell::default();
         go(&mut shell, Page::Prepare, Move::Click, &project, None);
         let run = shell.switch(page, Move::Run, &project, None, &[], &mut Vec::new());
-        assert!(matches!(run, Outcome::Shown { .. }), "a run must reach {}", page.label());
+        assert!(
+            matches!(run, Outcome::Shown { .. }),
+            "a run must reach {}",
+            page.label()
+        );
         assert_eq!(shell.page, page);
     }
     // The four tabs are the pipeline's own order and the same words as crate::PAGES.
@@ -94,18 +105,29 @@ fn f0_1_s2_a_locked_tab_bounces_and_says_why() {
     // §1: "Narrate and Produce never locked; their ▶ refuses without a cut." Prepare is where the
     // sources get added, so an empty project still has to open it.
     for page in [Page::Prepare, Page::Narrate, Page::Produce] {
-        assert_eq!(shell::lock(page, &empty), None, "{} is never locked", page.label());
+        assert_eq!(
+            shell::lock(page, &empty),
+            None,
+            "{} is never locked",
+            page.label()
+        );
     }
 
     let mut shell = Shell::default();
     let outcome = go(&mut shell, Page::Cut, Move::Click, &empty, None);
     assert_eq!(
         outcome,
-        Outcome::Bounced { reason: shell::CUT_LOCK },
+        Outcome::Bounced {
+            reason: shell::CUT_LOCK
+        },
         "a click on a locked tab bounces"
     );
     assert_eq!(shell.page, Page::Prepare, "the page did not move");
-    assert_eq!(shell.status, shell::CUT_LOCK, "the status line carries the reason");
+    assert_eq!(
+        shell.status,
+        shell::CUT_LOCK,
+        "the status line carries the reason"
+    );
     // ⓘ still describes the page that is showing, not the one that was refused.
     assert_eq!(shell.help_page, Page::Prepare);
 
@@ -113,11 +135,23 @@ fn f0_1_s2_a_locked_tab_bounces_and_says_why() {
     let project = with_footage();
     assert_eq!(shell::lock(Page::Cut, &project), None);
     let outcome = go(&mut shell, Page::Cut, Move::Click, &project, None);
-    assert!(matches!(outcome, Outcome::Shown { page: Page::Cut, .. }));
+    assert!(matches!(
+        outcome,
+        Outcome::Shown {
+            page: Page::Cut,
+            ..
+        }
+    ));
     assert_eq!(shell.page, Page::Cut);
     // A bounce leaves no debt behind: the status is overwritten by whatever happens next.
     let outcome = go(&mut shell, Page::Prepare, Move::Click, &project, None);
-    assert!(matches!(outcome, Outcome::Shown { page: Page::Prepare, .. }));
+    assert!(matches!(
+        outcome,
+        Outcome::Shown {
+            page: Page::Prepare,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -148,11 +182,17 @@ fn f0_1_s3_a_switch_flushes_the_narration_autosave() {
     let mut shell = Shell::default();
     shell.narration_pending.touched(Duration::ZERO);
     let outcome = go(&mut shell, Page::Cut, Move::Click, &project, None);
-    assert!(matches!(outcome, Outcome::Shown { flushed: true, .. }), "{outcome:?}");
+    assert!(
+        matches!(outcome, Outcome::Shown { flushed: true, .. }),
+        "{outcome:?}"
+    );
 
     // Nothing typed since: the next switch reports no flush.
     let outcome = go(&mut shell, Page::Narrate, Move::Click, &project, None);
-    assert!(matches!(outcome, Outcome::Shown { flushed: false, .. }), "{outcome:?}");
+    assert!(
+        matches!(outcome, Outcome::Shown { flushed: false, .. }),
+        "{outcome:?}"
+    );
 
     // And a bounce is S2 stopping the flow before S3 — nothing was written because nothing moved.
     let empty = Project::default();
@@ -173,11 +213,21 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
     let (_root, tree) = fixture("readouts");
     let project = with_footage();
     let cut = cut::Cut {
-        segs: vec![Seg { s: 0.0, e: 30.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 30.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     let narration = narration::Narration {
-        entries: vec![Entry { s: 0.0, e: 30.0, at: 1.0, text: "one".to_string(), ..Default::default() }],
+        entries: vec![Entry {
+            s: 0.0,
+            e: 30.0,
+            at: 1.0,
+            text: "one".to_string(),
+            ..Default::default()
+        }],
         ..Default::default()
     };
 
@@ -224,17 +274,46 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
     // Produce's row is spec/08-produce.md §1: "N clip(s) · mm:ss[ · no narration][ · no upload text]".
     let produce = &seen_inputs[3];
     assert!(produce.starts_with("1 clip(s) · "), "{produce}");
-    assert!(produce.contains("00:30"), "mm:ss of the cut's length: {produce}");
-    assert!(produce.ends_with("· no upload text"), "no publish.json yet: {produce}");
-    assert!(!produce.contains("no narration"), "there is a line to speak: {produce}");
+    assert!(
+        produce.contains("00:30"),
+        "mm:ss of the cut's length: {produce}"
+    );
+    assert!(
+        produce.ends_with("· no upload text"),
+        "no publish.json yet: {produce}"
+    );
+    assert!(
+        !produce.contains("no narration"),
+        "there is a line to speak: {produce}"
+    );
 
     // Narration off is what says so, and it is the row that changes.
-    let captions = Project { no_narration: true, ..with_footage() };
-    go(&mut shell, Page::Narrate, Move::Click, &captions, Some(&tree));
-    assert_eq!(shell.inputs(Some(&tree), &captions, &cut, &narration), "no narration — captions only");
-    go(&mut shell, Page::Produce, Move::Click, &captions, Some(&tree));
+    let captions = Project {
+        no_narration: true,
+        ..with_footage()
+    };
+    go(
+        &mut shell,
+        Page::Narrate,
+        Move::Click,
+        &captions,
+        Some(&tree),
+    );
+    assert_eq!(
+        shell.inputs(Some(&tree), &captions, &cut, &narration),
+        "no narration — captions only"
+    );
+    go(
+        &mut shell,
+        Page::Produce,
+        Move::Click,
+        &captions,
+        Some(&tree),
+    );
     assert!(
-        shell.inputs(Some(&tree), &captions, &cut, &narration).contains("no narration"),
+        shell
+            .inputs(Some(&tree), &captions, &cut, &narration)
+            .contains("no narration"),
         "the tail appears with nothing to speak"
     );
 
@@ -256,17 +335,27 @@ fn f0_1_s5_cut_rebuilds_only_when_prepare_moved() {
 
     let stamp = shell::prepare_stamp(&tree, &project);
     assert!(
-        stamp.sources.iter().any(|(name, _)| name.ends_with("cam.mp4/transcript.txt")),
+        stamp
+            .sources
+            .iter()
+            .any(|(name, _)| name.ends_with("cam.mp4/transcript.txt")),
         "the stamp names Prepare's own output: {:?}",
         stamp.sources
     );
-    assert_eq!(stamp, shell::prepare_stamp(&tree, &project), "an unchanged project stamps the same");
+    assert_eq!(
+        stamp,
+        shell::prepare_stamp(&tree, &project),
+        "an unchanged project stamps the same"
+    );
 
     let mut build = shell::CutBuild::default();
     // Never built, so it has to be.
     assert!(build.needs_rebuild(&stamp));
     build.record(stamp.clone());
-    assert!(!build.needs_rebuild(&stamp), "nothing moved since the build");
+    assert!(
+        !build.needs_rebuild(&stamp),
+        "nothing moved since the build"
+    );
 
     // One file of Prepare's output changed — a re-transcribe — and the build is stale.
     std::fs::write(&transcript, "second, longer").unwrap();
@@ -279,14 +368,35 @@ fn f0_1_s5_cut_rebuilds_only_when_prepare_moved() {
     let outcome = go(&mut shell, Page::Cut, Move::Click, &project, Some(&tree));
     assert_eq!(
         outcome,
-        Outcome::Shown { page: Page::Cut, flushed: false, refresh: Refresh::CutRebuild { stale: true } }
+        Outcome::Shown {
+            page: Page::Cut,
+            flushed: false,
+            refresh: Refresh::CutRebuild { stale: true }
+        }
     );
-    let outcome = go(&mut shell, Page::Prepare, Move::Click, &project, Some(&tree));
-    assert_eq!(outcome, Outcome::Shown { page: Page::Prepare, flushed: false, refresh: Refresh::None });
+    let outcome = go(
+        &mut shell,
+        Page::Prepare,
+        Move::Click,
+        &project,
+        Some(&tree),
+    );
+    assert_eq!(
+        outcome,
+        Outcome::Shown {
+            page: Page::Prepare,
+            flushed: false,
+            refresh: Refresh::None
+        }
+    );
     let outcome = go(&mut shell, Page::Cut, Move::Click, &project, Some(&tree));
     assert_eq!(
         outcome,
-        Outcome::Shown { page: Page::Cut, flushed: false, refresh: Refresh::CutRebuild { stale: false } },
+        Outcome::Shown {
+            page: Page::Cut,
+            flushed: false,
+            refresh: Refresh::CutRebuild { stale: false }
+        },
         "nothing moved between the two visits"
     );
 
@@ -294,37 +404,77 @@ fn f0_1_s5_cut_rebuilds_only_when_prepare_moved() {
     let mut shell = Shell::default();
     assert_eq!(
         go(&mut shell, Page::Cut, Move::Click, &project, None),
-        Outcome::Shown { page: Page::Cut, flushed: false, refresh: Refresh::CutRebuild { stale: false } }
+        Outcome::Shown {
+            page: Page::Cut,
+            flushed: false,
+            refresh: Refresh::CutRebuild { stale: false }
+        }
     );
 }
 
 #[test]
 fn f0_1_s6_narrate_refits_its_lines_to_the_cut() {
     // S5's Narrate branch: the words are kept and the times follow, with no model asked.
-    let segs = [Seg { s: 10.0, e: 20.0, ..Default::default() }];
+    let segs = [Seg {
+        s: 10.0,
+        e: 20.0,
+        ..Default::default()
+    }];
     // A line on the clip where it was written; the clip has moved to 10..20 and the words have to
     // stay over the same moment of the recording — `at` is re-based (gui/narrate.go:2432).
-    let mut entries = vec![Entry { s: 5.0, e: 15.0, at: 2.0, ..Default::default() }];
+    let mut entries = vec![Entry {
+        s: 5.0,
+        e: 15.0,
+        at: 2.0,
+        ..Default::default()
+    }];
     assert_eq!(shell::refit(&segs, &mut entries), (1, 0));
     assert_eq!((entries[0].s, entries[0].e), (10.0, 20.0));
     // 5 + 2 - 10 = -3 clamps to the clip's start: the line was written before the new clip began.
     assert_eq!(entries[0].at, 0.0, "{:?}", entries[0]);
 
     // A line inside a clip that only moved by hundredths is not "the cut moved".
-    let mut settled = vec![Entry { s: 10.04, e: 20.0, at: 1.0, ..Default::default() }];
+    let mut settled = vec![Entry {
+        s: 10.04,
+        e: 20.0,
+        at: 1.0,
+        ..Default::default()
+    }];
     assert_eq!(shell::refit(&segs, &mut settled), (0, 0));
     assert_eq!(settled[0].at, 1.0, "an unmoved line keeps its placement");
 
     // A line with no clip over it at all is an orphan and is left exactly where it was.
-    let mut orphan = vec![Entry { s: 100.0, e: 110.0, at: 3.0, ..Default::default() }];
+    let mut orphan = vec![Entry {
+        s: 100.0,
+        e: 110.0,
+        at: 3.0,
+        ..Default::default()
+    }];
     assert_eq!(shell::refit(&segs, &mut orphan), (0, 1));
-    assert_eq!((orphan[0].s, orphan[0].e, orphan[0].at), (100.0, 110.0, 3.0));
+    assert_eq!(
+        (orphan[0].s, orphan[0].e, orphan[0].at),
+        (100.0, 110.0, 3.0)
+    );
 
     // A line on a card keeps the zero-span segment sitting at the same moment.
-    let cards = [Seg { s: 40.0, e: 40.0, ..Default::default() }];
-    let mut card = vec![Entry { s: 40.0, e: 40.0, at: 0.0, ..Default::default() }];
+    let cards = [Seg {
+        s: 40.0,
+        e: 40.0,
+        ..Default::default()
+    }];
+    let mut card = vec![Entry {
+        s: 40.0,
+        e: 40.0,
+        at: 0.0,
+        ..Default::default()
+    }];
     assert_eq!(shell::refit(&cards, &mut card), (0, 0));
-    let mut stranded = vec![Entry { s: 60.0, e: 60.0, at: 0.0, ..Default::default() }];
+    let mut stranded = vec![Entry {
+        s: 60.0,
+        e: 60.0,
+        at: 0.0,
+        ..Default::default()
+    }];
     assert_eq!(shell::refit(&cards, &mut stranded), (0, 1));
 
     // Nothing written yet refits to nothing, and says nothing.
@@ -345,20 +495,62 @@ fn f0_1_s6_narrate_refits_its_lines_to_the_cut() {
     let (_root, tree) = fixture("refit");
     let project = with_footage();
     let mut shell = Shell::default();
-    let mut entries = vec![Entry { s: 5.0, e: 15.0, at: 2.0, ..Default::default() }];
-    let outcome = shell.switch(Page::Narrate, Move::Click, &project, Some(&tree), &segs, &mut entries);
+    let mut entries = vec![Entry {
+        s: 5.0,
+        e: 15.0,
+        at: 2.0,
+        ..Default::default()
+    }];
+    let outcome = shell.switch(
+        Page::Narrate,
+        Move::Click,
+        &project,
+        Some(&tree),
+        &segs,
+        &mut entries,
+    );
     assert_eq!(
         outcome,
-        Outcome::Shown { page: Page::Narrate, flushed: false, refresh: Refresh::NarrateRefit { moved: 1, orphan: 0 } }
+        Outcome::Shown {
+            page: Page::Narrate,
+            flushed: false,
+            refresh: Refresh::NarrateRefit {
+                moved: 1,
+                orphan: 0
+            }
+        }
     );
-    assert_eq!(shell.status, "the cut moved \u{2014} 1 line(s) followed their clips");
+    assert_eq!(
+        shell.status,
+        "the cut moved \u{2014} 1 line(s) followed their clips"
+    );
 
     // A narration with no lines refits to zero and leaves the status alone.
     let mut shell = Shell::default();
     shell.status = "unchanged".to_string();
-    let outcome = shell.switch(Page::Narrate, Move::Click, &project, Some(&tree), &segs, &mut Vec::new());
-    assert_eq!(outcome, Outcome::Shown { page: Page::Narrate, flushed: false, refresh: Refresh::NarrateRefit { moved: 0, orphan: 0 } });
-    assert_eq!(shell.status, "unchanged", "nothing moved, so nothing is claimed");
+    let outcome = shell.switch(
+        Page::Narrate,
+        Move::Click,
+        &project,
+        Some(&tree),
+        &segs,
+        &mut Vec::new(),
+    );
+    assert_eq!(
+        outcome,
+        Outcome::Shown {
+            page: Page::Narrate,
+            flushed: false,
+            refresh: Refresh::NarrateRefit {
+                moved: 0,
+                orphan: 0
+            }
+        }
+    );
+    assert_eq!(
+        shell.status, "unchanged",
+        "nothing moved, so nothing is claimed"
+    );
 }
 
 #[test]
@@ -376,7 +568,11 @@ fn f0_1_s7_produce_refreshes_readouts_and_the_publish_panel() {
 
     // Write it and refresh again: the panel reads the record back, base first, references after.
     let record = Publish {
-        frames: vec!["frame-1.png".to_string(), "frame-2.png".to_string(), "frame-3.png".to_string()],
+        frames: vec![
+            "frame-1.png".to_string(),
+            "frame-2.png".to_string(),
+            "frame-3.png".to_string(),
+        ],
         ..Publish::default()
     };
     publish::save(&record, &tree).expect("a publish file");
@@ -387,25 +583,58 @@ fn f0_1_s7_produce_refreshes_readouts_and_the_publish_panel() {
 
     // S5's Produce branch: readouts and the publish panel, whatever their contents.
     let mut shell = Shell::default();
-    let outcome = go(&mut shell, Page::Produce, Move::Click, &project, Some(&tree));
+    let outcome = go(
+        &mut shell,
+        Page::Produce,
+        Move::Click,
+        &project,
+        Some(&tree),
+    );
     assert_eq!(
         outcome,
-        Outcome::Shown { page: Page::Produce, flushed: false, refresh: Refresh::ProducePanels }
+        Outcome::Shown {
+            page: Page::Produce,
+            flushed: false,
+            refresh: Refresh::ProducePanels
+        }
     );
     // With the text written, the Inputs row stops saying otherwise.
-    let project = Project { publish: Some(record), ..project };
-    assert!(
-        !shell.inputs(Some(&tree), &project, &cut::Cut::default(), &narration::Narration::default())
-            .contains("no upload text")
-    );
+    let project = Project {
+        publish: Some(record),
+        ..project
+    };
+    assert!(!shell
+        .inputs(
+            Some(&tree),
+            &project,
+            &cut::Cut::default(),
+            &narration::Narration::default()
+        )
+        .contains("no upload text"));
 
     // A publish file that does not parse is reported and still opens the page.
     std::fs::write(tree.publish_json(), "{ not json").unwrap();
     let mut shell = Shell::default();
     assert!(shell::PublishPanel::refresh(&tree).is_err());
-    let outcome = go(&mut shell, Page::Produce, Move::Click, &project, Some(&tree));
-    assert!(matches!(outcome, Outcome::Shown { refresh: Refresh::ProducePanels, .. }));
-    assert!(!shell.status.is_empty(), "the reason reaches the status line: {}", shell.status);
+    let outcome = go(
+        &mut shell,
+        Page::Produce,
+        Move::Click,
+        &project,
+        Some(&tree),
+    );
+    assert!(matches!(
+        outcome,
+        Outcome::Shown {
+            refresh: Refresh::ProducePanels,
+            ..
+        }
+    ));
+    assert!(
+        !shell.status.is_empty(),
+        "the reason reaches the status line: {}",
+        shell.status
+    );
 }
 
 #[test]
@@ -424,7 +653,11 @@ fn f0_1_s8_a_page_that_loses_its_prerequisites_goes_back_silently() {
     let outcome = go(&mut shell, Page::Cut, Move::Vanished, &lost, None);
     assert_eq!(
         outcome,
-        Outcome::Shown { page: Page::Prepare, flushed: false, refresh: Refresh::None },
+        Outcome::Shown {
+            page: Page::Prepare,
+            flushed: false,
+            refresh: Refresh::None
+        },
         "vanished prerequisites send the page back to Prepare"
     );
     assert_eq!(shell.page, Page::Prepare);
@@ -441,16 +674,31 @@ fn f0_1_s8_a_page_that_loses_its_prerequisites_goes_back_silently() {
     // cannot proceed.
     let mut running = Shell::default();
     let outcome = go(&mut running, Page::Cut, Move::Run, &lost, None);
-    assert!(matches!(outcome, Outcome::Shown { page: Page::Cut, .. }), "{outcome:?}");
+    assert!(
+        matches!(
+            outcome,
+            Outcome::Shown {
+                page: Page::Cut,
+                ..
+            }
+        ),
+        "{outcome:?}"
+    );
     assert_eq!(running.page, Page::Cut);
-    assert_eq!(running.status, "", "a run that merely moved has nothing to report");
+    assert_eq!(
+        running.status, "",
+        "a run that merely moved has nothing to report"
+    );
 
     // Vanished while unlocked is no move at all — the page keeps its place.
     let mut staying = Shell::default();
     go(&mut staying, Page::Narrate, Move::Click, &project, None);
     assert!(matches!(
         go(&mut staying, Page::Narrate, Move::Vanished, &project, None),
-        Outcome::Shown { page: Page::Narrate, .. }
+        Outcome::Shown {
+            page: Page::Narrate,
+            ..
+        }
     ));
     assert_eq!(staying.page, Page::Narrate);
 }

@@ -37,7 +37,10 @@ fn p_project_frameinterval_s1_the_grid_read_is_the_project_written_value() {
         prepare::set_freq(&mut held, FREQ_STOPS[5]),
         "FREQ_STOPS[5] is a listed stop, so set_freq must accept it"
     );
-    assert_eq!(held.interval, 4.0, "Freq 4 s is what §10 §3 lists as stop 6");
+    assert_eq!(
+        held.interval, 4.0,
+        "Freq 4 s is what §10 §3 lists as stop 6"
+    );
     project::save(&held, &dir).expect("naivepost.json written");
 
     assert_eq!(
@@ -62,7 +65,10 @@ fn p_project_frameinterval_s1_the_grid_read_is_the_project_written_value() {
 #[test]
 fn p_project_frameinterval_s1_the_window_shown_follows_the_projects_interval() {
     let near = frames::get_frames(&GRID_4S, 0.0, 20.0, Some(6.0), 4.0);
-    assert!(near.contains(&4.0) && near.contains(&8.0), "both neighbours are 2 s off the ask: {near:?}");
+    assert!(
+        near.contains(&4.0) && near.contains(&8.0),
+        "both neighbours are 2 s off the ask: {near:?}"
+    );
     assert!(
         !near.contains(&0.0) && !near.contains(&12.0),
         "a frame further than one interval away is outside the window: {near:?}"
@@ -78,7 +84,11 @@ fn p_project_frameinterval_s1_the_window_shown_follows_the_projects_interval() {
 
     // No `at` still answers every frame inside the span, whatever the interval.
     let all = frames::get_frames(&GRID_4S, 0.0, 20.0, None, 4.0);
-    assert_eq!(all, GRID_4S.to_vec(), "an unaimed look shows the whole clip");
+    assert_eq!(
+        all,
+        GRID_4S.to_vec(),
+        "an unaimed look shows the whole clip"
+    );
     let clipped = frames::get_frames(&GRID_4S, 8.0, 20.0, None, 4.0);
     assert_eq!(clipped, vec![8.0, 12.0, 16.0], "and the span bounds it");
 }
@@ -99,7 +109,11 @@ fn shown(answer: &str) -> Vec<f64> {
         .as_array()
         .expect("the answer names frames")
         .iter()
-        .map(|frame| frame["at"].as_f64().expect("every frame carries its offset"))
+        .map(|frame| {
+            frame["at"]
+                .as_f64()
+                .expect("every frame carries its offset")
+        })
         .collect()
 }
 
@@ -112,15 +126,29 @@ fn p_project_frameinterval_s2_the_clip_batch_answers_on_the_projects_grid() {
     aimed.set_frame_interval(FREQ_STOPS[5]);
     let answer = clip_rules_tools_leg::answer(&look(r#"{"clip":1}"#), &mut aimed);
     let offsets = shown(&answer);
-    assert_eq!(offsets, vec![0.0, 4.0, 8.0], "a 10 s clip on the 4 s grid: {answer}");
+    assert_eq!(
+        offsets,
+        vec![0.0, 4.0, 8.0],
+        "a 10 s clip on the 4 s grid: {answer}"
+    );
     for at in &offsets {
         assert_eq!(at % 4.0, 0.0, "{at} is not on the 4 s grid: {offsets:?}");
     }
 
     let mut plain = clip_rules_tools_leg::batch_of(&[(1, 10.0)]);
-    let untouched = shown(&clip_rules_tools_leg::answer(&look(r#"{"clip":1}"#), &mut plain));
-    assert_eq!(untouched.len(), 11, "left alone the batch walks 1 s apart: {untouched:?}");
-    assert_ne!(untouched, offsets, "the grid is what moved the answer, not the clip");
+    let untouched = shown(&clip_rules_tools_leg::answer(
+        &look(r#"{"clip":1}"#),
+        &mut plain,
+    ));
+    assert_eq!(
+        untouched.len(),
+        11,
+        "left alone the batch walks 1 s apart: {untouched:?}"
+    );
+    assert_ne!(
+        untouched, offsets,
+        "the grid is what moved the answer, not the clip"
+    );
 }
 
 /// S3: refusals keep their own sentences — an empty session, a clip outside the batch, and a pick
@@ -143,7 +171,10 @@ fn p_project_frameinterval_s3_an_empty_or_unknown_answer_still_refuses_in_words(
         unknown.contains("clip 9 is not in this batch"),
         "the §3.1 error names the clip: {unknown}"
     );
-    assert!(unknown.starts_with("{\"error\":"), "still tools::error's shape: {unknown}");
+    assert!(
+        unknown.starts_with("{\"error\":"),
+        "still tools::error's shape: {unknown}"
+    );
 
     let refused = up::pick_frame(1, 1.0, &[0.0], &[]).expect_err("nothing to take");
     assert!(

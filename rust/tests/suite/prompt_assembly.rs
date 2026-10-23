@@ -43,13 +43,23 @@ impl Fake {
                     let mut length = 0usize;
                     loop {
                         let mut header = String::new();
-                        if reader.read_line(&mut header).ok().filter(|n| *n > 0).is_none()
+                        if reader
+                            .read_line(&mut header)
+                            .ok()
+                            .filter(|n| *n > 0)
+                            .is_none()
                             || header.trim().is_empty()
                         {
                             break;
                         }
                         if header.to_ascii_lowercase().starts_with("content-length:") {
-                            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+                            length = header
+                                .split(':')
+                                .nth(1)
+                                .unwrap_or("0")
+                                .trim()
+                                .parse()
+                                .unwrap_or(0);
                         }
                     }
                     let mut body = vec![0u8; length];
@@ -69,7 +79,10 @@ impl Fake {
                 });
             }
         });
-        Fake { url: format!("http://127.0.0.1:{port}"), asks }
+        Fake {
+            url: format!("http://127.0.0.1:{port}"),
+            asks,
+        }
     }
 
     /// Wait until `count` asks have been recorded — recording happens on the connection's own thread.
@@ -187,7 +200,10 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s1_prepare_jobs_get_answer_material_cl
         assert!(cut.contains(JOBS), "{key}: {cut}");
         assert!(cut.contains(NEVER), "{key}: {cut}");
         // Not the later steps' business.
-        assert!(!cut.contains(STEPS), "{key} must not read THE FOUR STEPS: {cut}");
+        assert!(
+            !cut.contains(STEPS),
+            "{key} must not read THE FOUR STEPS: {cut}"
+        );
         assert!(!cut.contains(CUT), "{key} must not read THE CUT: {cut}");
         // tool:web_search / tool:web_read are not offered to Prepare.
         assert!(!cut.contains(TOOLS), "{key} must not read TOOLS: {cut}");
@@ -232,7 +248,10 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s2_downstream_jobs_add_steps_tools_and
     for key in ["captions", "effects"] {
         let out = asm::cut_system(&fixture(), key);
         assert!(out.contains(CUT), "{key}: {out}");
-        assert!(out.contains(MATERIAL) && out.contains(CLOCKS), "{key}: {out}");
+        assert!(
+            out.contains(MATERIAL) && out.contains(CLOCKS),
+            "{key}: {out}"
+        );
         assert!(!out.contains(STEPS), "{key}: {out}");
         assert!(!out.contains(TOOLS), "{key}: {out}");
     }
@@ -243,7 +262,10 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s2_downstream_jobs_add_steps_tools_and
     assert!(speed.contains(ANSWER), "speed: {speed}");
     assert!(speed.contains(CUT), "speed: {speed}");
     assert!(speed.contains(JOBS), "speed: {speed}");
-    assert!(!speed.contains(NEVER), "speed must NOT read NEVER INVENT: {speed}");
+    assert!(
+        !speed.contains(NEVER),
+        "speed must NOT read NEVER INVENT: {speed}"
+    );
     assert!(!speed.contains(MATERIAL), "speed: {speed}");
     assert!(!speed.contains(CLOCKS), "speed: {speed}");
     assert!(!speed.contains(STEPS), "speed: {speed}");
@@ -255,13 +277,16 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s3_jobs_list_keeps_only_this_jobs_line
     let out = asm::cut_system(&fixture(), "retake");
     // Its own line, with the example indented under it.
     assert!(out.contains("retake: every spoken line, numbered"), "{out}");
-    assert!(out.contains("{\"abandoned\""), "its example survives: {out}");
+    assert!(
+        out.contains("{\"abandoned\""),
+        "its example survives: {out}"
+    );
     // Every other job's line AND its example are gone.
     assert!(!out.contains("narrate:"), "{out}");
     assert!(!out.contains("cut: the footage range"), "{out}");
     assert!(!out.contains("{\"segments\""), "{out}");
     assert!(!out.contains("{\"entries\""), "{out}");
-    assert!(!out.contains("EVENT: Calm", ), "{out}");
+    assert!(!out.contains("EVENT: Calm",), "{out}");
     // The heading itself stays.
     assert!(out.contains(JOBS), "{out}");
 
@@ -273,7 +298,10 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s3_jobs_list_keeps_only_this_jobs_line
     assert!(fixed.contains("transcript: N lines of TSV"), "{fixed}");
     assert!(!fixed.contains("retake:"), "{fixed}");
     let upload = asm::cut_system(&fixture(), "youtube");
-    assert!(upload.contains("upload text: the clips of the finished video"), "{upload}");
+    assert!(
+        upload.contains("upload text: the clips of the finished video"),
+        "{upload}"
+    );
     assert!(upload.contains("TITLE: seven words or fewer"), "{upload}");
     assert!(!upload.contains("translate:"), "{upload}");
 
@@ -304,7 +332,10 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s4_unknown_heading_and_preamble_reach_
     assert!(!asm::is_heading("just prose"));
     assert!(!asm::is_heading("AN UNKNOWN. WITH A STOP"));
     // Prefix matching keeps the jobs heading's lower-case tail inside that section.
-    assert_eq!(asm::head_of("WHAT EACH JOB IS GIVEN, AND WHAT IT ANSWERS WITH"), Some(JOBS));
+    assert_eq!(
+        asm::head_of("WHAT EACH JOB IS GIVEN, AND WHAT IT ANSWERS WITH"),
+        Some(JOBS)
+    );
 }
 
 #[test]
@@ -319,13 +350,17 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s5_keys_with_no_row_get_the_whole_syst
         assert!(out.contains("HOUSE STYLE"), "{key}: {out}");
         assert!(out.contains("automated video editor"), "{key}: {out}");
         // Whole means whole: every job line still there, nothing cut from the jobs list.
-        assert!(out.contains("narrate:") && out.contains("retake:"), "{key}: {out}");
+        assert!(
+            out.contains("narrate:") && out.contains("retake:"),
+            "{key}: {out}"
+        );
     }
     assert_eq!(asm::KNOWN_HEADS.len(), 8);
 }
 
 #[test]
-fn sec_09_llm_and_tools_8_prompt_assembly_s6_narrate_order_is_cut_then_prompt_then_addenda_then_rule() {
+fn sec_09_llm_and_tools_8_prompt_assembly_s6_narrate_order_is_cut_then_prompt_then_addenda_then_rule(
+) {
     // prompt.narrate: the addenda ride on the job's own wording, after the house rules, before the
     // precedence rule.
     let system = fixture();
@@ -346,11 +381,18 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s6_narrate_order_is_cut_then_prompt_th
         .expect("the precedence rule is last");
     assert!(i_cut < i_job, "house rules before the job wording");
     assert!(i_job < i_speech, "the prompt before its addenda");
-    assert!(i_speech < i_caps, "speech note before the captions addendum");
+    assert!(
+        i_speech < i_caps,
+        "speech note before the captions addendum"
+    );
     assert!(i_caps < i_rule, "the rule rides last");
 
     // Separators are exactly "\n\n", and each piece appears once.
-    assert_eq!(i_job, i_cut + cut.len() + 2, "exactly one blank line between pieces");
+    assert_eq!(
+        i_job,
+        i_cut + cut.len() + 2,
+        "exactly one blank line between pieces"
+    );
     assert_eq!(i_speech, i_job + job.len() + 2);
     assert_eq!(i_caps, i_speech + narrate_pass::SPEECH_ADDENDUM.len() + 2);
     assert_eq!(out.matches(job).count(), 1);
@@ -370,7 +412,14 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s6_narrate_order_is_cut_then_prompt_th
 #[test]
 fn sec_09_llm_and_tools_8_prompt_assembly_s7_precedence_rule_rides_only_with_a_context() {
     let system = fixture();
-    let with = asm::system_message(&system, "cut", "cut wording", "make it shorter", false, false);
+    let with = asm::system_message(
+        &system,
+        "cut",
+        "cut wording",
+        "make it shorter",
+        false,
+        false,
+    );
     assert!(with.contains("USER CONTEXT"), "{with}");
     // The second half names the other-step clause §8 requires.
     assert!(with.contains("that job's"), "{with}");
@@ -379,7 +428,10 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s7_precedence_rule_rides_only_with_a_c
     // Empty or whitespace-only context: no rule, and no empty header standing over nothing.
     for empty in ["", "   ", "\n\t "] {
         let out = asm::system_message(&system, "cut", "cut wording", empty, false, false);
-        assert!(!out.contains("USER CONTEXT"), "empty context leaked a rule: {out}");
+        assert!(
+            !out.contains("USER CONTEXT"),
+            "empty context leaked a rule: {out}"
+        );
         assert!(!out.contains("that job's"), "{out}");
         // What is left is the cut system followed by the job wording, unchanged.
         assert_eq!(
@@ -408,11 +460,27 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s8_user_message_context_then_speech_ru
         assert_eq!(out.matches(narrate_pass::CTX_SPEECH).count(), 1, "{key}");
     }
 
-    for key in ["describe", "fix", "retake", "textedit", "captions", "speed", "effects", "translate", "youtube"] {
+    for key in [
+        "describe",
+        "fix",
+        "retake",
+        "textedit",
+        "captions",
+        "speed",
+        "effects",
+        "translate",
+        "youtube",
+    ] {
         assert!(!asm::carries_speech_rule(key), "{key}");
         let out = asm::user_message("a context", key, material);
-        assert!(!out.contains(narrate_pass::CTX_SPEECH), "{key} gained the rule: {out}");
-        assert!(out.contains("a context") && out.contains(material), "{key}: {out}");
+        assert!(
+            !out.contains(narrate_pass::CTX_SPEECH),
+            "{key} gained the rule: {out}"
+        );
+        assert!(
+            out.contains("a context") && out.contains(material),
+            "{key}: {out}"
+        );
     }
 
     // No context: the material alone, with no header and no rule.
@@ -447,11 +515,20 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s9_shipped_wording_has_every_head_the_
     // Cutting the real prompt keeps each job's own line and drops another's.
     let retake = asm::cut_system(&shipped, "retake");
     assert!(retake.contains("retake:"), "real retake line missing");
-    assert!(!retake.contains("narrate:"), "another job's line survived: {retake}");
+    assert!(
+        !retake.contains("narrate:"),
+        "another job's line survived: {retake}"
+    );
     let speed = asm::cut_system(&shipped, "speed");
-    assert!(speed.contains("speed:") && !speed.contains(NEVER), "real speed cut wrong");
+    assert!(
+        speed.contains("speed:") && !speed.contains(NEVER),
+        "real speed cut wrong"
+    );
     // And the real system prompt's preamble reaches a minimal row.
-    assert!(speed.contains("automated video editor"), "preamble dropped: {speed}");
+    assert!(
+        speed.contains("automated video editor"),
+        "preamble dropped: {speed}"
+    );
 }
 
 // ---- the jobs §8 reached only from their own side ----------------------------------------------------
@@ -486,9 +563,14 @@ fn assert_heads(cut: &str, key: &str) {
         // A heading line is the head at the start of a line, not the phrase somewhere in prose.
         let present = cut.lines().any(|line| line.starts_with(head));
         assert_eq!(
-            present, wanted,
+            present,
+            wanted,
             "{key}: {head} {}",
-            if wanted { "must be on the wire" } else { "must not reach this job" }
+            if wanted {
+                "must be on the wire"
+            } else {
+                "must not reach this job"
+            }
         );
     }
 }
@@ -500,12 +582,21 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s10_retakes_system_goes_through_the_ta
     assert_heads(&got, "retake");
     // The job's own wording rides after the house rules, which is §8's "+" order.
     let job = shipped_job("retake");
-    let opener = job.lines().next().expect("the retake prompt opens with a line");
-    assert!(got.contains(opener), "the retake wording is missing:\n{got}");
+    let opener = job
+        .lines()
+        .next()
+        .expect("the retake prompt opens with a line");
+    assert!(
+        got.contains(opener),
+        "the retake wording is missing:\n{got}"
+    );
     // The order is decided by where the JOB's own text starts: everything before it is the cut house
     // prompt, which is why §8 says the job prompt is appended rather than interleaved.
     let house = asm::cut_system(&shipped_job("system"), "retake");
-    assert!(got.starts_with(house.trim()), "the cut house prompt leads:\n{got}");
+    assert!(
+        got.starts_with(house.trim()),
+        "the cut house prompt leads:\n{got}"
+    );
     assert!(got.contains(opener), "and the job prompt follows it");
     // The jobs list keeps ONLY this job's line: its own label survives, another job's does not.
     assert!(got.contains("retake:"), "own line missing:\n{got}");
@@ -513,10 +604,16 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s10_retakes_system_goes_through_the_ta
         if label == "retake:" {
             continue;
         }
-        assert!(!got.contains(label), "another job's line survived ({label}):\n{got}");
+        assert!(
+            !got.contains(label),
+            "another job's line survived ({label}):\n{got}"
+        );
     }
     // And §8's preamble (anything before the first heading) reaches it too.
-    assert!(got.contains("automated video editor"), "preamble dropped:\n{got}");
+    assert!(
+        got.contains("automated video editor"),
+        "preamble dropped:\n{got}"
+    );
 }
 
 #[test]
@@ -525,24 +622,48 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s11_describe_system_goes_through_the_t
     let got = naivepost::describe_call::system_message(&paths, "");
     assert_heads(&got, "describe");
     let job = shipped_job("describe");
-    let opener = job.lines().next().expect("the describe prompt opens with a line");
-    assert!(got.contains(opener), "the describe wording is missing:\n{got}");
-    assert!(got.contains("describe:"), "own jobs-list line missing:\n{got}");
+    let opener = job
+        .lines()
+        .next()
+        .expect("the describe prompt opens with a line");
+    assert!(
+        got.contains(opener),
+        "the describe wording is missing:\n{got}"
+    );
+    assert!(
+        got.contains("describe:"),
+        "own jobs-list line missing:\n{got}"
+    );
     for (_, label) in asm::JOB_LABEL {
         if label == "describe:" {
             continue;
         }
-        assert!(!got.contains(label), "another job's line survived ({label}):\n{got}");
+        assert!(
+            !got.contains(label),
+            "another job's line survived ({label}):\n{got}"
+        );
     }
     // Describe reads frames, not the downstream steps: THE FOUR STEPS and TOOLS stay out (§8's row).
-    assert!(!got.lines().any(|line| line.starts_with(STEPS)), "describe must not read THE FOUR STEPS");
-    assert!(!got.lines().any(|line| line.starts_with(CUT)), "describe must not read THE CUT");
+    assert!(
+        !got.lines().any(|line| line.starts_with(STEPS)),
+        "describe must not read THE FOUR STEPS"
+    );
+    assert!(
+        !got.lines().any(|line| line.starts_with(CUT)),
+        "describe must not read THE CUT"
+    );
 }
 
 #[test]
-fn sec_09_llm_and_tools_8_prompt_assembly_s12_cut_user_message_carries_the_context_and_the_speech_rule() {
+fn sec_09_llm_and_tools_8_prompt_assembly_s12_cut_user_message_carries_the_context_and_the_speech_rule(
+) {
     let material_tail = "[0.0s-5.0s] A: the timeline";
-    let with = naivepost::ui::cut_suggest_model_run::user_turn("make it shorter", 1200.0, 300.0, material_tail);
+    let with = naivepost::ui::cut_suggest_model_run::user_turn(
+        "make it shorter",
+        1200.0,
+        300.0,
+        material_tail,
+    );
     let ctx = with
         .find(narrate_pass::CTX_INTRO)
         .expect("the User Context block opens the user turn");
@@ -552,40 +673,86 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s12_cut_user_message_carries_the_conte
     let length = with.find("SESSION LENGTH").expect("then the material");
     let tail = with.find(material_tail).expect("and the timeline last");
     assert!(ctx < speech, "context before the speech rule:\n{with}");
-    assert!(speech < length, "the speech rule precedes the material:\n{with}");
+    assert!(
+        speech < length,
+        "the speech rule precedes the material:\n{with}"
+    );
     assert!(length < tail, "the material keeps its own order:\n{with}");
-    assert!(with.contains("make it shorter"), "the context text itself is there:\n{with}");
+    assert!(
+        with.contains("make it shorter"),
+        "the context text itself is there:\n{with}"
+    );
 
     // No context: neither the block nor the rule appears — nothing is said about a block the model will not get.
-    let without = naivepost::ui::cut_suggest_model_run::user_turn("   ", 1200.0, 300.0, material_tail);
-    assert!(!without.contains("USER CONTEXT"), "empty context leaked the block:\n{without}");
-    assert!(!without.contains(narrate_pass::CTX_SPEECH), "empty context leaked the speech rule:\n{without}");
-    assert!(without.starts_with("SESSION LENGTH"), "the material stands alone:\n{without}");
+    let without =
+        naivepost::ui::cut_suggest_model_run::user_turn("   ", 1200.0, 300.0, material_tail);
+    assert!(
+        !without.contains("USER CONTEXT"),
+        "empty context leaked the block:\n{without}"
+    );
+    assert!(
+        !without.contains(narrate_pass::CTX_SPEECH),
+        "empty context leaked the speech rule:\n{without}"
+    );
+    assert!(
+        without.starts_with("SESSION LENGTH"),
+        "the material stands alone:\n{without}"
+    );
 }
 
 #[test]
 fn sec_09_llm_and_tools_8_prompt_assembly_s13_policy_user_message_keeps_the_refusal_tail() {
     let req = naivepost::policy::request("cut the boring parts");
     let first = naivepost::policy_call::user_turn(&req, &[]);
-    assert!(first.starts_with(narrate_pass::CTX_INTRO), "§8's door writes the context block:\n{first}");
-    assert!(first.contains("cut the boring parts"), "the context text itself:\n{first}");
-    // policy decides nothing about what is spoken, so the speech rule is not its line to carry.
-    assert!(!asm::carries_speech_rule(req.prompt), "policy must not carry the speech rule");
-    assert!(!first.contains(narrate_pass::CTX_SPEECH), "policy carried a speech rule:\n{first}");
-    assert!(first.contains("Set only the fields it settles"), "the setter instruction is part of the material");
-
-    let again = naivepost::policy_call::user_turn(&req, &["target_length is not a field the list allows".into()]);
-    assert!(again.starts_with(narrate_pass::CTX_INTRO), "the retry still leads with the context block");
-    assert!(again.contains("Your previous answer was refused"), "the refusal note is appended:\n{again}");
-    assert!(again.contains("target_length is not a field the list allows"), "and says what was refused");
     assert!(
-        again.trim_end().ends_with("Send set_policy again with the field names and values the list allows."),
+        first.starts_with(narrate_pass::CTX_INTRO),
+        "§8's door writes the context block:\n{first}"
+    );
+    assert!(
+        first.contains("cut the boring parts"),
+        "the context text itself:\n{first}"
+    );
+    // policy decides nothing about what is spoken, so the speech rule is not its line to carry.
+    assert!(
+        !asm::carries_speech_rule(req.prompt),
+        "policy must not carry the speech rule"
+    );
+    assert!(
+        !first.contains(narrate_pass::CTX_SPEECH),
+        "policy carried a speech rule:\n{first}"
+    );
+    assert!(
+        first.contains("Set only the fields it settles"),
+        "the setter instruction is part of the material"
+    );
+
+    let again = naivepost::policy_call::user_turn(
+        &req,
+        &["target_length is not a field the list allows".into()],
+    );
+    assert!(
+        again.starts_with(narrate_pass::CTX_INTRO),
+        "the retry still leads with the context block"
+    );
+    assert!(
+        again.contains("Your previous answer was refused"),
+        "the refusal note is appended:\n{again}"
+    );
+    assert!(
+        again.contains("target_length is not a field the list allows"),
+        "and says what was refused"
+    );
+    assert!(
+        again
+            .trim_end()
+            .ends_with("Send set_policy again with the field names and values the list allows."),
         "and closes with the correction ask:\n{again}"
     );
 }
 
 #[test]
-fn sec_09_llm_and_tools_8_prompt_assembly_s14_precedence_rule_reaches_the_new_jobs_only_with_a_context() {
+fn sec_09_llm_and_tools_8_prompt_assembly_s14_precedence_rule_reaches_the_new_jobs_only_with_a_context(
+) {
     let paths = plain_paths("precedence");
     for (name, built_with, built_without) in [
         (
@@ -604,9 +771,18 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s14_precedence_rule_reaches_the_new_jo
             "{name}: the precedence rule closes the system message"
         );
         // §8 names the second half specifically: another step's instruction is that step's to act on.
-        assert!(built_with.contains(asm::PRECEDENCE_OTHER_JOBS), "{name}: second half missing");
-        assert!(!built_without.contains("USER CONTEXT"), "{name}: empty context invented a rule");
-        assert!(!built_without.contains(asm::PRECEDENCE_OTHER_JOBS), "{name}: empty context leaked the rule");
+        assert!(
+            built_with.contains(asm::PRECEDENCE_OTHER_JOBS),
+            "{name}: second half missing"
+        );
+        assert!(
+            !built_without.contains("USER CONTEXT"),
+            "{name}: empty context invented a rule"
+        );
+        assert!(
+            !built_without.contains(asm::PRECEDENCE_OTHER_JOBS),
+            "{name}: empty context leaked the rule"
+        );
     }
 
     // And the jobs read that context from their OWN project folder, not from a caller who happens to carry
@@ -619,9 +795,18 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s14_precedence_rule_reaches_the_new_jo
         "the session's own note is what a job reads"
     );
     let from_project = naivepost::retakes_ask::system_message(&paths, &project_context(&tree));
-    assert!(from_project.ends_with(&asm::precedence_rule()), "the project's context earned the rule");
-    let bare = naivepost::retakes_ask::system_message(&paths, &project_context(&empty_session("pa8-noctx")));
-    assert!(!bare.contains("USER CONTEXT"), "a session with no note invents nothing");
+    assert!(
+        from_project.ends_with(&asm::precedence_rule()),
+        "the project's context earned the rule"
+    );
+    let bare = naivepost::retakes_ask::system_message(
+        &paths,
+        &project_context(&empty_session("pa8-noctx")),
+    );
+    assert!(
+        !bare.contains("USER CONTEXT"),
+        "a session with no note invents nothing"
+    );
 }
 
 /// The User Context exactly as the program reads it: the session's own note in `naivepost.json`, which is
@@ -640,7 +825,14 @@ fn empty_session(tag: &str) -> naivepost::layout::Tree {
 
 /// A session folder whose `naivepost.json` carries a User Context, plus its settings paths. Needed by any
 /// door that reads the context from the project rather than being handed it.
-fn session_with_context(tag: &str, context: &str) -> (std::path::PathBuf, naivepost::layout::Tree, naivepost::settings::Paths) {
+fn session_with_context(
+    tag: &str,
+    context: &str,
+) -> (
+    std::path::PathBuf,
+    naivepost::layout::Tree,
+    naivepost::settings::Paths,
+) {
     let root = common::temp_dir_tagged(tag);
     let session = naivepost::startup::session_dir(&root);
     std::fs::create_dir_all(&session).expect("the session folder");
@@ -662,16 +854,25 @@ fn session_with_context(tag: &str, context: &str) -> (std::path::PathBuf, naivep
 /// system turn, because the frames ride on the user turn (§06#4), not here.
 #[test]
 fn sec_09_llm_and_tools_8_prompt_assembly_s11b_describe_system_goes_through_the_table() {
-    let built = naivepost::describe_call::system_message(&plain_paths("pa8-desc"), "keep the demos, cut the setup");
+    let built = naivepost::describe_call::system_message(
+        &plain_paths("pa8-desc"),
+        "keep the demos, cut the setup",
+    );
     assert_heads(&built, "describe");
     assert!(
         built.contains(shipped_job("describe").lines().next().expect("job opener")),
         "the describe wording is missing"
     );
-    assert!(built.ends_with(&asm::precedence_rule()), "a context earned the rule");
+    assert!(
+        built.ends_with(&asm::precedence_rule()),
+        "a context earned the rule"
+    );
     // The frames never appear in the system message (§06#4): this module's share of the request is the
     // system turn plus the clip list, and the list belongs to the caller that owns the clips.
-    assert!(!built.contains("data:image"), "no frame belongs on the system turn");
+    assert!(
+        !built.contains("data:image"),
+        "no frame belongs on the system turn"
+    );
 }
 
 /// The wire half: the retakes pool really sends what its door assembles. `ask_run` takes the settings
@@ -679,9 +880,8 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s11b_describe_system_goes_through_the_
 /// knows a test exists.
 #[test]
 fn sec_09_llm_and_tools_8_prompt_assembly_s15_retakes_wire_carries_the_assembled_system() {
-    let _turn: std::sync::MutexGuard<'_, ()> = ENV
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _turn: std::sync::MutexGuard<'_, ()> =
+        ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     // `finish` with no marks is a whole answer, so the run ends after one round and exactly one body
     // reaches the fake — the request whose system message this check reads.
     let fake = Fake::start(
@@ -704,7 +904,11 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s15_retakes_wire_carries_the_assembled
 
     use naivepost::tools::retakes::{Line, Marks};
     let lines: Vec<Line> = (1..=6u32)
-        .map(|n| Line { n, start: f64::from(n) - 1.0, end: f64::from(n) - 0.5 })
+        .map(|n| Line {
+            n,
+            start: f64::from(n) - 1.0,
+            end: f64::from(n) - 0.5,
+        })
         .collect();
     let speech = naivepost::retakes::speech_seconds(&lines);
     let brief = naivepost::retakes::brief(&lines, &[]);
@@ -723,7 +927,11 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s15_retakes_wire_carries_the_assembled
     assert_eq!(asks.len(), 1, "one request went out");
     let sent: serde_json::Value = serde_json::from_str(&asks[0]).expect("a JSON chat body");
     let messages = sent["messages"].as_array().expect("the chat messages");
-    assert_eq!(messages[0]["role"].as_str(), Some("system"), "the system message leads:\n{sent}");
+    assert_eq!(
+        messages[0]["role"].as_str(),
+        Some("system"),
+        "the system message leads:\n{sent}"
+    );
     // `llm_request::body` writes every turn's content as the typed part array, so the text is the first part.
     let system = messages[0]["content"][0]["text"]
         .as_str()
@@ -732,12 +940,21 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s15_retakes_wire_carries_the_assembled
     // What the door assembles is what the socket carried — headings, own jobs-list line, job wording,
     // and the precedence rule the project's context earned.
     assert_heads(&system, "retake");
-    assert!(system.contains("retake:"), "own jobs-list line missing:\n{system}");
+    assert!(
+        system.contains("retake:"),
+        "own jobs-list line missing:\n{system}"
+    );
     assert!(
         system.contains(shipped_job("retake").lines().next().expect("job opener")),
         "the retake wording is missing:\n{system}"
     );
     // §8's last clause reaches the wire too, because the job read its context from the session it was asked about.
-    assert!(system.contains(narrate_pass::CTX_INTRO), "no precedence rule on the wire:\n{system}");
-    assert!(system.ends_with(&asm::precedence_rule()), "and the rule closes the system turn");
+    assert!(
+        system.contains(narrate_pass::CTX_INTRO),
+        "no precedence rule on the wire:\n{system}"
+    );
+    assert!(
+        system.ends_with(&asm::precedence_rule()),
+        "and the rule closes the system turn"
+    );
 }

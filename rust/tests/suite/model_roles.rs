@@ -12,7 +12,12 @@ use naivepost::services::Server;
 /// The four audio rows: audio.cpp answers, and none of them has a thinking token to set.
 #[test]
 fn sec_02_services_2_model_roles_which_job_asks_which_server_s1_the_audio_jobs_ask_audio_cpp() {
-    for which in [job::Job::Asr, job::Job::Align, job::Job::Diarize, job::Job::Separate] {
+    for which in [
+        job::Job::Asr,
+        job::Job::Align,
+        job::Job::Diarize,
+        job::Job::Separate,
+    ] {
         assert_eq!(job::server(which), Server::Audio, "{which:?}");
         // `–` in the thinking column, read as "not applicable" — see roles::thinking.
         assert!(!job::thinking(which), "{which:?} must not ask for thinking");
@@ -110,8 +115,16 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s4_four_frames_a_vi
     assert_eq!(job::VISION_FRAMES_PER_CALL, 4);
     assert_eq!(job::vision_batches(0), 0, "no frames, no call");
     assert_eq!(job::vision_batches(1), 1);
-    assert_eq!(job::vision_batches(4), 1, "exactly a batch fits in one call");
-    assert_eq!(job::vision_batches(5), 2, "a fifth frame needs a second call");
+    assert_eq!(
+        job::vision_batches(4),
+        1,
+        "exactly a batch fits in one call"
+    );
+    assert_eq!(
+        job::vision_batches(5),
+        2,
+        "a fifth frame needs a second call"
+    );
     assert_eq!(job::vision_batches(8), 2);
     assert_eq!(job::vision_batches(9), 3);
     // Every frame goes out exactly once: whole calls of four plus a shorter last one.
@@ -119,7 +132,10 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s4_four_frames_a_vi
         let calls = job::vision_batches(frames);
         assert!(calls * 4 >= frames, "{frames} in {calls} calls");
         // And no call is wasted: dropping one would leave a frame unsent.
-        assert!(frames == 0 || (calls - 1) * 4 < frames, "{frames} in {calls} calls");
+        assert!(
+            frames == 0 || (calls - 1) * 4 < frames,
+            "{frames} in {calls} calls"
+        );
     }
 
     // The row's other two columns: the LLM with vision, thinking off.
@@ -146,8 +162,10 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_a_respell_cannot
     assert_eq!(texts, vec!["first", "second", "third"]);
     // ...and everything else is the original's, line by line. A reply that renumbered the
     // speakers or shifted a time could not reach here even if it tried.
-    let times: Vec<(f64, f64, String)> =
-        out.iter().map(|(s, e, sp, _)| (*s, *e, sp.clone())).collect();
+    let times: Vec<(f64, f64, String)> = out
+        .iter()
+        .map(|(s, e, sp, _)| (*s, *e, sp.clone()))
+        .collect();
     assert_eq!(
         times,
         vec![
@@ -172,8 +190,7 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_a_respell_cannot
 
 /// Joins (markingPass joins): thinking on, and only ever run under that pass.
 #[test]
-fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_joins_think_and_only_under_joins()
-{
+fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_joins_think_and_only_under_joins() {
     // P.machine.textEditThinking: the measured case where reasoning pays (15/29 → 20/29).
     assert!(job::TEXT_EDIT_THINKING);
     assert!(job::thinking(job::Job::Joins));
@@ -184,7 +201,11 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_joins_think_and_
     // Only under markingPass joins — and never alongside retakes, which is the other pass.
     for mode in [CutMode::Words, CutMode::Model] {
         assert!(job::job_applies(job::Job::Joins, MarkingPass::Joins, mode));
-        assert!(!job::job_applies(job::Job::Joins, MarkingPass::Retakes, mode));
+        assert!(!job::job_applies(
+            job::Job::Joins,
+            MarkingPass::Retakes,
+            mode
+        ));
         // "No marking pass" asks for neither marking job.
         assert!(!job::job_applies(job::Job::Joins, MarkingPass::None, mode));
     }
@@ -207,9 +228,21 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s7_retakes_are_pool
     assert_eq!(job::retake_batches(5), 5);
 
     for mode in [CutMode::Words, CutMode::Model] {
-        assert!(job::job_applies(job::Job::Retakes, MarkingPass::Retakes, mode));
-        assert!(!job::job_applies(job::Job::Retakes, MarkingPass::Joins, mode));
-        assert!(!job::job_applies(job::Job::Retakes, MarkingPass::None, mode));
+        assert!(job::job_applies(
+            job::Job::Retakes,
+            MarkingPass::Retakes,
+            mode
+        ));
+        assert!(!job::job_applies(
+            job::Job::Retakes,
+            MarkingPass::Joins,
+            mode
+        ));
+        assert!(!job::job_applies(
+            job::Job::Retakes,
+            MarkingPass::None,
+            mode
+        ));
     }
 }
 
@@ -233,7 +266,10 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s8_the_cut_gets_thr
 
     assert!(!job::cut_attempts_exhausted(1));
     assert!(!job::cut_attempts_exhausted(2));
-    assert!(job::cut_attempts_exhausted(3), "the third attempt is the last");
+    assert!(
+        job::cut_attempts_exhausted(3),
+        "the third attempt is the last"
+    );
     assert!(job::cut_attempts_exhausted(4));
 
     // Thinking: on for a retry that wrote something and had it rejected (the answer was written,
@@ -296,7 +332,8 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s10_narration_and_u
 
 /// Thumbnail: sd.cpp, and only when an instruction exists and no frame was named.
 #[test]
-fn sec_02_services_2_model_roles_which_job_asks_which_server_s11_a_thumbnail_needs_an_instruction() {
+fn sec_02_services_2_model_roles_which_job_asks_which_server_s11_a_thumbnail_needs_an_instruction()
+{
     assert_eq!(job::server(job::Job::Thumbnail), Server::Image);
     // `–` in the thinking column: sd.cpp has no thinking token either.
     assert!(!job::thinking(job::Job::Thumbnail));
@@ -314,7 +351,11 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s11_a_thumbnail_nee
     assert!(!job::thumbnail_wanted("", true));
 
     // Not gated by policy either: a thumbnail is asked for when the instruction says so.
-    assert!(job::job_applies(job::Job::Thumbnail, MarkingPass::None, CutMode::Words));
+    assert!(job::job_applies(
+        job::Job::Thumbnail,
+        MarkingPass::None,
+        CutMode::Words
+    ));
 }
 
 /// Subtitles in other languages: numbered lines translated, one call per language, thinking off.
@@ -336,9 +377,10 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s12_one_call_per_la
     assert_eq!(langs[0].code, "de");
     assert_eq!(langs[0].tag, "ger");
     assert_eq!(langs[0].ask_for(), "German");
-    assert_eq!(job::subtitle_calls(
-        &langs.iter().map(|l| l.ask_for()).collect::<Vec<_>>()
-    ), 3);
+    assert_eq!(
+        job::subtitle_calls(&langs.iter().map(|l| l.ask_for()).collect::<Vec<_>>()),
+        3
+    );
 
     // Order is the settings' order — the list is what decides which file is written first — and a
     // blank entry asks for nothing.
@@ -380,7 +422,11 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s13_the_table_row_b
         (job::Job::Thumbnail, Server::Image, false, false),
         (job::Job::Subtitles, Server::Llm, false, false),
     ];
-    assert_eq!(job::Job::all().len(), table.len(), "a row was added or lost");
+    assert_eq!(
+        job::Job::all().len(),
+        table.len(),
+        "a row was added or lost"
+    );
 
     for (which, server, thinking, web) in table {
         assert_eq!(job::server(which), server, "{which:?} server");
@@ -392,7 +438,11 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s13_the_table_row_b
     // the asserts above.
     let all = job::Job::all();
     for which in all {
-        assert_eq!(all.iter().filter(|j| **j == which).count(), 1, "{which:?} twice");
+        assert_eq!(
+            all.iter().filter(|j| **j == which).count(),
+            1,
+            "{which:?} twice"
+        );
     }
 
     // The `–` rows are exactly the ones no server has a thinking token for: the four audio jobs

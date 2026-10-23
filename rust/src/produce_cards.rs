@@ -109,7 +109,10 @@ fn draw_split(path: &cards::Path, doc: &str) -> Card {
             let changed = changed_note(defaults, &path.args);
             (redrawn, cards::drawn_by(kind, changed.as_deref()))
         }
-        None => (cards::fill(doc, &path.args), cards::arrived_at(doc, &path.args)),
+        None => (
+            cards::fill(doc, &path.args),
+            cards::arrived_at(doc, &path.args),
+        ),
     };
     card.arrived = arrived;
     card.drawn = drawn;
@@ -136,7 +139,8 @@ pub fn join_for_test(doc: &str, scope: &[(String, String)]) -> String {
 
 /// One animation plus the tag it animates and the byte range of the animation tag itself — what [`frame`] writes a
 /// value against, and what it cuts out of every frame.
-struct Bound {    anim: cards::Anim,
+struct Bound {
+    anim: cards::Anim,
     /// The element tag whose attribute is being animated, as it stands in the document.
     target: String,
     /// Byte range of the ANIMATION tag itself, removed from every frame.
@@ -165,7 +169,9 @@ fn bindings(doc: &str) -> Vec<Bound> {
     let mut from = 0usize;
     while let Some(rel) = doc[from..].find("<animate") {
         let start = from + rel;
-        let Some(end_rel) = doc[start..].find('>') else { break };
+        let Some(end_rel) = doc[start..].find('>') else {
+            break;
+        };
         let end = start + end_rel + 1;
         from = end;
         let Some(anim) = cards::parse_anim(&doc[start..end]) else {
@@ -196,7 +202,9 @@ fn enclosing_tag(doc: &str, at: usize) -> Option<String> {
         if start >= at {
             break;
         }
-        let Some(end_rel) = head[start..].find('>') else { break };
+        let Some(end_rel) = head[start..].find('>') else {
+            break;
+        };
         let end = start + end_rel + 1;
         from = end;
         let tag = &head[start..end];
@@ -204,7 +212,11 @@ fn enclosing_tag(doc: &str, at: usize) -> Option<String> {
             stack.pop();
             continue;
         }
-        if tag.ends_with("/>") || tag.starts_with("<!--") || tag.starts_with("<?") || tag.starts_with("<!") {
+        if tag.ends_with("/>")
+            || tag.starts_with("<!--")
+            || tag.starts_with("<?")
+            || tag.starts_with("<!")
+        {
             continue;
         }
         stack.push(tag.to_string());
@@ -281,7 +293,9 @@ fn bake(card: &mut Card) {
 /// which cannot tell "never ends" apart from "nothing moves".
 fn endless_animation(animations: &[cards::Anim], css: &[CssRule]) -> bool {
     animations.iter().any(|anim| anim.repeat == f64::INFINITY)
-        || css.iter().any(|rule| rule.keyframes.is_some() && rule.repeat == f64::INFINITY)
+        || css
+            .iter()
+            .any(|rule| rule.keyframes.is_some() && rule.repeat == f64::INFINITY)
 }
 
 /// One frame: every animation's value at `t` written into the attribute it animates, the animation tags taken out,
@@ -316,7 +330,9 @@ fn frame(card: &Card, bounds: &[Bound], css: &[CssRule], t: f64) -> String {
         }
     }
     for rule in css {
-        let Some(style) = rule.style_at(t) else { continue };
+        let Some(style) = rule.style_at(t) else {
+            continue;
+        };
         for at in find_selector(&card.drawn, &rule.selector) {
             let tag = &card.drawn[at.0..at.1];
             edits.push((at.0, at.1, add_style(tag, &style)));
@@ -343,9 +359,14 @@ fn add_base(value: &str, base: &str) -> String {
     terms
         .iter()
         .enumerate()
-        .map(|(i, term)| match (term.parse::<f64>(), bases.get(i).and_then(|b| b.parse::<f64>().ok())) {
-            (Ok(v), Some(b)) => format!("{}", v + b),
-            _ => (*term).to_string(),
+        .map(|(i, term)| {
+            match (
+                term.parse::<f64>(),
+                bases.get(i).and_then(|b| b.parse::<f64>().ok()),
+            ) {
+                (Ok(v), Some(b)) => format!("{}", v + b),
+                _ => (*term).to_string(),
+            }
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -365,7 +386,9 @@ fn put_attribute(tag: &str, key: &str, value: &str) -> String {
             return out;
         }
     }
-    let close = tag.rfind(if tag.ends_with("/>") { "/>" } else { ">" }).unwrap_or(0);
+    let close = tag
+        .rfind(if tag.ends_with("/>") { "/>" } else { ">" })
+        .unwrap_or(0);
     let mut out = String::from(&tag[..close]);
     out.push_str(&format!(" {key}=\"{}\"", cards::esc(value)));
     out.push_str(&tag[close..]);
@@ -384,7 +407,9 @@ fn add_style(tag: &str, style: &str) -> String {
             return out;
         }
     }
-    let close = tag.rfind(if tag.ends_with("/>") { "/>" } else { ">" }).unwrap_or(0);
+    let close = tag
+        .rfind(if tag.ends_with("/>") { "/>" } else { ">" })
+        .unwrap_or(0);
     let mut out = String::from(&tag[..close]);
     out.push_str(&format!(" style=\"{style}\""));
     out.push_str(&tag[close..]);
@@ -410,11 +435,17 @@ fn find_selector(doc: &str, selector: &str) -> Vec<(usize, usize)> {
         let mut from = 0usize;
         while let Some(rel) = doc[from..].find('<') {
             let start = from + rel;
-            let Some(end_rel) = doc[start..].find('>') else { break };
+            let Some(end_rel) = doc[start..].find('>') else {
+                break;
+            };
             let end = start + end_rel + 1;
             from = end;
             let tag = &doc[start..end];
-            let name = tag[1..].split_whitespace().next().unwrap_or("").trim_end_matches('/');
+            let name = tag[1..]
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim_end_matches('/');
             let hit = if let Some(id) = part.strip_prefix('#') {
                 cards::attribute(tag, "id").is_some_and(|v| v == id)
             } else if let Some(class) = part.strip_prefix('.') {
@@ -476,7 +507,11 @@ impl CssRule {
         } else {
             elapsed
         };
-        let linear = if run <= 0.0 { 1.0 } else { (clock / run).min(1.0) };
+        let linear = if run <= 0.0 {
+            1.0
+        } else {
+            (clock / run).min(1.0)
+        };
         let shaped = ease(self.easing, linear);
         let first = self.steps.first()?;
         if shaped <= first.at {
@@ -486,7 +521,11 @@ impl CssRule {
             let (lo, hi) = (&pair[0], &pair[1]);
             if shaped <= hi.at {
                 let span = hi.at - lo.at;
-                let at = if span <= 0.0 { 1.0 } else { (shaped - lo.at) / span };
+                let at = if span <= 0.0 {
+                    1.0
+                } else {
+                    (shaped - lo.at) / span
+                };
                 let from = decl_value(self, &lo.decls)?;
                 let to = decl_value(self, &hi.decls)?;
                 return Some(format!("{}:{}", self.property, mix(from, to, at)));
@@ -511,12 +550,25 @@ fn decl_value(rule: &CssRule, decls: &[(String, String)]) -> Option<String> {
 fn mix(from: String, to: String, at: f64) -> String {
     match (cards::parse_value(&from), cards::parse_value(&to)) {
         (Some(cards::Value::Colour(a)), Some(cards::Value::Colour(b))) => {
-            let step = |x: u8, y: u8| (x as f64 + (y as f64 - x as f64) * at).round().clamp(0.0, 255.0) as u8;
-            format!("#{:02x}{:02x}{:02x}", step(a[0], b[0]), step(a[1], b[1]), step(a[2], b[2]))
+            let step = |x: u8, y: u8| {
+                (x as f64 + (y as f64 - x as f64) * at)
+                    .round()
+                    .clamp(0.0, 255.0) as u8
+            };
+            format!(
+                "#{:02x}{:02x}{:02x}",
+                step(a[0], b[0]),
+                step(a[1], b[1]),
+                step(a[2], b[2])
+            )
         }
         _ => {
             // Numbers and lengths ramp in the open; anything else holds the start until the step arrives.
-            let unit = to.chars().rev().take_while(|c| !c.is_ascii_digit() && *c != '.').collect::<String>();
+            let unit = to
+                .chars()
+                .rev()
+                .take_while(|c| !c.is_ascii_digit() && *c != '.')
+                .collect::<String>();
             let unit = unit.chars().rev().collect::<String>();
             let a = from.trim_end_matches(unit.as_str()).trim().parse::<f64>();
             let b = to.trim_end_matches(unit.as_str()).trim().parse::<f64>();
@@ -534,7 +586,9 @@ fn ease(curve: (f64, f64, f64, f64), x: f64) -> f64 {
     if (x1, y1, x2, y2) == (0.0, 0.0, 1.0, 1.0) || !(0.0..=1.0).contains(&x) {
         return x;
     }
-    let poly = |t: f64, a: f64, b: f64| 3.0 * t * (1.0 - t) * (1.0 - t) * a + 3.0 * t * t * (1.0 - t) * b + t * t * t;
+    let poly = |t: f64, a: f64, b: f64| {
+        3.0 * t * (1.0 - t) * (1.0 - t) * a + 3.0 * t * t * (1.0 - t) * b + t * t * t
+    };
     let (mut lo, mut hi) = (0.0f64, 1.0f64);
     for _ in 0..24 {
         let mid = (lo + hi) / 2.0;
@@ -554,9 +608,13 @@ pub fn css_rules(doc: &str) -> Vec<CssRule> {
     while let Some(open) = rest.find("<style") {
         // Start the body AFTER the `<style …>` tag's own `>`: slicing from `<style`'s end would leave the `>` at the
         // head of the first selector, and `>.fade` is not a simple selector.
-        let Some(tag_end) = rest[open..].find('>') else { break };
+        let Some(tag_end) = rest[open..].find('>') else {
+            break;
+        };
         let body_from = open + tag_end + 1;
-        let Some(close) = rest[body_from..].find("</style>") else { break };
+        let Some(close) = rest[body_from..].find("</style>") else {
+            break;
+        };
         let body = &rest[body_from..body_from + close];
         rest = &rest[body_from + close..];
         let sheets = keyframes_in(body);
@@ -639,7 +697,9 @@ fn steps_in(body: &str) -> Vec<Step> {
     while let Some(rel) = rest.find('{') {
         let sel_start = rest[..rel].trim();
         let selector = sel_start.split(',').next().unwrap_or_default().trim();
-        let Some(end_rel) = rest[rel..].find('}') else { break };
+        let Some(end_rel) = rest[rel..].find('}') else {
+            break;
+        };
         let decls = &rest[rel + 1..rel + end_rel];
         rest = &rest[rel + end_rel + 1..];
         if selector.is_empty() {
@@ -721,9 +781,19 @@ fn animated_rule(selector: &str, decls: &str, sheets: &[(String, Vec<Step>)]) ->
     for (key, value) in &declared {
         match key.as_str() {
             "animation-name" => rule.keyframes = Some(value.clone()),
-            "animation-duration" => rule.dur = value.strip_suffix('s')?.trim().parse().unwrap_or(rule.dur),
-            "animation-delay" => rule.begin = value.strip_suffix('s')?.trim().parse().unwrap_or(rule.begin),
-            "animation-timing-function" => rule.easing = cards::easing(value).unwrap_or(rule.easing),
+            "animation-duration" => {
+                rule.dur = value.strip_suffix('s')?.trim().parse().unwrap_or(rule.dur)
+            }
+            "animation-delay" => {
+                rule.begin = value
+                    .strip_suffix('s')?
+                    .trim()
+                    .parse()
+                    .unwrap_or(rule.begin)
+            }
+            "animation-timing-function" => {
+                rule.easing = cards::easing(value).unwrap_or(rule.easing)
+            }
             "animation-iteration-count" => {
                 rule.repeat = if value == "infinite" {
                     f64::INFINITY
@@ -897,7 +967,10 @@ pub fn stage(clip: &crate::produce_render::Clip, resolved: Option<&str>) -> Opti
     }
     let doc = std::fs::read_to_string(path).ok()?;
     let card = arrive(&clip.source, &doc);
-    let mut staged = Staged { logs: card.logs.clone(), ..Default::default() };
+    let mut staged = Staged {
+        logs: card.logs.clone(),
+        ..Default::default()
+    };
     if card.baked() {
         // §8: `the bake writes one static SVG per frame (f%05d.svg)`, into a folder of its own beside the file it
         // was baked from. ffmpeg reads the pattern, so the frames are only inputs once they are on disk.
@@ -909,7 +982,9 @@ pub fn stage(clip: &crate::produce_render::Clip, resolved: Option<&str>) -> Opti
             staged.files.push((dir.join(name), text.clone()));
         }
         // The `%` of the pattern is spelled out by `frame_pattern`; the caller hands it over as the input path.
-        staged.inputs.push(("card".to_string(), frame_pattern(&dir)));
+        staged
+            .inputs
+            .push(("card".to_string(), frame_pattern(&dir)));
         staged.loops = card.length.is_none();
         return Some(staged);
     }
@@ -917,7 +992,9 @@ pub fn stage(clip: &crate::produce_render::Clip, resolved: Option<&str>) -> Opti
     // animates is looped by the caller exactly as a still is, and `-t` trims it to the slot the cut gave it.
     let out = clip.scratch.join(card.still_name());
     staged.files.push((out.clone(), card.drawn.clone()));
-    staged.inputs.push(("svg".to_string(), out.display().to_string()));
+    staged
+        .inputs
+        .push(("svg".to_string(), out.display().to_string()));
     // A single static picture needs looping whenever the clip is longer than one frame of it, which is every card
     // that has no strip of its own: §8's `takes the default insert length, loops for its slot`. The loop flag is the
     // caller's to set — `produce_render::encode_command_with` takes it as an argument — so a test that stages a card

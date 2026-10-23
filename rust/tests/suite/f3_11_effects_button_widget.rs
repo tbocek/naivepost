@@ -45,7 +45,10 @@ fn effects_json(entries: &[serde_json::Value]) -> String {
 fn fx_entry(clip: u32, kind: &str, start: f64, end: f64, gain: Option<f64>) -> serde_json::Value {
     let mut entry = json!({"clip": clip, "kind": kind, "start": start, "end": end});
     if let Some(gain) = gain {
-        entry.as_object_mut().expect("object").insert("gain".into(), json!(gain));
+        entry
+            .as_object_mut()
+            .expect("object")
+            .insert("gain".into(), json!(gain));
     }
     entry
 }
@@ -72,7 +75,8 @@ fn three_clips_captioned() -> Cut {
 /// Press the real ✨ Decorations button. Emitted by name because a named widget is the decision taken in its
 /// spirit: the handler under test is the shell's own, not a seam a test opened for itself.
 fn press_decorations(window: &adw::ApplicationWindow) {
-    let button = widget_in(window, "decorations-pass-button").expect("✨ Decorations is on the run-bar row");
+    let button =
+        widget_in(window, "decorations-pass-button").expect("✨ Decorations is on the run-bar row");
     button
         .clone()
         .downcast::<gtk::Button>()
@@ -110,25 +114,54 @@ fn round(app: &adw::Application) {
     let llm = FakeLlm::start(vec![effects_json(&[fx_entry(2, "zoom", 1.0, 4.0, None)])]);
     point_at(&llm.url());
     let window = cut_page(app, &common::three_clips_cut());
-    assert!(placed_of_kind(&window, "zoom").is_empty() && placed_of_kind(&window, "volume").is_empty(), "the seeded cut holds no decoration to confuse the count with");
+    assert!(
+        placed_of_kind(&window, "zoom").is_empty() && placed_of_kind(&window, "volume").is_empty(),
+        "the seeded cut holds no decoration to confuse the count with"
+    );
     press_decorations(&window);
 
     let landed = placed_of_kind(&window, "zoom");
-    assert_eq!(landed.len(), 1, "the answered zoom became one lane effect, got {landed:?}");
+    assert_eq!(
+        landed.len(),
+        1,
+        "the answered zoom became one lane effect, got {landed:?}"
+    );
     // Clip 2 starts at session second 10 and the answer aimed at +1..+4 inside it: the record is written in
     // SESSION seconds, which is the app's arithmetic, not the model's.
-    assert_eq!((landed[0].kind.as_str(), landed[0].t, landed[0].dur), ("zoom", 11.0, 3.0), "the zoom covers the answered span");
+    assert_eq!(
+        (landed[0].kind.as_str(), landed[0].t, landed[0].dur),
+        ("zoom", 11.0, 3.0),
+        "the zoom covers the answered span"
+    );
     // And with the app's defaults, not the tool's report: centred at 60 % height, glides min(1, d/3) → 1 s here.
-    assert_eq!((landed[0].cx, landed[0].cy), (Some(0.5), Some(0.5)), "centred: this pass sends no box");
-    assert_eq!(landed[0].hf, Some(naivepost::cut_effects_pass::ZOOM_HEIGHT), "at 60 % of the frame height");
-    assert_eq!((landed[0].trans, landed[0].tout), (1.0, 1.0), "glides min(1, d/3) with d = 3");
+    assert_eq!(
+        (landed[0].cx, landed[0].cy),
+        (Some(0.5), Some(0.5)),
+        "centred: this pass sends no box"
+    );
+    assert_eq!(
+        landed[0].hf,
+        Some(naivepost::cut_effects_pass::ZOOM_HEIGHT),
+        "at 60 % of the frame height"
+    );
+    assert_eq!(
+        (landed[0].trans, landed[0].tout),
+        (1.0, 1.0),
+        "glides min(1, d/3) with d = 3"
+    );
     let said = status_text(&window);
-    assert!(said.contains(">>> effects: 1 decoration(s)"), "the status says what the pass did, got {said:?}");
+    assert!(
+        said.contains(">>> effects: 1 decoration(s)"),
+        "the status says what the pass did, got {said:?}"
+    );
     // And the click really dialled: the fake saw the request the button caused, offering this job's tool.
     let seen = llm.next_seen();
     assert_eq!(seen.method, "POST", "a chat call is a POST");
     assert_eq!(seen.path, "/v1/chat/completions", "on the LLM's chat path");
-    assert!(seen.body.contains("add_effect"), "with this job's tool offered");
+    assert!(
+        seen.body.contains("add_effect"),
+        "with this job's tool offered"
+    );
     RAN_LIVE_CLICK.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -150,18 +183,41 @@ fn round(app: &adw::Application) {
     // The unknown kind adds nothing of its own, and the good volume landed: one volume, at clip 3's start + 2 s
     // with the app's ramp. (Each stage starts from a freshly seeded cut — `cut_page` re-seeds — so what is on the
     // lane is this press's doing and nobody else's.)
-    assert!(placed_of_kind(&window, "zoom").is_empty(), "a `blur` line becomes no record at all");
+    assert!(
+        placed_of_kind(&window, "zoom").is_empty(),
+        "a `blur` line becomes no record at all"
+    );
     let landed = placed_of_kind(&window, "volume");
-    assert_eq!(landed.len(), 1, "only the volume lands; the unknown kind adds nothing, got {landed:?}");
-    assert_eq!((landed[0].kind.as_str(), landed[0].t, landed[0].dur, landed[0].gain), ("volume", 22.0, 4.0, 0.0), "gain 0 is kept: silence is a decision someone can mean");
-    assert_eq!(placed_of_kind(&window, "speed").len(), 0, "nothing else came with it");
+    assert_eq!(
+        landed.len(),
+        1,
+        "only the volume lands; the unknown kind adds nothing, got {landed:?}"
+    );
+    assert_eq!(
+        (
+            landed[0].kind.as_str(),
+            landed[0].t,
+            landed[0].dur,
+            landed[0].gain
+        ),
+        ("volume", 22.0, 4.0, 0.0),
+        "gain 0 is kept: silence is a decision someone can mean"
+    );
+    assert_eq!(
+        placed_of_kind(&window, "speed").len(),
+        0,
+        "nothing else came with it"
+    );
     let said = status_text(&window);
     assert!(
         said.contains("\"blur\" is not an effect this pass places"),
         "§F3.11 S3: the skip is said on the status line, got {said:?}"
     );
     // The skip cost no round: one ask for a usable reply.
-    assert!(llm.next_seen().body.contains("add_effect"), "exactly one request went out for this stage");
+    assert!(
+        llm.next_seen().body.contains("add_effect"),
+        "exactly one request went out for this stage"
+    );
     RAN_SKIP_SAID.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -181,7 +237,11 @@ fn round(app: &adw::Application) {
     });
     let window = cut_page(app, &captioned);
     press_decorations(&window);
-    assert_eq!(placed_of_kind(&window, "speed").len(), 1, "the pass placed one stop to undo");
+    assert_eq!(
+        placed_of_kind(&window, "speed").len(),
+        1,
+        "the pass placed one stop to undo"
+    );
     ui::press_undo(&window);
     settle();
     assert!(
@@ -208,7 +268,8 @@ fn f3_11_widget_the_decorations_button_dials_the_live_ask() {
         std::env::set_var("XDG_DATA_HOME", root.join("data"));
     }
     // The address the ask must dial: written now, rewritten per stage by `point_at`.
-    let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+    let paths =
+        naivepost::settings::from_environment().expect("settings folder from the pinned env");
     let mut conf = naivepost::settings::Conf::default();
     conf.model = "effects-model".to_string();
     naivepost::settings::save(&paths, &conf).expect("settings written");
@@ -223,7 +284,16 @@ fn f3_11_widget_the_decorations_button_dials_the_live_ask() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_LIVE_CLICK.load(Ordering::SeqCst), "the live click never ran");
-    assert!(RAN_SKIP_SAID.load(Ordering::SeqCst), "the skipped-line stage never ran");
-    assert!(RAN_UNDO.load(Ordering::SeqCst), "the undo of the live pass never ran");
+    assert!(
+        RAN_LIVE_CLICK.load(Ordering::SeqCst),
+        "the live click never ran"
+    );
+    assert!(
+        RAN_SKIP_SAID.load(Ordering::SeqCst),
+        "the skipped-line stage never ran"
+    );
+    assert!(
+        RAN_UNDO.load(Ordering::SeqCst),
+        "the undo of the live pass never ran"
+    );
 }

@@ -55,7 +55,11 @@ impl Script {
     fn take(&mut self) -> String {
         let index = self.served;
         self.served += 1;
-        self.answers.get(index).cloned().or_else(|| self.answers.last().cloned()).unwrap_or_default()
+        self.answers
+            .get(index)
+            .cloned()
+            .or_else(|| self.answers.last().cloned())
+            .unwrap_or_default()
     }
 
     /// True while the request before this one has not been served yet.
@@ -80,7 +84,11 @@ impl FakeLlm {
                 }
             }
         });
-        FakeLlm { port, received, script }
+        FakeLlm {
+            port,
+            received,
+            script,
+        }
     }
 
     /// Queue the next answers, oldest first. A request past the end of the script gets the last answer,
@@ -115,9 +123,14 @@ impl FakeLlm {
     /// Nothing arrived within a short while. Used by the cache check: a second identical batch must be
     /// answered from `cache/llm/translate/` and cost no wire.
     fn expect_silent(&self) {
-        match self.received.recv_timeout(std::time::Duration::from_millis(400)) {
+        match self
+            .received
+            .recv_timeout(std::time::Duration::from_millis(400))
+        {
             Err(mpsc::RecvTimeoutError::Timeout) => (),
-            other => panic!("the server was dialled when the answer should have come from the cache: {other:?}"),
+            other => panic!(
+                "the server was dialled when the answer should have come from the cache: {other:?}"
+            ),
         }
     }
 }
@@ -153,7 +166,11 @@ fn serve(mut stream: TcpStream, script: &Arc<Mutex<Script>>) -> Option<Seen> {
     let answer = script.lock().expect("script lock").take();
     // A scripted `tool_calls` answer is already an envelope; wrapping that again buries the calls inside a
     // content string and the leg reads an empty answer.
-    let reply = if answer.trim_start().starts_with("{\"choices\"") { answer } else { envelope(&answer) };
+    let reply = if answer.trim_start().starts_with("{\"choices\"") {
+        answer
+    } else {
+        envelope(&answer)
+    };
     let framed = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         reply.len(),
@@ -183,9 +200,9 @@ fn tool_calls(calls: &[(usize, &str)]) -> String {
             })
         })
         .collect();
-    serde_json::json!({ "choices": [ { "message": { "content": "", "tool_calls": list } } ] }).to_string()
+    serde_json::json!({ "choices": [ { "message": { "content": "", "tool_calls": list } } ] })
+        .to_string()
 }
-
 
 /// A cancel context that is never cancelled: this leg is not the one F0.3's stop is wired to yet, and the
 /// leg only ever asks the flag between reads.
@@ -253,7 +270,11 @@ fn fixture(tag: &str) -> Fixture {
     settings::save(&paths, &conf).expect("settings written");
     let tree = naivepost::layout::Tree::new(&session).expect("a .naivepost folder is a project");
     drop(scenario);
-    Fixture { root, tree, _scenario: scenario_reacquire() }
+    Fixture {
+        root,
+        tree,
+        _scenario: scenario_reacquire(),
+    }
 }
 
 /// The model name every scenario asks with, so a check can assert it came back in the request.
@@ -291,7 +312,11 @@ fn cues(n: usize, tagged: bool) -> Vec<subs::Cue> {
         .map(|index| subs::Cue {
             s: index as f64,
             e: index as f64 + 0.6,
-            pos: if tagged && index == 0 { "top".to_string() } else { String::new() },
+            pos: if tagged && index == 0 {
+                "top".to_string()
+            } else {
+                String::new()
+            },
             text: if tagged && index == 0 {
                 // The tag the rule itself writes — `placement("top")` is what `keep_placement` checks for.
                 format!("{}line {}", subs::placement("top").unwrap(), index + 1)
@@ -345,15 +370,27 @@ fn f5_4_s1_wire_the_cue_text_is_what_travels() {
     let ask = ask_leg::ask(&scene.tree, &cancelled);
     llm.queue(vec!["1\teins\n2\tzwei\n3\tdrei".to_string()]);
     let numbers: Vec<usize> = (1..=track.len()).collect();
-    let message = format!("{}\n{}", subs::message(track.len(), "German"), subs::numbered(
-        &track.iter().enumerate().map(|(i, _)| (i + 1, format!("line {}", i + 1))).collect::<Vec<(usize, String)>>(),
-    ));
+    let message = format!(
+        "{}\n{}",
+        subs::message(track.len(), "German"),
+        subs::numbered(
+            &track
+                .iter()
+                .enumerate()
+                .map(|(i, _)| (i + 1, format!("line {}", i + 1)))
+                .collect::<Vec<(usize, String)>>(),
+        )
+    );
     let got = ask(&message, &numbers).expect("the fake answers");
     assert_eq!(got.get(&1).map(String::as_str), Some("eins"));
     assert_eq!(got.len(), 3, "every numbered line came back: {got:?}");
     // And the text that travelled is the CUE text, folded to one row per cue (no `\n`, no tag).
     let sent = last_sent_lines(&llm);
-    assert_eq!(sent.first().map(String::as_str), Some("1\tline 1"), "the numbered line is the cue: {sent:?}");
+    assert_eq!(
+        sent.first().map(String::as_str),
+        Some("1\tline 1"),
+        "the numbered line is the cue: {sent:?}"
+    );
 }
 
 /// One check of the real leg, in its own scenario: the settings address and `cache/llm` are
@@ -371,7 +408,10 @@ fn f5_4_s3_wire_the_placement_tag_never_travels() {
     let numbers = vec![1usize, 2];
     let _ = ask(&message, &numbers).expect("the fake answers");
     let seen = llm.next();
-    assert_eq!(seen.path, "/v1/chat/completions", "the chat endpoint is what was dialled");
+    assert_eq!(
+        seen.path, "/v1/chat/completions",
+        "the chat endpoint is what was dialled"
+    );
     assert!(
         !seen.body.contains("\\an8"),
         "the placement tag travelled into the translation: {}",
@@ -385,7 +425,10 @@ fn f5_4_s3_wire_the_placement_tag_never_travels() {
     // ...and it comes back on the cue, because the app puts it there: `keep_placement` reads the ORIGINAL
     // cue's `pos`, never the reply, and answers `true` only when the model smuggled a tag in as a word.
     let (text, carried) = subs::keep_placement(&track[0], "erste zeile");
-    assert!(!carried, "a clean answer was reported as smuggling a tag: {text}");
+    assert!(
+        !carried,
+        "a clean answer was reported as smuggling a tag: {text}"
+    );
     assert!(
         text.starts_with(subs::placement("top").unwrap()),
         "the finished cue lost its placement: {text}"
@@ -453,9 +496,17 @@ fn f5_4_s3_wire_one_request_per_batch() {
     // The request itself carried all `many.len()` numbered lines: counted off the body the fake read.
     // The leg's own message argument is only §3.10's heading — the walk appends the numbered lines, so
     // this check hands it both, exactly as `one_track` does.
-    let request = format!("{}\n{}", subs::message(many.len(), "German"), subs::numbered(
-        &many.iter().enumerate().map(|(i, _)| (i + 1, format!("line {}", i + 1))).collect::<Vec<(usize, String)>>(),
-    ));
+    let request = format!(
+        "{}\n{}",
+        subs::message(many.len(), "German"),
+        subs::numbered(
+            &many
+                .iter()
+                .enumerate()
+                .map(|(i, _)| (i + 1, format!("line {}", i + 1)))
+                .collect::<Vec<(usize, String)>>(),
+        )
+    );
     let got = ask(&request, &numbers).expect("the fake answers");
     assert_eq!(got.len(), many.len(), "every line of the batch answered");
     // The request itself carried all `many.len()` numbered lines: counted off the body the fake read,
@@ -523,7 +574,10 @@ fn f5_4_s3_wire_tool_calls_are_read() {
     llm.queue(vec![raw]);
     let got = ask(&subs::message(3, "German"), &[1, 2, 3]).expect("the fake answers");
     assert_eq!(got.get(&1).map(String::as_str), Some("eins"));
-    assert!(!got.contains_key(&2), "an unanswered number must stay missing: {got:?}");
+    assert!(
+        !got.contains_key(&2),
+        "an unanswered number must stay missing: {got:?}"
+    );
     assert_eq!(got.get(&3).map(String::as_str), Some("drei"));
 }
 
@@ -538,7 +592,11 @@ fn f5_4_s3_wire_a_foreign_number_and_an_empty_line_refuse() {
     let ask = ask_leg::ask(&scene.tree, &cancelled);
     llm.queue(vec!["9\taus der batch raus\n1\t\n2\tzwei".to_string()]);
     let got = ask(&subs::message(2, "German"), &[1, 2]).expect("the fake answers");
-    assert_eq!(got.keys().copied().collect::<Vec<usize>>(), vec![2], "only a line inside the batch with text is an answer: {got:?}");
+    assert_eq!(
+        got.keys().copied().collect::<Vec<usize>>(),
+        vec![2],
+        "only a line inside the batch with text is an answer: {got:?}"
+    );
 }
 
 /// One check of the real leg, in its own scenario: the settings address and `cache/llm` are
@@ -562,7 +620,11 @@ fn f5_4_s3_wire_only_a_complete_answer_is_cached() {
     let _ = llm.next();
     llm.expect_silent();
     let again = ask(&message, &numbers).expect("the cache answers the identical request");
-    assert_eq!(again.len(), 2, "the cached answer is the whole answer: {again:?}");
+    assert_eq!(
+        again.len(),
+        2,
+        "the cached answer is the whole answer: {again:?}"
+    );
     assert_eq!(
         subs::cached(true),
         true,

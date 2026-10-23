@@ -61,7 +61,9 @@ pub fn control_for(row: &CatalogueRow) -> Control {
 /// call unquoted, so `policy`'s validation must accept both spellings), and a four-item list is still a
 /// two-answer question: what decides a switch is that every value means on or off.
 fn is_on_off(values: &[&'static str]) -> bool {
-    values.iter().all(|value| matches!(*value, "on" | "off" | "true" | "false"))
+    values
+        .iter()
+        .all(|value| matches!(*value, "on" | "off" | "true" | "false"))
 }
 
 /// Build the row's editor, seeded from the live policy, named `policy-edit-<field>` so a test and the

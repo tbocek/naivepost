@@ -73,14 +73,20 @@ fn cut_page(app: &adw::Application) -> (adw::ApplicationWindow, naivepost::layou
     // A `.naivepost` folder is only a tree once its project file exists, and `build_window` fills the
     // window's folder slot from THAT tree — so the session has to be written before the window opens.
     let mut seed = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    seed.sources.iter_mut().for_each(|source| source.footage = true);
+    seed.sources
+        .iter_mut()
+        .for_each(|source| source.footage = true);
     std::fs::create_dir_all(&session).expect("session folder");
     naivepost::project::save(&seed, &session).expect("the session is a real project on disk");
-    let tree = naivepost::layout::Tree::new(&session).expect("a .naivepost folder with its file is a project");
+    let tree = naivepost::layout::Tree::new(&session)
+        .expect("a .naivepost folder with its file is a project");
 
     let mut model = naivepost::project::load(&session).expect("the session reloads");
     // Point the footage row at this session so the Cut tab unlocks and the tape is ours.
-    model.sources.iter_mut().for_each(|source| source.footage = true);
+    model
+        .sources
+        .iter_mut()
+        .for_each(|source| source.footage = true);
     let window = ui::build_window(app, &model, "Prepare");
     hold_last_window(window.clone());
     window.present();
@@ -96,28 +102,55 @@ fn cut_page(app: &adw::Application) -> (adw::ApplicationWindow, naivepost::layou
 /// never smaller than §A's 160 px floor.
 fn check_the_preview_shows_a_frame(app: &adw::Application) {
     let (window, tree) = cut_page(app);
-    let tape = [naivepost::timeline::Recording { base: "lecture".into(), start: 0.0, end: 120.0 }];
+    let tape = [naivepost::timeline::Recording {
+        base: "lecture".into(),
+        start: 0.0,
+        end: 120.0,
+    }];
     ui::set_session_recordings(&tape);
-    let seeded = cut::Cut { segs: vec![Seg { s: 0.0, e: 60.0, ..Default::default() }], ..Default::default() };
+    let seeded = cut::Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     ui::seed_review_cut(&window, &seeded);
-    let picture = common::find_named(&window, "preview-picture").expect("§A's GtkPicture is on the panel");
+    let picture =
+        common::find_named(&window, "preview-picture").expect("§A's GtkPicture is on the panel");
     let picture = picture.downcast::<gtk::Picture>().expect("it is a Picture");
     // Nothing extracted yet: the plate stays empty rather than showing a broken image.
-    assert!(picture.paintable().is_none(), "no frames on disk means no picture, not a broken one");
+    assert!(
+        picture.paintable().is_none(),
+        "no frames on disk means no picture, not a broken one"
+    );
 
     let written = write_frame(&tree, "lecture", 10.0);
-    assert!(written.exists(), "the frame file the program will list exists");
+    assert!(
+        written.exists(),
+        "the frame file the program will list exists"
+    );
     // Stand the line on that second through the page's own door, which is what repaints the frame.
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 10.0 });
     naivepost::ui::cut_picture::refresh(&window);
     settle();
 
-    let shown = picture.paintable().expect("the frame the line stands on is showing");
-    assert_eq!(shown.intrinsic_width(), FRAME_W, "the picture carries the PNG's own width");
+    let shown = picture
+        .paintable()
+        .expect("the frame the line stands on is showing");
+    assert_eq!(
+        shown.intrinsic_width(),
+        FRAME_W,
+        "the picture carries the PNG's own width"
+    );
     assert_eq!(shown.intrinsic_height(), FRAME_H, "and its own height");
     // §A's floor is a number the widget answers with, not one the spec alone asserts.
     let (min_w, min_h) = picture.size_request();
-    assert!(min_h >= naivepost::ui::cut_picture::PICTURE_MIN_HEIGHT, "{min_h} px tall");
+    assert!(
+        min_h >= naivepost::ui::cut_picture::PICTURE_MIN_HEIGHT,
+        "{min_h} px tall"
+    );
     let _ = min_w;
     RAN_FRAME.store(true, std::sync::atomic::Ordering::SeqCst);
 }
@@ -130,15 +163,26 @@ fn check_a_click_on_the_picture_toggles_play(app: &adw::Application) {
         start: 0.0,
         end: 120.0,
     }]);
-    let seeded = cut::Cut { segs: vec![Seg { s: 0.0, e: 60.0, ..Default::default() }], ..Default::default() };
+    let seeded = cut::Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     ui::seed_review_cut(&window, &seeded);
     write_frame(&tree, "lecture", 0.0);
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 0.0 });
     naivepost::ui::cut_picture::refresh(&window);
     settle();
-    assert!(!ui::preview_player(&window).transport.playing, "a fresh preview is not playing");
+    assert!(
+        !ui::preview_player(&window).transport.playing,
+        "a fresh preview is not playing"
+    );
 
-    let button = common::find_named(&window, "preview-picture-button").expect("the picture is clickable");
+    let button =
+        common::find_named(&window, "preview-picture-button").expect("the picture is clickable");
     button.emit_by_name::<()>("clicked", &[]);
     settle();
     assert!(
@@ -170,6 +214,9 @@ fn sec_05_cut_1_screen_s1_the_preview_shows_a_frame_of_the_line_and_a_click_togg
         (&RAN_FRAME, "the frame-of-the-line check"),
         (&RAN_CLICK, "the click-toggles-play check"),
     ] {
-        assert!(flag.load(std::sync::atomic::Ordering::SeqCst), "{what} never ran");
+        assert!(
+            flag.load(std::sync::atomic::Ordering::SeqCst),
+            "{what} never ran"
+        );
     }
 }

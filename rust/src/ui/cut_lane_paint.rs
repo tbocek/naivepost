@@ -103,7 +103,11 @@ pub fn caption_of(effect: &Fx) -> String {
             .map(one_line)
             .unwrap_or_default(),
         Some(EffectKind::Volume) => fx_volume::percent_label(effect),
-        Some(EffectKind::Label) => effect.text.chars().take(crate::fx_label::NAME_MAX_CHARS).collect(),
+        Some(EffectKind::Label) => effect
+            .text
+            .chars()
+            .take(crate::fx_label::NAME_MAX_CHARS)
+            .collect(),
         None => String::new(),
     }
 }
@@ -216,7 +220,12 @@ pub fn paint_bar(cr: &cairo::Context, view: &BarView) {
             let _ = cr.stroke();
         }
         if fx_band::kill_open(view.width) {
-            draw_cross(cr, w / 2.0, h / 2.0, (h / 2.0 - 2.0).clamp(2.0, CROSS_HALF_PX_MAX));
+            draw_cross(
+                cr,
+                w / 2.0,
+                h / 2.0,
+                (h / 2.0 - 2.0).clamp(2.0, CROSS_HALF_PX_MAX),
+            );
         }
     }
 }
@@ -319,8 +328,16 @@ pub fn attach(bar: &gtk::Widget, index: usize, view: &BarView) {
         // The allocation wins over the request: before layout GTK reports 0 for the area, and painting nothing
         // then is what left the old CSS-only lane blank until someone resized the window.
         let shown = BarView {
-            width: if width > 0 { width as f64 } else { painted.width },
-            height: if height > 0 { height as f64 } else { painted.height },
+            width: if width > 0 {
+                width as f64
+            } else {
+                painted.width
+            },
+            height: if height > 0 {
+                height as f64
+            } else {
+                painted.height
+            },
             ..painted.clone()
         };
         paint_bar(cr, &shown);

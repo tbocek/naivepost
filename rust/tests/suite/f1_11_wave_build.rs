@@ -43,11 +43,27 @@ fn write_tone_wav(path: &Path, tone: f64, tail: f64) {
     }
     let status = Command::new("/usr/bin/ffmpeg")
         .args([
-            "-v", "error", "-y",
-            "-f", "lavfi", "-i", &format!("sine=frequency=440:duration={tone}"),
-            "-f", "lavfi", "-i", &format!("anullsrc=r=16000:cl=mono:d={tail}"),
-            "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1[out]",
-            "-map", "[out]", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le",
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("sine=frequency=440:duration={tone}"),
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("anullsrc=r=16000:cl=mono:d={tail}"),
+            "-filter_complex",
+            "[0:a][1:a]concat=n=2:v=0:a=1[out]",
+            "-map",
+            "[out]",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            "-c:a",
+            "pcm_s16le",
         ])
         .arg(path)
         .status()
@@ -72,17 +88,31 @@ fn f1_11_s1_the_envelope_keeps_the_loudest_sample_of_every_bucket() {
     let peaks = wave_build::peaks_from_s16(&samples);
     assert_eq!(peaks.len(), 3, "one byte per bucket");
     assert_eq!(peaks[0], 0, "silence folds to nought");
-    assert_eq!(peaks[1], (30_000i64 * 255 / 32767) as u8, "the loudest absolute sample of the bucket");
+    assert_eq!(
+        peaks[1],
+        (30_000i64 * 255 / 32767) as u8,
+        "the loudest absolute sample of the bucket"
+    );
     assert_eq!(peaks[2], 0, "and the next bucket is quiet again");
 
     // Full scale lands on the top byte rather than one short of it, and a partial final bucket is kept:
     // dropping it would shorten every envelope by up to 4.95 ms, and the tail rule reads those buckets.
     let full = vec![i16::MIN; SAMPLES_PER_BUCKET + 1];
     let folded = wave_build::peaks_from_s16(&full);
-    assert_eq!(folded.len(), 2, "a trailing partial bucket still gets its byte");
+    assert_eq!(
+        folded.len(),
+        2,
+        "a trailing partial bucket still gets its byte"
+    );
     assert_eq!(folded[0], 255, "a full-scale peak reaches the top byte");
-    assert_eq!(folded[1], 255, "one sample is enough to say the bucket was loud");
-    assert!(wave_build::peaks_from_s16(&[]).is_empty(), "nothing in, nothing out");
+    assert_eq!(
+        folded[1], 255,
+        "one sample is enough to say the bucket was loud"
+    );
+    assert!(
+        wave_build::peaks_from_s16(&[]).is_empty(),
+        "nothing in, nothing out"
+    );
 }
 
 /// The reader and the fold over a genuine ffmpeg wav, end to end through `ensure`.
@@ -98,11 +128,20 @@ fn f1_11_s1_a_real_wav_decodes_to_the_peaks_the_folding_rule_says() {
 
     // The announce line goes out BEFORE the work, like every other step's first line.
     assert_eq!(log.len(), 1, "one line, said first: {log:?}");
-    assert!(log[0].starts_with(">>> envelope: measuring lecture"), "S1's line: {log:?}");
+    assert!(
+        log[0].starts_with(">>> envelope: measuring lecture"),
+        "S1's line: {log:?}"
+    );
 
-    let read = wave::read(&tree, LANE, size, mtime).expect("readable").expect("present");
+    let read = wave::read(&tree, LANE, size, mtime)
+        .expect("readable")
+        .expect("present");
     assert_eq!(read.hz, PEAK_HZ, "the cache holds the rate §01 §6 names");
-    assert_eq!(read.chans.len(), 1, "the decode is mono, so one block of peaks");
+    assert_eq!(
+        read.chans.len(),
+        1,
+        "the decode is mono, so one block of peaks"
+    );
     let peaks = &read.chans[0];
     assert!(
         (peaks.len() as i64 - buckets(3.0) as i64).abs() <= 2,
@@ -114,8 +153,14 @@ fn f1_11_s1_a_real_wav_decodes_to_the_peaks_the_folding_rule_says() {
     // it. That is all the rule needs — the dB arithmetic belongs to `edges`, and F1.11 keeps it there.
     let during = peaks[buckets(1.0)];
     let after = peaks[buckets(2.5)];
-    assert!(during > after, "tone louder than the silence after it: {during} vs {after}");
-    assert!(after < 8, "the silence is room-quiet on the byte scale: {after}");
+    assert!(
+        during > after,
+        "tone louder than the silence after it: {during} vs {after}"
+    );
+    assert!(
+        after < 8,
+        "the silence is room-quiet on the byte scale: {after}"
+    );
 }
 
 /// The cache is stamped against the RECORDING, which is what makes `edges::load` drop a stale envelope.
@@ -125,14 +170,18 @@ fn f1_11_s1_the_cache_is_stamped_against_the_recording_it_came_from() {
     write_tone_wav(&tree.voice16k_wav(LANE), 1.0, 0.5);
     let (size, mtime) = stamps(&source);
     wave_build::ensure(&tree, LANE, &source, &mut |_| ()).expect("measured once");
-    assert!(wave::read(&tree, LANE, size, mtime).expect("readable").is_some());
+    assert!(wave::read(&tree, LANE, size, mtime)
+        .expect("readable")
+        .is_some());
 
     // Replace the recording -- same name, different file. The envelope now describes audio that is gone,
     // so it must read as no envelope at all rather than placing a cut on sound that is not there.
     std::fs::write(&source, b"a-different-recording").expect("the recording is replaced");
     let (new_size, new_mtime) = stamps(&source);
     assert!(
-        wave::read(&tree, LANE, new_size, new_mtime).expect("readable").is_none(),
+        wave::read(&tree, LANE, new_size, new_mtime)
+            .expect("readable")
+            .is_none(),
         "a cache made against another file is a miss"
     );
 }
@@ -143,15 +192,27 @@ fn f1_11_s1_an_unchanged_recording_is_not_measured_twice() {
     let (tree, source) = session("resume");
     write_tone_wav(&tree.voice16k_wav(LANE), 1.0, 0.5);
     let mut first: Vec<String> = Vec::new();
-    wave_build::ensure(&tree, LANE, &source, &mut |l| first.push(l.to_string())).expect("first press");
-    assert_eq!(first.len(), 1, "the first press announces itself: {first:?}");
+    wave_build::ensure(&tree, LANE, &source, &mut |l| first.push(l.to_string()))
+        .expect("first press");
+    assert_eq!(
+        first.len(),
+        1,
+        "the first press announces itself: {first:?}"
+    );
 
     let cache = tree.wave(LANE);
-    let before = std::fs::metadata(&cache).expect("the cache").modified().expect("a time");
+    let before = std::fs::metadata(&cache)
+        .expect("the cache")
+        .modified()
+        .expect("a time");
     let mut second: Vec<String> = Vec::new();
-    wave_build::ensure(&tree, LANE, &source, &mut |l| second.push(l.to_string())).expect("second press");
+    wave_build::ensure(&tree, LANE, &source, &mut |l| second.push(l.to_string()))
+        .expect("second press");
     assert!(second.is_empty(), "a resumed step says nothing: {second:?}");
-    let after = std::fs::metadata(&cache).expect("the cache").modified().expect("a time");
+    let after = std::fs::metadata(&cache)
+        .expect("the cache")
+        .modified()
+        .expect("a time");
     assert_eq!(before, after, "and rewrites nothing: the file is untouched");
 }
 
@@ -185,14 +246,36 @@ fn f1_11_s1_the_envelope_a_cache_holds_moves_a_mark_live() {
     let (size, mtime) = stamps(&source);
     wave_build::ensure(&tree, LANE, &source, &mut |_| ()).expect("measured");
 
-    let held = edges::load(&tree, &[Lane { key: LANE.into(), off: 0.0, size, mtime }]);
-    assert_eq!(held.len(), 1, "the lane the program measured is the lane the finder answers");
+    let held = edges::load(
+        &tree,
+        &[Lane {
+            key: LANE.into(),
+            off: 0.0,
+            size,
+            mtime,
+        }],
+    );
+    assert_eq!(
+        held.len(),
+        1,
+        "the lane the program measured is the lane the finder answers"
+    );
     let mut lookup = edges::finder(&held);
-    assert!(lookup(1.0).is_some(), "a second inside the recording has an envelope to ask");
+    assert!(
+        lookup(1.0).is_some(),
+        "a second inside the recording has an envelope to ask"
+    );
 
     // No word times: the envelope alone places the edge, which is the branch that had never been reached
     // from produced data. With words the fence bounds it (see the case below).
-    let mark = Retake { s: 2.4, e: 3.0, again: 0.0, to: 3.0, text: String::new(), whole: String::new() };
+    let mark = Retake {
+        s: 2.4,
+        e: 3.0,
+        again: 0.0,
+        to: 3.0,
+        text: String::new(),
+        whole: String::new(),
+    };
     let (placed, notes) = edges::place_edges(vec![mark], &[], &mut lookup, &[]);
     assert!(
         placed[0].s < 2.4,
@@ -200,16 +283,33 @@ fn f1_11_s1_the_envelope_a_cache_holds_moves_a_mark_live() {
         placed[0].s
     );
     assert!(
-        notes.iter().any(|n| n.contains("the sound before it stops")),
+        notes
+            .iter()
+            .any(|n| n.contains("the sound before it stops")),
         "the envelope branch says so: {notes:?}"
     );
 
     // And the same envelope under a WORD FENCE: the aligner's back-to-back times bound the edge, so the
     // sound chooses inside the fence rather than anywhere within reach.
-    let words = [AlignedWord { word: "stays".into(), s: 1.0, e: 2.0 }];
-    let fenced = Retake { s: 2.0, e: 3.0, again: 0.0, to: 3.0, text: String::new(), whole: String::new() };
+    let words = [AlignedWord {
+        word: "stays".into(),
+        s: 1.0,
+        e: 2.0,
+    }];
+    let fenced = Retake {
+        s: 2.0,
+        e: 3.0,
+        again: 0.0,
+        to: 3.0,
+        text: String::new(),
+        whole: String::new(),
+    };
     let (fenced, _) = edges::place_edges(vec![fenced], &words, &mut lookup, &[]);
-    assert!(fenced[0].s >= 2.0, "a fence with no width leaves the edge on the word time: {}", fenced[0].s);
+    assert!(
+        fenced[0].s >= 2.0,
+        "a fence with no width leaves the edge on the word time: {}",
+        fenced[0].s
+    );
 }
 
 /// A hand-built envelope, for the case where a specific byte level matters (the fold above is whatever
@@ -237,9 +337,17 @@ fn f1_11_s1_a_folded_envelope_agrees_with_the_hand_written_one() {
     // worth pinning rather than papering over: `byte * 255 / 32767` truncates, so a sample one step under
     // a level folds one byte low. The producer cannot drift this way (it always holds a sample that was
     // really there), and the edge rules see the same SHAPE either way -- proved below by placing a mark.
-    assert_eq!(folded[buckets(1.0)], 119, "a spoken bucket lands one byte under the level named");
+    assert_eq!(
+        folded[buckets(1.0)],
+        119,
+        "a spoken bucket lands one byte under the level named"
+    );
     assert_eq!(folded[buckets(1.5)], 119, "and holds it across the stretch");
-    assert_eq!(folded[buckets(0.5)], 7, "the quiet between words sits one under the room byte too");
+    assert_eq!(
+        folded[buckets(0.5)],
+        7,
+        "the quiet between words sits one under the room byte too"
+    );
     assert_eq!(folded[buckets(3.0)], 7, "and on both sides of the speech");
     // The shape is what the rules read, not the exact byte: a mark placed off the folded envelope moves
     // exactly as it does off the hand-written one (`edge_placement`'s live cases use 8/120).
@@ -247,12 +355,41 @@ fn f1_11_s1_a_folded_envelope_agrees_with_the_hand_written_one() {
     // the hand-written ones every `edge_placement` case already uses.
     let tree = Tree::new(temp_dir("agree").join("p.naivepost")).expect("a project");
     let (size, mtime) = (1i64, 1i64);
-    wave::write(&tree, LANE, &Wave { hz, chans: vec![folded] }, size, mtime).unwrap();
-    let held = edges::load(&tree, &[Lane { key: LANE.into(), off: 0.0, size, mtime }]);
+    wave::write(
+        &tree,
+        LANE,
+        &Wave {
+            hz,
+            chans: vec![folded],
+        },
+        size,
+        mtime,
+    )
+    .unwrap();
+    let held = edges::load(
+        &tree,
+        &[Lane {
+            key: LANE.into(),
+            off: 0.0,
+            size,
+            mtime,
+        }],
+    );
     let mut lookup = edges::finder(&held);
-    let mark = Retake { s: 2.4, e: 3.0, again: 0.0, to: 3.0, text: String::new(), whole: String::new() };
+    let mark = Retake {
+        s: 2.4,
+        e: 3.0,
+        again: 0.0,
+        to: 3.0,
+        text: String::new(),
+        whole: String::new(),
+    };
     let (placed, notes) = edges::place_edges(vec![mark], &[], &mut lookup, &[]);
-    assert!(placed[0].s < 2.4 && !notes.is_empty(), "the fold's envelope moves the edge: {:?}", placed[0].s);
+    assert!(
+        placed[0].s < 2.4 && !notes.is_empty(),
+        "the fold's envelope moves the edge: {:?}",
+        placed[0].s
+    );
 }
 
 /// The recording's own size/mtime, taken the way the program takes them (never from the cache file).

@@ -73,7 +73,10 @@ pub fn press(selection: Option<(f64, f64)>, line: Option<f64>) -> Pressed {
         if to - from > cut_speed::MIN_MARKED_SECONDS
             || (to - from - cut_speed::MIN_MARKED_SECONDS).abs() < 1e-9
         {
-            return Pressed::Stretched { t: from, dur: to - from };
+            return Pressed::Stretched {
+                t: from,
+                dur: to - from,
+            };
         }
     }
     match line {
@@ -94,7 +97,12 @@ pub fn initial(pressed: Pressed) -> Option<Fx> {
         Pressed::MarkAtLine => (0.0, LINE_SECONDS),
         Pressed::Refused => return None,
     };
-    Some(Fx { kind: "label".into(), t, dur, ..Default::default() })
+    Some(Fx {
+        kind: "label".into(),
+        t,
+        dur,
+        ..Default::default()
+    })
 }
 
 /// F3.7 S1: the same record at a second someone named — the `line..+2 s` branch with its line supplied, so the
@@ -127,7 +135,8 @@ pub const NAME_HELP: &str = "what you call this moment -- \"the reveal\", \"boss
 /// F3.7 S3 (§A.7's Length wording, `the stretch a clip must overlap`): the length of a label is not how long
 /// a sound lasts, it is how wide the marked moment is drawn and therefore how far a kept clip has to reach to
 /// carry it. Kept short and factual because the field itself says the unit.
-pub const LENGTH_HELP: &str = "how wide the marked moment is \u{2014} the stretch a clip must overlap";
+pub const LENGTH_HELP: &str =
+    "how wide the marked moment is \u{2014} the stretch a clip must overlap";
 
 /// F3.7 S3: what the form holds when Apply is pressed — the name as typed (in characters, the field's unit) and
 /// the seconds as typed. There is no fade or curve here because a label has none: §1's table denies them, so a
@@ -182,7 +191,11 @@ pub const NOTHING_CHANGES: &str = "nothing changes in the video; the narration i
 /// sentence carries no duration where the others do, because a label's width is a drawing detail rather than
 /// something a reader of the list acts on; the seconds and the name are the whole entry.
 pub fn label(fx: &Fx) -> String {
-    format!("label \u{201c}{}\u{201d} at {}", fx.text, tools::mm_ss(fx.t))
+    format!(
+        "label \u{201c}{}\u{201d} at {}",
+        fx.text,
+        tools::mm_ss(fx.t)
+    )
 }
 
 /// F3.7 S5: what the page says after a label is placed.

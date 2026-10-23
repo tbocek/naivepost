@@ -66,7 +66,7 @@ pub fn value_word(policy: &Policy, field: &str) -> String {
             CutMode::Model => "model".to_string(),
         },
         "captionsPass" => pass_word(policy.captions_pass.value), // P.policy.captionsPass
-        "speedPass" => pass_word(policy.speed_pass.value), // P.policy.speedPass
+        "speedPass" => pass_word(policy.speed_pass.value),       // P.policy.speedPass
         "decorationsPass" => pass_word(policy.decorations_pass.value), // P.policy.decorationsPass
         // P.policy.targetLengthSeconds — a number row, so the seconds are the value. `0` is §10's "none" and
         // reads as the word rather than a bare 0, because a person comparing this with the cut brief should
@@ -79,7 +79,11 @@ pub fn value_word(policy: &Policy, field: &str) -> String {
 }
 
 fn pass_word(on: bool) -> String {
-    if on { "on".to_string() } else { "off".to_string() }
+    if on {
+        "on".to_string()
+    } else {
+        "off".to_string()
+    }
 }
 
 /// A target length as the form prints it: `45 min` style for a real target — the shortest unit that spells
@@ -109,8 +113,7 @@ const BECAUSE_MAX_CHARS: i32 = 36;
 /// and the home test is `decision_audit`'s, so the form cannot quietly grow a row that is really a machine
 /// setting or an engineering constant.
 pub fn policy_home(id: &str) -> bool {
-    crate::decision_homes::home_of(id)
-        .is_some_and(crate::decision_audit::is_number_or_wording)
+    crate::decision_homes::home_of(id).is_some_and(crate::decision_audit::is_number_or_wording)
 }
 
 /// Build the form for this policy. `parent` is the main window, so the form rides with it and closes

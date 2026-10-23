@@ -65,7 +65,10 @@ fn fixture(tag: &str) -> Scenario {
     }
     let paths = settings::from_environment().expect("settings from the pinned env");
     settings::save(&paths, &Conf::default()).expect("settings written");
-    Scenario { root, _scenario: scenario }
+    Scenario {
+        root,
+        _scenario: scenario,
+    }
 }
 
 /// The stub browser: prints whatever DOM the scenario asked for and ignores the URL, which is the point —
@@ -82,7 +85,8 @@ fn write_stub(dir: &Path, dom: &str) -> PathBuf {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("stub executable");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("stub executable");
     }
     path
 }
@@ -114,48 +118,77 @@ fn ddg_page(urls: &[&str]) -> String {
 
 /// A page wide enough to clear `web_tools::MIN_PAGE_CHARS`.
 fn long_page(body: &str) -> String {
-    format!("<html><body><p>{body}</p><p>{}</p></body></html>", "x".repeat(250))
+    format!(
+        "<html><body><p>{body}</p><p>{}</p></body></html>",
+        "x".repeat(250)
+    )
 }
 
 /// The rows the run left in the open project's `requests.tsv`.
 fn rows() -> Vec<Request> {
-    let tree = Tree::new(startup::session_dir(&std::env::current_dir().unwrap())).expect("session tree");
+    let tree =
+        Tree::new(startup::session_dir(&std::env::current_dir().unwrap())).expect("session tree");
     requests::read(&tree).expect("requests.tsv reads back")
 }
 
 /// A DOM with no result markup in it: a real page, so the browser runs and answers, but nothing to extract.
-const NO_RESULTS_PAGE: &str = "<html><body><p>DuckDuckGo is thinking. This page carries no results at all.</p></body></html>";
+const NO_RESULTS_PAGE: &str =
+    "<html><body><p>DuckDuckGo is thinking. This page carries no results at all.</p></body></html>";
 
 /// S1: a `web_search` goes out through the browser leg and leaves its timed row behind.
 #[test]
 fn sec_02_services_1_the_four_servers_s25_a_web_search_lands_in_requests_tsv() {
     let root = fixture("search-row");
-    let stub = write_stub(&root, &ddg_page(&["https://one.example/a", "https://two.example/b"]));
+    let stub = write_stub(
+        &root,
+        &ddg_page(&["https://one.example/a", "https://two.example/b"]),
+    );
     point_at(&stub);
 
     let answer = web_browser::dispatch(
         "narrate",
         &stub.to_string_lossy(),
-        &common::call("web_search", r#"{"broad":"tower height","medium":"ez tower","narrow":"634 m"}"#),
+        &common::call(
+            "web_search",
+            r#"{"broad":"tower height","medium":"ez tower","narrow":"634 m"}"#,
+        ),
     )
     .expect("web_search is answered by the browser leg");
-    assert!(answer.contains("Results for"), "the model got the hit list: {answer}");
+    assert!(
+        answer.contains("Results for"),
+        "the model got the hit list: {answer}"
+    );
 
     let written = rows();
     let row = written
         .iter()
         .find(|row| row.kind == web_request_log::KIND_SEARCH)
         .expect("the search wrote a row of kind `search`: {written:?}");
-    assert_eq!(row.service, Service::Web, "§09 §10 counts the web as one of the four outside services");
+    assert_eq!(
+        row.service,
+        Service::Web,
+        "§09 §10 counts the web as one of the four outside services"
+    );
     assert_eq!(row.step, "narrate", "the row names the step that asked");
-    assert_eq!(row.outcome, Outcome::Ok, "hits came back, so the row is not a failure");
+    assert_eq!(
+        row.outcome,
+        Outcome::Ok,
+        "hits came back, so the row is not a failure"
+    );
     assert!(
         row.on_wire_s.unwrap_or(-1.0) >= 0.0,
         "the wire column is filled at all; a local stub can round to zero on the millisecond, got {:?}",
         row.on_wire_s
     );
-    assert!(row.first_byte_s.is_some(), "an answer arrived, so there is a first byte");
-    assert_eq!(row.wait_s, Some(0.0), "a web call takes no model slot, so it never queued (§09 §4)");
+    assert!(
+        row.first_byte_s.is_some(),
+        "an answer arrived, so there is a first byte"
+    );
+    assert_eq!(
+        row.wait_s,
+        Some(0.0),
+        "a web call takes no model slot, so it never queued (§09 §4)"
+    );
     assert!(
         row.sent_bytes.unwrap_or(0) > 0,
         "what went out is the query the model asked for, got {:?}",
@@ -171,7 +204,10 @@ fn sec_02_services_1_the_four_servers_s25_a_web_search_lands_in_requests_tsv() {
         answer.len(),
         "the received count is the size the conversation grew by"
     );
-    assert_eq!(row.model, "", "a page fetch has no model; the column stays empty rather than naming a binary");
+    assert_eq!(
+        row.model, "",
+        "a page fetch has no model; the column stays empty rather than naming a binary"
+    );
     assert_eq!(row.attempt, 1, "one call, one attempt");
     // §2's app-log line is unchanged by the recording: the row is extra, not a replacement. `dispatch`
     // writes it to the same sink every flow logs on, so a reader of the log still sees the ladder.
@@ -202,8 +238,15 @@ fn sec_02_services_1_the_four_servers_s25_a_web_search_lands_in_requests_tsv() {
         .rev()
         .find(|row| row.kind == web_request_log::KIND_SEARCH)
         .expect("the empty ladder left its row too");
-    assert_eq!(empty_row.outcome, Outcome::Ok, "the engine answered; there was simply nothing in it");
-    assert!(empty_row.on_wire_s.unwrap_or(-1.0) >= 0.0, "three queries were paid for and are timed");
+    assert_eq!(
+        empty_row.outcome,
+        Outcome::Ok,
+        "the engine answered; there was simply nothing in it"
+    );
+    assert!(
+        empty_row.on_wire_s.unwrap_or(-1.0) >= 0.0,
+        "three queries were paid for and are timed"
+    );
 }
 
 /// S1: a page read leaves a row too — and a refused page still leaves one, naming why.
@@ -219,7 +262,10 @@ fn sec_02_services_1_the_four_servers_s26_a_page_read_lands_in_requests_tsv() {
         &common::call("web_read", r#"{"url":"https://tower.example/height"}"#),
     )
     .expect("web_read is answered by the browser leg");
-    assert!(answer.contains("634 metres"), "the page text reached the model: {answer}");
+    assert!(
+        answer.contains("634 metres"),
+        "the page text reached the model: {answer}"
+    );
 
     let written = rows();
     let row = written
@@ -229,7 +275,10 @@ fn sec_02_services_1_the_four_servers_s26_a_page_read_lands_in_requests_tsv() {
     assert_eq!(row.service, Service::Web);
     assert_eq!(row.step, "publish", "the upload-text step gets its own row");
     assert_eq!(row.outcome, Outcome::Ok);
-    assert!(row.on_wire_s.unwrap_or(-1.0) >= 0.0, "timed like every other request");
+    assert!(
+        row.on_wire_s.unwrap_or(-1.0) >= 0.0,
+        "timed like every other request"
+    );
     assert!(row.sent_bytes.unwrap_or(0) > 0 && row.received_bytes.unwrap_or(0) > 0);
 
     // The second branch: a bot wall. §09 §10 wants the failed request in the file as much as the good one.
@@ -256,7 +305,10 @@ fn sec_02_services_1_the_four_servers_s26_a_page_read_lands_in_requests_tsv() {
         ),
         other => panic!("a refusal is an error row, got {other:?}"),
     }
-    assert!(bad.on_wire_s.unwrap_or(-1.0) >= 0.0, "a failed request cost time and says so");
+    assert!(
+        bad.on_wire_s.unwrap_or(-1.0) >= 0.0,
+        "a failed request cost time and says so"
+    );
 }
 
 /// S1: the web rows join the per-service tally, which is what the run's closing "web 3 in 12s" line reads.
@@ -300,7 +352,9 @@ fn sec_02_services_1_the_four_servers_s27_web_rows_join_the_service_tally() {
         .expect("the web has an entry now: {tally:?}");
     assert_eq!(web.count, 2, "one search and one read were counted");
     assert!(
-        tally.iter().any(|entry| entry.service == Service::Llm && entry.count == 1),
+        tally
+            .iter()
+            .any(|entry| entry.service == Service::Llm && entry.count == 1),
         "the llm rows keep counting beside them: {tally:?}"
     );
     assert_eq!(web.cached, 0, "nothing about a browser trip is a cache hit");

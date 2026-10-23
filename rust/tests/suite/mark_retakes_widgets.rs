@@ -21,12 +21,12 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use adw::prelude::*;
-use naivepost::layout::Tree;
-use naivepost::project::{MarkingPass, Project};
 use crate::common;
+use adw::prelude::*;
 use common::fake_audio_server;
 use common::footage;
+use naivepost::layout::Tree;
+use naivepost::project::{MarkingPass, Project};
 use naivepost::run;
 use naivepost::ui;
 
@@ -102,9 +102,18 @@ fn f1_9_wire_pressing_play_reaches_the_retake_marking_pass() {
     });
     app.run_with_args::<String>(&[]);
 
-    assert!(RAN_BRIEF.load(Ordering::SeqCst), "the briefing check never ran");
-    assert!(RAN_TOO_FEW.load(Ordering::SeqCst), "the too-few-lines check never ran");
-    assert!(RAN_GATE.load(Ordering::SeqCst), "the policy-gate check never ran");
+    assert!(
+        RAN_BRIEF.load(Ordering::SeqCst),
+        "the briefing check never ran"
+    );
+    assert!(
+        RAN_TOO_FEW.load(Ordering::SeqCst),
+        "the too-few-lines check never ran"
+    );
+    assert!(
+        RAN_GATE.load(Ordering::SeqCst),
+        "the policy-gate check never ran"
+    );
 }
 
 /// Four spoken lines is enough to hold a retake, so the pass runs and says what it is briefing on --
@@ -147,7 +156,8 @@ fn check_briefing_lands_through_the_button(app: &adw::Application) {
     );
     assert!(
         logs.iter()
-            .any(|line| line == ">>> retakes: briefing on 4 spoken lines, 1 pause(s) of 1.5 s or more"),
+            .any(|line| line
+                == ">>> retakes: briefing on 4 spoken lines, 1 pause(s) of 1.5 s or more"),
         "F1.9's briefing line landed for the clicked source: {logs:?}"
     );
     // It came after Prepare's own opening line, i.e. down the started path, not before it.

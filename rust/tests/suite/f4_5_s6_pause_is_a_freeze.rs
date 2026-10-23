@@ -95,8 +95,20 @@ fn f4_5_s6_pause_freezes_both_players_and_a_thaw_walks_them_on() {
     let session = session("freeze");
     let cut = leg::cut_of(
         vec![
-            Seg { s: 0.0, e: 10.0, ins: "a.mp4".into(), dur: 10.0, ..Default::default() },
-            Seg { s: 10.0, e: 20.0, ins: "b.mp4".into(), dur: 10.0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 10.0,
+                ins: "a.mp4".into(),
+                dur: 10.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 10.0,
+                e: 20.0,
+                ins: "b.mp4".into(),
+                dur: 10.0,
+                ..Default::default()
+            },
         ],
         vec![],
     );
@@ -113,14 +125,21 @@ fn f4_5_s6_pause_freezes_both_players_and_a_thaw_walks_them_on() {
     let spawn: &mut Spawn = &mut spawn_fn;
 
     // Nothing running yet: the press starts one, it does not freeze an empty slot.
-    assert_eq!(leg::hold_paused(true), None, "with no preview there is nothing to freeze");
+    assert_eq!(
+        leg::hold_paused(true),
+        None,
+        "with no preview there is nothing to freeze"
+    );
 
     // The footage has to exist for the picture's cue to spawn at all (S1 refuses a cue onto nothing), so
     // write what a real session has: the cut and one recording its camera row names.
     naivepost::cut::save(&cut, &session.tree).expect("cut written");
     // `footage_path` resolves a relative source against the process's cwd, so the recording lives here.
-    std::fs::write(std::env::current_dir().expect("cwd").join("cam0.mp4"), b"stub footage")
-        .expect("footage on disk");
+    std::fs::write(
+        std::env::current_dir().expect("cwd").join("cam0.mp4"),
+        b"stub footage",
+    )
+    .expect("footage on disk");
     let project = naivepost::project::Project {
         sources: vec![naivepost::project::Source {
             path: "cam0.mp4".into(),
@@ -134,7 +153,10 @@ fn f4_5_s6_pause_freezes_both_players_and_a_thaw_walks_them_on() {
     // Start through the door the page's own ▶ uses.
     let said = leg::start_running(&session.tree, &cut, &entries, 0.0, 0.5, 1.0, spawn)
         .expect("the preview started");
-    assert!(said.contains("playing the cut from"), "started with: {said}");
+    assert!(
+        said.contains("playing the cut from"),
+        "started with: {said}"
+    );
     let pids = leg::running_children();
     assert_eq!(pids.len(), 1, "one player is running: {pids:?}");
     let pid = pids[0];
@@ -142,28 +164,67 @@ fn f4_5_s6_pause_freezes_both_players_and_a_thaw_walks_them_on() {
     assert_ne!(proc_state(pid), 'T', "it plays, it does not start frozen");
 
     // ⏸ freezes it: SIGSTOP, so the process is still there holding its place.
-    assert_eq!(leg::hold_paused(true), Some(true), "freezing a running preview reports the hold");
+    assert_eq!(
+        leg::hold_paused(true),
+        Some(true),
+        "freezing a running preview reports the hold"
+    );
     assert!(alive(pid), "a pause keeps the player alive");
-    assert_eq!(proc_state_after_stop(pid), 'T', "the player is stopped, not killed");
-    assert_eq!(leg::running_children(), vec![pid], "⏹ still owns the frozen player");
+    assert_eq!(
+        proc_state_after_stop(pid),
+        'T',
+        "the player is stopped, not killed"
+    );
+    assert_eq!(
+        leg::running_children(),
+        vec![pid],
+        "⏹ still owns the frozen player"
+    );
 
     // ▶ thaws the SAME player rather than building a new pipeline.
-    assert_eq!(leg::hold_paused(false), Some(true), "something WAS held, so this press walks on");
-    assert_eq!(leg::running_children(), vec![pid], "the thaw walks the same player on");
-    assert!(matches!(proc_state(pid), 'S' | 'R'), "the player runs again: {}", proc_state(pid));
+    assert_eq!(
+        leg::hold_paused(false),
+        Some(true),
+        "something WAS held, so this press walks on"
+    );
+    assert_eq!(
+        leg::running_children(),
+        vec![pid],
+        "the thaw walks the same player on"
+    );
+    assert!(
+        matches!(proc_state(pid), 'S' | 'R'),
+        "the player runs again: {}",
+        proc_state(pid)
+    );
 
     // A second ▶ over a preview that was already playing answers false: that press must re-cue.
-    assert_eq!(leg::hold_paused(false), Some(false), "nothing was held, so the next press re-cues");
+    assert_eq!(
+        leg::hold_paused(false),
+        Some(false),
+        "nothing was held, so the next press re-cues"
+    );
 
     // ⏹ reaches a HELD player too (§F4.5 S6's ⏹ stops both players, frozen or not) — which is what makes
     // a freeze safe rather than a leak — and ends it for real. Freeze once more first: the hold flag lives
     // in the slot, so this is the state ⏹ must be able to end.
-    assert_eq!(leg::hold_paused(true), Some(true), "⏸ over an already-held preview still reports a hold");
+    assert_eq!(
+        leg::hold_paused(true),
+        Some(true),
+        "⏸ over an already-held preview still reports a hold"
+    );
     let (_stopped, killed) = leg::stop_running();
     assert_eq!(killed, vec![pid], "⏹ names the player it ended");
     // The slot is empty now, and `stop` clears the held flag with it: after ⏹ there is nothing to freeze,
     // so a ▶ on the next press starts a fresh preview rather than thawing one that no longer exists.
-    assert_eq!(leg::hold_paused(true), None, "with nothing running there is nothing to freeze");
-    assert!(leg::running_children().is_empty(), "the slot is empty after ⏹");
+    assert_eq!(
+        leg::hold_paused(true),
+        None,
+        "with nothing running there is nothing to freeze"
+    );
+    assert!(
+        leg::running_children().is_empty(),
+        "the slot is empty after ⏹"
+    );
     reap(&spawned);
 }

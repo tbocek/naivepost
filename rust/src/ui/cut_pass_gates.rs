@@ -12,8 +12,8 @@ use crate::policy;
 use adw::prelude::*;
 use gtk4 as gtk;
 
-use crate::ui::window::refresh_effects_lane;
 use crate::ui::window as ui;
+use crate::ui::window::refresh_effects_lane;
 
 /// F3.9 S4's second door: what the model answered for one batch. `place` is a pure function of the reply, so
 /// the page can either collect calls from a live tool round or be handed them by a test that never dials a model
@@ -24,13 +24,6 @@ pub struct CaptionBatch {
     /// What came back: the `add_caption` calls, before any validation.
     pub calls: Vec<crate::cut_captions::Call>,
 }
-
-
-
-
-
-
-
 
 /// F3.10's label. As with ✐ Captions, the spec's flowchart starts at a model call and names no control: a named
 /// button is the decision taken in its spirit, so the pass can be started and its gate seen.
@@ -79,7 +72,13 @@ pub fn run_captions_pass(window: &adw::ApplicationWindow) -> String {
         // One attempt, then the retry `retries` allows, then give up on THIS batch only.
         let mut accepted: Option<Vec<crate::cut::Fx>> = None;
         for runs_so_far in 1..=2u32 {
-            let reply = ask_captions(window, &ui::user_context(window), &clips, &runs, runs_so_far);
+            let reply = ask_captions(
+                window,
+                &ui::user_context(window),
+                &clips,
+                &runs,
+                runs_so_far,
+            );
             match crate::cut_captions::place(&clips, &reply) {
                 crate::cut_captions::Reply::Accepted(fx) => {
                     accepted = Some(fx);
@@ -142,7 +141,14 @@ fn ask_captions(
     };
     let (words, times) = hand_edit::session_words(&tree, &ui::session_sources(window));
     let offsets = crate::captions_ask::offsets_in_clips(runs, &words, &times);
-    let asked = crate::captions_ask::ask(&tree, context, clips, &offsets, attempt, &crate::cancel_leg::cancel_check_now());
+    let asked = crate::captions_ask::ask(
+        &tree,
+        context,
+        clips,
+        &offsets,
+        attempt,
+        &crate::cancel_leg::cancel_check_now(),
+    );
     if asked.failed {
         ui::log_line(&format!("!!! captions: {reason}", reason = asked.reason));
     }

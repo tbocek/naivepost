@@ -16,12 +16,12 @@
 
 use crate::cut::{Fx, Lane, Seg};
 use crate::cut_hear;
-use crate::tools::cutpass::MIN_CLIP_SECONDS;
 use crate::narrate_preview;
 use crate::narrate_screen;
 use crate::narration::{self, Entry};
 use crate::project::{self, Produce, Subtitles};
 use crate::render_fx;
+use crate::tools::cutpass::MIN_CLIP_SECONDS;
 use crate::tools::mm_ss;
 
 // ---- S1: the scratch folder -------------------------------------------------------
@@ -69,7 +69,11 @@ pub enum Speak {
 /// [`crate::narrate_off::lines_to_speak`] uses). The list holds the **words** to speak, in the record's
 /// order: which wav each one lands in is [`crate::narration::tts_key`]'s answer, and asking it here would
 /// make this function depend on the voice and the emotion blend it does not have.
-pub fn speak_job(voice_is_captions: bool, entries: &[Entry], wav_exists: impl Fn(&Entry) -> bool) -> Speak {
+pub fn speak_job(
+    voice_is_captions: bool,
+    entries: &[Entry],
+    wav_exists: impl Fn(&Entry) -> bool,
+) -> Speak {
     if voice_is_captions {
         return Speak::Nothing;
     }
@@ -101,7 +105,9 @@ pub fn synthesis_failure_log(seconds: f64, reason: &str) -> String {
 /// other choice already carries them in the picture or in a track.
 pub fn captions_only_warning(subtitles: Subtitles) -> Option<&'static str> {
     match subtitles {
-        Subtitles::None => Some(">>> captions only and nothing in the video — the lines are in the .srt beside it"),
+        Subtitles::None => {
+            Some(">>> captions only and nothing in the video — the lines are in the .srt beside it")
+        }
         _ => None,
     }
 }
@@ -220,7 +226,12 @@ pub fn plan_clips(
         let rate = if seg.rate > 0.0 { seg.rate } else { 1.0 };
         let on_screen = crate::narrate_pass::on_screen(seg);
         if on_screen < MIN_CLIP_SECONDS {
-            logs.push(too_short_log(no, seg.s, on_screen, lost_lines(entries, seg)));
+            logs.push(too_short_log(
+                no,
+                seg.s,
+                on_screen,
+                lost_lines(entries, seg),
+            ));
             continue;
         }
         let heard: Vec<String> = lanes
@@ -228,11 +239,11 @@ pub fn plan_clips(
             .filter(|lane| lane_heard(lane, seg))
             .map(|lane| lane.name.clone())
             .collect();
-    // §9's reach rule, asked per clip: a lane-named cue acts only where that lane is heard, so a duck
-    // aimed at a silent recording is not counted as work the encode has to do. A whole-bed cue reaches
-    // whatever the scene hears — INCLUDING nothing at all, which is a card's own sound (§9: the render
-    // applies a volume over a card's own sound, as the preview does; asking "is any of these lanes heard"
-    // of a bed cue dropped every cue for a card, because a card hears no lane).
+        // §9's reach rule, asked per clip: a lane-named cue acts only where that lane is heard, so a duck
+        // aimed at a silent recording is not counted as work the encode has to do. A whole-bed cue reaches
+        // whatever the scene hears — INCLUDING nothing at all, which is a card's own sound (§9: the render
+        // applies a volume over a card's own sound, as the preview does; asking "is any of these lanes heard"
+        // of a bed cue dropped every cue for a card, because a card hears no lane).
         let cues = render_fx::all_gain_cues(&fx, seg.s, rate, on_screen)
             .into_iter()
             .filter(|cue| cue.reaches_the_clip(&heard))
@@ -410,7 +421,8 @@ pub fn fit_in(
     // 3 · speed up to the ceiling and pack again at the new tempo. The line that gets a tempo is the one
     // whose wav will be asked for it, so the log names what the listener is about to hear.
     let tempo = needed_tempo(lines, room).min(MAX_TEMPO);
-    let final_slide = (run_end(&pack(lines, tempo, 0.0)) + TAIL_SECONDS - room).clamp(0.0, slide_of(lines));
+    let final_slide =
+        (run_end(&pack(lines, tempo, 0.0)) + TAIL_SECONDS - room).clamp(0.0, slide_of(lines));
     let sped = pack(lines, tempo, -final_slide);
     if (tempo - 1.0).abs() > f64::EPSILON {
         logs.push(moved_log(no, final_slide));
@@ -517,7 +529,9 @@ pub fn moved_log(no: usize, seconds: f64) -> String {
 
 /// F4.3 (`"clip N: narration X s does not fit Y s — sped up Zx"`).
 pub fn sped_up_log(no: usize, speech: f64, room: f64, tempo: f64) -> String {
-    format!("clip {no}: narration {speech:.1} s does not fit {room:.1} s \u{2014} sped up {tempo:.2}x")
+    format!(
+        "clip {no}: narration {speech:.1} s does not fit {room:.1} s \u{2014} sped up {tempo:.2}x"
+    )
 }
 
 // ---- S3's lane mixes -------------------------------------------------------------
@@ -555,7 +569,8 @@ fn lane_heard(lane: &Lane, seg: &Seg) -> bool {
 /// no run to read: it follows the picture's clock or is silent.
 pub fn read_head_plan(seg: &Seg, fx: &[Fx]) -> Option<(f64, f64)> {
     let own = fx.iter().any(|effect| {
-        effect.effect_kind() == Some(crate::cut::EffectKind::Speed) && matches!(effect.snd.as_str(), "own" | "scene")
+        effect.effect_kind() == Some(crate::cut::EffectKind::Speed)
+            && matches!(effect.snd.as_str(), "own" | "scene")
     });
     own.then_some((seg.s, seg.e))
 }
@@ -637,7 +652,12 @@ pub fn frame_rate_args(frame_rate: &str, vfr: bool) -> Vec<String> {
         return Vec::new();
     }
     if vfr {
-        return vec!["-fps_mode".into(), "vfr".into(), "-fpsmax".into(), frame_rate.into()];
+        return vec![
+            "-fps_mode".into(),
+            "vfr".into(),
+            "-fpsmax".into(),
+            frame_rate.into(),
+        ];
     }
     vec![
         "-fps_mode".into(),
@@ -687,7 +707,10 @@ pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec
             chain.push(filter);
         }
     }
-    chain.extend(frame_rate_filter(frame_rate_name(settings.frame_rate), settings.vfr));
+    chain.extend(frame_rate_filter(
+        frame_rate_name(settings.frame_rate),
+        settings.vfr,
+    ));
     if settings.blurred_edges {
         // §4's "blurred": a blown-up, blurred copy of the picture centred behind the frame. The sigma
         // is derived here by [`blur_sigma`] from the finished height — [`BLUR_SIGMA_FRACTION`] of it,
@@ -732,7 +755,12 @@ fn frame_rate_filter(frame_rate: &str, vfr: bool) -> Vec<String> {
 /// the narration at `P.policy.gameVolume` → limiter → format. Extends [`render_fx::audio_order`] rather than
 /// re-listing it: that answer is where the volume cues sit relative to the lane mix, and this is everything
 /// around it.
-pub fn audio_chain(clip: &Clip, settings: &Produce, lanes: usize, hush: &[(f64, f64)]) -> Vec<String> {
+pub fn audio_chain(
+    clip: &Clip,
+    settings: &Produce,
+    lanes: usize,
+    hush: &[(f64, f64)],
+) -> Vec<String> {
     let mut chain = Vec::new();
     if (clip.rate - 1.0).abs() > f64::EPSILON {
         chain.push(render_fx::atempo_chain(clip.rate));
@@ -752,7 +780,10 @@ pub fn audio_chain(clip: &Clip, settings: &Produce, lanes: usize, hush: &[(f64, 
     chain.extend(built.audio.iter().cloned());
     let dips = chain.iter().any(|f| f.starts_with("afade="));
     if !dips {
-        chain.push(format!("afade=t=out:st=0:d={}", crate::fx_lane::SOUND_DIP_SECONDS));
+        chain.push(format!(
+            "afade=t=out:st=0:d={}",
+            crate::fx_lane::SOUND_DIP_SECONDS
+        ));
     }
     for line in &clip.lines {
         if line.speech <= 0.0 {
@@ -761,7 +792,11 @@ pub fn audio_chain(clip: &Clip, settings: &Produce, lanes: usize, hush: &[(f64, 
         // P.policy.gameVolume is the bed's level, not the voice's: the narration rides at full level over a
         // bed turned down to it, which is why the number appears on the lane side of the mix.
         chain.push(format!("volume={:.2}", settings.game_volume));
-        chain.push(format!("adelay={}ms|{}ms", (line.at * 1000.0).round() as i64, (line.at * 1000.0).round() as i64));
+        chain.push(format!(
+            "adelay={}ms|{}ms",
+            (line.at * 1000.0).round() as i64,
+            (line.at * 1000.0).round() as i64
+        ));
     }
     chain.push("amix=duration=first:normalize=0".into());
     chain.push(LIMITER.into());
@@ -897,7 +932,12 @@ pub fn encode_command_with(
     for (kind, path) in inputs {
         match (*kind, path) {
             ("sound", None) => {
-                argv.extend(["-f".into(), "lavfi".into(), "-i".into(), "anullsrc=r=48000:cl=stereo".into()]);
+                argv.extend([
+                    "-f".into(),
+                    "lavfi".into(),
+                    "-i".into(),
+                    "anullsrc=r=48000:cl=stereo".into(),
+                ]);
             }
             (_, Some(path)) => {
                 if matches!(*kind, "text" | "svg" | "still") {
@@ -924,7 +964,10 @@ pub fn encode_command_with(
         format!("[0:v]{video}[v];[0:a]{audio}[a]"),
     ]);
     argv.extend(codec_args(settings));
-    argv.extend(frame_rate_args(frame_rate_name(settings.frame_rate), settings.vfr));
+    argv.extend(frame_rate_args(
+        frame_rate_name(settings.frame_rate),
+        settings.vfr,
+    ));
     argv.extend([
         "-c:a".into(),
         audio_codec(settings.container).into(),
@@ -961,7 +1004,8 @@ pub fn join_mismatch(first: (i32, i32), size: (i32, i32)) -> Option<String> {
 /// The sentence [`join_mismatch`] says, spelled once so the walk's probed-size loop and the rule test quote
 /// the same spec line (§B: "…the join is a stream copy and cannot mix sizes, so the video breaks at this
 /// clip").
-pub const JOIN_MISMATCH: &str = "!!! the join is a stream copy and cannot mix sizes, so the video breaks \
+pub const JOIN_MISMATCH: &str =
+    "!!! the join is a stream copy and cannot mix sizes, so the video breaks \
 at this clip";
 
 // ---- S6: join by stream copy -----------------------------------------------------
@@ -1012,7 +1056,10 @@ pub fn stages() -> Vec<(&'static str, &'static str)> {
         ("subtitles", "build the cues on the produced clock"),
         ("clip", "encode each clip"),
         ("joining", "join the clips by stream copy"),
-        ("translating", "translate the cues into the ticked languages"),
+        (
+            "translating",
+            "translate the cues into the ticked languages",
+        ),
         ("muxing", "loudness, subtitle tracks and the container"),
         ("sidecars", "write the .srt and .vtt beside the video"),
         ("stamp", "record what this file is up to date with"),

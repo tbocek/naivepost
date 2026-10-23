@@ -52,7 +52,10 @@ pub const PASS_TWO: [(&str, &str); 3] = [
 /// One rename, logged either way. `Ok` means it happened; `Err` means the folder
 /// is untouched and the caller logs [`failure_line`].
 fn move_folder(dir: &Path, from: &str, to: &str) -> Result<Moved, (Moved, String)> {
-    let moved = Moved { from: from.into(), to: to.into() };
+    let moved = Moved {
+        from: from.into(),
+        to: to.into(),
+    };
     let (source, target) = (dir.join(from), dir.join(to));
     if !source.is_dir() {
         return Err((moved, "there is nothing under the old name".into()));
@@ -108,7 +111,10 @@ pub fn pass_two(dir: &Path) -> (Vec<Moved>, Vec<String>) {
     // The removal is a plain `remove_dir`, not a recursive delete: anything still
     // in there is not ours to throw away, and the call simply fails when it is.
     if fs::remove_dir(dir.join("understand")).is_ok() {
-        moved.push(Moved { from: "understand".into(), to: String::new() });
+        moved.push(Moved {
+            from: "understand".into(),
+            to: String::new(),
+        });
     }
     (moved, failures)
 }

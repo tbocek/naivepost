@@ -8,9 +8,9 @@
 use std::fs;
 use std::path::PathBuf;
 
+use naivepost::layout::Tree;
 use naivepost::retakes;
 use naivepost::retakes_ask;
-use naivepost::layout::Tree;
 use naivepost::tools::retakes::{Line, Mark, Marks, Trim};
 
 /// A scratch project folder, the way `tests/suite/prepare_run_flow.rs::scratch` makes one. Never cwd at
@@ -47,9 +47,21 @@ fn words(text: &str) -> Vec<String> {
 fn f1_9_s1_too_few_lines_marks_nothing_but_still_writes_the_file() {
     // P.machine.retakeCeil is irrelevant at this size; the gate is a line count.
     let short = vec![
-        Line { n: 1, start: 0.0, end: 0.5 },
-        Line { n: 2, start: 1.0, end: 1.5 },
-        Line { n: 3, start: 2.0, end: 2.5 },
+        Line {
+            n: 1,
+            start: 0.0,
+            end: 0.5,
+        },
+        Line {
+            n: 2,
+            start: 1.0,
+            end: 1.5,
+        },
+        Line {
+            n: 3,
+            start: 2.0,
+            end: 2.5,
+        },
     ];
     assert!(retakes::too_few(&short), "three lines is fewer than four");
     assert!(!retakes::too_few(&six_lines()), "four or more proceeds");
@@ -61,8 +73,15 @@ fn f1_9_s1_too_few_lines_marks_nothing_but_still_writes_the_file() {
     assert!(lines[0].contains("fewer than 4"), "and says why: {lines:?}");
     // The empty file is written on purpose, so the caller writes even when nothing was found.
     retakes::write_marks(&tree, &[], &[], &[]).expect("empty file written");
-    assert!(tree.retakes_tsv().exists(), "an empty retakes.tsv still exists");
-    assert_eq!(fs::read_to_string(tree.retakes_tsv()).unwrap(), "", "and is empty");
+    assert!(
+        tree.retakes_tsv().exists(),
+        "an empty retakes.tsv still exists"
+    );
+    assert_eq!(
+        fs::read_to_string(tree.retakes_tsv()).unwrap(),
+        "",
+        "and is empty"
+    );
 }
 
 // ---- S2 ---------------------------------------------------------------------
@@ -73,12 +92,27 @@ fn f1_9_s1_too_few_lines_marks_nothing_but_still_writes_the_file() {
 fn f1_9_s2_a_pause_of_1_5_seconds_is_drawn_and_1_4_is_not() {
     // Gap before line 2 is 1.5 s; before line 3 it is 1.4 s.
     let lines = vec![
-        Line { n: 1, start: 0.0, end: 1.0 },
-        Line { n: 2, start: 2.5, end: 3.0 },
-        Line { n: 3, start: 4.4, end: 5.0 },
+        Line {
+            n: 1,
+            start: 0.0,
+            end: 1.0,
+        },
+        Line {
+            n: 2,
+            start: 2.5,
+            end: 3.0,
+        },
+        Line {
+            n: 3,
+            start: 4.4,
+            end: 5.0,
+        },
     ];
     let brief = retakes::brief(&lines, &[]);
-    assert!(brief.contains("2 (1.5s pause)"), "exactly 1.5 s draws the marker: {brief}");
+    assert!(
+        brief.contains("2 (1.5s pause)"),
+        "exactly 1.5 s draws the marker: {brief}"
+    );
     assert!(!brief.contains("4.4"), "the raw second is never printed");
     assert!(
         !brief.contains("3 (1.4s pause)") && !brief.contains("1.4"),
@@ -101,7 +135,11 @@ fn f1_9_s2_a_source_change_inserts_the_separator() {
         .iter()
         .position(|l| *l == "--- the recording stops here; the next one begins ---")
         .expect("the separator is present verbatim");
-    assert_eq!(lines[at + 1], "4", "it sits in front of the line that begins the new recording");
+    assert_eq!(
+        lines[at + 1],
+        "4",
+        "it sits in front of the line that begins the new recording"
+    );
     assert_eq!(
         retakes::SOURCE_CHANGE_LINE,
         "--- the recording stops here; the next one begins ---",
@@ -117,7 +155,8 @@ fn f1_9_s2_a_source_change_inserts_the_separator() {
 /// digest the pool really files under and not a look-alike. The system half is §8's assembled message,
 /// because that is the text the pool sends and §6 keys a slot on what went out.
 fn slot_for(paths: &naivepost::settings::Paths, brief: &str, model: &str, run: usize) -> String {
-    retakes_ask::run_key(&retakes_ask::system_message(paths, ""), brief, model, run).expect("a brief always keys")
+    retakes_ask::run_key(&retakes_ask::system_message(paths, ""), brief, model, run)
+        .expect("a brief always keys")
 }
 
 /// S3: each pooled run gets its own cache slot -- the run index is in the key, or the pool collapses
@@ -130,8 +169,9 @@ fn f1_9_s3_each_pooled_run_gets_its_own_cache_slot() {
         config_dir: std::env::temp_dir().join("naivepost-retake-slot-cfg"),
         data_dir: std::env::temp_dir().join("naivepost-retake-slot-data"),
     };
-    let slots: Vec<String> =
-        (0..retakes::RUNS).map(|run| slot_for(&paths, "the brief", "qwen3", run)).collect();
+    let slots: Vec<String> = (0..retakes::RUNS)
+        .map(|run| slot_for(&paths, "the brief", "qwen3", run))
+        .collect();
     assert_eq!(slots.len(), 3, "P.machine.retakeRuns = 3");
     assert_eq!(retakes::RUNS, naivepost::roles::RETAKE_RUNS_POOLED as usize);
     let distinct: std::collections::HashSet<&String> = slots.iter().collect();
@@ -150,7 +190,9 @@ fn f1_9_s3_each_pooled_run_gets_its_own_cache_slot() {
     let first = slot_for(&paths, "the brief", "qwen3", 0);
     assert_eq!(first.len(), 64, "a sha256 hex digest names the file");
     assert!(
-        first.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        first
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "lowercase hex: {first}"
     );
     // And the model that answered is part of it (§6's rewrite addition): another model draws again.
@@ -181,7 +223,11 @@ fn f1_9_s3_pooled_answers_dedupe_to_the_unique_set() {
     let mut other_again = mk(2, 4);
     other_again.again = None;
     let deduped = retakes::dedupe(vec![mk(2, 4), other_again]);
-    assert_eq!(deduped.len(), 1, "the pair (from,to) is the identity of a mark");
+    assert_eq!(
+        deduped.len(),
+        1,
+        "the pair (from,to) is the identity of a mark"
+    );
 }
 
 /// S3: the prototype's strict JSON shape parses, and a bad payload yields no answer instead of a panic.
@@ -198,8 +244,14 @@ fn f1_9_s3_the_answer_shape_parses_and_a_bad_payload_is_not_fatal() {
         retakes::parse_answer(r#"{"abandoned":[{"from":3,"to":4}]}"#),
         vec![(3, 4, 0)]
     );
-    assert!(retakes::parse_answer("not json at all").is_empty(), "a broken payload sets the run aside");
-    assert!(retakes::parse_answer("{}").is_empty(), "no `abandoned` key is no answer");
+    assert!(
+        retakes::parse_answer("not json at all").is_empty(),
+        "a broken payload sets the run aside"
+    );
+    assert!(
+        retakes::parse_answer("{}").is_empty(),
+        "no `abandoned` key is no answer"
+    );
     assert!(
         retakes::parse_answer(r#"{"abandoned":[{"from":"x","to":2,"again":3}]}"#).is_empty(),
         "a non-numeric line number is dropped rather than guessed"
@@ -214,15 +266,30 @@ fn f1_9_s3_the_answer_shape_parses_and_a_bad_payload_is_not_fatal() {
 fn f1_9_s4_a_removal_under_the_minimum_is_dropped_as_a_breath() {
     // Lines 1-2 spanning 0.0 .. 0.2: 0.2 s to remove.
     let lines = vec![
-        Line { n: 1, start: 0.0, end: 0.1 },
-        Line { n: 2, start: 0.1, end: 0.2 },
-        Line { n: 3, start: 5.0, end: 6.0 },
+        Line {
+            n: 1,
+            start: 0.0,
+            end: 0.1,
+        },
+        Line {
+            n: 2,
+            start: 0.1,
+            end: 0.2,
+        },
+        Line {
+            n: 3,
+            start: 5.0,
+            end: 6.0,
+        },
     ];
     let marks = Marks::new(lines.clone(), 10.0);
     let out = retakes::verify(&marks, 1, 2, Some(3), None, false, false);
     match out {
         retakes::Outcome::Dropped(reason) => {
-            assert!(reason.contains("breath"), "the reason names itself: {reason}");
+            assert!(
+                reason.contains("breath"),
+                "the reason names itself: {reason}"
+            );
         }
         other => panic!("a 0.2 s removal must be dropped, got {other:?}"),
     }
@@ -294,15 +361,36 @@ fn f1_9_s4_the_fuzzy_matcher_finds_a_repeat_with_skips_and_one_edit_words() {
         Some(1)
     );
     // A shared prefix of 3 bytes counts; two letters do not.
-    assert!(retakes::word_matches("lecture", "lecturer"), "shared 3-byte prefix");
-    assert!(retakes::word_matches("chain", "chein"), "one substitution is one edit");
-    assert!(retakes::word_matches("record", "records"), "one insertion is one edit");
-    assert!(retakes::word_matches("cat", "cats"), "one deletion is one edit");
+    assert!(
+        retakes::word_matches("lecture", "lecturer"),
+        "shared 3-byte prefix"
+    );
+    assert!(
+        retakes::word_matches("chain", "chein"),
+        "one substitution is one edit"
+    );
+    assert!(
+        retakes::word_matches("record", "records"),
+        "one insertion is one edit"
+    );
+    assert!(
+        retakes::word_matches("cat", "cats"),
+        "one deletion is one edit"
+    );
     // "ab"/"ac" IS one edit apart (one substitution), so it matches: the prefix rule needs 3 bytes,
     // but the one-edit rule has no length floor. Two edits is where it stops.
-    assert!(retakes::word_matches("ab", "ac"), "one substitution is one edit at any length");
-    assert!(!retakes::word_matches("ab", "cd"), "two edits apart is not a match");
-    assert!(!retakes::word_matches("alpha", "omega"), "nothing alike is not a match");
+    assert!(
+        retakes::word_matches("ab", "ac"),
+        "one substitution is one edit at any length"
+    );
+    assert!(
+        !retakes::word_matches("ab", "cd"),
+        "two edits apart is not a match"
+    );
+    assert!(
+        !retakes::word_matches("alpha", "omega"),
+        "nothing alike is not a match"
+    );
 
     // Below 70 % matched is no repeat at all.
     let weak = words("completely different opening words here not matching our sentence today");
@@ -310,8 +398,14 @@ fn f1_9_s4_the_fuzzy_matcher_finds_a_repeat_with_skips_and_one_edit_words() {
         retakes::repeated_tail_match(&attempt, &weak).is_none(),
         "a partial echo of one phrase is not a retake"
     );
-    assert!(retakes::repeated_tail_match(&[], &later).is_none(), "nothing to match");
-    assert!(retakes::repeated_tail_match(&attempt, &[]).is_none(), "nothing to match into");
+    assert!(
+        retakes::repeated_tail_match(&[], &later).is_none(),
+        "nothing to match"
+    );
+    assert!(
+        retakes::repeated_tail_match(&attempt, &[]).is_none(),
+        "nothing to match into"
+    );
 }
 
 /// S4: a rephrase keeps only the broken-off tail, and only while it is still fragment-sized.
@@ -320,9 +414,21 @@ fn f1_9_s4_the_fuzzy_matcher_finds_a_repeat_with_skips_and_one_edit_words() {
 fn f1_9_s4_a_rephrase_is_trimmed_to_the_broken_off_tail() {
     // Lines 1-3 span 0.0 .. 8.0; the fragment cap is 6 s, so 2 s are left standing at the front.
     let lines = vec![
-        Line { n: 1, start: 0.0, end: 3.0 },
-        Line { n: 2, start: 3.0, end: 6.0 },
-        Line { n: 3, start: 6.0, end: 8.0 },
+        Line {
+            n: 1,
+            start: 0.0,
+            end: 3.0,
+        },
+        Line {
+            n: 2,
+            start: 3.0,
+            end: 6.0,
+        },
+        Line {
+            n: 3,
+            start: 6.0,
+            end: 8.0,
+        },
     ];
     let marks = Marks::new(lines, 20.0);
     let out = retakes::verify(&marks, 1, 3, Some(4), None, true, false);
@@ -335,8 +441,16 @@ fn f1_9_s4_a_rephrase_is_trimmed_to_the_broken_off_tail() {
     );
     // A fragment shorter than a breath is dropped rather than cut.
     let tiny = vec![
-        Line { n: 1, start: 0.0, end: 0.1 },
-        Line { n: 2, start: 0.1, end: 0.2 },
+        Line {
+            n: 1,
+            start: 0.0,
+            end: 0.1,
+        },
+        Line {
+            n: 2,
+            start: 0.1,
+            end: 0.2,
+        },
     ];
     let marks = Marks::new(tiny, 20.0);
     let out = retakes::verify(&marks, 1, 2, Some(3), None, true, false);
@@ -352,7 +466,11 @@ fn f1_9_s4_a_refused_mark_is_reheard_rather_than_discarded() {
     let out = retakes::reheat(5, 9);
     match out {
         retakes::Outcome::Rehear { from, to } => {
-            assert_eq!((from, to), (5, 9), "both attempts get re-transcribed and asked about again");
+            assert_eq!(
+                (from, to),
+                (5, 9),
+                "both attempts get re-transcribed and asked about again"
+            );
         }
         other => panic!("expected Rehear, got {other:?}"),
     }
@@ -366,7 +484,10 @@ fn f1_9_s4_a_found_repeat_trims_the_mark_to_the_tail() {
     let marks = Marks::new(six_lines(), 40.0);
     let out = retakes::verify(&marks, 1, 4, Some(5), Some(2), false, false);
     let removed = out.removed().expect("a trimmed mark applies");
-    assert!(removed.0 > 0.0, "the front of the stretch is left standing: {removed:?}");
+    assert!(
+        removed.0 > 0.0,
+        "the front of the stretch is left standing: {removed:?}"
+    );
     assert!(
         matches!(out, retakes::Outcome::Applied { trimmed: true, .. }),
         "the trim is reported so the model knows its numbers were understood: {out:?}"
@@ -386,7 +507,11 @@ fn f1_9_s5_overlapping_marks_merge_into_one_span() {
         again: None,
     };
     let merged = retakes::merge_marks(vec![mk(5.0, 8.0), mk(7.0, 10.0)]);
-    assert_eq!(merged.len(), 1, "two overlapping removals are one cut: {merged:?}");
+    assert_eq!(
+        merged.len(),
+        1,
+        "two overlapping removals are one cut: {merged:?}"
+    );
     assert_eq!(merged[0].removed, (5.0, 10.0), "the union of the spans");
     assert!(merged[0].trimmed, "merging moved the shape, and says so");
 
@@ -405,9 +530,21 @@ fn f1_9_s5_overlapping_marks_merge_into_one_span() {
 fn f1_9_s5_edges_are_placed_by_f1_11_not_invented_here() {
     use naivepost::edges::AlignedWord;
     let words = vec![
-        AlignedWord { word: "one".into(), s: 0.0, e: 0.4 },
-        AlignedWord { word: "two".into(), s: 1.0, e: 1.4 },
-        AlignedWord { word: "three".into(), s: 3.0, e: 3.4 },
+        AlignedWord {
+            word: "one".into(),
+            s: 0.0,
+            e: 0.4,
+        },
+        AlignedWord {
+            word: "two".into(),
+            s: 1.0,
+            e: 1.4,
+        },
+        AlignedWord {
+            word: "three".into(),
+            s: 3.0,
+            e: 3.4,
+        },
     ];
     let marks = vec![naivepost::textfmt::Retake {
         s: 1.0,
@@ -432,9 +569,15 @@ fn f1_9_s5_edges_are_placed_by_f1_11_not_invented_here() {
 #[test]
 fn f1_9_s6_more_than_40_percent_is_refused_and_exactly_40_is_not() {
     assert!(retakes::over_ceiling(41.0, 100.0), "41 % is over");
-    assert!(!retakes::over_ceiling(40.0, 100.0), "exactly 40 % stayed inside the limit");
+    assert!(
+        !retakes::over_ceiling(40.0, 100.0),
+        "exactly 40 % stayed inside the limit"
+    );
     assert!(!retakes::over_ceiling(39.9, 100.0));
-    assert!(!retakes::over_ceiling(10.0, 0.0), "no speech means no share, and no refusal");
+    assert!(
+        !retakes::over_ceiling(10.0, 0.0),
+        "no speech means no share, and no refusal"
+    );
     assert_eq!(
         naivepost::tools::retakes::RETAKE_CEIL,
         0.4,
@@ -449,7 +592,11 @@ fn f1_9_s6_more_than_40_percent_is_refused_and_exactly_40_is_not() {
     assert_eq!(retakes::m_ss(59.0), "0:59");
     assert_eq!(retakes::m_ss(60.0), "1:00");
     assert_eq!(retakes::m_ss(105.4), "1:45");
-    assert_eq!(retakes::m_ss(3600.0), "60:00", "past an hour keeps counting minutes");
+    assert_eq!(
+        retakes::m_ss(3600.0),
+        "60:00",
+        "past an hour keeps counting minutes"
+    );
 }
 
 /// S6: the ceiling refusal reaches the entry point and leaves nothing marked.
@@ -498,8 +645,20 @@ fn f1_9_s7_the_completion_line_is_the_specs() {
 fn f1_9_s7_the_marks_round_trip_through_the_file_cut_reads() {
     let (_keep, tree) = scratch("s7");
     let marks = vec![
-        Mark { from: 2, to: 3, removed: (1.0, 2.5), trimmed: false, again: Some(4) },
-        Mark { from: 5, to: 6, removed: (4.0, 5.5), trimmed: true, again: None },
+        Mark {
+            from: 2,
+            to: 3,
+            removed: (1.0, 2.5),
+            trimmed: false,
+            again: Some(4),
+        },
+        Mark {
+            from: 5,
+            to: 6,
+            removed: (4.0, 5.5),
+            trimmed: true,
+            again: None,
+        },
     ];
     let texts = vec!["the first attempt".to_string(), "the second".to_string()];
     let written = retakes::write_marks(&tree, &marks, &texts, &[3.0, 0.0]).expect("written");
@@ -508,7 +667,10 @@ fn f1_9_s7_the_marks_round_trip_through_the_file_cut_reads() {
     assert_eq!(read.len(), 2, "{read:?}");
     assert_eq!(read[0].s, 1.0);
     assert_eq!(read[0].e, 2.5);
-    assert_eq!(read[0].again, 3.0, "the kept attempt's second survives the round trip");
+    assert_eq!(
+        read[0].again, 3.0,
+        "the kept attempt's second survives the round trip"
+    );
     assert_eq!(read[0].text, "the first attempt");
     assert_eq!(read[1].again, 0.0, "no replacement is written as 0");
 }
@@ -568,11 +730,22 @@ fn f1_9_s3_the_reach_rule_is_the_parameter_named_in_the_spec() {
     );
     // The tool itself refuses beyond it: line 6 starts far after line 1 ends.
     let far = vec![
-        Line { n: 1, start: 0.0, end: 1.0 },
-        Line { n: 2, start: 200.0, end: 201.0 },
+        Line {
+            n: 1,
+            start: 0.0,
+            end: 1.0,
+        },
+        Line {
+            n: 2,
+            start: 200.0,
+            end: 201.0,
+        },
     ];
     let mut marks = Marks::new(far, 400.0);
     let answer = marks.mark_abandoned(1, 1, Some(2), Trim::none());
-    assert!(answer.contains("error"), "beyond the reach it is refused: {answer}");
+    assert!(
+        answer.contains("error"),
+        "beyond the reach it is refused: {answer}"
+    );
     assert!(answer.contains("180"), "and says the limit: {answer}");
 }

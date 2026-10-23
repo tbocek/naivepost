@@ -12,6 +12,8 @@
 
 use std::path::PathBuf;
 
+use crate::common;
+use common::temp_dir;
 use naivepost::layout::{self, Tree};
 use naivepost::produce_data as data;
 use naivepost::produce_embed as embed;
@@ -19,8 +21,6 @@ use naivepost::produce_render as render;
 use naivepost::produce_stamp as stamp;
 use naivepost::project::{self, Container, Publish};
 use naivepost::publish;
-use crate::common;
-use common::{temp_dir};
 
 const ITEM: &str = "§08-produce#3-data";
 
@@ -52,7 +52,10 @@ fn sec_08_produce_3_data_s1_the_scratch_folder_holds_the_encodes() {
     // A per-clip encode lands in it, named `c%03d_<stamp>.<container>` by the module that encodes it.
     let clip = data::clip_path(&tree, 7, "17-25-30", "mp4");
     assert_eq!(clip.parent().unwrap(), tree.clips_dir());
-    assert_eq!(clip.file_name().unwrap(), format!("{}.mp4", render::clip_stem(7, "17-25-30")).as_str());
+    assert_eq!(
+        clip.file_name().unwrap(),
+        format!("{}.mp4", render::clip_stem(7, "17-25-30")).as_str()
+    );
     assert_eq!(clip.file_name().unwrap(), "c007_17-25-30.mp4");
     // The number is padded because the join list is read in name order.
     assert_eq!(
@@ -60,7 +63,9 @@ fn sec_08_produce_3_data_s1_the_scratch_folder_holds_the_encodes() {
         "c001_ab.mp4"
     );
     // And the container follows the row, so a webm run leaves no .mp4 behind to join.
-    assert!(data::clip_path(&tree, 2, "ab", "webm").to_string_lossy().ends_with(".webm"));
+    assert!(data::clip_path(&tree, 2, "ab", "webm")
+        .to_string_lossy()
+        .ends_with(".webm"));
 }
 
 #[test]
@@ -69,16 +74,27 @@ fn sec_08_produce_3_data_s1_clearing_the_scratch_folder_counts_and_keeps_it() {
     let (_root, tree) = tree_in("s1-clear");
     // A project that has never rendered has no scratch folder: nothing to clear is not an error.
     assert_eq!(data::clear_scratch(&tree), Ok(0));
-    assert!(!tree.clips_dir().exists(), "clearing must not create the folder");
+    assert!(
+        !tree.clips_dir().exists(),
+        "clearing must not create the folder"
+    );
 
     make_scratch(&tree);
     std::fs::write(data::clip_path(&tree, 1, "ab", "mp4"), b"clip").unwrap();
     std::fs::write(data::concat_path(&tree), b"file 'x'").unwrap();
-    assert_eq!(data::clear_scratch(&tree), Ok(2), "every file inside, and the count says so");
+    assert_eq!(
+        data::clear_scratch(&tree),
+        Ok(2),
+        "every file inside, and the count says so"
+    );
     // The folder itself stays: the render writes into it seconds later, and a missing folder is an
     // ffmpeg error with a worse message than this one.
     assert!(tree.clips_dir().is_dir());
-    assert_eq!(data::clear_scratch(&tree), Ok(0), "a second clear has nothing to say");
+    assert_eq!(
+        data::clear_scratch(&tree),
+        Ok(0),
+        "a second clear has nothing to say"
+    );
 }
 
 // ---- S2: produce/clips/final.srt ---------------------------------------------------
@@ -92,7 +108,11 @@ fn sec_08_produce_3_data_s2_the_working_cue_sheet_is_not_the_sidecar() {
     // the `<video>` tag read afterwards.
     let working = data::scratch_srt(&tree);
     assert_eq!(working, tree.clips_dir().join("final.srt"));
-    assert_ne!(working, tree.final_srt(None), "§3 would not list both if they were one file");
+    assert_ne!(
+        working,
+        tree.final_srt(None),
+        "§3 would not list both if they were one file"
+    );
 
     // Same stem on both sides — spelled from the module that owns the name, so a rename cannot leave
     // the two halves of a run writing to different videos.
@@ -145,7 +165,10 @@ fn sec_08_produce_3_data_s4_the_join_reads_one_list_from_the_scratch_folder() {
     let text = render::concat_list(&stems);
     assert_eq!(text.lines().count(), 2);
     assert!(text.starts_with("file '"), "{text}");
-    assert!(text.contains("c001_ab.mp4") && text.contains("c002_ab.mp4"), "{text}");
+    assert!(
+        text.contains("c001_ab.mp4") && text.contains("c002_ab.mp4"),
+        "{text}"
+    );
     assert!(
         text.find("c001").unwrap() < text.find("c002").unwrap(),
         "the join is in list order: {text}"
@@ -157,7 +180,10 @@ fn sec_08_produce_3_data_s4_the_join_reads_one_list_from_the_scratch_folder() {
     let joined = argv.join(" ");
     assert!(joined.contains("-f concat"), "{joined}");
     assert!(joined.contains("-safe 0"), "{joined}");
-    assert!(joined.contains(&format!("-i {}", list.display())), "{joined}");
+    assert!(
+        joined.contains(&format!("-i {}", list.display())),
+        "{joined}"
+    );
     assert!(joined.contains("-c copy"), "{joined}");
     assert!(joined.ends_with(&out.display().to_string()), "{joined}");
 }
@@ -191,10 +217,22 @@ fn sec_08_produce_3_data_s5_resolve_names_only_the_single_files() {
     assert_eq!(data::resolve(&tree, "final.<ext>"), None);
     assert_eq!(data::resolve(&tree, "clips/<encode>"), None);
     assert_eq!(data::resolve(&tree, "final[.<code>].srt"), None);
-    assert_eq!(data::resolve(&tree, "clips/final.srt"), Some(data::scratch_srt(&tree)));
-    assert_eq!(data::resolve(&tree, "clips/concat.txt"), Some(data::concat_path(&tree)));
-    assert_eq!(data::resolve(&tree, "final.stamp"), Some(tree.final_stamp()));
-    assert_eq!(data::resolve(&tree, "publish/publish.json"), Some(tree.publish_json()));
+    assert_eq!(
+        data::resolve(&tree, "clips/final.srt"),
+        Some(data::scratch_srt(&tree))
+    );
+    assert_eq!(
+        data::resolve(&tree, "clips/concat.txt"),
+        Some(data::concat_path(&tree))
+    );
+    assert_eq!(
+        data::resolve(&tree, "final.stamp"),
+        Some(tree.final_stamp())
+    );
+    assert_eq!(
+        data::resolve(&tree, "publish/publish.json"),
+        Some(tree.publish_json())
+    );
 }
 
 // ---- S6: produce/final.stamp --------------------------------------------------------
@@ -205,7 +243,10 @@ fn sec_08_produce_3_data_s6_the_stamp_sits_beside_the_video_and_decides_the_enco
     let (_root, tree) = tree_in("s6");
     // One path, two modules: §3 lists the file and F5.3 owns what is in it.
     assert_eq!(data::stamp_path(&tree), tree.final_stamp());
-    assert_eq!(data::stamp_path(&tree), tree.dir().join("produce/final.stamp"));
+    assert_eq!(
+        data::stamp_path(&tree),
+        tree.dir().join("produce/final.stamp")
+    );
     assert_ne!(data::stamp_path(&tree), tree.final_video("mp4"));
 
     // What ▶ reads: a stamp equal to this run's hash skips the encode; anything else encodes.
@@ -214,13 +255,19 @@ fn sec_08_produce_3_data_s6_the_stamp_sits_beside_the_video_and_decides_the_enco
     // A missing or unreadable file reads as None, and None means encode — the stamp may only ever
     // let a run skip work it can prove was done.
     assert_eq!(stamp::read_stamp(&tree), None);
-    assert!(!data::video_is_up_to_date(stamp::read_stamp(&tree).as_deref(), "abc"));
+    assert!(!data::video_is_up_to_date(
+        stamp::read_stamp(&tree).as_deref(),
+        "abc"
+    ));
     assert!(!stamp::skip_encode(None, ""));
 
     // Written and read back, it is the same answer.
     stamp::write_stamp(&tree, "abc").unwrap();
     assert_eq!(stamp::read_stamp(&tree).as_deref(), Some("abc"));
-    assert!(data::video_is_up_to_date(stamp::read_stamp(&tree).as_deref(), "abc"));
+    assert!(data::video_is_up_to_date(
+        stamp::read_stamp(&tree).as_deref(),
+        "abc"
+    ));
     // And it is not the thumbnail's stamp, which lives under publish/ and answers another question.
     assert_ne!(data::stamp_path(&tree), tree.thumbnail_stamp());
 }
@@ -241,8 +288,14 @@ fn sec_08_produce_3_data_s7_the_sidecars_are_two_files_per_track() {
         ["final.de.srt".to_string(), "final.de.vtt".to_string()]
     );
     // Both spellings land beside the video, and both are readable through Tree.
-    assert_eq!(tree.final_srt(None).parent(), tree.final_vtt(Some("de")).parent());
-    assert_eq!(tree.final_srt(None).file_name().unwrap(), data::sidecar_files("final", None)[0].as_str());
+    assert_eq!(
+        tree.final_srt(None).parent(),
+        tree.final_vtt(Some("de")).parent()
+    );
+    assert_eq!(
+        tree.final_srt(None).file_name().unwrap(),
+        data::sidecar_files("final", None)[0].as_str()
+    );
     assert_eq!(
         tree.final_vtt(Some("de")).file_name().unwrap(),
         data::sidecar_files("final", Some("de"))[1].as_str()
@@ -266,7 +319,10 @@ fn sec_08_produce_3_data_s7_stale_sidecars_are_deleted_by_exact_name() {
     );
     for name in &stale {
         assert!(!name.contains('*'), "{name} is a pattern, not a name");
-        assert!(name.starts_with("final."), "{name} belongs to another video");
+        assert!(
+            name.starts_with("final."),
+            "{name} belongs to another video"
+        );
     }
     // The poster and the tag are §3's own entries and never among the deletions: they are written by
     // the other half of ▶ and must survive a run that skipped the encode.
@@ -308,7 +364,11 @@ fn sec_08_produce_3_data_s9_the_record_exists_or_it_does_not() {
     // §5: "an existing publish.json means the upload text is written" — the file's existence is the
     // whole flag, so there is no boolean beside it to keep in step.
     assert!(!publish::is_written(&tree));
-    assert_eq!(data::written(&tree), Vec::<&str>::new(), "a fresh project has none of §3's groups");
+    assert_eq!(
+        data::written(&tree),
+        Vec::<&str>::new(),
+        "a fresh project has none of §3's groups"
+    );
 
     let mut record = Publish::default();
     record.title = "a title".to_string();
@@ -334,11 +394,18 @@ fn sec_08_produce_3_data_s9_the_first_frame_is_the_base_and_the_rest_are_referen
     // §5: "The first frame is the base the image model edits; the rest are references." Order is the
     // whole answer, which is why no index travels beside the list.
     let mut record = Publish::default();
-    record.frames = vec!["project:a.jpg".to_string(), "project:b.jpg".to_string(), "project:c.jpg".into()];
+    record.frames = vec![
+        "project:a.jpg".to_string(),
+        "project:b.jpg".to_string(),
+        "project:c.jpg".into(),
+    ];
     publish::save(&record, &tree).unwrap();
     let read = publish::load(&tree).unwrap();
     assert_eq!(publish::base(&read), Some("project:a.jpg"));
-    assert_eq!(publish::references(&read), ["project:b.jpg", "project:c.jpg"]);
+    assert_eq!(
+        publish::references(&read),
+        ["project:b.jpg", "project:c.jpg"]
+    );
 
     // A chosen frame rather than a drawn one is the `own` flag, and it is the only kind of thumbnail
     // that costs no model call.
@@ -378,9 +445,16 @@ fn sec_08_produce_3_data_s9_the_specs_file_round_trips_and_paths_stay_relative()
     let stored = &read.frames[0];
     assert!(stored.starts_with("project:"), "{stored}");
     let resolved = layout::resolve(tree.dir(), tree.dir(), stored);
-    assert_eq!(resolved, tree.dir().join("prepare/inputs/frames/a/2026-09-16_17-25-30.jpg"));
+    assert_eq!(
+        resolved,
+        tree.dir()
+            .join("prepare/inputs/frames/a/2026-09-16_17-25-30.jpg")
+    );
     // And the round trip out writes the same spelling back.
-    assert_eq!(layout::write_path(tree.dir(), tree.dir(), &resolved), *stored);
+    assert_eq!(
+        layout::write_path(tree.dir(), tree.dir(), &resolved),
+        *stored
+    );
 
     // Saving what was read changes nothing about where the file lives.
     publish::save(&read, &tree).unwrap();
@@ -411,7 +485,10 @@ fn sec_08_produce_3_data_s10_the_spec_line_is_every_file_in_three_groups() {
     );
     for entry in data::DATA_FILES {
         assert!(!entry.is_empty(), "an empty entry would name nothing");
-        assert!(!entry.starts_with("produce/"), "{entry} repeats the folder §3 is about");
+        assert!(
+            !entry.starts_with("produce/"),
+            "{entry} repeats the folder §3 is about"
+        );
         assert!(!entry.contains(".."), "{entry} leaves the project");
     }
 }
@@ -425,7 +502,11 @@ fn sec_08_produce_3_data_s10_each_group_has_the_lifetime_the_spec_gives_it() {
         assert_eq!(data::kind(entry), Kind::Scratch, "{entry} is inside clips/");
     }
     for entry in &data::DATA_FILES[4..10] {
-        assert_eq!(data::kind(entry), Kind::Output, "{entry} sits beside the video");
+        assert_eq!(
+            data::kind(entry),
+            Kind::Output,
+            "{entry} sits beside the video"
+        );
     }
     assert_eq!(data::kind(data::DATA_FILES[10]), Kind::State);
 
@@ -461,10 +542,22 @@ fn sec_08_produce_3_data_s10_every_path_stays_inside_the_project() {
     ];
     assert_eq!(paths.len(), 11, "one path per entry of §3's line");
     for path in &paths {
-        assert!(path.starts_with(tree.dir()), "{} leaves the project", path.display());
-        assert!(data::in_produce(&tree, path), "{} is not under produce/", path.display());
+        assert!(
+            path.starts_with(tree.dir()),
+            "{} leaves the project",
+            path.display()
+        );
+        assert!(
+            data::in_produce(&tree, path),
+            "{} is not under produce/",
+            path.display()
+        );
         // And nothing here is a directory: §3 lists files.
-        assert!(path.extension().is_some(), "{} has no extension", path.display());
+        assert!(
+            path.extension().is_some(),
+            "{} has no extension",
+            path.display()
+        );
     }
 }
 
@@ -475,7 +568,10 @@ fn sec_08_produce_3_data_s10_the_module_runs_nothing_itself() {
     // (`tool:ffmpeg.encode`) and are spawned elsewhere.
     let source = include_str!("../../src/produce_data.rs");
     for forbidden in ["std::process", "process::Command", "gtk4", "adw::"] {
-        assert!(!source.contains(forbidden), "{forbidden} does not belong in a pure module");
+        assert!(
+            !source.contains(forbidden),
+            "{forbidden} does not belong in a pure module"
+        );
     }
     assert!(source.contains("tool:ffmpeg.encode"));
 }

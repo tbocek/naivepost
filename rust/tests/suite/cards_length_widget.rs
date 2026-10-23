@@ -24,7 +24,10 @@ use naivepost::timeline::Recording;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip, tape, cut_button as button};
+use common::{
+    clip, cut_button as button, fixture_dir, hold_last_window, release_last_window, settle,
+    status_text, tape,
+};
 
 static RAN_LENGTH: AtomicBool = AtomicBool::new(false);
 static RAN_FIELD: AtomicBool = AtomicBool::new(false);
@@ -32,7 +35,11 @@ static RAN_APPLY: AtomicBool = AtomicBool::new(false);
 static RAN_ANSWER: AtomicBool = AtomicBool::new(false);
 
 /// Build a window already sitting on the Cut tab with the given tape and cut, the way the insert wire does.
-fn cut_page(app: &adw::Application, tape: &[Recording], seeded: &cut::Cut) -> adw::ApplicationWindow {
+fn cut_page(
+    app: &adw::Application,
+    tape: &[Recording],
+    seeded: &cut::Cut,
+) -> adw::ApplicationWindow {
     release_last_window();
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     assert!(
@@ -65,7 +72,9 @@ fn child_named(root: &impl AsRef<gtk::Widget>, name: &str) -> Option<gtk::Widget
     }
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if let Some(found) = child_named(&widget, name) {
             return Some(found);
         }
@@ -116,22 +125,43 @@ fn write_card_file(name: &str, doc: &str) -> String {
 /// S3 + §5: the form opens at the CARD'S OWN seconds. Nothing was handed to the seam, so `2.0` can only have come
 /// from reading the document — the fallback chain task 2 wired (`selection → file → default`).
 fn the_form_opens_at_the_cards_own_seconds(app: &adw::Application) {
-    let window = cut_page(app, &tape(), &cut::Cut { segs: vec![clip(0.0, 90.0)], ..Default::default() });
+    let window = cut_page(
+        app,
+        &tape(),
+        &cut::Cut {
+            segs: vec![clip(0.0, 90.0)],
+            ..Default::default()
+        },
+    );
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
     let path = timed_card("timed.svg");
     let said = ui::insert_chosen_with_length(&window, std::path::Path::new(&path), 20.0, None);
     settle();
     assert!(said.contains("timed.svg"), "{said}");
     let seconds = child_entry(&window, "insert-seconds").text().to_string();
-    assert_eq!(seconds, "2.0", "the card's last moving moment, not the default: {said}");
-    assert_ne!(seconds, format!("{:.1}", ins::DEFAULT_SECONDS), "P.policy.insertDefaultSeconds never reached this");
+    assert_eq!(
+        seconds, "2.0",
+        "the card's last moving moment, not the default: {said}"
+    );
+    assert_ne!(
+        seconds,
+        format!("{:.1}", ins::DEFAULT_SECONDS),
+        "P.policy.insertDefaultSeconds never reached this"
+    );
     window.close();
 }
 
 /// §5/S4: a card asked for with `?title=…` gets its declared hole's field, holding the path's value — the same
 /// split the render applies when it fills the document.
 fn the_paths_argument_lands_in_its_field(app: &adw::Application) {
-    let window = cut_page(app, &tape(), &cut::Cut { segs: vec![clip(0.0, 90.0)], ..Default::default() });
+    let window = cut_page(
+        app,
+        &tape(),
+        &cut::Cut {
+            segs: vec![clip(0.0, 90.0)],
+            ..Default::default()
+        },
+    );
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
     let asked = declared_card("declared.svg");
     // The chooser hands back the FILE; the parameters ride on the end of its path (§G), which is what fills the
@@ -144,16 +174,25 @@ fn the_paths_argument_lands_in_its_field(app: &adw::Application) {
         "the card's declared `title` hole has its own entry"
     );
     // A card chosen fresh has nothing typed yet: the field asks rather than guessing.
-    assert_eq!(child_entry(&window, "insert-field-title").text().as_str(), "");
+    assert_eq!(
+        child_entry(&window, "insert-field-title").text().as_str(),
+        ""
+    );
     // And its own length still arrives: a declared hole did not cost the card its timing.
-    assert_eq!(child_entry(&window, "insert-seconds").text().as_str(), "2.0");
+    assert_eq!(
+        child_entry(&window, "insert-seconds").text().as_str(),
+        "2.0"
+    );
     window.close();
 }
 
 /// S5: Apply writes the card and says §G's sentence — compared against [`ins::status_line`] called directly, so
 /// the drawn line and the logic's line are the same string rather than two guesses.
 fn apply_says_what_the_logic_would_say(app: &adw::Application) {
-    let seeded = cut::Cut { segs: vec![clip(0.0, 90.0)], ..Default::default() };
+    let seeded = cut::Cut {
+        segs: vec![clip(0.0, 90.0)],
+        ..Default::default()
+    };
     let was = cut_screen::cut_seconds(&seeded);
     let window = cut_page(app, &tape(), &seeded);
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
@@ -164,8 +203,16 @@ fn apply_says_what_the_logic_would_say(app: &adw::Application) {
     settle();
 
     let after = cut_of(&window);
-    let placed: &Seg = after.segs.iter().find(|seg| seg.is_insert()).expect("the card is in the cut");
-    assert_eq!((placed.s, placed.e), (20.0, 20.0), "BETWEEN splices: s == e");
+    let placed: &Seg = after
+        .segs
+        .iter()
+        .find(|seg| seg.is_insert())
+        .expect("the card is in the cut");
+    assert_eq!(
+        (placed.s, placed.e),
+        (20.0, 20.0),
+        "BETWEEN splices: s == e"
+    );
     assert_eq!(placed.dur, 2.0, "for the card's own two seconds");
     let now = cut_screen::cut_seconds(&after);
     let line = status_text(&window);
@@ -173,7 +220,10 @@ fn apply_says_what_the_logic_would_say(app: &adw::Application) {
     // written there rather than retyped here, so the two cannot drift.
     let how = "between the footage, which is cut open for it";
     let expected = ins::status_line(&path, 20.0, 2.0, how, now, was);
-    assert_eq!(line, expected, "the widget's sentence is the logic's sentence");
+    assert_eq!(
+        line, expected,
+        "the widget's sentence is the logic's sentence"
+    );
     window.close();
 }
 
@@ -182,7 +232,14 @@ fn apply_says_what_the_logic_would_say(app: &adw::Application) {
 /// writes no argument at all — the hole keeps its own fallback rather than being filled with emptiness — and a
 /// path that already carries one gains the new key without losing the old.
 fn typed_answers_land_on_the_paths_arguments(app: &adw::Application) {
-    let window = cut_page(app, &tape(), &cut::Cut { segs: vec![clip(0.0, 90.0)], ..Default::default() });
+    let window = cut_page(
+        app,
+        &tape(),
+        &cut::Cut {
+            segs: vec![clip(0.0, 90.0)],
+            ..Default::default()
+        },
+    );
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
 
     // (a) one hole, one answer: the stored source carries it, and the document that answers it has no hole left.
@@ -216,7 +273,11 @@ fn typed_answers_land_on_the_paths_arguments(app: &adw::Application) {
     // §5's other half, through the same press: the seconds in the entry are what the slot got. This call handed 4.0
     // as the form's opening number on purpose — a card's own length is offered (the check above), and an explicit
     // answer to the Seconds entry outranks it, which is the fallback chain `cut_insert::default_length` spells.
-    assert_eq!(placed.dur, 4.0, "what the entry held is what the slot got: {:?}", placed.ins);
+    assert_eq!(
+        placed.dur, 4.0,
+        "what the entry held is what the slot got: {:?}",
+        placed.ins
+    );
     // §8's arrival sentence leads the line: what the typed parameters did, then where the card landed.
     let said = status_text(&window);
     assert!(
@@ -234,7 +295,11 @@ fn typed_answers_land_on_the_paths_arguments(app: &adw::Application) {
         .into_iter()
         .map(|(name, _)| name)
         .collect();
-    assert_eq!(answered, vec!["title".to_string()], "that answer fills the hole it names");
+    assert_eq!(
+        answered,
+        vec!["title".to_string()],
+        "that answer fills the hole it names"
+    );
     assert!(
         !cards::fill(&doc, &args).contains("{{title}}"),
         "the filled document has no hole left for the producer to leave unfilled"
@@ -242,7 +307,14 @@ fn typed_answers_land_on_the_paths_arguments(app: &adw::Application) {
     window.close();
 
     // (b) nothing typed: no `?` at all, so the card is asked about as the bare file it is.
-    let window = cut_page(app, &tape(), &cut::Cut { segs: vec![clip(0.0, 90.0)], ..Default::default() });
+    let window = cut_page(
+        app,
+        &tape(),
+        &cut::Cut {
+            segs: vec![clip(0.0, 90.0)],
+            ..Default::default()
+        },
+    );
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
     ui::insert_chosen_with_length(&window, std::path::Path::new(&plain), 20.0, Some(4.0));
     settle();
@@ -253,11 +325,22 @@ fn typed_answers_land_on_the_paths_arguments(app: &adw::Application) {
         .into_iter()
         .find(|seg| seg.is_insert())
         .expect("the unanswered card is in the cut");
-    assert_eq!(bare.ins, plain, "an empty field writes no argument: {}", bare.ins);
+    assert_eq!(
+        bare.ins, plain,
+        "an empty field writes no argument: {}",
+        bare.ins
+    );
     window.close();
 
     // (c) a path that already carries an argument keeps it and gains the typed one, round-tripping split/join.
-    let window = cut_page(app, &tape(), &cut::Cut { segs: vec![clip(0.0, 90.0)], ..Default::default() });
+    let window = cut_page(
+        app,
+        &tape(),
+        &cut::Cut {
+            segs: vec![clip(0.0, 90.0)],
+            ..Default::default()
+        },
+    );
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
     // A card declaring TWO holes, so one answer can join an argument the path already carried instead of
     // replacing it. The chooser hands back the file; §G's parameters ride on the end of its path.
@@ -278,7 +361,10 @@ fn typed_answers_land_on_the_paths_arguments(app: &adw::Application) {
     // round-trips split/join so the render splits exactly what the form wrote. The seam stands in for the
     // chooser's FILE; `answer_path` is asked directly about a source that already carries `keep=on`, which is
     // the state a re-edited card's clip is in (§G keeps parameters on the end of the path).
-    let joined = ins::answer_path(&written, &[("title".to_string(), "Ranks & records".to_string())]);
+    let joined = ins::answer_path(
+        &written,
+        &[("title".to_string(), "Ranks & records".to_string())],
+    );
     let args = cards::split_path(&joined).args;
     assert_eq!(
         args.iter().filter(|(key, _)| key == "keep").count(),
@@ -315,7 +401,12 @@ fn field_entry(window: &adw::ApplicationWindow, name: &str) -> gtk::Entry {
     let holder = live_holder(window);
     child_named(&holder, name)
         .and_then(|w| w.downcast::<gtk::Entry>().ok())
-        .unwrap_or_else(|| panic!("the open insert form drew no {name} under {:?}", all_names(holder.upcast_ref())))
+        .unwrap_or_else(|| {
+            panic!(
+                "the open insert form drew no {name} under {:?}",
+                all_names(holder.upcast_ref())
+            )
+        })
 }
 
 /// Every widget name below `root`, so a miss says what WAS drawn rather than only what was not.
@@ -323,7 +414,9 @@ fn all_names(root: &gtk::Widget) -> Vec<String> {
     let mut out = vec![root.widget_name().to_string()];
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         out.extend(all_names(&widget));
     }
     out
@@ -352,7 +445,8 @@ fn window_round() {
 }
 
 #[test]
-fn sec_06_effects_5_cards_svg_inserts_wire_a_cards_own_length_reaches_the_form_through_real_widgets() {
+fn sec_06_effects_5_cards_svg_inserts_wire_a_cards_own_length_reaches_the_form_through_real_widgets(
+) {
     // Pin cwd BEFORE anything builds: the presses resolve the project through `startup::session_dir(current_dir())`,
     // and leaving it at rust/ writes a stray `rust/session.naivepost/` into the repo.
     let root = std::env::temp_dir().join(format!("np-card-len-root-{}", std::process::id()));
@@ -360,9 +454,18 @@ fn sec_06_effects_5_cards_svg_inserts_wire_a_cards_own_length_reaches_the_form_t
     std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
 
     window_round();
-    assert!(RAN_LENGTH.load(Ordering::SeqCst), "the offered-length check never ran");
-    assert!(RAN_FIELD.load(Ordering::SeqCst), "the declared-field check never ran");
-    assert!(RAN_APPLY.load(Ordering::SeqCst), "the Apply check never ran");
+    assert!(
+        RAN_LENGTH.load(Ordering::SeqCst),
+        "the offered-length check never ran"
+    );
+    assert!(
+        RAN_FIELD.load(Ordering::SeqCst),
+        "the declared-field check never ran"
+    );
+    assert!(
+        RAN_APPLY.load(Ordering::SeqCst),
+        "the Apply check never ran"
+    );
     assert!(
         RAN_ANSWER.load(Ordering::SeqCst),
         "the typed-answer-to-path check never ran"

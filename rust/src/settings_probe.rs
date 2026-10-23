@@ -18,8 +18,8 @@ use std::rc::Rc;
 use crate::checks::{self, SdCaps, SdProbe};
 use crate::services::{self, Endpoint, Kind, Server};
 use crate::settings::Conf;
-use crate::ui::settings::Provider;
 use crate::settings_probe_rows;
+use crate::ui::settings::Provider;
 
 /// The provider a real session installs: the three HTTP rows go out over the wire through
 /// [`probe`]; every other row keeps `fallback`. Composed HERE rather than inside
@@ -71,7 +71,9 @@ pub const AUDIO_ROW_TASKS: [(&str, &str); 4] = [
 
 /// The (label, task) pair behind one row key, or `None` for a key that is not an audio row.
 fn audio_row_pair(key: &str) -> Option<(&'static str, &'static str)> {
-    let (_, task) = AUDIO_ROW_TASKS.into_iter().find(|(row_key, _)| *row_key == key)?;
+    let (_, task) = AUDIO_ROW_TASKS
+        .into_iter()
+        .find(|(row_key, _)| *row_key == key)?;
     checks::AUDIO_ROWS
         .into_iter()
         .find(|(_, row_task)| *row_task == task)
@@ -120,16 +122,35 @@ pub fn probe(key: &str, typed: &str) -> Result<String, String> {
             // §5's sentence carries a number: "healthy in N ms". The health call is timed here rather
             // than assumed, so the row reports what this address actually took to answer.
             let began = std::time::Instant::now();
-            get(&tree, Server::Audio, &endpoint, Kind::Health, "health", None)?;
+            get(
+                &tree,
+                Server::Audio,
+                &endpoint,
+                Kind::Health,
+                "health",
+                None,
+            )?;
             let health_ms = u64::try_from(began.elapsed().as_millis()).unwrap_or(u64::MAX);
-            let models = services::parse_models(
-                &get(&tree, Server::Audio, &endpoint, Kind::ListModels, "models", None)?,
-            );
+            let models = services::parse_models(&get(
+                &tree,
+                Server::Audio,
+                &endpoint,
+                Kind::ListModels,
+                "models",
+                None,
+            )?);
             Ok(checks::audio_health_verdict(health_ms, &models)?)
         }
         "sd" => {
             let endpoint = image_at(&conf, typed);
-            match get(&tree, Server::Image, &endpoint, Kind::Capabilities, "capabilities", None) {
+            match get(
+                &tree,
+                Server::Image,
+                &endpoint,
+                Kind::Capabilities,
+                "capabilities",
+                None,
+            ) {
                 Ok(body) => {
                     let caps = sd_caps(&body);
                     Ok(checks::sd_verdict(Ok(&caps))?)
@@ -138,8 +159,15 @@ pub fn probe(key: &str, typed: &str) -> Result<String, String> {
                     // The two failures are fixed differently, so tell them apart rather than
                     // reporting one word for both: an OpenAI-shaped tenant answers /v1/models and
                     // not the sdcpp API; nothing answering is simply not up.
-                    let openai_only = get(&tree, Server::Image, &endpoint, Kind::ListModels, "models", None)
-                        .is_ok();
+                    let openai_only = get(
+                        &tree,
+                        Server::Image,
+                        &endpoint,
+                        Kind::ListModels,
+                        "models",
+                        None,
+                    )
+                    .is_ok();
                     let probe = if openai_only {
                         SdProbe::OpenAiOnly
                     } else {
@@ -149,7 +177,9 @@ pub fn probe(key: &str, typed: &str) -> Result<String, String> {
                 }
             }
         }
-        other => Err(format!("no live probe for {other:?} -- that row is not an HTTP service")),
+        other => Err(format!(
+            "no live probe for {other:?} -- that row is not an HTTP service"
+        )),
     }
 }
 
@@ -178,8 +208,12 @@ pub fn get(
     // A budget only bites when nothing else bounds the call: `send_budget` falls back to §1's table,
     // and the recorded path goes through `call`, which carries no per-call ceiling of its own.
     let reply = match tree {
-        Some(tree) => crate::server_leg::call(tree, &base, server, endpoint, kind, None, body, &cancelled).1,
-        None => crate::server_leg::send_budget(server, endpoint, kind, None, body, None, &cancelled),
+        Some(tree) => {
+            crate::server_leg::call(tree, &base, server, endpoint, kind, None, body, &cancelled).1
+        }
+        None => {
+            crate::server_leg::send_budget(server, endpoint, kind, None, body, None, &cancelled)
+        }
     }?;
     if !reply.ok() {
         return Err(format!("{} answered {}", kind.path(None), reply.status));
@@ -202,7 +236,16 @@ pub fn chat_post(
     // F0.13's two probes each carry a ceiling (§9: 60 s for the completion, 120 s for the picture), and
     // only the socket can enforce it — §1 leaves an ordinary chat call unbounded on purpose.
     let budget = budget.map(std::time::Duration::from_secs);
-    ask_job(tree, Server::Llm, endpoint, Kind::Chat, None, model, Some(body), budget)
+    ask_job(
+        tree,
+        Server::Llm,
+        endpoint,
+        Kind::Chat,
+        None,
+        model,
+        Some(body),
+        budget,
+    )
 }
 
 /// [`ask_job`] with the sd.cpp job id a poll or cancel acts on. Settings probes never pass one today;
@@ -212,7 +255,7 @@ pub fn chat_post(
 /// last paragraph puts EVERY request on the run context, and a settings probe is a request. A ⏹
 /// pressed while a probe is in flight therefore ends it rather than leaving the dialog waiting.
 #[allow(clippy::too_many_arguments)] // one leg's whole request: which server, endpoint, kind, job, model,
-// body and per-call ceiling the caller already holds; a struct here would only rename them.
+                                     // body and per-call ceiling the caller already holds; a struct here would only rename them.
 fn ask_job(
     tree: &Option<crate::layout::Tree>,
     server: Server,
@@ -228,8 +271,12 @@ fn ask_job(
     // A budget only bites when nothing else bounds the call: `send_budget` falls back to §1's table,
     // and the recorded path goes through `call`, which carries no per-call ceiling of its own.
     let reply = match tree {
-        Some(tree) => crate::server_leg::call(tree, &base, server, endpoint, kind, job, body, &cancelled).1,
-        None => crate::server_leg::send_budget(server, endpoint, kind, job, body, budget, &cancelled),
+        Some(tree) => {
+            crate::server_leg::call(tree, &base, server, endpoint, kind, job, body, &cancelled).1
+        }
+        None => {
+            crate::server_leg::send_budget(server, endpoint, kind, job, body, budget, &cancelled)
+        }
     };
     reply.map(|reply| reply.body)
 }
@@ -266,7 +313,14 @@ pub fn fire_unload(kind: Kind) {
         ))
         .ok();
         // Best-effort: the result chooses a log line and nothing else. No `?`, no retry, no wait.
-        match get(&tree, Server::Audio, &endpoint, Kind::UnloadAll, "unload", None) {
+        match get(
+            &tree,
+            Server::Audio,
+            &endpoint,
+            Kind::UnloadAll,
+            "unload",
+            None,
+        ) {
             Ok(_) => crate::ui::run_close::report_unload("models unloaded"),
             Err(why) => crate::ui::run_close::report_unload(&format!("unload skipped: {why}")),
         };
@@ -280,7 +334,6 @@ pub fn fire_unload(kind: Kind) {
 static UNLOADING: std::sync::Mutex<Option<std::thread::JoinHandle<()>>> =
     std::sync::Mutex::new(None);
 
-
 /// Wait for the end-of-run unload to land, or give up when ⏹ says to — whichever comes first.
 ///
 /// §1 makes the unload best-effort with a 20 s ceiling, and F0.3 S4 makes a late stop a non-failure:
@@ -291,7 +344,10 @@ pub fn drain_unload(budget: std::time::Duration) -> crate::cancel_leg::StoppedLe
     // The handle is released either way: once the run is gone nothing downstream waits on this
     // thread, and joining here would put the 20 s ceiling back where §1 asked for none.
     UNLOADING.lock().unwrap().take();
-    crate::cancel_leg::StoppedLegs { waited: stopped.waited, legs: crate::cancel_leg::legs_outstanding() }
+    crate::cancel_leg::StoppedLegs {
+        waited: stopped.waited,
+        legs: crate::cancel_leg::legs_outstanding(),
+    }
 }
 
 /// The settings as they are ON DISK right now — re-read per request, which is what makes a change

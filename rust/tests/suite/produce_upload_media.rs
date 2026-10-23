@@ -24,7 +24,6 @@ use naivepost::settings::{self, Conf};
 
 use crate::common;
 
-
 struct Fixture {
     root: PathBuf,
     tree: Tree,
@@ -69,13 +68,25 @@ fn fixture(tag: &str, sd_url: &str) -> Fixture {
     settings::save(&paths, &conf).expect("settings written");
     let tree = Tree::new(&session).expect("a .naivepost folder is a project");
     write_cut(&tree);
-    Fixture { root, tree, _scenario: scenario }
+    Fixture {
+        root,
+        tree,
+        _scenario: scenario,
+    }
 }
 
 /// Two footage segments, so `starts_of` answers `[0, 20]` and the second clip holds the +1 s moment.
 fn write_cut(tree: &Tree) {
-    let first = Seg { s: 0.0, e: 9.5, ..Default::default() };
-    let second = Seg { s: 10.0, e: 30.0, ..Default::default() };
+    let first = Seg {
+        s: 0.0,
+        e: 9.5,
+        ..Default::default()
+    };
+    let second = Seg {
+        s: 10.0,
+        e: 30.0,
+        ..Default::default()
+    };
     let cut = Cut {
         segs: vec![first, second],
         aspect: "16:9".to_string(),
@@ -132,7 +143,11 @@ fn make_jpeg(path: &Path, wide: u32, high: u32) {
         "lavfi could not draw a {wide}x{high} frame: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(path.is_file(), "ffmpeg wrote no frame at {}", path.display());
+    assert!(
+        path.is_file(),
+        "ffmpeg wrote no frame at {}",
+        path.display()
+    );
 }
 
 /// One extracted frame, filed the way Prepare files them: `tree.frames_dir(stem)/<clock name>.jpg`.
@@ -239,13 +254,19 @@ impl FakeSd {
 
 /// Answer one request with the next scripted reply, then close: the client reads to EOF, so a kept-open
 /// connection makes every later round pay a timeout.
-fn serve(mut stream: TcpStream, script: &std::sync::Arc<std::sync::Mutex<Vec<String>>>) -> Option<String> {
+fn serve(
+    mut stream: TcpStream,
+    script: &std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+) -> Option<String> {
     let seen = serve_inner(&mut stream, script);
     let _ = stream.shutdown(std::net::Shutdown::Both);
     seen
 }
 
-fn serve_inner(stream: &mut TcpStream, script: &std::sync::Arc<std::sync::Mutex<Vec<String>>>) -> Option<String> {
+fn serve_inner(
+    stream: &mut TcpStream,
+    script: &std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+) -> Option<String> {
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     let mut request_line = String::new();
     reader.read_line(&mut request_line).ok()?;
@@ -308,7 +329,8 @@ fn drawn_png(wide: u32, high: u32) -> Vec<u8> {
 /// one delete the other's file between its write and its read.
 fn flat_png(wide: u32, high: u32) -> Vec<u8> {
     let scratch = scratch_path(&format!("drawn-{}-{wide}x{high}.png", counter::next()));
-    naivepost::produce_upload_print::flat_png_for_test(&scratch, wide, high, 0.3).expect("a flat png");
+    naivepost::produce_upload_print::flat_png_for_test(&scratch, wide, high, 0.3)
+        .expect("a flat png");
     let bytes = std::fs::read(&scratch).expect("the flat png is readable");
     let _ = std::fs::remove_file(&scratch);
     bytes
@@ -358,19 +380,24 @@ fn f5_6_s6_the_base_goes_cropped_and_the_references_raw() {
         thumb_title: "a title".to_string(),
         ..Default::default()
     };
-    let sent = media::request_images(
-        &scene.tree,
-        &publish,
-        &files,
-        1280,
-        720,
-        silent,
+    let sent = media::request_images(&scene.tree, &publish, &files, 1280, 720, silent);
+    assert_eq!(
+        sent.urls.len(),
+        2,
+        "base plus one reference: {:?}",
+        sent.urls
     );
-    assert_eq!(sent.urls.len(), 2, "base plus one reference: {:?}", sent.urls);
-    assert!(sent.skipped.is_empty(), "nothing was skipped: {:?}", sent.skipped);
+    assert!(
+        sent.skipped.is_empty(),
+        "nothing was skipped: {:?}",
+        sent.skipped
+    );
 
     let (base_mime, base_bytes) = decode_data_url(sent.urls.first().expect("a base"));
-    assert_eq!(base_mime, "image/png", "the crop is written as a PNG: {base_mime}");
+    assert_eq!(
+        base_mime, "image/png",
+        "the crop is written as a PNG: {base_mime}"
+    );
     assert!(
         base_bytes != std::fs::read(&base).expect("the source frame"),
         "the base went out as its uncropped bytes"
@@ -382,15 +409,25 @@ fn f5_6_s6_the_base_goes_cropped_and_the_references_raw() {
         "the base arrived at the video's shape"
     );
     let (ref_mime, ref_bytes) = decode_data_url(&sent.urls[1]);
-    assert_eq!(ref_mime, "image/jpeg", "a reference is the frame's own type");
+    assert_eq!(
+        ref_mime, "image/jpeg",
+        "a reference is the frame's own type"
+    );
     // Compared as base64 text, not as a byte array: a failure that prints two megabytes of JPEG buries the
     // assertion under it, and the fact being pinned is "the same bytes", which the encoding shows directly.
     let encoded = crate_helper_b64(&ref_bytes);
     let on_disk = crate_helper_b64(&std::fs::read(&reference).expect("the reference frame"));
-    assert_eq!(encoded, on_disk, "S6: references go RAW — the same bytes, not a re-encode");
+    assert_eq!(
+        encoded, on_disk,
+        "S6: references go RAW — the same bytes, not a re-encode"
+    );
     // And the crop the log prints is a fact about that source: a 4:3 frame cropped to 16:9 keeps 75% of
     // its width, not the 100% a shape-only rule would have claimed.
-    assert_eq!(sent.crop_percent, 75, "the crop line tells the truth: {}", sent.crop_percent);
+    assert_eq!(
+        sent.crop_percent, 75,
+        "the crop line tells the truth: {}",
+        sent.crop_percent
+    );
 }
 
 /// S6 with nothing behind the row: the walk must SAY it has no base, in the sentence §S6 spells, and send no
@@ -413,7 +450,11 @@ fn f5_6_s6_no_base_says_drawn_from_the_instruction_alone() {
     };
     let sent = media::request_images(&scene.tree, &publish, &[], 1280, 720, silent);
     assert!(sent.base.is_none(), "nothing resolved to a picture");
-    assert!(sent.urls.is_empty(), "no phantom reference: {:?}", sent.urls);
+    assert!(
+        sent.urls.is_empty(),
+        "no phantom reference: {:?}",
+        sent.urls
+    );
 
     // Through the walk, so the sentence is the program's and not the test's.
     let answers = up::Answers {
@@ -425,12 +466,19 @@ fn f5_6_s6_no_base_says_drawn_from_the_instruction_alone() {
     };
     let outcome = walk_through_page_legs(&scene, &publish, &answers, &logs);
     assert!(outcome.published, "the text still lands ahead of the draw");
-    assert_eq!(outcome.error, None, "the draw was refused, not failed: {:?}", outcome.error);
+    assert_eq!(
+        outcome.error, None,
+        "the draw was refused, not failed: {:?}",
+        outcome.error
+    );
     let logs = logs.lock().expect("log lock").clone();
     assert!(
-        logs.iter().any(|l| l.contains(naivepost::produce_details::REQUEST_NO_IMAGES_LOG)),
+        logs.iter()
+            .any(|l| l.contains(naivepost::produce_details::REQUEST_NO_IMAGES_LOG)),
         "S6's own line is missing: {:?}",
-        logs.iter().filter(|l| l.contains("publish")).collect::<Vec<_>>()
+        logs.iter()
+            .filter(|l| l.contains("publish"))
+            .collect::<Vec<_>>()
     );
     let body = sd.next_body();
     assert!(
@@ -466,15 +514,28 @@ fn f5_6_s3_a_picked_frame_becomes_the_picture() {
         picked_frame: Some(21.0),
     };
     let outcome = walk_with_frames(&scene, &publish, &answers, &files, true, &logs);
-    assert!(outcome.own, "S3: the answer says the picture is a chosen frame");
-    assert_eq!(outcome.error, None, "the walk finished: {:?}", outcome.error);
+    assert!(
+        outcome.own,
+        "S3: the answer says the picture is a chosen frame"
+    );
+    assert_eq!(
+        outcome.error, None,
+        "the walk finished: {:?}",
+        outcome.error
+    );
     // An OWN picture is not reprinted when the words changed (decision 34): this scenario's row holds a frame
     // AND an instruction of its own, so `edited_by_hand` is true and the title change costs no lettering.
     // That is the rule under test, so the plain picture is what this check measures — and it only exists at
     // all because the S3 leg wrote it (§F5.6 S3: the frame IS the thumbnail, no model, no GPU).
-    assert!(!outcome.reprinted, "an own picture is not re-lettered by a title change");
+    assert!(
+        !outcome.reprinted,
+        "an own picture is not re-lettered by a title change"
+    );
     let plain = scene.tree.thumbnail_plain_png();
-    assert!(plain.is_file(), "the chosen frame landed as the plain picture");
+    assert!(
+        plain.is_file(),
+        "the chosen frame landed as the plain picture"
+    );
     assert_eq!(
         naivepost::produce_probe::size_of(&plain),
         Some((1280, 720)),
@@ -533,8 +594,15 @@ fn f5_6_s7_the_words_half_lands_a_real_picture() {
         picked_frame: None,
     };
     let outcome = walk_with_frames(&scene, &publish, &answers, &files, false, &logs);
-    assert_eq!(outcome.error, None, "the words half finished: {:?}", outcome.error);
-    assert!(outcome.reprinted, "S7 printed the title, so the walk says it did");
+    assert_eq!(
+        outcome.error, None,
+        "the words half finished: {:?}",
+        outcome.error
+    );
+    assert!(
+        outcome.reprinted,
+        "S7 printed the title, so the walk says it did"
+    );
     assert!(outcome.published, "publish.json + description.txt landed");
     for (what, path) in [
         ("publish.json", scene.tree.publish_json()),
@@ -558,14 +626,21 @@ fn f5_6_s7_the_words_half_lands_a_real_picture() {
         Some((1280, 720)),
         "the drawn bytes are the job's own picture"
     );
-    let stamp = std::fs::read_to_string(scene.tree.thumbnail_stamp()).expect("the stamp reads back");
+    let stamp =
+        std::fs::read_to_string(scene.tree.thumbnail_stamp()).expect("the stamp reads back");
     assert_eq!(stamp.trim().len(), 16, "the stamp is a hash: {stamp}");
     // The request the fake took carried the cropped base — the pixels, not the row's name.
     let body = sd.next_body();
     let refs = body["ref_images"].as_array().expect("references went out");
-    assert!(!refs.is_empty(), "an image row of one frame is a base: {body}");
+    assert!(
+        !refs.is_empty(),
+        "an image row of one frame is a base: {body}"
+    );
     let (mime, bytes) = decode_data_url(refs[0].as_str().expect("a url"));
-    assert_eq!(mime, "image/png", "the base is the crop, not the JPEG: {mime}");
+    assert_eq!(
+        mime, "image/png",
+        "the base is the crop, not the JPEG: {mime}"
+    );
     assert_eq!(
         size_of_bytes(&bytes),
         Some((1280, 720)),
@@ -615,9 +690,14 @@ fn walk_with_frames(
         poll: &poll,
         save_picture: &save_picture,
         print: &print,
-        nearest_frame: &|at| frames.iter().map(|(moment, _)| *moment).min_by(|a, b| {
-            (a - at).abs().partial_cmp(&(b - at).abs()).unwrap_or(std::cmp::Ordering::Equal)
-        }),
+        nearest_frame: &|at| {
+            frames.iter().map(|(moment, _)| *moment).min_by(|a, b| {
+                (a - at)
+                    .abs()
+                    .partial_cmp(&(b - at).abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        },
         spread_frames: &|| vec!["frame:1.000".to_string()],
         stored_stamp: None,
         write_stamp: &write_stamp,
@@ -629,9 +709,15 @@ fn walk_with_frames(
             media::write_own_picture(&tree, record, &frames, wide, high, silent)
         },
     };
-    up::walk("THE FINISHED VIDEO: 2 clips, 00:30 long.", publish, answers, &mats, |line| {
-        logs.lock().expect("log lock").push(line.to_string());
-    })
+    up::walk(
+        "THE FINISHED VIDEO: 2 clips, 00:30 long.",
+        publish,
+        answers,
+        &mats,
+        |line| {
+            logs.lock().expect("log lock").push(line.to_string());
+        },
+    )
 }
 
 fn walk_through_page_legs(
@@ -641,7 +727,8 @@ fn walk_through_page_legs(
     logs: &std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 ) -> up::Outcome {
     let tree = scene.tree.clone();
-    let legs = naivepost::ui::produce_languages::upload_legs(&tree, &publish_run(&scene.tree, publish));
+    let legs =
+        naivepost::ui::produce_languages::upload_legs(&tree, &publish_run(&scene.tree, publish));
     let mats = up::Materials {
         save_publish: &legs.save_publish,
         ask_model: &legs.ask_model,
@@ -657,15 +744,24 @@ fn walk_through_page_legs(
         request_images: &legs.request_images,
         own_picture: &legs.own_picture,
     };
-    up::walk("THE FINISHED VIDEO: 2 clips, 00:30 long.", publish, answers, &mats, |line| {
-        logs.lock().expect("log lock").push(line.to_string());
-    })
+    up::walk(
+        "THE FINISHED VIDEO: 2 clips, 00:30 long.",
+        publish,
+        answers,
+        &mats,
+        |line| {
+            logs.lock().expect("log lock").push(line.to_string());
+        },
+    )
 }
 
 /// A run whose cut is the scenario's and whose publish state is the record under test — which is exactly
 /// what the page's snapshot hands the words half at a press.
 fn publish_run(tree: &Tree, publish: &Publish) -> naivepost::produce_flow::Run {
-    naivepost::produce_flow::Run { publish: Some(publish.clone()), ..run(tree) }
+    naivepost::produce_flow::Run {
+        publish: Some(publish.clone()),
+        ..run(tree)
+    }
 }
 
 /// The draw and poll legs the fixture's fake sd.cpp answers: unscripted, so these are the program's own.
@@ -676,7 +772,9 @@ fn draw_leg() -> Box<up::AskDraw> {
 
 fn poll_leg() -> Box<up::Poll> {
     let tree = naivepost::ui::produce_languages::session_tree();
-    Box::new(move |job| naivepost::produce_upload_draw::wait_until_done(&tree, job, &|| false, silent))
+    Box::new(move |job| {
+        naivepost::produce_upload_draw::wait_until_done(&tree, job, &|| false, silent)
+    })
 }
 
 fn save_picture_leg() -> Box<up::SavePicture> {
@@ -721,7 +819,11 @@ fn f5_6_s7_the_page_s_band_and_marked_texts_are_what_get_printed() {
     // One frame so the row has a base the crop can open; the shape differs from the video's on purpose.
     let frame = frame_on_disk(&scene.tree, "room", 2.0, 1440, 1080);
     let files = frame_files(&scene.tree, &[(2.0, frame)]);
-    assert_eq!(files.len(), 1, "the scenario's one frame resolves to one entry");
+    assert_eq!(
+        files.len(),
+        1,
+        "the scenario's one frame resolves to one entry"
+    );
     let logs = collected();
     // The page's state: a title box over the LOWER part of the picture (the app default is 0.25, the upper
     // third), one marked text, and an instruction. None of this is on disk — nothing has been saved yet.
@@ -733,7 +835,12 @@ fn f5_6_s7_the_page_s_band_and_marked_texts_are_what_get_printed() {
         title: "a title from the page".to_string(),
         thumb_title: "an older printed line".to_string(),
         description: "a description".to_string(),
-        title_box: Some(naivepost::project::TitleBox { cx: 0.5, cy: 0.8, wf: 0.9, hf: 0.3 }),
+        title_box: Some(naivepost::project::TitleBox {
+            cx: 0.5,
+            cy: 0.8,
+            wf: 0.9,
+            hf: 0.3,
+        }),
         texts: vec![naivepost::project::TextMark {
             cx: 0.5,
             cy: 0.5,
@@ -759,22 +866,41 @@ fn f5_6_s7_the_page_s_band_and_marked_texts_are_what_get_printed() {
     // picture by hand" from the legs it builds, and this scenario wants the reprint to be the page's business,
     // so the walk is driven with the same materials over a record whose printed line differs from its title.
     assert!(
-        naivepost::audit_gaps::reprint_title_on_change(&publish.thumb_title, "a title from the page", false),
+        naivepost::audit_gaps::reprint_title_on_change(
+            &publish.thumb_title,
+            "a title from the page",
+            false
+        ),
         "the scenario does not actually change the printed line"
     );
     let outcome = walk_through_page_legs(&scene, &publish, &answers, &logs);
-    assert_eq!(outcome.error, None, "the words half finished: {:?}", outcome.error);
+    assert_eq!(
+        outcome.error, None,
+        "the words half finished: {:?}",
+        outcome.error
+    );
     assert!(outcome.published, "the text landed before the draw (S5)");
     assert!(outcome.reprinted, "a new title prints (decision 34)");
     // S7 printed SOMETHING: the two pictures differ, and both exist.
     let plain = std::fs::read(scene.tree.thumbnail_plain_png()).expect("the drawn plain picture");
     let printed = std::fs::read(scene.tree.thumbnail_png()).expect("the printed picture");
-    assert_ne!(plain, printed, "the words were not printed: both are {} bytes", printed.len());
+    assert_ne!(
+        plain,
+        printed,
+        "the words were not printed: both are {} bytes",
+        printed.len()
+    );
     // The band the letters went into is measurable: a box at cy 0.8 puts ink in the BOTTOM quarter and none
     // in the top one, which is the opposite of the app default's 0.25. Read back off the PNG cairo wrote.
     let (top, bottom) = ink_halves(&printed);
-    assert!(bottom > 0, "nothing was printed in the lower band the page asked for: {outcome:?}");
-    assert_eq!(top, 0, "ink landed above the page's box: top={top} bottom={bottom}");
+    assert!(
+        bottom > 0,
+        "nothing was printed in the lower band the page asked for: {outcome:?}"
+    );
+    assert_eq!(
+        top, 0,
+        "ink landed above the page's box: top={top} bottom={bottom}"
+    );
     // And the instruction the page holds reached the server — a fresh session reading the file would have had
     // nothing to send at all.
     let body = sd.next_body();
@@ -849,7 +975,10 @@ fn f5_6_s6_an_empty_page_instruction_refuses_before_any_call() {
         "S6's own sentence, not a substitute: {:?}",
         outcome.error
     );
-    assert!(outcome.published, "the text still lands ahead of the refusal (S5)");
+    assert!(
+        outcome.published,
+        "the text still lands ahead of the refusal (S5)"
+    );
     assert!(
         !scene.tree.thumbnail_plain_png().exists(),
         "a refused draw leaves no picture behind"
@@ -884,10 +1013,15 @@ fn f5_6_s3_the_chosen_picture_is_the_videos_shape_not_the_frames() {
         picked_frame: Some(21.0),
     };
     let outcome = walk_with_frames(&scene, &publish, &answers, &files, true, &logs);
-    assert_eq!(outcome.error, None, "the walk finished: {:?}", outcome.error);
+    assert_eq!(
+        outcome.error, None,
+        "the walk finished: {:?}",
+        outcome.error
+    );
     assert!(outcome.own, "S3: the picture is a chosen frame");
     let plain = scene.tree.thumbnail_plain_png();
-    let (wide, high) = naivepost::produce_probe::size_of(&plain).expect("ffprobe can size the picture");
+    let (wide, high) =
+        naivepost::produce_probe::size_of(&plain).expect("ffprobe can size the picture");
     let (want_wide, want_high) = up::frame_size_from_aspect("16:9");
     assert_eq!(
         (wide, high),
@@ -896,14 +1030,21 @@ fn f5_6_s3_the_chosen_picture_is_the_videos_shape_not_the_frames() {
     );
     let saved = naivepost::publish::load(&scene.tree).expect("publish.json reads back");
     assert!(saved.own, "and the record says so too");
-    assert_eq!(saved.frames.len(), 1, "the row holds that frame only: {:?}", saved.frames);
+    assert_eq!(
+        saved.frames.len(),
+        1,
+        "the row holds that frame only: {:?}",
+        saved.frames
+    );
     let _ = sd;
 }
 
 /// The publish leg the walk is handed: the program's own `publish::save`, so a check reads back the same file
 /// a press writes.
 fn save_publish_leg() -> Box<up::SavePublish> {
-    Box::new(|record| naivepost::publish::save(record, &naivepost::ui::produce_languages::session_tree()))
+    Box::new(|record| {
+        naivepost::publish::save(record, &naivepost::ui::produce_languages::session_tree())
+    })
 }
 
 /// The stamp writer's shape, named because `Box<dyn Fn …>` inline reads as noise (clippy's `type_complexity`).

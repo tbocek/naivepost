@@ -66,23 +66,49 @@ fn sec_06_effects_5_cards_svg_inserts_s9_a_stamped_card_is_redrawn_by_its_card()
     let plain = produce_cards::draw("assets/s.svg", &shipped);
     assert_eq!(plain.arrived, cards::drawn_by("badge", None));
     assert_eq!(plain.arrived, "drawn by the built-in badge card");
-    assert!(plain.logs.contains(&plain.arrived.clone()), "{:?}", plain.logs);
+    assert!(
+        plain.logs.contains(&plain.arrived.clone()),
+        "{:?}",
+        plain.logs
+    );
     assert!(plain.drawn.contains(">S</text>"), "{}", plain.drawn);
-    assert!(!plain.drawn.contains("{{"), "a redrawn card has no holes left");
+    assert!(
+        !plain.drawn.contains("{{"),
+        "a redrawn card has no holes left"
+    );
 
     // One argument changed: the SAME card, drawn with the new words, and the note says which.
     let asked = produce_cards::draw("assets/s.svg?caption=Champion%20run", &shipped);
-    assert!(asked.arrived.starts_with("drawn by the built-in badge card, except that "), "{asked:?}");
+    assert!(
+        asked
+            .arrived
+            .starts_with("drawn by the built-in badge card, except that "),
+        "{asked:?}"
+    );
     assert!(asked.arrived.contains("caption"), "{}", asked.arrived);
     assert!(asked.drawn.contains("Champion run"), "{}", asked.drawn);
-    assert!(!asked.drawn.contains("S tier"), "the shipped caption is gone: {}", asked.drawn);
+    assert!(
+        !asked.drawn.contains("S tier"),
+        "the shipped caption is gone: {}",
+        asked.drawn
+    );
     assert!(!asked.drawn.contains("{{"), "{}", asked.drawn);
 
     // The merge itself: defaults first, the path's values over them, order kept.
-    let merged = produce_cards::merge_args("letter=S&caption=S tier", &[("caption".to_string(), "Best of 2026".into())]);
+    let merged = produce_cards::merge_args(
+        "letter=S&caption=S tier",
+        &[("caption".to_string(), "Best of 2026".into())],
+    );
     assert_eq!(merged[0], ("letter".to_string(), "S".to_string()));
-    assert_eq!(merged[1], ("caption".to_string(), "Best of 2026".to_string()));
-    assert_eq!(produce_cards::changed_note("letter=S", &[]), None, "nothing typed is nothing to except");
+    assert_eq!(
+        merged[1],
+        ("caption".to_string(), "Best of 2026".to_string())
+    );
+    assert_eq!(
+        produce_cards::changed_note("letter=S", &[]),
+        None,
+        "nothing typed is nothing to except"
+    );
 }
 
 // --- S10: an unstamped card gets its holes filled -------------------------------------------------------------------
@@ -103,14 +129,31 @@ fn sec_06_effects_5_cards_svg_inserts_s10_an_unstamped_card_is_filled_in() {
     let filled = produce_cards::draw("assets/mine.svg", &doc);
     let joined = produce_cards::join_for_test(&doc, &args);
 
-    assert_eq!(filled.arrived, cards::FILLED_IN, "\"filled in\", not \"drawn by\"");
-    assert!(joined.contains("Ranks &amp; records"), "the value arrives XML-escaped: {joined}");
-    assert!(joined.contains(">nobody<"), "an unanswered hole takes its fallback: {joined}");
+    assert_eq!(
+        filled.arrived,
+        cards::FILLED_IN,
+        "\"filled in\", not \"drawn by\""
+    );
+    assert!(
+        joined.contains("Ranks &amp; records"),
+        "the value arrives XML-escaped: {joined}"
+    );
+    assert!(
+        joined.contains(">nobody<"),
+        "an unanswered hole takes its fallback: {joined}"
+    );
     assert!(!joined.contains("{{title}}"), "{joined}");
-    assert!(joined.contains("{{note}}"), "a hole inside a comment stays a comment: {joined}");
+    assert!(
+        joined.contains("{{note}}"),
+        "a hole inside a comment stays a comment: {joined}"
+    );
     // The door the render uses gives the same answer, with the note logged beside it.
     let arrived = produce_cards::arrive("assets/mine.svg", &doc);
-    assert!(arrived.logs.iter().any(|line| line == cards::FILLED_IN), "{:?}", arrived.logs);
+    assert!(
+        arrived.logs.iter().any(|line| line == cards::FILLED_IN),
+        "{:?}",
+        arrived.logs
+    );
 }
 
 // --- S11: nothing to fill, and the parameters are ignored -----------------------------------------------------------
@@ -123,8 +166,15 @@ fn sec_06_effects_5_cards_svg_inserts_s11_parameters_with_nowhere_to_go_are_igno
     let doc = canvas("<text x=\"100\" y=\"200\">hand-drawn, no holes</text>");
     let card = produce_cards::draw("assets/plain.svg?title=Anything", &doc);
     assert_eq!(card.arrived, cards::IGNORED);
-    assert!(card.logs.iter().any(|line| line == cards::IGNORED), "{:?}", card.logs);
-    assert_eq!(card.drawn, doc, "nothing was written into a picture with no holes");
+    assert!(
+        card.logs.iter().any(|line| line == cards::IGNORED),
+        "{:?}",
+        card.logs
+    );
+    assert_eq!(
+        card.drawn, doc,
+        "nothing was written into a picture with no holes"
+    );
 
     // No arguments either: then there was nothing to ignore, and the honest note is "filled in".
     let quiet = produce_cards::draw("assets/plain.svg", &doc);
@@ -143,8 +193,16 @@ fn sec_06_effects_5_cards_svg_inserts_s12_a_card_carries_its_own_images_and_font
          <animate attributeName=\"opacity\" values=\"0;1\" keyTimes=\"0;1\" dur=\"2s\" fill=\"freeze\"/>",
     );
     let ok = produce_cards::arrive("assets/data.svg", &inline);
-    assert!(ok.baked(), "a self-contained animated card bakes: {:?}", ok.logs);
-    assert!(ok.logs.iter().all(|line| !line.starts_with("!!!")), "{:?}", ok.logs);
+    assert!(
+        ok.baked(),
+        "a self-contained animated card bakes: {:?}",
+        ok.logs
+    );
+    assert!(
+        ok.logs.iter().all(|line| !line.starts_with("!!!")),
+        "{:?}",
+        ok.logs
+    );
 
     // An empty href is how an attribute says "no image here" and is left alone.
     let empty = canvas("<image href=\"\" x=\"0\" y=\"0\"/>");
@@ -154,16 +212,41 @@ fn sec_06_effects_5_cards_svg_inserts_s12_a_card_carries_its_own_images_and_font
     let linked = canvas("<image href=\"/home/dev/logo.png\" x=\"0\" y=\"0\"/>");
     let refused = produce_cards::arrive("assets/linked.svg", &linked);
     assert!(!refused.baked(), "a refused card is not baked");
-    let refusal = refused.logs.iter().find(|line| line.starts_with("!!!")).expect("the refusal is logged");
+    let refusal = refused
+        .logs
+        .iter()
+        .find(|line| line.starts_with("!!!"))
+        .expect("the refusal is logged");
     assert!(refusal.contains("/home/dev/logo.png"), "{refusal}");
-    assert_eq!(refused.logs.first().map(String::as_str), Some(refusal.as_str()), "it comes first: {:?}", refused.logs);
-    assert_eq!(refused.still.as_deref(), Some("linked-filled.svg"), "and the clip still gets one file");
+    assert_eq!(
+        refused.logs.first().map(String::as_str),
+        Some(refusal.as_str()),
+        "it comes first: {:?}",
+        refused.logs
+    );
+    assert_eq!(
+        refused.still.as_deref(),
+        Some("linked-filled.svg"),
+        "and the clip still gets one file"
+    );
 
     // A webfont the render cannot fetch: said, not fatal — the card still draws in a machine font.
-    let webfont = canvas("<style>@font-face { font-family: X }</style><text x=\"1\" y=\"2\">hi</text>");
+    let webfont =
+        canvas("<style>@font-face { font-family: X }</style><text x=\"1\" y=\"2\">hi</text>");
     let faced = produce_cards::arrive("assets/font.svg", &webfont);
-    assert!(faced.logs.iter().any(|line| line.contains("@font-face") && line.starts_with(">>>")), "{:?}", faced.logs);
-    assert!(!faced.logs.iter().any(|line| line.starts_with("!!!")), "a font is not a refusal: {:?}", faced.logs);
+    assert!(
+        faced
+            .logs
+            .iter()
+            .any(|line| line.contains("@font-face") && line.starts_with(">>>")),
+        "{:?}",
+        faced.logs
+    );
+    assert!(
+        !faced.logs.iter().any(|line| line.starts_with("!!!")),
+        "a font is not a refusal: {:?}",
+        faced.logs
+    );
 }
 
 // --- S13: the SMIL bake ---------------------------------------------------------------------------------------------
@@ -187,13 +270,20 @@ fn sec_06_effects_5_cards_svg_inserts_s13_an_animated_card_bakes_one_static_svg_
     // `bake_times` is the frame grid; the bake adds the finished frame at the animation's own end, so a 2 s card
     // lands its frozen value on screen instead of stopping one frame short of it.
     assert_eq!(times.len(), 50, "2 s at 25 fps");
-    assert_eq!(card.frames.len(), times.len() + 1, "one frame per moment, plus the finished one");
+    assert_eq!(
+        card.frames.len(),
+        times.len() + 1,
+        "one frame per moment, plus the finished one"
+    );
     assert_eq!(card.frame_dir(), "titled.frames", "{}", card.frame_dir());
     assert_eq!(card.still, None, "a baked card has no single static file");
 
     // Named as §8 spells it, and in order.
     assert_eq!(card.frames.first().unwrap().0, "f00000.svg");
-    assert_eq!(card.frames.last().unwrap().0, format!("f{:05}.svg", card.frames.len() - 1));
+    assert_eq!(
+        card.frames.last().unwrap().0,
+        format!("f{:05}.svg", card.frames.len() - 1)
+    );
     assert_eq!(produce_cards::frame_name(7), "f00007.svg");
 
     // Frame 0 is the animation's start; a middle frame is the interpolated value; the last holds the frozen end.
@@ -205,24 +295,44 @@ fn sec_06_effects_5_cards_svg_inserts_s13_an_animated_card_bakes_one_static_svg_
     let middle = &card.frames[25].1;
     // Read the last frame fresh: `frames` grew after the earlier bindings were taken.
     let last = card.frames.last().cloned().unwrap();
-    assert!(first.contains("opacity=\"0\""), "frame 0 reads the start: {first}");
+    assert!(
+        first.contains("opacity=\"0\""),
+        "frame 0 reads the start: {first}"
+    );
     let expected = cards::value_at(&anim, times[25]).unwrap();
-    assert!(middle.contains(&format!("opacity=\"{expected}\"")), "frame 25 should read {expected}: {middle}");
+    assert!(
+        middle.contains(&format!("opacity=\"{expected}\"")),
+        "frame 25 should read {expected}: {middle}"
+    );
     // A middle frame reads exactly what `value_at` answers at that second.
     let _ = first;
 
     // The point of the bake: every frame is a plain picture. No animation tags, and none of the source's SMIL.
     for (name, text) in &card.frames {
-        assert!(!text.contains("<animate"), "{name} still carries an animation tag");
+        assert!(
+            !text.contains("<animate"),
+            "{name} still carries an animation tag"
+        );
         assert!(!text.contains("</text><animate"), "{name}");
         assert!(text.contains("<svg"), "{name} is still a document");
     }
     // The strip is what ffmpeg reads: a pattern under the scratch folder, not the card's own path. `bake_times(2.0)`
     // stops just short of the end (the last frame it asks for is 1.96 s), so the frozen value is what the LAST frame
     // carries — and it carries it once, not twice.
-    assert_eq!(last.1.matches("opacity=").count(), 1, "one opacity per frame: {}", last.1);
-    assert!(last.1.contains("opacity=\"1\""), "freeze holds the end: {}", last.1);
-    assert!(produce_cards::frame_pattern(Path::new("/tmp/x/a.frames")).ends_with("a.frames/f%05d.svg"));
+    assert_eq!(
+        last.1.matches("opacity=").count(),
+        1,
+        "one opacity per frame: {}",
+        last.1
+    );
+    assert!(
+        last.1.contains("opacity=\"1\""),
+        "freeze holds the end: {}",
+        last.1
+    );
+    assert!(
+        produce_cards::frame_pattern(Path::new("/tmp/x/a.frames")).ends_with("a.frames/f%05d.svg")
+    );
 }
 
 // --- S14: the CSS subset, and what it refuses -----------------------------------------------------------------------
@@ -247,18 +357,32 @@ fn sec_06_effects_5_cards_svg_inserts_s14_css_animations_bake_and_a_missing_keyf
     assert!(rules[0].style_at(1.0).unwrap().contains("opacity:"));
     let shaped = rules[0].style_at(1.0).unwrap();
     let value: f64 = shaped.split(':').nth(1).unwrap().trim().parse().unwrap();
-    assert!((0.35..0.5).contains(&value), "ease-in-out at half time: {shaped}");
+    assert!(
+        (0.35..0.5).contains(&value),
+        "ease-in-out at half time: {shaped}"
+    );
     // Past the end with `forwards`: the last step is held, which is exactly what the word means.
-    assert_eq!(rules[0].style_at(3.0).as_deref(), Some("opacity:1"), "forwards holds the last step");
+    assert_eq!(
+        rules[0].style_at(3.0).as_deref(),
+        Some("opacity:1"),
+        "forwards holds the last step"
+    );
 
     let card = produce_cards::arrive("assets/css.svg", doc);
     assert_eq!(card.length, Some(2.0), "{:?}", card.length);
     assert_eq!(card.frames.len(), cards::bake_times(2.0).len() + 1);
-    assert!(card.frames[40].1.contains("style=\"opacity:"), "{}", card.frames[40].1);
+    assert!(
+        card.frames[40].1.contains("style=\"opacity:"),
+        "{}",
+        card.frames[40].1
+    );
     for (_, text) in &card.frames {
         // The sheet is dropped from every frame: a baked frame carries its values inline, and leaving the rules in
         // would let whichever renderer ffmpeg uses animate the same picture a second time on top of ours.
-        assert!(!text.contains("@keyframes"), "a frame is a picture, not a stylesheet: {text}");
+        assert!(
+            !text.contains("@keyframes"),
+            "a frame is a picture, not a stylesheet: {text}"
+        );
         assert!(!text.contains("<style"), "and no stylesheet at all: {text}");
     }
 
@@ -272,7 +396,11 @@ fn sec_06_effects_5_cards_svg_inserts_s14_css_animations_bake_and_a_missing_keyf
         "a rule whose @keyframes are missing is still a rule, so the reason can be said"
     );
     let card = produce_cards::arrive("assets/assets/lost.css.svg", lost);
-    assert_eq!(card.frames.len(), 0, "nothing to interpolate means no frames");
+    assert_eq!(
+        card.frames.len(),
+        0,
+        "nothing to interpolate means no frames"
+    );
     assert_eq!(card.length, None, "and so no length of its own");
     assert!(
         card.logs
@@ -289,14 +417,21 @@ fn sec_06_effects_5_cards_svg_inserts_s14_css_animations_bake_and_a_missing_keyf
                    @keyframes grow { from { stroke-width: 1 } to { stroke-width: 8 } }</style>\
                    <rect class=\"bar\" width=\"10\" height=\"10\"/></svg>";
     assert!(!cards::css_supported("stroke-width: 3"));
-    assert_eq!(produce_cards::css_rules(outside).len(), 1, "the rule is read; its property is not one §5 grants");
+    assert_eq!(
+        produce_cards::css_rules(outside).len(),
+        1,
+        "the rule is read; its property is not one §5 grants"
+    );
     assert_eq!(
         produce_cards::css_rules(outside)[0].property,
         "",
         "nothing in those keyframes is a granted property, so there is nothing to ramp"
     );
     let still = produce_cards::arrive("assets/outside.svg", outside);
-    assert!(still.frames.is_empty(), "the unsupported half is not approximated");
+    assert!(
+        still.frames.is_empty(),
+        "the unsupported half is not approximated"
+    );
 }
 
 // --- S15: the card's length, offered and looped ---------------------------------------------------------------------
@@ -322,12 +457,21 @@ fn sec_06_effects_5_cards_svg_inserts_s15_the_length_reaches_the_form_and_the_en
 
     // Offered to the form: the card's own seconds, and nothing at all for a still or an endless card, which is where
     // the caller falls back to P.policy.insertDefaultSeconds.
-    assert_eq!(produce_cards::offer_seconds(&timed.to_string_lossy()), Some(2.0));
-    assert_eq!(produce_cards::offer_seconds(&endless.to_string_lossy()), None);
+    assert_eq!(
+        produce_cards::offer_seconds(&timed.to_string_lossy()),
+        Some(2.0)
+    );
+    assert_eq!(
+        produce_cards::offer_seconds(&endless.to_string_lossy()),
+        None
+    );
     assert_eq!(produce_cards::offer_seconds(&still.to_string_lossy()), None);
     assert_eq!(cut_insert::DEFAULT_SECONDS, 4.0);
     assert_eq!(
-        cut_insert::default_length(produce_cards::offer_seconds(&endless.to_string_lossy()), true),
+        cut_insert::default_length(
+            produce_cards::offer_seconds(&endless.to_string_lossy()),
+            true
+        ),
         4.0,
         "an endlessly repeating card takes the default insert length"
     );
@@ -337,31 +481,54 @@ fn sec_06_effects_5_cards_svg_inserts_s15_the_length_reaches_the_form_and_the_en
     assert_eq!(endless_card.length, None);
     // An endlessly repeating card has no strip to run out: it is drawn as ONE static picture and the encode loops
     // that picture for the slot — §8's `takes the default insert length, loops for its slot`.
-    assert!(!endless_card.baked(), "no strip, one looped picture: {:?}", endless_card.logs);
+    assert!(
+        !endless_card.baked(),
+        "no strip, one looped picture: {:?}",
+        endless_card.logs
+    );
     assert_eq!(endless_card.still.as_deref(), Some("endless-filled.svg"));
     let staged = stage_for(&endless, &endless_doc);
     assert!(staged.loops, "{staged:?}");
     assert_eq!(staged.inputs[0].0, "svg");
     let argv = encode(&staged, true);
-    assert!(argv.contains(&"-stream_loop".to_string()) && argv.contains(&"-1".to_string()), "{argv:?}");
+    assert!(
+        argv.contains(&"-stream_loop".to_string()) && argv.contains(&"-1".to_string()),
+        "{argv:?}"
+    );
     // A looped still keeps the still's own rate: `-loop 1 -framerate 30` with `-stream_loop -1` in front of it.
     // The bake fps belongs to a baked strip, which is what the next check reads.
-    assert!(argv.iter().any(|a| a == "-loop"), "a single picture is still looped as a still: {argv:?}");
+    assert!(
+        argv.iter().any(|a| a == "-loop"),
+        "a single picture is still looped as a still: {argv:?}"
+    );
     // A single static picture carries `-loop 1 -framerate 30` beside its `-stream_loop -1`: it IS a still, looped
     // for the slot (§8), so no "no -loop here" assertion belongs on this branch.
 
     let timed_staged = stage_for(&timed, &timed_doc);
     assert!(!timed_staged.loops, "{timed_staged:?}");
     let timed_argv = encode(&timed_staged, false);
-    assert!(!timed_argv.contains(&"-stream_loop".to_string()), "{timed_argv:?}");
+    assert!(
+        !timed_argv.contains(&"-stream_loop".to_string()),
+        "{timed_argv:?}"
+    );
 
     // A still card writes ONE filled file and asks for it as a looped still, exactly as before this item.
     let still_staged = stage_for(&still, &still_doc);
     assert_eq!(still_staged.inputs[0].0, "svg");
-    assert_eq!(still_staged.files[0].0.file_name().unwrap().to_string_lossy(), "still-filled.svg");
+    assert_eq!(
+        still_staged.files[0]
+            .0
+            .file_name()
+            .unwrap()
+            .to_string_lossy(),
+        "still-filled.svg"
+    );
     assert!(!still_staged.files[0].1.contains("{{"));
     let still_argv = encode(&still_staged, false);
-    assert!(still_argv.iter().any(|a| a == "-loop"), "a still is looped as it always was: {still_argv:?}");
+    assert!(
+        still_argv.iter().any(|a| a == "-loop"),
+        "a still is looped as it always was: {still_argv:?}"
+    );
 }
 
 // --- the render's own doors -----------------------------------------------------------------------------------------
@@ -416,7 +583,14 @@ fn sec_06_effects_5_cards_svg_inserts_s15b_the_plan_stages_the_card_before_it_en
     std::fs::write(&card_path, &doc).unwrap();
 
     let cut = naivepost::cut::Cut {
-        segs: vec![Seg { s: 0.0, e: 0.0, dur: 4.0, cam: 0, ins: card_path.to_string_lossy().to_string(), ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 0.0,
+            dur: 4.0,
+            cam: 0,
+            ins: card_path.to_string_lossy().to_string(),
+            ..Default::default()
+        }],
         ..Default::default()
     };
     // Named `fn`s rather than closures: `Materials` holds `&dyn Fn` over a higher-ranked lifetime, which only an
@@ -481,23 +655,41 @@ fn sec_06_effects_5_cards_svg_inserts_s15b_the_plan_stages_the_card_before_it_en
     let frames = tree.clips_dir().join("board.frames");
     let count = std::fs::read_dir(&frames).map(|rd| rd.count()).unwrap_or(0);
     // The frame grid plus the finished frame the bake adds at the animation's own end.
-    assert_eq!(count, cards::bake_times(2.0).len() + 1, "one static SVG per frame in {}", frames.display());
+    assert_eq!(
+        count,
+        cards::bake_times(2.0).len() + 1,
+        "one static SVG per frame in {}",
+        frames.display()
+    );
     let first = std::fs::read_to_string(frames.join("f00000.svg")).unwrap();
-    assert!(!first.contains("<animate"), "a written frame is a finished picture: {first}");
     assert!(
-        plan.encodes[0].command.argv.iter().any(|a| a.ends_with("f%05d.svg")),
+        !first.contains("<animate"),
+        "a written frame is a finished picture: {first}"
+    );
+    assert!(
+        plan.encodes[0]
+            .command
+            .argv
+            .iter()
+            .any(|a| a.ends_with("f%05d.svg")),
         "{:?}",
         plan.encodes[0].command.argv
     );
     // §5 (`to frames at the render fps (default 25)`): ffmpeg has to be told the strip's own rate, and the number it
     // is told is `P.card.bakeFps`, spelled by `produce_cards` because the bake owns it.
     let argv = &plan.encodes[0].command.argv;
-    let rate = argv.iter().position(|a| a == "-framerate").expect("the strip carries its rate");
+    let rate = argv
+        .iter()
+        .position(|a| a == "-framerate")
+        .expect("the strip carries its rate");
     assert_eq!(argv[rate + 1], produce_cards::bake_fps_arg(), "{argv:?}");
     assert_eq!(argv[rate + 1], "25", "P.card.bakeFps: {argv:?}");
     // §5's `-t` goes on the OUTPUT, so after every input — including the one naming this strip. A `-t` before `-i`
     // would trim what the filters were built from.
-    let limit = argv.iter().position(|a| a == "-t").expect("the insert is trimmed to its slot");
+    let limit = argv
+        .iter()
+        .position(|a| a == "-t")
+        .expect("the insert is trimmed to its slot");
     assert_eq!(argv[limit + 1], format!("{:.3}", 4.0), "{argv:?}");
     assert!(
         limit > argv.iter().position(|a| a.ends_with("f%05d.svg")).unwrap(),
@@ -522,12 +714,25 @@ fn sec_06_effects_5_cards_svg_inserts_s15c_the_run_loops_a_card_with_no_own_leng
     let card_path = root.join("spin.svg");
     std::fs::write(&card_path, &doc).unwrap();
     // The slot the Cut page gave it: nothing of its own to offer, so P.policy.insertDefaultSeconds.
-    assert_eq!(produce_cards::offer_seconds(&card_path.to_string_lossy()), None);
-    let seconds = cut_insert::default_length(produce_cards::offer_seconds(&card_path.to_string_lossy()), true);
+    assert_eq!(
+        produce_cards::offer_seconds(&card_path.to_string_lossy()),
+        None
+    );
+    let seconds = cut_insert::default_length(
+        produce_cards::offer_seconds(&card_path.to_string_lossy()),
+        true,
+    );
     assert_eq!(seconds, cut_insert::DEFAULT_SECONDS);
 
     let cut = naivepost::cut::Cut {
-        segs: vec![Seg { s: 0.0, e: 0.0, dur: seconds, cam: 0, ins: card_path.to_string_lossy().to_string(), ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 0.0,
+            dur: seconds,
+            cam: 0,
+            ins: card_path.to_string_lossy().to_string(),
+            ..Default::default()
+        }],
         ..Default::default()
     };
     fn always_exists(_: &str) -> bool {
@@ -586,10 +791,16 @@ fn sec_06_effects_5_cards_svg_inserts_s15c_the_run_loops_a_card_with_no_own_leng
     );
     let argv = &plan.encodes[0].command.argv;
     // Its slot is longer than one pass of it, so the picture runs again: `-stream_loop -1`.
-    let loops = argv.iter().position(|a| a == "-stream_loop").expect("an endless card loops");
+    let loops = argv
+        .iter()
+        .position(|a| a == "-stream_loop")
+        .expect("an endless card loops");
     assert_eq!(argv[loops + 1], "-1", "{argv:?}");
     // And looping is only safe because `-t` trims the loop back to the seconds the cut asked for.
-    let limit = argv.iter().position(|a| a == "-t").expect("the loop is trimmed to the slot");
+    let limit = argv
+        .iter()
+        .position(|a| a == "-t")
+        .expect("the loop is trimmed to the slot");
     assert_eq!(argv[limit + 1], format!("{:.3}", seconds), "{argv:?}");
 }
 

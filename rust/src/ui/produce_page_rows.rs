@@ -5,8 +5,9 @@
 /// The session's folder, resolved the way the page resolves everything else on this path.
 pub(crate) fn session_tree() -> crate::layout::Tree {
     let root = std::env::current_dir().unwrap_or_default();
-    crate::layout::Tree::new(crate::startup::session_dir(&root))
-    .unwrap_or_else(|_| crate::layout::Tree::new(std::path::Path::new("session.naivepost")).unwrap())
+    crate::layout::Tree::new(crate::startup::session_dir(&root)).unwrap_or_else(|_| {
+        crate::layout::Tree::new(std::path::Path::new("session.naivepost")).unwrap()
+    })
 }
 
 /// S2's speak, over the real wire: [`crate::ui::produce_speak_leg`]'s door, which is the Narrate page's
@@ -18,10 +19,7 @@ pub(crate) fn session_tree() -> crate::layout::Tree {
 ///
 /// The voice travels from the run, so a take spoken by a ▶ run is the take its stamp weighs: with nothing
 /// in `voice` both doors key the line as the session's own voice.
-pub(crate) fn speak_a_line(
-    line: &crate::produce_exec::ToSpeak,
-    voice: &str,
-) -> Result<(), String> {
+pub(crate) fn speak_a_line(line: &crate::produce_exec::ToSpeak, voice: &str) -> Result<(), String> {
     crate::ui::produce_speak_leg::speak_one(&session_tree(), line, voice)
         .map(|take| crate::ui::window::log_line(&format!("spoken \u{2014} {}", take.display())))
 }

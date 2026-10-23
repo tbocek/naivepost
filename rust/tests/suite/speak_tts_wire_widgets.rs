@@ -20,14 +20,15 @@ use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{hold_last_window, release_last_window, settle, status_text, narrate_button as button};
+use common::{
+    hold_last_window, narrate_button as button, release_last_window, settle, status_text,
+};
 
 #[path = "speak_tts_wire_harness.rs"]
 mod harness;
 use harness::{wav_bytes, FakeAudio, Script};
 
 static RAN_SPEAK_WIRE: AtomicBool = AtomicBool::new(false);
-
 
 /// The session folder the page resolves its take into: `startup::session_dir(current_dir())`.
 fn session_tree() -> Tree {
@@ -64,7 +65,11 @@ fn run_round(app: &adw::Application) {
     });
     naivepost::project::save(&project, tree.dir()).expect("naivepost.json written");
     let cut = Cut {
-        segs: vec![Seg { s: 0.0, e: 10.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     naivepost::cut::save(&cut, &tree).expect("cut.json written");

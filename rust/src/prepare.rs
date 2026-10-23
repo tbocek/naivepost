@@ -220,7 +220,11 @@ pub fn inputs_tip(tree: &Tree, project: &Project) -> String {
         .iter()
         .map(|source| {
             let lane = lane(source);
-            let frames = if source.footage { count_files(&tree.frames_dir(&lane)) } else { 0 };
+            let frames = if source.footage {
+                count_files(&tree.frames_dir(&lane))
+            } else {
+                0
+            };
             let lines = count_lines(&tree.transcript_tsv(&lane));
             let counts = Counts { frames, lines };
             format!("{}: {}", base_name(&source.path), counts.readout())

@@ -98,7 +98,10 @@ impl FakeLlm {
 
     #[allow(dead_code)]
     fn expect_silent(&self) {
-        match self.received.recv_timeout(std::time::Duration::from_millis(400)) {
+        match self
+            .received
+            .recv_timeout(std::time::Duration::from_millis(400))
+        {
             Err(mpsc::RecvTimeoutError::Timeout) => (),
             other => panic!("the server was dialled when nothing should have been: {other:?}"),
         }
@@ -143,7 +146,13 @@ fn serve_inner(stream: &mut TcpStream, reply: &Reply) -> Option<String> {
             break;
         }
         if line.to_ascii_lowercase().starts_with("content-length:") {
-            length = line.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = line
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
         if line.trim().is_empty() {
             break;
@@ -153,7 +162,11 @@ fn serve_inner(stream: &mut TcpStream, reply: &Reply) -> Option<String> {
     if length > 0 {
         reader.read_exact(&mut payload).ok()?;
     }
-    let reason = if reply.status == 400 { "Bad Request" } else { "OK" };
+    let reason = if reply.status == 400 {
+        "Bad Request"
+    } else {
+        "OK"
+    };
     let framed = format!(
         "HTTP/1.1 {} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         reply.status,
@@ -172,11 +185,11 @@ fn envelope(content: &str) -> String {
 
 /// The 400 body a schema-refusing server sends: an `error.message` naming the field.
 fn refusal_body() -> String {
-    serde_json::json!({ "error": { "message": REFUSAL, "type": "invalid_request_error" } }).to_string()
+    serde_json::json!({ "error": { "message": REFUSAL, "type": "invalid_request_error" } })
+        .to_string()
 }
 
 // ---- the scenario -------------------------------------------------------------------------------
-
 
 struct Fixture {
     root: PathBuf,
@@ -215,7 +228,11 @@ fn fixture(tag: &str, address: &str) -> Fixture {
     conf.sd_server = "http://127.0.0.1:1".to_string();
     settings::save(&paths, &conf).expect("settings written");
     let tree = naivepost::layout::Tree::new(&session).expect("a .naivepost folder is a project");
-    Fixture { root, tree, _scenario: scenario }
+    Fixture {
+        root,
+        tree,
+        _scenario: scenario,
+    }
 }
 
 fn cancelled() -> impl Fn() -> bool {
@@ -268,8 +285,14 @@ fn f6_1_s5_a_server_that_refuses_tools_is_asked_again_without_them() {
     // Two connections for one refused round, and then the loop's own quiet-round nudge (§2 S3) makes a third --
     // the script repeats its last answer from there on. The claim this check makes is about the FIRST TWO.
     let llm = FakeLlm::start(vec![
-        Reply { status: 400, body: refusal_body() },
-        Reply { status: 200, body: envelope(TITLE_ANSWER) },
+        Reply {
+            status: 400,
+            body: refusal_body(),
+        },
+        Reply {
+            status: 200,
+            body: envelope(TITLE_ANSWER),
+        },
     ]);
     let scene = fixture("refused", &llm.url());
     let moments = [1.0f64];
@@ -292,9 +315,19 @@ fn f6_1_s5_a_server_that_refuses_tools_is_asked_again_without_them() {
     );
 
     let asked = llm.all(std::time::Duration::from_millis(600));
-    assert!(asked.len() >= 2, "the refusal and its resend both reached the server: {}", asked.len());
-    assert!(offers_tools(&asked[0]), "the first request offered the job's tools");
-    assert!(!offers_tools(&asked[1]), "the resent request carries no `tools` field");
+    assert!(
+        asked.len() >= 2,
+        "the refusal and its resend both reached the server: {}",
+        asked.len()
+    );
+    assert!(
+        offers_tools(&asked[0]),
+        "the first request offered the job's tools"
+    );
+    assert!(
+        !offers_tools(&asked[1]),
+        "the resent request carries no `tools` field"
+    );
     assert_eq!(
         messages_of(&asked[0]),
         messages_of(&asked[1]),
@@ -303,9 +336,21 @@ fn f6_1_s5_a_server_that_refuses_tools_is_asked_again_without_them() {
 
     // And the refusal was said exactly once, in §2's own words, on the log sink every headless flow writes to.
     let lines = window_refusals();
-    assert_eq!(lines.len(), 1, "the refusal is logged exactly once: {lines:?}");
-    assert!(lines[0].contains(REFUSAL), "the line quotes the server's reason: {}", lines[0]);
-    assert!(lines[0].starts_with(&format!(">>> {}:", call::STEP)), "named by step: {}", lines[0]);
+    assert_eq!(
+        lines.len(),
+        1,
+        "the refusal is logged exactly once: {lines:?}"
+    );
+    assert!(
+        lines[0].contains(REFUSAL),
+        "the line quotes the server's reason: {}",
+        lines[0]
+    );
+    assert!(
+        lines[0].starts_with(&format!(">>> {}:", call::STEP)),
+        "named by step: {}",
+        lines[0]
+    );
 }
 
 /// S5's memory: once this server has refused, the NEXT call asks without the field and says nothing more. That
@@ -315,8 +360,14 @@ fn f6_1_s5_a_refusal_is_remembered_so_the_next_attempt_sends_no_tools_field() {
     // The refused request is answered, and EVERY later round of this call gets the prose answer -- including the
     // loop's quiet-round nudge (§2 S3), whose reply is what the flow finally peels. Same title either way.
     let llm = FakeLlm::start(vec![
-        Reply { status: 400, body: refusal_body() },
-        Reply { status: 200, body: envelope(TITLE_FIRST) },
+        Reply {
+            status: 400,
+            body: refusal_body(),
+        },
+        Reply {
+            status: 200,
+            body: envelope(TITLE_FIRST),
+        },
     ]);
     let scene = fixture("remembered", &llm.url());
     let moments = [1.0f64];
@@ -334,7 +385,12 @@ fn f6_1_s5_a_refusal_is_remembered_so_the_next_attempt_sends_no_tools_field() {
     };
     let first = run_once().expect("the refused call still answered");
     assert!(first.publish.thumb_title.contains("first attempt"));
-    assert_eq!(window_refusals().len(), 1, "first call said it once: {:?}", window_refusals());
+    assert_eq!(
+        window_refusals().len(),
+        1,
+        "first call said it once: {:?}",
+        window_refusals()
+    );
 
     let second = run_once().expect("the second call answers without being refused");
     assert!(
@@ -345,7 +401,11 @@ fn f6_1_s5_a_refusal_is_remembered_so_the_next_attempt_sends_no_tools_field() {
     // The refused call made two requests (refused + resend); this one makes ONE, and it carries no `tools`
     // field at all, because the refusal is remembered per server rather than re-offered and re-logged.
     let asked = llm.all(std::time::Duration::from_millis(600));
-    assert!(asked.len() >= 3, "both calls reached the server: {}", asked.len());
+    assert!(
+        asked.len() >= 3,
+        "both calls reached the server: {}",
+        asked.len()
+    );
     assert!(
         !offers_tools(asked.last().expect("at least one request")),
         "a remembered refusal means no `tools` field on the next call"
@@ -379,9 +439,15 @@ fn f6_1_s5_a_dead_server_is_not_read_as_a_refusal() {
         &cancelled(),
         silent,
     );
-    assert!(outcome.is_err(), "a dead server fails the call, it does not degrade it: {outcome:?}");
+    assert!(
+        outcome.is_err(),
+        "a dead server fails the call, it does not degrade it: {outcome:?}"
+    );
     let asked = llm.next();
-    assert!(offers_tools(&asked), "the request went out with its tools: {asked}");
+    assert!(
+        offers_tools(&asked),
+        "the request went out with its tools: {asked}"
+    );
     // §3 (F6.2) now gives an answered-but-unusable 500 its one short retry, so the fake sees that second,
     // identical request. What this check is about is unchanged and still holds: none of them was a
     // resend-WITHOUT-tools, and no refusal was claimed for a server that merely died.

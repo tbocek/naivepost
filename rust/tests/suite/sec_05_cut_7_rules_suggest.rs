@@ -10,9 +10,9 @@
 //! Pure rule + pure door: nothing here builds a window, because `suggested_cut` reads the cut it lands onto from
 //! its argument and the recorder slot only matters to the write, which `sec_05_cut_7_rules_s7_*` covers.
 
-use naivepost::cut::{self, Cut, Seg};
 use crate::common;
 use common::fx;
+use naivepost::cut::{self, Cut, Seg};
 use naivepost::layout;
 use naivepost::suggest::Applied;
 use naivepost::ui::cut_suggest_land;
@@ -42,7 +42,11 @@ fn card(s: f64, e: f64, file: &str) -> Seg {
 /// placed against those seconds.
 fn cut_before() -> Cut {
     Cut {
-        segs: vec![seg(0.0, 10.0), card(10.0, 12.0, "title.png"), seg(12.0, 30.0)],
+        segs: vec![
+            seg(0.0, 10.0),
+            card(10.0, 12.0, "title.png"),
+            seg(12.0, 30.0),
+        ],
         fx: vec![fx("zoom", 2.0, 3.0)],
         ..Default::default()
     }
@@ -98,7 +102,10 @@ fn sec_05_cut_7_rules_s6_a_resuggest_keeps_the_cards_and_moves_the_base() {
     let starts: Vec<f64> = landed.segs.iter().map(|s| s.s).collect();
     let mut sorted = starts.clone();
     sorted.sort_by(f64::total_cmp);
-    assert_eq!(starts, sorted, "the landed list stays in time order: {starts:?}");
+    assert_eq!(
+        starts, sorted,
+        "the landed list stays in time order: {starts:?}"
+    );
 
     // (d) the effects go with the footage half: the answer's list, not the old zoom.
     assert_eq!(
@@ -113,7 +120,10 @@ fn sec_05_cut_7_rules_s6_a_resuggest_keeps_the_cards_and_moves_the_base() {
     history.note_change(&before);
     history.suggested(&landed);
     let back = history.revert();
-    assert_eq!(back.segs, landed.segs, "Revert lands on the suggestion's segments");
+    assert_eq!(
+        back.segs, landed.segs,
+        "Revert lands on the suggestion's segments"
+    );
     assert_eq!(back.fx, landed.fx, "…with the suggestion's effects");
     assert!(
         history.base_is_the_screen(&landed),
@@ -143,11 +153,18 @@ fn sec_05_cut_7_rules_s8_the_strip_is_a_window_under_a_translate() {
     use naivepost::ui::cut_strip_view;
 
     let pps = cut_strip_view::pps();
-    assert!(pps > 0.0, "the strip draws at some zoom, or nothing here means anything: {pps}");
+    assert!(
+        pps > 0.0,
+        "the strip draws at some zoom, or nothing here means anything: {pps}"
+    );
 
     // At zero scroll the two conversions are the plain divide / multiply — the old behaviour, still correct there.
     cut_strip_view::set_scroll_for_test(0.0);
-    assert_eq!(cut_strip_view::scroll_px(), 0.0, "scroll starts at the head of the tape");
+    assert_eq!(
+        cut_strip_view::scroll_px(),
+        0.0,
+        "scroll starts at the head of the tape"
+    );
     assert!(
         (cut_strip_view::seconds_at(120.0) - 120.0 / pps).abs() < 1e-9,
         "unscrolled, a pixel is just pixels over pps"
@@ -155,7 +172,10 @@ fn sec_05_cut_7_rules_s8_the_strip_is_a_window_under_a_translate() {
 
     // Scrolled by 100 px: the second under a pixel is further into the session by exactly `100 / pps`.
     let scrolled = cut_strip_view::set_scroll_for_test(100.0);
-    assert!((scrolled - 100.0).abs() < 1e-9, "the scroll took: {scrolled}");
+    assert!(
+        (scrolled - 100.0).abs() < 1e-9,
+        "the scroll took: {scrolled}"
+    );
     let delta = cut_strip_view::seconds_at(120.0) - 120.0 / pps;
     assert!(
         (delta - 100.0 / pps).abs() < 1e-9,
@@ -211,7 +231,10 @@ fn sec_05_cut_7_rules_s8_the_page_rebuilds_only_when_prepare_output_changed() {
         "no session.tsv means no fingerprint: {:?}",
         tree.session_tsv()
     );
-    assert!(cut_rebuild::output_changed(&tree), "absent output counts as changed once");
+    assert!(
+        cut_rebuild::output_changed(&tree),
+        "absent output counts as changed once"
+    );
     assert!(
         !cut_rebuild::output_changed(&tree),
         "and unchanged after that — nothing has appeared"
@@ -244,7 +267,10 @@ fn sec_05_cut_7_rules_s8_the_page_rebuilds_only_when_prepare_output_changed() {
         cut_rebuild::output_changed(&tree),
         "output disappearing is not 'unchanged'"
     );
-    assert!(!cut_rebuild::output_changed(&tree), "back to steady absence");
+    assert!(
+        !cut_rebuild::output_changed(&tree),
+        "back to steady absence"
+    );
 
     // And an open of another folder forgets everything, so a byte-identical file elsewhere still rebuilds.
     write_session(&tree, b"t\tfile\n0.0\tcam0.mp4\n");

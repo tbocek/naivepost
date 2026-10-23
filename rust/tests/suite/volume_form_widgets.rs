@@ -29,7 +29,10 @@ use naivepost::ui;
 
 use crate::common;
 pub use common::find_in;
-use common::{assert_close, entry, settle, status_text, widget, label_text, click, cut_page_unpainted as cut_page};
+use common::{
+    assert_close, click, cut_page_unpainted as cut_page, entry, label_text, settle, status_text,
+    widget,
+};
 
 static RAN_REFUSED: AtomicBool = AtomicBool::new(false);
 static RAN_LINE: AtomicBool = AtomicBool::new(false);
@@ -48,7 +51,6 @@ fn dropdown(window: &adw::ApplicationWindow, name: &str) -> gtk::DropDown {
         .unwrap_or_else(|_| panic!("`{name}` is a DropDown"))
 }
 
-
 fn tooltip(window: &adw::ApplicationWindow, name: &str) -> String {
     widget(window, name)
         .tooltip_text()
@@ -60,13 +62,17 @@ fn tooltip(window: &adw::ApplicationWindow, name: &str) -> String {
 /// here once rather than at every call site.
 fn strings_of(drop: &gtk::DropDown) -> Vec<String> {
     let model = drop.model().expect("the dropdown has a model");
-    let list = model.downcast::<gtk::StringList>().expect("a list of strings");
+    let list = model
+        .downcast::<gtk::StringList>()
+        .expect("a list of strings");
     strings(list.as_ref())
 }
 
 /// The strings a `StringList` holds, in order.
 fn strings(model: &glib::Object) -> Vec<String> {
-    let list = model.downcast_ref::<gtk::StringList>().expect("a list of strings");
+    let list = model
+        .downcast_ref::<gtk::StringList>()
+        .expect("a list of strings");
     (0..list.n_items())
         .map(|index| {
             list.item(index)
@@ -89,7 +95,6 @@ fn form_visible(window: &adw::ApplicationWindow) -> bool {
     form_holder(window).get_visible()
 }
 
-
 /// Mark a stretch on the ruler/selection ground — the same seam a drag leaves behind — so S1 has a band.
 fn mark_band(window: &adw::ApplicationWindow, from: f64, to: f64) {
     let band = ui::draw_selection(window, Surface::SelectionBand, None, from, to);
@@ -111,7 +116,10 @@ fn open_over_band(app: &adw::Application, from: f64, to: f64) -> adw::Applicatio
     let window = cut_page(app, &Cut::default());
     mark_band(&window, from, to);
     click(&window, "effect-item-volume");
-    assert!(form_visible(&window), "a marked stretch opens the volume form");
+    assert!(
+        form_visible(&window),
+        "a marked stretch opens the volume form"
+    );
     window
 }
 
@@ -152,16 +160,32 @@ fn volume_round(app: &adw::Application) {
         assert!(form_visible(&window), "a bare line opens the form too");
         let form = ui::volume_form_open().expect("the press left a form waiting");
         // P.policy.effectDefaultSeconds ("stop/speed/volume/label 2"): two seconds off the red line.
-        assert_close("P.policy.effectDefaultSeconds", form.dur, fx_volume::LINE_SECONDS);
+        assert_close(
+            "P.policy.effectDefaultSeconds",
+            form.dur,
+            fx_volume::LINE_SECONDS,
+        );
         assert_close("at the line", form.t, 42.0);
         // effects.defaultGain: twice as loud, printed in the field's own unit.
-        assert_close("effects.defaultGain as a percent", form.percent, fx_volume::DEFAULT_GAIN * 100.0);
+        assert_close(
+            "effects.defaultGain as a percent",
+            form.percent,
+            fx_volume::DEFAULT_GAIN * 100.0,
+        );
         assert_close("the default is 200 %", form.percent, 200.0);
         // P.policy.effectDefaultFades: volume 0.25 both ways -- a gain arriving on one sample is a click.
-        assert_close("P.policy.effectDefaultFades in", form.trans, fx_volume::FADE_SECONDS);
+        assert_close(
+            "P.policy.effectDefaultFades in",
+            form.trans,
+            fx_volume::FADE_SECONDS,
+        );
         assert_close("...and out", form.tout, fx_volume::FADE_SECONDS);
         let title = fx_volume::form_title(42.0, fx_volume::LINE_SECONDS);
-        assert_eq!(label_text(&window, "volume-heading"), title, "the heading IS the module's title");
+        assert_eq!(
+            label_text(&window, "volume-heading"),
+            title,
+            "the heading IS the module's title"
+        );
         assert!(
             status_text(&window).starts_with(&title),
             "and the status line opens with it too, got {}",
@@ -182,7 +206,10 @@ fn volume_round(app: &adw::Application) {
             fx_volume::LINE_SECONDS,
             "a stretch is worked over its own seconds, not over the line default"
         );
-        assert_eq!(label_text(&window, "volume-heading"), fx_volume::form_title(10.0, 15.0));
+        assert_eq!(
+            label_text(&window, "volume-heading"),
+            fx_volume::form_title(10.0, 15.0)
+        );
         window.close();
 
         // A band under every effect's floor is not a band: with a placed line the line answers instead of
@@ -192,7 +219,10 @@ fn volume_round(app: &adw::Application) {
         ui::set_line_position(&thin, LinePos { t: 42.0 });
         mark_band(&thin, 30.0, 30.0 + MIN_MARKED_SECONDS * 0.5);
         click(&thin, "effect-item-volume");
-        assert!(form_visible(&thin), "a slipped band falls through to the line rather than refusing");
+        assert!(
+            form_visible(&thin),
+            "a slipped band falls through to the line rather than refusing"
+        );
         let fell = ui::volume_form_open().expect("the line answered");
         assert_close("at the line, not at the slipped band", fell.t, 42.0);
         assert_close("the line's two seconds", fell.dur, fx_volume::LINE_SECONDS);
@@ -249,20 +279,40 @@ fn volume_round(app: &adw::Application) {
             format!("{:.0}", fx_volume::percent_of(fx_volume::DEFAULT_GAIN)),
             "the percent field shows 200 because that is what gain 2.0 IS in the field's unit"
         );
-        assert_eq!(entry(&window, "volume-field-length").text(), trim(15.0), "the band's length");
+        assert_eq!(
+            entry(&window, "volume-field-length").text(),
+            trim(15.0),
+            "the band's length"
+        );
         assert_eq!(
             entry(&window, "volume-field-fade-in").text(),
             trim(fx_volume::FADE_SECONDS),
             "P.policy.effectDefaultFades pre-filled"
         );
-        assert_eq!(entry(&window, "volume-field-fade-out").text(), trim(fx_volume::FADE_SECONDS));
+        assert_eq!(
+            entry(&window, "volume-field-fade-out").text(),
+            trim(fx_volume::FADE_SECONDS)
+        );
 
         // Tooltips are the module's sentences, whole.
         let percent_tip = tooltip(&window, "volume-field-percent");
-        assert_eq!(percent_tip, fx_volume::VOLUME_HELP_FULL, "the field's tooltip IS the module's sentence");
-        assert!(percent_tip.contains("1000"), "and it states where the field tops out: {percent_tip}");
-        assert!(percent_tip.contains("hiss"), "...with the reason not to lean on it: {percent_tip}");
-        assert_eq!(tooltip(&window, "volume-field-fade-in"), fx_volume::FADE_IN_HELP);
+        assert_eq!(
+            percent_tip,
+            fx_volume::VOLUME_HELP_FULL,
+            "the field's tooltip IS the module's sentence"
+        );
+        assert!(
+            percent_tip.contains("1000"),
+            "and it states where the field tops out: {percent_tip}"
+        );
+        assert!(
+            percent_tip.contains("hiss"),
+            "...with the reason not to lean on it: {percent_tip}"
+        );
+        assert_eq!(
+            tooltip(&window, "volume-field-fade-in"),
+            fx_volume::FADE_IN_HELP
+        );
         assert!(
             tooltip(&window, "volume-field-fade-in").contains("hard step"),
             "nought is explained rather than forbidden"
@@ -270,7 +320,11 @@ fn volume_round(app: &adw::Application) {
 
         // Curve is a dropdown over §A.1's list, owned by zoom and borrowed here.
         let curve = dropdown(&window, "volume-field-curve");
-        assert_eq!(strings_of(&curve), fx_zoom::CURVE_CHOICES, "one curve today, offered as the module lists it");
+        assert_eq!(
+            strings_of(&curve),
+            fx_zoom::CURVE_CHOICES,
+            "one curve today, offered as the module lists it"
+        );
         RAN_FIELDS.store(true, Ordering::SeqCst);
         window.close();
     }
@@ -342,13 +396,22 @@ fn volume_round(app: &adw::Application) {
             "a refused Apply keeps the form OPEN: closing it would throw away the numbers being typed"
         );
         assert!(form_visible(&window), "still on screen, still editable");
-        assert!(ui::review_cut_of(&window).fx.is_empty(), "and it wrote nothing");
+        assert!(
+            ui::review_cut_of(&window).fx.is_empty(),
+            "and it wrote nothing"
+        );
 
         // Cancel drops the form and changes nothing on the cut -- no record, no history write.
         click(&window, "volume-cancel-button");
-        assert!(ui::volume_form_open().is_none(), "Cancel cleared the held form");
+        assert!(
+            ui::volume_form_open().is_none(),
+            "Cancel cleared the held form"
+        );
         assert!(!form_visible(&window), "and hid the holder");
-        assert!(ui::review_cut_of(&window).fx.is_empty(), "Cancel records nothing");
+        assert!(
+            ui::review_cut_of(&window).fx.is_empty(),
+            "Cancel records nothing"
+        );
         RAN_FLOOR.store(true, Ordering::SeqCst);
         window.close();
     }
@@ -364,7 +427,11 @@ fn volume_round(app: &adw::Application) {
         // Mid-band, fades long done: the page asks the SAME function the playing preview asks, so a
         // parked red line gives what will play -- the only way the fades can be judged without motion.
         let mid = 17.0;
-        assert_close("heard paused mid-band", ui::paused_preview_gain(&window, mid), 2.0);
+        assert_close(
+            "heard paused mid-band",
+            ui::paused_preview_gain(&window, mid),
+            2.0,
+        );
         assert_eq!(
             ui::paused_preview_gain(&window, mid),
             fx_volume::heard_while_paused(fx, mid),
@@ -387,10 +454,17 @@ fn volume_round(app: &adw::Application) {
             "inside the fade the loudness is still climbing ({at_ramp}), not yet the full 2.0 -- so the \
              paused reading tracks the envelope, not just the peak"
         );
-        assert_eq!(at_ramp, cut_hear::gain_under(fx, ramped), "same function at the ramp point too");
+        assert_eq!(
+            at_ramp,
+            cut_hear::gain_under(fx, ramped),
+            "same function at the ramp point too"
+        );
 
         // And nothing to see: §A.6's "No box, no drag" is a statement about the picture.
-        assert!(fx_volume::gain_has_no_visual(), "a volume is heard, never seen");
+        assert!(
+            fx_volume::gain_has_no_visual(),
+            "a volume is heard, never seen"
+        );
         assert!(
             !fx_lane::drawn_paused(EffectKind::Volume),
             "§06#2 lists nothing to draw for it, so pausing changes no pixel -- hence \"untouched\""
@@ -422,14 +496,32 @@ fn f3_6_the_volume_form_is_wired_through_the_real_widgets() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_REFUSED.load(Ordering::SeqCst), "the S1 refusal check never ran");
-    assert!(RAN_LINE.load(Ordering::SeqCst), "the S1/S2 line-branch check never ran");
-    assert!(RAN_BAND.load(Ordering::SeqCst), "the S1 band-branch check never ran");
-    assert!(RAN_FIELDS.load(Ordering::SeqCst), "the S3 five-field check never ran");
+    assert!(
+        RAN_REFUSED.load(Ordering::SeqCst),
+        "the S1 refusal check never ran"
+    );
+    assert!(
+        RAN_LINE.load(Ordering::SeqCst),
+        "the S1/S2 line-branch check never ran"
+    );
+    assert!(
+        RAN_BAND.load(Ordering::SeqCst),
+        "the S1 band-branch check never ran"
+    );
+    assert!(
+        RAN_FIELDS.load(Ordering::SeqCst),
+        "the S3 five-field check never ran"
+    );
     assert!(
         RAN_APPLY_UNDO.load(Ordering::SeqCst),
         "the S4 apply-and-undo check never ran"
     );
-    assert!(RAN_FLOOR.load(Ordering::SeqCst), "the S4 length-floor check never ran");
-    assert!(RAN_PAUSED.load(Ordering::SeqCst), "the S5 heard-while-paused check never ran");
+    assert!(
+        RAN_FLOOR.load(Ordering::SeqCst),
+        "the S4 length-floor check never ran"
+    );
+    assert!(
+        RAN_PAUSED.load(Ordering::SeqCst),
+        "the S5 heard-while-paused check never ran"
+    );
 }

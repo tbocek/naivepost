@@ -33,7 +33,8 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    if args.iter().any(|a| a == "--snapshot") {        return match parse_snapshot(&args)
+    if args.iter().any(|a| a == "--snapshot") {
+        return match parse_snapshot(&args)
             .and_then(|(screen, dir, out)| naivepost::snapshot::run(&screen, &dir, &out))
         {
             Ok(()) => ExitCode::SUCCESS,

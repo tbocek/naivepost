@@ -19,7 +19,12 @@ const KINDS: [EffectKind; 6] = [
 ];
 
 fn fx(kind: EffectKind, t: f64, dur: f64) -> Fx {
-    Fx { kind: name(kind).into(), t, dur, ..Default::default() }
+    Fx {
+        kind: name(kind).into(),
+        t,
+        dur,
+        ..Default::default()
+    }
 }
 
 /// The file's key for a kind — the record stores a string and §06#1 is what types it.
@@ -38,16 +43,28 @@ fn name(kind: EffectKind) -> &'static str {
 /// and that staying changes nothing else.
 #[test]
 fn sec_06_effects_2_the_lane_and_the_preview_s1_colours() {
-    assert_eq!(lane::bar_colour(EffectKind::Zoom, false), (0.25, 0.72, 0.82));
+    assert_eq!(
+        lane::bar_colour(EffectKind::Zoom, false),
+        (0.25, 0.72, 0.82)
+    );
     assert_eq!(lane::bar_colour(EffectKind::Zoom, true), (0.95, 0.62, 0.15));
-    assert_eq!(lane::bar_colour(EffectKind::Speed, false), (0.92, 0.42, 0.6));
+    assert_eq!(
+        lane::bar_colour(EffectKind::Speed, false),
+        (0.92, 0.42, 0.6)
+    );
     assert_eq!(lane::bar_colour(EffectKind::Text, false), (0.6, 0.55, 0.95));
     assert_eq!(lane::bar_colour(EffectKind::Svg, false), (0.4, 0.8, 0.5));
-    assert_eq!(lane::bar_colour(EffectKind::Volume, false), (0.95, 0.85, 0.2));
+    assert_eq!(
+        lane::bar_colour(EffectKind::Volume, false),
+        (0.95, 0.85, 0.2)
+    );
     // "grey-white" — §2 gives no number; this near-white is ours and only has to separate from the lane.
     let label = lane::bar_colour(EffectKind::Label, false);
     assert_eq!(label, (0.92, 0.92, 0.92));
-    assert!(label.0 > 0.8 && label.0 > label.2 * 0.9, "grey-white, not blue-grey: {label:?}");
+    assert!(
+        label.0 > 0.8 && label.0 > label.2 * 0.9,
+        "grey-white, not blue-grey: {label:?}"
+    );
 
     // Staying is a zoom's question (§06#1's table gives no other kind a `stay`), so no other colour moves.
     for kind in KINDS {
@@ -63,19 +80,33 @@ fn sec_06_effects_2_the_lane_and_the_preview_s1_colours() {
     let mut stop = fx(EffectKind::Speed, 4.0, 2.0);
     stop.rate = 0.0;
     assert!(fx_record::is_stop(&stop));
-    assert_eq!(lane::bar_colour(EffectKind::Speed, false), (0.92, 0.42, 0.6));
+    assert_eq!(
+        lane::bar_colour(EffectKind::Speed, false),
+        (0.92, 0.42, 0.6)
+    );
 }
 
 /// §06-effects#2-the-lane-and-the-preview — the Effect menu's order, which `spec/img/06-effect-menu.png` is
 /// normative for and which is NOT `EffectKind`'s declaration order.
 #[test]
 fn sec_06_effects_2_the_lane_and_the_preview_s2_menu_order() {
-    assert_eq!(lane::MENU_ORDER[0], EffectKind::Zoom, "the image opens with ⊕ Zoom");
-    assert_eq!(lane::MENU_ORDER[lane::MENU_ORDER.len() - 1], EffectKind::Label, "and ends with 🏷 Label");
+    assert_eq!(
+        lane::MENU_ORDER[0],
+        EffectKind::Zoom,
+        "the image opens with ⊕ Zoom"
+    );
+    assert_eq!(
+        lane::MENU_ORDER[lane::MENU_ORDER.len() - 1],
+        EffectKind::Label,
+        "and ends with 🏷 Label"
+    );
     // Every kind once: the menu cannot gain a row or lose one.
     for kind in KINDS {
         assert_eq!(
-            lane::MENU_ORDER.iter().filter(|offered| **offered == kind).count(),
+            lane::MENU_ORDER
+                .iter()
+                .filter(|offered| **offered == kind)
+                .count(),
             1,
             "{kind:?} appears exactly once"
         );
@@ -100,27 +131,44 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_menu_order() {
 #[test]
 fn sec_06_effects_2_the_lane_and_the_preview_s3_rows_pack_by_seconds() {
     // Two over the top of each other: two rows.
-    let overlap = vec![fx(EffectKind::Zoom, 0.0, 5.0), fx(EffectKind::Text, 2.0, 5.0)];
+    let overlap = vec![
+        fx(EffectKind::Zoom, 0.0, 5.0),
+        fx(EffectKind::Text, 2.0, 5.0),
+    ];
     assert_eq!(lane::rows_for_effects(&overlap), vec![0, 1]);
     assert_eq!(lane::row_count(&overlap), 2);
 
     // One after the other: one row, however many of them there are.
-    let queue = vec![fx(EffectKind::Text, 0.0, 3.0), fx(EffectKind::Text, 3.0, 3.0), fx(EffectKind::Svg, 6.0, 3.0)];
+    let queue = vec![
+        fx(EffectKind::Text, 0.0, 3.0),
+        fx(EffectKind::Text, 3.0, 3.0),
+        fx(EffectKind::Svg, 6.0, 3.0),
+    ];
     assert_eq!(lane::rows_for_effects(&queue), vec![0, 0, 0]);
     assert_eq!(lane::row_count(&queue), 1);
 
     // First fit, not "next row": the third effect fits the gap the second left on row 0.
-    let fits = vec![fx(EffectKind::Zoom, 0.0, 3.0), fx(EffectKind::Text, 2.0, 3.0), fx(EffectKind::Svg, 8.0, 3.0)];
+    let fits = vec![
+        fx(EffectKind::Zoom, 0.0, 3.0),
+        fx(EffectKind::Text, 2.0, 3.0),
+        fx(EffectKind::Svg, 8.0, 3.0),
+    ];
     assert_eq!(lane::rows_for_effects(&fits), vec![0, 1, 0]);
 
     // The floor: a bar under it is drawn at the lane's top and reserves nothing.
     // effects.packMinSeconds
     assert_eq!(lane::PACK_MIN_SECONDS, 0.4);
-    let short = vec![fx(EffectKind::Label, 0.0, 0.39), fx(EffectKind::Label, 0.1, 0.3)];
+    let short = vec![
+        fx(EffectKind::Label, 0.0, 0.39),
+        fx(EffectKind::Label, 0.1, 0.3),
+    ];
     assert_eq!(lane::rows_for_effects(&short), vec![0, 0], "both are drawn");
     assert_eq!(lane::row_count(&short), 1, "and neither grew the lane");
     // Exactly the floor is not under it.
-    let at_floor = vec![fx(EffectKind::Label, 0.0, lane::PACK_MIN_SECONDS), fx(EffectKind::Label, 0.1, 1.0)];
+    let at_floor = vec![
+        fx(EffectKind::Label, 0.0, lane::PACK_MIN_SECONDS),
+        fx(EffectKind::Label, 0.1, 1.0),
+    ];
     assert_eq!(lane::rows_for_effects(&at_floor), vec![0, 1]);
 
     // Packed by seconds, so zooming the timeline cannot change it: same shape at any pps.
@@ -139,7 +187,10 @@ fn sec_06_effects_2_the_lane_and_the_preview_s4_lane_is_never_empty() {
 
     // And the row count never reports nought, so nothing downstream has to guard against it.
     let one = vec![fx(EffectKind::Text, 0.0, 2.0)];
-    assert_eq!(lane::row_count(&one), lane::rows_for_effects(&one).iter().max().unwrap() + 1);
+    assert_eq!(
+        lane::row_count(&one),
+        lane::rows_for_effects(&one).iter().max().unwrap() + 1
+    );
     assert!(lane::lane_height_px(lane::row_count(&[])) > 0.0);
 }
 
@@ -147,11 +198,18 @@ fn sec_06_effects_2_the_lane_and_the_preview_s4_lane_is_never_empty() {
 /// full alpha with a dashed violet outline, a box in the hand dashed, and every overlay at its real alpha.
 #[test]
 fn sec_06_effects_2_the_lane_and_the_preview_s5_paused_preview() {
-    assert_eq!(lane::DIM_ALPHA, 0.45, "outside the camera rect dimmed black 0.45");
+    assert_eq!(
+        lane::DIM_ALPHA,
+        0.45,
+        "outside the camera rect dimmed black 0.45"
+    );
     assert_eq!(lane::RECT_STROKE_PX, 1.5);
     let violet = lane::HELD_OUTLINE;
     assert_eq!(violet.len(), 3);
-    assert!(violet[0] > violet[1] && violet[2] > violet[1], "a violet, not a blue: {violet:?}");
+    assert!(
+        violet[0] > violet[1] && violet[2] > violet[1],
+        "a violet, not a blue: {violet:?}"
+    );
 
     // Overlays are drawn at their real alpha when paused; the rest is either a guide or inaudible-but-seen-nowhere.
     for kind in KINDS {
@@ -172,19 +230,41 @@ fn sec_06_effects_2_the_lane_and_the_preview_s5_paused_preview() {
     assert!(!lane::box_being_drawn_dashed(false));
 
     // Real alpha = the fades: nought outside, ramping in and out, full between.
-    let caption = Fx { trans: 1.0, tout: 2.0, ..fx(EffectKind::Text, 10.0, 10.0) };
+    let caption = Fx {
+        trans: 1.0,
+        tout: 2.0,
+        ..fx(EffectKind::Text, 10.0, 10.0)
+    };
     assert_eq!(lane::visibility_at(&caption, 9.9), 0.0);
-    assert_eq!(lane::visibility_at(&caption, 20.0), 0.0, "the end second is outside — half-open");
-    assert!((lane::visibility_at(&caption, 10.5) - 0.5).abs() < 1e-9, "half way through the fade in");
+    assert_eq!(
+        lane::visibility_at(&caption, 20.0),
+        0.0,
+        "the end second is outside — half-open"
+    );
+    assert!(
+        (lane::visibility_at(&caption, 10.5) - 0.5).abs() < 1e-9,
+        "half way through the fade in"
+    );
     assert_eq!(lane::visibility_at(&caption, 13.0), 1.0);
-    assert!((lane::visibility_at(&caption, 19.0) - 0.5).abs() < 1e-9, "half way through the fade out");
+    assert!(
+        (lane::visibility_at(&caption, 19.0) - 0.5).abs() < 1e-9,
+        "half way through the fade out"
+    );
     // A fade of nought either side is a hard cut: there from its first frame.
     let hard = fx(EffectKind::Text, 10.0, 4.0);
     assert_eq!(lane::visibility_at(&hard, 10.0), 1.0);
     assert_eq!(lane::visibility_at(&hard, 13.9), 1.0);
     // A label has no fades to read (§06#1's table), so it is simply there for its seconds.
-    let marked = Fx { trans: 1.0, tout: 1.0, ..fx(EffectKind::Label, 4.0, 2.0) };
-    assert_eq!(lane::visibility_at(&marked, 4.5), 1.0, "a label's fades are never read");
+    let marked = Fx {
+        trans: 1.0,
+        tout: 1.0,
+        ..fx(EffectKind::Label, 4.0, 2.0)
+    };
+    assert_eq!(
+        lane::visibility_at(&marked, 4.5),
+        1.0,
+        "a label's fades are never read"
+    );
     assert_eq!(lane::visibility_at(&marked, 6.0), 0.0);
 }
 
@@ -195,7 +275,11 @@ fn sec_06_effects_2_the_lane_and_the_preview_s6_playing_preview() {
     // Only the mask over what the finished frame hides, plus titles.
     assert!(lane::mask_only_while_playing(EffectKind::Zoom));
     for kind in KINDS {
-        assert_eq!(lane::mask_only_while_playing(kind), matches!(kind, EffectKind::Zoom), "{kind:?}");
+        assert_eq!(
+            lane::mask_only_while_playing(kind),
+            matches!(kind, EffectKind::Zoom),
+            "{kind:?}"
+        );
         assert_eq!(
             lane::drawn_while_playing(kind),
             matches!(kind, EffectKind::Text | EffectKind::Svg),
@@ -204,11 +288,17 @@ fn sec_06_effects_2_the_lane_and_the_preview_s6_playing_preview() {
     }
     // A label is a marker for the narration brief and never rendered, so it does not survive into playing either.
     assert!(!lane::drawn_while_playing(EffectKind::Label));
-    assert!(!lane::drawn_while_playing(EffectKind::Volume), "a volume has no visual");
+    assert!(
+        !lane::drawn_while_playing(EffectKind::Volume),
+        "a volume has no visual"
+    );
 
     // The camera layer rides the smoothed clock, not the once-a-tick playhead.
     assert!(lane::camera_clock_is_smoothed());
-    assert!(naivepost::preview::TICK_MS >= 10, "the tick is slow enough that this matters");
+    assert!(
+        naivepost::preview::TICK_MS >= 10,
+        "the tick is slow enough that this matters"
+    );
 
     // A stop's still is rendered from the scene's own camera: it borrows its framing, never invents one.
     let mut stop = fx(EffectKind::Speed, 6.0, 2.0);
@@ -216,9 +306,21 @@ fn sec_06_effects_2_the_lane_and_the_preview_s6_playing_preview() {
     assert!(lane::still_come_from_scene_camera(&stop));
     let mut own = fx(EffectKind::Speed, 6.0, 2.0);
     own.rate = 1.0;
-    assert!(!lane::still_come_from_scene_camera(&own), "rate 1 is not a still");
-    for kind in [EffectKind::Zoom, EffectKind::Text, EffectKind::Svg, EffectKind::Volume, EffectKind::Label] {
-        assert!(!lane::still_come_from_scene_camera(&fx(kind, 6.0, 2.0)), "{kind:?} is not a stop");
+    assert!(
+        !lane::still_come_from_scene_camera(&own),
+        "rate 1 is not a still"
+    );
+    for kind in [
+        EffectKind::Zoom,
+        EffectKind::Text,
+        EffectKind::Svg,
+        EffectKind::Volume,
+        EffectKind::Label,
+    ] {
+        assert!(
+            !lane::still_come_from_scene_camera(&fx(kind, 6.0, 2.0)),
+            "{kind:?} is not a stop"
+        );
     }
 }
 
@@ -237,7 +339,11 @@ fn sec_06_effects_2_the_lane_and_the_preview_s7_flat_rate_not_ramps() {
     speed.tout = 2.0;
     let effects = [speed.clone()];
     for t in [10.0, 11.0, 13.0, 15.9] {
-        assert_eq!(naivepost::cut_hear::rate_under(&effects, t), 0.5, "flat at {t}");
+        assert_eq!(
+            naivepost::cut_hear::rate_under(&effects, t),
+            0.5,
+            "flat at {t}"
+        );
     }
     // Outside it the clip runs at its own clock again.
     assert_eq!(naivepost::cut_hear::rate_under(&effects, 20.0), 1.0);
@@ -277,16 +383,32 @@ fn sec_06_effects_2_the_lane_and_the_preview_s9_debt_tail_and_plate() {
     // effects.debtTailMinSeconds
     assert_eq!(lane::DEBT_TAIL_MIN_SECONDS, 0.05);
     assert!(lane::draws_debt_tail("scene", 2.0, true));
-    assert!(!lane::draws_debt_tail("own", 2.0, true), "1× to the effect's end closes its gap on its last frame");
+    assert!(
+        !lane::draws_debt_tail("own", 2.0, true),
+        "1× to the effect's end closes its gap on its last frame"
+    );
     assert!(!lane::draws_debt_tail("", 2.0, true), "no answer, no tail");
-    assert!(!lane::draws_debt_tail("scene", 0.04, true), "under the floor is a rounding difference");
-    assert!(lane::draws_debt_tail("scene", -0.05, true), "the floor is the size of the debt, not its side");
-    assert!(!lane::draws_debt_tail("scene", 2.0, false), "a tail past the cut points at nothing");
+    assert!(
+        !lane::draws_debt_tail("scene", 0.04, true),
+        "under the floor is a rounding difference"
+    );
+    assert!(
+        lane::draws_debt_tail("scene", -0.05, true),
+        "the floor is the size of the debt, not its side"
+    );
+    assert!(
+        !lane::draws_debt_tail("scene", 2.0, false),
+        "a tail past the cut points at nothing"
+    );
 
     // The plate's words.
     assert_eq!(lane::plate_text(2.0), "sound 2.0 s behind");
     assert_eq!(lane::plate_text(-1.5), "sound 1.5 s ahead");
-    assert_eq!(lane::plate_text(0.0), "", "a plate saying nothing is no plate");
+    assert_eq!(
+        lane::plate_text(0.0),
+        "",
+        "a plate saying nothing is no plate"
+    );
 
     // effects.plateMinPx — §2 says "once wider than 60 px" (the inventory writes "≥ 60"), so the edge is above.
     assert_eq!(lane::PLATE_MIN_PX, 60.0);
@@ -305,16 +427,28 @@ fn sec_06_effects_2_the_lane_and_the_preview_s10_earliest_answer_wins() {
     later.snd = "mute".into();
 
     // Two covering speeds: the one that started first answers for the overlap.
-    assert_eq!(lane::sound_answer_at(&[later.clone(), first.clone()], 13.0).as_deref(), Some("pitch"));
+    assert_eq!(
+        lane::sound_answer_at(&[later.clone(), first.clone()], 13.0).as_deref(),
+        Some("pitch")
+    );
     // Past the first's end, only the later one covers the second and its answer stands.
-    assert_eq!(lane::sound_answer_at(&[first.clone(), later.clone()], 17.0).as_deref(), Some("mute"));
+    assert_eq!(
+        lane::sound_answer_at(&[first.clone(), later.clone()], 17.0).as_deref(),
+        Some("mute")
+    );
 
     // An empty `snd` is no answer: it neither wins nor silences the effect behind it.
     let quiet = fx(EffectKind::Speed, 9.0, 8.0);
-    assert_eq!(lane::sound_answer_at(&[quiet, first.clone()], 13.0).as_deref(), Some("pitch"));
+    assert_eq!(
+        lane::sound_answer_at(&[quiet, first.clone()], 13.0).as_deref(),
+        Some("pitch")
+    );
 
     // A non-speed says nothing about sound (§06#1 gives it no `snd`), even with the field filled in.
-    let caption = Fx { snd: "mute".into(), ..fx(EffectKind::Text, 12.0, 4.0) };
+    let caption = Fx {
+        snd: "mute".into(),
+        ..fx(EffectKind::Text, 12.0, 4.0)
+    };
     assert_eq!(lane::sound_answer_at(&[caption], 13.0), None);
 
     // Nothing covering the second at all.
@@ -338,7 +472,10 @@ fn sec_06_effects_2_the_lane_and_the_preview_s11_plate_debt_at_the_line() {
 
     // Three of its five seconds gone by the line at 13 → two seconds of sound still behind.
     assert_eq!(lane::plate_debt_at(&[held.clone()], 13.0), 2.0);
-    assert_eq!(lane::plate_text(lane::plate_debt_at(&[held.clone()], 13.0)), "sound 2.0 s behind");
+    assert_eq!(
+        lane::plate_text(lane::plate_debt_at(&[held.clone()], 13.0)),
+        "sound 2.0 s behind"
+    );
 
     // Before the record starts there is nothing to be late for, so no plate.
     assert_eq!(lane::plate_debt_at(&[held.clone()], 9.0), 0.0);
@@ -349,17 +486,31 @@ fn sec_06_effects_2_the_lane_and_the_preview_s11_plate_debt_at_the_line() {
     // "sound 0.1 s behind", never an inflated figure. Compared with a tolerance: the seconds are floats and the
     // subtraction carries their representation error, which is not what this rule is about.
     let near_end = lane::plate_debt_at(&[held.clone()], 14.9);
-    assert!((near_end - 0.1).abs() < 1e-6, "0.1 s still owed at 14.9 of a 5.0 s bar, got {near_end}");
-    assert_eq!(lane::plate_debt_at(&[held.clone()], 15.0), 0.0, "the bar ended; nothing under the line");
+    assert!(
+        (near_end - 0.1).abs() < 1e-6,
+        "0.1 s still owed at 14.9 of a 5.0 s bar, got {near_end}"
+    );
+    assert_eq!(
+        lane::plate_debt_at(&[held.clone()], 15.0),
+        0.0,
+        "the bar ended; nothing under the line"
+    );
     assert_eq!(lane::plate_debt_at(&[held.clone()], 20.0), 0.0);
-    assert_eq!(lane::plate_debt_at(&[held.clone()], 10.0), 5.0, "at its start, all of it is owed");
+    assert_eq!(
+        lane::plate_debt_at(&[held.clone()], 10.0),
+        5.0,
+        "at its start, all of it is owed"
+    );
 
     // The EARLIER covering record answers, matching s10's ordering rule — not whichever has the bigger debt.
     let later = Fx {
         snd: "pitch".into(),
         ..fx(EffectKind::Speed, 12.0, 9.0)
     };
-    assert_eq!(lane::plate_debt_at(&[later.clone(), held.clone()], 13.0), 2.0);
+    assert_eq!(
+        lane::plate_debt_at(&[later.clone(), held.clone()], 13.0),
+        2.0
+    );
 
     // A kind with no `snd` in §06#1's table says nothing about sound even with the field filled in.
     let caption = Fx {

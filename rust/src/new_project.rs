@@ -17,7 +17,8 @@ pub const RUN_REFUSAL: &str =
 /// project and puts it somewhere.
 pub const QUESTION: &str = "Start a new project?";
 /// S3's first paragraph — the second depends on what is open now ([`confirm_detail`]).
-pub const DETAIL: &str = "The sources, the session context and every prompt edit go back to empty. \
+pub const DETAIL: &str =
+    "The sources, the session context and every prompt edit go back to empty. \
 Files already written to the output folder are left alone.";
 /// The ellipsis again: Cancel keeps everything, Start new… still has to name a folder.
 pub const BUTTON: &str = "Start new\u{2026}";
@@ -60,7 +61,10 @@ pub fn confirm_detail(open: &Path) -> String {
         .and_then(|name| name.to_str())
         .is_some_and(|name| name != startup::SESSION_NAME);
     if named {
-        let base = open.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        let base = open
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
         format!(
             "{DETAIL}\n\n{base} stays on disk as it is, with everything it has written \
 -- this session simply stops being it."
@@ -146,7 +150,11 @@ pub fn answer(root: &Path, chosen: Option<&Path>) -> Answer {
     };
     // Split the named folder into where it goes and what it is called; `create` puts the suffix back on.
     let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
-    let named = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let named = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
     match create(root, &dir, &named) {
         Ok(created) => Answer::Created(Box::new(created)),
         Err(reason) => Answer::Refused(reason),

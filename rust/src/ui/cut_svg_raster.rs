@@ -26,18 +26,12 @@ use crate::subprocess;
 ///
 /// On failure the reason comes back as `Err` and it is the caller's line to say — §A.5 wants it said ONCE, and
 /// "once" is a property of the cache, not of this call.
-pub fn make(
-    program: &str,
-    path: &str,
-    dir: &Path,
-    log: &dyn Fn(&str),
-) -> Result<PathBuf, String> {
+pub fn make(program: &str, path: &str, dir: &Path, log: &dyn Fn(&str)) -> Result<PathBuf, String> {
     let out = dir.join(fx_svg::raster_file_name(path));
     if out.exists() {
         return Ok(out);
     }
-    std::fs::create_dir_all(dir)
-        .map_err(|err| format!("{}: {err}", dir.display()))?;
+    std::fs::create_dir_all(dir).map_err(|err| format!("{}: {err}", dir.display()))?;
     let argv = fx_svg::ffmpeg_raster(program, path, &out.display().to_string());
     // Strings to &strs without a second list: `subprocess::run` takes refs, `ffmpeg_raster` owns the args.
     let refs: Vec<&str> = argv.iter().map(String::as_str).skip(1).collect();
@@ -49,7 +43,11 @@ pub fn make(
     // ffmpeg exiting 0 without writing the file is a failure too: an empty success would mark the file ready and
     // leave the panel painting nothing, which is the exact lie this module exists to avoid.
     if !out.exists() {
-        return Err(format!("{} produced no raster at {}", program, out.display()));
+        return Err(format!(
+            "{} produced no raster at {}",
+            program,
+            out.display()
+        ));
     }
     Ok(out)
 }

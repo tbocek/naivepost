@@ -4,11 +4,10 @@
 //! count S5 logs: no widget and no display, because `rust/src/ui/window.rs` still renders only Prepare and there is no
 //! button to press that would run this.
 
+use crate::common;
+use common::{fx, seg};
 use naivepost::cut::{Cut, Fx, Seg};
 use naivepost::cut_clamp as clamp;
-use crate::common;
-use common::{seg, fx};
-
 
 /// A spliced insert of `dur` seconds — its own picture, and no footage for an effect to sit on.
 fn card(dur: f64) -> Seg {
@@ -78,7 +77,10 @@ fn f3_12_s2_a_point_effect_needs_footage_under_it() {
     assert_eq!(one(&out.kept).dur, 0.0);
 
     // In the hole between two scenes: nothing is playing at 15 s, so there is nothing to mark.
-    let out = clamp::clamp_to_cut(&cut_of(&[seg(0.0, 10.0), seg(20.0, 30.0)], &[fx("label", 15.0, 0.0)]));
+    let out = clamp::clamp_to_cut(&cut_of(
+        &[seg(0.0, 10.0), seg(20.0, 30.0)],
+        &[fx("label", 15.0, 0.0)],
+    ));
     assert_eq!(out.dropped, 1);
     assert!(out.kept.is_empty());
 
@@ -224,7 +226,14 @@ fn f3_12_s6_the_fades_shrink_with_the_band() {
         &[seg(0.0, 10.0)],
         &[fx_faded("text", 6.0, 8.0, 2.0, 2.0)],
     ));
-    assert_eq!((one(&out.kept).dur, one(&out.kept).trans, one(&out.kept).tout), (4.0, 1.0, 1.0));
+    assert_eq!(
+        (
+            one(&out.kept).dur,
+            one(&out.kept).trans,
+            one(&out.kept).tout
+        ),
+        (4.0, 1.0, 1.0)
+    );
 
     // Uneven fades keep their ratio: a third of the band left turns 3 s in and 1 s out into 1 s and 1/3 s.
     let out = clamp::clamp_to_cut(&cut_of(
@@ -241,7 +250,14 @@ fn f3_12_s6_the_fades_shrink_with_the_band() {
         &[seg(0.0, 10.0)],
         &[fx_faded("volume", 8.0, 4.0, 4.0, 1.0)],
     ));
-    assert_eq!((one(&out.kept).dur, one(&out.kept).trans, one(&out.kept).tout), (2.0, 1.6, 0.4));
+    assert_eq!(
+        (
+            one(&out.kept).dur,
+            one(&out.kept).trans,
+            one(&out.kept).tout
+        ),
+        (2.0, 1.6, 0.4)
+    );
 
     // A band the pass does not trim keeps its fades whole — shrinking is about the piece the cut took away.
     let out = clamp::clamp_to_cut(&cut_of(
@@ -261,8 +277,14 @@ fn f3_12_s7_only_the_count_of_drops_reaches_the_log() {
         line,
         ">>> 3 effect(s) pointed at footage the final cut does not keep \u{2014} dropped"
     );
-    assert!(!line.contains("--"), "the log uses an em dash, not two hyphens");
-    assert_eq!(clamp::log_line(1), ">>> 1 effect(s) pointed at footage the final cut does not keep \u{2014} dropped");
+    assert!(
+        !line.contains("--"),
+        "the log uses an em dash, not two hyphens"
+    );
+    assert_eq!(
+        clamp::log_line(1),
+        ">>> 1 effect(s) pointed at footage the final cut does not keep \u{2014} dropped"
+    );
 
     // The count is of effects, not of scenes or of trims: three of five go here.
     let segs = [seg(0.0, 10.0), seg(20.0, 30.0)];
@@ -322,7 +344,10 @@ fn f3_12_s9_a_label_is_trimmed_and_an_unknown_kind_is_left_alone() {
     assert_eq!(one(&out.kept).text, "results");
 
     // The same label entirely over an insert has no footage to mark and goes.
-    let out = clamp::clamp_to_cut(&cut_of(&[seg(0.0, 10.0), card(6.0)], &[fx("label", 2.0, 4.0)]));
+    let out = clamp::clamp_to_cut(&cut_of(
+        &[seg(0.0, 10.0), card(6.0)],
+        &[fx("label", 2.0, 4.0)],
+    ));
     assert_eq!(out.dropped, 0); // that band is inside the footage beside the card
 
     let out = clamp::clamp_to_cut(&cut_of(&[card(30.0)], &[fx("label", 2.0, 4.0)]));

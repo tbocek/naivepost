@@ -84,7 +84,9 @@ impl RoundsLlm {
                     let index = sent.fetch_add(1, Ordering::SeqCst);
                     let reply = {
                         let held = script.lock().expect("script lock");
-                        held.get(index).cloned().unwrap_or_else(|| held.last().cloned().unwrap_or_default())
+                        held.get(index)
+                            .cloned()
+                            .unwrap_or_else(|| held.last().cloned().unwrap_or_default())
                     };
                     if let Some(seen) = serve(stream, &reply) {
                         let _ = sender.send(seen);
@@ -92,7 +94,12 @@ impl RoundsLlm {
                 }
             }
         });
-        RoundsLlm { port, received, script, sent }
+        RoundsLlm {
+            port,
+            received,
+            script,
+            sent,
+        }
     }
 
     pub fn url(&self) -> String {
@@ -111,7 +118,10 @@ impl RoundsLlm {
     pub fn drain(&self) -> Vec<Seen> {
         let mut seen = vec![self.next()];
         loop {
-            match self.received.recv_timeout(std::time::Duration::from_millis(200)) {
+            match self
+                .received
+                .recv_timeout(std::time::Duration::from_millis(200))
+            {
                 Ok(more) => seen.push(more),
                 Err(_) => return seen,
             }
@@ -143,7 +153,13 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<Seen> {
             break;
         }
         if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = header
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
     }
     let mut payload = vec![0u8; length];
@@ -157,7 +173,9 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<Seen> {
     let _ = stream.write_all(framed.as_bytes());
     let _ = stream.flush();
     let _ = stream.shutdown(std::net::Shutdown::Both);
-    Some(Seen { body: String::from_utf8_lossy(&payload).to_string() })
+    Some(Seen {
+        body: String::from_utf8_lossy(&payload).to_string(),
+    })
 }
 
 // ---- the scripted answers ---------------------------------------------------------------------
@@ -229,7 +247,12 @@ pub fn caption_json(clips: &[ClipCaptions]) -> String {
 pub fn caption_tools() -> Vec<naivepost::tools::Tool> {
     naivepost::tools::offered(naivepost::roles::Job::ClipRules)
         .into_iter()
-        .filter(|tool| matches!(tool, naivepost::tools::Tool::AddCaption | naivepost::tools::Tool::Finish))
+        .filter(|tool| {
+            matches!(
+                tool,
+                naivepost::tools::Tool::AddCaption | naivepost::tools::Tool::Finish
+            )
+        })
         .collect()
 }
 

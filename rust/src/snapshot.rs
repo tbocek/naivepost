@@ -71,8 +71,6 @@ fn screen_page(screen: &str) -> Option<&'static str> {
     }
 }
 
-
-
 pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
     let page = screen_page(screen).ok_or_else(|| format!("unknown screen {screen}"))?;
     if !dir.join(project::PROJECT_FILE).is_file() {
@@ -1463,7 +1461,8 @@ pub fn write_silence_wav(path: &Path, rate: u32, samples: u32) -> std::io::Resul
             at += 1;
         }
         // The gap after it: near-silence, so the wave has quiet stretches between the loud ones.
-        at = (at + rate * 15 / 100 + (next() % (rate as u64 * 25 / 100)) as usize).min(samples as usize);
+        at = (at + rate * 15 / 100 + (next() % (rate as u64 * 25 / 100)) as usize)
+            .min(samples as usize);
     }
     std::fs::write(path, bytes)
 }
@@ -1491,7 +1490,9 @@ const SAMPLE_RATE: u32 = crate::transcribe::SAMPLE_RATE as u32;
 
 pub fn seed_voice_reference(tree: &crate::layout::Tree) -> bool {
     let base = crate::narrate_data::base_reference(tree);
-    let Some(folder) = base.parent() else { return false };
+    let Some(folder) = base.parent() else {
+        return false;
+    };
     if std::fs::create_dir_all(folder).is_err() {
         return false;
     }
@@ -1529,7 +1530,11 @@ fn seed_narrator_recording(tree: &crate::layout::Tree) -> bool {
     let Ok(mut project) = crate::project::load(tree.dir()) else {
         return false;
     };
-    let Some(row) = project.sources.iter_mut().find(|source| source.narrator == 1) else {
+    let Some(row) = project
+        .sources
+        .iter_mut()
+        .find(|source| source.narrator == 1)
+    else {
         // Nothing is tagged: §A.7 has no recording to ask about, and inventing a row here would be the shot
         // making up project state the Prepare step never produced.
         return false;

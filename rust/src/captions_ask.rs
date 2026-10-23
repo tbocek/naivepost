@@ -25,8 +25,8 @@ use crate::layout::Tree;
 use crate::llm_cache;
 use crate::llm_request;
 use crate::requests::{Request, Service};
-use crate::services;
 use crate::roles::Job;
+use crate::services;
 use crate::settings::{self, Conf, Paths};
 use crate::tools::Tool;
 
@@ -108,7 +108,11 @@ pub fn ask_at(
         // the wire, so the file shows what a re-run saved. Nothing goes out here; the row only says so.
         crate::request_timing::record_cached(tree, base_row(&model));
         return match read_back(&cached) {
-            Ok(calls) => Asked { calls, failed: false, reason: String::new() },
+            Ok(calls) => Asked {
+                calls,
+                failed: false,
+                reason: String::new(),
+            },
             Err(reason) => failed(reason),
         };
     }
@@ -132,14 +136,26 @@ pub fn ask_at(
     // server that refused the field; the cache slot and the timed row belong to whichever body goes out first.
     let build = |offer: Option<&[Tool]>| {
         let messages = vec![
-            Message { role: "system".to_string(), parts: vec![Part::Text(system.clone())] },
-            Message { role: "user".to_string(), parts: vec![Part::Text(user.clone())] },
+            Message {
+                role: "system".to_string(),
+                parts: vec![Part::Text(system.clone())],
+            },
+            Message {
+                role: "user".to_string(),
+                parts: vec![Part::Text(user.clone())],
+            },
         ];
         // §4 lists captions as thinking-OFF, so the mode comes from the prompt table rather than a named
         // `Mode` here: this call used to send `Mode::Thinking` for a job §4 says does not think.
-        Ok(llm_request::
-            body(STEP, &model, &messages, crate::prompts::mode_of(STEP), offer, true)?
-            .to_string())
+        Ok(llm_request::body(
+            STEP,
+            &model,
+            &messages,
+            crate::prompts::mode_of(STEP),
+            offer,
+            true,
+        )?
+        .to_string())
     };
     // One live ask is ONE request on the wire (§F3.9 counts batches by rows in `requests.tsv`). This dial IS §2's
     // first round, and it honours S5 itself: a refusal of the `tools` FIELD gets the identical body again without
@@ -178,7 +194,11 @@ pub fn ask_at(
         // the refusal was already said once, on the round that earned it.
         if crate::llm_tools_offer::tools_for(&endpoint.url, &offered).is_none() {
             return match parse_captions(reply.answer()) {
-                Ok(calls) => Asked { calls, failed: false, reason: String::new() },
+                Ok(calls) => Asked {
+                    calls,
+                    failed: false,
+                    reason: String::new(),
+                },
                 Err(problem) => failed(problem),
             };
         }
@@ -190,8 +210,16 @@ pub fn ask_at(
         // this pass's failure, said by name rather than quietly placed.
         let went_out = std::time::Instant::now();
         let dial = |body: &str| {
-            crate::llm_retry_leg::chat(STEP, tree, &base, &endpoint, body, cancelled, &crate::ui::window::log_line)
-                .map(|sent| (sent.content_type, sent.body))
+            crate::llm_retry_leg::chat(
+                STEP,
+                tree,
+                &base,
+                &endpoint,
+                body,
+                cancelled,
+                &crate::ui::window::log_line,
+            )
+            .map(|sent| (sent.content_type, sent.body))
         };
         let second = match crate::clip_rules_tools_leg::ask_again_for_calls(
             STEP,
@@ -227,7 +255,11 @@ pub fn ask_at(
         if asks_for_anything(&second) {
             llm_cache::store(tree, STEP, &parts, &chat_envelope(&second).to_string());
         }
-        return Asked { calls, failed: false, reason: String::new() };
+        return Asked {
+            calls,
+            failed: false,
+            reason: String::new(),
+        };
     }
     // §2's loop from here: the clip batch is the state the tools write into, so a model that asks `get_frames`
     // gets frames and a caption call lands in the same batch the prose document would have filled. The grown
@@ -238,8 +270,14 @@ pub fn ask_at(
     // grid, and a default 1 s spread would name pictures this session never extracted.
     batch.set_frame_interval(crate::project::frame_interval(tree.dir()));
     let messages = vec![
-        Message { role: "system".to_string(), parts: vec![Part::Text(system.clone())] },
-        Message { role: "user".to_string(), parts: vec![Part::Text(user.clone())] },
+        Message {
+            role: "system".to_string(),
+            parts: vec![Part::Text(system.clone())],
+        },
+        Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text(user.clone())],
+        },
     ];
     let mut calls_out: Vec<Call> = reply
         .tool_calls
@@ -255,7 +293,10 @@ pub fn ask_at(
     let first = crate::tool_loop::Turn {
         content: reply.content.clone(),
         calls: reply.tool_calls.clone(),
-        finish: reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name()),
+        finish: reply
+            .tool_calls
+            .iter()
+            .any(|call| call.name == Tool::Finish.name()),
     };
     let looped = crate::clip_rules_tools_leg::run_over_batch_from(
         STEP,
@@ -323,13 +364,21 @@ pub fn ask_at(
     if asks_for_anything(&reply) {
         llm_cache::store(tree, STEP, &parts, &chat_envelope(&reply).to_string());
     }
-    Asked { calls: calls_out, failed: false, reason: String::new() }
+    Asked {
+        calls: calls_out,
+        failed: false,
+        reason: String::new(),
+    }
 }
 
 /// One answered round as §7 shows it: the conversation that round was shown, its calls with their results, and
 /// the prose the model said alongside them. Built by [`crate::exchange_leg::round_of`], so a tool flow's page is
 /// drawn through the same door every other exchange is.
-fn page_round(step: &str, model: &str, round: &crate::clip_rules_tools_leg::Round) -> exchanges::Call {
+fn page_round(
+    step: &str,
+    model: &str,
+    round: &crate::clip_rules_tools_leg::Round,
+) -> exchanges::Call {
     crate::exchange_leg::round_of(step, model, &round.messages, &round.turn)
 }
 
@@ -396,8 +445,11 @@ fn wording(paths: Option<&Paths>, key: &str) -> String {
 pub fn call_of_args(args: &serde_json::Value) -> Option<Call> {
     let text = args.get("text").and_then(|text| text.as_str())?.to_string();
     let number = |key: &str| {
-        args.get(key)
-            .and_then(|value| value.as_f64().or_else(|| value.as_str().and_then(|t| t.trim().parse::<f64>().ok())))
+        args.get(key).and_then(|value| {
+            value
+                .as_f64()
+                .or_else(|| value.as_str().and_then(|t| t.trim().parse::<f64>().ok()))
+        })
     };
     Some(Call {
         clip: number("clip")?.max(1.0) as u32,
@@ -411,11 +463,16 @@ pub fn call_of_args(args: &serde_json::Value) -> Option<Call> {
 /// request carried, because a repair adds to the conversation rather than replacing it.
 fn repair_messages(system: &str, user: &str) -> Vec<Message> {
     vec![
-        Message { role: "system".to_string(), parts: vec![Part::Text(system.to_string())] },
-        Message { role: "user".to_string(), parts: vec![Part::Text(user.to_string())] },
+        Message {
+            role: "system".to_string(),
+            parts: vec![Part::Text(system.to_string())],
+        },
+        Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text(user.to_string())],
+        },
     ]
 }
-
 
 /// The chat body for one round of a tool conversation: the grown message list beside the offer the loop was
 /// given (§2 S2's "append the assistant turn · one `tool` message per call"). The body carries `"stream": true`
@@ -436,7 +493,6 @@ fn chat_body_conversation(
     )?
     .to_string())
 }
-
 
 /// The timed row shape this ask's rounds write: `started` and `run` belong to whoever owns the run, and a step
 /// that stands alone leaves them blank (the same shape `llm_retry_leg::chat` fills in).
@@ -465,7 +521,11 @@ fn cache_parts(system: &str, user: &str, model: &str, attempt: u32) -> Vec<serde
 
 /// An ask that did not answer: F3.9's pass keeps its stumble and says why, rather than failing the cut.
 fn failed(reason: String) -> Asked {
-    Asked { calls: Vec::new(), failed: true, reason }
+    Asked {
+        calls: Vec::new(),
+        failed: true,
+        reason,
+    }
 }
 
 /// Read a cached captions answer back. Two shapes, because the answer's shape changed with the tools being put
@@ -498,7 +558,10 @@ pub fn read_back(cached: &str) -> Result<Vec<Call>, String> {
 /// [`crate::clip_rules_tools_leg::asks_for_anything`]; this one only has to ignore `finish`, because the
 /// captions pass offers nothing else, and it reads clearer at the call site.
 fn asks_for_anything(reply: &llm_request::Reply) -> bool {
-    reply.tool_calls.iter().any(|call| call.name != Tool::Finish.name())
+    reply
+        .tool_calls
+        .iter()
+        .any(|call| call.name != Tool::Finish.name())
 }
 
 /// The chat envelope a round answered with, rebuilt for the cache — the shared door, so all three §3.7 passes
@@ -535,7 +598,9 @@ pub fn parse_captions(answer: &str) -> Result<Vec<Call>, String> {
             .get("i")
             .and_then(|number| number.as_u64())
             .map(|number| number as u32)
-            .ok_or_else(|| "a clip entry in the captions answer has no clip number \"i\"".to_string())?;
+            .ok_or_else(|| {
+                "a clip entry in the captions answer has no clip number \"i\"".to_string()
+            })?;
         let fx = entry
             .get("fx")
             .and_then(|fx| fx.as_array())
@@ -549,7 +614,12 @@ pub fn parse_captions(answer: &str) -> Result<Vec<Call>, String> {
                 .get("text")
                 .and_then(|text| text.as_str())
                 .ok_or_else(|| format!("clip {clip}: a caption has no \"text\""))?;
-            calls.push(Call { clip, start, end, text: text.to_string() });
+            calls.push(Call {
+                clip,
+                start,
+                end,
+                text: text.to_string(),
+            });
         }
     }
     Ok(calls)

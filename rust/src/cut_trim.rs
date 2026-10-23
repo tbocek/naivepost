@@ -50,7 +50,11 @@ pub fn grab_border(px: f64, start_px: f64, end_px: f64) -> Option<Border> {
     let start = to_start <= EDGE_GRAB_PX;
     let end = to_end <= EDGE_GRAB_PX;
     match (start, end) {
-        (true, true) => Some(if to_start < to_end { Border::Start } else { Border::End }),
+        (true, true) => Some(if to_start < to_end {
+            Border::Start
+        } else {
+            Border::End
+        }),
         (true, false) => Some(Border::Start),
         (false, true) => Some(Border::End),
         (false, false) => None,
@@ -91,21 +95,41 @@ fn neighbours(segs: &[Seg], index: usize) -> (f64, f64) {
 /// those bounds, which is what makes a trim feel like cutting film rather than being magnetised around. The
 /// next clip's start is therefore an exact stop — `39` stays `39`, one second short of it — because "not
 /// past the next clip" is a wall at 40 and not a slope leading to it.
-pub fn clamp_edge(segs: &[Seg], index: usize, border: Border, t: f64, rec_start: f64, rec_end: f64) -> f64 {
+pub fn clamp_edge(
+    segs: &[Seg],
+    index: usize,
+    border: Border,
+    t: f64,
+    rec_start: f64,
+    rec_end: f64,
+) -> f64 {
     let Some(held) = segs.get(index) else {
         return t;
     };
     let (before, after) = neighbours(segs, index);
     match border {
-        Border::End => t.clamp(held.s + MIN_SCENE_SECONDS, (rec_end.min(after)).max(held.s + MIN_SCENE_SECONDS)),
-        Border::Start => t.clamp((rec_start.max(before)).min(held.e - MIN_SCENE_SECONDS), held.e - MIN_SCENE_SECONDS),
+        Border::End => t.clamp(
+            held.s + MIN_SCENE_SECONDS,
+            (rec_end.min(after)).max(held.s + MIN_SCENE_SECONDS),
+        ),
+        Border::Start => t.clamp(
+            (rec_start.max(before)).min(held.e - MIN_SCENE_SECONDS),
+            held.e - MIN_SCENE_SECONDS,
+        ),
     }
 }
 
 /// F2.8 S1: is this a new edge at all? `false` when the clamped value is the border's own value — a drag
 /// that lands back where it started is not an edit, and pushing one onto the history per mouse move would
 /// be fifty steps for one act of the hand.
-pub fn trims(segs: &[Seg], index: usize, border: Border, t: f64, rec_start: f64, rec_end: f64) -> bool {
+pub fn trims(
+    segs: &[Seg],
+    index: usize,
+    border: Border,
+    t: f64,
+    rec_start: f64,
+    rec_end: f64,
+) -> bool {
     let Some(held) = segs.get(index) else {
         return false;
     };
@@ -201,7 +225,10 @@ pub fn merge_pair(segs: &[Seg], held: usize) -> Option<usize> {
     let held_seg = segs.get(held)?;
     let near = |a: f64, b: f64| (a - b).abs() <= MIN_SECONDS;
     let pair = segs.iter().enumerate().find(|(other, seg)| {
-        *other != held && !is_card(seg) && seg.cam == held_seg.cam && (near(seg.s, held_seg.e) || near(seg.e, held_seg.s))
+        *other != held
+            && !is_card(seg)
+            && seg.cam == held_seg.cam
+            && (near(seg.s, held_seg.e) || near(seg.e, held_seg.s))
     });
     if is_card(held_seg) {
         return None;
@@ -216,7 +243,11 @@ pub fn merge_pair(segs: &[Seg], held: usize) -> Option<usize> {
 /// identity so the page still calls it clip N.
 pub fn merge(segs: &mut Vec<Seg>, held: usize) -> Option<(usize, usize)> {
     let other = merge_pair(segs, held)?;
-    let (first, second) = if held < other { (held, other) } else { (other, held) };
+    let (first, second) = if held < other {
+        (held, other)
+    } else {
+        (other, held)
+    };
     segs[first].s = segs[first].s.min(segs[second].s);
     segs[first].e = segs[first].e.max(segs[second].e);
     // The border being closed may be the survivor's own split flag: the earlier piece is the one that stays,
@@ -399,7 +430,14 @@ pub fn slide_for(press: &Press) -> Slide {
 /// behind another meets it exactly instead of a pixel short. Pixels because the reach is the hand's, the
 /// same reason F2.6's snap is pixels. An insert may go anywhere the neighbours allow: this clamps footage
 /// and cards by one geometry and leaves the caller to decide which to accept.
-pub fn slide_scene(segs: &[Seg], index: usize, to: f64, rec_start: f64, rec_end: f64, pps: f64) -> f64 {
+pub fn slide_scene(
+    segs: &[Seg],
+    index: usize,
+    to: f64,
+    rec_start: f64,
+    rec_end: f64,
+    pps: f64,
+) -> f64 {
     let Some(held) = segs.get(index) else {
         return to;
     };
@@ -447,7 +485,11 @@ pub fn pushes_undo(moved: bool, already_pushed: bool) -> bool {
 /// Read from the gesture's OPENING map, not the current one: a drag fires an update per mouse-move event,
 /// and each asking the live map would compound ten nudges into ten times the distance the hand travelled.
 /// That is also what makes one Undo enough — the whole gesture is one step from the opening state to this.
-pub fn slide_shift(from: &BTreeMap<String, f64>, sources: &[String], d: f64) -> BTreeMap<String, f64> {
+pub fn slide_shift(
+    from: &BTreeMap<String, f64>,
+    sources: &[String],
+    d: f64,
+) -> BTreeMap<String, f64> {
     let mut shifted = from.clone();
     for source in sources {
         let start = shifted.get(source).copied().unwrap_or(0.0);
@@ -463,7 +505,11 @@ pub fn slide_shift(from: &BTreeMap<String, f64>, sources: &[String], d: f64) -> 
 /// drag has got to, which with no travel yet is just that column. A fold elsewhere is untouched by this drag,
 /// and opening it would have nothing to refold afterwards.
 pub fn folds_to_open(folds: &[[f64; 2]], grab: f64, travel: f64) -> Vec<usize> {
-    let (from, to) = if travel >= 0.0 { (grab, grab + travel) } else { (grab + travel, grab) };
+    let (from, to) = if travel >= 0.0 {
+        (grab, grab + travel)
+    } else {
+        (grab + travel, grab)
+    };
     folds
         .iter()
         .enumerate()
@@ -474,7 +520,8 @@ pub fn folds_to_open(folds: &[[f64; 2]], grab: f64, travel: f64) -> Vec<usize> {
 
 /// F2.8 S1: the tooltip that says a border is grabbable before a person tries it — the reach is
 /// [`EDGE_GRAB_PX`], and either button takes it. `// layout.edgeGrabPx`
-pub const TRIM_TIP: &str = "press within 6 px of a clip border to drag that border \u{2014} either button";
+pub const TRIM_TIP: &str =
+    "press within 6 px of a clip border to drag that border \u{2014} either button";
 
 /// F2.8 S2: the tooltip for the right hand, naming what a right-drag does before it is tried.
 pub const MOVE_TIP: &str =
@@ -571,7 +618,8 @@ pub fn right_gesture(
             // scene's delta as the number the sentence quotes.
             for scene in scenes {
                 if let Some(seg) = segs.get(*scene) {
-                    let landed = slide_scene(segs, *scene, seg.s + d_seconds, rec_start, rec_end, pps);
+                    let landed =
+                        slide_scene(segs, *scene, seg.s + d_seconds, rec_start, rec_end, pps);
                     moved = landed - seg.s;
                 }
             }
@@ -640,7 +688,10 @@ pub fn shift_label(what: &str, d: f64) -> String {
 /// F2.8 S2: what a row change says. Rows are counted from 1 in the sentence and numbered from 0 in `Cut::rows`,
 /// so the page's "row 3" is the map's `2`.
 pub fn row_status(what: &str, row: usize) -> String {
-    format!("{what} moved to row {} \u{2014} its kept scenes came along", row + 1)
+    format!(
+        "{what} moved to row {} \u{2014} its kept scenes came along",
+        row + 1
+    )
 }
 
 // --- S1: the strip's own geometry (what the draw callback paints) ---------------------------------------
@@ -663,7 +714,12 @@ pub fn border_positions(boxes: &[Box_]) -> Vec<(f64, usize, Border)> {
     boxes
         .iter()
         .filter(|b| !b.insert)
-        .flat_map(|b| [(b.x, b.index, Border::Start), (b.x + b.w, b.index, Border::End)])
+        .flat_map(|b| {
+            [
+                (b.x, b.index, Border::Start),
+                (b.x + b.w, b.index, Border::End),
+            ]
+        })
         .collect()
 }
 
@@ -681,7 +737,6 @@ pub fn border_at(boxes: &[Box_], px: f64) -> Option<(usize, Border)> {
     }
     best.map(|(_, index, border)| (index, border))
 }
-
 
 /// F2.8: one box on the placeholder strip — where a drawn thing sits and how wide it is, in pixels.
 ///

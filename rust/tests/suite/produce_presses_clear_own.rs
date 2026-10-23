@@ -16,11 +16,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use naivepost::layout::Tree;
 use naivepost::produce_presses::{self as presses, ClearOwn, Legs};
 use naivepost::produce_upload as upload;
 use naivepost::project::Publish;
 use naivepost::startup::session_dir;
-use naivepost::layout::Tree;
 
 const ITEM: &str = "F5.7";
 
@@ -31,7 +31,10 @@ fn session(tag: &str) -> (std::path::PathBuf, Tree) {
     let _ = std::fs::remove_dir_all(&root);
     let dir = session_dir(&root);
     std::fs::create_dir_all(&dir).expect("session folder");
-    (root, Tree::new(&dir).expect("the session folder is a project tree"))
+    (
+        root,
+        Tree::new(&dir).expect("the session folder is a project tree"),
+    )
 }
 
 /// The order the legs answered in, shared between the recording legs and the test.
@@ -56,7 +59,9 @@ fn walk(calls: &Calls, clear_own: ClearOwn) -> Legs {
         brief: Box::new(|| "the brief".to_string()),
         ask_draw: Box::new(move |_body| {
             for_draw.borrow_mut().push("draw".to_string());
-            Ok(upload::DrawnJob { id: "job-1".to_string() })
+            Ok(upload::DrawnJob {
+                id: "job-1".to_string(),
+            })
         }),
         poll: Box::new(move |_job| {
             for_poll.borrow_mut().push("poll".to_string());
@@ -153,10 +158,7 @@ fn f5_7_s1_the_clear_lands_after_the_opening_and_before_the_draw() {
         &Publish {
             own: true,
             thumb_title: "an old title".to_string(),
-            crop: naivepost::project::Crop {
-                x: 0.0,
-                y: 0.25,
-            },
+            crop: naivepost::project::Crop { x: 0.0, y: 0.25 },
             ..Default::default()
         },
         &tree,
@@ -173,7 +175,9 @@ fn f5_7_s1_the_clear_lands_after_the_opening_and_before_the_draw() {
             Box::new(move |_body| {
                 seen.set(own.get());
                 calls.borrow_mut().push("draw".to_string());
-                Ok(upload::DrawnJob { id: "job-1".to_string() })
+                Ok(upload::DrawnJob {
+                    id: "job-1".to_string(),
+                })
             })
         },
         ..walk(&calls, page_door(own.clone(), tree.clone()))
@@ -186,10 +190,16 @@ fn f5_7_s1_the_clear_lands_after_the_opening_and_before_the_draw() {
         !out.calls.contains(&"refused".to_string()),
         "no refusal on a press with a cut and an instruction"
     );
-    assert!(!seen_at_draw.get(), "the picture was the app's by the time the draw was sent");
+    assert!(
+        !seen_at_draw.get(),
+        "the picture was the app's by the time the draw was sent"
+    );
     assert!(!own.get(), "and stayed that way");
     let read = naivepost::publish::load(&tree).expect("publish.json");
-    assert!(!read.own, "§F5.7's \"clears `own`\" reaches the file, not only the screen");
+    assert!(
+        !read.own,
+        "§F5.7's \"clears `own`\" reaches the file, not only the screen"
+    );
     assert_eq!(
         read.thumb_title, "keep me",
         "clearing the flag rewrites nothing else — the instruction and the words are the next legs' business"
@@ -235,7 +245,10 @@ fn f5_7_s1_a_clear_that_refuses_ends_the_press_before_any_draw() {
         said.contains("publish.json could not be written"),
         "the trouble is named where it happened: {said:?}"
     );
-    assert_eq!(out.sd_calls, 0, "a press that could not clear draws nothing");
+    assert_eq!(
+        out.sd_calls, 0,
+        "a press that could not clear draws nothing"
+    );
     assert!(
         !calls.borrow().iter().any(|c| c == "draw"),
         "and spends no GPU time doing it: {:?}",
@@ -255,6 +268,12 @@ fn f5_7_s1_the_page_mirror_clears_only_the_flag() {
     naivepost::ui::produce_page::clear_own_thumbnail();
 
     let after = naivepost::ui::produce_page::read_state();
-    assert!(!after.own, "the press that hands the picture back leaves no mark of ownership");
-    assert_eq!(after.thumb_title, "keep me", "it clears the flag, not the words");
+    assert!(
+        !after.own,
+        "the press that hands the picture back leaves no mark of ownership"
+    );
+    assert_eq!(
+        after.thumb_title, "keep me",
+        "it clears the flag, not the words"
+    );
 }

@@ -137,7 +137,8 @@ fn sec_07_narrate_3_data_stored_takes_come_from_the_recording_key() {
         "nothing picked yet, so the band opens bare"
     );
     narrate_data::save_takes(&tree, "lecture", &[Take { s: 4.0, e: 9.0 }]).expect("a pick stored");
-    narrate_data::save_takes(&tree, "other_cam", &[Take { s: 0.0, e: 2.0 }]).expect("another recording's pick");
+    narrate_data::save_takes(&tree, "other_cam", &[Take { s: 0.0, e: 2.0 }])
+        .expect("another recording's pick");
     assert_eq!(
         ui::narrate_seed::stored_takes(&tree),
         vec![(4.0, 9.0)],
@@ -146,7 +147,10 @@ fn sec_07_narrate_3_data_stored_takes_come_from_the_recording_key() {
 }
 
 /// Open the shell on the Narrate tab, the way a person does: the tab's own clicked emission.
-fn narrate_tab(app: &adw::Application, project: &naivepost::project::Project) -> adw::ApplicationWindow {
+fn narrate_tab(
+    app: &adw::Application,
+    project: &naivepost::project::Project,
+) -> adw::ApplicationWindow {
     let window = ui::build_window(app, project, "Prepare");
     window.present();
     ui::tab_button(&window, naivepost::shell::Page::Narrate)
@@ -321,7 +325,14 @@ fn stored_values_seed_the_page(
 
 /// A line of a narration record: the clip's bounds and what is said over it.
 fn entry(s: f64, e: f64, text: &str) -> Entry {
-    Entry { s, e, at: 0.0, text: text.into(), emotion: String::new(), ..Default::default() }
+    Entry {
+        s,
+        e,
+        at: 0.0,
+        text: text.into(),
+        emotion: String::new(),
+        ..Default::default()
+    }
 }
 
 /// sec_07_narrate_3_data_pitch_survives_a_reload — `narrate/pitch.txt` holds one decimal, and reading it
@@ -368,7 +379,9 @@ fn sec_07_narrate_3_data_takes_are_keyed_by_the_recording() {
     let file = tree.takes_json();
     assert!(!file.exists(), "a fresh session has no takes.json");
     assert!(
-        narrate_data::load_takes(&tree).expect("a missing file is nobody having picked anything").is_empty(),
+        narrate_data::load_takes(&tree)
+            .expect("a missing file is nobody having picked anything")
+            .is_empty(),
         "and it reads as an empty map"
     );
 
@@ -443,7 +456,10 @@ fn sec_07_narrate_3_data_stored_values_seed_the_page() {
 fn sec_07_narrate_3_data_previous_kept_only_after_a_valid_reply() {
     let (_root, tree) = tree_in("data-prev");
     // What was there before this run: one line, which is what the copy has to preserve.
-    let before = Narration { entries: vec![entry(0.0, 10.0, "the OLD first line")], silent: vec![] };
+    let before = Narration {
+        entries: vec![entry(0.0, 10.0, "the OLD first line")],
+        silent: vec![],
+    };
     narration::save(&before, &tree).expect("a record exists before the run");
     assert!(
         narrate_data::keep_previous(&tree).expect("copying an existing record works"),
@@ -496,22 +512,37 @@ fn sec_07_narrate_3_data_previous_reads_back_the_generation() {
         "an absent narration.json is a fresh session, not a broken one"
     );
     let (record, fell_back) = narrate_data::load_or_previous(&tree).expect("a fresh session reads");
-    assert!(record.entries.is_empty() && !fell_back, "and it reads as no lines, without falling back");
+    assert!(
+        record.entries.is_empty() && !fell_back,
+        "and it reads as no lines, without falling back"
+    );
 
     // One good generation, then the current file is damaged by hand — the state a half-written save leaves.
-    let kept = Narration { entries: vec![entry(0.0, 10.0, "the KEPT line")], silent: vec![] };
+    let kept = Narration {
+        entries: vec![entry(0.0, 10.0, "the KEPT line")],
+        silent: vec![],
+    };
     narration::save(&kept, &tree).expect("a record exists");
     narrate_data::keep_previous(&tree).expect("it becomes the kept generation");
-    std::fs::write(tree.narration_json(), b"{ this is not json").expect("the current file is now garbage");
+    std::fs::write(tree.narration_json(), b"{ this is not json")
+        .expect("the current file is now garbage");
 
     assert!(
         narration::load(&tree).is_err(),
         "the current file genuinely fails to load -- that is the case the fallback is for"
     );
-    let (record, fell_back) = narrate_data::load_or_previous(&tree).expect("the kept generation is readable");
-    assert!(fell_back, "and the answer came from the fallback, which is what gets said out loud");
+    let (record, fell_back) =
+        narrate_data::load_or_previous(&tree).expect("the kept generation is readable");
+    assert!(
+        fell_back,
+        "and the answer came from the fallback, which is what gets said out loud"
+    );
     assert_eq!(
-        record.entries.iter().map(|line| line.text.as_str()).collect::<Vec<_>>(),
+        record
+            .entries
+            .iter()
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>(),
         vec!["the KEPT line"],
         "so the run starts from the generation one back, not from nothing"
     );

@@ -82,8 +82,16 @@ fn run_round() {
     naivepost::project::save(&project, fixture.tree.dir()).expect("naivepost.json written");
     let lane = "narrator-mic";
     let turns = vec![
-        naivepost::requests::Turn { start_sample: 0, end_sample: 96_000, speaker_id: 1 },
-        naivepost::requests::Turn { start_sample: 200_000, end_sample: 296_000, speaker_id: 1 },
+        naivepost::requests::Turn {
+            start_sample: 0,
+            end_sample: 96_000,
+            speaker_id: 1,
+        },
+        naivepost::requests::Turn {
+            start_sample: 200_000,
+            end_sample: 296_000,
+            speaker_id: 1,
+        },
     ];
     naivepost::requests::write_turns(&fixture.tree, lane, &turns).expect("turns.json written");
     let lines = vec![
@@ -100,8 +108,14 @@ fn run_round() {
             text: "one two three four five six seven eight nine ten".into(),
         },
     ];
-    std::fs::create_dir_all(fixture.tree.transcript_fixed_tsv(lane).parent().expect("dir"))
-        .expect("transcript folder");
+    std::fs::create_dir_all(
+        fixture
+            .tree
+            .transcript_fixed_tsv(lane)
+            .parent()
+            .expect("dir"),
+    )
+    .expect("transcript folder");
     naivepost::textfmt::write_lines(&lines, &fixture.tree.transcript_fixed_tsv(lane))
         .expect("transcript written");
 
@@ -119,8 +133,16 @@ fn run_round() {
 
     let base = fixture.tree.voice_ref_base_wav();
     let served = fixture.tree.voice_ref_wav();
-    assert!(base.is_file(), "the level pass wrote the base at {}", base.display());
-    assert!(served.is_file(), "the shift pass wrote the served copy at {}", served.display());
+    assert!(
+        base.is_file(),
+        "the level pass wrote the base at {}",
+        base.display()
+    );
+    assert!(
+        served.is_file(),
+        "the shift pass wrote the served copy at {}",
+        served.display()
+    );
 
     let argv = std::fs::read_to_string(&log).expect("the fake recorded its argv");
     assert!(
@@ -152,7 +174,10 @@ fn run_round() {
         "and the line was spoken over it: {paths:?}"
     );
     let ffmpeg_at = std::fs::metadata(&log).map(|m| m.len()).unwrap_or(0);
-    assert!(ffmpeg_at > 0, "the build left its argv behind: {ffmpeg_at} bytes");
+    assert!(
+        ffmpeg_at > 0,
+        "the build left its argv behind: {ffmpeg_at} bytes"
+    );
 
     RAN_BUILD_DOOR.store(true, Ordering::SeqCst);
 }

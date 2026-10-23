@@ -19,7 +19,11 @@ use naivepost::{checks, settings, settings_probe};
 ///
 /// The whole request line and body are pushed into the `Vec` the caller polls: the answer thread writes
 /// before it records, so a probe can come back first — tests poll rather than sleep.
-fn fake(content_type: &'static str, body: &'static str, echo: bool) -> (String, std::sync::mpsc::Receiver<String>) {
+fn fake(
+    content_type: &'static str,
+    body: &'static str,
+    echo: bool,
+) -> (String, std::sync::mpsc::Receiver<String>) {
     // Bound the read: a GET sends no body, and `read_line` on a keep-alive socket would otherwise sit
     // until the client's own timeout and the answer would never be written.
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
@@ -46,7 +50,13 @@ fn fake(content_type: &'static str, body: &'static str, echo: bool) -> (String, 
                 break;
             }
             if line.to_ascii_lowercase().starts_with("content-length:") {
-                length = line.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+                length = line
+                    .split(':')
+                    .nth(1)
+                    .unwrap_or("0")
+                    .trim()
+                    .parse()
+                    .unwrap_or(0);
             }
             headers.push_str(&line);
         }
@@ -129,7 +139,8 @@ fn chat_answer(content: &str) -> String {
 /// §5 keeps that endpoint for "Fetch models" and the sd.cpp fallback only; a server that lists a model and
 /// then answers nothing is precisely what this row has to catch, so the body on the wire is the evidence.
 #[test]
-fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s1_llm_row_posts_one_completion() {
+fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s1_llm_row_posts_one_completion(
+) {
     // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
     crate::common::pin_private_cwd();
     let _env = env_turn();
@@ -139,16 +150,29 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s1_llm
     let sent = recorded(&rx);
     // §5's switches are proven by the bytes the row put on the wire, which is what the fake recorded;
     // the verdict line is `checks`' sentence about the reply, so a GET could never produce this.
-    assert!(sent.starts_with("POST /v1/chat/completions"), "the LLM row must send a completion, not {}", sent.lines().next().unwrap_or(""));
+    assert!(
+        sent.starts_with("POST /v1/chat/completions"),
+        "the LLM row must send a completion, not {}",
+        sent.lines().next().unwrap_or("")
+    );
     assert!(!sent.contains("GET /v1/models"), "{sent}");
     let on_the_wire: serde_json::Value = request_body(&sent)
         .expect("the fake must record the POST body it was sent")
         .parse()
         .expect("the POST carries a JSON body");
     assert_eq!(on_the_wire["max_tokens"], 16, "checks::LLM_TEST_MAX_TOKENS");
-    assert_eq!(on_the_wire["enable_thinking"], false, "thinking off, top level");
-    assert_eq!(on_the_wire["chat_template_kwargs"]["enable_thinking"], false, "thinking off, in the template kwargs");
-    assert_eq!(on_the_wire["model"], "probe-model", "the id comes from the Model box");
+    assert_eq!(
+        on_the_wire["enable_thinking"], false,
+        "thinking off, top level"
+    );
+    assert_eq!(
+        on_the_wire["chat_template_kwargs"]["enable_thinking"], false,
+        "thinking off, in the template kwargs"
+    );
+    assert_eq!(
+        on_the_wire["model"], "probe-model",
+        "the id comes from the Model box"
+    );
     // The switches are proven by the bytes on the wire; the verdict line is `checks`' own sentence about
     // the reply, so it is checked for the content the fake answered with.
     assert!(verdict.contains("ok"), "{verdict}");
@@ -156,7 +180,8 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s1_llm
 
 /// s2 — the vision row sends the 48 px red square as a data URL and passes only if the reply says red.
 #[test]
-fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s2_vision_row_shows_a_red_square() {
+fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s2_vision_row_shows_a_red_square(
+) {
     crate::common::pin_private_cwd();
     let _env = env_turn();
     // A reply naming the colour passes with `checks`' own sentence. A completion reply carries only the
@@ -177,14 +202,22 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s2_vis
 
 /// s3 — the four audio.cpp model rows check the DECLARED TASK of the id in the box.
 #[test]
-fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s3_audio_rows_check_the_declared_task() {
+fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s3_audio_rows_check_the_declared_task(
+) {
     crate::common::pin_private_cwd();
     let _env = env_turn();
     // Each row's own task, served under its own id: every row passes and says which task it saw.
     // The four rows' declared tasks come from `checks::AUDIO_ROWS` itself (TTS is served as `clon`).
     // The rows' declared tasks are `checks::AUDIO_ROWS`' own pairs, read out rather than repeated here,
     // so a test cannot go green against a pair the program disagrees with (TTS is served as `clon`).
-    for key_id in [("tts", "index-tts2"), ("asr", "nemotron-asr"), ("diar", "sortformer"), ("sep", "bam")].iter() {
+    for key_id in [
+        ("tts", "index-tts2"),
+        ("asr", "nemotron-asr"),
+        ("diar", "sortformer"),
+        ("sep", "bam"),
+    ]
+    .iter()
+    {
         // A row's key is the first word of its label, lowercased — the same key the dialog's Test button
         // carries — and the task is read from the program's own pair rather than restated here, so a test
         // cannot go green against a pair the program disagrees with (the TTS row is served as `clon`).
@@ -198,9 +231,13 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s3_aud
         // The audio rows dial the SERVER box's address (§5 gives those boxes an id, not an address), so
         // the fake is installed in the conf and the typed value is the id being checked.
         write_conf(&conf_at(&url));
-        let verdict = settings_probe::probe(key, id).unwrap_or_else(|why| panic!("{key} row failed: {why}"));
+        let verdict =
+            settings_probe::probe(key, id).unwrap_or_else(|why| panic!("{key} row failed: {why}"));
         assert!(verdict.contains(id), "{key}: {verdict}");
-        assert!(verdict.contains(task), "{key}: {verdict} should name task {task}");
+        assert!(
+            verdict.contains(task),
+            "{key}: {verdict} should name task {task}"
+        );
     }
 
     // The interesting failure: the id is served, but declared for another task.
@@ -221,37 +258,59 @@ fn asr_row_against(entries: &[(&str, &str)]) -> String {
 
 /// s4 — the id the server does not serve at all is refused with what IS served, named.
 #[test]
-fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s4_a_missing_id_names_the_catalogue() {
+fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s4_a_missing_id_names_the_catalogue(
+) {
     crate::common::pin_private_cwd();
     let _env = env_turn();
-    let (url, _) = fake("application/json", leak(catalogue(&[("other-model", "asr")])), false);
+    let (url, _) = fake(
+        "application/json",
+        leak(catalogue(&[("other-model", "asr")])),
+        false,
+    );
     write_conf(&conf_at(&url));
     let failure = settings_probe::probe("asr", "nemotron-asr").expect_err("not served");
-    assert!(failure.contains("other-model"), "{failure} must list what the server has");
+    assert!(
+        failure.contains("other-model"),
+        "{failure} must list what the server has"
+    );
 }
 
 /// s5 — the aligner row is answered by TASK, never by id: an empty box with an `align` model passes, and a
 /// name the server does not declare as `align` fails naming the server's own list.
 #[test]
-fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s5_the_aligner_row_is_answered_by_task() {
+fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s5_the_aligner_row_is_answered_by_task(
+) {
     crate::common::pin_private_cwd();
     let _env = env_turn();
     // One listener answers one request, and ureq does not reuse it here, so the two dials (empty box,
     // then the disagreeing name) get two fakes each serving the same catalogue.
-    let (url, _) = fake("application/json", leak(catalogue(&[("qwen3-aligner", "align")])), false);
+    let (url, _) = fake(
+        "application/json",
+        leak(catalogue(&[("qwen3-aligner", "align")])),
+        false,
+    );
     write_conf(&conf_at(&url));
     let verdict = settings_probe::probe("aligner", "").expect("an aligner is served for the task");
     assert!(verdict.contains("qwen3-aligner"), "{verdict}");
     assert!(verdict.contains("word"), "{verdict}");
 
     // A box disagreeing with the server is the failure §5 says cannot be resolved locally.
-    let (again, _) = fake("application/json", leak(catalogue(&[("qwen3-aligner", "align")])), false);
+    let (again, _) = fake(
+        "application/json",
+        leak(catalogue(&[("qwen3-aligner", "align")])),
+        false,
+    );
     write_conf(&conf_at(&again));
-    let disagree = settings_probe::probe("aligner", "hand-picked").expect_err("not declared as align");
+    let disagree =
+        settings_probe::probe("aligner", "hand-picked").expect_err("not declared as align");
     assert!(disagree.contains("not served as task"), "{disagree}");
 
     // And having no aligner at all is a smaller tool, not a failure: §5's waveform wording.
-    let (none, _) = fake("application/json", leak(catalogue(&[("only-asr", "asr")])), false);
+    let (none, _) = fake(
+        "application/json",
+        leak(catalogue(&[("only-asr", "asr")])),
+        false,
+    );
     write_conf(&conf_at(&none));
     let no_aligner = settings_probe::probe("aligner", "").expect("no aligner is not a failure");
     assert!(no_aligner.contains("silence to cut in"), "{no_aligner}");
@@ -260,17 +319,21 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s5_the
 
 /// s6 — the ffmpeg row: the binary named, ffprobe beside it, then what the build has, by name.
 #[test]
-fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s6_the_ffmpeg_row_reads_the_build() {
+fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s6_the_ffmpeg_row_reads_the_build(
+) {
     crate::common::pin_private_cwd();
     // A build missing one filter from `checks::FF_FILTERS` is reported by that filter's name.
     let listing: Vec<String> = checks::FF_FILTERS
         .iter()
         .skip(1)
-        .map(|name| format!("  T.C {name} ")
-            )
+        .map(|name| format!("  T.C {name} "))
         .collect();
     let missing = checks::ffmpeg_missing(&listing.join("\n"), &checks::FF_FILTERS);
-    assert_eq!(missing, vec!["rubberband"], "the first of the list is the one left out");
+    assert_eq!(
+        missing,
+        vec!["rubberband"],
+        "the first of the list is the one left out"
+    );
 
     // A box that names nothing resolves to nothing, and the verdict is `checks`' PATH sentence.
     let absent = naivepost::settings_probe_rows::ffmpeg_row("").expect_err("nothing named");
@@ -281,15 +344,20 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s6_the
         let verdict = naivepost::settings_probe_rows::ffmpeg_row("/usr/bin/ffmpeg");
         let line = verdict.unwrap_or_else(|why| why);
         assert!(!line.contains("nothing wired"), "{line}");
-        assert!(line.contains("/usr/bin/ffmpeg"), "{line} must name the binary it read");
+        assert!(
+            line.contains("/usr/bin/ffmpeg"),
+            "{line} must name the binary it read"
+        );
     }
 }
 
 /// s7 — the firefox row: `off` is a pass; a missing binary fails with `checks`' wording; never a stub.
 #[test]
-fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s7_the_firefox_row_off_is_a_pass() {
+fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s7_the_firefox_row_off_is_a_pass(
+) {
     crate::common::pin_private_cwd();
-    let off = naivepost::settings_probe_rows::firefox_row("off").expect("`off` is the box saying no search");
+    let off = naivepost::settings_probe_rows::firefox_row("off")
+        .expect("`off` is the box saying no search");
     assert!(off.contains("no web search"), "{off}");
     assert!(!off.contains("nothing wired"), "{off}");
 
@@ -306,26 +374,36 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s7_the
 /// Through the same store the dialog's own timer and `close_request` go through (`machine_store::Store`),
 /// with [`checks::CONF_SAVE_WAIT`] as the beat — the widget half is in `settings_dialog_lands_its_write`.
 #[test]
-fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s8_the_conf_lands_on_the_beat_and_on_close() {
+fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s8_the_conf_lands_on_the_beat_and_on_close(
+) {
     crate::common::pin_private_cwd();
     let root = std::env::temp_dir().join(format!("np-s5-save-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
-    let paths = settings::Paths { config_dir: root.join("config"), data_dir: root.join("data") };
+    let paths = settings::Paths {
+        config_dir: root.join("config"),
+        data_dir: root.join("data"),
+    };
 
     // Write a conf first so the folder exists with `settings`' own mode; §5's rule is about WHEN it is
     // written, so the empty-beat half is told by `flush` answering `None` before the beat is due.
     settings::save(&paths, &settings::Conf::default()).unwrap();
-    let mut store = naivepost::machine_store::Store::open(&paths).expect("the store opens over the conf");
+    let mut store =
+        naivepost::machine_store::Store::open(&paths).expect("the store opens over the conf");
     // The dialog hands over its boxes by their WIDGET key (the same key `machine_store::set_field`
     // recognises and the same one `entry-<key>` / `test-<key>-button` are named after).
     let typed = || vec![("server".to_string(), "http://127.0.0.1:9099".to_string())];
 
     // Half a beat after the keystroke: nothing owed yet, so nothing new on disk.
     store.touched(Duration::ZERO);
-    assert!(store.flush(CONF_HALF_BEAT, &typed()).unwrap().is_none(), "a beat still running must not write");
     assert!(
-        !std::fs::read_to_string(paths.conf_path()).unwrap().contains("9099"),
+        store.flush(CONF_HALF_BEAT, &typed()).unwrap().is_none(),
+        "a beat still running must not write"
+    );
+    assert!(
+        !std::fs::read_to_string(paths.conf_path())
+            .unwrap()
+            .contains("9099"),
         "the file is written by the beat, not by the key"
     );
 
@@ -337,7 +415,10 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s8_the
 
     // A second close with nothing owed writes nothing: the debt is consumed by the first door.
     let mut idle = naivepost::machine_store::Store::open(&paths).unwrap();
-    assert!(idle.on_close(&typed()).unwrap().is_none(), "an untouched dialog does not rewrite the file");
+    assert!(
+        idle.on_close(&typed()).unwrap().is_none(),
+        "an untouched dialog does not rewrite the file"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -392,6 +473,12 @@ fn write_conf(conf: &settings::Conf) {
     let paths = settings::from_environment().expect("an absolute XDG_CONFIG_HOME is a config home");
     settings::save(&paths, conf).expect("the conf writes");
     let read_back = settings::read(&paths).expect("the conf reads back");
-    assert_eq!(read_back.server, conf.server, "the conf on disk says this fake's address");
-    assert_eq!(read_back.model, conf.model, "the conf on disk names the probe's model");
+    assert_eq!(
+        read_back.server, conf.server,
+        "the conf on disk says this fake's address"
+    );
+    assert_eq!(
+        read_back.model, conf.model,
+        "the conf on disk names the probe's model"
+    );
 }

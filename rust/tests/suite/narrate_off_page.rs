@@ -86,7 +86,10 @@ fn f4_8_s1_the_tick_greys_the_page_and_never_greys_itself() {
     let off = greyed(true);
     assert!(off.lines && off.preview && off.voice);
     // The tick is how the page comes back: greying it would lock the page shut.
-    assert!(!off.tick, "the Narration tick must stay pressable — it is the only way back onto this page");
+    assert!(
+        !off.tick,
+        "the Narration tick must stay pressable — it is the only way back onto this page"
+    );
 
     let on = greyed(false);
     assert!(
@@ -151,7 +154,8 @@ fn f4_8_s2_the_tick_writes_the_flag_and_leaves_the_record_alone() {
     // `session_no_narration()` reader depends on: a reload opens with the tick unchecked (or checked),
     // never with whatever the widget last drew.
     set_off(&mut project, &tree, true).unwrap();
-    let reloaded = naivepost::project::load(tree.dir()).expect("the project reloads after the tick");
+    let reloaded =
+        naivepost::project::load(tree.dir()).expect("the project reloads after the tick");
     assert!(
         reloaded.no_narration,
         "a fresh read sees the flag the tick wrote"
@@ -206,7 +210,10 @@ fn f4_8_s3_produce_hides_the_slider_and_renders_without_lines() {
     );
     assert_eq!(off_rows.len(), 12, "one row of the thirteen goes away");
     let on_rows = produce_screen::settings_rows_shown(false);
-    assert!(on_rows.contains(&"Game audio"), "a narrated project gets the slider back");
+    assert!(
+        on_rows.contains(&"Game audio"),
+        "a narrated project gets the slider back"
+    );
     assert_eq!(
         on_rows.len(),
         produce_screen::SETTINGS_ROWS.len(),
@@ -229,7 +236,8 @@ fn f4_8_s3_produce_hides_the_slider_and_renders_without_lines() {
         !silent_pass.contains(&narrate_run::Speak::Synthesize),
         "nothing is synthesized when narration is off: {silent_pass:?}"
     );
-    let narrated_pass = narrate_run::speak_pass("own", &lines_to_speak(false, &entries()), |_| false);
+    let narrated_pass =
+        narrate_run::speak_pass("own", &lines_to_speak(false, &entries()), |_| false);
     assert!(
         narrated_pass.contains(&narrate_run::Speak::Synthesize),
         "the same call with narration on does have work to do: {narrated_pass:?}"

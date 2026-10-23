@@ -66,7 +66,8 @@ fn tagged(view: &gtk::TextView) -> Vec<i32> {
 /// Which line is a link, and which line its page sits on: §1 lets exactly one line be clickable, so a
 /// second one is a bug no amount of correct wording would catch.
 #[test]
-fn sec_03_shell_7_the_model_exchange_log_llm_s7_the_run_page_line_is_the_log_s_only_clickable_one() {
+fn sec_03_shell_7_the_model_exchange_log_llm_s7_the_run_page_line_is_the_log_s_only_clickable_one()
+{
     common::pin_private_cwd();
     static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     GTK.call_once(|| {
@@ -86,10 +87,14 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s7_the_run_page_line_is_the_log_s_o
             let bar = ui::run_bar(&window).expect("the window carries a run bar");
             naivepost::runqueue::start_run(
                 &mut bar.borrow_mut(),
-                &mut ui::run_queue(&window).expect("the window carries a queue").borrow_mut(),
+                &mut ui::run_queue(&window)
+                    .expect("the window carries a queue")
+                    .borrow_mut(),
                 &mut exchanges::RunLog::new(),
                 naivepost::run::Step::Prepare,
-                naivepost::run::snapshot_sources(&naivepost::project::load(&fixture_dir()).expect("fixture loads")),
+                naivepost::run::snapshot_sources(
+                    &naivepost::project::load(&fixture_dir()).expect("fixture loads"),
+                ),
             );
             ui::note_exchange_line(">>> Describe: 451.4 kB of text and 0 image(s) went to the LLM");
             ui::note_exchange_line(">>> Describe: 28.6 kB came back in 2m39s");
@@ -161,5 +166,8 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s7_the_run_page_line_is_the_log_s_o
         });
         app.run_with_args::<String>(&[]);
     });
-    assert!(RAN.load(std::sync::atomic::Ordering::SeqCst), "the widget round never ran");
+    assert!(
+        RAN.load(std::sync::atomic::Ordering::SeqCst),
+        "the widget round never ran"
+    );
 }

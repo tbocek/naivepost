@@ -21,18 +21,29 @@ use naivepost::tools::clips::Clips;
 use crate::common;
 use common::{assert_close, row};
 
-
 /// One row of the catalogue, by id. `params::find` answers Prepare's list only and this flow's rows live in §6's
 /// (`params::cut`), so look through both — and assert exactly one hit, since two homes for one bound is what the
 /// catalogue exists to prevent.
 /// The cut S1–S6 argue about: five clips of ten seconds at their session seconds. Ten is exact in binary, and so are
 /// the multiples, which is what lets every expected number below be derived by hand.
 fn five_clips() -> Clips {
-    Clips::new(&[(1, 0.0, 10.0), (2, 10.0, 10.0), (3, 20.0, 10.0), (4, 30.0, 10.0), (5, 40.0, 10.0)])
+    Clips::new(&[
+        (1, 0.0, 10.0),
+        (2, 10.0, 10.0),
+        (3, 20.0, 10.0),
+        (4, 30.0, 10.0),
+        (5, 40.0, 10.0),
+    ])
 }
 
 fn call(clip: u32, kind: &str, start: f64, end: f64, gain: Option<f64>) -> Call {
-    Call { clip, kind: kind.to_string(), start, end, gain }
+    Call {
+        clip,
+        kind: kind.to_string(),
+        start,
+        end,
+        gain,
+    }
 }
 
 /// The one effect of a reply that should hold exactly one, or the reason it holds something else.
@@ -71,7 +82,10 @@ fn f3_11_s1_one_call_told_the_captions_and_speeds() {
     let mut both = five_clips();
     both.add_caption(2, 1.0, 3.0, "words");
     let noted = pass::brief(&both, &[(2, 4.0)]);
-    assert!(noted.contains("CLIP 2: 10.0 s long, 1 caption(s) -- runs at 1, plays at 4x"), "{noted}");
+    assert!(
+        noted.contains("CLIP 2: 10.0 s long, 1 caption(s) -- runs at 1, plays at 4x"),
+        "{noted}"
+    );
 
     // The two numbers this flow adds to the catalogue. §10 gives them no `P.` row — the 60 % and the 0.3 come from
     // §F3.11's own text — so they carry the bare prefix of the rule that reads them, and answer to no family.
@@ -81,8 +95,14 @@ fn f3_11_s1_one_call_told_the_captions_and_speeds() {
     let fade = row("effects.proposedStopFadeSeconds");
     assert_eq!(fade.spelled, "0.3");
     assert_eq!(fade.from, "cut_effects_pass::STOP_FADE_CAP_SECONDS");
-    assert_eq!(params::family("effects.proposedZoomHeight"), params::Family::Other);
-    assert_eq!(params::family("effects.proposedStopFadeSeconds"), params::Family::Other);
+    assert_eq!(
+        params::family("effects.proposedZoomHeight"),
+        params::Family::Other
+    );
+    assert_eq!(
+        params::family("effects.proposedStopFadeSeconds"),
+        params::Family::Other
+    );
 }
 
 // --- S2: a clip outside the list ------------------------------------------------------------------------------------------
@@ -93,7 +113,10 @@ fn f3_11_s1_one_call_told_the_captions_and_speeds() {
 #[test]
 fn f3_11_s2_a_clip_outside_the_list_loses_the_reply() {
     let clips = five_clips();
-    let mixed = vec![call(3, "zoom", 1.0, 4.0, None), call(9, "stop", 1.0, 3.0, None)];
+    let mixed = vec![
+        call(3, "zoom", 1.0, 4.0, None),
+        call(9, "stop", 1.0, 3.0, None),
+    ];
     let reply = pass::place(&clips, &mixed);
     assert_eq!(
         reply.fault,
@@ -110,7 +133,10 @@ fn f3_11_s2_a_clip_outside_the_list_loses_the_reply() {
     assert_eq!(reply.fault, cut_captions::clip_outside(9, 1, 5));
 
     // Order does not matter: membership is checked over the whole reply before any tool call is made.
-    let reversed = vec![call(9, "stop", 1.0, 3.0, None), call(3, "zoom", 1.0, 4.0, None)];
+    let reversed = vec![
+        call(9, "stop", 1.0, 3.0, None),
+        call(3, "zoom", 1.0, 4.0, None),
+    ];
     let second = pass::place(&clips, &reversed);
     assert!(second.fault.is_some(), "{:?}", second.fault);
     assert!(second.effects.is_empty());
@@ -120,8 +146,14 @@ fn f3_11_s2_a_clip_outside_the_list_loses_the_reply() {
     // Inside at both ends of a cut numbered from 1, and two rounds then no more.
     assert!(pass::place(&clips, &[call(1, "zoom", 1.0, 4.0, None)]).usable());
     assert!(pass::place(&clips, &[call(5, "zoom", 1.0, 4.0, None)]).usable());
-    assert!(cut_captions::retries(1), "one attempt made, so one retry owed");
-    assert!(!cut_captions::retries(2), "two attempts made: never a third");
+    assert!(
+        cut_captions::retries(1),
+        "one attempt made, so one retry owed"
+    );
+    assert!(
+        !cut_captions::retries(2),
+        "two attempts made: never a third"
+    );
 }
 
 // --- S3: unknown kind or no span is skipped ---------------------------------------------------------------------------------
@@ -136,15 +168,32 @@ fn f3_11_s3_an_unknown_kind_or_an_empty_span_is_skipped() {
     // kind is the same nothing. Each names what was sent, so the model can correct it on the retry it does NOT get for
     // this reason — a skipped line costs nothing but that line.
     for kind in ["blur", "text", "", "ZOOM"] {
-        let reply = pass::place(&clips, &[call(1, kind, 1.0, 4.0, None), call(2, "zoom", 1.0, 3.0, None)]);
-        assert!(reply.usable(), "{kind} must not fault the whole reply: {:?}", reply.fault);
+        let reply = pass::place(
+            &clips,
+            &[
+                call(1, kind, 1.0, 4.0, None),
+                call(2, "zoom", 1.0, 3.0, None),
+            ],
+        );
+        assert!(
+            reply.usable(),
+            "{kind} must not fault the whole reply: {:?}",
+            reply.fault
+        );
         let Answer::Refused(reason) = &reply.answers[0] else {
             panic!("{kind:?} was not skipped: {:?}", reply.answers[0]);
         };
-        assert!(reason.contains("not an effect this pass places"), "{reason}");
+        assert!(
+            reason.contains("not an effect this pass places"),
+            "{reason}"
+        );
         // The valid call in the same reply is placed — skipped, not fatal.
         assert_eq!(reply.effects.len(), 1, "{kind}: {:?}", reply.effects);
-        assert_close("the survivor is clip 2's zoom", reply.effects[0].t, 10.0 + 1.0);
+        assert_close(
+            "the survivor is clip 2's zoom",
+            reply.effects[0].t,
+            10.0 + 1.0,
+        );
     }
 
     // A span that is empty after clamping into the clip: end == start, and a reversed pair (which clamps to nothing
@@ -152,7 +201,11 @@ fn f3_11_s3_an_unknown_kind_or_an_empty_span_is_skipped() {
     for (start, end) in [(4.0, 4.0), (6.0, 2.0)] {
         let reply = pass::place(&clips, &[call(1, "zoom", start, end, None)]);
         assert!(reply.usable());
-        assert!(reply.effects.is_empty(), "{start}..{end}: {:?}", reply.effects);
+        assert!(
+            reply.effects.is_empty(),
+            "{start}..{end}: {:?}",
+            reply.effects
+        );
         let Answer::Refused(reason) = &reply.answers[0] else {
             panic!("{start}..{end} was not skipped: {:?}", reply.answers[0]);
         };
@@ -184,7 +237,11 @@ fn f3_11_s4_the_apps_defaults_per_kind() {
     assert_close("both edges", zoom.tout, 1.0);
     // And d/3 wins below the cap: 1.5 / 3 = 0.5, exact in binary.
     let brief_zoom = pass::defaults("zoom", 0.0, (0.0, 1.5), None);
-    assert_close("a short zoom glides for half a second", brief_zoom.trans, 0.5);
+    assert_close(
+        "a short zoom glides for half a second",
+        brief_zoom.trans,
+        0.5,
+    );
     assert_eq!(pass::glide(6.0), 1.0);
     assert_eq!(pass::glide(1.5), 0.5);
 
@@ -204,7 +261,11 @@ fn f3_11_s4_the_apps_defaults_per_kind() {
     // for. It cannot be applied to a span here: the flowchart skips an empty one instead of padding it, which is why a
     // model's span is never silently stretched to this constant (the prototype's `if d <= 0 { d = 2 }` was unreachable
     // behind its own parse for the same reason).
-    assert_close("P.policy.effectDefaultSeconds", cut_speed::STOP_SECONDS, 2.0);
+    assert_close(
+        "P.policy.effectDefaultSeconds",
+        cut_speed::STOP_SECONDS,
+        2.0,
+    );
 
     // A volume over 4 s: ramps min(1, 4/4) = 1.0 each way, the same 1 s cap F3.10 gives a proposed speed (read from that
     // pass's constant, so one number is one decision), with this flow's quarter.
@@ -214,11 +275,18 @@ fn f3_11_s4_the_apps_defaults_per_kind() {
     assert_close("a second of ramp", volume.trans, 1.0);
     assert_close("both ways", volume.tout, 1.0);
     let half = pass::defaults("volume", 0.0, (0.0, 2.0), Some(0.5));
-    assert_close("2 s of passage ramps for a quarter of itself", half.trans, 0.5);
+    assert_close(
+        "2 s of passage ramps for a quarter of itself",
+        half.trans,
+        0.5,
+    );
 
     // The record carries nothing else: no words, no file, no lane — §1's table marks all of those "–" for these kinds,
     // and the box belongs to a zoom alone.
-    assert_eq!((zoom.text.as_str(), zoom.src.as_str(), zoom.lane.as_str()), ("", "", ""));
+    assert_eq!(
+        (zoom.text.as_str(), zoom.src.as_str(), zoom.lane.as_str()),
+        ("", "", "")
+    );
     assert_eq!((volume.cx, volume.hf), (None, None));
 }
 
@@ -240,7 +308,12 @@ fn f3_11_s5_gain_1_and_no_gain_are_ignored_and_zero_is_kept() {
     // 1 changes nothing -- leave the audio alone" — because that sentence reads as a fault to act on when nothing is
     // wrong, and §F3.11 calls this case ignored, not skipped.
     let untouched = pass::place(&clips, &[call(1, "volume", 1.0, 4.0, Some(1.0))]);
-    assert_eq!(untouched.answers, vec![Answer::Ignored], "{:?}", untouched.answers);
+    assert_eq!(
+        untouched.answers,
+        vec![Answer::Ignored],
+        "{:?}",
+        untouched.answers
+    );
     assert!(untouched.effects.is_empty());
     assert!(untouched.usable());
 
@@ -260,12 +333,20 @@ fn f3_11_s5_gain_1_and_no_gain_are_ignored_and_zero_is_kept() {
     // one effect reaching the cut.
     let mixed = pass::place(
         &clips,
-        &[call(1, "volume", 1.0, 4.0, None), call(2, "blur", 1.0, 4.0, None), call(3, "zoom", 1.0, 4.0, None)],
+        &[
+            call(1, "volume", 1.0, 4.0, None),
+            call(2, "blur", 1.0, 4.0, None),
+            call(3, "zoom", 1.0, 4.0, None),
+        ],
     );
     assert_eq!(mixed.fault, None);
     assert_eq!(mixed.effects.len(), 1, "{:?}", mixed.effects);
     assert_eq!(
-        mixed.answers.iter().map(|a| matches!(a, Answer::Placed(_))).collect::<Vec<_>>(),
+        mixed
+            .answers
+            .iter()
+            .map(|a| matches!(a, Answer::Placed(_)))
+            .collect::<Vec<_>>(),
         vec![false, false, true]
     );
 }
@@ -277,14 +358,24 @@ fn f3_11_s5_gain_1_and_no_gain_are_ignored_and_zero_is_kept() {
 /// punctuation. The other two lines are the prototype's: a run that places three decorations should say so.
 #[test]
 fn f3_11_s6_the_three_lines_and_the_two_round_budget() {
-    assert_eq!(pass::no_answer(), "!!! effects: no usable answer -- the cut stands without them");
+    assert_eq!(
+        pass::no_answer(),
+        "!!! effects: no usable answer -- the cut stands without them"
+    );
     let line = pass::no_answer();
     assert!(line.contains("--"), "{line}: this line's break is ASCII --");
-    assert!(!line.contains('\u{2014}'), "{line}: an em dash belongs to §F3.10's lines, not this one");
+    assert!(
+        !line.contains('\u{2014}'),
+        "{line}: an em dash belongs to §F3.10's lines, not this one"
+    );
 
     // Success and the fault said back before the retry — both `>>>`, both the prototype's wording.
     assert_eq!(pass::placed(3), ">>> effects: 3 decoration(s)");
-    assert_eq!(pass::placed(0), ">>> effects: 0 decoration(s)", "a plain cut is still an answer");
+    assert_eq!(
+        pass::placed(0),
+        ">>> effects: 0 decoration(s)",
+        "a plain cut is still an answer"
+    );
     assert_eq!(pass::rejected("x"), ">>> effects rejected: x");
 
     // The whole flow for a reply that names a clip nobody gave, twice: unusable both times, so nothing is placed and the
@@ -298,7 +389,10 @@ fn f3_11_s6_the_three_lines_and_the_two_round_budget() {
     loop {
         runs += 1;
         let reply = pass::place(&clips, &hopeless);
-        assert_eq!(reply.fault, Some("clip 9 is not one of the clips given (1 to 5)".to_string()));
+        assert_eq!(
+            reply.fault,
+            Some("clip 9 is not one of the clips given (1 to 5)".to_string())
+        );
         assert!(reply.effects.is_empty(), "an unusable reply places nothing");
         if cut_captions::retries(runs) {
             log.push(pass::rejected(reply.fault.as_deref().unwrap()));
@@ -309,7 +403,16 @@ fn f3_11_s6_the_three_lines_and_the_two_round_budget() {
         break;
     }
     assert_eq!(runs, 2, "two rounds and no more");
-    assert_eq!(log, vec![pass::rejected("clip 9 is not one of the clips given (1 to 5)"), pass::no_answer()]);
+    assert_eq!(
+        log,
+        vec![
+            pass::rejected("clip 9 is not one of the clips given (1 to 5)"),
+            pass::no_answer()
+        ]
+    );
     // "the cut stands without them": a plain cut, and a whole one.
-    assert!(effects.is_empty(), "no decoration survived the pass: {effects:?}");
+    assert!(
+        effects.is_empty(),
+        "no decoration survived the pass: {effects:?}"
+    );
 }

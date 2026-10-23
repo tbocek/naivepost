@@ -76,7 +76,8 @@ fn fake_player(root: &Path) -> PathBuf {
         ),
     )
     .expect("the player stub");
-    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).expect("it runs");
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+        .expect("it runs");
     std::env::set_var("NAIVEPOST_PLAYER", &script);
     script
 }
@@ -130,8 +131,16 @@ fn cut_window(app: &adw::Application, tag: &str) -> (adw::ApplicationWindow, Pat
     ui::tab_button(&window, Page::Cut)
         .expect("the shell has a Cut tab")
         .emit_clicked();
-    assert_eq!(ui::state(&window).page, Page::Cut, "the Cut tab is live with footage");
-    ui::set_session_recordings(&[Recording { base: "lecture".into(), start: 0.0, end: TAPE_END }]);
+    assert_eq!(
+        ui::state(&window).page,
+        Page::Cut,
+        "the Cut tab is live with footage"
+    );
+    ui::set_session_recordings(&[Recording {
+        base: "lecture".into(),
+        start: 0.0,
+        end: TAPE_END,
+    }]);
     settle();
     (window, root)
 }
@@ -147,7 +156,10 @@ fn check_s3_a_press_gives_the_window_real_filmed_runs(app: &adw::Application) {
     settle();
 
     let player = ui::preview_player(&window);
-    assert!(player.transport.playing, "with real runs the press plays, it does not refuse");
+    assert!(
+        player.transport.playing,
+        "with real runs the press plays, it does not refuse"
+    );
     assert!(
         play_back::playing_pid().is_some(),
         "and a real media process was started for it"
@@ -159,16 +171,29 @@ fn check_s3_a_press_gives_the_window_real_filmed_runs(app: &adw::Application) {
         args.iter().any(|arg| arg.ends_with("sources/lecture.mkv")),
         "the session's own footage went to the player: {args:?}"
     );
-    let at = args.iter().position(|arg| arg == "-s").and_then(|i| args.get(i + 1));
-    assert_eq!(at.map(String::as_str), Some("0.0"), "cued AT the red line: {args:?}");
+    let at = args
+        .iter()
+        .position(|arg| arg == "-s")
+        .and_then(|i| args.get(i + 1));
+    assert_eq!(
+        at.map(String::as_str),
+        Some("0.0"),
+        "cued AT the red line: {args:?}"
+    );
 
     // The second press pauses: the transport clears and the process is stopped, not left running muted.
     // `play_back::halt` answers whether THIS leg had a process — the press above already halted the one it
     // started — so the state read is `playing_pid`, which is what "stopped" means here.
     button.emit_by_name::<()>("clicked", &[]);
     settle();
-    assert!(!ui::preview_player(&window).transport.playing, "the second click paused it");
-    assert!(play_back::playing_pid().is_none(), "pausing stopped the player process");
+    assert!(
+        !ui::preview_player(&window).transport.playing,
+        "the second click paused it"
+    );
+    assert!(
+        play_back::playing_pid().is_none(),
+        "pausing stopped the player process"
+    );
     window.close();
     settle();
 }
@@ -186,14 +211,23 @@ fn check_s2_cues_the_real_player_program_at_the_red_line(app: &adw::Application)
     // []` about once in fifteen full-suite runs, and a panic inside GTK's activate aborts the whole binary
     // (exit 134) rather than reporting one failed test. So the wait is for the CONDITION with a deadline naming
     // what never happened; the assert below still pins the exact second, unchanged.
-    common::wait_until(
-        "the fake player logged ▶'s cue at the red line",
-        || cue_argv_of(&root).iter().any(|arg| arg == "-s"),
-    );
+    common::wait_until("the fake player logged ▶'s cue at the red line", || {
+        cue_argv_of(&root).iter().any(|arg| arg == "-s")
+    });
     let args = cue_argv_of(&root);
-    let at = args.iter().position(|arg| arg == "-s").and_then(|i| args.get(i + 1));
-    assert_eq!(at.map(String::as_str), Some("42.5"), "the cue names the red line: {args:?}");
-    assert!(play_back::playing_pid().is_some(), "and it is a live process");
+    let at = args
+        .iter()
+        .position(|arg| arg == "-s")
+        .and_then(|i| args.get(i + 1));
+    assert_eq!(
+        at.map(String::as_str),
+        Some("42.5"),
+        "the cue names the red line: {args:?}"
+    );
+    assert!(
+        play_back::playing_pid().is_some(),
+        "and it is a live process"
+    );
     play_back::halt();
     window.close();
     settle();
@@ -237,15 +271,24 @@ fn check_s1_switches_and_carries_on(app: &adw::Application) {
         &window,
         true,
         false,
-        naivepost::run::Transport { playing: true, started: true },
+        naivepost::run::Transport {
+            playing: true,
+            started: true,
+        },
     );
-    assert!(ui::preview_player(&window).cut_only, "the ✂ preview is showing to start with");
+    assert!(
+        ui::preview_player(&window).cut_only,
+        "the ✂ preview is showing to start with"
+    );
     let button = ui::play_recording_button(&window).expect("▶");
     button.emit_by_name::<()>("clicked", &[]);
     settle();
     let after = ui::preview_player(&window);
     assert!(!after.cut_only, "the preview is the recording now");
-    assert!(after.transport.playing, "\"already playing: carry on\" — it did not stop");
+    assert!(
+        after.transport.playing,
+        "\"already playing: carry on\" — it did not stop"
+    );
     assert!(
         common::status_text(&window).contains("preview is the recording again"),
         "and says so: {:?}",
@@ -254,9 +297,15 @@ fn check_s1_switches_and_carries_on(app: &adw::Application) {
     // S1 says "already playing: carry on", so the press that switched starts NO process — the one already
     // running is the one being carried on. A fresh stub log proves nothing was cued by this press.
     let args = argv_lines(&root);
-    assert!(args.is_empty(), "carrying on cues nothing new, it keeps what runs: {args:?}");
+    assert!(
+        args.is_empty(),
+        "carrying on cues nothing new, it keeps what runs: {args:?}"
+    );
     // And because ours is now the running preview, the button wears ⏸ rather than lying about ▶.
-    assert!(button.label().is_some_and(|l| l.contains('\u{23f8}')), "the face followed the switch");
+    assert!(
+        button.label().is_some_and(|l| l.contains('\u{23f8}')),
+        "the face followed the switch"
+    );
     play_back::halt();
     window.close();
     settle();

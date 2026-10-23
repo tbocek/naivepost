@@ -38,7 +38,11 @@ static RAN_PRESS_ON: AtomicBool = AtomicBool::new(false);
 static RAN_PRESS_OFF: AtomicBool = AtomicBool::new(false);
 
 fn on(value: bool) -> Field<bool> {
-    Field { value, origin: Origin::Default, because: None }
+    Field {
+        value,
+        origin: Origin::Default,
+        because: None,
+    }
 }
 
 /// A policy with exactly the three pipeline switches set as asked; everything else stays at its default.
@@ -76,9 +80,18 @@ fn f2_14_s2b_only_the_switched_on_passes_are_asked() {
         "decorations off keeps the two that ran before it"
     );
     // Two off, one on: the survivor alone, still in order.
-    assert_eq!(cut_suggest_passes::order(&policy_with(false, false, true)), vec![Pass::Decorations]);
-    assert_eq!(cut_suggest_passes::order(&policy_with(false, true, false)), vec![Pass::Speeds]);
-    assert_eq!(cut_suggest_passes::order(&policy_with(true, false, false)), vec![Pass::Captions]);
+    assert_eq!(
+        cut_suggest_passes::order(&policy_with(false, false, true)),
+        vec![Pass::Decorations]
+    );
+    assert_eq!(
+        cut_suggest_passes::order(&policy_with(false, true, false)),
+        vec![Pass::Speeds]
+    );
+    assert_eq!(
+        cut_suggest_passes::order(&policy_with(true, false, false)),
+        vec![Pass::Captions]
+    );
     RAN_ORDER.store(true, Ordering::SeqCst);
 }
 
@@ -120,8 +133,14 @@ fn f2_14_s2b_the_effects_line_counts_what_landed() {
 /// `tests/suite/f2_14_press_model.rs`, whose fixture seconds these stamps snap onto.
 fn good_plan() -> String {
     tool_turn(&[
-        ("add_segment", serde_json::json!({ "start": 4.0, "end": 18.0, "why": "the point" })),
-        ("add_segment", serde_json::json!({ "start": 24.0, "end": 38.0, "why": "the second" })),
+        (
+            "add_segment",
+            serde_json::json!({ "start": 4.0, "end": 18.0, "why": "the point" }),
+        ),
+        (
+            "add_segment",
+            serde_json::json!({ "start": 24.0, "end": 38.0, "why": "the second" }),
+        ),
         ("finish_cut", serde_json::json!({})),
     ])
 }
@@ -152,7 +171,12 @@ fn press_once(app: &adw::Application, switches: (bool, bool, bool)) -> Vec<Strin
     ui::seed_review_cut(
         &window,
         &naivepost::cut::Cut {
-            segs: vec![Seg { s: 0.0, e: 60.0, cam: 0, ..Default::default() }],
+            segs: vec![Seg {
+                s: 0.0,
+                e: 60.0,
+                cam: 0,
+                ..Default::default()
+            }],
             ..Default::default()
         },
     );
@@ -219,11 +243,7 @@ fn round(app: &adw::Application) {
         quiet.iter().any(|line| line.starts_with(">>> suggested ")),
         "the cut still lands with the passes off: {quiet:?}"
     );
-    for refusal in [
-        "captions are off",
-        "speeds are off",
-        "decorations are off",
-    ] {
+    for refusal in ["captions are off", "speeds are off", "decorations are off"] {
         assert!(
             !quiet.iter().any(|line| line.contains(refusal)),
             "a ruled-out pass is never called, so it never gets to say `{refusal}` either: {quiet:?}"
@@ -235,8 +255,14 @@ fn round(app: &adw::Application) {
 #[test]
 fn f2_14_s2b_the_press_runs_the_passes_after_the_cut() {
     one_round();
-    assert!(RAN_PRESS_ON.load(Ordering::SeqCst), "the switches-on press never ran");
-    assert!(RAN_PRESS_OFF.load(Ordering::SeqCst), "the switches-off press never ran");
+    assert!(
+        RAN_PRESS_ON.load(Ordering::SeqCst),
+        "the switches-on press never ran"
+    );
+    assert!(
+        RAN_PRESS_OFF.load(Ordering::SeqCst),
+        "the switches-off press never ran"
+    );
 }
 
 fn one_round() {

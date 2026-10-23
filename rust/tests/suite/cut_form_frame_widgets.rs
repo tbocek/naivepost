@@ -41,7 +41,8 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 /// S15: the column is the three §A parts, and while nothing is being placed only the body shows.
 fn check_the_column_pins_a_heading_and_a_footer(app: &adw::Application) {
     let window = cut_window(app);
-    let scroller = common::find_named(&window, "cut-form-scroller").expect("§A's scroller holds the column body");
+    let scroller = common::find_named(&window, "cut-form-scroller")
+        .expect("§A's scroller holds the column body");
     let heading = common::find_named(&window, "cut-form-heading").expect("§A's pinned heading row");
     let footer = common::find_named(&window, "cut-form-footer").expect("§A's pinned button footer");
     assert!(
@@ -55,17 +56,26 @@ fn check_the_column_pins_a_heading_and_a_footer(app: &adw::Application) {
     let mut holder = grid.parent().expect("the grid sits inside something");
     while holder.widget_name() != "cut-form-scroller" {
         holder = holder.parent().unwrap_or_else(|| {
-            panic!("the readings grid is not under the scroller: {:?}", grid.parent())
+            panic!(
+                "the readings grid is not under the scroller: {:?}",
+                grid.parent()
+            )
         });
     }
     for label in naivepost::cut_screen::IDLE_FORM_ROWS {
         let name = naivepost::cut_screen::readout_widget(label);
-        assert!(common::find_named(&window, &name).is_some(), "no {name} readout under the scroller");
+        assert!(
+            common::find_named(&window, &name).is_some(),
+            "no {name} readout under the scroller"
+        );
     }
     // Idle means no title and no buttons: the pinned parts exist but show nothing until a form opens.
     assert!(!heading.is_visible(), "an idle column shows no heading");
     assert!(!footer.is_visible(), "an idle column shows no footer");
-    assert!(scroller.is_visible(), "the body is what an idle column shows");
+    assert!(
+        scroller.is_visible(),
+        "the body is what an idle column shows"
+    );
     RAN_FRAME.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
@@ -84,7 +94,10 @@ fn check_the_pinned_cross_closes_the_open_form(app: &adw::Application) {
     let said = ui::insert_chosen_with_length(&window, &video, 20.0, Some(7.5));
     settle();
     assert!(said.contains("sting.mp4"), "{said}");
-    assert!(ui::insert_open(&window).is_some(), "the insert form is open");
+    assert!(
+        ui::insert_open(&window).is_some(),
+        "the insert form is open"
+    );
     let heading = common::find_named(&window, "cut-form-heading").expect("the pinned heading");
     let title = common::find_named(&window, "cut-form-title")
         .and_then(|w| w.downcast::<gtk::Label>().ok())
@@ -97,7 +110,8 @@ fn check_the_pinned_cross_closes_the_open_form(app: &adw::Application) {
     );
     // An insert's buttons sit in the INSERT's own pinned footer (`insert-form-footer`, the box under its form);
     // the frame's `cut-form-footer` is what every other form pins, so exactly one of the two is shown.
-    let column_footer = common::find_named(&window, "cut-form-footer").expect("the column pins a footer");
+    let column_footer =
+        common::find_named(&window, "cut-form-footer").expect("the column pins a footer");
     let insert_footer = common::find_named(&window, "insert-form-footer")
         .expect("the insert has its own pinned footer for its buttons");
     assert!(
@@ -111,15 +125,23 @@ fn check_the_pinned_cross_closes_the_open_form(app: &adw::Application) {
         .emit_by_name::<()>("clicked", &[]);
     settle();
 
-    assert!(ui::insert_open(&window).is_none(), "the ✕ closed the insert form");
+    assert!(
+        ui::insert_open(&window).is_none(),
+        "the ✕ closed the insert form"
+    );
     assert!(
         !common::find_named(&window, "insert-form")
             .expect("the insert holder")
             .is_visible(),
         "the form box is hidden again"
     );
-    assert!(!heading.is_visible(), "with nothing open the heading is pinned away again");
-    assert!(!common::find_named(&window, "cut-form-footer").expect("the footer").is_visible());
+    assert!(
+        !heading.is_visible(),
+        "with nothing open the heading is pinned away again"
+    );
+    assert!(!common::find_named(&window, "cut-form-footer")
+        .expect("the footer")
+        .is_visible());
     let said = status_text(&window);
     assert!(
         said.contains("insert") && said.contains("cancelled"),
@@ -144,6 +166,9 @@ fn sec_05_cut_1_screen_s15_and_s16_the_form_column_pins_a_heading_and_a_footer()
         (&RAN_FRAME, "the pinned-frame check"),
         (&RAN_CLOSE, "the cross-closes-the-form click check"),
     ] {
-        assert!(flag.load(std::sync::atomic::Ordering::SeqCst), "{what} never ran");
+        assert!(
+            flag.load(std::sync::atomic::Ordering::SeqCst),
+            "{what} never ran"
+        );
     }
 }

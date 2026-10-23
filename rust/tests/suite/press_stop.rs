@@ -34,7 +34,10 @@ fn f0_3_s1_stops_the_page_transport_and_still_stops_the_run() {
     procs.register(4101);
 
     // Cut has a preview (transport_for answers Some), and it is playing.
-    let playing = Transport { playing: true, started: true };
+    let playing = Transport {
+        playing: true,
+        started: true,
+    };
     let stopped = bar.press_stop(Page::Cut, playing, false, &mut procs);
 
     assert_eq!(
@@ -47,8 +50,14 @@ fn f0_3_s1_stops_the_page_transport_and_still_stops_the_run() {
         run::PLAYBACK_STOPPED,
         "the playback sentence is overwritten by the run's — one press, both stopped"
     );
-    assert!(bar.stop_flag, "the run was stopped too, not only the playback");
-    assert!(bar.cancelled, "and its context cancelled, so model/audio calls abort");
+    assert!(
+        bar.stop_flag,
+        "the run was stopped too, not only the playback"
+    );
+    assert!(
+        bar.cancelled,
+        "and its context cancelled, so model/audio calls abort"
+    );
     assert_eq!(stopped, run::Stopped::RunStopped { killed: vec![4101] });
     assert!(procs.is_empty(), "the registry was drained");
 }
@@ -60,11 +69,18 @@ fn f0_3_s1_a_cued_preview_counts_as_playback_too() {
     let mut procs = Subprocesses::default();
 
     // started but not playing == cued.
-    let cued = Transport { playing: false, started: true };
+    let cued = Transport {
+        playing: false,
+        started: true,
+    };
     assert!(cued.cued(), "the fixture really is the cued case");
     let stopped = bar.press_stop(Page::Narrate, cued, false, &mut procs);
 
-    assert_eq!(stopped.status(), run::STOPPING, "fall-through still applies");
+    assert_eq!(
+        stopped.status(),
+        run::STOPPING,
+        "fall-through still applies"
+    );
     assert!(bar.stop_flag, "the run came down with the parked preview");
 }
 
@@ -76,7 +92,14 @@ fn f0_3_s1_a_cued_preview_counts_as_playback_too() {
 fn f0_3_s1_prepare_page_has_no_transport() {
     for page in [Page::Prepare, Page::Produce] {
         assert!(
-            run::transport_for(page, Transport { playing: true, started: true }).is_none(),
+            run::transport_for(
+                page,
+                Transport {
+                    playing: true,
+                    started: true
+                }
+            )
+            .is_none(),
             "{page:?} has no page transport"
         );
 
@@ -84,21 +107,39 @@ fn f0_3_s1_prepare_page_has_no_transport() {
         let mut procs = Subprocesses::default();
         let stopped = bar.press_stop(
             page,
-            Transport { playing: true, started: true },
+            Transport {
+                playing: true,
+                started: true,
+            },
             false,
             &mut procs,
         );
 
         // It stopped the run, not a transport: the run's sentence, and the stop flag set.
-        assert_eq!(stopped.status(), run::STOPPING, "{page:?}: the run half still acts");
-        assert!(bar.stop_flag, "{page:?}: the run stopped regardless of the playing flag");
+        assert_eq!(
+            stopped.status(),
+            run::STOPPING,
+            "{page:?}: the run half still acts"
+        );
+        assert!(
+            bar.stop_flag,
+            "{page:?}: the run stopped regardless of the playing flag"
+        );
     }
 
     // And with no run either, a playing flag on Prepare changes nothing at all: no transport to stop.
     let mut bare = RunBar::default();
     let mut procs = Subprocesses::default();
     assert_eq!(
-        bare.press_stop(Page::Prepare, Transport { playing: true, started: true }, false, &mut procs),
+        bare.press_stop(
+            Page::Prepare,
+            Transport {
+                playing: true,
+                started: true
+            },
+            false,
+            &mut procs
+        ),
         run::Stopped::NothingToDo,
         "Prepare ignores a preview: there is nothing here for ⏹ to end"
     );
@@ -123,8 +164,15 @@ fn f0_3_s2_no_run_is_nothing_more() {
     assert_eq!(stopped.status(), "", "S2 says nothing");
     assert!(!bar.stop_flag, "no run, so no stop flag");
     assert!(!bar.cancelled, "nothing to cancel");
-    assert_eq!(procs.len(), 1, "the registry was not touched by an idle press");
-    assert_eq!(bar.status, before, "the existing sentence survives, uncleared");
+    assert_eq!(
+        procs.len(),
+        1,
+        "the registry was not touched by an idle press"
+    );
+    assert_eq!(
+        bar.status, before,
+        "the existing sentence survives, uncleared"
+    );
 }
 
 /// S3: the run is brought down — flag set, context cancelled, every registered child handed off to be
@@ -141,15 +189,30 @@ fn f0_3_s3_flag_cancel_and_kill_all() {
 
     assert!(bar.stop_flag, "S3 sets the stop flag");
     assert!(bar.cancelled, "S3 cancels the run context");
-    let run = bar.running.as_ref().expect("the run record stays until the flow unwinds (F0.5)");
-    assert!(!run.paused, "a stop is not a pause: the pause flag is cleared");
+    let run = bar
+        .running
+        .as_ref()
+        .expect("the run record stays until the flow unwinds (F0.5)");
+    assert!(
+        !run.paused,
+        "a stop is not a pause: the pause flag is cleared"
+    );
     assert_eq!(
         stopped,
-        run::Stopped::RunStopped { killed: vec![9001, 9002] },
+        run::Stopped::RunStopped {
+            killed: vec![9001, 9002]
+        },
         "both children are handed to the caller to signal"
     );
-    assert!(procs.is_empty(), "drained, so the next ⏹ cannot kill a recycled pid twice");
-    assert_eq!(bar.status, run::STOPPING, "the status line reads 'stopping…'");
+    assert!(
+        procs.is_empty(),
+        "drained, so the next ⏹ cannot kill a recycled pid twice"
+    );
+    assert_eq!(
+        bar.status,
+        run::STOPPING,
+        "the status line reads 'stopping…'"
+    );
     // The same press reaches the legs that are already on the wire: the shared switch is what an
     // HTTP call reads with no borrow on this bar (§S3's "aborts model and audio calls").
     assert!(
@@ -184,7 +247,11 @@ fn f0_3_s5_a_stop_inside_describe_arms_a_restart_from_the_start() {
     let mut procs = Subprocesses::default();
 
     let stopped = bar.press_stop(Page::Prepare, Transport::default(), true, &mut procs);
-    assert_eq!(stopped.status(), run::STOPPING, "the stop itself behaves the same");
+    assert_eq!(
+        stopped.status(),
+        run::STOPPING,
+        "the stop itself behaves the same"
+    );
     assert!(bar.describe_restarts(), "armed by the stop inside Describe");
     assert!(
         !bar.describe_restarts(),
@@ -195,7 +262,10 @@ fn f0_3_s5_a_stop_inside_describe_arms_a_restart_from_the_start() {
     let mut elsewhere = bar_with_run(run::Step::Narrate, false);
     let mut idle = Subprocesses::default();
     let _ = elsewhere.press_stop(Page::Narrate, Transport::default(), false, &mut idle);
-    assert!(!elsewhere.describe_restarts(), "no Describe involved, no restart armed");
+    assert!(
+        !elsewhere.describe_restarts(),
+        "no Describe involved, no restart armed"
+    );
 }
 
 // ---- the legs that leave the process: F0.3 S3's kill, S4's excuse, S5's restart ----
@@ -223,13 +293,19 @@ fn f0_3_s3_stop_terminates_a_registered_child_for_real() {
     };
     let signalled = naivepost::stop_legs::signal(&killed);
     assert_eq!(signalled, vec![pid], "the pid was actually signalled");
-    assert!(procs.is_empty(), "and the registry was drained by the press");
+    assert!(
+        procs.is_empty(),
+        "and the registry was drained by the press"
+    );
 
     // The child is gone, killed by the signal rather than by finishing its own sleep. Polled with
     // `try_wait` rather than blocked on `wait`: if nothing had been signalled this would hang for the
     // full minute, and a test that hangs proves less than one that says "still alive".
     let status = wait_killed(&mut child);
-    assert!(status.code().is_none(), "a signalled death carries no exit code: {status:?}");
+    assert!(
+        status.code().is_none(),
+        "a signalled death carries no exit code: {status:?}"
+    );
     // Which signal depends on whether the target took SIGTERM or had to be killed outright; either one
     // means ⏹'s leg reached it, and neither is the exit code `sleep` would have on finishing.
     assert!(
@@ -276,7 +352,10 @@ fn f0_3_s3_the_button_leg_terminates_every_registered_child() {
 
     let killed = naivepost::stop_legs::stop_registered(&mut procs);
     assert_eq!(killed.len(), 2, "both were signalled: {killed:?}");
-    assert!(procs.is_empty(), "drained, so a second press cannot kill a recycled pid");
+    assert!(
+        procs.is_empty(),
+        "drained, so a second press cannot kill a recycled pid"
+    );
 
     for mut child in [first, second] {
         let status = wait_killed(&mut child);
@@ -311,10 +390,16 @@ fn f0_3_s4_a_child_already_gone_is_not_reported_and_not_a_failure() {
 
     // First pass: the pid is already reaped, so nothing is reported as signalled.
     let first_pass = naivepost::stop_legs::signal(&killed);
-    assert!(first_pass.is_empty(), "a gone pid is not claimed as killed: {first_pass:?}");
+    assert!(
+        first_pass.is_empty(),
+        "a gone pid is not claimed as killed: {first_pass:?}"
+    );
     // And again: still nothing, and no error surfaced anywhere.
     let second_pass = naivepost::stop_legs::signal(&killed);
-    assert!(second_pass.is_empty(), "signalling a gone pid twice stays quiet: {second_pass:?}");
+    assert!(
+        second_pass.is_empty(),
+        "signalling a gone pid twice stays quiet: {second_pass:?}"
+    );
     // The rule S4 states, applied to the same fact: with the stop flag up, the death reads as stopped.
     assert!(run::stopped_is_not_failure(true, true));
 }
@@ -347,7 +432,10 @@ fn f0_3_s3_describe_stage_is_what_the_press_reads() {
         naivepost::stop_legs::describe_stage(),
         &mut procs,
     );
-    assert!(!later.describe_restarts(), "leaving the stage really closed it");
+    assert!(
+        !later.describe_restarts(),
+        "leaving the stage really closed it"
+    );
 }
 
 /// S5's consequence, all four arms. Armed and marker-present are two ways of saying the same thing —
@@ -360,22 +448,37 @@ fn f0_3_s3_describe_stage_is_what_the_press_reads() {
 fn f0_3_s5_an_armed_stop_describes_from_the_start() {
     use naivepost::stop_legs::describes_from_the_start as from_start;
     // Armed by a stop inside Describe, nothing on disk: start from the beginning.
-    assert!(from_start(true, false), "armed with nothing on disk: start over");
+    assert!(
+        from_start(true, false),
+        "armed with nothing on disk: start over"
+    );
     // Armed AND a marker left behind: still starts over — both say the middle is untrusted.
     assert!(from_start(true, true), "armed with a marker: start over");
     // A marker without the arming says the same about the files: start over.
-    assert!(from_start(false, true), "marker present, not armed: start over");
+    assert!(
+        from_start(false, true),
+        "marker present, not armed: start over"
+    );
     // Neither: nothing was stopped inside Describe, so nothing restarts.
-    assert!(!from_start(false, false), "nothing at all: nothing to restart");
+    assert!(
+        !from_start(false, false),
+        "nothing at all: nothing to restart"
+    );
 }
 
 /// S5: the arming is consumed on read, so one stop affects exactly one Prepare run — the same
 /// contract `RunBar::describe_restarts` holds for the bar's own flag.
 #[test]
 fn f0_3_s5_one_armed_stop_arms_exactly_one_run() {
-    assert!(!naivepost::stop_legs::take_describe_restart(), "starts unarmed");
+    assert!(
+        !naivepost::stop_legs::take_describe_restart(),
+        "starts unarmed"
+    );
     naivepost::stop_legs::arm_describe_restart();
-    assert!(naivepost::stop_legs::take_describe_restart(), "the armed stop is taken up once");
+    assert!(
+        naivepost::stop_legs::take_describe_restart(),
+        "the armed stop is taken up once"
+    );
     assert!(
         !naivepost::stop_legs::take_describe_restart(),
         "and never again: the arming does not leak into a third run"

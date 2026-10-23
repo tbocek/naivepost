@@ -7,12 +7,12 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::fixture_dir;
 use gtk4 as gtk;
 use naivepost::shell::Page;
 use naivepost::{cut_line, cut_screen, ui};
-use crate::common;
-use common::{fixture_dir};
 
 static RAN_STEPS: AtomicBool = AtomicBool::new(false);
 static RAN_KEYS: AtomicBool = AtomicBool::new(false);
@@ -76,15 +76,31 @@ fn check_the_four_step_buttons_move_the_line(app: &adw::Application) {
     ] {
         let button = ui::line_step_button(&window, name)
             .unwrap_or_else(|| panic!("the Cut page carries {name}"));
-        assert!(button.is_mapped(), "{name} is mapped on the visible Cut page");
-        assert!(button.width() >= 16, "{name} wide enough to click, got {} px", button.width());
-        assert!(button.height() > 16, "{name} tall enough to click, got {} px", button.height());
+        assert!(
+            button.is_mapped(),
+            "{name} is mapped on the visible Cut page"
+        );
+        assert!(
+            button.width() >= 16,
+            "{name} wide enough to click, got {} px",
+            button.width()
+        );
+        assert!(
+            button.height() > 16,
+            "{name} tall enough to click, got {} px",
+            button.height()
+        );
         assert_eq!(
             button.tooltip_text().as_deref(),
             Some(naivepost::cut_screen::FRAME_TIP),
             "{name} carries \u{00a7}A's own frame-step wording"
         );
-        println!("LAYOUT {name} width={} height={} mapped={}", button.width(), button.height(), button.is_mapped());
+        println!(
+            "LAYOUT {name} width={} height={} mapped={}",
+            button.width(),
+            button.height(),
+            button.is_mapped()
+        );
         let _ = shift;
     }
 
@@ -108,8 +124,7 @@ fn check_the_four_step_buttons_move_the_line(app: &adw::Application) {
     // Back five frames via the Shift button. It is wired with shift=true, so it steps BACK five --
     // asserted against step_frames(true), not a hardcoded 5, so a retune shows up here.
     let before = ui::line_position(&window).t;
-    let back_five = ui::line_step_button(&window, "line-step-back-five")
-        .expect("back-five button");
+    let back_five = ui::line_step_button(&window, "line-step-back-five").expect("back-five button");
     assert_eq!(back_five.label().unwrap().as_str(), "\u{2039}\u{2039}",
         "the shift variant is the one wired to that name (\u{a7}A group 1's glyph; the sentence is the tooltip)");
     assert_eq!(
@@ -124,7 +139,11 @@ fn check_the_four_step_buttons_move_the_line(app: &adw::Application) {
         "\u{2039}\u{2039}f steps five frames: {before} -> {back}, expected {}",
         before - 5.0 / FPS
     );
-    assert_eq!(cut_line::step_frames(true), 5, "// the five-frame variant is what that button asked for");
+    assert_eq!(
+        cut_line::step_frames(true),
+        5,
+        "// the five-frame variant is what that button asked for"
+    );
     window.close();
 }
 
@@ -138,7 +157,8 @@ fn check_the_key_controller_is_attached_and_refuses_without_a_hold(app: &adw::Ap
     // GTK exposes no public list of a widget's controllers (only `add_controller`), so the controller
     // is proven by what it does rather than by where it is filed: the checks below drive its handler's
     // own seams and assert the state changes.
-    let _controller = ui::line_key_controller(&window).expect("the window has a line key controller");
+    let _controller =
+        ui::line_key_controller(&window).expect("the window has a line key controller");
 
     // S3: with nothing held the arrows do nothing at all -- the line must not budge.
     ui::set_line_position(&window, cut_line::LinePos { t: 40.0 });
@@ -148,7 +168,11 @@ fn check_the_key_controller_is_attached_and_refuses_without_a_hold(app: &adw::Ap
         ui::Step::Still,
         "an arrow with nothing held refuses"
     );
-    assert_eq!(ui::line_position(&window).t, before, "and the line did not move");
+    assert_eq!(
+        ui::line_position(&window).t,
+        before,
+        "and the line did not move"
+    );
 
     // With a hold, the same arrow nudges the hold instead of the line.
     assert_eq!(
@@ -161,15 +185,39 @@ fn check_the_key_controller_is_attached_and_refuses_without_a_hold(app: &adw::Ap
         ui::Step::Nudged { frames: 5 },
         "Shift makes it five"
     );
-    assert_eq!(ui::line_position(&window).t, before, "nudging a hold never moves the line");
+    assert_eq!(
+        ui::line_position(&window).t,
+        before,
+        "nudging a hold never moves the line"
+    );
 
     // S3: Space toggles the preview unless a text box holds the focus.
-    ui::set_preview_state(&window, false, false, naivepost::run::Transport { playing: false, started: false });
-    assert!(ui::space_toggles(&window, false), "Space is handled outside a text box");
-    assert!(ui::preview_player(&window).transport.playing, "and it started playback");
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        naivepost::run::Transport {
+            playing: false,
+            started: false,
+        },
+    );
+    assert!(
+        ui::space_toggles(&window, false),
+        "Space is handled outside a text box"
+    );
+    assert!(
+        ui::preview_player(&window).transport.playing,
+        "and it started playback"
+    );
     assert!(ui::space_toggles(&window, false), "again handled");
-    assert!(!ui::preview_player(&window).transport.playing, "toggled back off");
-    assert!(!ui::space_toggles(&window, true), "a text box keeps its Space");
+    assert!(
+        !ui::preview_player(&window).transport.playing,
+        "toggled back off"
+    );
+    assert!(
+        !ui::space_toggles(&window, true),
+        "a text box keeps its Space"
+    );
     window.close();
 }
 
@@ -183,50 +231,94 @@ fn check_a_track_press_places_the_line(app: &adw::Application) {
     // A `Hit` is what the widget layer hands the rule: where the pointer landed, in which band, whether
     // anything plays and whether sources are loaded. Built here exactly as `cut_line_press::press_in`
     // builds it, so the seam under test is the program's own.
-    let hit = |at: f64, on_picture: bool, on_scene: bool, playing: bool, sources: bool, gutter: bool| {
-        cut_line::Hit {
-            at,
-            row: cut_line::PICTURE_ROW,
-            on_picture,
-            on_scene_picture: on_scene,
-            playing,
-            sources,
-            gutter,
-        }
-    };
+    let hit =
+        |at: f64, on_picture: bool, on_scene: bool, playing: bool, sources: bool, gutter: bool| {
+            cut_line::Hit {
+                at,
+                row: cut_line::PICTURE_ROW,
+                on_picture,
+                on_scene_picture: on_scene,
+                playing,
+                sources,
+                gutter,
+            }
+        };
 
     let outcome = ui::place_line_press(&window, hit(12.0, true, true, false, true, false), 20_000);
     assert!(outcome.line_moved, "a press on a track moves the line");
     assert_eq!(outcome.line_at, 12.0);
-    assert_eq!(ui::line_position(&window).t, 12.0, "and the window's line is there");
-    assert!(outcome.clears_selection, "every track press clears the selection");
-    assert_eq!(outcome.watches, Some(cut_line::PICTURE_ROW), "on the picture band, the row is watched");
-    assert!(outcome.takes_scene, "landing on the scene's own picture takes it in hand");
+    assert_eq!(
+        ui::line_position(&window).t,
+        12.0,
+        "and the window's line is there"
+    );
+    assert!(
+        outcome.clears_selection,
+        "every track press clears the selection"
+    );
+    assert_eq!(
+        outcome.watches,
+        Some(cut_line::PICTURE_ROW),
+        "on the picture band, the row is watched"
+    );
+    assert!(
+        outcome.takes_scene,
+        "landing on the scene's own picture takes it in hand"
+    );
 
     // A gutter click moves no line and watches nothing -- and the seam agrees with the rule itself, so
     // the two cannot drift apart.
     let gutter = ui::place_line_press(&window, hit(99.0, true, false, false, true, true), 20_100);
     assert!(!gutter.line_moved, "a gutter press leaves the line alone");
-    assert_eq!(ui::line_position(&window).t, 12.0, "still where the last real press put it");
     assert_eq!(
-        gutter.watches, None,
+        ui::line_position(&window).t,
+        12.0,
+        "still where the last real press put it"
+    );
+    assert_eq!(
+        gutter.watches,
+        None,
         "and watches nothing -- matching watches_row's own answer: {}",
         cut_line::watches_row(true, false, true, true)
     );
 
     // Playing suppresses watching, sources-not-loaded suppresses it, both straight from the rule.
-    let while_playing = ui::place_line_press(&window, hit(30.0, true, true, true, true, false), 20_200);
-    assert_eq!(while_playing.watches, None, "nothing is watched while something plays");
-    let no_sources = ui::place_line_press(&window, hit(31.0, true, true, false, false, false), 20_300);
-    assert_eq!(no_sources.watches, None, "and none before a source has loaded");
+    let while_playing =
+        ui::place_line_press(&window, hit(30.0, true, true, true, true, false), 20_200);
+    assert_eq!(
+        while_playing.watches, None,
+        "nothing is watched while something plays"
+    );
+    let no_sources =
+        ui::place_line_press(&window, hit(31.0, true, true, false, false, false), 20_300);
+    assert_eq!(
+        no_sources.watches, None,
+        "and none before a source has loaded"
+    );
 
     // S1b: the wider 12 px reach grabs the edge first, then a border, then the whole clip.
     // layout.lineReachPx is how params.rs catalogues cut_line::EDGE_REACH_PX.
     assert_eq!(cut_line::EDGE_REACH_PX, 12.0);
-    assert_eq!(cut_line::first_press_pick(3.0, true), cut_line::PressPick::Edge, "within the reach, the edge");
-    assert_eq!(cut_line::first_press_pick(12.0, true), cut_line::PressPick::Edge, "exactly at the reach still counts");
-    assert_eq!(cut_line::first_press_pick(40.0, true), cut_line::PressPick::Border, "inside but clear of the edge, a border");
-    assert_eq!(cut_line::first_press_pick(40.0, false), cut_line::PressPick::Clip, "outside the box, the whole clip");
+    assert_eq!(
+        cut_line::first_press_pick(3.0, true),
+        cut_line::PressPick::Edge,
+        "within the reach, the edge"
+    );
+    assert_eq!(
+        cut_line::first_press_pick(12.0, true),
+        cut_line::PressPick::Edge,
+        "exactly at the reach still counts"
+    );
+    assert_eq!(
+        cut_line::first_press_pick(40.0, true),
+        cut_line::PressPick::Border,
+        "inside but clear of the edge, a border"
+    );
+    assert_eq!(
+        cut_line::first_press_pick(40.0, false),
+        cut_line::PressPick::Clip,
+        "outside the box, the whole clip"
+    );
     window.close();
 }
 
@@ -250,38 +342,62 @@ fn check_a_real_click_clears_watches_and_a_hold_nudges_instead_of_stepping(app: 
         45.0,
     )
     .expect("a drag on a picture row selects that row's footage");
-    assert!(ui::selection(&window).is_some(), "a band is up before the click");
+    assert!(
+        ui::selection(&window).is_some(),
+        "a band is up before the click"
+    );
 
     // A cut with one kept scene covering 10..20, so a click at 15 lands ON a scene's picture.
     let mut seeded = Cut::default();
-    seeded.segs = vec![Seg { s: 10.0, e: 20.0, ..Default::default() }];
+    seeded.segs = vec![Seg {
+        s: 10.0,
+        e: 20.0,
+        ..Default::default()
+    }];
     ui::seed_review_cut(&window, &seeded);
 
     // The REAL gesture, emitted the way GTK does it. x is in px at SELECT_SURFACE_PPS, so 15 s of the
     // scene is 15 * pps across -- converted by the handler itself, never by this test.
-    let gesture = ui::line_click_gesture(&window).expect("the surface carries the line-click gesture");
+    let gesture =
+        ui::line_click_gesture(&window).expect("the surface carries the line-click gesture");
     let x_px = 15.0 * ui::SELECT_SURFACE_PPS;
     gesture.emit_by_name::<()>("released", &[&1i32, &x_px, &8.0]);
     settle();
 
-    assert_eq!(ui::line_position(&window).t, 15.0, "the click put the red line at 15 s");
-    assert!(ui::selection(&window).is_none(), "and S1 cleared the band that was up");
+    assert_eq!(
+        ui::line_position(&window).t,
+        15.0,
+        "the click put the red line at 15 s"
+    );
+    assert!(
+        ui::selection(&window).is_none(),
+        "and S1 cleared the band that was up"
+    );
     assert_eq!(
         ui::watched_row(),
         Some(cut_line::PICTURE_ROW),
         "S1 stored the watched picture row"
     );
     let held = ui::held_clip().expect("landing on a scene's picture took it in hand");
-    assert_eq!((held.s, held.e), (10.0, 20.0), "the scene under the click is the one now held");
+    assert_eq!(
+        (held.s, held.e),
+        (10.0, 20.0),
+        "the scene under the click is the one now held"
+    );
 
     // S2/S3 with that hold: an arrow through the WINDOW's key controller must nudge, not step. Read
     // the line before and after -- if the hardcoded `None` were still there the line would have moved by
     // a frame and this assertion would fail exactly as the item says it must.
     let before = ui::line_position(&window).t;
-    let controller = ui::line_key_controller(&window).expect("the window has a line key controller");
+    let controller =
+        ui::line_key_controller(&window).expect("the window has a line key controller");
     let _ = controller.emit_by_name::<bool>(
         "key-pressed",
-        &[&gtk::gdk::Key::Left, &0u32, &gtk::gdk::ModifierType::empty()],
+        &[
+            &gtk::gdk::Key::Left,
+            &0u32,
+            &gtk::gdk::ModifierType::empty(),
+        ],
     );
     settle();
     assert_eq!(
@@ -390,7 +506,11 @@ fn check_closing_flushes_the_line_through_the_real_file(app: &adw::Application) 
 
     let window = cut_window(app);
     settle();
-    assert_eq!(ui::line_position(&window).t, 0.0, "no file -> the line opens at zero");
+    assert_eq!(
+        ui::line_position(&window).t,
+        0.0,
+        "no file -> the line opens at zero"
+    );
 
     // A real press on f› : the line moves by one frame and the writer is now throttled.
     let forward = ui::line_step_button(&window, "line-step-forward").expect("f› exists");
@@ -442,7 +562,12 @@ fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application)
 
     // A cut whose single kept scene covers 10..30 s, so a press inside it lands on that scene's picture.
     let seeded = Cut {
-        segs: vec![Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 10.0,
+            e: 30.0,
+            cam: 0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     ui::seed_review_cut(&window, &seeded);
@@ -468,11 +593,9 @@ fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application)
     // (its kept footage runs 0-9.5 / 10-30 / 40-70) rather than at whatever x happens to be mid-box.
     let pressed_at = 12.0;
     let inside_x = origin + cut_view::gutter_px() + pressed_at * pps;
-    let held_seg = naivepost::cut_delete::scene_under(
-        &naivepost::ui::review_cut_of(&window).segs,
-        pressed_at,
-    )
-    .cloned();
+    let held_seg =
+        naivepost::cut_delete::scene_under(&naivepost::ui::review_cut_of(&window).segs, pressed_at)
+            .cloned();
     let painted_row = naivepost::timeline::rows_for(
         &ui::page_recordings(),
         &naivepost::ui::review_cut_of(&window),
@@ -482,7 +605,10 @@ fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application)
     .find(|(_, rec)| rec.base == format!("cam{}", held_seg.as_ref().map(|s| s.cam).unwrap_or(0)))
     .map(|(row, _)| row)
     .unwrap_or(0);
-    assert!(painted_row < rows.max(1), "the painted box's row {painted_row} is a drawn row");
+    assert!(
+        painted_row < rows.max(1),
+        "the painted box's row {painted_row} is a drawn row"
+    );
     // Row 0's own picture half, off the arithmetic the painter lays out.
     let bands = cut_tracks::bands_for(naivepost::fx_lane::row_count(
         &naivepost::ui::review_cut_of(&window).fx,
@@ -501,7 +627,10 @@ fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application)
     // The fixture's footage is one camera (every kept segment is cam0), so the coloured picture row the
     // press must land on is row 0 -- its middle is `first_picture + row_height / 2`, inside the band's own
     // laid-out height, which is what `surface_at` bounds the rows by.
-    assert_eq!(rows, 1, "this session films one camera, so one picture row is drawn");
+    assert_eq!(
+        rows, 1,
+        "this session films one camera, so one picture row is drawn"
+    );
     let row_y = bands.first_picture + bands.row_height / 2.0;
     assert!(
         row_y < band_px,
@@ -548,12 +677,17 @@ fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application)
         "the lane press moved the line to its own second: {}",
         ui::line_position(&window).t
     );
-    assert_eq!(ui::watched_row(), None, "but a lane is not a picture row, so nothing is watched");
+    assert_eq!(
+        ui::watched_row(),
+        None,
+        "but a lane is not a picture row, so nothing is watched"
+    );
 
     // (d) On the PLACEHOLDER strip's ruler band: the strip's handler now reads the press's real y instead of
     // assuming every click landed on its one picture row, so a ruler click moves the line but watches
     // nothing -- the same answer the painted band gives for ground that is not a picture row.
-    let strip = ui::line_click_gesture(&window).expect("the placeholder strip carries its own gesture");
+    let strip =
+        ui::line_click_gesture(&window).expect("the placeholder strip carries its own gesture");
     let ruler_y = (naivepost::cut_select::PLACEHOLDER_BANDS.ruler.0
         + naivepost::cut_select::PLACEHOLDER_BANDS.ruler.1)
         / 2.0;
@@ -652,7 +786,11 @@ fn check_a_step_moves_one_frame_of_the_probed_rate(app: &adw::Application) {
     // A footage file must exist for the rate to be asked of it: a real path on disk, which is what
     // `cut_fps::session_fps` resolves and probes (the stub answers whatever it is asked).
     let film = tools.join("lecture.mkv");
-    std::fs::write(&film, b"not really a video, and the stub answers whatever it is asked").unwrap();
+    std::fs::write(
+        &film,
+        b"not really a video, and the stub answers whatever it is asked",
+    )
+    .unwrap();
 
     let window = cut_window(app);
     settle();
@@ -718,7 +856,10 @@ fn check_a_real_press_clear_of_the_green_takes_the_edge_by_the_reach(app: &adw::
         .expect("the painted band carries the line-click gesture");
     let origin = cut_view::origin();
     let boxes = cut_view::band_clip_boxes_for_test(&window);
-    assert!(!boxes.is_empty(), "the band has painted boxes to press beside");
+    assert!(
+        !boxes.is_empty(),
+        "the band has painted boxes to press beside"
+    );
     // The target is the GAP between two kept scenes: pressing just LEFT of a later box's edge puts the
     // pointer on a dropped stretch -- bare ground, no green -- while still landing in the picture band.
     // That is exactly S1b's case ("how to take a clip or card whose green sits on ANOTHER row"): the hand
@@ -731,7 +872,9 @@ fn check_a_real_press_clear_of_the_green_takes_the_edge_by_the_reach(app: &adw::
             let left_on_screen = held.x - origin;
             held.w > 0.0 && left_on_screen > cut_view::gutter_px() + cut_line::EDGE_REACH_PX
         })
-        .expect("a painted box whose left edge is clear of the gutter, i.e. beside a dropped stretch");
+        .expect(
+            "a painted box whose left edge is clear of the gutter, i.e. beside a dropped stretch",
+        );
     let box_left = target.x - origin;
     let seg = naivepost::ui::review_cut_of(&window)
         .segs
@@ -845,7 +988,10 @@ fn check_a_restored_line_scrolls_into_view_on_a_zoomed_tape(app: &adw::Applicati
         .expect("the page carries its scrollbar")
         .downcast::<gtk::Scrollbar>()
         .expect("it is a scrollbar");
-    assert!(bar.is_visible(), "§A: the scrollbar shows when not everything fits");
+    assert!(
+        bar.is_visible(),
+        "§A: the scrollbar shows when not everything fits"
+    );
 
     let _ = std::fs::remove_file(cut_line::line_file(&proj));
     cut_view::set_pps(naivepost::cut_screen::ZOOM_AT_OPEN);
@@ -861,7 +1007,8 @@ fn check_a_restored_line_scrolls_into_view_on_a_zoomed_tape(app: &adw::Applicati
 fn check_the_arrows_reach_the_window_through_its_own_key_controller(app: &adw::Application) {
     pin_session_root("arrow-wire");
     let window = cut_window(app);
-    let controller = ui::line_key_controller(&window).expect("the window has a line key controller");
+    let controller =
+        ui::line_key_controller(&window).expect("the window has a line key controller");
     ui::set_held_edge(None);
     ui::set_held_clip(None);
     ui::set_held_effect(None);
@@ -893,15 +1040,27 @@ fn check_a_held_edge_and_a_held_clip_are_nudged_by_the_arrows_not_the_line(app: 
     use naivepost::cut::{Cut, Seg};
     pin_session_root("arrow-hold");
     let window = cut_window(app);
-    let seeded = Cut { segs: vec![Seg { s: 10.0, e: 20.0, ..Default::default() }], ..Default::default() };
+    let seeded = Cut {
+        segs: vec![Seg {
+            s: 10.0,
+            e: 20.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     ui::seed_review_cut(&window, &seeded);
     ui::set_line_position(&window, cut_line::LinePos { t: 15.0 });
-    let controller = ui::line_key_controller(&window).expect("the window has a line key controller");
+    let controller =
+        ui::line_key_controller(&window).expect("the window has a line key controller");
     let line_before = ui::line_position(&window).t;
 
     // Edge first, then whole clip -- the order S3's "an edge, clip or effect held?" walks.
     for held in [
-        Some(Seg { s: 10.0, e: 20.0, ..Default::default() }),
+        Some(Seg {
+            s: 10.0,
+            e: 20.0,
+            ..Default::default()
+        }),
         None,
     ] {
         if held.is_some() {
@@ -909,7 +1068,11 @@ fn check_a_held_edge_and_a_held_clip_are_nudged_by_the_arrows_not_the_line(app: 
             assert_eq!(ui::held_now(), Some(cut_line::Held::Edge));
         } else {
             ui::set_held_edge(None);
-            ui::set_held_clip(Some(Seg { s: 10.0, e: 20.0, ..Default::default() }));
+            ui::set_held_clip(Some(Seg {
+                s: 10.0,
+                e: 20.0,
+                ..Default::default()
+            }));
             assert_eq!(ui::held_now(), Some(cut_line::Held::Clip));
         }
         for (shift, frames) in [(false, 1_i64), (true, 5_i64)] {
@@ -924,8 +1087,7 @@ fn check_a_held_edge_and_a_held_clip_are_nudged_by_the_arrows_not_the_line(app: 
                 gtk::gdk::ModifierType::empty()
             };
             for key in [gtk::gdk::Key::Left, gtk::gdk::Key::Right] {
-                let handled =
-                    controller.emit_by_name::<bool>("key-pressed", &[&key, &0u32, &mods]);
+                let handled = controller.emit_by_name::<bool>("key-pressed", &[&key, &0u32, &mods]);
                 settle();
                 assert!(handled, "a held item makes {key:?} handled");
                 assert_eq!(
@@ -951,7 +1113,11 @@ fn check_a_held_effect_is_nudged_unsnapped_by_the_arrows(app: &adw::Application)
     pin_session_root("arrow-effect");
     let window = cut_window(app);
     let seeded = Cut {
-        segs: vec![Seg { s: 10.0, e: 20.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 10.0,
+            e: 20.0,
+            ..Default::default()
+        }],
         fx: vec![Fx {
             kind: "zoom".to_string(),
             t: 12.0,
@@ -969,7 +1135,8 @@ fn check_a_held_effect_is_nudged_unsnapped_by_the_arrows(app: &adw::Application)
     ui::set_held_edge(None);
     ui::set_held_clip(None);
     ui::set_held_effect(Some(ui::review_cut_of(&window).fx[0].clone()));
-    let controller = ui::line_key_controller(&window).expect("the window has a line key controller");
+    let controller =
+        ui::line_key_controller(&window).expect("the window has a line key controller");
     let fps = naivepost::cut_fps::session_fps(&window);
     assert!(fps > 0.0, "the page steps at a real rate: {fps}");
 
@@ -1013,19 +1180,31 @@ fn check_space_still_toggles_play_from_the_key_controller(app: &adw::Application
     pin_session_root("arrow-space");
     let window = cut_window(app);
     let seeded = naivepost::cut::Cut {
-        segs: vec![naivepost::cut::Seg { s: 0.0, e: 20.0, ..Default::default() }],
+        segs: vec![naivepost::cut::Seg {
+            s: 0.0,
+            e: 20.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     ui::seed_review_cut(&window, &seeded);
-    ui::set_preview_state(&window, false, false, Transport { playing: false, started: false });
-    let controller = ui::line_key_controller(&window).expect("the window has a line key controller");
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        Transport {
+            playing: false,
+            started: false,
+        },
+    );
+    let controller =
+        ui::line_key_controller(&window).expect("the window has a line key controller");
     assert!(
         !cut_line::space_toggles_preview(true),
         "a text box keeps its Space: with the focus in an entry the page does NOT take the key"
     );
     assert!(
-        !ui::space_toggles(&window, true)
-            && !ui::preview_player(&window).transport.playing,
+        !ui::space_toggles(&window, true) && !ui::preview_player(&window).transport.playing,
         "and a text-focus press starts nothing"
     );
     assert!(
@@ -1035,7 +1214,11 @@ fn check_space_still_toggles_play_from_the_key_controller(app: &adw::Application
 
     let first = controller.emit_by_name::<bool>(
         "key-pressed",
-        &[&gtk::gdk::Key::space, &0u32, &gtk::gdk::ModifierType::empty()],
+        &[
+            &gtk::gdk::Key::space,
+            &0u32,
+            &gtk::gdk::ModifierType::empty(),
+        ],
     );
     settle();
     assert!(first, "S3: Space outside a text box is handled");
@@ -1045,7 +1228,11 @@ fn check_space_still_toggles_play_from_the_key_controller(app: &adw::Application
     );
     let second = controller.emit_by_name::<bool>(
         "key-pressed",
-        &[&gtk::gdk::Key::space, &0u32, &gtk::gdk::ModifierType::empty()],
+        &[
+            &gtk::gdk::Key::space,
+            &0u32,
+            &gtk::gdk::ModifierType::empty(),
+        ],
     );
     settle();
     assert!(second, "Space again handled");
@@ -1142,12 +1329,30 @@ fn f2_4_s1_placing_and_stepping_the_line_reaches_the_window_through_real_widgets
     std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
 
     window_round();
-    assert!(RAN_STEPS.load(Ordering::SeqCst), "the step-button check never ran");
-    assert!(RAN_KEYS.load(Ordering::SeqCst), "the key-controller check never ran");
-    assert!(RAN_CLICK.load(Ordering::SeqCst), "the track-press check never ran");
-    assert!(RAN_EFFECTS.load(Ordering::SeqCst), "the click-effects and nudge check never ran");
-    assert!(RAN_RESTORE.load(Ordering::SeqCst), "the restore-on-open check never ran");
-    assert!(RAN_FLUSH.load(Ordering::SeqCst), "the flush-on-close check never ran");
+    assert!(
+        RAN_STEPS.load(Ordering::SeqCst),
+        "the step-button check never ran"
+    );
+    assert!(
+        RAN_KEYS.load(Ordering::SeqCst),
+        "the key-controller check never ran"
+    );
+    assert!(
+        RAN_CLICK.load(Ordering::SeqCst),
+        "the track-press check never ran"
+    );
+    assert!(
+        RAN_EFFECTS.load(Ordering::SeqCst),
+        "the click-effects and nudge check never ran"
+    );
+    assert!(
+        RAN_RESTORE.load(Ordering::SeqCst),
+        "the restore-on-open check never ran"
+    );
+    assert!(
+        RAN_FLUSH.load(Ordering::SeqCst),
+        "the flush-on-close check never ran"
+    );
     assert!(
         RAN_BAND_PRESS.load(Ordering::SeqCst),
         "the painted-band press check never ran"

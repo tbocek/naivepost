@@ -28,7 +28,8 @@ pub fn press_preview_picture(window: &adw::ApplicationWindow) -> String {
     let s = narrate_page::read_state();
     let line_start = narrate_preview::line_at(s.session, &s.entries)
         .map(|index| s.entries[index].s + s.entries[index].at);
-    let pressed = narrate_preview::press_picture(s.playing, &s.segs, line_start, &preview_covered(&s));
+    let pressed =
+        narrate_preview::press_picture(s.playing, &s.segs, line_start, &preview_covered(&s));
     let next_playing = pressed.playing();
     narrate_page::mutate(|state| state.playing = next_playing);
     // §5: the bar follows whatever this press decided, before any of the arms below can return early.

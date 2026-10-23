@@ -16,7 +16,6 @@
 //! - **Each tool answers what it did** (§3.9): the fitted size, the distance a frame landed, the refusal
 //!   when a frame and an instruction are both claimed.
 
-
 use crate::produce_details as details;
 use crate::project::{Publish, TitleBox};
 
@@ -400,7 +399,13 @@ pub fn thumbnail_stamp(
     aspect: &str,
     own: bool,
 ) -> String {
-    crate::produce_stamp::hash_text(&thumbnail_stamp_text(images, instruction, negative, aspect, own))
+    crate::produce_stamp::hash_text(&thumbnail_stamp_text(
+        images,
+        instruction,
+        negative,
+        aspect,
+        own,
+    ))
 }
 
 // ---- the walk --------------------------------------------------------------------
@@ -605,7 +610,9 @@ pub fn walk(
             }
             None => {
                 // Nothing to take: say so and fall through to drawing rather than ship an empty row.
-                log(&details::chosen_frame_failed_log("no extracted frame anywhere near it"));
+                log(&details::chosen_frame_failed_log(
+                    "no extracted frame anywhere near it",
+                ));
             }
         }
     }
@@ -636,7 +643,13 @@ pub fn walk(
     // S6: draw unless the picture is the user's own, or its own stamp says these images and this
     // instruction were already drawn.
     let aspect = DEFAULT_ASPECT.to_string();
-    let current = thumbnail_stamp(&next.frames, &next.prompt, &next.negative, &aspect, next.own);
+    let current = thumbnail_stamp(
+        &next.frames,
+        &next.prompt,
+        &next.negative,
+        &aspect,
+        next.own,
+    );
     // S5/S7: the title that goes onto the picture. From the answer when there is one; otherwise the line the
     // record already carries, since S8 keeps the previous value and a missing title must not reprint nothing.
     let printed_title = answers
@@ -659,9 +672,16 @@ pub fn walk(
                 // both that moment and the frame it got, in the same words the model's own `pick_frame` gets.
                 // Nothing was asked of the person here, so it is the log that must not print only the frame.
                 if let Some(entry) = next.frames.first() {
-                    if let Some(taken) = entry.strip_prefix("frame:").and_then(|t| t.parse::<f64>().ok()) {
+                    if let Some(taken) = entry
+                        .strip_prefix("frame:")
+                        .and_then(|t| t.parse::<f64>().ok())
+                    {
                         if let Some(asked) = answers.picked_frame {
-                            log(&picked_frame_answer(asked, taken, "the moment the answer named"));
+                            log(&picked_frame_answer(
+                                asked,
+                                taken,
+                                "the moment the answer named",
+                            ));
                         }
                     }
                 }
@@ -743,7 +763,10 @@ pub fn walk(
         if png.is_empty() {
             // The job said done and sent no picture: say which, rather than let the print leg refuse for a
             // reason one step and one file away from the truth.
-            out.error = Some(format!("the drawing server finished job {} with no image", job.id));
+            out.error = Some(format!(
+                "the drawing server finished job {} with no image",
+                job.id
+            ));
             return out;
         }
         if let Err(why) = (mats.save_picture)(&job, &png) {
@@ -819,7 +842,9 @@ fn title_box(publish: &Publish) -> TitleBox {
 /// ask which entry a run is about to edit; the REQUEST line reads its name off [`Sent`] instead, because the
 /// file behind the entry is the media leg's answer, not this module's.
 pub fn base_of(publish: &Publish) -> String {
-    crate::publish::base(publish).unwrap_or_default().to_string()
+    crate::publish::base(publish)
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// How many references actually went out in this body — read back off the JSON so the log states what was
@@ -858,7 +883,12 @@ pub const OVERFLOW_WORDS: usize = 7;
 ///
 /// `edited_by_hand` is the user having their own picture (an own frame, or an edit instruction of their
 /// own); while that holds the picture is theirs and the title is not reprinted even when it changes (S5).
-pub fn set_title(publish: &Publish, text: &str, box_: &TitleBox, edited_by_hand: bool) -> TitleAnswer {
+pub fn set_title(
+    publish: &Publish,
+    text: &str,
+    box_: &TitleBox,
+    edited_by_hand: bool,
+) -> TitleAnswer {
     let printed = crate::produce_runs::reprint(text, *box_);
     let words = text.split_whitespace().count();
     // §12 #35 has TWO ways a title fails to fit, and the answer must tell them apart: "four to seven words" is
@@ -871,8 +901,8 @@ pub fn set_title(publish: &Publish, text: &str, box_: &TitleBox, edited_by_hand:
     // fraction of the picture, so the ceiling is that fraction of the picture's height divided by the line
     // height — `fx_text::fit`'s own first try, from the same numbers, never a second guess at it.
     let band_px = box_.hf * f64::from(crate::produce_runs::HEIGHT);
-    let full_height = band_px > 0.0
-        && printed.size >= band_px / crate::fx_text::LINE_HEIGHT_EM - f64::EPSILON;
+    let full_height =
+        band_px > 0.0 && printed.size >= band_px / crate::fx_text::LINE_HEIGHT_EM - f64::EPSILON;
     let shrunk = printed.size > 0.0 && !full_height;
     let changed = crate::audit_gaps::reprint_title_on_change(&publish.title, text, edited_by_hand);
     let answer = match (overflows, shrunk) {
@@ -923,9 +953,15 @@ pub struct Picked {
 ///
 /// `Err` when the cut has no such clip or no frames were extracted: naming no frame is better than naming a
 /// wrong one (`details::frame_moment` refuses the same way for the same reason).
-pub fn pick_frame(clip: usize, offset: f64, starts: &[f64], frames: &[f64]) -> Result<Picked, String> {
+pub fn pick_frame(
+    clip: usize,
+    offset: f64,
+    starts: &[f64],
+    frames: &[f64],
+) -> Result<Picked, String> {
     let named = details::FrameAt::Clip(clip, offset);
-    let asked = details::frame_moment(named, starts).ok_or_else(|| format!("the cut has no clip {clip}"))?;
+    let asked = details::frame_moment(named, starts)
+        .ok_or_else(|| format!("the cut has no clip {clip}"))?;
     let taken = nearest(frames, asked).ok_or("no frames have been extracted")?;
     let distance = (taken - asked).abs();
     Ok(Picked {
@@ -944,12 +980,15 @@ pub fn pick_frame(clip: usize, offset: f64, starts: &[f64], frames: &[f64]) -> R
 /// The nearest of `frames` to `at`, by absolute distance. Ties go to the earlier frame: deterministic, and
 /// an earlier picture is the one that was already there.
 pub fn nearest(frames: &[f64], at: f64) -> Option<f64> {
-    frames.iter().min_by(|a, b| {
-        (**a - at)
-            .abs()
-            .partial_cmp(&(**b - at).abs())
-            .unwrap_or(std::cmp::Ordering::Equal)
-    }).copied()
+    frames
+        .iter()
+        .min_by(|a, b| {
+            (**a - at)
+                .abs()
+                .partial_cmp(&(**b - at).abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .copied()
 }
 
 /// `set_thumbnail_instruction`: ok, unless a frame was already picked — then an error, instead of the
@@ -960,7 +999,10 @@ pub fn set_thumbnail_instruction(
     negative: Option<&str>,
 ) -> Result<String, String> {
     if own {
-        return Err("a frame was already picked \u{2014} clear it before setting an instruction".to_string());
+        return Err(
+            "a frame was already picked \u{2014} clear it before setting an instruction"
+                .to_string(),
+        );
     }
     if text.trim().is_empty() {
         return Err(NO_INSTRUCTION.to_string());
@@ -1017,9 +1059,15 @@ pub fn peel(reply: &str) -> (Option<String>, Option<String>, Option<String>) {
     }
     let body: Vec<&str> = rest.lines().skip_while(|l| l.trim().is_empty()).collect();
     let description = match body.first() {
-        Some(first) if details::drops_description_heading(first) && body.len() > 1 => body[1..].join("\n"),
+        Some(first) if details::drops_description_heading(first) && body.len() > 1 => {
+            body[1..].join("\n")
+        }
         Some(_) => body.join("\n"),
         None => String::new(),
     };
-    (title, thumbnail, (!description.trim().is_empty()).then_some(description))
+    (
+        title,
+        thumbnail,
+        (!description.trim().is_empty()).then_some(description),
+    )
 }

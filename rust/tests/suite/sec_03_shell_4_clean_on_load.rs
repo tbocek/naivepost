@@ -20,12 +20,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::common;
 use adw::prelude::*;
+use common::source_row as row;
 use gtk4 as gtk;
 use naivepost::project::Project;
 use naivepost::{open_project, sources, ui};
-use crate::common;
-use common::source_row as row;
 
 /// The item's id, interpolated into every assertion message so a failure names the item.
 const ITEM: &str =
@@ -77,12 +77,25 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     let project = &applied.project;
 
     // The second claimant loses its tag; the first holder keeps it (§4: one row per narrator slot).
-    assert_eq!(project.sources[1].narrator, 0, "{ITEM}: two rows cannot hold slot 1");
+    assert_eq!(
+        project.sources[1].narrator, 0,
+        "{ITEM}: two rows cannot hold slot 1"
+    );
     // A slot past the last one is not honoured either.
-    assert_eq!(project.sources[2].narrator, 0, "{ITEM}: slot 9 is past the last slot");
+    assert_eq!(
+        project.sources[2].narrator, 0,
+        "{ITEM}: slot 9 is past the last slot"
+    );
     // Only a video may be footage: the audio row loses the flag, not the row.
-    assert!(!project.sources[3].footage, "{ITEM}: an audio file has no frames");
-    assert_eq!(sources::slot_holder(project, 1), Some(0), "{ITEM}: slot 1 stays held");
+    assert!(
+        !project.sources[3].footage,
+        "{ITEM}: an audio file has no frames"
+    );
+    assert_eq!(
+        sources::slot_holder(project, 1),
+        Some(0),
+        "{ITEM}: slot 1 stays held"
+    );
 
     // Each clearing is REPORTED -- silently losing a tag someone typed is worse than a line about it --
     // and the lines ride `Applied.lines`, which is what the shell logs on an open.
@@ -113,10 +126,17 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     ];
     let folder = dirty_folder(&root, &rows);
 
-    let applied = open_project::apply(&folder, |path| path.is_file()).expect("a good project opens");
+    let applied =
+        open_project::apply(&folder, |path| path.is_file()).expect("a good project opens");
 
-    assert_eq!(applied.project.sources[0].narrator, 1, "{ITEM}: the holder stays");
-    assert_eq!(applied.project.sources[1].narrator, 2, "{ITEM}: the second slot stays");
+    assert_eq!(
+        applied.project.sources[0].narrator, 1,
+        "{ITEM}: the holder stays"
+    );
+    assert_eq!(
+        applied.project.sources[1].narrator, 2,
+        "{ITEM}: the second slot stays"
+    );
     assert!(
         applied.lines.is_empty(),
         "{ITEM}: a clean load has nothing to report: {:?}",
@@ -157,19 +177,25 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     let applied = open_project::apply(&folder, |path| path.is_file())
         .expect("a project with one missing source still opens");
 
-    assert_eq!(applied.dropped, ["project:sources/old.wav"], "{ITEM}: only the missing row goes");
+    assert_eq!(
+        applied.dropped,
+        ["project:sources/old.wav"],
+        "{ITEM}: only the missing row goes"
+    );
     assert_eq!(
         sources::slot_holder(&applied.project, 1),
         Some(0),
         "{ITEM}: the load left slot 1 unheld -- §4 fills it whenever it is empty"
     );
     assert_eq!(
-        applied.project.sources[0].path,
-        "project:sources/mic.wav",
+        applied.project.sources[0].path, "project:sources/mic.wav",
         "{ITEM}: a recording is seated before footage"
     );
     assert!(
-        applied.lines.iter().any(|line| line.contains(SLOT_1_SEATED)),
+        applied
+            .lines
+            .iter()
+            .any(|line| line.contains(SLOT_1_SEATED)),
         "{ITEM}: the load never said who took slot 1: {:?}",
         applied.lines
     );
@@ -199,11 +225,23 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 
     let (project, report) = ui::launch::load_for_launch(&folder);
 
-    assert_eq!(project.sources[1].narrator, 0, "{ITEM}: the launch strips a duplicated slot");
-    assert!(!project.sources[3].footage, "{ITEM}: the launch strips footage off an audio file");
-    assert_eq!(sources::slot_holder(&project, 1), Some(0), "{ITEM}: slot 1 stays held");
+    assert_eq!(
+        project.sources[1].narrator, 0,
+        "{ITEM}: the launch strips a duplicated slot"
+    );
     assert!(
-        report.iter().any(|line| line.contains("an audio file has no frames -- not footage")),
+        !project.sources[3].footage,
+        "{ITEM}: the launch strips footage off an audio file"
+    );
+    assert_eq!(
+        sources::slot_holder(&project, 1),
+        Some(0),
+        "{ITEM}: slot 1 stays held"
+    );
+    assert!(
+        report
+            .iter()
+            .any(|line| line.contains("an audio file has no frames -- not footage")),
         "{ITEM}: the launch says what it cleared: {report:?}"
     );
     fs::remove_dir_all(&root).ok();
@@ -254,14 +292,30 @@ fn open_through_the_open_button(app: &adw::Application) {
     let session = ui::session_handle(&window);
 
     let opened = ui::open_folder(&bar, &status, &session, &folder);
-    assert!(opened, "{ITEM}: opening a hand-edited project still succeeds");
+    assert!(
+        opened,
+        "{ITEM}: opening a hand-edited project still succeeds"
+    );
 
     // The live session -- what ▶ freezes as the run's snapshot -- holds the CLEANED rows.
     let held = session.borrow();
-    assert_eq!(held.sources.len(), 4, "{ITEM}: nothing was dropped, only flagged wrong");
-    assert_eq!(held.sources[1].narrator, 0, "{ITEM}: the duplicate slot survived the open");
-    assert_eq!(held.sources[2].narrator, 0, "{ITEM}: the out-of-range slot survived the open");
-    assert!(!held.sources[3].footage, "{ITEM}: footage survived on an audio file");
+    assert_eq!(
+        held.sources.len(),
+        4,
+        "{ITEM}: nothing was dropped, only flagged wrong"
+    );
+    assert_eq!(
+        held.sources[1].narrator, 0,
+        "{ITEM}: the duplicate slot survived the open"
+    );
+    assert_eq!(
+        held.sources[2].narrator, 0,
+        "{ITEM}: the out-of-range slot survived the open"
+    );
+    assert!(
+        !held.sources[3].footage,
+        "{ITEM}: footage survived on an audio file"
+    );
     assert_eq!(
         sources::slot_holder(&held, 1),
         Some(0),
@@ -271,7 +325,8 @@ fn open_through_the_open_button(app: &adw::Application) {
     // And the shell said what it changed: the strip lines went to the log the open writes.
     let log = ui::window::logs_for_test();
     assert!(
-        log.iter().any(|line| line.contains("slot 1 is taken -- untagged")),
+        log.iter()
+            .any(|line| line.contains("slot 1 is taken -- untagged")),
         "{ITEM}: the open never logged the strip: {log:?}"
     );
 

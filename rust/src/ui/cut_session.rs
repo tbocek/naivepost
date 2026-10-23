@@ -45,7 +45,12 @@ thread_local! {
 ///
 /// `root` and `project` resolve a stored path (`project:` + root-relative, absolute nowhere else); pass
 /// [`open_roots`] to have this read where the window left the open folder.
-pub fn session_recordings(project: &Project, cut_: &Cut, root: &Path, project_dir: &Path) -> Vec<Recording> {
+pub fn session_recordings(
+    project: &Project,
+    cut_: &Cut,
+    root: &Path,
+    project_dir: &Path,
+) -> Vec<Recording> {
     let names: Vec<String> = project
         .sources
         .iter()
@@ -64,8 +69,11 @@ pub fn session_recordings(project: &Project, cut_: &Cut, root: &Path, project_di
         .filter(|(_, source)| source.footage)
     {
         let name = base(source);
-        let Some(length) = length_of(&configured, &crate::layout::resolve(root, project_dir, &source.path), &name)
-        else {
+        let Some(length) = length_of(
+            &configured,
+            &crate::layout::resolve(root, project_dir, &source.path),
+            &name,
+        ) else {
             // Said by name and reason rather than dropped quietly: a missing row reads as a bug.
             crate::ui::window::log_line(&format!("{name}: no row \u{2014} ffprobe gave no length"));
             continue;
@@ -205,7 +213,11 @@ pub fn session_or_kept(cut_: &Cut) -> Vec<Recording> {
         named.push(span.base.clone());
         spans.push(span);
     }
-    spans.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
+    spans.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     spans
 }
 
@@ -213,7 +225,11 @@ pub fn session_or_kept(cut_: &Cut) -> Vec<Recording> {
 fn kept_cam_spans(cut_: &Cut) -> Vec<Recording> {
     let mut cams: Vec<i32> = Vec::new();
     let mut spans: Vec<Recording> = Vec::new();
-    for seg in cut_.segs.iter().filter(|seg| seg.ins.is_empty() && seg.e > seg.s) {
+    for seg in cut_
+        .segs
+        .iter()
+        .filter(|seg| seg.ins.is_empty() && seg.e > seg.s)
+    {
         match cams.iter().position(|cam| *cam == seg.cam) {
             Some(known) => spans[known].end = spans[known].end.max(seg.e),
             None => {

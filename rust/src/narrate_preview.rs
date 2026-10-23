@@ -222,7 +222,13 @@ pub enum Tick {
 /// `takes` is one entry per line, in order; a missing answer counts as [`Take::Missing`], which is the safe
 /// reading — a take nobody has looked for has not been spoken yet. `speaking` is the line whose audio is
 /// running, if any.
-pub fn tick(t: f64, segs: &[Seg], entries: &[Entry], takes: &[Take], speaking: Option<usize>) -> Tick {
+pub fn tick(
+    t: f64,
+    segs: &[Seg],
+    entries: &[Entry],
+    takes: &[Take],
+    speaking: Option<usize>,
+) -> Tick {
     if cut_hear::scene_at(segs, t).is_some() {
         let Some(line) = line_at(t, entries) else {
             return Tick::Idle;
@@ -242,7 +248,11 @@ pub fn tick(t: f64, segs: &[Seg], entries: &[Entry], takes: &[Take], speaking: O
             return Tick::Hold;
         }
     }
-    match segs.iter().filter(|seg| seg.s > t).min_by(|left, right| left.s.total_cmp(&right.s)) {
+    match segs
+        .iter()
+        .filter(|seg| seg.s > t)
+        .min_by(|left, right| left.s.total_cmp(&right.s))
+    {
         Some(next) => Tick::SkipTo(next.s),
         None => Tick::Pause,
     }

@@ -32,7 +32,10 @@ fn row(id: &str) -> params::Param {
 /// A number §6 writes with a decimal point (`1.0`, `5.0`) compared as a number: `params::num` trims the trailing
 /// zero, so comparing strings would pin a spelling neither side chose.
 fn number(id: &str) -> f64 {
-    row(id).spelled.parse().unwrap_or_else(|_| panic!("{id} spells a number"))
+    row(id)
+        .spelled
+        .parse()
+        .unwrap_or_else(|_| panic!("{id} spells a number"))
 }
 
 // --- S1: what bounds an edit -----------------------------------------------------------------------------
@@ -48,10 +51,19 @@ fn sec_05_cut_6_parameters_used_s1_what_bounds_an_edit_is_catalogued_with_its_va
     assert_eq!(number("P.policy.reviewPadSeconds"), 10.0);
 
     // A row that names no constant is a row nobody can follow back to its rule.
-    assert_eq!(row("P.policy.minSceneSeconds").from, "cut_select::MIN_SCENE_SECONDS");
+    assert_eq!(
+        row("P.policy.minSceneSeconds").from,
+        "cut_select::MIN_SCENE_SECONDS"
+    );
     assert_eq!(row("P.eng.minPieceSeconds").from, "cut_select::MIN_SECONDS");
-    assert_eq!(row("P.policy.snapToleranceSeconds").from, "tools::cutpass::SNAP_TOLERANCE_SECONDS");
-    assert_eq!(row("P.policy.reviewPadSeconds").from, "cut_review::REVIEW_PAD_SECONDS");
+    assert_eq!(
+        row("P.policy.snapToleranceSeconds").from,
+        "tools::cutpass::SNAP_TOLERANCE_SECONDS"
+    );
+    assert_eq!(
+        row("P.policy.reviewPadSeconds").from,
+        "cut_review::REVIEW_PAD_SECONDS"
+    );
 
     // §6's `targetLengthSeconds (0 = none)` in §10's own spelling — the default is not a very short video.
     assert_eq!(row("P.policy.targetLengthSeconds").spelled, "0 (none)");
@@ -70,20 +82,36 @@ fn sec_05_cut_6_parameters_used_s2_the_target_arithmetic_rows_spell_the_formulas
         "min(1 + \u{230a}target/30\u{230b}, 4)",
         "§10's own text"
     );
-    assert_eq!(row("P.machine.suggestMaxSegments").spelled, "max(\u{230a}target/5\u{230b}, 40)");
+    assert_eq!(
+        row("P.machine.suggestMaxSegments").spelled,
+        "max(\u{230a}target/5\u{230b}, 40)"
+    );
     assert_eq!(
         row("P.machine.footageWindow").spelled,
         "target \u{00d7} [0.6, 1.2] (\u{2264} shortTargetSeconds) else [0.6, 1.5]; ceiling \u{00d7} maxSpeedRate"
     );
-    assert_eq!(row("P.machine.suggestMinSegments").from, "tools::cutpass::min_segments");
-    assert_eq!(row("P.machine.suggestMaxSegments").from, "tools::cutpass::max_segments");
-    assert_eq!(row("P.machine.footageWindow").from, "tools::cutpass::footage_window");
+    assert_eq!(
+        row("P.machine.suggestMinSegments").from,
+        "tools::cutpass::min_segments"
+    );
+    assert_eq!(
+        row("P.machine.suggestMaxSegments").from,
+        "tools::cutpass::max_segments"
+    );
+    assert_eq!(
+        row("P.machine.footageWindow").from,
+        "tools::cutpass::footage_window"
+    );
 
     // The formulas as the functions work them: a 30 s target is a format, a 120 s one is a wish.
     assert_eq!(cutpass::min_segments(30.0), 2);
     assert_eq!(cutpass::max_segments(30.0), 40);
     assert_eq!(cutpass::footage_window(30.0), (18.0, 144.0));
-    assert_eq!(cutpass::footage_window(120.0), (72.0, 720.0), "the ceiling is × maxSpeedRate");
+    assert_eq!(
+        cutpass::footage_window(120.0),
+        (72.0, 720.0),
+        "the ceiling is × maxSpeedRate"
+    );
 
     // The factors and the ceiling the formulas are built from.
     assert_eq!(number("P.policy.shortTargetSeconds"), 60.0);
@@ -101,7 +129,10 @@ fn sec_05_cut_6_parameters_used_s2_the_target_arithmetic_rows_spell_the_formulas
 
     // P.policy.insertDefaultSeconds = 4: a card with no length of its own.
     assert_eq!(naivepost::cut_insert::DEFAULT_SECONDS, 4.0);
-    assert_eq!(number("P.policy.insertDefaultSeconds"), naivepost::cut_insert::DEFAULT_SECONDS);
+    assert_eq!(
+        number("P.policy.insertDefaultSeconds"),
+        naivepost::cut_insert::DEFAULT_SECONDS
+    );
 }
 
 // --- S3: what the preview does ----------------------------------------------------------------------------
@@ -116,8 +147,14 @@ fn sec_05_cut_6_parameters_used_s3_the_preview_numbers_are_catalogued_without_in
     assert_eq!(number("preview.cardFps"), 8.0);
     assert_eq!(row("preview.cardFps").from, "cut_insert::PREVIEW_FPS");
 
-    let invented: Vec<String> = ids().into_iter().filter(|id| id.starts_with("P.preview.")).collect();
-    assert!(invented.is_empty(), "§10 has no P.preview family: {invented:?}");
+    let invented: Vec<String> = ids()
+        .into_iter()
+        .filter(|id| id.starts_with("P.preview."))
+        .collect();
+    assert!(
+        invented.is_empty(),
+        "§10 has no P.preview family: {invented:?}"
+    );
 }
 
 // --- S4: the engineering group ------------------------------------------------------------------------------
@@ -133,16 +170,24 @@ fn sec_05_cut_6_parameters_used_s4_the_engineering_group_is_the_constants_the_pa
     assert_eq!(number("layout.lineReachPx"), 12.0);
 
     // Band heights, top to bottom of a row, plus the gap between rows.
-    let bands: Vec<(String, f64)> = ["layout.rulerPx", "layout.selBandPx", "layout.effectRowPx", "layout.waveLanePx"]
-        .iter()
-        .map(|id| (id.to_string(), number(id)))
-        .collect();
-    assert_eq!(bands, vec![
-        ("layout.rulerPx".to_string(), 18.0),
-        ("layout.selBandPx".to_string(), 22.0),
-        ("layout.effectRowPx".to_string(), 26.0),
-        ("layout.waveLanePx".to_string(), 30.0),
-    ]);
+    let bands: Vec<(String, f64)> = [
+        "layout.rulerPx",
+        "layout.selBandPx",
+        "layout.effectRowPx",
+        "layout.waveLanePx",
+    ]
+    .iter()
+    .map(|id| (id.to_string(), number(id)))
+    .collect();
+    assert_eq!(
+        bands,
+        vec![
+            ("layout.rulerPx".to_string(), 18.0),
+            ("layout.selBandPx".to_string(), 22.0),
+            ("layout.effectRowPx".to_string(), 26.0),
+            ("layout.waveLanePx".to_string(), 30.0),
+        ]
+    );
     assert_eq!(number("layout.laneGapPx"), 3.0);
 
     // Zoom limits: where the page opens, how deep it goes, what one step of the wheel is.
@@ -155,7 +200,10 @@ fn sec_05_cut_6_parameters_used_s4_the_engineering_group_is_the_constants_the_pa
     assert_eq!(row("layout.undoDepth").spelled, "50");
     assert_eq!(row("layout.undoDepth").spelled, cut::UNDO_DEPTH.to_string());
     assert_eq!(row("layout.waveCacheMagic").spelled, "AWV4");
-    assert_eq!(row("layout.waveCacheMagic").spelled, std::str::from_utf8(wave::MAGIC).unwrap());
+    assert_eq!(
+        row("layout.waveCacheMagic").spelled,
+        std::str::from_utf8(wave::MAGIC).unwrap()
+    );
 
     // §6's last engineering item is its colour list, and each row answers with the tuple the painter uses — so a
     // row that drifted from `cut_colours`, or from what `spec/inventory/cut.md` §D names, shows up here as a
@@ -176,7 +224,11 @@ fn sec_05_cut_6_parameters_used_s4_the_engineering_group_is_the_constants_the_pa
         ("cut.colour.speedTint", cut_colours::SPEED_TINT),
         ("cut.colour.playhead", cut_colours::PLAYHEAD_RGB),
     ] {
-        assert_eq!(row(id).spelled, cut_colours::spell(rgb), "{id} is not the tint being painted");
+        assert_eq!(
+            row(id).spelled,
+            cut_colours::spell(rgb),
+            "{id} is not the tint being painted"
+        );
     }
 }
 
@@ -212,7 +264,10 @@ fn sec_05_cut_6_parameters_used_s5_what_is_deferred_is_absent_and_said_so() {
     assert_eq!(number("preview.thumbBatch"), 6.0);
 
     // §6's `10 px` hit reach: §I gives it as a radius on two widgets, no constant owns it.
-    assert!(!listed.iter().any(|id| id.contains("hit")), "no rule owns the 10 px hit radius");
+    assert!(
+        !listed.iter().any(|id| id.contains("hit")),
+        "no rule owns the 10 px hit radius"
+    );
     // Its colours DO have rows now, because `ui::cut_colours` holds each one and the painters read it: §10 lists
     // them among the timeline's engineering values, so a tuning pass can move a tint from one place. Every colour
     // row must name the constant it came from, not merely repeat a tuple nobody consults.
@@ -246,17 +301,32 @@ fn sec_05_cut_6_parameters_used_s5_what_is_deferred_is_absent_and_said_so() {
 fn sec_05_cut_6_parameters_used_s6_every_row_names_where_its_value_lives() {
     let listed = ids();
     for id in &listed {
-        assert_eq!(listed.iter().filter(|other| *other == id).count(), 1, "{id} catalogued twice");
+        assert_eq!(
+            listed.iter().filter(|other| *other == id).count(),
+            1,
+            "{id} catalogued twice"
+        );
     }
     for param in rows() {
         assert!(!param.from.is_empty(), "{} names no constant", param.id);
-        assert!(param.from.contains("::"), "{}: {} is not module::CONST", param.id, param.from);
+        assert!(
+            param.from.contains("::"),
+            "{}: {} is not module::CONST",
+            param.id,
+            param.from
+        );
         assert!(!param.spelled.is_empty(), "{} spells nothing", param.id);
     }
 
     // Families by prefix — including that §6's preview and layout rows claim no `P.` prefix they have not earned.
-    assert_eq!(params::family("P.policy.minSceneSeconds"), params::Family::Policy);
-    assert_eq!(params::family("P.machine.footageWindow"), params::Family::Machine);
+    assert_eq!(
+        params::family("P.policy.minSceneSeconds"),
+        params::Family::Policy
+    );
+    assert_eq!(
+        params::family("P.machine.footageWindow"),
+        params::Family::Machine
+    );
     assert_eq!(params::family("P.eng.minPieceSeconds"), params::Family::Eng);
     assert_eq!(params::family("preview.playTickMs"), params::Family::Other);
     assert_eq!(params::family("layout.undoDepth"), params::Family::Other);

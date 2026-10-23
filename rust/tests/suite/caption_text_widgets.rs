@@ -22,7 +22,9 @@ use naivepost::ui;
 
 use crate::common;
 pub use common::find_in;
-use common::{settle, status_text, entry, widget, label_text, click, cut_page_settled_first as cut_page};
+use common::{
+    click, cut_page_settled_first as cut_page, entry, label_text, settle, status_text, widget,
+};
 
 static RAN_ARM: AtomicBool = AtomicBool::new(false);
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
@@ -34,7 +36,6 @@ static RAN_APPLY_UNDO: AtomicBool = AtomicBool::new(false);
 static RAN_BOX: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
-
 
 /// The caption's TextView, found by name and downcast — the type itself is the Enter-is-a-newline rule.
 fn words_view(window: &adw::ApplicationWindow) -> gtk::TextView {
@@ -77,7 +78,6 @@ fn form_visible(window: &adw::ApplicationWindow) -> bool {
     form_holder(window).get_visible()
 }
 
-
 /// Mark a stretch on the selection ground — the same seam a drag leaves behind — so S2 has a band.
 fn mark_band(window: &adw::ApplicationWindow, from: f64, to: f64) {
     let band = ui::draw_selection(window, Surface::SelectionBand, None, from, to);
@@ -90,10 +90,7 @@ fn mark_band(window: &adw::ApplicationWindow, from: f64, to: f64) {
 fn drag_panel(window: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) {
     let gesture = ui::zoom_gesture(window).expect("the page wired a drag onto the preview panel");
     gesture.emit_by_name::<()>("drag-begin", &[&from.0, &from.1]);
-    gesture.emit_by_name::<()>(
-        "drag-end",
-        &[&(to.0 - from.0), &(to.1 - from.1)],
-    );
+    gesture.emit_by_name::<()>("drag-end", &[&(to.0 - from.0), &(to.1 - from.1)]);
     settle();
 }
 
@@ -476,7 +473,11 @@ fn f3_4_s5_a_moved_box_snaps_and_a_resized_edge_moves_one_axis_only(app: &adw::A
         moved_top,
         mid
     );
-    assert_eq!(moved.hf, fx_text::LOWER_THIRD.hf, "a move never resizes the box");
+    assert_eq!(
+        moved.hf,
+        fx_text::LOWER_THIRD.hf,
+        "a move never resizes the box"
+    );
     assert_eq!(moved.wf, fx_text::LOWER_THIRD.wf, "nor on the other axis");
 
     // Right edge pulled to 200 px: 200 is not within SNAP_PX of any frame line (120 / 240), so the hand's
@@ -560,8 +561,14 @@ fn f3_4_the_caption_form_is_wired_through_the_real_widgets() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_ARM.load(Ordering::SeqCst), "the S1 arm-and-camera check never ran");
-    assert!(RAN_CLICK.load(Ordering::SeqCst), "the S2 click check never ran");
+    assert!(
+        RAN_ARM.load(Ordering::SeqCst),
+        "the S1 arm-and-camera check never ran"
+    );
+    assert!(
+        RAN_CLICK.load(Ordering::SeqCst),
+        "the S2 click check never ran"
+    );
     assert!(
         RAN_DRAG.load(Ordering::SeqCst),
         "the S2 drag-and-selection check never ran"

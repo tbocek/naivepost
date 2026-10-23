@@ -49,18 +49,29 @@ fn f0_7_s2_a_live_set_policy_answer_lands_as_model_with_its_because() {
         "the reason survives the serialisation: {stored}"
     );
     // The derivation says what it did, and nothing was refused.
-    assert!(run.derived.refusals.is_empty(), "{:?}", run.derived.refusals);
     assert!(
-        run.derived.applied.contains(&("markingPass", naivepost::policy::Applied::Set)),
+        run.derived.refusals.is_empty(),
+        "{:?}",
+        run.derived.refusals
+    );
+    assert!(
+        run.derived
+            .applied
+            .contains(&("markingPass", naivepost::policy::Applied::Set)),
         "{:?}",
         run.derived.applied
     );
     // Untouched fields keep their defaults -- the model spoke to one field, so only one moved.
-    assert!(run.policy.captions_pass.value, "P.policy.captionsPass stays at its default");
+    assert!(
+        run.policy.captions_pass.value,
+        "P.policy.captionsPass stays at its default"
+    );
     // And the answer went into the project cache, so the same context next time costs no request.
     let cache = fixture.tree.dir().join("cache/llm/policy");
     assert!(
-        std::fs::read_dir(&cache).map(|mut entries| entries.next().is_some()).unwrap_or(false),
+        std::fs::read_dir(&cache)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(false),
         "{} holds the answer",
         cache.display()
     );

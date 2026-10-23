@@ -231,7 +231,12 @@ pub fn alongside(project: Option<&crate::project::Project>, index: usize) -> Vec
         .enumerate()
         .filter(|(_, source)| !source.footage)
         .map(|(position, source)| {
-            let name = source.path.rsplit('/').next().unwrap_or(&source.path).to_string();
+            let name = source
+                .path
+                .rsplit('/')
+                .next()
+                .unwrap_or(&source.path)
+                .to_string();
             (name, offsets.get(position).copied().unwrap_or(0.0) - video)
         })
         .collect()

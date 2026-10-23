@@ -19,7 +19,7 @@
 //! Undo (F2.13). This module writes nothing, twice over for the reason above and once more because a
 //! flow that saves cannot be run twice in a test.
 
-use crate::cut::{Cut, Seg, Fx};
+use crate::cut::{Cut, Fx, Seg};
 use crate::cut_clamp;
 use crate::cut_effect_decisions::{self as decisions, Candidate};
 use crate::decision_audit;
@@ -41,7 +41,8 @@ use crate::tools::{self, cutpass};
 /// because "refused" alone does not tell the person what to do about it.
 pub const BUSY: &str = "a run is already going \u{2014} stop it before asking for a new cut";
 /// S1, quoted from the flowchart.
-pub const HAND_EDITS: &str = "you have hand edits \u{2014} press Revert first for a fresh suggestion";
+pub const HAND_EDITS: &str =
+    "you have hand edits \u{2014} press Revert first for a fresh suggestion";
 /// S1, quoted from the flowchart.
 pub const NO_TIMELINE: &str =
     "run Describe first \u{2014} the suggestion reads the session timeline, and there is none";
@@ -224,8 +225,12 @@ pub struct WordsCut {
 pub fn words_cut(runs: &[SpokenRun], marks: &[(f64, f64)], silences: &[(f64, f64)]) -> WordsCut {
     let trimmed: Vec<(f64, f64)> = runs.iter().map(trim_run_to_words).collect();
     let (unmarked, marks_out) = remove_marks(&trimmed, marks);
-    let (kept, silence_out) =
-        remove_dead_air(&unmarked, silences, DEAD_AIR_MAX_SECONDS, DEAD_AIR_KEEP_SECONDS);
+    let (kept, silence_out) = remove_dead_air(
+        &unmarked,
+        silences,
+        DEAD_AIR_MAX_SECONDS,
+        DEAD_AIR_KEEP_SECONDS,
+    );
     let segs = coalesce(&kept);
     let total: f64 = segs.iter().map(|(a, b)| b - a).sum();
     WordsCut {
@@ -484,7 +489,9 @@ pub fn snap_edge(candidates: &[(f64, Candidate)], stamp: f64, outward_is_earlier
         // same weight would look arbitrary on the band.
         let nearer = match best {
             Some((_best_point, best_score)) if best_score > score => continue,
-            Some((best_point, best_score)) if best_score == score && (best_point - stamp).abs() <= (point - stamp).abs() => {
+            Some((best_point, best_score))
+                if best_score == score && (best_point - stamp).abs() <= (point - stamp).abs() =>
+            {
                 continue;
             }
             _ => true,
@@ -517,7 +524,11 @@ pub struct Applied {
 /// row. §1 asks whether an unseen change can be explained in one sentence; this is that sentence, so
 /// [`walk_back_audit`] measures it instead of assuming it exists.
 fn walk_account(segs: usize, inserts: usize, total: f64) -> String {
-    format!("suggested {} segments, {} total", segs + inserts, tools::mm_ss(total))
+    format!(
+        "suggested {} segments, {} total",
+        segs + inserts,
+        tools::mm_ss(total)
+    )
 }
 
 /// Whether the walk-back this [`Walk`] would perform is allowed to happen unseen.
@@ -614,11 +625,7 @@ pub fn apply(model_segs: &[(f64, f64)], inserts: &[Seg], fx: &[Fx], walk: &Walk)
     let mut log = vec![
         format!(
             ">>> {}",
-            walk_account(
-                segs.len(),
-                kept_inserts.len(),
-                total
-            )
+            walk_account(segs.len(), kept_inserts.len(), total)
         ),
         walk_report(closed_len, moved),
         effects_line(effects.len()),
@@ -684,8 +691,12 @@ pub fn walk_back_spans(segs: &[(f64, f64)], walk: &Walk) -> Walked {
         .filter(|((start, end), (from, to))| start != from || end != to)
         .count();
     let (unmarked, marks_out) = remove_marks(&snapped, &walk.marks);
-    let (kept, silence_out) =
-        remove_dead_air(&unmarked, &walk.silences, DEAD_AIR_MAX_SECONDS, DEAD_AIR_KEEP_SECONDS);
+    let (kept, silence_out) = remove_dead_air(
+        &unmarked,
+        &walk.silences,
+        DEAD_AIR_MAX_SECONDS,
+        DEAD_AIR_KEEP_SECONDS,
+    );
     Walked {
         segs: coalesce(&kept),
         closed_len: closed.len(),

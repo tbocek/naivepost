@@ -209,7 +209,6 @@ pub fn scroll_page(window: &adw::ApplicationWindow, dy: f64) {
     crate::snapshot_face::pump_context(32);
 }
 
-
 /// How far the page had scrolled when the shot was taken -- printed by `stage`, because "the rows are in the
 /// frame" is a claim about the scroll position as much as about the layout.
 pub fn scroll_value(window: &adw::ApplicationWindow) -> f64 {
@@ -275,7 +274,6 @@ pub fn raise_shell_split(window: &adw::ApplicationWindow, page_px: i32) {
     }
     crate::snapshot_face::pump_context(32);
 }
-
 
 /// The shell's scroller around the visible page, found by the name `window_page_box` gives it for this tab.
 fn page_scroller(window: &adw::ApplicationWindow) -> Option<gtk::ScrolledWindow> {
@@ -386,11 +384,8 @@ pub fn stage(window: &adw::ApplicationWindow, dir: &Path) -> Vec<String> {
     if let Some(band) = find_widget_by_name(window.upcast_ref(), "track-band") {
         band.set_size_request(-1, SHOT_TRACKS_H);
     }
-    // And the strip under it keeps only what the ruler and one wave strip cost. Left at its built request it
-    // asks for 170 px of its own, which is why the rows below stayed out of reach however far the divider moved.
-    if let Some(strip) = find_widget_by_name(window.upcast_ref(), "track-strip") {
-        strip.set_size_request(-1, SHOT_STRIP_H);
-    }
+    // The placeholder strip is no longer part of the shot's stack (§1's tracks are ONE stack now), so it
+    // costs nothing above the camera rows and needs no height ask of its own.
     // And the divider moves up. `arrange` opens it at §A's 380 px AND hands the leftover to the upper pane
     // (`resize_start_child`), so shrinking the widgets inside the panes is not enough -- GTK keeps 380 px above
     // the line whatever lives there. This is the drag a user would make.

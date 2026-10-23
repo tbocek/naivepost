@@ -100,7 +100,11 @@ fn tape_len() -> f64 {
 fn pre_seeded_staying_zoom() -> Cut {
     let mut cut_ = Cut::default();
     let mut zoom = naivepost::fx_zoom::new_zoom(
-        (naivepost::fx_zoom::SETTLED.cx, naivepost::fx_zoom::SETTLED.cy, 0.8),
+        (
+            naivepost::fx_zoom::SETTLED.cx,
+            naivepost::fx_zoom::SETTLED.cy,
+            0.8,
+        ),
         4.0,
         // Deliberately NOT `fx_aspect::HOLD_SECONDS`: see the doc above.
         7.0,
@@ -180,7 +184,10 @@ fn round(app: &adw::Application) {
         let said = ui::press_aspect(&window, fx_aspect::SOURCE);
         settle();
         let cut_ = ui::review_cut_of(&window);
-        assert!(cut_.aspect.is_empty(), "and on the page's own cut, still nothing stored");
+        assert!(
+            cut_.aspect.is_empty(),
+            "and on the page's own cut, still nothing stored"
+        );
         assert!(cut_.fx.is_empty(), "and still nothing added");
         assert_eq!(said, wanted, "the seam says the module's sentence verbatim");
         RAN_SOURCE.store(true, Ordering::SeqCst);
@@ -201,13 +208,19 @@ fn round(app: &adw::Application) {
         assert_eq!(cut_.fx.len(), 1, "and exactly one zoom came with the pick");
         let zoom = &cut_.fx[0];
         assert_eq!(zoom.kind, "zoom");
-        assert_eq!(zoom.t, 0.0, "at 0:00, not at the playhead -- the video needs a framing NOW");
+        assert_eq!(
+            zoom.t, 0.0,
+            "at 0:00, not at the playhead -- the video needs a framing NOW"
+        );
         assert_eq!(
             zoom.dur,
             fx_aspect::HOLD_SECONDS,
             "// P.eng.aspectStaySeconds -- the hold is 1.0 s, catalogued once in fx_aspect"
         );
-        assert!(zoom.stay, "it stays: a reframing, not an event that pulls back");
+        assert!(
+            zoom.stay,
+            "it stays: a reframing, not an event that pulls back"
+        );
         assert_eq!(zoom.hf, Some(1.0), "whole frame");
         assert_eq!(zoom.cx, Some(0.5), "centred");
         assert_eq!(zoom.cy, Some(0.5), "centred");
@@ -238,7 +251,10 @@ fn round(app: &adw::Application) {
             "aspect 1:1 \u{2014} the zooms on the lane decide the framing",
             "and it says who decides rather than pretending it placed something"
         );
-        assert_eq!(cut_.aspect, "1:1", "the shape is still stored -- the report is about framing, not storage");
+        assert_eq!(
+            cut_.aspect, "1:1",
+            "the shape is still stored -- the report is about framing, not storage"
+        );
         assert_eq!(aspect_row_text(&window), "1:1", "and the row agrees");
         RAN_ALREADY_STAYING.store(true, Ordering::SeqCst);
         window.close();
@@ -297,8 +313,14 @@ fn f3_2_the_aspect_dropdown_is_wired_through_the_real_signal() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_LIST.load(Ordering::SeqCst), "the S1 shape-list check never ran");
-    assert!(RAN_SOURCE.load(Ordering::SeqCst), "the S2 source-report check never ran");
+    assert!(
+        RAN_LIST.load(Ordering::SeqCst),
+        "the S1 shape-list check never ran"
+    );
+    assert!(
+        RAN_SOURCE.load(Ordering::SeqCst),
+        "the S2 source-report check never ran"
+    );
     assert!(
         RAN_NINE_SIXTEEN.load(Ordering::SeqCst),
         "the S3 place-a-hold-zoom check never ran"
@@ -307,5 +329,8 @@ fn f3_2_the_aspect_dropdown_is_wired_through_the_real_signal() {
         RAN_ALREADY_STAYING.load(Ordering::SeqCst),
         "the S4 lane-decides check never ran"
     );
-    assert!(RAN_ONE_UNDO.load(Ordering::SeqCst), "the S5 one-undo-step check never ran");
+    assert!(
+        RAN_ONE_UNDO.load(Ordering::SeqCst),
+        "the S5 one-undo-step check never ran"
+    );
 }

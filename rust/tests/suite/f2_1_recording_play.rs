@@ -25,8 +25,16 @@ fn f2_1_s3_the_line_walks_straight_through_a_stretch_the_cut_removed() {
         head: RefCell::new(Some(29.95)),
         cut: RefCell::new(Cut {
             segs: vec![
-                Seg { s: 0.0, e: 30.0, ..Default::default() },
-                Seg { s: 60.0, e: 90.0, ..Default::default() },
+                Seg {
+                    s: 0.0,
+                    e: 30.0,
+                    ..Default::default()
+                },
+                Seg {
+                    s: 60.0,
+                    e: 90.0,
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         }),
@@ -45,8 +53,14 @@ fn f2_1_s3_the_line_walks_straight_through_a_stretch_the_cut_removed() {
         cut_record_tick::step(&page, &tape(), TICK);
     }
     let head = page.playhead().expect("a line after 30 s of ticks");
-    assert!(head > 60.0, "and walked out the far side of the hole: {head}");
-    assert!(head < 61.0, "one tick at a time, never skipping ahead: {head}");
+    assert!(
+        head > 60.0,
+        "and walked out the far side of the hole: {head}"
+    );
+    assert!(
+        head < 61.0,
+        "one tick at a time, never skipping ahead: {head}"
+    );
 }
 
 #[test]
@@ -62,7 +76,11 @@ fn f2_1_s3_at_a_recordings_end_the_line_walks_on_to_the_next_one() {
         root: None,
     };
     cut_record_tick::step(&page, &runs, TICK);
-    assert_eq!(page.playhead(), Some(20.0), "walked on to the next recording's start");
+    assert_eq!(
+        page.playhead(),
+        Some(20.0),
+        "walked on to the next recording's start"
+    );
 
     // A camera still rolling at that second keeps the line where it is — nothing to walk on to.
     let overlapping = vec![(0.0, 10.0), (5.0, 30.0)];
@@ -93,13 +111,21 @@ fn f2_1_s3_a_fold_the_line_reaches_opens_and_says_unfolded() {
     let page = TablePage {
         playing: true,
         head: RefCell::new(Some(39.95)),
-        cut: RefCell::new(Cut { folds: vec![[40.0, 50.0]], ..Default::default() }),
+        cut: RefCell::new(Cut {
+            folds: vec![[40.0, 50.0]],
+            ..Default::default()
+        }),
         said: RefCell::new(Vec::new()),
         mix: RefCell::new(None),
         root: None,
     };
-    let said = cut_record_tick::step(&page, &tape(), TICK).expect("the fold the line ran into answers");
-    assert_eq!(said, preview::unfolded_status(40.0), "§B's sentence, verbatim");
+    let said =
+        cut_record_tick::step(&page, &tape(), TICK).expect("the fold the line ran into answers");
+    assert_eq!(
+        said,
+        preview::unfolded_status(40.0),
+        "§B's sentence, verbatim"
+    );
     assert!(
         !page.cut().folds.iter().any(|fold| fold[0] == 40.0),
         "the seam is open now: {:?}",
@@ -125,9 +151,23 @@ fn f2_1_s4_the_tick_moves_the_line_ten_times_a_second() {
         page.playhead()
     );
     // The face is session time to a tenth (§D), and empty until somebody has a line at all.
-    assert_eq!(preview::clock(Some(65.34)), "01:05.3", "mm:ss.d of session time");
-    assert_eq!(preview::clock(None), "--:--.-", "a page nobody clicked has no time");
+    assert_eq!(
+        preview::clock(Some(65.34)),
+        "01:05.3",
+        "mm:ss.d of session time"
+    );
+    assert_eq!(
+        preview::clock(None),
+        "--:--.-",
+        "a page nobody clicked has no time"
+    );
     // Between ticks the face smooths forward but never more than one tick, so it cannot jump back.
-    assert!(preview::live_clock(10.0, 40, 1.0) > 10.0, "smoothed ahead between ticks");
-    assert!((preview::live_clock(10.0, 900, 1.0) - 10.1).abs() < 1e-9, "capped at one tick");
+    assert!(
+        preview::live_clock(10.0, 40, 1.0) > 10.0,
+        "smoothed ahead between ticks"
+    );
+    assert!(
+        (preview::live_clock(10.0, 900, 1.0) - 10.1).abs() < 1e-9,
+        "capped at one tick"
+    );
 }

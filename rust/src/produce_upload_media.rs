@@ -66,9 +66,12 @@ pub fn entry_file(
     if let Some(named) = details::frame_line(entry) {
         // `clip n +s` means the same moment as the seconds it adds up to, so one resolution rule serves both.
         let at = details::frame_moment(named, &[])?;
-        let (_, path) = frames
-            .iter()
-            .min_by(|(a, _), (b, _)| (a - at).abs().partial_cmp(&(b - at).abs()).unwrap_or(std::cmp::Ordering::Equal))?;
+        let (_, path) = frames.iter().min_by(|(a, _), (b, _)| {
+            (a - at)
+                .abs()
+                .partial_cmp(&(b - at).abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })?;
         return path.is_file().then(|| path.clone());
     }
     let written = entry.trim();
@@ -86,7 +89,11 @@ pub fn data_url(path: &Path) -> Option<String> {
     if bytes.is_empty() {
         return None;
     }
-    Some(format!("data:{};base64,{}", mime_of(path), crate::checks::base64(&bytes)))
+    Some(format!(
+        "data:{};base64,{}",
+        mime_of(path),
+        crate::checks::base64(&bytes)
+    ))
 }
 
 /// ffmpeg's argv for one centre-crop-and-scale: the source scaled to cover the draw size `wide`x`high` and
@@ -257,7 +264,10 @@ pub fn request_images(
 /// 1280x720 is 16:9, 1080x1080 is 1:1, and a shape with no common factor keeps its own pair.
 fn ratio_of(shape: (u32, u32)) -> (u32, u32) {
     let (wide, high) = (shape.0.max(1), shape.1.max(1));
-    let gcd = (1..=wide.min(high)).rev().find(|d| wide % d == 0 && high % d == 0).unwrap_or(1);
+    let gcd = (1..=wide.min(high))
+        .rev()
+        .find(|d| wide % d == 0 && high % d == 0)
+        .unwrap_or(1);
     (wide / gcd, high / gcd)
 }
 
@@ -276,7 +286,11 @@ pub fn crop_percent_of(source_file: &Path, shape: (u32, u32)) -> u32 {
     let (rw, rh) = ratio_of(shape);
     let want = f64::from(rw) / f64::from(rh);
     // Wider than the shape: all the height survives and the width is trimmed to `height * want`.
-    let kept = if source_ratio >= want { want / source_ratio } else { 1.0 };
+    let kept = if source_ratio >= want {
+        want / source_ratio
+    } else {
+        1.0
+    };
     ((kept * 100.0).round() as u32).clamp(1, 100)
 }
 
@@ -347,7 +361,12 @@ pub fn jpeg_args(png: &Path, out: &Path, quality: u32) -> Vec<String> {
 /// rather than with the size of the file that already existed (which made every ladder collapse to its first
 /// or last rung). A rung whose encode failed contributes the last good weight, so a failed rung never reads
 /// as a free win.
-pub fn jpeg_ladder(png: &Path, out: &Path, qualities: &[u32], mut log: impl FnMut(&str)) -> Vec<u64> {
+pub fn jpeg_ladder(
+    png: &Path,
+    out: &Path,
+    qualities: &[u32],
+    mut log: impl FnMut(&str),
+) -> Vec<u64> {
     let mut sizes: Vec<u64> = Vec::with_capacity(qualities.len());
     let mut last = 0u64;
     for quality in qualities {

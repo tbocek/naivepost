@@ -30,7 +30,8 @@ fn call(field: &str, value: &str, because: &str) -> ToolCall {
 fn answer(policy: &Policy, field: &str, value: &str, because: &str) -> serde_json::Value {
     let req = policy::request(CONTEXT);
     let text = tool_answer(&call(field, value, because), &req, policy);
-    serde_json::from_str(&text).unwrap_or_else(|why| panic!("the tool answer must be JSON ({why}): {text}"))
+    serde_json::from_str(&text)
+        .unwrap_or_else(|why| panic!("the tool answer must be JSON ({why}): {text}"))
 }
 
 /// The same verdict through the validator alone, so a test can assert the tool says EXACTLY what
@@ -54,7 +55,10 @@ fn tool_set_policy_s1_an_accepted_call_answers_ok_and_changes_nothing_it_was_giv
     assert_eq!(got["recorded"], serde_json::json!(true), "{got}");
     assert_eq!(got["field"], "markingPass", "{got}");
     assert_eq!(got["value"], "joins", "{got}");
-    assert!(got.get("error").is_none(), "an accepted call carries no error: {got}");
+    assert!(
+        got.get("error").is_none(),
+        "an accepted call carries no error: {got}"
+    );
     // The tool ANSWERS; `policy::derive`'s loop applies. Handing in the session policy must leave it
     // untouched, or the derivation would land values twice from two places.
     assert_eq!(
@@ -75,15 +79,30 @@ fn tool_set_policy_s2_an_unknown_field_comes_back_as_the_error_apply_writes() {
         !say.is_empty(),
         "an unknown field must come back as an error object, got {got}"
     );
-    assert_eq!(say, expected, "the tool result IS `policy::apply`'s sentence, not a copy of it");
+    assert_eq!(
+        say, expected,
+        "the tool result IS `policy::apply`'s sentence, not a copy of it"
+    );
     assert!(
         say.starts_with("stylePreset is not a policy field"),
         "and it names the field the model invented: {say}"
     );
-    for field in ["markingPass", "cutMode", "captionsPass", "speedPass", "decorationsPass"] {
-        assert!(say.contains(field), "the refusal lists the real fields so it can self-correct: {say}");
+    for field in [
+        "markingPass",
+        "cutMode",
+        "captionsPass",
+        "speedPass",
+        "decorationsPass",
+    ] {
+        assert!(
+            say.contains(field),
+            "the refusal lists the real fields so it can self-correct: {say}"
+        );
     }
-    assert!(got.get("recorded").is_none(), "a refused call claims nothing recorded: {got}");
+    assert!(
+        got.get("recorded").is_none(),
+        "a refused call claims nothing recorded: {got}"
+    );
 }
 
 #[test]
@@ -94,7 +113,10 @@ fn tool_set_policy_s3_an_out_of_range_value_comes_back_as_the_error_apply_writes
     let say = got["error"].as_str().unwrap_or_default();
     assert_eq!(say, expected, "one validator, one sentence: {got}");
     assert!(say.contains("out of range"), "{say}");
-    assert!(say.contains("cutMode") && say.contains("words") && say.contains("model"), "{say}");
+    assert!(
+        say.contains("cutMode") && say.contains("words") && say.contains("model"),
+        "{say}"
+    );
 }
 
 #[test]
@@ -109,7 +131,10 @@ fn tool_set_policy_s4_a_number_row_refuses_a_non_number_and_accepts_seconds() {
         applied_sentence(&mut Policy::default(), "targetLengthSeconds", "soon"),
         "{bad}"
     );
-    assert!(say.contains("targetLengthSeconds") && say.contains("soon"), "{say}");
+    assert!(
+        say.contains("targetLengthSeconds") && say.contains("soon"),
+        "{say}"
+    );
     let good = answer(&policy, "targetLengthSeconds", "900", "fifteen minutes");
     assert_eq!(good["recorded"], serde_json::json!(true), "{good}");
     assert!(good.get("error").is_none(), "{good}");
@@ -128,9 +153,15 @@ fn tool_set_policy_s5_a_hand_set_field_is_not_an_error_and_claims_nothing_record
         ..Policy::default()
     }; // P.policy.speedPass, set by hand
     let got = answer(&policy, "speedPass", "on", "the pacing could use a lift");
-    assert!(got.get("error").is_none(), "a kept value is not a fault: {got}");
+    assert!(
+        got.get("error").is_none(),
+        "a kept value is not a fault: {got}"
+    );
     assert_eq!(got["kept"], "user", "{got}");
-    assert!(got.get("recorded").is_none(), "nothing was recorded, so nothing may claim it: {got}");
+    assert!(
+        got.get("recorded").is_none(),
+        "nothing was recorded, so nothing may claim it: {got}"
+    );
     assert_eq!(got["field"], "speedPass", "{got}");
     assert!(!policy.speed_pass.value, "the person's off stays off");
 }
@@ -141,9 +172,19 @@ fn tool_set_policy_s6_only_a_refusal_carries_the_error_key() {
     // that put both in one object would read as a broken reply rather than as an answer to act on.
     let policy = Policy::default();
     let refused = answer(&policy, "unknownSwitch", "on", "made up");
-    let keys: Vec<&str> = refused.as_object().map(|map| map.keys().map(String::as_str).collect()).unwrap_or_default();
-    assert_eq!(keys, vec!["error"], "a refusal is exactly one key: {refused}");
-    for accepted in [answer(&policy, "markingPass", "none", "hand-marked"), answer(&policy, "cutMode", "words", "text-driven")] {
+    let keys: Vec<&str> = refused
+        .as_object()
+        .map(|map| map.keys().map(String::as_str).collect())
+        .unwrap_or_default();
+    assert_eq!(
+        keys,
+        vec!["error"],
+        "a refusal is exactly one key: {refused}"
+    );
+    for accepted in [
+        answer(&policy, "markingPass", "none", "hand-marked"),
+        answer(&policy, "cutMode", "words", "text-driven"),
+    ] {
         assert!(accepted.get("error").is_none(), "{accepted}");
     }
 }

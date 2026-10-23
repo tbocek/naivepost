@@ -119,10 +119,11 @@ pub fn parse_scores(log: &str) -> Vec<(f64, f64)> {
     let mut out = Vec::new();
     let mut at: Option<f64> = None;
     for line in log.lines() {
-        if let Some(second) = line
-            .split_whitespace()
-            .find_map(|field| field.strip_prefix("pts_time:").or(field.strip_prefix("pts_time=")))
-        {
+        if let Some(second) = line.split_whitespace().find_map(|field| {
+            field
+                .strip_prefix("pts_time:")
+                .or(field.strip_prefix("pts_time="))
+        }) {
             at = second.parse().ok();
         }
         // `tag:lavfi.scd.score=58.310` is the printed form; a bare key=value is what a caller piping

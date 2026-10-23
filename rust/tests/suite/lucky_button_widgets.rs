@@ -2,12 +2,11 @@
 //! forwards its click to [`naivepost::lucky::Chain`] and draws what comes back, so what these checks
 //! assert is that the forwarding happened, not what a press means (spec/00-principles.md §5).
 
-
+use crate::common;
 use adw::prelude::*;
+use common::fixture_dir;
 use naivepost::lucky;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir};
 
 /// One running GTK application for this test binary, taken in turn by the checks below — the same
 /// single-main-loop arrangement tests/suite/press_stop_widgets.rs needs (`g_application_run` refuses a
@@ -41,7 +40,10 @@ fn refuses_while_a_run_is_going(app: &adw::Application) {
     );
 
     // Nothing going yet, so the gears are live.
-    assert!(gears.is_sensitive(), "an idle bar leaves the gears pressable");
+    assert!(
+        gears.is_sensitive(),
+        "an idle bar leaves the gears pressable"
+    );
 
     // Start a run with ▶ so the bar is busy. F0.5 S4 closes what a single-step press opens, so the
     // busy state has to be stood up as an open run rather than inferred from a ▶ that already ended --
@@ -58,7 +60,11 @@ fn refuses_while_a_run_is_going(app: &adw::Application) {
         }
     }
     assert!(
-        ui::run_bar(&window).expect("the bar").borrow().running.is_some(),
+        ui::run_bar(&window)
+            .expect("the bar")
+            .borrow()
+            .running
+            .is_some(),
         "a run is under way for the gears to refuse over"
     );
     gears.emit_clicked();
@@ -87,15 +93,23 @@ fn starts_and_logs_the_order_when_idle(app: &adw::Application) {
         "a press with nothing running must log something, got {logged:?}"
     );
     assert_eq!(
-        logged[0],
-        ">>> run: Prepare \u{2192} Cut \u{2192} Narrate \u{2192} Produce",
+        logged[0], ">>> run: Prepare \u{2192} Cut \u{2192} Narrate \u{2192} Produce",
         "S3: the opening line lists every step in page order, first"
     );
     // Each step then announces itself as the chain reaches it.
-    assert!(logged.contains(&">>> run: Prepare".to_string()), "{logged:?}");
+    assert!(
+        logged.contains(&">>> run: Prepare".to_string()),
+        "{logged:?}"
+    );
     assert!(logged.contains(&">>> run: Cut".to_string()), "{logged:?}");
-    assert!(logged.contains(&">>> run: Narrate".to_string()), "{logged:?}");
-    assert!(logged.contains(&">>> run: Produce".to_string()), "{logged:?}");
+    assert!(
+        logged.contains(&">>> run: Narrate".to_string()),
+        "{logged:?}"
+    );
+    assert!(
+        logged.contains(&">>> run: Produce".to_string()),
+        "{logged:?}"
+    );
     // And the press ends with a sentence mirrored on the status line, not silence.
     let last = logged.last().expect("an end line");
     assert!(
@@ -107,7 +121,10 @@ fn starts_and_logs_the_order_when_idle(app: &adw::Application) {
         "the status line mirrors the end sentence rather than going blank"
     );
     // The gears are handed back once the chain is over.
-    assert!(gears.is_sensitive(), "after the chain the gears are pressable again");
+    assert!(
+        gears.is_sensitive(),
+        "after the chain the gears are pressable again"
+    );
     window.close();
 }
 

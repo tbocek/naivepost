@@ -50,15 +50,27 @@ fn round(app: &adw::Application) {
     // `remove_segment` names its scene by START (§3.6), never by index.
     let llm = harness::FakeLlm::start(vec![
         tool_turn(&[
-            ("add_segment", serde_json::json!({ "start": 4.0, "end": 18.0, "why": "the point" })),
-            ("add_segment", serde_json::json!({ "start": 30.0, "end": 30.5, "why": "a slip" })),
+            (
+                "add_segment",
+                serde_json::json!({ "start": 4.0, "end": 18.0, "why": "the point" }),
+            ),
+            (
+                "add_segment",
+                serde_json::json!({ "start": 30.0, "end": 30.5, "why": "a slip" }),
+            ),
             ("finish_cut", serde_json::json!({})),
         ]),
         tool_turn(&[
             ("remove_segment", serde_json::json!({ "start": 30.0 })),
             ("remove_segment", serde_json::json!({ "start": 4.0 })),
-            ("add_segment", serde_json::json!({ "start": 3.0, "end": 19.0, "why": "the point" })),
-            ("add_segment", serde_json::json!({ "start": 24.0, "end": 40.0, "why": "the second" })),
+            (
+                "add_segment",
+                serde_json::json!({ "start": 3.0, "end": 19.0, "why": "the point" }),
+            ),
+            (
+                "add_segment",
+                serde_json::json!({ "start": 24.0, "end": 40.0, "why": "the second" }),
+            ),
             ("finish_cut", serde_json::json!({})),
         ]),
     ]);
@@ -100,7 +112,13 @@ fn round(app: &adw::Application) {
         "the ask carries the timeline: {}",
         &first.body[..200.min(first.body.len())]
     );
-    for name in ["add_segment", "remove_segment", "set_speed", "cut_status", "finish_cut"] {
+    for name in [
+        "add_segment",
+        "remove_segment",
+        "set_speed",
+        "cut_status",
+        "finish_cut",
+    ] {
         assert!(
             first.body.contains(name),
             "the offer lists the tool {name}: {}",
@@ -139,7 +157,8 @@ fn round(app: &adw::Application) {
     );
     let logs = ui::window_logs();
     assert!(
-        logs.iter().any(|line| line.starts_with(">>> suggested ") && line.contains(" segments, ")),
+        logs.iter()
+            .any(|line| line.starts_with(">>> suggested ") && line.contains(" segments, ")),
         "§S3's first line reached the log: {logs:?}"
     );
     assert!(
@@ -150,7 +169,11 @@ fn round(app: &adw::Application) {
         "§S3's second line reached the log: {logs:?}"
     );
     let saved = std::fs::read(f.tree.cut_json()).expect("the suggestion was persisted");
-    assert_ne!(Some(saved.as_slice()), before.as_deref(), "cut.json changed, as §S3's persist says");
+    assert_ne!(
+        Some(saved.as_slice()),
+        before.as_deref(),
+        "cut.json changed, as §S3's persist says"
+    );
     // And what a re-open would read is what the page shows.
     assert_eq!(
         naivepost::cut::load(&f.tree).expect("re-read").segs,

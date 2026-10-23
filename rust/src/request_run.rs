@@ -69,7 +69,9 @@ pub fn log_closing_line() {
 /// Rows the file holds now (its header is not a row, which is [`requests::read`]'s rule, not ours).
 fn rows_written() -> usize {
     match crate::web_request_log::session_tree() {
-        Some(tree) => requests::read(&tree).map(|rows| rows.len()).unwrap_or_default(),
+        Some(tree) => requests::read(&tree)
+            .map(|rows| rows.len())
+            .unwrap_or_default(),
         None => 0,
     }
 }

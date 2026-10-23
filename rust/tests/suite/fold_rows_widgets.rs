@@ -15,13 +15,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{self, Lane, Seg};
+use naivepost::cut_fold;
 use naivepost::shell::Page;
 use naivepost::timeline::{self, Recording, Span};
 use naivepost::ui;
-use naivepost::cut_fold;
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, clip};
+use common::{clip, fixture_dir, hold_last_window, release_last_window, settle, status_text};
 
 static RAN_FOLD: AtomicBool = AtomicBool::new(false);
 static RAN_UNFOLD: AtomicBool = AtomicBool::new(false);
@@ -96,7 +96,9 @@ fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
     let holder = if name == "fold-all-button" {
         // The whole-cut badge now sits on the band's own gutter rail (§B); the old beside-the-rows holder is
         // only the fallback for a page built without a band.
-        naivepost::ui::cut_tracks::gutter_badges_box(window).or_else(|| ui::fold_badges_box(window)).expect("the Cut page drew its fold-all rail")
+        naivepost::ui::cut_tracks::gutter_badges_box(window)
+            .or_else(|| ui::fold_badges_box(window))
+            .expect("the Cut page drew its fold-all rail")
     } else if name.starts_with("fold-") {
         ui::fold_overlay(window).expect("the band drew its own `fold-badges` overlay")
     } else if name.starts_with("row-cross-") || name.starts_with("gutter-switch-") {
@@ -116,7 +118,9 @@ fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
         }
         for child in node.observe_children().iter::<glib::Object>() {
             let Ok(child) = child else { continue };
-            let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+            let Ok(widget) = child.downcast::<gtk::Widget>() else {
+                continue;
+            };
             if let Some(found) = walk(&widget, name) {
                 return Some(found);
             }
@@ -140,7 +144,11 @@ fn dropped() -> cut::Cut {
 
 /// The recordings the page would draw rows for: the session's tape over 0–120.
 fn tape_for(_cut_: &cut::Cut) -> Vec<Recording> {
-    vec![Recording { base: "session-tape".to_string(), start: 0.0, end: 120.0 }]
+    vec![Recording {
+        base: "session-tape".to_string(),
+        start: 0.0,
+        end: 120.0,
+    }]
 }
 
 /// The gap index whose stretch is `gap`, read off the WINDOW's own badge list — which is what
@@ -162,7 +170,11 @@ fn f2_11_s1_a_click_on_the_minus_folds_the_hole(app: &adw::Application) {
     settle();
 
     let held = ui::review_fold_rows(&window);
-    assert_eq!(held.folds, vec![[30.0, 40.0]], "the fold is stored on the cut");
+    assert_eq!(
+        held.folds,
+        vec![[30.0, 40.0]],
+        "the fold is stored on the cut"
+    );
     assert!(cut_fold::is_folded(&held.folds, (30.0, 40.0)));
 
     // The same cell/width assertions the logic test makes, recomputed off the window's own cut.
@@ -181,7 +193,10 @@ fn f2_11_s1_a_click_on_the_minus_folds_the_hole(app: &adw::Application) {
         (span.x_of(32.0) - span.x_of(38.0)).abs() < 1e-9,
         "both seconds share the seam x — the stretch takes no width"
     );
-    assert!(span.x_of(32.0) > span.x_of(29.0), "which sits where the footage before it ended");
+    assert!(
+        span.x_of(32.0) > span.x_of(29.0),
+        "which sits where the footage before it ended"
+    );
 
     assert_eq!(
         status_text(&window),
@@ -190,7 +205,11 @@ fn f2_11_s1_a_click_on_the_minus_folds_the_hole(app: &adw::Application) {
     );
     // And the badge flipped to a + over the same gap.
     let again = button(&window, &format!("fold-button-{}", index + 1));
-    assert_eq!(again.label().unwrap_or_default().as_str(), "+", "a folded gap wears a +");
+    assert_eq!(
+        again.label().unwrap_or_default().as_str(),
+        "+",
+        "a folded gap wears a +"
+    );
     window.close();
 }
 
@@ -208,12 +227,18 @@ fn f2_11_s1_a_second_click_unfolds_it_again(app: &adw::Application) {
     settle();
 
     let held = ui::review_fold_rows(&window);
-    assert!(held.folds.is_empty(), "nothing left folded: {:?}", held.folds);
+    assert!(
+        held.folds.is_empty(),
+        "nothing left folded: {:?}",
+        held.folds
+    );
     // The SESSION's tape, which is what the page laid out (see `ui::page_recordings`) — recomputing
     // from the kept segments here would answer a different question than the one the badge drew.
     let runs = timeline::filmed_runs(tape_for(&held).as_slice());
     assert!(
-        timeline::cells(&runs, &held.folds).iter().all(|cell| !cell.folded),
+        timeline::cells(&runs, &held.folds)
+            .iter()
+            .all(|cell| !cell.folded),
         "the band lays the gap out again"
     );
     assert_eq!(status_text(&window), "unfolded 0:30 \u{2013} 0:40 (10.0 s)");
@@ -225,21 +250,41 @@ fn f2_11_s1_a_second_click_unfolds_it_again(app: &adw::Application) {
 fn f2_11_s1_the_gutter_badge_folds_and_unfolds_all(app: &adw::Application) {
     let window = cut_page(app, &dropped());
     let gaps = ui::fold_gaps(&window);
-    assert_eq!(gaps.len(), 3, "head, hole and tail all wear badges: {gaps:?}");
+    assert_eq!(
+        gaps.len(),
+        3,
+        "head, hole and tail all wear badges: {gaps:?}"
+    );
 
     button(&window, "fold-all-button").emit_by_name::<()>("clicked", &[]);
     settle();
     let held = ui::review_fold_rows(&window);
-    assert_eq!(held.folds.len(), 3, "every dropped gap folded: {:?}", held.folds);
+    assert_eq!(
+        held.folds.len(),
+        3,
+        "every dropped gap folded: {:?}",
+        held.folds
+    );
     for gap in &gaps {
         assert!(cut_fold::is_folded(&held.folds, *gap), "{gap:?} still open");
     }
-    assert!(status_text(&window).starts_with("folded 3 seams"), "{}", status_text(&window));
+    assert!(
+        status_text(&window).starts_with("folded 3 seams"),
+        "{}",
+        status_text(&window)
+    );
 
     button(&window, "fold-all-button").emit_by_name::<()>("clicked", &[]);
     settle();
-    assert!(ui::review_fold_rows(&window).folds.is_empty(), "and opened again");
-    assert!(status_text(&window).starts_with("unfolded 3 seams"), "{}", status_text(&window));
+    assert!(
+        ui::review_fold_rows(&window).folds.is_empty(),
+        "and opened again"
+    );
+    assert!(
+        status_text(&window).starts_with("unfolded 3 seams"),
+        "{}",
+        status_text(&window)
+    );
     window.close();
 }
 
@@ -256,7 +301,11 @@ fn f2_11_s1_a_fold_is_saved_and_never_undone(app: &adw::Application) {
     let dir = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
     let tree = naivepost::layout::Tree::new(&dir).expect("the session tree exists after a save");
     let reloaded = cut::load(&tree).expect("cut.json reads back");
-    assert_eq!(reloaded.folds, vec![[30.0, 40.0]], "the fold survived the round trip");
+    assert_eq!(
+        reloaded.folds,
+        vec![[30.0, 40.0]],
+        "the fold survived the round trip"
+    );
 
     // An edit that DOES belong to the undo stack, then Undo: the segments go back, the fold stays.
     ui::note_edit(&window);
@@ -265,8 +314,16 @@ fn f2_11_s1_a_fold_is_saved_and_never_undone(app: &adw::Application) {
     button(&window, "undo-button").emit_by_name::<()>("clicked", &[]);
     settle();
     let after = ui::review_fold_rows(&window);
-    assert_eq!(after.folds, vec![[30.0, 40.0]], "Undo left the view where it was");
-    assert_eq!(after.segs.len(), 2, "and only the edited fields were restored");
+    assert_eq!(
+        after.folds,
+        vec![[30.0, 40.0]],
+        "Undo left the view where it was"
+    );
+    assert_eq!(
+        after.segs.len(),
+        2,
+        "and only the edited fields were restored"
+    );
     window.close();
 }
 
@@ -278,8 +335,14 @@ fn f2_11_s1_a_tiny_gap_gets_no_widget(app: &adw::Application) {
     tight.segs = vec![clip(0.5, 30.0), clip(40.0, 60.0)];
     let window = cut_page(app, &tight);
     let gaps = ui::fold_gaps(&window);
-    assert!(!gaps.contains(&(0.0, 0.5)), "the 2 px head wore no badge: {gaps:?}");
-    assert!(gaps.contains(&(30.0, 40.0)), "while the 40 px hole did: {gaps:?}");
+    assert!(
+        !gaps.contains(&(0.0, 0.5)),
+        "the 2 px head wore no badge: {gaps:?}"
+    );
+    assert!(
+        gaps.contains(&(30.0, 40.0)),
+        "while the 40 px hole did: {gaps:?}"
+    );
     // No numbered button anywhere stands for the too-narrow gap.
     for i in 1..=gaps.len() {
         assert_ne!(
@@ -310,7 +373,10 @@ fn f2_11_s2_the_row_cross_removes_an_emptied_bottom_row(app: &adw::Application) 
         "a row with footage offers no ✕"
     );
     // Row 1 (index 1) is empty and is the bottom row: its cross is live.
-    assert!(button(&window, "row-cross-2").is_sensitive(), "the emptied bottom row's ✕ is live");
+    assert!(
+        button(&window, "row-cross-2").is_sensitive(),
+        "the emptied bottom row's ✕ is live"
+    );
 
     button(&window, "row-cross-2").emit_by_name::<()>("clicked", &[]);
     settle();
@@ -322,7 +388,11 @@ fn f2_11_s2_the_row_cross_removes_an_emptied_bottom_row(app: &adw::Application) 
         1,
         "and the page draws one row now"
     );
-    assert!(status_text(&window).contains("removed the empty row 2"), "{}", status_text(&window));
+    assert!(
+        status_text(&window).contains("removed the empty row 2"),
+        "{}",
+        status_text(&window)
+    );
     window.close();
 }
 
@@ -376,14 +446,29 @@ fn f2_11_s2_the_lane_cross_takes_pin_shift_pictures_and_sound(app: &adw::Applica
     let after = ui::review_fold_rows(&window);
 
     // 1. the lane entry
-    assert!(after.lanes.iter().all(|lane| lane.name != LANE), "the lane is gone: {:?}", after.lanes);
+    assert!(
+        after.lanes.iter().all(|lane| lane.name != LANE),
+        "the lane is gone: {:?}",
+        after.lanes
+    );
     // 2. its pin
-    assert!(!after.rows.contains_key(LANE), "its pin went with it: {:?}", after.rows);
+    assert!(
+        !after.rows.contains_key(LANE),
+        "its pin went with it: {:?}",
+        after.rows
+    );
     // 3. its shift
-    assert!(!after.shift.contains_key(LANE), "and its shift: {:?}", after.shift);
+    assert!(
+        !after.shift.contains_key(LANE),
+        "and its shift: {:?}",
+        after.shift
+    );
     // 4. its pictures AND its sound
     assert!(
-        after.segs.iter().all(|seg| seg.ins != "project:media/pass.mp4"),
+        after
+            .segs
+            .iter()
+            .all(|seg| seg.ins != "project:media/pass.mp4"),
         "its picture is off the cut"
     );
     assert!(
@@ -396,7 +481,11 @@ fn f2_11_s2_the_lane_cross_takes_pin_shift_pictures_and_sound(app: &adw::Applica
         "the other lane keeps its scene"
     );
     assert_eq!(after.lanes.len(), 1, "and the other lane itself");
-    assert!(status_text(&window).contains("removed the Second pass lane"), "{}", status_text(&window));
+    assert!(
+        status_text(&window).contains("removed the Second pass lane"),
+        "{}",
+        status_text(&window)
+    );
     window.close();
 }
 
@@ -429,11 +518,32 @@ fn f2_11_wire_the_fold_and_row_widgets_reach_the_rules_through_real_clicks() {
     std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
 
     window_round();
-    assert!(RAN_FOLD.load(Ordering::SeqCst), "the − click check never ran");
-    assert!(RAN_UNFOLD.load(Ordering::SeqCst), "the + click check never ran");
-    assert!(RAN_ALL.load(Ordering::SeqCst), "the gutter-badge check never ran");
-    assert!(RAN_SAVED.load(Ordering::SeqCst), "the saved-and-not-undone check never ran");
-    assert!(RAN_NO_ROOM.load(Ordering::SeqCst), "the no-room check never ran");
-    assert!(RAN_ROW_CROSS.load(Ordering::SeqCst), "the row-cross check never ran");
-    assert!(RAN_LANE_CROSS.load(Ordering::SeqCst), "the lane-cross check never ran");
+    assert!(
+        RAN_FOLD.load(Ordering::SeqCst),
+        "the − click check never ran"
+    );
+    assert!(
+        RAN_UNFOLD.load(Ordering::SeqCst),
+        "the + click check never ran"
+    );
+    assert!(
+        RAN_ALL.load(Ordering::SeqCst),
+        "the gutter-badge check never ran"
+    );
+    assert!(
+        RAN_SAVED.load(Ordering::SeqCst),
+        "the saved-and-not-undone check never ran"
+    );
+    assert!(
+        RAN_NO_ROOM.load(Ordering::SeqCst),
+        "the no-room check never ran"
+    );
+    assert!(
+        RAN_ROW_CROSS.load(Ordering::SeqCst),
+        "the row-cross check never ran"
+    );
+    assert!(
+        RAN_LANE_CROSS.load(Ordering::SeqCst),
+        "the lane-cross check never ran"
+    );
 }

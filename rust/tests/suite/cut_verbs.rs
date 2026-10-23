@@ -28,11 +28,7 @@ fn card(s: f64, e: f64, ins: &str) -> Seg {
 }
 
 fn band(scope: Scope, start: f64, end: f64) -> Selection {
-    Selection {
-        start,
-        end,
-        scope,
-    }
+    Selection { start, end, scope }
 }
 
 fn applied(outcome: Outcome) -> (String, Vec<Seg>, bool, bool) {
@@ -70,13 +66,21 @@ fn f2_7_s1_add_keeps_the_band_as_one_scene_per_filmed_run() {
         status,
         "added on cam 0, and taken off the other camera \u{2014} \u{21b6} Undo (Ctrl+Z) takes it back"
     );
-    assert_eq!(out.len(), 5, "the kept scene plus the remainders of both runs");
+    assert_eq!(
+        out.len(),
+        5,
+        "the kept scene plus the remainders of both runs"
+    );
     let kept: Vec<(i32, f64, f64)> = out
         .iter()
         .filter(|seg| (seg.s - 10.0).abs() < 1e-9 && (seg.e - 20.0).abs() < 1e-9)
         .map(|seg| (seg.cam, seg.s, seg.e))
         .collect();
-    assert_eq!(kept, vec![(0, 10.0, 20.0)], "one scene per filmed run inside the band");
+    assert_eq!(
+        kept,
+        vec![(0, 10.0, 20.0)],
+        "one scene per filmed run inside the band"
+    );
     let outside: Vec<(f64, f64)> = out
         .iter()
         .filter(|seg| !((seg.s - 10.0).abs() < 1e-9 && (seg.e - 20.0).abs() < 1e-9))
@@ -174,7 +178,13 @@ fn f2_7_s1_add_refuses_under_min_scene_seconds() {
 #[test]
 fn f2_7_s1_add_refuses_a_sound_band_by_name() {
     let segs = vec![footage(0.0, 60.0, 0)];
-    let sel = band(Scope::Sound { recording: "lecture".into() }, 10.0, 30.0);
+    let sel = band(
+        Scope::Sound {
+            recording: "lecture".into(),
+        },
+        10.0,
+        30.0,
+    );
     assert_eq!(
         refused(cut_verbs::add(Some(&sel), &segs, &[])),
         "\u{ff0b} Add keeps footage \u{2014} the selection is lecture's sound"
@@ -207,14 +217,15 @@ fn f2_7_s1_add_snaps_within_five_seconds_and_not_beyond() {
 fn f2_7_s2_split_marks_the_right_half_so_coalescing_keeps_its_hands_off() {
     let segs = vec![footage(0.0, 100.0, 0)];
     let sel = band(Scope::Footage { row: 0 }, 10.0, 20.0);
-    let (status, out, keeps_selection, into_hand) = applied(cut_verbs::split(Some(&sel), 0.0, &segs));
+    let (status, out, keeps_selection, into_hand) =
+        applied(cut_verbs::split(Some(&sel), 0.0, &segs));
 
-    assert_eq!(
-        status,
-        "split at 00:10 and 00:20 \u{2014} 3 scenes, was 1"
-    );
+    assert_eq!(status, "split at 00:10 and 00:20 \u{2014} 3 scenes, was 1");
     assert_eq!(out.len(), 3);
-    assert!(!out[0].split, "the piece before the first border is untouched");
+    assert!(
+        !out[0].split,
+        "the piece before the first border is untouched"
+    );
     assert!(out[1].split, "the middle piece starts at a Split border");
     assert!(out[2].split, "the right half starts at a Split border too");
     assert!(keeps_selection, "Split leaves the band up on purpose");
@@ -229,8 +240,7 @@ fn f2_7_s2_split_names_only_the_borders_actually_drawn() {
     let sel = band(Scope::Footage { row: 0 }, 10.0, 30.0);
     let (status, _, _, _) = applied(cut_verbs::split(Some(&sel), 0.0, &segs));
     assert_eq!(
-        status,
-        "split at 00:30 \u{2014} 3 scenes, was 2",
+        status, "split at 00:30 \u{2014} 3 scenes, was 2",
         "one border made, so one time named"
     );
 }
@@ -242,7 +252,10 @@ fn f2_7_s2_split_removes_nothing() {
     let sel = band(Scope::Footage { row: 0 }, 20.0, 80.0);
     let (_, out, _, _) = applied(cut_verbs::split(Some(&sel), 0.0, &segs));
     let total: f64 = out.iter().map(|seg| seg.e - seg.s).sum();
-    assert!((total - 100.0).abs() < 1e-9, "a split cuts, it never subtracts");
+    assert!(
+        (total - 100.0).abs() < 1e-9,
+        "a split cuts, it never subtracts"
+    );
 }
 
 /// No selection: one border at the red line and the right half lands in the hand.
@@ -254,7 +267,10 @@ fn f2_7_s2_split_at_the_line_with_no_selection_takes_the_right_half_in_hand() {
     assert_eq!(out.len(), 2);
     assert!(out[1].split);
     assert!(!keeps_selection, "there was no band to keep");
-    assert!(into_hand, "the right half is what the person asked to move next");
+    assert!(
+        into_hand,
+        "the right half is what the person asked to move next"
+    );
 }
 
 #[test]
@@ -262,7 +278,13 @@ fn f2_7_s2_split_refusals() {
     let segs = vec![footage(0.0, 100.0, 0)];
 
     // A sound band cannot be cut as footage.
-    let sound = band(Scope::Sound { recording: "mic".into() }, 10.0, 20.0);
+    let sound = band(
+        Scope::Sound {
+            recording: "mic".into(),
+        },
+        10.0,
+        20.0,
+    );
     assert_eq!(
         refused(cut_verbs::split(Some(&sound), 0.0, &segs)),
         "| Split cuts footage \u{2014} the selection is mic's sound"
@@ -352,7 +374,13 @@ fn f2_7_s3_remove_refusals() {
         "drag a region on a track first"
     );
 
-    let sound = band(Scope::Sound { recording: "lecture".into() }, 10.0, 20.0);
+    let sound = band(
+        Scope::Sound {
+            recording: "lecture".into(),
+        },
+        10.0,
+        20.0,
+    );
     assert_eq!(
         refused(cut_verbs::remove(Some(&sound), &segs)),
         "\u{ff0d} Remove drops footage \u{2014} the selection is lecture's sound"
@@ -403,8 +431,7 @@ fn f2_7_s4_delete_takes_held_effect_then_clip_then_selection_then_scene_under_li
         &segs,
     ));
     assert_eq!(
-        status,
-        "removed the card \u{2014} card:intro.svg (\u{21b6} Undo takes it back)",
+        status, "removed the card \u{2014} card:intro.svg (\u{21b6} Undo takes it back)",
         "⌦ on a held card is the only way a spliced insert can be removed"
     );
 
@@ -425,9 +452,21 @@ fn f2_7_s4_delete_takes_held_effect_then_clip_then_selection_then_scene_under_li
 #[test]
 fn f2_7_s4_delete_refuses_a_sound_selection_even_with_a_scene_under_the_line() {
     let segs = vec![footage(0.0, 100.0, 0)];
-    let sound = band(Scope::Sound { recording: "mic".into() }, 10.0, 20.0);
+    let sound = band(
+        Scope::Sound {
+            recording: "mic".into(),
+        },
+        10.0,
+        20.0,
+    );
     assert_eq!(
-        refused(cut_verbs::delete_verb(None, None, Some(&sound), Some(&segs[0]), &segs)),
+        refused(cut_verbs::delete_verb(
+            None,
+            None,
+            Some(&sound),
+            Some(&segs[0]),
+            &segs
+        )),
         "\u{2326} drops footage \u{2014} the selection is mic's sound"
     );
 }

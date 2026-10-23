@@ -22,7 +22,9 @@ pub const PAUSE_LABEL: &str = "\u{23f8} Pause the cut";
 /// S2's sentence) — a greyed button and a named refusal are two different answers to two different moments,
 /// and the spec asks for both.
 pub fn paint(window: &adw::ApplicationWindow) {
-    let Some(button) = ui::play_cut_button(window) else { return };
+    let Some(button) = ui::play_cut_button(window) else {
+        return;
+    };
     button.set_sensitive(!cut_play::empty(&ui::review_cut_of(window)));
     let player = ui::preview_player(window);
     // §2's "one lit" from [`crate::tab_states::preview_lits`], the same decision the other two buttons
@@ -32,7 +34,11 @@ pub fn paint(window: &adw::ApplicationWindow) {
             cut_only: player.cut_only,
             reviewing: player.reviewing,
         });
-    button.set_label(if ours_lit && player.transport.playing { PAUSE_LABEL } else { PLAY_LABEL });
+    button.set_label(if ours_lit && player.transport.playing {
+        PAUSE_LABEL
+    } else {
+        PLAY_LABEL
+    });
 }
 
 /// Paint BOTH skipping buttons — ▶✂ and ▶✂✂ — from this window's cut. They read the same cut slot, and the
@@ -119,7 +125,10 @@ pub fn hand_gain(window: &adw::ApplicationWindow, gain: f64, at_secs: f64) {
 /// out. A player that will not start is logged and answered `false`; the tick's arithmetic and every other
 /// preview rule are unaffected, which is the "carry on elsewhere" half of §0 (F2.1's cue door says the same).
 pub fn cue_running(window: &adw::ApplicationWindow, at: f64) -> bool {
-    let cued = cue_files(&ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now()), at);
+    let cued = cue_files(
+        &ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now()),
+        at,
+    );
     // §05-cut#8 bullet 2: the log carries the reason (`cue_files` already wrote it) and the status row says
     // where to find it. Both halves, because a status that reads "playback failed" without a reason and a
     // reason nobody was told about are the same failure twice over.
@@ -160,7 +169,12 @@ pub fn clock_tooltip(into_cut: f64, of_cut: f64, session_t: f64) -> String {
 /// Put that sentence on the button's tooltip — the ✂ clock has no widget of its own on this page today
 /// (see [`crate::cut_play_leg::start_cut_preview_tick`]'s note), and the transport button whose press set
 /// the clock reading is where the explanation belongs.
-pub fn set_clock_tooltip(window: &adw::ApplicationWindow, into_cut: f64, of_cut: f64, session_t: f64) {
+pub fn set_clock_tooltip(
+    window: &adw::ApplicationWindow,
+    into_cut: f64,
+    of_cut: f64,
+    session_t: f64,
+) {
     if let Some(button) = ui::play_cut_button(window) {
         button.set_tooltip_text(Some(&clock_tooltip(into_cut, of_cut, session_t)));
     }

@@ -69,8 +69,12 @@ pub type Spawn = dyn FnMut(&str, &[String]) -> Result<Child, String>;
 /// stays killable. Kept behind [`Spawn`] so the loop below has one injection point and no branch.
 pub fn spawn_player(program: &str, args: &[String]) -> Result<Child, String> {
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-    crate::subprocess::spawn_piped(program, &borrowed)
-        .map_err(|err| format!("{} failed: {err}", crate::subprocess::shown(program, &borrowed)))
+    crate::subprocess::spawn_piped(program, &borrowed).map_err(|err| {
+        format!(
+            "{} failed: {err}",
+            crate::subprocess::shown(program, &borrowed)
+        )
+    })
 }
 
 /// The whole running preview: two children, the picture's second, what is speaking, and the takes the
@@ -189,7 +193,10 @@ impl Preview {
         // The old voice belongs to the line that just ended; drop it before the new one starts so one
         // preview never has two wavs playing over the same second.
         self.voice = None;
-        if let Ok(child) = spawn(&VOICE_PROGRAM.with(|name| name.borrow().clone()), &voice_args(wav, 0.0, ducked_voice(self.game_volume))) {
+        if let Ok(child) = spawn(
+            &VOICE_PROGRAM.with(|name| name.borrow().clone()),
+            &voice_args(wav, 0.0, ducked_voice(self.game_volume)),
+        ) {
             self.voice = Some(child);
         }
         at
@@ -368,7 +375,11 @@ thread_local! {
 /// this app uses for a machine value (`speak_leg`'s audio address, the configured encoder path), so the
 /// seam is the setting and not a test hook.
 pub fn picture_program() -> String {
-    named_program(PICTURE_PLAYER_KEY, "NAIVEPOST_PICTURE_PLAYER", PICTURE_PLAYER)
+    named_program(
+        PICTURE_PLAYER_KEY,
+        "NAIVEPOST_PICTURE_PLAYER",
+        PICTURE_PLAYER,
+    )
 }
 
 /// `P.eng.voicePlayer` as it stands on disk: see [`picture_program`].
@@ -424,7 +435,10 @@ fn unknown_value(conf: &Conf, key: &str) -> Option<String> {
 
 /// Undo [`settings::quote`] for the six characters it escapes.
 fn unquoted(value: &str) -> String {
-    let body = value.strip_prefix('"').and_then(|v| v.strip_suffix('"')).unwrap_or(value);
+    let body = value
+        .strip_prefix('"')
+        .and_then(|v| v.strip_suffix('"'))
+        .unwrap_or(value);
     let mut out = String::with_capacity(body.len());
     let mut chars = body.chars();
     while let Some(c) = chars.next() {
@@ -647,7 +661,8 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
             // level lives in the player's `--volume=`, so a new answer is a new process; `bed_gain_ask`
             // is the stamp that says whether this beat changed anything, and nothing is re-cued when it
             // did not — otherwise every 100 ms beat would seek the middle of every clip.
-            let bed_gain = narrate_preview_media::bed_gain(&cut, heard.at, speaking, game_volume, volume);
+            let bed_gain =
+                narrate_preview_media::bed_gain(&cut, heard.at, speaking, game_volume, volume);
             let recued = RUNNING.with(|slot| {
                 slot.borrow_mut().as_mut().and_then(|preview| {
                     if !preview.bed_gain_ask(bed_gain) {
@@ -666,7 +681,8 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
             }
             // S2: the picture's own second moves here, one tick at a time and at the cut's rate — without it
             // `tick` is asked the same second forever and only a gap skip ever moves the head.
-            let at = narrate_preview::advance(from, crate::preview::TICK_SECONDS, heard.rate, &cut.segs);
+            let at =
+                narrate_preview::advance(from, crate::preview::TICK_SECONDS, heard.rate, &cut.segs);
             if at != from {
                 page.set_head(at);
             }
@@ -696,17 +712,16 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
                         }
                     },
                     None => {
-                        let stepped =
-                            tick_loop(
-                                &tree,
-                                &cut,
-                                &entries,
-                                at,
-                                game_volume,
-                                volume,
-                                page.no_narration(),
-                                &mut spawn_player,
-                            );
+                        let stepped = tick_loop(
+                            &tree,
+                            &cut,
+                            &entries,
+                            at,
+                            game_volume,
+                            volume,
+                            page.no_narration(),
+                            &mut spawn_player,
+                        );
                         if let Stepped::Moved { at, rate: _ } = stepped {
                             page.set_head(at);
                         }
@@ -817,7 +832,11 @@ fn take_key(entry: &Entry) -> String {
 /// (nothing was spoken), when no file has been written for its key, or when the speech server refused
 /// this session's copy of it — the same three questions `take_states` asks the running preview, in one
 /// public door so a caller outside the tick loop cannot disagree with it about what is speakable.
-pub fn line_take(tree: &crate::layout::Tree, entries: &[Entry], line: usize) -> Option<std::path::PathBuf> {
+pub fn line_take(
+    tree: &crate::layout::Tree,
+    entries: &[Entry],
+    line: usize,
+) -> Option<std::path::PathBuf> {
     let entry = entries.get(line)?;
     if entry.text.trim().is_empty() {
         return None;
@@ -833,7 +852,11 @@ pub fn line_take(tree: &crate::layout::Tree, entries: &[Entry], line: usize) -> 
 }
 
 /// S2: the wav path of one line, for the voice to play and for a failure to name.
-pub fn take_file(tree: &crate::layout::Tree, entries: &[Entry], line: usize) -> Option<std::path::PathBuf> {
+pub fn take_file(
+    tree: &crate::layout::Tree,
+    entries: &[Entry],
+    line: usize,
+) -> Option<std::path::PathBuf> {
     entries
         .get(line)
         .map(take_key)
@@ -1017,9 +1040,7 @@ pub fn stop_running() -> (narrate_preview::Stopped, Vec<u32>) {
 /// The one running preview's pids, for the page to register with `run::Subprocesses` so ⏹ reaches
 /// them through F0.3's existing drain.
 pub fn running_children() -> Vec<u32> {
-    RUNNING.with(|slot| {
-        held_children(&mut slot.borrow_mut())
-    })
+    RUNNING.with(|slot| held_children(&mut slot.borrow_mut()))
 }
 
 fn held_children(held: &mut Option<Preview>) -> Vec<u32> {
@@ -1062,7 +1083,15 @@ pub fn seek(
             preview.game_volume,
             preview.volume,
         );
-        if let Ok((child, _cue)) = player(&picture_program(), tree, cut, snapped, gain, was_held, spawn) {
+        if let Ok((child, _cue)) = player(
+            &picture_program(),
+            tree,
+            cut,
+            snapped,
+            gain,
+            was_held,
+            spawn,
+        ) {
             preview.picture = Some(child);
             // A seek is a fresh cue: the stamp follows it, or the next tick would read the duck it just
             // replaced as "already applied".
@@ -1075,7 +1104,9 @@ pub fn seek(
 /// S5: where the preview goes when a row is selected — the line's lead-in, from the rules module.
 /// `None` when there is no such row, so the caller leaves the picture alone rather than jumping to 0.
 pub fn lead_in_of(entries: &[Entry], index: usize) -> Option<f64> {
-    entries.get(index).map(|_| narrate_preview::lead_in(index, entries))
+    entries
+        .get(index)
+        .map(|_| narrate_preview::lead_in(index, entries))
 }
 
 /// S2: the door F4.4's row ▶ goes through before it dials the speech server: free this take so a
@@ -1180,16 +1211,21 @@ pub fn synthesize_line(
     let outcome = crate::speak_leg::speak(tree, &entry.text, &entry.emotion, seed, &key, &language);
     let line_start = entry.s + entry.at;
     match outcome {
-        narrate_tts::Outcome::Take(wav) => {
-            RUNNING.with(|slot| {
-                let mut held = slot.borrow_mut();
-                if let Some(preview) = held.as_mut() {
-                    let at = preview.resume_spoken(line, line_start, &wav.to_string_lossy(), spawn);
-                    return (format!("{} \u{2014} {}", starting, narrate_preview::line_ready(line)), at);
-                }
-                (narrate_preview::line_ready(line), line_start)
-            })
-        }
+        narrate_tts::Outcome::Take(wav) => RUNNING.with(|slot| {
+            let mut held = slot.borrow_mut();
+            if let Some(preview) = held.as_mut() {
+                let at = preview.resume_spoken(line, line_start, &wav.to_string_lossy(), spawn);
+                return (
+                    format!(
+                        "{} \u{2014} {}",
+                        starting,
+                        narrate_preview::line_ready(line)
+                    ),
+                    at,
+                );
+            }
+            (narrate_preview::line_ready(line), line_start)
+        }),
         narrate_tts::Outcome::Refused(why) => {
             let at = RUNNING.with(|slot| {
                 let mut held = slot.borrow_mut();
@@ -1198,7 +1234,11 @@ pub fn synthesize_line(
                     None => narrate_preview::resume_after_synthesis(line_start, line_start, false),
                 }
             });
-            let said = format!("{} \u{b7} {}", narrate_preview::failed_playing_on(line), why);
+            let said = format!(
+                "{} \u{b7} {}",
+                narrate_preview::failed_playing_on(line),
+                why
+            );
             let _ = volume;
             (said, at)
         }

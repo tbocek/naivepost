@@ -15,15 +15,15 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use naivepost::checks;
 use naivepost::icons::Databases;
 use naivepost::machine_store;
 use naivepost::settings::{self, Paths};
 use naivepost::ui;
 use naivepost::ui::settings as ui_settings;
-use crate::common;
-use common::{fixture_dir, settle};
 
 /// A throwaway config/data pair standing in for `$XDG_CONFIG_HOME` and `$XDG_DATA_HOME`, shaped the
 /// way `tests/suite/machine_files.rs` shapes its own so no test reads or writes the real `$HOME`.
@@ -72,7 +72,11 @@ fn open_canned(window: &adw::ApplicationWindow, provider: ui_settings::Provider)
 }
 
 fn mode(path: &Path) -> u32 {
-    fs::metadata(path).expect("the file is there").permissions().mode() & 0o777
+    fs::metadata(path)
+        .expect("the file is there")
+        .permissions()
+        .mode()
+        & 0o777
 }
 
 fn read(path: &Path) -> String {
@@ -81,7 +85,8 @@ fn read(path: &Path) -> String {
 
 /// S1: the launch persists what the legacy `settings.json` remembered, and asks about it only once.
 #[test]
-fn sec_01_project_and_files_7_machine_files_s1_the_launch_stores_the_recovered_projects_in_the_conf() {
+fn sec_01_project_and_files_7_machine_files_s1_the_launch_stores_the_recovered_projects_in_the_conf(
+) {
     common::pin_private_cwd();
     let d = Dirs::new("recover");
     // Only the legacy file exists: this is the launch right after the merge into llm.conf.
@@ -93,7 +98,8 @@ fn sec_01_project_and_files_7_machine_files_s1_the_launch_stores_the_recovered_p
     .unwrap();
     assert!(!d.paths.conf_path().exists(), "no conf yet");
 
-    let conf = machine_store::open_and_recover(&d.paths, &d.root).expect("the launch reads its settings");
+    let conf =
+        machine_store::open_and_recover(&d.paths, &d.root).expect("the launch reads its settings");
     assert_eq!(
         conf.projects.get("/sessions/lecture").map(String::as_str),
         Some("/sessions/lecture/naivepost.json"),
@@ -111,8 +117,14 @@ fn sec_01_project_and_files_7_machine_files_s1_the_launch_stores_the_recovered_p
     settings::save(&fresh.paths, &settings::Conf::default()).unwrap();
     assert_eq!(mode(&fresh.paths.config_dir), 0o700);
     let body = read(&conf_path);
-    assert!(body.contains("PROJECT_1_ROOT=\"/sessions/lecture\""), "{body}");
-    assert!(body.contains("PROJECT_1_FILE=\"/sessions/lecture/naivepost.json\""), "{body}");
+    assert!(
+        body.contains("PROJECT_1_ROOT=\"/sessions/lecture\""),
+        "{body}"
+    );
+    assert!(
+        body.contains("PROJECT_1_FILE=\"/sessions/lecture/naivepost.json\""),
+        "{body}"
+    );
 
     // The next launch does not ask again: same answer, and `settings::save` reports no change — the
     // bytes it would write are the bytes already there, which is §7's "read once" made true on disk.
@@ -137,11 +149,15 @@ fn sec_01_project_and_files_7_machine_files_s2_opening_a_project_writes_the_pair
 
     machine_store::persist_project(&d.paths, &mut projects, root_b, &file(root_b)).unwrap();
     let first = read(&d.paths.conf_path());
-    assert!(first.contains("PROJECT_1_ROOT=\"/sessions/bbb\""), "{first}");
+    assert!(
+        first.contains("PROJECT_1_ROOT=\"/sessions/bbb\""),
+        "{first}"
+    );
 
     // The same project opened again: recorded, but the file is untouched — the sorted render makes an
     // unchanged save byte-identical, which is what §7 asks for.
-    let changed = machine_store::persist_project(&d.paths, &mut projects, root_b, &file(root_b)).unwrap();
+    let changed =
+        machine_store::persist_project(&d.paths, &mut projects, root_b, &file(root_b)).unwrap();
     assert!(!changed, "nothing to write");
     assert_eq!(read(&d.paths.conf_path()), first);
 
@@ -151,8 +167,16 @@ fn sec_01_project_and_files_7_machine_files_s2_opening_a_project_writes_the_pair
     assert!(both.contains("PROJECT_1_ROOT=\"/sessions/aaa\""), "{both}");
     assert!(both.contains("PROJECT_2_ROOT=\"/sessions/bbb\""), "{both}");
     let back = settings::read(&d.paths).unwrap();
-    assert_eq!(back.projects.len(), 2, "both pairs read back: {:?}", back.projects);
-    assert_eq!(back.projects.get("/sessions/aaa").unwrap(), "/sessions/aaa/naivepost.json");
+    assert_eq!(
+        back.projects.len(),
+        2,
+        "both pairs read back: {:?}",
+        back.projects
+    );
+    assert_eq!(
+        back.projects.get("/sessions/aaa").unwrap(),
+        "/sessions/aaa/naivepost.json"
+    );
 }
 
 /// The beat itself, without a window: the same `checks::Draft` the dialog's timer drives, so the two
@@ -171,18 +195,46 @@ fn sec_01_project_and_files_7_machine_files_s3_the_beat_lands_only_once_it_has_e
     let t0 = std::time::Duration::from_secs(1000);
     store.touched(t0);
     // The beat has not come round: typing an address must not rewrite a 0600 file per letter.
-    assert!(store.flush(t0 + checks::CONF_SAVE_WAIT / 2, &typed("qwen3-7")).unwrap().is_none());
-    assert!(!read(&d.paths.conf_path()).contains("qwen3-7"), "nothing written early");
+    assert!(store
+        .flush(t0 + checks::CONF_SAVE_WAIT / 2, &typed("qwen3-7"))
+        .unwrap()
+        .is_none());
+    assert!(
+        !read(&d.paths.conf_path()).contains("qwen3-7"),
+        "nothing written early"
+    );
     // The beat elapses: the file carries the new id, and §5's line names where it went.
-    let line = store.flush(t0 + checks::CONF_SAVE_WAIT, &typed("qwen3-7")).unwrap();
-    assert_eq!(line, Some(format!("settings saved to {}", d.paths.conf_path().display())));
-    assert!(read(&d.paths.conf_path()).contains("LLM_MODEL=\"qwen3-7\""), "{}", read(&d.paths.conf_path()));
-    assert_eq!(settings::read(&d.paths).unwrap().model, "qwen3-7", "and it reads back as a model");
+    let line = store
+        .flush(t0 + checks::CONF_SAVE_WAIT, &typed("qwen3-7"))
+        .unwrap();
+    assert_eq!(
+        line,
+        Some(format!(
+            "settings saved to {}",
+            d.paths.conf_path().display()
+        ))
+    );
+    assert!(
+        read(&d.paths.conf_path()).contains("LLM_MODEL=\"qwen3-7\""),
+        "{}",
+        read(&d.paths.conf_path())
+    );
+    assert_eq!(
+        settings::read(&d.paths).unwrap().model,
+        "qwen3-7",
+        "and it reads back as a model"
+    );
 
     // A second keystroke with no beat left before closing still lands: losing the last thing typed is
     // the one failure this dialog must not have.
     store.touched(t0 + checks::CONF_SAVE_WAIT * 3);
-    assert!(store.flush(t0 + checks::CONF_SAVE_WAIT * 3 + std::time::Duration::from_millis(200), &typed("llama3.2:3b")).unwrap().is_none());
+    assert!(store
+        .flush(
+            t0 + checks::CONF_SAVE_WAIT * 3 + std::time::Duration::from_millis(200),
+            &typed("llama3.2:3b")
+        )
+        .unwrap()
+        .is_none());
     let closed = store.on_close(&typed("llama3.2:3b")).unwrap();
     assert!(closed.is_some(), "closing wrote the last value");
     assert_eq!(settings::read(&d.paths).unwrap().model, "llama3.2:3b");
@@ -198,7 +250,10 @@ fn sec_01_project_and_files_7_machine_files_s3_the_settings_dialog_saves_what_wa
 ) {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_DIALOG_SAVED.load(Ordering::SeqCst), "the dialog-save check never ran");
+    assert!(
+        RAN_DIALOG_SAVED.load(Ordering::SeqCst),
+        "the dialog-save check never ran"
+    );
 }
 
 static RAN_DIALOG_SAVED: AtomicBool = AtomicBool::new(false);
@@ -284,7 +339,8 @@ fn check_dialog_saves(app: &adw::Application) {
 /// S4: a stall writes one watchdog dump naming the component, at 0600 beside the conf; and nowhere
 /// to put it costs nothing (principle 8).
 #[test]
-fn sec_01_project_and_files_7_machine_files_s4_a_give_up_writes_a_watchdog_dump_naming_the_component() {
+fn sec_01_project_and_files_7_machine_files_s4_a_give_up_writes_a_watchdog_dump_naming_the_component(
+) {
     common::pin_private_cwd();
     let d = Dirs::new("hang");
     fs::create_dir_all(&d.paths.config_dir).unwrap();
@@ -297,7 +353,10 @@ fn sec_01_project_and_files_7_machine_files_s4_a_give_up_writes_a_watchdog_dump_
         .expect("the dump landed beside the conf");
     assert_eq!(path.parent().unwrap(), d.paths.config_dir);
     let name = path.file_name().unwrap().to_string_lossy().into_owned();
-    assert!(name.starts_with("hang-") && name.ends_with(".txt"), "{name}");
+    assert!(
+        name.starts_with("hang-") && name.ends_with(".txt"),
+        "{name}"
+    );
     assert_eq!(
         name,
         format!("hang-{}.txt", machine_store::local_stamp()),
@@ -306,7 +365,10 @@ fn sec_01_project_and_files_7_machine_files_s4_a_give_up_writes_a_watchdog_dump_
     assert_eq!(mode(&path), 0o600);
     let body = read(&path);
     assert!(body.contains("cutting"), "which component stalled:\n{body}");
-    assert!(body.contains(&format!("pid {}", std::process::id())), "{body}");
+    assert!(
+        body.contains(&format!("pid {}", std::process::id())),
+        "{body}"
+    );
     assert!(body.contains("19s"), "how long it was silent:\n{body}");
 
     // The same second again writes nothing: two dumps would bury the first.
@@ -357,35 +419,68 @@ fn sec_01_project_and_files_7_machine_files_s5_the_desktop_entry_and_mime_packag
     assert_eq!(mode(&entry), 0o644);
     assert_eq!(mode(&mime), 0o644);
     let entry_body = read(&entry);
-    assert!(entry_body.contains(&format!("Exec={}", installed.display())), "{entry_body}");
-    assert!(entry_body.contains("MimeType=application/x-naivepost-project;"), "{entry_body}");
-    assert!(read(&mime).contains("<glob pattern=\"*.naivepost\"/>"), "the project suffix is declared");
-    assert!(log.iter().any(|line| line.contains("told the desktop about")), "{log:?}");
+    assert!(
+        entry_body.contains(&format!("Exec={}", installed.display())),
+        "{entry_body}"
+    );
+    assert!(
+        entry_body.contains("MimeType=application/x-naivepost-project;"),
+        "{entry_body}"
+    );
+    assert!(
+        read(&mime).contains("<glob pattern=\"*.naivepost\"/>"),
+        "the project suffix is declared"
+    );
+    assert!(
+        log.iter()
+            .any(|line| line.contains("told the desktop about")),
+        "{log:?}"
+    );
     // Both databases, each pointed at the tree that holds what changed.
     let spelled: Vec<String> = commands.iter().map(|c| c.join(" ")).collect();
     assert!(
-        spelled.iter().any(|c| c.starts_with("update-mime-database ")),
+        spelled
+            .iter()
+            .any(|c| c.starts_with("update-mime-database ")),
         "the MIME database is re-read: {spelled:?}"
     );
     assert!(
-        spelled.iter().any(|c| c.starts_with("update-desktop-database ")),
+        spelled
+            .iter()
+            .any(|c| c.starts_with("update-desktop-database ")),
         "the desktop database is re-read: {spelled:?}"
     );
 
     // A second launch writes neither file again, so the databases are not re-told about nothing.
     let before = (read(&entry), read(&mime));
-    let (log2, commands2) =
-        machine_store::register_with_desktop(&d.paths, &installed, false, false, &mut Databases::new());
+    let (log2, commands2) = machine_store::register_with_desktop(
+        &d.paths,
+        &installed,
+        false,
+        false,
+        &mut Databases::new(),
+    );
     assert_eq!((read(&entry), read(&mime)), before);
-    assert!(commands2.is_empty(), "nothing new for the databases: {commands2:?}");
+    assert!(
+        commands2.is_empty(),
+        "nothing new for the databases: {commands2:?}"
+    );
     assert!(log2.is_empty(), "and nothing said about it: {log2:?}");
 
     // Inside a Flatpak the manifest exports both; a file written from inside would point into the
     // sandbox. Same for a run out of a build cache, whose path stops existing on `cargo clean`.
     let flatpak = Dirs::new("flatpak");
-    let (_, commands) =
-        machine_store::register_with_desktop(&flatpak.paths, &installed, true, false, &mut Databases::new());
-    assert!(!flatpak.paths.desktop_file().exists(), "a Flatpak exports both from its manifest");
+    let (_, commands) = machine_store::register_with_desktop(
+        &flatpak.paths,
+        &installed,
+        true,
+        false,
+        &mut Databases::new(),
+    );
+    assert!(
+        !flatpak.paths.desktop_file().exists(),
+        "a Flatpak exports both from its manifest"
+    );
     assert!(!flatpak.paths.mime_package().exists());
     assert!(commands.is_empty(), "and tells nobody: {commands:?}");
     let cache = Dirs::new("cache");
@@ -400,25 +495,38 @@ fn sec_01_project_and_files_7_machine_files_s5_the_desktop_entry_and_mime_packag
         machine_store::in_build_cache(&cached),
         &mut Databases::new(),
     );
-    assert!(commands.is_empty(), "a build-cache launch installs nothing: {commands:?}");
+    assert!(
+        commands.is_empty(),
+        "a build-cache launch installs nothing: {commands:?}"
+    );
     assert!(!cache.paths.desktop_file().exists(), "not even the file");
     assert!(!cache.paths.mime_package().exists());
-    assert!(machine_store::in_build_cache(&cached), "that IS a build cache");
+    assert!(
+        machine_store::in_build_cache(&cached),
+        "that IS a build cache"
+    );
     assert!(!machine_store::in_build_cache(&installed));
 }
 
 /// S6: a missing refresh tool is one log line, not a failed launch.
 #[test]
-fn sec_01_project_and_files_7_machine_files_s6_running_the_refresh_survives_a_missing_database_tool() {
+fn sec_01_project_and_files_7_machine_files_s6_running_the_refresh_survives_a_missing_database_tool(
+) {
     common::pin_private_cwd();
     // This container has update-mime-database and NOT update-desktop-database, so both branches are
     // live here: one command starts, the other cannot be found.
     let log = machine_store::run_refresh(&[
         vec!["update-mime-database".to_string(), "/tmp".to_string()],
-        vec!["naivepost-no-such-database-tool".to_string(), "/tmp".to_string()],
+        vec![
+            "naivepost-no-such-database-tool".to_string(),
+            "/tmp".to_string(),
+        ],
     ]);
     assert_eq!(log.len(), 1, "only the missing one is said about: {log:?}");
-    assert!(log[0].contains("naivepost-no-such-database-tool"), "{log:?}");
+    assert!(
+        log[0].contains("naivepost-no-such-database-tool"),
+        "{log:?}"
+    );
     assert!(log[0].contains("failed"), "{log:?}");
     // An empty command list says nothing rather than panicking.
     assert!(machine_store::run_refresh(&[]).is_empty());

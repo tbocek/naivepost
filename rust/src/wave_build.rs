@@ -42,7 +42,11 @@ fn peak_byte(top: i32) -> u8 {
 pub fn peaks_from_s16(samples: &[i16]) -> Vec<u8> {
     let mut out = Vec::with_capacity(samples.len() / SAMPLES_PER_BUCKET + 1);
     for bucket in samples.chunks(SAMPLES_PER_BUCKET) {
-        let top = bucket.iter().map(|s| (s.unsigned_abs()) as i32).max().unwrap_or(0);
+        let top = bucket
+            .iter()
+            .map(|s| (s.unsigned_abs()) as i32)
+            .max()
+            .unwrap_or(0);
         out.push(peak_byte(top));
     }
     out
@@ -65,7 +69,8 @@ pub fn read_wav_samples(path: &Path) -> Result<Vec<i16>, String> {
     while at + 8 <= bytes.len() {
         let tag = &bytes[at..at + 4];
         // Chunk length is little-endian and padded to an even count; the data itself stops at the length.
-        let len = u32::from_le_bytes([bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]]) as usize;
+        let len = u32::from_le_bytes([bytes[at + 4], bytes[at + 5], bytes[at + 6], bytes[at + 7]])
+            as usize;
         let body = at + 8;
         let end = body + len;
         if end > bytes.len() {
@@ -74,7 +79,9 @@ pub fn read_wav_samples(path: &Path) -> Result<Vec<i16>, String> {
         if tag == b"data" {
             let body = &bytes[body..end];
             if body.len() % 2 != 0 {
-                return Err(why("an odd number of bytes where s16 samples were expected"));
+                return Err(why(
+                    "an odd number of bytes where s16 samples were expected",
+                ));
             }
             return Ok(body
                 .chunks_exact(2)
@@ -91,12 +98,18 @@ pub fn read_wav_samples(path: &Path) -> Result<Vec<i16>, String> {
 /// come from the recording and never from the cache file, because a staleness test that reads its own
 /// subject cannot fail (see [`crate::edges::load`]'s note).
 fn stamp(recording: &Path) -> Result<(i64, i64), String> {
-    let meta = std::fs::metadata(recording).map_err(|err| format!("{}: {err}", recording.display()))?;
+    let meta =
+        std::fs::metadata(recording).map_err(|err| format!("{}: {err}", recording.display()))?;
     let mtime = meta
         .modified()
         .map_err(|err| format!("{}: no modification time ({err})", recording.display()))?
         .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|err| format!("{}: modification time before the epoch ({err})", recording.display()))?
+        .map_err(|err| {
+            format!(
+                "{}: modification time before the epoch ({err})",
+                recording.display()
+            )
+        })?
         .as_secs() as i64;
     Ok((meta.len() as i64, mtime))
 }
@@ -131,8 +144,14 @@ pub fn ensure(
     let samples = read_wav_samples(&decoded)?;
     let peaks = peaks_from_s16(&samples);
     if peaks.is_empty() {
-        return Err(format!("{}: the decoded audio holds no samples", decoded.display()));
+        return Err(format!(
+            "{}: the decoded audio holds no samples",
+            decoded.display()
+        ));
     }
-    let wave = Wave { hz: PEAK_HZ, chans: vec![peaks] };
+    let wave = Wave {
+        hz: PEAK_HZ,
+        chans: vec![peaks],
+    };
     wave::write(tree, lane, &wave, size, mtime)
 }

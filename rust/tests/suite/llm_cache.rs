@@ -14,12 +14,12 @@
 //!   caches its gap-fill; the fixer caches only its first attempt) — s5.
 //! * a hit is answered before the gate and before the exchange log — s6.
 
+use naivepost::layout::Tree;
 use naivepost::llm_cache::{self, Ahead, Request, Stored};
 use naivepost::narrate_pass;
 use naivepost::produce_subtitles as subs;
 use naivepost::requests::Outcome;
 use naivepost::roles::Job;
-use naivepost::layout::Tree;
 use serde_json::{json, Value};
 use sha2::Digest;
 
@@ -54,7 +54,8 @@ fn sec_09_llm_and_tools_6_cache_s1_the_key_is_sha256_of_the_parts_each_nul_termi
     let key = llm_cache::key(&parts).expect("a full request has a key");
     assert_eq!(key.len(), 64, "sha256 as hex");
     assert!(
-        key.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+        key.chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
         "lowercase hex: {key}"
     );
 
@@ -73,7 +74,11 @@ fn sec_09_llm_and_tools_6_cache_s1_the_key_is_sha256_of_the_parts_each_nul_termi
 
     // And the file lands where §6 says it does.
     let path = tree("s1").cache_llm("describe", &key);
-    assert!(path.ends_with(format!("cache/llm/describe/{key}")), "{}", path.display());
+    assert!(
+        path.ends_with(format!("cache/llm/describe/{key}")),
+        "{}",
+        path.display()
+    );
 
     let t = tree("s1b");
     assert_eq!(
@@ -83,7 +88,10 @@ fn sec_09_llm_and_tools_6_cache_s1_the_key_is_sha256_of_the_parts_each_nul_termi
     let on_disk = t.cache_llm("describe", &key);
     assert!(on_disk.exists(), "the store wrote to {}", on_disk.display());
     assert_eq!(std::fs::read_to_string(&on_disk).unwrap(), "an event line");
-    assert_eq!(llm_cache::read(&t, "describe", &parts).as_deref(), Some("an event line"));
+    assert_eq!(
+        llm_cache::read(&t, "describe", &parts).as_deref(),
+        Some("an event line")
+    );
 }
 
 // --- S2: what the key holds -----------------------------------------------------------------------------
@@ -130,7 +138,11 @@ fn sec_09_llm_and_tools_6_cache_s2_the_key_holds_everything_that_decides_the_ans
     // The base plus eleven single-field variants, every one of them a different question.
     let unique: std::collections::HashSet<&String> = keys.iter().collect();
     assert_eq!(keys.len(), 12, "the base plus eleven variants");
-    assert_eq!(unique.len(), keys.len(), "every variant asks a different question: {keys:?}");
+    assert_eq!(
+        unique.len(),
+        keys.len(),
+        "every variant asks a different question: {keys:?}"
+    );
     assert_ne!(keys[0], keys[8]);
 }
 
@@ -157,12 +169,22 @@ fn sec_09_llm_and_tools_6_cache_s2_with_tools_the_finished_list_is_the_cached_un
     assert_eq!(parts[3], json!(one_round.speech));
     assert_eq!(parts[4], json!(one_round.context));
     assert_eq!(parts[5], json!("data:image/jpeg;base64,AAA"));
-    assert_eq!(parts[6], Value::Null, "unpooled: a null part, not a skipped one");
+    assert_eq!(
+        parts[6],
+        Value::Null,
+        "unpooled: a null part, not a skipped one"
+    );
     assert_eq!(parts[7], json!("qwen-vl"));
     assert_eq!(parts[8], json!(false));
     let as_text = format!("{parts:?}").to_lowercase();
-    assert!(!as_text.contains("round"), "no tool-round count in the key: {as_text}");
-    assert!(!as_text.contains("attempt"), "no attempt count in the key: {as_text}");
+    assert!(
+        !as_text.contains("round"),
+        "no tool-round count in the key: {as_text}"
+    );
+    assert!(
+        !as_text.contains("attempt"),
+        "no attempt count in the key: {as_text}"
+    );
 }
 
 // --- S3: only a usable answer is stored ------------------------------------------------------------------
@@ -179,14 +201,27 @@ fn sec_09_llm_and_tools_6_cache_s3_only_a_usable_answer_is_stored() {
     let path = t.cache_llm("describe", &llm_cache::key(&parts).unwrap());
 
     // Refused before touching the filesystem: no empty file is left standing where an answer would go.
-    assert_eq!(llm_cache::store(&t, "describe", &parts, ""), Stored::RefusedEmpty);
-    assert_eq!(llm_cache::store(&t, "describe", &parts, "   \n"), Stored::RefusedEmpty);
+    assert_eq!(
+        llm_cache::store(&t, "describe", &parts, ""),
+        Stored::RefusedEmpty
+    );
+    assert_eq!(
+        llm_cache::store(&t, "describe", &parts, "   \n"),
+        Stored::RefusedEmpty
+    );
     assert!(!path.exists(), "a refused answer leaves nothing behind");
     assert_eq!(llm_cache::read(&t, "describe", &parts), None);
 
     // An uncomputable key is no key: nothing read, nothing written.
-    assert_eq!(llm_cache::key(&[]), None, "an empty part list is not a question");
-    assert_eq!(llm_cache::store(&t, "describe", &[], "text"), Stored::RefusedNoKey);
+    assert_eq!(
+        llm_cache::key(&[]),
+        None,
+        "an empty part list is not a question"
+    );
+    assert_eq!(
+        llm_cache::store(&t, "describe", &[], "text"),
+        Stored::RefusedNoKey
+    );
     assert_eq!(llm_cache::read(&t, "describe", &[]), None);
     // The other shape of "uncomputable" is a part that cannot be encoded. In practice every
     // [`Request`] field has a JSON encoding, so the empty list above is the case a caller hits;
@@ -200,7 +235,12 @@ fn sec_09_llm_and_tools_6_cache_s3_only_a_usable_answer_is_stored() {
         }
     }
     let mut half_keyable = llm_cache::parts(&request());
-    half_keyable.push(serde_json::to_value(&Unencodable).unwrap_err().to_string().into());
+    half_keyable.push(
+        serde_json::to_value(&Unencodable)
+            .unwrap_err()
+            .to_string()
+            .into(),
+    );
     // Encoded as a string it hashes; pushed as a value that refuses, it must not.
     let refused = {
         #[derive(serde::Serialize)]
@@ -210,8 +250,14 @@ fn sec_09_llm_and_tools_6_cache_s3_only_a_usable_answer_is_stored() {
             Err(_) => Value::String("placeholder".into()),
         }
     };
-    assert!(refused.is_string(), "the failed encode leaves a plain string, not a half-part");
-    assert!(half_keyable.len() > 9, "the request's own parts plus one more");
+    assert!(
+        refused.is_string(),
+        "the failed encode leaves a plain string, not a half-part"
+    );
+    assert!(
+        half_keyable.len() > 9,
+        "the request's own parts plus one more"
+    );
 
     // A real answer round-trips.
     assert_eq!(
@@ -278,7 +324,13 @@ fn sec_09_llm_and_tools_6_cache_s4_an_unwritable_cache_makes_a_slower_step_never
 
 #[test]
 fn sec_09_llm_and_tools_6_cache_s5_which_jobs_cache_and_the_two_irregularities() {
-    let caching = [Job::Describe, Job::CleanTranscript, Job::Joins, Job::Retakes, Job::Subtitles];
+    let caching = [
+        Job::Describe,
+        Job::CleanTranscript,
+        Job::Joins,
+        Job::Retakes,
+        Job::Subtitles,
+    ];
     let not_caching = [
         Job::ModelCut,
         Job::ClipRules,
@@ -291,16 +343,25 @@ fn sec_09_llm_and_tools_6_cache_s5_which_jobs_cache_and_the_two_irregularities()
         Job::Separate,
     ];
     for job in caching {
-        assert!(llm_cache::uses_cache(job), "{job:?} is one of §6's five users");
+        assert!(
+            llm_cache::uses_cache(job),
+            "{job:?} is one of §6's five users"
+        );
     }
     for job in not_caching {
-        assert!(!llm_cache::uses_cache(job), "{job:?} is not a user of the reply cache");
+        assert!(
+            !llm_cache::uses_cache(job),
+            "{job:?} is not a user of the reply cache"
+        );
     }
     // All fourteen accounted for, so a fifteenth job cannot slip through unclassified.
     assert_eq!(caching.len() + not_caching.len(), Job::all().len());
 
     // Narration agrees from its own side: it is never served from the reply cache.
-    assert!(!narrate_pass::served_from_cache(), "the TTS cache is narration's cache");
+    assert!(
+        !narrate_pass::served_from_cache(),
+        "the TTS cache is narration's cache"
+    );
 
     // Irregularity one: translate stores the reconstructed numbered text, not the reply.
     assert_eq!(
@@ -309,14 +370,26 @@ fn sec_09_llm_and_tools_6_cache_s5_which_jobs_cache_and_the_two_irregularities()
     );
     // ... and never caches its gap-filling second call, while the first call is gated on being
     // complete. Two different rules, both holding.
-    assert!(llm_cache::gap_fill_caches(false), "the first call may be cached");
-    assert!(!llm_cache::gap_fill_caches(true), "the repair call never is");
+    assert!(
+        llm_cache::gap_fill_caches(false),
+        "the first call may be cached"
+    );
+    assert!(
+        !llm_cache::gap_fill_caches(true),
+        "the repair call never is"
+    );
     assert!(subs::cached(true), "a complete batch earns its place");
-    assert!(!subs::cached(false), "a partial batch would be partial forever");
+    assert!(
+        !subs::cached(false),
+        "a partial batch would be partial forever"
+    );
 
     // Irregularity two: the fixer caches only its first attempt.
     assert!(llm_cache::fixer_caches(1));
-    assert!(!llm_cache::fixer_caches(2), "a repaired-after-refusal answer is not replayed");
+    assert!(
+        !llm_cache::fixer_caches(2),
+        "a repaired-after-refusal answer is not replayed"
+    );
     assert!(!llm_cache::fixer_caches(3));
 }
 
@@ -324,8 +397,14 @@ fn sec_09_llm_and_tools_6_cache_s5_which_jobs_cache_and_the_two_irregularities()
 
 #[test]
 fn sec_09_llm_and_tools_6_cache_s6_a_hit_is_answered_before_the_gate_and_the_exchange_log() {
-    assert!(llm_cache::hit_answered_ahead(Ahead::Gate), "a hit takes no slot");
-    assert!(llm_cache::hit_answered_ahead(Ahead::ExchangeLog), "a hit opens no page section");
+    assert!(
+        llm_cache::hit_answered_ahead(Ahead::Gate),
+        "a hit takes no slot"
+    );
+    assert!(
+        llm_cache::hit_answered_ahead(Ahead::ExchangeLog),
+        "a hit opens no page section"
+    );
     // Which is why a resumed run's `llm/` page holds only the calls actually made. The hit is not
     // invisible though: it leaves its own row in requests.tsv (§10), spelled `cache` and carrying
     // no time on the wire, so the file shows what a re-run saved.

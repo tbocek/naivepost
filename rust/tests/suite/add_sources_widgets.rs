@@ -5,11 +5,11 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::fixture_dir;
 use naivepost::add_sources;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir};
 
 /// One running GTK application for this test binary — the same single-main-loop arrangement
 /// `tests/suite/rescan_widgets.rs` needs for the same reason: both checks run in one `connect_activate`,
@@ -68,7 +68,11 @@ fn check_offers_the_chooser(app: &adw::Application) {
         1,
         "§F0.12 S1: the press raises the chooser — the bug was that it was built but never shown"
     );
-    assert_eq!(ui::state(&window).status, "", "opening a dialog says nothing");
+    assert_eq!(
+        ui::state(&window).status,
+        "",
+        "opening a dialog says nothing"
+    );
 }
 
 /// S0 through the widgets: ▶ starts a run (F0.2), and Add then says why it will not go ahead — no
@@ -78,7 +82,9 @@ fn check_refused_during_a_run(app: &adw::Application) {
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
 
-    ui::play_button(&window).expect("the run bar has a ▶").emit_clicked();
+    ui::play_button(&window)
+        .expect("the run bar has a ▶")
+        .emit_clicked();
     // F0.5 S4 closes what a single-step press opens, so the busy state is stood up as an open run --
     // `start_run`, the call ▶ itself makes before it walks the step.
     if let (Some(bar), Some(queue)) = (ui::run_bar(&window), ui::run_queue(&window)) {
@@ -111,7 +117,10 @@ fn f0_12_s1_the_add_button_and_the_copy_tick_are_on_prepare() {
 fn f0_12_s0_adding_is_refused_while_a_run_is_on() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_REFUSED.load(Ordering::SeqCst), "the refusal check never ran");
+    assert!(
+        RAN_REFUSED.load(Ordering::SeqCst),
+        "the refusal check never ran"
+    );
 }
 
 /// S2/S3/S4/S5 through the widgets: a pick copies into `sources/`, lands rows in the visible list,
@@ -141,25 +150,44 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
 
     // S2's default is the copy, read off the live tick rather than assumed.
     assert!(
-        ui::copy_into_project(&window).expect("copy tick").is_active(),
+        ui::copy_into_project(&window)
+            .expect("copy tick")
+            .is_active(),
         "copy defaults on"
     );
     assert!(
-        ui::add_files(&window, &[cam.clone(), wav.clone(), txt.clone(), dup.clone()]),
+        ui::add_files(
+            &window,
+            &[cam.clone(), wav.clone(), txt.clone(), dup.clone()]
+        ),
         "two rows should go in"
     );
 
     let rows = ui::session_sources(&window);
-    assert!(rows.contains(&"project:sources/cam.mkv".to_string()), "the video row: {rows:?}");
-    assert!(rows.contains(&"project:sources/mic.wav".to_string()), "the audio row: {rows:?}");
-    assert!(!rows.iter().any(|path| path.ends_with("notes.txt")), "non-media never becomes a row: {rows:?}");
+    assert!(
+        rows.contains(&"project:sources/cam.mkv".to_string()),
+        "the video row: {rows:?}"
+    );
+    assert!(
+        rows.contains(&"project:sources/mic.wav".to_string()),
+        "the audio row: {rows:?}"
+    );
+    assert!(
+        !rows.iter().any(|path| path.ends_with("notes.txt")),
+        "non-media never becomes a row: {rows:?}"
+    );
     assert_eq!(
-        rows.iter().filter(|path| *path == "project:sources/lecture.mkv").count(),
+        rows.iter()
+            .filter(|path| *path == "project:sources/lecture.mkv")
+            .count(),
         1,
         "the duplicate is not added twice: {rows:?}"
     );
     // S5, the same sentence `tests/suite/add_sources.rs` pins for this 2-of-4 mix.
-    assert_eq!(ui::state(&window).status, "added 2 of 4 \u{2014} the rest were already in");
+    assert_eq!(
+        ui::state(&window).status,
+        "added 2 of 4 \u{2014} the rest were already in"
+    );
     // S2 on disk: the copy landed under `sources/`, no `.part` left behind.
     let copied = dir.join("sources").join("cam.mkv");
     assert_eq!(
@@ -177,14 +205,29 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
         .unwrap_or(usize::MAX);
     assert_eq!(parts, 0, "a finished copy leaves no .part behind");
     // The visible list, not just the model: the fixture draws row 0, two went in.
-    assert!(ui::find_source_widget(&window, "source-row-1").is_some(), "row 2 drawn");
-    assert!(ui::find_source_widget(&window, "source-row-2").is_some(), "row 3 drawn");
-    assert!(ui::find_source_widget(&window, "source-row-3").is_none(), "no row beyond what was added");
+    assert!(
+        ui::find_source_widget(&window, "source-row-1").is_some(),
+        "row 2 drawn"
+    );
+    assert!(
+        ui::find_source_widget(&window, "source-row-2").is_some(),
+        "row 3 drawn"
+    );
+    assert!(
+        ui::find_source_widget(&window, "source-row-3").is_none(),
+        "no row beyond what was added"
+    );
     // S3's footage default through the widget: `sources::row_controls` offers `Control::Footage`
     // only for a video ("on an audio file the control is not off — it does not exist"), so the new
     // video row carries `footage-1` and the new audio row carries no `footage-2` at all.
-    assert!(ui::find_source_widget(&window, "footage-1").is_some(), "a new video row defaults to footage");
-    assert!(ui::find_source_widget(&window, "footage-2").is_none(), "an audio row has no footage control");
+    assert!(
+        ui::find_source_widget(&window, "footage-1").is_some(),
+        "a new video row defaults to footage"
+    );
+    assert!(
+        ui::find_source_widget(&window, "footage-2").is_none(),
+        "an audio row has no footage control"
+    );
     // F0.5's bar moved off zero while the bytes were copied.
     assert!(
         ui::progress_bar(&window).expect("run-progress").fraction() > 0.0,
@@ -193,14 +236,26 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
 
     // S5 again with nothing new: refused as a no-op, session untouched.
     let before = ui::session_sources(&window);
-    assert!(!ui::add_files(&window, &[cam.clone(), wav.clone()]), "nothing new to add");
-    assert_eq!(ui::state(&window).status, "already in the session \u{2014} nothing added");
-    assert_eq!(ui::session_sources(&window), before, "a repeat pick adds nothing");
+    assert!(
+        !ui::add_files(&window, &[cam.clone(), wav.clone()]),
+        "nothing new to add"
+    );
+    assert_eq!(
+        ui::state(&window).status,
+        "already in the session \u{2014} nothing added"
+    );
+    assert_eq!(
+        ui::session_sources(&window),
+        before,
+        "a repeat pick adds nothing"
+    );
 
     // S0 on this same path: with a run on, the seam refuses before any byte moves. F0.5 S4 closes what
     // a single-step ▶ opens, so the busy state is stood up as an open run -- `start_run`, the call ▶
     // itself makes before it walks the step.
-    ui::play_button(&window).expect("the run bar has a ▶").emit_clicked();
+    ui::play_button(&window)
+        .expect("the run bar has a ▶")
+        .emit_clicked();
     if let (Some(bar), Some(queue)) = (ui::run_bar(&window), ui::run_queue(&window)) {
         naivepost::runqueue::start_run(
             &mut bar.borrow_mut(),
@@ -210,9 +265,16 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
             naivepost::run::snapshot_sources(&model),
         );
     }
-    assert!(!ui::add_files(&window, &[cam]), "a copy is a run of its own, so it waits");
+    assert!(
+        !ui::add_files(&window, &[cam]),
+        "a copy is a run of its own, so it waits"
+    );
     assert_eq!(ui::state(&window).status, add_sources::RUN_REFUSAL);
-    assert_eq!(ui::session_sources(&window), before, "refused before touching the session");
+    assert_eq!(
+        ui::session_sources(&window),
+        before,
+        "refused before touching the session"
+    );
     window.close();
 }
 

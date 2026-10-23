@@ -15,7 +15,9 @@ use naivepost::shell::Page;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, narrate_button as button, release_last_window, settle, widget_in};
+use common::{
+    fixture_dir, hold_last_window, narrate_button as button, release_last_window, settle, widget_in,
+};
 
 static RAN_BUTTONS: AtomicBool = AtomicBool::new(false);
 static RAN_SLIDER: AtomicBool = AtomicBool::new(false);
@@ -25,8 +27,18 @@ static RAN_WHEEL: AtomicBool = AtomicBool::new(false);
 /// boundary and not on the second the bar was dragged to.
 fn bracketing_clips() -> Vec<Seg> {
     vec![
-        Seg { s: 0.0, e: 15.0, cam: 0, ..Default::default() },
-        Seg { s: 25.0, e: 40.0, cam: 0, ..Default::default() },
+        Seg {
+            s: 0.0,
+            e: 15.0,
+            cam: 0,
+            ..Default::default()
+        },
+        Seg {
+            s: 25.0,
+            e: 40.0,
+            cam: 0,
+            ..Default::default()
+        },
     ]
 }
 
@@ -64,10 +76,12 @@ fn state_at(session: f64) -> ui::NarrateState {
 fn narrate_page(app: &adw::Application, state: ui::NarrateState) -> adw::ApplicationWindow {
     release_last_window();
     common::pin_private_cwd(); // the working session sits beside the cwd, which no other test program may share
-    // The seek seams snap against the SESSION's cut (`cut::load`), which is what a preview actually runs, so
-    // the scenario files the cut its clips describe. The fixture stays untouched: this is the working session
-    // beside the cwd, the same folder every flow saves into.
-    let session = naivepost::startup::session_dir(&std::env::current_dir().expect("a cwd to file the cut in"));
+                               // The seek seams snap against the SESSION's cut (`cut::load`), which is what a preview actually runs, so
+                               // the scenario files the cut its clips describe. The fixture stays untouched: this is the working session
+                               // beside the cwd, the same folder every flow saves into.
+    let session = naivepost::startup::session_dir(
+        &std::env::current_dir().expect("a cwd to file the cut in"),
+    );
     std::fs::create_dir_all(&session).expect("the session folder exists");
     let tree = naivepost::layout::Tree::new(&session).expect("a .naivepost folder");
     naivepost::cut::save(
@@ -118,7 +132,11 @@ fn run_buttons(app: &adw::Application) {
     let window = narrate_page(app, state_at(5.0));
     button(&window, "narrate-forward-3s").emit_by_name::<()>("clicked", &[]);
     settle();
-    assert_eq!(ui::read_state().session, 8.0, "a step inside a clip keeps its second");
+    assert_eq!(
+        ui::read_state().session,
+        8.0,
+        "a step inside a clip keeps its second"
+    );
     window.close();
     settle();
 
@@ -189,7 +207,10 @@ fn run_wheel(app: &adw::Application) {
     settle();
     let after = ui::read_state().session;
     assert!(stepped.is_some(), "a notch while paused is ours to answer");
-    assert!(after > before, "the notch walked the playhead a frame forward: {before} -> {after}");
+    assert!(
+        after > before,
+        "the notch walked the playhead a frame forward: {before} -> {after}"
+    );
     RAN_WHEEL.store(true, Ordering::SeqCst);
     window.close();
     settle();

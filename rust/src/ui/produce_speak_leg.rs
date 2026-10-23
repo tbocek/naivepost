@@ -27,7 +27,11 @@ use crate::narration::Entry;
 ///
 /// `voice` is the run's selected voice, `""` meaning the session's own — the same value
 /// `produce_snapshot::render_half` passes to `wav_of`, so both doors key the take identically.
-pub fn speak_one(tree: &Tree, line: &crate::produce_exec::ToSpeak, voice: &str) -> Result<std::path::PathBuf, String> {
+pub fn speak_one(
+    tree: &Tree,
+    line: &crate::produce_exec::ToSpeak,
+    voice: &str,
+) -> Result<std::path::PathBuf, String> {
     let language = project_language(tree);
     crate::ui::narrate_run_speak::dial_line(tree, voice, &language, &spoken_entry(tree, line))
 }

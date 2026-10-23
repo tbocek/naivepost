@@ -127,7 +127,13 @@ fn eat(stream: TcpStream) -> Option<String> {
             break;
         }
         if head.to_ascii_lowercase().starts_with("content-length:") {
-            length = head.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = head
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
         if head.trim().is_empty() {
             break;
@@ -181,12 +187,32 @@ impl Drop for Fixture {
 /// One batch's message and numbers, the same shape the render builds for a two-cue track.
 fn batch() -> (String, Vec<usize>) {
     let track = [
-        subs::Cue { s: 0.0, e: 0.6, pos: String::new(), text: "one".to_string() },
-        subs::Cue { s: 1.0, e: 1.6, pos: String::new(), text: "two".to_string() },
+        subs::Cue {
+            s: 0.0,
+            e: 0.6,
+            pos: String::new(),
+            text: "one".to_string(),
+        },
+        subs::Cue {
+            s: 1.0,
+            e: 1.6,
+            pos: String::new(),
+            text: "two".to_string(),
+        },
     ];
-    let numbered: Vec<(usize, String)> =
-        track.iter().enumerate().map(|(i, _)| (i + 1, format!("line {}", i + 1))).collect();
-    (format!("{}\n{}", subs::message(2, "German"), subs::numbered(&numbered)), vec![1usize, 2])
+    let numbered: Vec<(usize, String)> = track
+        .iter()
+        .enumerate()
+        .map(|(i, _)| (i + 1, format!("line {}", i + 1)))
+        .collect();
+    (
+        format!(
+            "{}\n{}",
+            subs::message(2, "German"),
+            subs::numbered(&numbered)
+        ),
+        vec![1usize, 2],
+    )
 }
 
 /// §3's cancellable wait, on the render's own leg: a ⏹ that has landed ends the ladder instead of the
@@ -228,12 +254,19 @@ fn f6_2_s1_a_translation_that_is_not_stopped_walks_the_ladder() {
     let scene = fixture("live_ladder", &llm.url());
     let (message, numbers) = batch();
     let got = ask_leg::ask(&scene.tree, &never_stopped())(&message, &numbers);
-    assert!(got.is_err(), "a server that dies every time answers nothing");
+    assert!(
+        got.is_err(),
+        "a server that dies every time answers nothing"
+    );
     // The endpoint has answered nothing ever, so §02's "a service that is down gives an error" applies and
     // the ladder is gated on mid-call history (see `llm_retry_leg::has_answered`): the leg asks again once
     // and then reports the server. Either way the point is that the run kept going on its own, so the next
     // test's stop is a stop and not an immediate give-up.
-    assert!(llm.times_asked() >= 1, "the request reached the fake: {}", llm.url());
+    assert!(
+        llm.times_asked() >= 1,
+        "the request reached the fake: {}",
+        llm.url()
+    );
     assert!(llm.saw(1), "the fake saw the first request");
 }
 
@@ -252,7 +285,10 @@ fn f6_2_s1_the_page_leg_hands_the_shell_switch_not_a_dead_false() {
     let stop = Stopped::press();
     // Read FRESH, the way the leg reads it per ask: the closure the page hands over rebuilds the check on
     // every call, which is what lets a stop that lands after the leg was built still reach its wait.
-    assert!(translation_stop_check()(), "⏹ now reaches the leg's own wait");
+    assert!(
+        translation_stop_check()(),
+        "⏹ now reaches the leg's own wait"
+    );
     drop(stop);
     assert!(!shipped(), "and a cleared switch lets the next run dial");
 }

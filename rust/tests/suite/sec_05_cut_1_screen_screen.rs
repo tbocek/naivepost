@@ -13,11 +13,11 @@
 //! in the same binary would read the first one's session (the shape
 //! `tests/suite/sec_05_cut_1_screen_layout.rs` uses).
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, hold_last_window, release_last_window, settle};
 use gtk4 as gtk;
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle};
 
 static RAN_PICTURE: AtomicBool = AtomicBool::new(false);
 static RAN_LANES: AtomicBool = AtomicBool::new(false);
@@ -29,8 +29,6 @@ static RAN_LINE: AtomicBool = AtomicBool::new(false);
 /// fails. Chosen from the numbers: a row is thumbnail + wave strip (~90 px), so a couple of rows'
 /// worth of slack still catches a wall of emptiness.
 const MAX_ROWS_TO_LANES_PX: i32 = 260;
-
-
 
 /// A widget's top and bottom edge relative to ITS OWN WINDOW's top-left — the frame two widgets on
 /// the same page must be compared in (see [`cut_page_with_a_lane`]'s note on stacked windows).
@@ -59,7 +57,9 @@ fn cut_page_with_a_lane(app: &adw::Application) -> adw::ApplicationWindow {
     std::env::set_current_dir(&root).expect("cwd pinned away from rust/");
     let session = naivepost::startup::session_dir(&root);
     let mut seed = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    seed.sources.iter_mut().for_each(|source| source.footage = true);
+    seed.sources
+        .iter_mut()
+        .for_each(|source| source.footage = true);
     std::fs::create_dir_all(&session).expect("session folder");
     naivepost::project::save(&seed, &session).expect("the session is a real project");
 
@@ -79,7 +79,11 @@ fn cut_page_with_a_lane(app: &adw::Application) -> adw::ApplicationWindow {
         end: 120.0,
     }]);
     let seeded = naivepost::cut::Cut {
-        segs: vec![naivepost::cut::Seg { s: 0.0, e: 60.0, ..Default::default() }],
+        segs: vec![naivepost::cut::Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
         lanes: vec![naivepost::cut::Lane {
             name: "mic-lav".into(),
             src: "project:sources/mic-lav.wav".into(),
@@ -150,7 +154,8 @@ fn check_the_preview_holds_a_real_picture(app: &adw::Application) {
     assert!(shown, "the page's own refresh found and showed a frame");
     settle();
 
-    let picture = common::find_named(&window, "preview-picture").expect("badge 1's picture widget is on the page");
+    let picture = common::find_named(&window, "preview-picture")
+        .expect("badge 1's picture widget is on the page");
     let picture = picture
         .downcast::<gtk::Picture>()
         .expect("`preview-picture` is a gtk::Picture");
@@ -158,7 +163,11 @@ fn check_the_preview_holds_a_real_picture(app: &adw::Application) {
         .paintable()
         .expect("the preview panel holds a paintable, not an empty plate");
     let (w, h) = (held.intrinsic_width(), held.intrinsic_height());
-    println!("PICTURE texture {w}x{h}, widget {}x{}", picture.width(), picture.height());
+    println!(
+        "PICTURE texture {w}x{h}, widget {}x{}",
+        picture.width(),
+        picture.height()
+    );
     assert!(w > 0 && h > 0, "the texture carries real pixels: {w}x{h}");
     assert!(picture.is_visible(), "and the panel shows it");
     RAN_PICTURE.store(true, Ordering::SeqCst);
@@ -187,7 +196,10 @@ fn check_the_lanes_sit_under_the_picture_rows(app: &adw::Application) {
         edges_in(&window.clone().upcast::<gtk::Widget>(), widget)
     };
     let scene = naivepost::ui::cut_view::band_scene_for(&window);
-    assert!(!scene.lanes.is_empty(), "the seeded lane reached the band's scene");
+    assert!(
+        !scene.lanes.is_empty(),
+        "the seeded lane reached the band's scene"
+    );
 
     // The live measurement: the band's own surface starts within a row or two of the picture rows.
     //
@@ -199,8 +211,10 @@ fn check_the_lanes_sit_under_the_picture_rows(app: &adw::Application) {
     // `Rows::lane_top` says where lane 0 begins, and every painted pixel has to lie inside the band's
     // allocation — a lane drawn below it would be clipped away, which is what "detached at the bottom
     // of the page" looked like.
-    let layers = common::find_named(&window, "track-layers").expect("the band's layer stack is on the page");
-    let band = common::find_named(&window, "track-band").expect("the band's drawing area is on the page");
+    let layers =
+        common::find_named(&window, "track-layers").expect("the band's layer stack is on the page");
+    let band =
+        common::find_named(&window, "track-band").expect("the band's drawing area is on the page");
     let (band_top, band_bottom) = local(&layers);
     // The size request, not the allocation: `fit_band_height` grows the request and the allocation only
     // catches up on the next layout pass, so reading the allocation here races it — the same lane that
@@ -252,7 +266,11 @@ fn check_the_lanes_sit_under_the_picture_rows(app: &adw::Application) {
     // drawn outside the surface the band allocated.
     let thumb = naivepost::ui::cut_tracks::THUMB_DEFAULT_PX;
     let without = naivepost::cut::Cut {
-        segs: vec![naivepost::cut::Seg { s: 0.0, e: 60.0, ..Default::default() }],
+        segs: vec![naivepost::cut::Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     let with = naivepost::cut::Cut {
@@ -365,8 +383,10 @@ fn check_the_red_line_is_two_pixels_on_its_own_layer(app: &adw::Application) {
     naivepost::ui::set_playhead(&window, 24.0);
     naivepost::ui::cut_view::repaint_page(&window);
     settle();
-    let band = common::find_named(&window, "track-band").expect("the band's drawing area is on the page");
-    let head = common::find_named(&window, "track-playhead").expect("the red line's layer is on the page");
+    let band =
+        common::find_named(&window, "track-band").expect("the band's drawing area is on the page");
+    let head =
+        common::find_named(&window, "track-playhead").expect("the red line's layer is on the page");
     assert_ne!(
         band.widget_name(),
         head.widget_name(),
@@ -415,7 +435,10 @@ fn check_the_red_line_is_two_pixels_on_its_own_layer(app: &adw::Application) {
         !(data[offset + 1] == 255 && data[offset + 2] == 255 && data[offset + 3] == 255)
     };
     assert!(inked(20) && inked(21), "two columns of ink at the line");
-    assert!(!inked(23) && !inked(19), "and no third column: the line is 2 px");
+    assert!(
+        !inked(23) && !inked(19),
+        "and no third column: the line is 2 px"
+    );
     RAN_LINE.store(true, Ordering::SeqCst);
     window.close();
 }
@@ -453,26 +476,39 @@ fn round() {
 fn sec_05_cut_1_screen_s1_the_preview_panel_holds_a_real_picture() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_PICTURE.load(Ordering::SeqCst), "the preview-picture check never ran");
+    assert!(
+        RAN_PICTURE.load(Ordering::SeqCst),
+        "the preview-picture check never ran"
+    );
 }
 
 #[test]
 fn sec_05_cut_1_screen_s2_the_lanes_sit_directly_under_the_picture_rows() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_LANES.load(Ordering::SeqCst), "the lanes-under-the-rows check never ran");
+    assert!(
+        RAN_LANES.load(Ordering::SeqCst),
+        "the lanes-under-the-rows check never ran"
+    );
 }
 
 #[test]
-fn sec_05_cut_1_screen_s3_the_scrollbar_shows_when_the_tape_is_wider_than_the_view_and_hides_when_it_fits() {
+fn sec_05_cut_1_screen_s3_the_scrollbar_shows_when_the_tape_is_wider_than_the_view_and_hides_when_it_fits(
+) {
     common::pin_private_cwd();
     round();
-    assert!(RAN_BAR.load(Ordering::SeqCst), "the scrollbar check never ran");
+    assert!(
+        RAN_BAR.load(Ordering::SeqCst),
+        "the scrollbar check never ran"
+    );
 }
 
 #[test]
 fn sec_05_cut_1_screen_s4_the_red_line_is_two_pixels_on_its_own_layer_across_both_bands() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_LINE.load(Ordering::SeqCst), "the red-line check never ran");
+    assert!(
+        RAN_LINE.load(Ordering::SeqCst),
+        "the red-line check never ran"
+    );
 }

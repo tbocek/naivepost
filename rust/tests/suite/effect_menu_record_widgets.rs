@@ -22,7 +22,10 @@ use naivepost::timeline::Recording;
 use naivepost::ui;
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, tape, cut_button as button};
+use common::{
+    cut_button as button, fixture_dir, hold_last_window, release_last_window, settle, status_text,
+    tape,
+};
 
 static RAN_VOLUME_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_ZOOM_ROW: AtomicBool = AtomicBool::new(false);
@@ -30,13 +33,16 @@ static RAN_UNDO: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
 
-
 /// The dropdown's trigger is a `MenuButton`, not a plain Button, so it needs its own lookup.
 fn menu_button(window: &adw::ApplicationWindow, name: &str) -> gtk::MenuButton {
     let holder = std::cell::RefCell::new(None);
     // Walk the window's own tree for the name and downcast to MenuButton; `line_step_button` only
     // reaches plain Buttons.
-    fn walk(node: &gtk::Widget, name: &str, out: &std::cell::RefCell<Option<gtk::MenuButton>>) -> bool {
+    fn walk(
+        node: &gtk::Widget,
+        name: &str,
+        out: &std::cell::RefCell<Option<gtk::MenuButton>>,
+    ) -> bool {
         if node.widget_name() == name {
             if let Ok(found) = node.clone().downcast::<gtk::MenuButton>() {
                 out.borrow_mut().replace(found);
@@ -55,7 +61,9 @@ fn menu_button(window: &adw::ApplicationWindow, name: &str) -> gtk::MenuButton {
         false
     }
     walk(window.upcast_ref(), name, &holder);
-    holder.into_inner().unwrap_or_else(|| panic!("the Cut page drew no MenuButton named {name}"))
+    holder
+        .into_inner()
+        .unwrap_or_else(|| panic!("the Cut page drew no MenuButton named {name}"))
 }
 
 fn click(window: &adw::ApplicationWindow, name: &str) {
@@ -92,12 +100,25 @@ fn fx_menu_round(app: &adw::Application) {
 
     // The dropdown itself is drawn and labelled (§1 item 17).
     let trigger = menu_button(&window, "effect-button");
-    assert_eq!(trigger.label().map(|l| l.to_string()), Some("\u{271a} Effect".to_string()));
+    assert_eq!(
+        trigger.label().map(|l| l.to_string()),
+        Some("\u{271a} Effect".to_string())
+    );
     // And its contents resolve by name whether the popover popped or fell back to the flat Box: every
     // one of the six rows is reachable by its own name from this window's tree.
-    for row in ["effect-item-zoom", "effect-item-speed", "effect-item-text", "effect-item-svg", "effect-item-volume", "effect-item-label"] {
+    for row in [
+        "effect-item-zoom",
+        "effect-item-speed",
+        "effect-item-text",
+        "effect-item-svg",
+        "effect-item-volume",
+        "effect-item-label",
+    ] {
         assert!(
-            !button(&window, row).label().map(|l| l.is_empty()).unwrap_or(true),
+            !button(&window, row)
+                .label()
+                .map(|l| l.is_empty())
+                .unwrap_or(true),
             "{row} is drawn with a label"
         );
     }
@@ -121,7 +142,11 @@ fn fx_menu_round(app: &adw::Application) {
         "the press adds no record: until the percent is given there is no loudness to place"
     );
     let opened = ui::volume_form_open().expect("the volume row opened the form");
-    assert_eq!(opened.dur, vol::LINE_SECONDS, "it starts two seconds wide, off the line");
+    assert_eq!(
+        opened.dur,
+        vol::LINE_SECONDS,
+        "it starts two seconds wide, off the line"
+    );
     assert_eq!(
         opened.percent,
         vol::DEFAULT_GAIN * 100.0,
@@ -152,7 +177,10 @@ fn fx_menu_round(app: &adw::Application) {
         "arming added no record -- the zoom's box has not been drawn yet, and §F3.6 moved the volume to \
          Apply as well, so nothing is on the cut here"
     );
-    assert!(ui::zoom_armed(), "the zoom entry left the page waiting for a box");
+    assert!(
+        ui::zoom_armed(),
+        "the zoom entry left the page waiting for a box"
+    );
     let said = status_text(&window);
     assert!(
         said.starts_with(zoom::ARM_WORDS),
@@ -163,7 +191,10 @@ fn fx_menu_round(app: &adw::Application) {
         "and its tail names where the zoom will go and for how long, got {said}"
     );
     // Camera layer goes down while armed: whole source visible (§F3.1 S1).
-    assert!(zoom::whole_source_shown(true), "while armed the framing is out of the way");
+    assert!(
+        zoom::whole_source_shown(true),
+        "while armed the framing is out of the way"
+    );
     RAN_ZOOM_ROW.store(true, Ordering::SeqCst);
 
     // --- S3: the hand-added record came in as an edit, so ↶ takes it back ----------------------
@@ -208,7 +239,16 @@ fn sec_06_effects_1_record_wire_a_real_click_on_an_effect_row_records_it() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_VOLUME_ROW.load(Ordering::SeqCst), "the volume-row check never ran");
-    assert!(RAN_ZOOM_ROW.load(Ordering::SeqCst), "the zoom-row check never ran");
-    assert!(RAN_UNDO.load(Ordering::SeqCst), "the undo-after-recording check never ran");
+    assert!(
+        RAN_VOLUME_ROW.load(Ordering::SeqCst),
+        "the volume-row check never ran"
+    );
+    assert!(
+        RAN_ZOOM_ROW.load(Ordering::SeqCst),
+        "the zoom-row check never ran"
+    );
+    assert!(
+        RAN_UNDO.load(Ordering::SeqCst),
+        "the undo-after-recording check never ran"
+    );
 }

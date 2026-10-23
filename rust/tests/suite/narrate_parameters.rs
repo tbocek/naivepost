@@ -6,6 +6,8 @@
 // — or is absent because no rule in this tree reads it yet, which is asserted too, so a number arriving with
 // nothing behind it is caught here rather than shipping. Same shape as §06-effects#6's tests.
 
+use crate::common;
+use common::seg;
 use naivepost::narrate_data::{self, Take};
 use naivepost::narrate_pass as pass;
 use naivepost::narrate_preview as preview;
@@ -16,8 +18,6 @@ use naivepost::params;
 use naivepost::shell;
 use naivepost::textfmt::SessionLine;
 use naivepost::voice_ref;
-use crate::common;
-use common::seg;
 
 fn narrate_rows() -> Vec<params::Param> {
     params::narrate()
@@ -48,9 +48,11 @@ fn row(id: &str) -> params::Param {
 /// A number §4 writes with a decimal point compared as a number: `params::num` trims the trailing zero, so
 /// comparing strings would pin a spelling neither side chose.
 fn number(id: &str) -> f64 {
-    row(id).spelled.parse().unwrap_or_else(|_| panic!("{id} spells a number"))
+    row(id)
+        .spelled
+        .parse()
+        .unwrap_or_else(|_| panic!("{id} spells a number"))
 }
-
 
 fn line(at: f64, text: &str) -> Entry {
     Entry {
@@ -80,7 +82,11 @@ fn row_at(start: f64, end: f64, text: &str) -> SessionLine {
 fn sec_07_narrate_4_parameters_used_s1_the_word_budget_the_narration_call_prints() {
     // P.policy.narrationMinWords — the floor, so a two-second clip is still offered a sentence.
     assert_eq!(pass::word_ceiling(2.0), 8);
-    assert_eq!(pass::word_ceiling(0.0), 8, "a clip with no seconds still gets the floor");
+    assert_eq!(
+        pass::word_ceiling(0.0),
+        8,
+        "a clip with no seconds still gets the floor"
+    );
 
     // P.policy.narrationWordsPerSecond — between the ends it is 0.75 words per on-screen second, and the product
     // is truncated rather than rounded: 13.3 s affords 9.99 words, which is nine words and not ten.
@@ -90,7 +96,11 @@ fn sec_07_narrate_4_parameters_used_s1_the_word_budget_the_narration_call_prints
 
     // P.policy.narrationMaxWords — the ceiling, so a ten-minute clip is not offered an essay.
     assert_eq!(pass::word_ceiling(100.0), 30);
-    assert_eq!(pass::word_ceiling(10_000.0), 30, "the ceiling holds however long the clip is");
+    assert_eq!(
+        pass::word_ceiling(10_000.0),
+        30,
+        "the ceiling holds however long the clip is"
+    );
 
     // Catalogued from the constants the arithmetic reads, so a row and a rule cannot drift.
     assert_eq!(row("P.policy.narrationMinWords").spelled, "8");
@@ -99,7 +109,10 @@ fn sec_07_narrate_4_parameters_used_s1_the_word_budget_the_narration_call_prints
         "narrate_pass::MIN_WORDS"
     );
     assert_eq!(row("P.policy.narrationMaxWords").spelled, "30");
-    assert_eq!(row("P.policy.narrationMaxWords").from, "narrate_pass::MAX_WORDS");
+    assert_eq!(
+        row("P.policy.narrationMaxWords").from,
+        "narrate_pass::MAX_WORDS"
+    );
     assert_eq!(number("P.policy.narrationWordsPerSecond"), 0.75);
     assert_eq!(
         row("P.policy.narrationWordsPerSecond").from,
@@ -159,7 +172,11 @@ fn sec_07_narrate_4_parameters_used_s2_how_far_the_call_looks_and_what_language_
     // the prototype's hard-coded "en" for a project that names none.
     assert_eq!(tts::language(""), tts::LANGUAGE_FALLBACK);
     assert_eq!(tts::LANGUAGE_FALLBACK, "en");
-    assert_eq!(tts::language("  pl  "), "pl", "a real language is never overridden");
+    assert_eq!(
+        tts::language("  pl  "),
+        "pl",
+        "a real language is never overridden"
+    );
     assert_eq!(row("P.policy.ttsLanguage").spelled, "project language");
     assert_eq!(row("P.policy.ttsLanguage").from, tts::LANGUAGE_SOURCE);
 }
@@ -199,7 +216,11 @@ fn sec_07_narrate_4_parameters_used_s3_the_seconds_the_page_and_preview_wait_wit
     let entries = [line(10.0, "a line ten seconds into its clip")];
     assert_eq!(preview::lead_in(0, &entries), 17.0);
     let early = [line(1.0, "a line at the clip's head")];
-    assert_eq!(preview::lead_in(0, &early), 10.0, "the clip's start rather than a second before it");
+    assert_eq!(
+        preview::lead_in(0, &early),
+        10.0,
+        "the clip's start rather than a second before it"
+    );
 
     // The estimate is 15 characters a second plus its tail because no take exists to measure yet — 30 chars
     // over 15 is 2 s of speech, and the tail counts since "speaking until mm:ss" names the line's end. So ＋
@@ -214,7 +235,11 @@ fn sec_07_narrate_4_parameters_used_s3_the_seconds_the_page_and_preview_wait_wit
         "＋ 1.5 s into a 2.2 s line has to be refused: {refused:?}"
     );
     let accepted = screen::add_at_playhead(12.5, &clips, &spoken);
-    assert_eq!(accepted, Ok(12.5), "past the estimate the clip is free again, at the pressed second");
+    assert_eq!(
+        accepted,
+        Ok(12.5),
+        "past the estimate the clip is free again, at the pressed second"
+    );
 }
 
 // --- P.eng.refPadSeconds: the row, and the rule that reads it ------------------------------------------
@@ -222,8 +247,7 @@ fn sec_07_narrate_4_parameters_used_s3_the_seconds_the_page_and_preview_wait_wit
 /// §07-narrate#4-parameters-used — the pad has a row built from the constant `plan_reference` guards its solo
 /// windows with, so the catalogue cannot drift from the clearance another speaker has to stay outside.
 #[test]
-fn sec_07_narrate_4_parameters_used_ref_pad_seconds_is_a_row_and_is_read()
-{
+fn sec_07_narrate_4_parameters_used_ref_pad_seconds_is_a_row_and_is_read() {
     assert_eq!(number("P.eng.refPadSeconds"), 2.0);
     assert_eq!(
         row("P.eng.refPadSeconds").from,
@@ -245,10 +269,19 @@ fn sec_07_narrate_4_parameters_used_ref_pad_seconds_is_a_row_and_is_read()
         matches!(crowded, voice_ref::ReferencePlan::Unavailable(_)),
         "1.9 s of clearance is inside P.eng.refPadSeconds: {crowded:?}"
     );
-    let clear = voice_ref::plan_reference(&[], &[(0.0, 6.0, 1u32), (8.0, 9.0, 2)], &|_, _| 30, &words, 1);
+    let clear = voice_ref::plan_reference(
+        &[],
+        &[(0.0, 6.0, 1u32), (8.0, 9.0, 2)],
+        &|_, _| 30,
+        &words,
+        1,
+    );
     assert_eq!(
         clear,
-        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece { start: 0.0, end: 6.0 }]),
+        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece {
+            start: 0.0,
+            end: 6.0
+        }]),
         "at the pad's own value the neighbour is outside the guard"
     );
 }
@@ -263,7 +296,10 @@ fn sec_07_narrate_4_parameters_used_s3_speech_rate_band_clamps_a_measurement() {
     // A take that ran exactly at the default: 60 characters in 4 s.
     assert_eq!(screen::measured_char_rate(60, 4.0), Some(15.0));
     // Too fast to believe: 200 characters in 2 s would be 100 chars/s, so it comes back at the ceiling.
-    assert_eq!(screen::measured_char_rate(200, 2.0), Some(screen::CHAR_RATE_MAX));
+    assert_eq!(
+        screen::measured_char_rate(200, 2.0),
+        Some(screen::CHAR_RATE_MAX)
+    );
     assert_eq!(screen::measured_char_rate(200, 2.0), Some(28.0));
     // Too slow likewise: 10 characters in 4 s is 2.5 chars/s, floored at 8.
     assert_eq!(screen::measured_char_rate(10, 4.0), Some(8.0));
@@ -274,8 +310,16 @@ fn sec_07_narrate_4_parameters_used_s3_speech_rate_band_clamps_a_measurement() {
     assert_eq!(screen::measured_char_rate(60, -1.0), None);
 
     // The clamp bites through the estimate too, so no caller can smuggle a wild rate past it.
-    assert_eq!(screen::page_speech_seconds(280, 100.0), 10.0, "280 chars at the 28 chars/s ceiling");
-    assert_eq!(screen::page_speech_seconds(80, 0.5), 10.0, "80 chars at the 8 chars/s floor");
+    assert_eq!(
+        screen::page_speech_seconds(280, 100.0),
+        10.0,
+        "280 chars at the 28 chars/s ceiling"
+    );
+    assert_eq!(
+        screen::page_speech_seconds(80, 0.5),
+        10.0,
+        "80 chars at the 8 chars/s floor"
+    );
 
     // And the row spells all three, from the constants the rules read.
     assert_eq!(row("narrate.speechCharsPerSecond").spelled, "15 (8..28)");
@@ -290,14 +334,24 @@ fn sec_07_narrate_4_parameters_used_s4_the_take_floor_and_the_alpha_that_rides_w
     assert!(screen::can_make_take((0.0, 0.4)));
     assert!(!screen::can_make_take((0.0, 0.39)));
     let kept = narrate_data::clean_takes(&[Take { s: 0.0, e: 5.0 }, Take { s: 8.0, e: 8.3 }]);
-    assert_eq!(kept, vec![Take { s: 0.0, e: 5.0 }], "the short one never reaches disk");
+    assert_eq!(
+        kept,
+        vec![Take { s: 0.0, e: 5.0 }],
+        "the short one never reaches disk"
+    );
     assert_eq!(number("P.eng.takeMinSeconds"), 0.4);
-    assert_eq!(row("P.eng.takeMinSeconds").from, "narrate_screen::TAKE_MIN_SECONDS");
+    assert_eq!(
+        row("P.eng.takeMinSeconds").from,
+        "narrate_screen::TAKE_MIN_SECONDS"
+    );
 
     // P.eng.emotionAlpha — the alpha rides with a take whose emotion is a name the engine has to interpret; an
     // exact vector is not diluted, so that path sends 1.
     assert_eq!(tts::options("", 9)["emotion_alpha"], "0.85");
-    assert_eq!(tts::options("wonderful", 9)["emotion_alpha"], tts::EMOTION_ALPHA);
+    assert_eq!(
+        tts::options("wonderful", 9)["emotion_alpha"],
+        tts::EMOTION_ALPHA
+    );
     assert_eq!(
         tts::options("angry=1", 9)["emotion_alpha"],
         tts::VECTOR_ALPHA,
@@ -313,7 +367,8 @@ fn sec_07_narrate_4_parameters_used_s4_the_take_floor_and_the_alpha_that_rides_w
 /// format (frozen)". The first three and the geometry have no `P.` row to inherit and say so by their prefix; the
 /// key format is a format rather than a number, so it is pinned as one.
 #[test]
-fn sec_07_narrate_4_parameters_used_s5_the_engineering_sentence_tick_debounce_autosave_and_geometry() {
+fn sec_07_narrate_4_parameters_used_s5_the_engineering_sentence_tick_debounce_autosave_and_geometry(
+) {
     // narrate.tickMs / narrate.seekDebounceMs / narrate.autosaveMs — §10:133's prose line and §07's own.
     assert_eq!(row("narrate.tickMs").spelled, "100");
     assert_eq!(row("narrate.tickMs").from, "narrate_screen::TICK_MS");
@@ -332,7 +387,11 @@ fn sec_07_narrate_4_parameters_used_s5_the_engineering_sentence_tick_debounce_au
         ("narrate.bandLanePx", "56", "narrate_screen::BAND_LANE_PX"),
         ("narrate.bandMaxPps", "200", "narrate_screen::BAND_MAX_PPS"),
         ("narrate.clickSlopPx", "3", "narrate_screen::CLICK_SLOP_PX"),
-        ("narrate.takeLabelPx", "34", "narrate_screen::TAKE_LABEL_MIN_PX"),
+        (
+            "narrate.takeLabelPx",
+            "34",
+            "narrate_screen::TAKE_LABEL_MIN_PX",
+        ),
     ] {
         assert_eq!(row(id).spelled, spelled, "{id}");
         assert_eq!(row(id).from, from, "{id}");
@@ -355,17 +414,11 @@ fn sec_07_narrate_4_parameters_used_s5_the_engineering_sentence_tick_debounce_au
     let file = narration::tts_file(&key);
     assert_eq!(file.len(), 16, "{file}");
     assert!(
-        file.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+        file.chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
         "{file} is not lowercase hex"
     );
-    let rolled = narration::tts_key(
-        &Entry {
-            roll: 2,
-            ..entry
-        },
-        None,
-        None,
-    );
+    let rolled = narration::tts_key(&Entry { roll: 2, ..entry }, None, None);
     // §01 §4's key: `[<roll>#]` sits in front of everything but the prefix.
     assert_eq!(rolled, "25e0.85|2#We start with …|calm");
     assert_ne!(narration::tts_file(&key), narration::tts_file(&rolled));
@@ -378,7 +431,11 @@ fn sec_07_narrate_4_parameters_used_s5_the_engineering_sentence_tick_debounce_au
 /// the narration preview's loop ask `glib` for the same interval, so the row cannot drift from either.
 #[test]
 fn sec_07_narrate_4_parameters_used_s5_one_tick_rate_for_both_pages() {
-    assert_eq!(screen::TICK_MS, naivepost::preview::TICK_MS, "one rate, two names");
+    assert_eq!(
+        screen::TICK_MS,
+        naivepost::preview::TICK_MS,
+        "one rate, two names"
+    );
     assert_eq!(naivepost::preview::TICK_MS, 100);
     assert_eq!(row("narrate.tickMs").spelled, "100");
     assert_eq!(row("narrate.tickMs").from, "narrate_screen::TICK_MS");
@@ -428,8 +485,18 @@ fn sec_07_narrate_4_parameters_used_s6_every_id_has_exactly_one_row() {
 
     // §10:194 spells speechCharsPerSecond as "15 (8..28)": one row carrying the default AND its band, so no
     // separate floor/ceiling id may appear beside it.
-    assert_eq!(listed.iter().filter(|id| *id == "narrate.speechCharsPerSecond").count(), 1);
-    for bound in ["speechRateFloor", "speechRateCeiling", "speechCharsPerSecondFloor"] {
+    assert_eq!(
+        listed
+            .iter()
+            .filter(|id| *id == "narrate.speechCharsPerSecond")
+            .count(),
+        1
+    );
+    for bound in [
+        "speechRateFloor",
+        "speechRateCeiling",
+        "speechCharsPerSecondFloor",
+    ] {
         assert!(
             !listed.iter().any(|id| id.contains(bound)),
             "{bound} would be a second row for a bound §10 spells inside the one row"
@@ -447,7 +514,10 @@ fn sec_07_narrate_4_parameters_used_s6_every_id_has_exactly_one_row() {
         "P.eng.emotionAlpha",
     ] {
         let homes = listed.iter().filter(|seen| *seen == id).count();
-        assert_eq!(homes, 1, "{id} would have {homes} homes; one bound lives in one row");
+        assert_eq!(
+            homes, 1,
+            "{id} would have {homes} homes; one bound lives in one row"
+        );
     }
 }
 

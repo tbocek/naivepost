@@ -20,9 +20,9 @@
 //! Every network leg is a caller-supplied closure, so no test dials a socket — the shape
 //! `fix_call` and `narrate_tts::speak_line` already use.
 
+use crate::cut_effect_decisions::Candidate;
 use crate::cut_suggest;
 use crate::cut_suggest_words_run;
-use crate::cut_effect_decisions::Candidate;
 use crate::exchanges::{Message, Part, ToolCall};
 use crate::layout::Tree;
 use crate::llm_request;
@@ -407,7 +407,12 @@ pub fn past_end_claim(problems: &[String], footage_end: f64) -> Option<u32> {
 /// caption batches: a retry must never be served the reply it was just refused for, so the cache is
 /// kept out of this call entirely (`llm_cache::uses_cache(Job::ModelCut)` answers false). Spelled
 /// separately so a test pins what the model is told, in order, with no socket in the way.
-pub fn opening(system: &str, user: &str, complaint: Option<&str>, note: Option<&str>) -> Vec<Message> {
+pub fn opening(
+    system: &str,
+    user: &str,
+    complaint: Option<&str>,
+    note: Option<&str>,
+) -> Vec<Message> {
     let mut messages = vec![
         Message {
             role: "system".to_string(),
@@ -448,7 +453,16 @@ pub fn attempt_with<F>(
 where
     F: FnMut(&[Message], &[Tool]) -> Result<tool_loop::Turn, String>,
 {
-    attempt_with_tools(system, user, complaint, note, plan, target, &tools::offered(Job::ModelCut), ask)
+    attempt_with_tools(
+        system,
+        user,
+        complaint,
+        note,
+        plan,
+        target,
+        &tools::offered(Job::ModelCut),
+        ask,
+    )
 }
 
 /// The same attempt with the tool list handed in. §8's web-tool rule decides per attempt which tools go out,
@@ -604,8 +618,16 @@ where
         // §12: and the model is TOLD which of the two changed, beside the complaint about its last answer.
         // Read AFTER `offer`, which owns the withdrawal and marks the sentence as owed.
         let note = call.note_to_model();
-        let (_finished, ok, round_logs) =
-            attempt_with_tools(&system, &user, complaint, note.as_deref(), &mut plan, target, &offered, &mut watch);
+        let (_finished, ok, round_logs) = attempt_with_tools(
+            &system,
+            &user,
+            complaint,
+            note.as_deref(),
+            &mut plan,
+            target,
+            &offered,
+            &mut watch,
+        );
         // The progress this attempt's replies earned, reported now that the loop owns `call` again.
         // `Call::report` answers the bar's sentence, its fraction and whether it still pulses; `watch` is the
         // page's door, and no door means no page to tell (a logic test), which is the same answer.
@@ -761,7 +783,8 @@ pub fn live_ask<'a>(
             &|body| dial(tree, &model, &endpoint, body),
             &crate::ui::window::log_line,
         )?;
-        let parsed = llm_request::reply_from(&content_type, &reply).map_err(|why| unreadable(&why))?;
+        let parsed =
+            llm_request::reply_from(&content_type, &reply).map_err(|why| unreadable(&why))?;
         let finishing = parsed
             .tool_calls
             .iter()
@@ -799,19 +822,22 @@ fn press_parts(window: &adw::ApplicationWindow) -> Result<(Tree, Press), Blocked
     if let Some(Err(reason)) = paths.as_ref().map(settings::read) {
         return Err(Blocked::Settings(reason));
     }
-    Ok((tree, Press {
-        paths,
-        project: crate::ui::window::session_handle(window).borrow().clone(),
-        cut: crate::ui::window::newest_review_cut(),
-    }))
+    Ok((
+        tree,
+        Press {
+            paths,
+            project: crate::ui::window::session_handle(window).borrow().clone(),
+            cut: crate::ui::window::newest_review_cut(),
+        },
+    ))
 }
 
 fn blocked(why: Blocked) -> Landed {
     match why {
         Blocked::NoSession => Landed::refused(suggest::NO_TIMELINE),
-        Blocked::Settings(reason) => {
-            Landed::refused(&unreadable(&format!("settings could not be read: {reason}")))
-        }
+        Blocked::Settings(reason) => Landed::refused(&unreadable(&format!(
+            "settings could not be read: {reason}"
+        ))),
     }
 }
 

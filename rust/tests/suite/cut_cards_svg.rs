@@ -95,7 +95,10 @@ fn sec_06_effects_5_cards_svg_inserts_s3_holes_are_filled_or_left_outside_commen
     let scope = [("title".to_string(), "Dust II".to_string())];
     let filled = cards::fill(doc, &scope);
     assert!(filled.contains(">Dust II<"), "{filled}");
-    assert!(filled.contains(">Anonymous<"), "the fallback speaks when the scope is silent");
+    assert!(
+        filled.contains(">Anonymous<"),
+        "the fallback speaks when the scope is silent"
+    );
     // The comment survives byte for byte, hole and all.
     assert!(filled.contains("<!-- {{hidden}} -->"), "{filled}");
 
@@ -142,10 +145,19 @@ fn sec_06_effects_5_cards_svg_inserts_s4_the_two_shipped_cards_have_their_shape(
     assert_eq!(mistyped[0].label, "C");
     assert_eq!(mistyped[0].delay, None);
 
-    for doc in [cards::badge_svg("S", "top"), cards::tier_svg(&items, &arrivals)] {
-        assert!(doc.contains("width=\"1920\"") && doc.contains("height=\"1080\""), "{doc}");
+    for doc in [
+        cards::badge_svg("S", "top"),
+        cards::tier_svg(&items, &arrivals),
+    ] {
+        assert!(
+            doc.contains("width=\"1920\"") && doc.contains("height=\"1080\""),
+            "{doc}"
+        );
         assert!(doc.contains(cards::BACKGROUND), "a dark background: {doc}");
-        assert!(!doc.contains("{{"), "a shipped card asks for nothing: {doc}");
+        assert!(
+            !doc.contains("{{"),
+            "a shipped card asks for nothing: {doc}"
+        );
     }
     // And each names itself, which is how an insert knows it was drawn by a card.
     assert!(cards::badge_svg("S", "t").contains(&format!("data-naivepost=\"{}\"", cards::BADGE)));
@@ -187,11 +199,18 @@ fn sec_06_effects_5_cards_svg_inserts_s5_the_seeds_are_badges_then_the_board_the
     std::fs::write(dir.join("s.svg"), theirs).expect("a file to keep");
 
     let first = cut_insert::seed_cards(&dir, &seeds);
-    assert_eq!(first.len(), seeds.len() - 1, "the badge already there is not written: {first:?}");
+    assert_eq!(
+        first.len(),
+        seeds.len() - 1,
+        "the badge already there is not written: {first:?}"
+    );
     assert!(!first.contains(&"s.svg".to_string()));
 
     let second = cut_insert::seed_cards(&dir, &seeds);
-    assert!(second.is_empty(), "a second open writes nothing: {second:?}");
+    assert!(
+        second.is_empty(),
+        "a second open writes nothing: {second:?}"
+    );
     assert_eq!(
         std::fs::read_to_string(dir.join("s.svg")).expect("read it back"),
         theirs,
@@ -238,7 +257,10 @@ fn sec_06_effects_5_cards_svg_inserts_s6_the_static_file_is_the_finished_card() 
             let list = &rest[at + "keyTimes=\"".len()..];
             let list = &list[..list.find('"').expect("a closing quote")];
             let times: Vec<f64> = list.split(';').filter_map(|v| v.parse().ok()).collect();
-            assert!(cards::starts_at_zero_and_waits(&times), "{list} in a shipped card");
+            assert!(
+                cards::starts_at_zero_and_waits(&times),
+                "{list} in a shipped card"
+            );
             found += 1;
             rest = &list[list.len()..];
         }
@@ -278,7 +300,10 @@ fn sec_06_effects_5_cards_svg_inserts_s7_the_bake_reads_smil_and_css() {
     )
     .expect("an animate tag");
     let wrapped = cards::value_at(&twice, 2.5).expect("the second run");
-    assert!((wrapped.parse::<f64>().unwrap() - 2.5).abs() < 1e-6, "{wrapped}");
+    assert!(
+        (wrapped.parse::<f64>().unwrap() - 2.5).abs() < 1e-6,
+        "{wrapped}"
+    );
     // Two runs and then it is over.
     assert_eq!(cards::value_at(&twice, 4.5), None);
 
@@ -347,8 +372,14 @@ fn sec_06_effects_5_cards_svg_inserts_s7_the_bake_reads_smil_and_css() {
 
     for name in ["linear", "ease", "ease-in", "ease-out", "ease-in-out"] {
         let (x1, y1, x2, y2) = cards::easing(name).expect("a standard easing");
-        assert!((0.0..=1.0).contains(&x1) && (0.0..=1.0).contains(&x2), "{name}");
-        assert!((0.0..=1.0).contains(&y1) && (0.0..=1.0).contains(&y2), "{name}");
+        assert!(
+            (0.0..=1.0).contains(&x1) && (0.0..=1.0).contains(&x2),
+            "{name}"
+        );
+        assert!(
+            (0.0..=1.0).contains(&y1) && (0.0..=1.0).contains(&y2),
+            "{name}"
+        );
     }
     // A stepped timing is not a standard easing and the bake has no curve to draw it with.
     assert_eq!(cards::easing("steps(4)"), None);
@@ -360,7 +391,7 @@ fn sec_06_effects_5_cards_svg_inserts_s7_the_bake_reads_smil_and_css() {
 #[test]
 fn sec_06_effects_5_cards_svg_inserts_s8_the_card_is_as_long_as_it_moves() {
     assert_eq!(cards::BAKE_FPS, 25.0); // card.bakeFps
-    // The bake reuses the tree's one definition of "frames at an fps" rather than writing its own division.
+                                       // The bake reuses the tree's one definition of "frames at an fps" rather than writing its own division.
     assert_eq!(
         cards::bake_times(2.0),
         cut_insert::frame_times(2.0, 25.0),
@@ -381,7 +412,10 @@ fn sec_06_effects_5_cards_svg_inserts_s8_the_card_is_as_long_as_it_moves() {
     };
 
     // The LAST moving moment, not the sum: two animations that overlap end once, and the later one decides.
-    assert_eq!(cards::card_length(&[anim(0.0, 2.0, 1.0), anim(1.0, 4.0, 1.0)]), Some(5.0));
+    assert_eq!(
+        cards::card_length(&[anim(0.0, 2.0, 1.0), anim(1.0, 4.0, 1.0)]),
+        Some(5.0)
+    );
     // A repeat runs the clock out: begin + dur × repeat.
     assert_eq!(cards::card_length(&[anim(0.5, 2.0, 2.0)]), Some(4.5));
 

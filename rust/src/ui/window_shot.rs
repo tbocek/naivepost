@@ -83,7 +83,9 @@ pub fn band_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
 /// Returns the band it asked for, or `None` when this window has no shell band (a dialog shot).
 pub fn opened_px(divider: &gtk::Paned) -> Option<i32> {
     let bottom = divider.end_child()?;
-    let log = find_in_bottom(&bottom, "log-expander")?.downcast::<gtk::Expander>().ok()?;
+    let log = find_in_bottom(&bottom, "log-expander")?
+        .downcast::<gtk::Expander>()
+        .ok()?;
     // THE COLLAPSED CASE IS THE RESTING CASE — leave it to `rest_split`, which is what the shell already
     // asked and what §1's collapsed sentence counts. Asking here would move a shot that never opened its log.
     if !log.is_expanded() {
@@ -130,8 +132,15 @@ fn find_in_bottom(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     if node.widget_name() == name {
         return Some(node.clone());
     }
-    for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
-        if let Some(widget) = child.downcast_ref::<gtk::Widget>().and_then(|w| find_in_bottom(w, name)) {
+    for child in node
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+    {
+        if let Some(widget) = child
+            .downcast_ref::<gtk::Widget>()
+            .and_then(|w| find_in_bottom(w, name))
+        {
             return Some(widget);
         }
     }
@@ -167,7 +176,11 @@ fn find_scroller(node: &gtk::Widget) -> Option<gtk::ScrolledWindow> {
     if let Some(scroller) = node.downcast_ref::<gtk::ScrolledWindow>() {
         return Some(scroller.clone());
     }
-    for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
+    for child in node
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+    {
         if let Some(found) = child.downcast_ref::<gtk::Widget>().and_then(find_scroller) {
             return Some(found);
         }
@@ -192,17 +205,27 @@ pub fn rest_position(total: i32, band: i32) -> i32 {
 /// `_for_test` because asking it needs a laid-out window, and the app itself never does: no handler, flow or
 /// `main` path reads where its own controls landed. The question belongs to §1's "at the minimum size every
 /// control a page names is on screen at once", which only a test over a realized window can answer.
-pub fn bounds_in_window_for_test(window: &gtk::Widget, named: &str) -> Option<(f64, f64, f64, f64)> {
+pub fn bounds_in_window_for_test(
+    window: &gtk::Widget,
+    named: &str,
+) -> Option<(f64, f64, f64, f64)> {
     let widget = find_named(window, named)?;
     let rect = widget.compute_bounds(window)?;
-    Some((rect.x() as f64, rect.y() as f64, rect.width() as f64, rect.height() as f64))
+    Some((
+        rect.x() as f64,
+        rect.y() as f64,
+        rect.width() as f64,
+        rect.height() as f64,
+    ))
 }
 
 /// Is `named` drawn at all — non-empty box, top-left inside the window? This is what "on screen at once"
 /// means for a control: not that it exists in the tree, but that it got pixels. Test-read for the same
 /// reason as [`bounds_in_window_for_test`]: a running app has no use for the answer.
 pub fn is_on_screen_for_test(window: &gtk::Widget, named: &str) -> bool {
-    let Some((x, y, w, h)) = bounds_in_window_for_test(window, named) else { return false };
+    let Some((x, y, w, h)) = bounds_in_window_for_test(window, named) else {
+        return false;
+    };
     let (win_w, win_h) = (window.width() as f64, window.height() as f64);
     w > 0.0 && h > 0.0 && x >= -0.5 && y >= -0.5 && x < win_w && y < win_h
 }
@@ -213,8 +236,15 @@ fn find_named(window: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     if window.widget_name() == name {
         return Some(window.clone());
     }
-    for child in window.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
-        if let Some(found) = child.downcast_ref::<gtk::Widget>().and_then(|w| find_named(w, name)) {
+    for child in window
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+    {
+        if let Some(found) = child
+            .downcast_ref::<gtk::Widget>()
+            .and_then(|w| find_named(w, name))
+        {
             return Some(found);
         }
     }

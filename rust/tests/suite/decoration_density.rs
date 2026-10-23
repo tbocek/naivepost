@@ -30,8 +30,16 @@ fn p_policy_decorationdensity_three_or_four_per_five_minutes() {
     // §10 spells the default "three or four per five minutes"; that is what the constants hold.
     assert_eq!(fx::DENSITY_PER_FIVE_MINUTES, (3, 4));
     assert_eq!(fx::FIVE_MINUTES_SECONDS, 300.0);
-    assert!(fx::DENSITY_GUIDE.contains("three or four"), "{}", fx::DENSITY_GUIDE);
-    assert!(fx::DENSITY_GUIDE.contains("five minutes"), "{}", fx::DENSITY_GUIDE);
+    assert!(
+        fx::DENSITY_GUIDE.contains("three or four"),
+        "{}",
+        fx::DENSITY_GUIDE
+    );
+    assert!(
+        fx::DENSITY_GUIDE.contains("five minutes"),
+        "{}",
+        fx::DENSITY_GUIDE
+    );
 }
 
 // --- S2: the constant cannot drift from the shipped prompt -------------------------------------
@@ -59,7 +67,11 @@ fn p_policy_decorationdensity_the_band_scales_with_the_edit() {
     assert_eq!(fx::expected_decorations(600.0), (6, 8));
     // A short edit still gets one: the prompt's own sentence ends "Not one on every clip, and not none".
     assert_eq!(fx::expected_decorations(60.0), (1, 1));
-    assert_eq!(fx::expected_decorations(1.0).0, 1, "never zero while there is a picture");
+    assert_eq!(
+        fx::expected_decorations(1.0).0,
+        1,
+        "never zero while there is a picture"
+    );
     // Nothing rendered asks for nothing.
     assert_eq!(fx::expected_decorations(0.0), (0, 0));
     assert_eq!(fx::expected_decorations(-5.0), (0, 0));
@@ -91,12 +103,21 @@ fn p_policy_decorationdensity_the_cap_not_the_guide_bounds_a_reply() {
 #[test]
 fn p_policy_decorationdensity_the_context_outranks_the_default() {
     let shipped = shipped_effects();
-    assert!(shipped.contains("the USER CONTEXT outranks it"), "prompt changed shape");
-    assert!(shipped.contains("Asked for more, write more"), "prompt changed shape");
+    assert!(
+        shipped.contains("the USER CONTEXT outranks it"),
+        "prompt changed shape"
+    );
+    assert!(
+        shipped.contains("Asked for more, write more"),
+        "prompt changed shape"
+    );
     // So the value is a guide rather than a limit: fifty decorations is far over the band for a
     // five-minute edit, yet nothing refuses them — the cap is nowhere near.
     assert!(fx::above_density_guide(50, 300.0));
-    assert!(fx::effect_cap_allows(50), "the density must not act as a cap");
+    assert!(
+        fx::effect_cap_allows(50),
+        "the density must not act as a cap"
+    );
 }
 
 // --- S6: where the id lives -------------------------------------------------------------------
@@ -116,10 +137,22 @@ fn p_policy_decorationdensity_row_points_at_the_prompt_clause() {
         .chain(params::produce())
         .filter(|row| row.id == "P.policy.decorationDensity")
         .collect::<Vec<_>>();
-    assert_eq!(rows.len(), 1, "§10's decorationDensity row must be catalogued once");
+    assert_eq!(
+        rows.len(),
+        1,
+        "§10's decorationDensity row must be catalogued once"
+    );
     assert_eq!(rows[0].from, "cut_effects_pass::DENSITY_GUIDE");
-    assert!(rows[0].spelled.contains("three or four"), "{}", rows[0].spelled);
-    assert!(rows[0].spelled.contains("five minutes"), "{}", rows[0].spelled);
+    assert!(
+        rows[0].spelled.contains("three or four"),
+        "{}",
+        rows[0].spelled
+    );
+    assert!(
+        rows[0].spelled.contains("five minutes"),
+        "{}",
+        rows[0].spelled
+    );
     // And the constants the row names agree with each other and with the shipped prompt wording.
     assert_eq!(fx::DENSITY_PER_FIVE_MINUTES, (3, 4));
     assert!(fx::DENSITY_GUIDE.contains("three or four"));

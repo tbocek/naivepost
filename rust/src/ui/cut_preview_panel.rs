@@ -3,8 +3,8 @@
 //! every alpha, row, plate sentence and rectangle comes from [`crate::fx_lane`]'s view-model and is pushed in
 //! by `window::refresh_effects_lane`; this module only decides which widget carries which name.
 
-use gtk4 as gtk;
 use gtk::prelude::*;
+use gtk4 as gtk;
 
 use crate::fx_lane;
 use crate::ui::{cut_picture, cut_preview_frame};
@@ -200,7 +200,11 @@ pub(crate) fn sync_overlay_stack(
 
 /// Find a direct child of `holder` by name, or build it once and append it. Direct only: a tree-wide search
 /// from a holder can land on a different window's copy, since a closed GTK window is not destroyed.
-fn ensure_named_child<F: FnOnce(i32) -> gtk::Box>(holder: &gtk::Box, name: &str, make: F) -> gtk::Box {
+fn ensure_named_child<F: FnOnce(i32) -> gtk::Box>(
+    holder: &gtk::Box,
+    name: &str,
+    make: F,
+) -> gtk::Box {
     if let Some(found) = find_in_holder(holder.as_ref(), name) {
         return found;
     }

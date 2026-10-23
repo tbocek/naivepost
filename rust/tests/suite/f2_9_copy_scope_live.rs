@@ -37,50 +37,128 @@ static RAN_LANE_OFF_PERSISTS: AtomicBool = AtomicBool::new(false);
 /// §B's `at(t)`, asked of the hand: which second INSIDE the source do these seconds come from?
 fn s2_the_paste_asks_the_source_for_the_file_second_under_it() {
     let filmed = vec![
-        Recording { base: "cam0".to_string(), start: 0.0, end: 30.0 },
-        Recording { base: "mic".to_string(), start: 30.0, end: 90.0 },
+        Recording {
+            base: "cam0".to_string(),
+            start: 0.0,
+            end: 30.0,
+        },
+        Recording {
+            base: "mic".to_string(),
+            start: 30.0,
+            end: 90.0,
+        },
     ];
     let plain = Cut::default();
     // A recording that starts AFTER zero is the case that used to be wrong: session 40 on a tape that opened
     // at 0:30 is the tape's tenth second, not its fortieth.
-    let mic = Hand { from: 40.0, length: 6.0, scope: Scope::Sound { recording: "mic".to_string() } };
-    assert_eq!(cp::file_seconds(&plain, &filmed, &mic), 10.0, "session 40 on a tape starting at 30 is file 10");
+    let mic = Hand {
+        from: 40.0,
+        length: 6.0,
+        scope: Scope::Sound {
+            recording: "mic".to_string(),
+        },
+    };
+    assert_eq!(
+        cp::file_seconds(&plain, &filmed, &mic),
+        10.0,
+        "session 40 on a tape starting at 30 is file 10"
+    );
     // The hand correction rides along: a slid recording's material starts elsewhere (§B's `shift`).
     let slid = Cut {
         shift: [("mic".to_string(), 5.0)].into_iter().collect(),
         ..Default::default()
     };
-    assert_eq!(cp::file_seconds(&slid, &filmed, &mic), 15.0, "and +5 s of slide makes it file 15");
+    assert_eq!(
+        cp::file_seconds(&slid, &filmed, &mic),
+        15.0,
+        "and +5 s of slide makes it file 15"
+    );
     // Before the recording began there is nothing earlier on that lane: 0, not -10.
-    let early = Hand { from: 20.0, length: 6.0, scope: Scope::Sound { recording: "mic".to_string() } };
-    assert_eq!(cp::file_seconds(&plain, &filmed, &early), 0.0, "a span older than its tape clamps to its head");
+    let early = Hand {
+        from: 20.0,
+        length: 6.0,
+        scope: Scope::Sound {
+            recording: "mic".to_string(),
+        },
+    };
+    assert_eq!(
+        cp::file_seconds(&plain, &filmed, &early),
+        0.0,
+        "a span older than its tape clamps to its head"
+    );
     // Footage has no single source, so the RUN holding the opening second is converted.
-    let foot = Hand { from: 10.0, length: 6.0, scope: Scope::Footage { row: 0 } };
-    assert_eq!(cp::file_seconds(&plain, &filmed, &foot), 10.0, "cam0 opens at 0, so session 10 is file 10");
-    let late_foot = Hand { from: 40.0, length: 6.0, scope: Scope::Footage { row: 0 } };
-    assert_eq!(cp::file_seconds(&plain, &filmed, &late_foot), 10.0, "the run holding 40 is mic (starts 30)");
+    let foot = Hand {
+        from: 10.0,
+        length: 6.0,
+        scope: Scope::Footage { row: 0 },
+    };
+    assert_eq!(
+        cp::file_seconds(&plain, &filmed, &foot),
+        10.0,
+        "cam0 opens at 0, so session 10 is file 10"
+    );
+    let late_foot = Hand {
+        from: 40.0,
+        length: 6.0,
+        scope: Scope::Footage { row: 0 },
+    };
+    assert_eq!(
+        cp::file_seconds(&plain, &filmed, &late_foot),
+        10.0,
+        "the run holding 40 is mic (starts 30)"
+    );
     // Unknown recording / no tapes at all: 0, the honest "nothing to convert against".
-    let ghost = Hand { from: 40.0, length: 6.0, scope: Scope::Sound { recording: "gone".to_string() } };
-    assert_eq!(cp::file_seconds(&plain, &filmed, &ghost), 0.0, "a file that left the session has no offset");
-    assert_eq!(cp::file_seconds(&plain, &[], &foot), 0.0, "no filmed runs, no conversion");
-    println!("f2_9 file_seconds: mic@40=10 (+shift5=15), early=0, cam0@10=10, mic-run@40=10, ghost=0");
+    let ghost = Hand {
+        from: 40.0,
+        length: 6.0,
+        scope: Scope::Sound {
+            recording: "gone".to_string(),
+        },
+    };
+    assert_eq!(
+        cp::file_seconds(&plain, &filmed, &ghost),
+        0.0,
+        "a file that left the session has no offset"
+    );
+    assert_eq!(
+        cp::file_seconds(&plain, &[], &foot),
+        0.0,
+        "no filmed runs, no conversion"
+    );
+    println!(
+        "f2_9 file_seconds: mic@40=10 (+shift5=15), early=0, cam0@10=10, mic-run@40=10, ghost=0"
+    );
     RAN_FILE_SECONDS.store(true, Ordering::SeqCst);
 }
 
 /// ⇲ Lane's "nothing is rolling at m:ss" must ask the FILMED runs, not the kept ones: a second inside a
 /// dropped stretch of a take really was filmed, and refusing it would be refusing something the tape has.
 fn s3_a_lane_starts_where_the_session_actually_filmed() {
-    let hand = Hand { from: 20.0, length: 8.0, scope: Scope::Footage { row: 0 } };
+    let hand = Hand {
+        from: 20.0,
+        length: 8.0,
+        scope: Scope::Footage { row: 0 },
+    };
     // One take, 0-120, but the cut keeps only 10-40: 60 is inside the take and outside every kept clip.
-    let takes = vec![Recording { base: "session-tape".to_string(), start: 0.0, end: 120.0 }];
+    let takes = vec![Recording {
+        base: "session-tape".to_string(),
+        start: 0.0,
+        end: 120.0,
+    }];
     let filmed = naivepost::timeline::filmed_runs(&takes);
     let kept: Vec<(f64, f64)> = vec![(10.0, 40.0)];
     assert!(
-        matches!(cp::lane_start(Some(60.0), &hand, &filmed), cp::LaneStart::Start(60.0)),
+        matches!(
+            cp::lane_start(Some(60.0), &hand, &filmed),
+            cp::LaneStart::Start(60.0)
+        ),
         "a second inside a take may open a row even where the cut kept nothing"
     );
     assert!(
-        !matches!(cp::lane_start(Some(60.0), &hand, &kept), cp::LaneStart::Start(_)),
+        !matches!(
+            cp::lane_start(Some(60.0), &hand, &kept),
+            cp::LaneStart::Start(_)
+        ),
         "…which the kept-footage stand-in would have refused — that is the difference being pinned"
     );
     // Outside every take, nothing is rolling and the refusal says so.
@@ -189,7 +267,10 @@ fn s1_a_picture_row_is_footage_and_a_wave_strip_names_that_rows_recording() {
         app.quit();
     });
     app.run_with_args::<String>(&[]);
-    assert!(RAN_BAND_SCOPE.load(Ordering::SeqCst), "the band-scope check ran");
+    assert!(
+        RAN_BAND_SCOPE.load(Ordering::SeqCst),
+        "the band-scope check ran"
+    );
     assert!(RAN_FORK.load(Ordering::SeqCst), "the fork check ran");
 }
 
@@ -198,27 +279,59 @@ fn s1_a_picture_row_is_footage_and_a_wave_strip_names_that_rows_recording() {
 /// the recording it stands in for and starts mid-file (`ss`) — what a stand-in built from kept footage could
 /// never produce, since a stand-in has no file and no offset.
 fn s2_the_strip_draws_the_pieces_the_paste_laid() {
-    let filmed = vec![Recording { base: "mic".to_string(), start: 30.0, end: 90.0 }];
+    let filmed = vec![Recording {
+        base: "mic".to_string(),
+        start: 30.0,
+        end: 90.0,
+    }];
     // A hole in the kept footage under the span: the paste covers two stretches, so two pieces arrive.
     let laid = Cut {
         segs: vec![
-            Seg { s: 40.0, e: 46.0, cam: 0, ..Default::default() },
-            Seg { s: 46.0, e: 52.0, cam: 0, ..Default::default() },
+            Seg {
+                s: 40.0,
+                e: 46.0,
+                cam: 0,
+                ..Default::default()
+            },
+            Seg {
+                s: 46.0,
+                e: 52.0,
+                cam: 0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
-    let hand = Hand { from: 40.0, length: 12.0, scope: Scope::Sound { recording: "mic".to_string() } };
+    let hand = Hand {
+        from: 40.0,
+        length: 12.0,
+        scope: Scope::Sound {
+            recording: "mic".to_string(),
+        },
+    };
     let file_seconds = cp::file_seconds(&laid, &filmed, &hand);
-    assert_eq!(file_seconds, 10.0, "session 40 on a tape opening at 0:30 is the tape's tenth second");
+    assert_eq!(
+        file_seconds, 10.0,
+        "session 40 on a tape opening at 0:30 is the tape's tenth second"
+    );
     let pieces = cp::lay_pieces(&laid, "project:mic.mkv", &hand, 40.0, file_seconds);
     assert_eq!(pieces.len(), 2, "both stretches under the span got a piece");
     for (i, piece) in pieces.iter().enumerate() {
-        assert_eq!(piece.lane, "mic", "piece {i} stands in for the recording it was copied from");
-        assert_eq!(piece.ins, "project:mic.mkv", "and names the FILE a stand-in would have left blank");
+        assert_eq!(
+            piece.lane, "mic",
+            "piece {i} stands in for the recording it was copied from"
+        );
+        assert_eq!(
+            piece.ins, "project:mic.mkv",
+            "and names the FILE a stand-in would have left blank"
+        );
         assert!(piece.s < piece.e, "piece {i} covers seconds");
     }
     // The offset moves WITH the piece: the second stretch resumes mid-file, past the hole.
-    assert_eq!(pieces[0].ss, 10.0, "the first piece opens at the converted file second");
+    assert_eq!(
+        pieces[0].ss, 10.0,
+        "the first piece opens at the converted file second"
+    );
     assert_eq!(pieces[1].ss, 16.0, "the next resumes six file-seconds in");
     println!(
         "f2_9 pieces: {} of them, ss {:?} (lane {:?}, file {:?})",
@@ -229,7 +342,10 @@ fn s2_the_strip_draws_the_pieces_the_paste_laid() {
     );
     // Nothing under the span means nothing painted: the honest zero, not a full-width stand-in.
     let bare = Cut::default();
-    assert!(cp::lay_pieces(&bare, "project:mic.mkv", &hand, 40.0, file_seconds).is_empty(), "no picture, no piece");
+    assert!(
+        cp::lay_pieces(&bare, "project:mic.mkv", &hand, 40.0, file_seconds).is_empty(),
+        "no picture, no piece"
+    );
     RAN_PIECES_NOT_STAND_IN.store(true, Ordering::SeqCst);
 }
 
@@ -263,17 +379,29 @@ fn s3_the_lane_windows_the_file_and_reopens_with_it() {
             .expect("the shell has a Cut tab")
             .emit_clicked();
         let seeded = Cut {
-            segs: vec![Seg { s: 0.0, e: 60.0, cam: 0, ..Default::default() }],
+            segs: vec![Seg {
+                s: 0.0,
+                e: 60.0,
+                cam: 0,
+                ..Default::default()
+            }],
             ..Default::default()
         };
         ui::seed_review_cut(&window, &seeded);
         // A recording that does NOT open at 0:00 — the only case where `off` can be told from 0.
-        ui::set_session_recordings(&[Recording { base: "mic".to_string(), start: 30.0, end: 90.0 }]);
+        ui::set_session_recordings(&[Recording {
+            base: "mic".to_string(),
+            start: 30.0,
+            end: 90.0,
+        }]);
         settle();
 
         ui::draw_selection(&window, Surface::WaveStrip, Some("mic"), 40.0, 46.0);
         let said = ui::press_copy(&window);
-        assert!(said.starts_with("copied "), "\u{29c9} Copy took the lane band: {said}");
+        assert!(
+            said.starts_with("copied "),
+            "\u{29c9} Copy took the lane band: {said}"
+        );
         // Inside a filmed run, so `lane_start` accepts the second.
         ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 44.0 });
         let status = ui::press_lane(&window);
@@ -283,8 +411,15 @@ fn s3_the_lane_windows_the_file_and_reopens_with_it() {
         let fresh = lanes.last().expect("the new row");
         assert_eq!(fresh.at, 44.0, "the row starts at the line");
         assert_eq!(fresh.dur, 6.0, "and runs the copied length");
-        assert_eq!(fresh.off, 10.0, "the row windows the FILE from its tenth second, not from 0");
-        assert!(fresh.src.contains("mic"), "and names its file: {:?}", fresh.src);
+        assert_eq!(
+            fresh.off, 10.0,
+            "the row windows the FILE from its tenth second, not from 0"
+        );
+        assert!(
+            fresh.src.contains("mic"),
+            "and names its file: {:?}",
+            fresh.src
+        );
 
         // And it is on disk: re-read the written cut.json rather than trusting the in-memory mirror.
         let written = std::fs::read_to_string(
@@ -294,16 +429,33 @@ fn s3_the_lane_windows_the_file_and_reopens_with_it() {
         )
         .expect("the lane press wrote cut.json");
         let back: Cut = serde_json::from_str(&written).expect("cut.json parses");
-        let reopened = back.lanes.iter().find(|lane| lane.name == fresh.name).expect("the row is in the file");
-        assert_eq!(reopened.off, 10.0, "`off` survived the write — a dropped `off` would reopen as 0");
-        assert_eq!((reopened.at, reopened.dur), (44.0, 6.0), "and so did `at` and `dur`");
-        println!("f2_9 lane after reopen: off {} at {} dur {} src {:?}", reopened.off, reopened.at, reopened.dur, reopened.src);
+        let reopened = back
+            .lanes
+            .iter()
+            .find(|lane| lane.name == fresh.name)
+            .expect("the row is in the file");
+        assert_eq!(
+            reopened.off, 10.0,
+            "`off` survived the write — a dropped `off` would reopen as 0"
+        );
+        assert_eq!(
+            (reopened.at, reopened.dur),
+            (44.0, 6.0),
+            "and so did `at` and `dur`"
+        );
+        println!(
+            "f2_9 lane after reopen: off {} at {} dur {} src {:?}",
+            reopened.off, reopened.at, reopened.dur, reopened.src
+        );
         RAN_LANE_OFF_PERSISTS.store(true, Ordering::SeqCst);
         out.borrow_mut().replace(app.clone());
         app.quit();
     });
     app.run_with_args::<String>(&[]);
-    assert!(RAN_LANE_OFF_PERSISTS.load(Ordering::SeqCst), "the lane-offset check ran");
+    assert!(
+        RAN_LANE_OFF_PERSISTS.load(Ordering::SeqCst),
+        "the lane-offset check ran"
+    );
 }
 
 #[test]

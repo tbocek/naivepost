@@ -78,7 +78,8 @@ fn filmed(clip: &Seg, recordings: &[timeline::Recording]) -> bool {
         // No session named at all (a page with no tape yet): say nothing rather than a tail about nothing.
         return false;
     }
-    runs.iter().any(|(start, end)| start < &clip.e && clip.s < *end)
+    runs.iter()
+        .any(|(start, end)| start < &clip.e && clip.s < *end)
 }
 
 /// Is this record on an insert? A card films nothing — its sound is exactly as long as its picture, so there
@@ -93,7 +94,13 @@ fn is_insert(clip: &Seg, _effect: &Fx) -> bool {
 /// Put the dashed tail on the bar it explains, or take it off — added AND removed off the answer, so a paid-off
 /// sound cannot keep a tail claiming otherwise. Whether is not composed here: [`tail_open`] asks
 /// [`crate::effect_details::read_head_open`].
-pub fn wear_tail(bar: &gtk::Widget, cut: &Cut, index: usize, t: f64, recordings: &[timeline::Recording]) {
+pub fn wear_tail(
+    bar: &gtk::Widget,
+    cut: &Cut,
+    index: usize,
+    t: f64,
+    recordings: &[timeline::Recording],
+) {
     let held_classes = bar.css_classes();
     let mut classes: Vec<&str> = held_classes
         .iter()

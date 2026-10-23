@@ -153,7 +153,9 @@ pub fn clip_outside(clip: u32, first: u32, last: u32) -> Option<String> {
     if (first..=last).contains(&clip) {
         return None;
     }
-    Some(format!("clip {clip} is not one of the clips given ({first} to {last})"))
+    Some(format!(
+        "clip {clip} is not one of the clips given ({first} to {last})"
+    ))
 }
 
 /// F3.9 S4 (`retried once`): a rejected reply goes out again, and only once more. `runs` counts the attempts made
@@ -189,7 +191,10 @@ pub fn place(clips_in: &[(u32, f64)], calls: &[Call]) -> Reply {
     // clip's session second comes from [`session_start`] — the sum of what came before — because this signature
     // carries lengths only; a caller that knows the real positions reads them through [`on_the_timeline_at`].
     let mut batch = Clips::new(
-        &clips_in.iter().map(|(n, _)| (*n, session_start(clips_in, *n), length_of(clips_in, *n))).collect::<Vec<_>>(),
+        &clips_in
+            .iter()
+            .map(|(n, _)| (*n, session_start(clips_in, *n), length_of(clips_in, *n)))
+            .collect::<Vec<_>>(),
     );
     let mut placed = Vec::new();
     for call in calls {
@@ -212,7 +217,11 @@ pub fn place(clips_in: &[(u32, f64)], calls: &[Call]) -> Reply {
 /// The length one clip number was given. `position` in the batch is a lookup this module already performs once per
 /// clip when it builds [`Clips`], and a missing clip cannot reach here (S4 rejected the reply before that).
 fn length_of(clips_in: &[(u32, f64)], clip: u32) -> f64 {
-    clips_in.iter().find(|(n, _)| *n == clip).map(|(_, length)| *length).unwrap_or_default()
+    clips_in
+        .iter()
+        .find(|(n, _)| *n == clip)
+        .map(|(_, length)| *length)
+        .unwrap_or_default()
 }
 
 /// F3.9 S5 (`fades min 0.3, d/4`): a caption's fade at each edge — P.policy.effectDefaultFades' text value (0.3)

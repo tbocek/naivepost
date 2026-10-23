@@ -40,10 +40,8 @@ const SECOND: (f64, f64) = (40.0, 60.0);
 /// A Cut-page window whose session and cut are the ones the three shots share, in its own temp folder so the
 /// verb presses have a real `cut/cut.json` to write.
 fn shot_window(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
-    let root = std::env::temp_dir().join(format!(
-        "naivepost-f27-shots-{}-{slug}",
-        std::process::id()
-    ));
+    let root =
+        std::env::temp_dir().join(format!("naivepost-f27-shots-{}-{slug}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let session = naivepost::startup::session_dir(&root);
     std::fs::create_dir_all(session.join("cut")).expect("a session cut folder");
@@ -120,7 +118,9 @@ fn fold_badges(window: &adw::ApplicationWindow) -> Vec<String> {
 /// A named button anywhere in this window's tree.
 fn button(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Button> {
     let content = window.content()?;
-    find_named(content.upcast_ref(), name)?.downcast::<gtk::Button>().ok()
+    find_named(content.upcast_ref(), name)?
+        .downcast::<gtk::Button>()
+        .ok()
 }
 
 fn find_named(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
@@ -159,9 +159,7 @@ fn check_add_shot(app: &adw::Application) {
     );
     let after = live_segs(&window);
     assert!(
-        kept(&after)
-            .iter()
-            .any(|(s, e)| *s <= 32.0 && *e >= 37.0),
+        kept(&after).iter().any(|(s, e)| *s <= 32.0 && *e >= 37.0),
         "the selected stretch of the hole is now kept footage, kept = {:?}",
         kept(&after)
     );
@@ -339,7 +337,9 @@ fn round() {
                 ("remove", check_remove_shot),
                 ("distinct", check_the_three_shots_differ),
             ] {
-                if let Err(panic) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(app))) {
+                if let Err(panic) =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(app)))
+                {
                     let why = panic
                         .downcast_ref::<String>()
                         .cloned()
@@ -360,13 +360,20 @@ fn round() {
         app.run_with_args::<String>(&[]);
     });
     let failed = failures.lock().unwrap().clone();
-    assert!(failed.is_empty(), "shot checks failed -> {}", failed.join(" // "));
+    assert!(
+        failed.is_empty(),
+        "shot checks failed -> {}",
+        failed.join(" // ")
+    );
 }
 
 #[test]
 fn f2_7_s1_the_add_shot_stages_a_gap_into_a_kept_scene() {
     round();
-    assert!(RAN_ADD.load(Ordering::SeqCst), "the add-shot check never ran");
+    assert!(
+        RAN_ADD.load(Ordering::SeqCst),
+        "the add-shot check never ran"
+    );
 }
 
 #[test]

@@ -33,8 +33,7 @@ fn f0_7_s3_a_live_refusal_is_handed_back_and_the_second_round_lands() {
         clip(&first.body)
     );
     assert!(
-        second.body.contains("is not a policy field")
-            && second.body.contains("markingStyle"),
+        second.body.contains("is not a policy field") && second.body.contains("markingStyle"),
         "the second ask carried the refusal naming the bad field: {}",
         clip(&second.body)
     );
@@ -44,7 +43,11 @@ fn f0_7_s3_a_live_refusal_is_handed_back_and_the_second_round_lands() {
         MarkingPass::Joins,
         "the corrected proposal landed" // P.policy.markingPass
     );
-    assert_eq!(run.policy.cut_mode.value, CutMode::Model, "untouched fields keep their default");
+    assert_eq!(
+        run.policy.cut_mode.value,
+        CutMode::Model,
+        "untouched fields keep their default"
+    );
     // And the derivation reports both halves: one refusal said, one field set.
     assert_eq!(run.derived.refusals.len(), 1, "{:?}", run.derived.refusals);
     assert!(
@@ -53,7 +56,9 @@ fn f0_7_s3_a_live_refusal_is_handed_back_and_the_second_round_lands() {
         run.derived.refusals[0]
     );
     assert!(
-        run.derived.applied.contains(&("markingPass", naivepost::policy::Applied::Set)),
+        run.derived
+            .applied
+            .contains(&("markingPass", naivepost::policy::Applied::Set)),
         "{:?}",
         run.derived.applied
     );

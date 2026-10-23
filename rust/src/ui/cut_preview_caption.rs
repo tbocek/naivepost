@@ -56,7 +56,9 @@ pub fn draw(cr: &cairo::Context, effect: &Fx, fit: (f64, f64), alpha: f64) {
     let radius = (stroke / 2.0).max(0.5);
     let ys = fx_text::baselines(box_px.1, box_px.3, size, lines.len());
     for (line, &baseline) in lines.iter().zip(ys.iter()) {
-        let Ok(extents) = cr.text_extents(line) else { continue };
+        let Ok(extents) = cr.text_extents(line) else {
+            continue;
+        };
         let x = box_px.0 + box_px.2 / 2.0 - extents.width() / 2.0 - extents.x_bearing();
         // "16 directions": the angle list is derived from the constant, so §10's row is the only place to change it.
         for step in 0..fx_text::EDGE_STEPS {

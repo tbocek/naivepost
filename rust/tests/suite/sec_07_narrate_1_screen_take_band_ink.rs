@@ -23,9 +23,11 @@ static RAN_LOG: AtomicBool = AtomicBool::new(false);
 
 /// A session folder of our own, so nothing written here lands in a real project or another test's.
 fn scratch_root(tag: &str) -> std::path::PathBuf {
-    let root = naivepost::startup::session_dir(
-        &std::env::temp_dir().join(format!("np-ink-{}-{}", tag, std::process::id())),
-    );
+    let root = naivepost::startup::session_dir(&std::env::temp_dir().join(format!(
+        "np-ink-{}-{}",
+        tag,
+        std::process::id()
+    )));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("scratch session folder");
     std::env::set_current_dir(&root).expect("cwd pinned to this root");
@@ -54,8 +56,16 @@ fn narrate_page(app: &adw::Application, state: ui::NarrateState) -> adw::Applica
 fn base_state() -> ui::NarrateState {
     ui::NarrateState {
         segs: vec![
-            naivepost::cut::Seg { s: 0.0, e: 30.0, ..Default::default() },
-            naivepost::cut::Seg { s: 30.0, e: 60.0, ..Default::default() },
+            naivepost::cut::Seg {
+                s: 0.0,
+                e: 30.0,
+                ..Default::default()
+            },
+            naivepost::cut::Seg {
+                s: 30.0,
+                e: 60.0,
+                ..Default::default()
+            },
         ],
         takes: vec![],
         voice: "narrator1".into(),
@@ -135,9 +145,15 @@ fn sec_07_narrate_1_screen_take_band_ink_the_lane_inks_its_takes_and_its_wave() 
     // One application, one main loop: GTK and libadwaita bind to the first thread that initialises them,
     // so every check is a stage of this single activate rather than a second `run()` on another thread.
     app.run_with_args::<&str>(&[]);
-    assert!(RAN_TAKE.load(Ordering::SeqCst), "the take-ink check never ran");
+    assert!(
+        RAN_TAKE.load(Ordering::SeqCst),
+        "the take-ink check never ran"
+    );
     assert!(RAN_WAVE.load(Ordering::SeqCst), "the wave check never ran");
-    assert!(RAN_LOG.load(Ordering::SeqCst), "the refusal-log check never ran");
+    assert!(
+        RAN_LOG.load(Ordering::SeqCst),
+        "the refusal-log check never ran"
+    );
 }
 
 fn round(app: &adw::Application) {
@@ -193,8 +209,8 @@ fn round(app: &adw::Application) {
         );
         assert_eq!(drawn_label, "20.0s", "and the plan drew exactly that word");
         let (px, pw, ph) = {
-            let (px, pw, ph, _, _) =
-                ui::narrate_band::painted_pixels_for_test(width, lane_h).expect("the lane painted whole");
+            let (px, pw, ph, _, _) = ui::narrate_band::painted_pixels_for_test(width, lane_h)
+                .expect("the lane painted whole");
             (px, pw, ph)
         };
         // The wash: green over the near-black ground, so g leads both of the others. Sampled across the
@@ -206,7 +222,11 @@ fn round(app: &adw::Application) {
                 g > r + 30 && g > b + 20
             })
         });
-        assert!(shaded, "the take is SHADED across its own seconds ({left}..{} px)", left + w);
+        assert!(
+            shaded,
+            "the take is SHADED across its own seconds ({left}..{} px)",
+            left + w
+        );
         // The label strip: §1's seconds have to survive the dark wash, and the bug this pins was near-black
         // letters, which leave it with no bright pixel at all. `paint` draws the word at `left + 3` on one
         // baseline, so the box to read is that and nothing wider — sampling from the take's own left edge
@@ -251,7 +271,10 @@ fn round(app: &adw::Application) {
         settle();
         let peaks = match ui::narrate_band::envelope_report_for_test(&ui::read_state()) {
             Ok((hz, peaks)) => {
-                assert!(hz > 0.0, "the peaks arrive with their rate: {hz} per second");
+                assert!(
+                    hz > 0.0,
+                    "the peaks arrive with their rate: {hz} per second"
+                );
                 peaks
             }
             Err(why) => panic!("a staged envelope decodes instead of refusing: {why}"),
@@ -270,7 +293,10 @@ fn round(app: &adw::Application) {
                 r.abs_diff(191) <= 6 && g.abs_diff(199) <= 6 && b.abs_diff(204) <= 6
             })
         });
-        assert!(!grey_rows, "with a wave drawn, the lane prints no \"reading the recording…\" sentence");
+        assert!(
+            !grey_rows,
+            "with a wave drawn, the lane prints no \"reading the recording…\" sentence"
+        );
         RAN_WAVE.store(true, Ordering::SeqCst);
         window.close();
         settle();

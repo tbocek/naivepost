@@ -87,7 +87,10 @@ pub fn firefox_path(setting: &str) -> Result<PathBuf, String> {
         if let Some(found) = on_path(setting) {
             return Ok(found);
         }
-        let reason = std::fs::metadata(&named).err().map(|e| e.to_string()).unwrap_or_else(|| "not executable".to_string());
+        let reason = std::fs::metadata(&named)
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| "not executable".to_string());
         return Err(reason);
     }
     for name in PATH_NAMES {
@@ -178,7 +181,9 @@ pub fn dump_with(browser: &std::path::Path, url: &str, budget: Duration) -> Resu
                 drop(launched);
                 let _ = std::fs::remove_dir_all(&profile);
                 if !status.success() && text.trim().is_empty() {
-                    return Err(format!("the browser exited {status} without printing a page"));
+                    return Err(format!(
+                        "the browser exited {status} without printing a page"
+                    ));
                 }
                 return Ok(text);
             }
@@ -228,7 +233,9 @@ pub fn page_text(html: &str) -> String {
     let mut offset = 0usize;
     while let Some(rel) = lower[offset..].find('<') {
         let start = offset + rel;
-        let Some(end_rel) = lower[start..].find('>') else { break };
+        let Some(end_rel) = lower[start..].find('>') else {
+            break;
+        };
         let tag_end = start + end_rel + 1;
         if !raw_element.is_empty() {
             // Inside a script or a style there is nothing to emit until its closing tag shows up.
@@ -247,9 +254,16 @@ pub fn page_text(html: &str) -> String {
         let name_full = lower[name_start..start + end_rel].trim();
         // The tag's NAME, without its attributes or its closing slash: `<p class="x">` is a `p`, and comparing
         // the whole attribute string against BLOCK_TAGS matched nothing, which flattened every page to one line.
-        let name = name_full.trim_start_matches('/').split([' ', '\t', '\n']).next().unwrap_or("");
+        let name = name_full
+            .trim_start_matches('/')
+            .split([' ', '\t', '\n'])
+            .next()
+            .unwrap_or("");
         let closing = name_full.starts_with('/');
-        if RAW_ELEMENTS.iter().any(|element| name.starts_with(*element)) {
+        if RAW_ELEMENTS
+            .iter()
+            .any(|element| name.starts_with(*element))
+        {
             // Reached only when not already inside a raw element (that case is skipped above), so an opening tag
             // here always starts one. A stray `</script>` outside one matches the branch and changes nothing.
             if !closing {
@@ -311,7 +325,9 @@ fn unescape(text: &str) -> String {
 pub fn search_hits(html: &str) -> Vec<Hit> {
     let mut hits: Vec<Hit> = Vec::new();
     for block in article_blocks(html) {
-        let Some((href, title)) = first_link(&block) else { continue };
+        let Some((href, title)) = first_link(&block) else {
+            continue;
+        };
         if href.is_empty() || title.trim().is_empty() {
             continue;
         }
@@ -332,7 +348,9 @@ fn article_blocks(html: &str) -> Vec<String> {
     let mut cursor = 0usize;
     while let Some(rel) = lower[cursor..].find("<article") {
         let start = cursor + rel;
-        let Some(end_rel) = lower[start..].find("</article>") else { break };
+        let Some(end_rel) = lower[start..].find("</article>") else {
+            break;
+        };
         blocks.push(html[start..start + end_rel].to_string());
         cursor = start + end_rel;
     }
@@ -347,11 +365,15 @@ fn first_link(block: &str) -> Option<(String, String)> {
     let mut rest = block;
     while let Some(rel) = rest.to_ascii_lowercase().find("<a ") {
         let start = rel + 2;
-        let Some(close) = rest[start..].find('>') else { break };
+        let Some(close) = rest[start..].find('>') else {
+            break;
+        };
         let attrs = &rest[start..start + close];
         let href = attribute(attrs, "href").unwrap_or_default();
         let after = &rest[start + close + 1..];
-        let Some(text_end) = after.to_ascii_lowercase().find("</a>") else { break };
+        let Some(text_end) = after.to_ascii_lowercase().find("</a>") else {
+            break;
+        };
         let text = &after[..text_end];
         if !href.trim().is_empty() && !text.trim().is_empty() {
             return Some((href, text.to_string()));
@@ -377,7 +399,11 @@ fn first_snippet(block: &str) -> String {
         (Some(rel), _) => (0, &block[rel + 4..]),
         _ => (0, block),
     };
-    page_text(after_title).lines().next().unwrap_or_default().to_string()
+    page_text(after_title)
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// One attribute out of a tag's attribute list, quoted or bare.
@@ -397,7 +423,11 @@ fn attribute(attrs: &str, name: &str) -> Option<String> {
 
 /// Collapse the whitespace a DOM dump sprinkles everywhere and drop the entity noise from one field.
 fn clean(text: &str) -> String {
-    page_text(text).replace('\n', " ").split_whitespace().collect::<Vec<&str>>().join(" ")
+    page_text(text)
+        .replace('\n', " ")
+        .split_whitespace()
+        .collect::<Vec<&str>>()
+        .join(" ")
 }
 
 // ---- the closures the rules take ---------------------------------------------------------

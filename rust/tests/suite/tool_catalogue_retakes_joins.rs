@@ -14,7 +14,11 @@ fn session() -> Marks {
     let lines = (1..=10u32)
         .map(|n| {
             let start = (n as f64 - 1.0) * 3.0;
-            Line { n, start, end: start + 2.0 }
+            Line {
+                n,
+                start,
+                end: start + 2.0,
+            }
         })
         .collect();
     Marks::new(lines, 20.0)
@@ -24,7 +28,15 @@ fn session() -> Marks {
 #[test]
 fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s4_a_mark_reports_what_it_removes() {
     let mut marks = session();
-    let body = marks.mark_abandoned(1, 3, Some(6), Trim { lead: 0.5, tail: 1.0 });
+    let body = marks.mark_abandoned(
+        1,
+        3,
+        Some(6),
+        Trim {
+            lead: 0.5,
+            tail: 1.0,
+        },
+    );
     let parsed: serde_json::Value = serde_json::from_str(&body).expect("an ok is JSON");
 
     // Lines 1-3 run 0..8 s; trimming half a second off the front and the repeated tail off the back
@@ -57,7 +69,15 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s4_a_mark_reports_what_i
     assert_eq!(parsed["again"], serde_json::Value::Null);
 
     // A mark whose trim leaves nothing is a refusal, not an empty ok.
-    let body = marks.mark_abandoned(4, 4, None, Trim { lead: 5.0, tail: 5.0 });
+    let body = marks.mark_abandoned(
+        4,
+        4,
+        None,
+        Trim {
+            lead: 5.0,
+            tail: 5.0,
+        },
+    );
     assert!(body.contains("breath"), "{body}");
 }
 
@@ -93,21 +113,48 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s4_every_refusal_names_i
     // A session whose second line starts exactly one reach after line 1 ends...
     let mut at_limit = Marks::new(
         vec![
-            Line { n: 1, start: 0.0, end: 2.0 },
-            Line { n: 2, start: 182.0, end: 184.0 },
-            Line { n: 3, start: 400.0, end: 402.0 },
+            Line {
+                n: 1,
+                start: 0.0,
+                end: 2.0,
+            },
+            Line {
+                n: 2,
+                start: 182.0,
+                end: 184.0,
+            },
+            Line {
+                n: 3,
+                start: 400.0,
+                end: 402.0,
+            },
         ],
         6.0,
     );
     // ...is allowed: the gap is exactly 180 s, and a limit that refused itself would be one short.
     let body = at_limit.mark_abandoned(1, 1, Some(2), Trim::none());
-    assert!(!body.contains("error"), "exactly the reach is the limit: {body}");
+    assert!(
+        !body.contains("error"),
+        "exactly the reach is the limit: {body}"
+    );
     // ...and one tenth further is not the same attempt.
     let mut past = Marks::new(
         vec![
-            Line { n: 1, start: 0.0, end: 2.0 },
-            Line { n: 2, start: 182.1, end: 184.0 },
-            Line { n: 3, start: 400.0, end: 402.0 },
+            Line {
+                n: 1,
+                start: 0.0,
+                end: 2.0,
+            },
+            Line {
+                n: 2,
+                start: 182.1,
+                end: 184.0,
+            },
+            Line {
+                n: 3,
+                start: 400.0,
+                end: 402.0,
+            },
         ],
         6.0,
     );
@@ -123,18 +170,37 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s4_every_refusal_names_i
     assert_eq!(retakes::RETAKE_MIN_SECONDS, 0.3);
     let mut tight = Marks::new(
         vec![
-            Line { n: 1, start: 0.0, end: 0.3 },
-            Line { n: 2, start: 5.0, end: 6.0 },
+            Line {
+                n: 1,
+                start: 0.0,
+                end: 0.3,
+            },
+            Line {
+                n: 2,
+                start: 5.0,
+                end: 6.0,
+            },
         ],
         10.0,
     );
     // Exactly 0.3 s is allowed; the rule is "shorter than", not "at most".
     let body = tight.mark_abandoned(1, 1, None, Trim::none());
-    assert!(!body.contains("error"), "exactly the minimum is a mark: {body}");
+    assert!(
+        !body.contains("error"),
+        "exactly the minimum is a mark: {body}"
+    );
     let mut short = Marks::new(
         vec![
-            Line { n: 1, start: 0.0, end: 0.29 },
-            Line { n: 2, start: 5.0, end: 6.0 },
+            Line {
+                n: 1,
+                start: 0.0,
+                end: 0.29,
+            },
+            Line {
+                n: 2,
+                start: 5.0,
+                end: 6.0,
+            },
         ],
         10.0,
     );
@@ -172,8 +238,15 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s4_marks_merge_and_can_b
     let body = marks.unmark(4, 5);
     let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
     assert_eq!(parsed["seconds_taken_back"], serde_json::json!(5.0));
-    assert!((marks.finish().share - 0.45).abs() < 1e-9, "{:?}", marks.finish());
-    assert!(marks.finish().over, "still over the ceiling after one take-back");
+    assert!(
+        (marks.finish().share - 0.45).abs() < 1e-9,
+        "{:?}",
+        marks.finish()
+    );
+    assert!(
+        marks.finish().over,
+        "still over the ceiling after one take-back"
+    );
     // What is left of the mark is what was not asked back.
     assert_eq!(marks.marks()[0].removed, (0.0, 9.0));
 
@@ -197,10 +270,26 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s4_the_short_pauses_are_
     // speaker stops and starts again.
     let marks = Marks::new(
         vec![
-            Line { n: 1, start: 0.0, end: 2.0 },
-            Line { n: 2, start: 2.9, end: 4.0 },
-            Line { n: 3, start: 5.4, end: 6.0 },
-            Line { n: 4, start: 8.0, end: 9.0 },
+            Line {
+                n: 1,
+                start: 0.0,
+                end: 2.0,
+            },
+            Line {
+                n: 2,
+                start: 2.9,
+                end: 4.0,
+            },
+            Line {
+                n: 3,
+                start: 5.4,
+                end: 6.0,
+            },
+            Line {
+                n: 4,
+                start: 8.0,
+                end: 9.0,
+            },
         ],
         9.0,
     );
@@ -210,8 +299,14 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s4_the_short_pauses_are_
     assert!((pauses[2] - 1.4).abs() < 1e-9, "{pauses:?}");
     assert!((pauses[3] - 2.0).abs() < 1e-9, "{pauses:?}");
     // Both sub-threshold gaps are present rather than filtered out.
-    let under = pauses.iter().filter(|p| **p < retakes::RETAKE_PAUSE_SECONDS).count();
-    assert_eq!(under, 3, "the first line has no pause before it: {pauses:?}");
+    let under = pauses
+        .iter()
+        .filter(|p| **p < retakes::RETAKE_PAUSE_SECONDS)
+        .count();
+    assert_eq!(
+        under, 3,
+        "the first line has no pause before it: {pauses:?}"
+    );
 
     // A range asks for its own lines only, and the pause of the first is measured against the line
     // before it in the session rather than reported as zero.
@@ -226,8 +321,8 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s4_the_short_pauses_are_
 
 /// `finish` answers with the total marked against the ceiling, over or not.
 #[test]
-fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s4_finish_reads_the_share_against_the_ceil(
-) {
+fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s4_finish_reads_the_share_against_the_ceil()
+{
     // P.machine.retakeCeil
     assert_eq!(retakes::RETAKE_CEIL, 0.4);
 
@@ -253,7 +348,14 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s4_finish_reads_the_shar
 
     // A session with no spoken seconds cannot be over anything: a share of nothing is zero rather
     // than a division that reports infinity.
-    let empty = Marks::new(vec![Line { n: 1, start: 0.0, end: 5.0 }], 0.0);
+    let empty = Marks::new(
+        vec![Line {
+            n: 1,
+            start: 0.0,
+            end: 5.0,
+        }],
+        0.0,
+    );
     assert_eq!(empty.finish().share, 0.0);
 }
 
@@ -316,16 +418,25 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s5_a_drop_is_refused_bef
     // side is over it and four is not. P.machine.seamCeil
     assert_eq!(textedit::SEAM_CEIL, 0.6);
     let body = join.drop_words(Side::After, 4);
-    assert!(!body.contains("error"), "four of eight is under the ceiling: {body}");
+    assert!(
+        !body.contains("error"),
+        "four of eight is under the ceiling: {body}"
+    );
     // And the fifth word on top of those four is where it bites -- counted across calls, not per call.
     let body = reason(join.drop_words(Side::After, 1));
     assert!(body.contains("60%"), "{body}");
-    assert_eq!(join.dropped_count(Side::After), 4, "the refusal took nothing more");
+    assert_eq!(
+        join.dropped_count(Side::After),
+        4,
+        "the refusal took nothing more"
+    );
 
     // (c) More than the word maximum, counted across calls rather than per call.
     // P.machine.seamMaxWords
     assert_eq!(textedit::SEAM_MAX_WORDS, 40);
-    let words: Vec<&str> = (0..120).map(|n| if n % 2 == 0 { "x" } else { "y" }).collect();
+    let words: Vec<&str> = (0..120)
+        .map(|n| if n % 2 == 0 { "x" } else { "y" })
+        .collect();
     let before = &words[..60];
     let after = &words[60..];
     let mut long = Join::new(before, after);
@@ -334,7 +445,11 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s5_a_drop_is_refused_bef
     // ...and thirty more would be sixty, which no single join may remove.
     let body = reason(long.drop_words(Side::Before, 30));
     assert!(body.contains("at most 40"), "{body}");
-    assert_eq!(long.dropped_count(Side::Before), 30, "the refusal took nothing more");
+    assert_eq!(
+        long.dropped_count(Side::Before),
+        30,
+        "the refusal took nothing more"
+    );
 
     // The shown set is capped at the reach, so the ceiling counts against what was given.
     // P.machine.seamReachWords

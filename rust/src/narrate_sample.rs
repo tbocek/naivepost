@@ -12,8 +12,8 @@
 
 use crate::layout::Tree;
 use crate::narrate_details;
-use crate::narrate_tts;
 use crate::narrate_preview_leg;
+use crate::narrate_tts;
 use crate::voice_ref;
 
 /// S5's door, before any dial: is this voice and these words already on disk? Answering here rather

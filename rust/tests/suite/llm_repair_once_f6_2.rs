@@ -33,15 +33,36 @@ fn f6_2_s3_e_a_second_unusable_answer_ends_the_step_without_another_repair() {
     // `content` empty, reasoning in its own field: §3's `noAnswer`, which is the only answer shape worth a
     // repair. A non-empty malformed answer is a different failure (the pass's own complaint about the ANSWER)
     // and correctly costs no extra request at all.
-    let stubborn = "{\"choices\":[{\"message\":{\"reasoning_content\":\"still thinking\",\"content\":\"\"}}]}".to_string();
+    let stubborn =
+        "{\"choices\":[{\"message\":{\"reasoning_content\":\"still thinking\",\"content\":\"\"}}]}"
+            .to_string();
     let llm = FakeLlm::start(vec![stubborn.clone(), stubborn]);
     point_at(&llm.url());
 
-    let asked = captions_ask::ask(&fixture.tree, "Caption every spoken line.", &clips, &words, 0, &|| false);
-    assert!(asked.failed, "two unusable answers are the step's failure, not a loop");
-    assert!(asked.calls.is_empty(), "nothing was placed: {:?}", asked.calls);
+    let asked = captions_ask::ask(
+        &fixture.tree,
+        "Caption every spoken line.",
+        &clips,
+        &words,
+        0,
+        &|| false,
+    );
+    assert!(
+        asked.failed,
+        "two unusable answers are the step's failure, not a loop"
+    );
+    assert!(
+        asked.calls.is_empty(),
+        "nothing was placed: {:?}",
+        asked.calls
+    );
     let seen = llm.drain();
-    assert_eq!(seen.len(), 2, "the repair was spent once and not again: {}", seen.len());
+    assert_eq!(
+        seen.len(),
+        2,
+        "the repair was spent once and not again: {}",
+        seen.len()
+    );
     // And the reason still says what was wrong with the answer, so §F3.9's log line names a cause — and says
     // it was asked again, which is the whole difference between this failure and a plain one. Since §3's
     // answer on this item the caption pass ends its ask-again with `no_calls_reason`, which already says the
@@ -51,10 +72,7 @@ fn f6_2_s3_e_a_second_unusable_answer_ends_the_step_without_another_repair() {
         "the step says the repair was spent: {}",
         asked.reason
     );
-    assert!(
-        !asked.reason.is_empty(),
-        "and never fails without a reason"
-    );
+    assert!(!asked.reason.is_empty(), "and never fails without a reason");
     // §3's repair says so in the log, once per repair — the prototype logged nothing here, which is why a
     // repaired batch looked identical to a normal one. The wording has a home, so it gets pinned.
     assert!(

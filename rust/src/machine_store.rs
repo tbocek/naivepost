@@ -74,7 +74,11 @@ pub struct Store {
 impl Store {
     /// Open the store over the conf as it stands right now — the values the boxes are seeded from.
     pub fn open(paths: &Paths) -> Result<Self, String> {
-        Ok(Self { paths: paths.clone(), base: settings::read(paths)?, draft: checks::Draft::default() })
+        Ok(Self {
+            paths: paths.clone(),
+            base: settings::read(paths)?,
+            draft: checks::Draft::default(),
+        })
     }
 
     /// The conf the boxes were seeded from, so the dialog can show what is on disk rather than blanks.
@@ -101,7 +105,11 @@ impl Store {
     /// The beat elapsed: write what is in the boxes now. `values` is every box's key and current
     /// text, read by the caller out of its widgets — the dialog owns the widgets, this owns the file.
     /// Answers the line §5 puts in the log when bytes actually changed, `None` when they did not.
-    pub fn flush(&mut self, now: Duration, values: &[(String, String)]) -> Result<Option<String>, String> {
+    pub fn flush(
+        &mut self,
+        now: Duration,
+        values: &[(String, String)],
+    ) -> Result<Option<String>, String> {
         if !self.draft.save(now) {
             return Ok(None);
         }
@@ -262,14 +270,7 @@ pub fn note_hang(component: &str, unresponsive: Duration) -> Option<PathBuf> {
     if paths.has_hang_dump(&stamp) {
         return None;
     }
-    settings::write_hang_dump(
-        &paths,
-        component,
-        std::process::id(),
-        unresponsive,
-        &stamp,
-    )
-    .ok()
+    settings::write_hang_dump(&paths, component, std::process::id(), unresponsive, &stamp).ok()
 }
 
 /// Today's local date and time as `MMDD-HHMMSS`, the stamp [`settings::hang_stamp`] wants — month
@@ -277,7 +278,9 @@ pub fn note_hang(component: &str, unresponsive: Duration) -> Option<PathBuf> {
 /// watching the clock when the app stalled.
 pub fn local_stamp() -> String {
     // Seconds since the epoch, turned into the LOCAL calendar by glib (std has no local offset).
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     let Ok(local) = glib::DateTime::from_unix_local(now.as_secs() as i64) else {
         // No local zone to speak of: a dump still gets written, stamped from the epoch.
         return settings::hang_stamp(1, 1, 0, 0, 0);
@@ -334,7 +337,12 @@ pub fn register_with_desktop(
     // The folder each database is told about is its own: `applications` for the entry, `mime` for
     // the package. `refresh` logs one line for the first, so it is handed the mime folder (the one
     // whose type decides whether a file manager offers naivepost at all).
-    let commands = databases.refresh(wrote_entry, wrote_mime, &paths.data_dir.join("mime"), &mut log);
+    let commands = databases.refresh(
+        wrote_entry,
+        wrote_mime,
+        &paths.data_dir.join("mime"),
+        &mut log,
+    );
     (log, commands)
 }
 
@@ -353,7 +361,10 @@ pub fn run_refresh(commands: &[Vec<String>]) -> Vec<String> {
         };
         let args: Vec<&str> = rest.iter().map(String::as_str).collect();
         if let Err(err) = crate::subprocess::spawn_piped(program, &args) {
-            log.push(format!("{} failed: {err}", crate::subprocess::shown(program, &args)));
+            log.push(format!(
+                "{} failed: {err}",
+                crate::subprocess::shown(program, &args)
+            ));
         }
     }
     log
@@ -362,5 +373,7 @@ pub fn run_refresh(commands: &[Vec<String>]) -> Vec<String> {
 /// Whether a file needs writing: absent, unreadable, or different bytes. Unreadable counts as needing
 /// a write — a file we cannot compare is one the desktop cannot use either.
 fn differs(path: &Path, body: &str) -> bool {
-    std::fs::read_to_string(path).map(|text| text != body).unwrap_or(true)
+    std::fs::read_to_string(path)
+        .map(|text| text != body)
+        .unwrap_or(true)
 }

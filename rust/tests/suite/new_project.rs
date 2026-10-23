@@ -9,11 +9,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::temp_dir_created as temp_dir;
 use naivepost::new_project::{self as new_project, Gate};
 use naivepost::project::{self, Project};
 use naivepost::startup;
-use crate::common;
-use common::temp_dir_created as temp_dir;
 
 /// A folder that is a project already, holding something recognisable so an overwrite would show.
 fn project_folder(dir: &Path) -> PathBuf {
@@ -37,7 +37,8 @@ fn f0_8_s1_a_run_under_way_is_refused() {
     assert_eq!(
         gate,
         Gate::Refused {
-            reason: "stop the run first \u{2014} a new project would pull its inputs out from under it"
+            reason:
+                "stop the run first \u{2014} a new project would pull its inputs out from under it"
         }
     );
     assert_eq!(
@@ -136,7 +137,10 @@ fn f0_8_s4_the_default_name_is_todays_date_and_the_next_free_one() {
     // number rather than a refusal.
     let root = temp_dir("name");
 
-    assert_eq!(new_project::free_name(&root, "2026-09-19"), "2026-09-19.naivepost");
+    assert_eq!(
+        new_project::free_name(&root, "2026-09-19"),
+        "2026-09-19.naivepost"
+    );
     fs::create_dir_all(root.join("2026-09-19.naivepost")).unwrap();
     assert_eq!(
         new_project::free_name(&root, "2026-09-19"),
@@ -155,10 +159,7 @@ fn f0_8_s4_the_default_name_is_todays_date_and_the_next_free_one() {
         new_project::with_suffix("2026-09-19.naivepost"),
         "2026-09-19.naivepost"
     );
-    assert_eq!(
-        new_project::with_suffix("talk.NAIVEPOST"),
-        "talk.NAIVEPOST"
-    );
+    assert_eq!(new_project::with_suffix("talk.NAIVEPOST"), "talk.NAIVEPOST");
 
     fs::remove_dir_all(&root).unwrap();
 }
@@ -174,13 +175,26 @@ fn f0_8_s4_a_typed_name_gets_the_suffix_and_the_project_written() {
     let new_project::Answer::Created(created) = answer else {
         panic!("a free typed name creates: {answer:?}")
     };
-    assert_eq!(created.path, root.join("elsewhere/talk.naivepost"), "the suffix was appended");
-    assert!(created.path.join(project::PROJECT_FILE).is_file(), "S6 saved it");
+    assert_eq!(
+        created.path,
+        root.join("elsewhere/talk.naivepost"),
+        "the suffix was appended"
+    );
+    assert!(
+        created.path.join(project::PROJECT_FILE).is_file(),
+        "S6 saved it"
+    );
     assert_eq!(created.base, "talk.naivepost");
-    assert_eq!(created.status, format!("new project \u{2014} {}", created.base));
+    assert_eq!(
+        created.status,
+        format!("new project \u{2014} {}", created.base)
+    );
     assert_eq!(
         created.log,
-        format!(">>> new project {} -- the session is empty; outputs on disk are untouched", created.path.display())
+        format!(
+            ">>> new project {} -- the session is empty; outputs on disk are untouched",
+            created.path.display()
+        )
     );
     std::fs::remove_dir_all(&root).ok();
 }
@@ -195,7 +209,11 @@ fn f0_8_s4_a_name_that_already_has_the_suffix_is_not_doubled() {
     let new_project::Answer::Created(created) = answer else {
         panic!("a free typed name creates: {answer:?}")
     };
-    assert_eq!(created.path, root.join("talk.naivepost"), "no doubled suffix");
+    assert_eq!(
+        created.path,
+        root.join("talk.naivepost"),
+        "no doubled suffix"
+    );
     assert!(created.path.join(project::PROJECT_FILE).is_file());
     std::fs::remove_dir_all(&root).ok();
 }
@@ -214,7 +232,8 @@ fn f0_8_s5_a_typed_name_holding_a_project_is_refused() {
         panic!("a name holding a project is refused: {answer:?}")
     };
     assert!(
-        reason.contains("jan.naivepost is a project already \u{2014} open it, or pick another name"),
+        reason
+            .contains("jan.naivepost is a project already \u{2014} open it, or pick another name"),
         "{reason}"
     );
     let after = fs::read(taken.join(project::PROJECT_FILE)).unwrap();
@@ -234,8 +253,15 @@ fn f0_8_s4_a_dismissed_dialog_changes_nothing() {
         .map(|entry| entry.path())
         .collect();
     assert!(before.is_empty(), "the folder starts empty");
-    assert_eq!(new_project::answer(&root, None), new_project::Answer::Dismissed);
-    assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0, "a dismissal wrote nothing");
+    assert_eq!(
+        new_project::answer(&root, None),
+        new_project::Answer::Dismissed
+    );
+    assert_eq!(
+        std::fs::read_dir(&root).unwrap().count(),
+        0,
+        "a dismissal wrote nothing"
+    );
     std::fs::remove_dir_all(&root).ok();
 }
 

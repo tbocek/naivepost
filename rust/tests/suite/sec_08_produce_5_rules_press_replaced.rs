@@ -6,6 +6,7 @@ const CASE: &str = "replaced";
 mod press;
 
 #[test]
-fn sec_08_produce_5_rules_s2_a_stale_sidecar_of_the_ticked_language_is_replaced_not_left_beside_the_new_video() {
+fn sec_08_produce_5_rules_s2_a_stale_sidecar_of_the_ticked_language_is_replaced_not_left_beside_the_new_video(
+) {
     press::run_case();
 }

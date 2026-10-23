@@ -6,15 +6,14 @@
 //! an exact binary number, so a comparison that must be exact stays exact; only the two log lines and the frame boxes
 //! are compared whole, everything else asks about the fragment of a filter string that carries the meaning.
 
+use crate::common;
+use common::{fx, seg};
 use naivepost::cut::{Fx, Seg};
 use naivepost::cut_hear;
 use naivepost::fx_lane;
 use naivepost::fx_zoom;
 use naivepost::params;
 use naivepost::render_fx as render;
-use crate::common;
-use common::{seg, fx};
-
 
 /// A spliced card: no footage under it, its own length.
 fn card(dur: f64) -> Seg {
@@ -54,7 +53,8 @@ const HD: (i32, i32) = (1920, 1080);
 /// only the stretch that was sped gets a filter. `Inserts and spliced cards keep their own clock` is the other half:
 /// a card's length IS its timing, so re-timing it would move every other card in the video.
 #[test]
-fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s1_speed_splits_the_clip_and_carries_the_rate() {
+fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s1_speed_splits_the_clip_and_carries_the_rate(
+) {
     let fx = [speed(2.0, 2.0, 2.0)];
     let pictures = render::split_pictures(&fx, &seg(0.0, 6.0));
     assert_eq!(pictures.len(), 3);
@@ -84,9 +84,18 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s1_speed_splits_the_cl
 
     // The four sound answers §4 lists, chosen by the stored answer.
     assert_eq!(render::sound_filters(2.0, "").join(","), "atempo=2");
-    assert_eq!(render::sound_filters(4.0, "").join(","), "atempo=2,atempo=2");
-    assert_eq!(render::sound_filters(0.25, "").join(","), "atempo=0.5,atempo=0.5");
-    assert!(render::sound_filters(1.0, "").is_empty(), "1× needs no filter");
+    assert_eq!(
+        render::sound_filters(4.0, "").join(","),
+        "atempo=2,atempo=2"
+    );
+    assert_eq!(
+        render::sound_filters(0.25, "").join(","),
+        "atempo=0.5,atempo=0.5"
+    );
+    assert!(
+        render::sound_filters(1.0, "").is_empty(),
+        "1× needs no filter"
+    );
     assert_eq!(
         render::sound_filters(2.0, "pitch").join(","),
         "asetrate=48000*2,aresample=48000"
@@ -118,7 +127,8 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s1_speed_splits_the_cl
 /// S2 (`a still of the frame at t … overlaid with alpha fades for the frozen spans; footage runs on at 1×`): a stop is
 /// not a rate, so it never reaches S1's split — and the chain it does produce carries both fades and the window.
 #[test]
-fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s2_a_stop_freezes_a_frame_and_the_footage_runs_on() {
+fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s2_a_stop_freezes_a_frame_and_the_footage_runs_on(
+) {
     let stop = Fx {
         trans: 0.5,
         tout: 0.5,
@@ -128,7 +138,11 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s2_a_stop_freezes_a_fr
 
     let chain = render::still_chain(stop.t, (4.0, 6.0), (stop.trans, stop.tout), HD).join(";");
     assert!(chain.contains("alpha=1"), "{chain}");
-    assert_eq!(chain.matches("alpha=1").count(), 2, "one fade each end: {chain}");
+    assert_eq!(
+        chain.matches("alpha=1").count(),
+        2,
+        "one fade each end: {chain}"
+    );
     assert!(chain.contains("enable=between(t"), "{chain}");
 
     // The footage under it runs at its own speed: a stop carries no rate to split on.
@@ -147,7 +161,8 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s2_a_stop_freezes_a_fr
 /// S3 (`sampled at clip ends and every zoom's breakpoints, straight lines between`): an unsampled breakpoint is an
 /// unsampled move — a hold that is not sampled renders as the camera drifting on instead of standing still.
 #[test]
-fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s3_the_camera_is_sampled_at_ends_and_breakpoints() {
+fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s3_the_camera_is_sampled_at_ends_and_breakpoints(
+) {
     let fx = [zoom(2.0, 4.0, 0.5, 0.5, 0.5)];
     let samples = render::camera_samples(&fx, 0.0, 10.0);
     let at: Vec<f64> = samples.iter().map(|s| s.t).collect();
@@ -160,7 +175,10 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s3_the_camera_is_sampl
     }
 
     // What it reads is the preview's camera, so the two cannot drift apart: outside every zoom the frame is settled.
-    let outside = samples.iter().find(|s| s.t == 0.0).expect("the scene's first second");
+    let outside = samples
+        .iter()
+        .find(|s| s.t == 0.0)
+        .expect("the scene's first second");
     assert_eq!(outside.cx, fx_zoom::SETTLED.cx);
     assert_eq!(outside.hf, fx_zoom::SETTLED.hf);
 
@@ -175,23 +193,41 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s3_the_camera_is_sampl
         tout: 1.0,
         ..zoom(2.0, 4.0, 0.5, 0.5, 0.5)
     }];
-    assert!(!render::is_static(&render::camera_samples(&glide, 0.0, 10.0)));
+    assert!(!render::is_static(&render::camera_samples(
+        &glide, 0.0, 10.0
+    )));
 
     // Static: two filters and no zoompan.
     let still = render::camera_chain(&held_samples, HD, HD).join(";");
-    assert!(still.contains("crop=") && still.contains("scale="), "{still}");
-    assert!(!still.contains("zoompan"), "a camera with nowhere to go: {still}");
+    assert!(
+        still.contains("crop=") && still.contains("scale="),
+        "{still}"
+    );
+    assert!(
+        !still.contains("zoompan"),
+        "a camera with nowhere to go: {still}"
+    );
 
     // Moving: zoompan on the grid §4 names, and black only where a rectangle reaches past the source.
     let moving = render::camera_samples(&glide, 0.0, 10.0);
     let chain = render::camera_chain(&moving, HD, HD).join(";");
     assert!(chain.contains("zoompan"), "{chain}");
-    assert!(chain.contains(&format!("fps={}", render::ZOOM_GRID_FPS)), "{chain}");
+    assert!(
+        chain.contains(&format!("fps={}", render::ZOOM_GRID_FPS)),
+        "{chain}"
+    );
     assert_eq!(render::ZOOM_GRID_FPS, 30.0);
-    assert!(!chain.contains("pad="), "a centred box never leaves the frame: {chain}");
+    assert!(
+        !chain.contains("pad="),
+        "a centred box never leaves the frame: {chain}"
+    );
     let deep = [zoom(2.0, 4.0, 0.25, 0.1, 0.1)];
-    let off_edge = render::camera_chain(&render::camera_samples(&deep, 0.0, 10.0), HD, HD).join(";");
-    assert!(off_edge.contains("pad="), "the box reaches past the edge: {off_edge}");
+    let off_edge =
+        render::camera_chain(&render::camera_samples(&deep, 0.0, 10.0), HD, HD).join(";");
+    assert!(
+        off_edge.contains("pad="),
+        "the box reaches past the edge: {off_edge}"
+    );
 
     // The piecewise expression: a ramp between two samples, flat past either end.
     let expr = render::piece_expr(&[0.0, 4.0], &[1.0, 3.0]);
@@ -222,17 +258,22 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s3_the_camera_is_sampl
 /// S4 (`composited after the camera and burned subtitles … with alpha fades and an enable window`): a title is put on
 /// the finished frame, so it holds still while the camera moves under it.
 #[test]
-fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s4_words_and_drawings_go_after_the_camera() {
+fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s4_words_and_drawings_go_after_the_camera(
+) {
     let order = render::picture_order();
     let camera = order.iter().position(|p| *p == "camera").expect("camera");
     let subs = order
         .iter()
         .position(|p| p.contains("subtitles"))
         .expect("burned subtitles");
-    let words = order.iter().position(|p| p.contains("text")).expect("text and svg");
+    let words = order
+        .iter()
+        .position(|p| p.contains("text"))
+        .expect("text and svg");
     assert!(camera < subs && subs < words, "{order:?}");
 
-    let chain = render::overlay_chain("text", (2.0, 5.0), (0.5, 0.5), (100, 200, 800, 300)).join(";");
+    let chain =
+        render::overlay_chain("text", (2.0, 5.0), (0.5, 0.5), (100, 200, 800, 300)).join(";");
     assert!(chain.contains("looped"), "{chain}");
     assert!(chain.contains("enable=between(t"), "{chain}");
     assert_eq!(chain.matches("alpha=1").count(), 2, "both fades: {chain}");
@@ -240,12 +281,18 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s4_words_and_drawings_
     // The generated title: frame-sized, transparent, and painted outline-then-fill. SVG draws in document order, so
     // the stroke has to be written first or the letters lose their edge on a bright picture.
     let svg = render::title_svg("results", 1920, 1080);
-    assert!(svg.contains("width=\"1920\"") && svg.contains("height=\"1080\""), "{svg}");
+    assert!(
+        svg.contains("width=\"1920\"") && svg.contains("height=\"1080\""),
+        "{svg}"
+    );
     assert!(!svg.contains("<rect"), "no background: {svg}");
     let stroke = svg.find("stroke-linejoin").expect("round joins");
     let black = svg.find("stroke=\"black\"").expect("the outline");
     let fill = svg.find("fill=\"white\"").expect("the letters");
-    assert!(stroke < black && black < fill, "outline under letters: {svg}");
+    assert!(
+        stroke < black && black < fill,
+        "outline under letters: {svg}"
+    );
 
     // The user's own drawing goes in at its box and nothing else is done to it.
     let drawn = render::scaled_into_box("project:assets/arrow.svg", (0, 0, 640, 480)).join(";");
@@ -335,7 +382,8 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s6_a_label_renders_not
 /// S7 (`no aspect → the footage's own; with an aspect the resolution tier names the short side (1080p on 9:16 =
 /// 1080×1920), even sides`): naming the tier by an edge is what lets a project change shape and keep its sharpness.
 #[test]
-fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s7_the_frame_box_is_the_tier_on_the_short_side() {
+fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s7_the_frame_box_is_the_tier_on_the_short_side(
+) {
     assert_eq!(render::frame_box("", 1920, 1080), (1920, 1080));
     assert_eq!(render::frame_box("source", 1280, 720), (1280, 720));
 

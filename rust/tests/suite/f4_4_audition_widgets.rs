@@ -78,7 +78,10 @@ fn arg_of(line: &str, key: &str) -> f64 {
         let rest = arg.trim_start_matches(&long).to_string();
         // `--volume=0.800` answers `gain=`; a bare word is the value that follows its flag (`-s 2.0`).
         if rest.is_empty() || rest.replace('.', "").parse::<f64>().is_err() {
-            let next = words.iter().position(|w| *w == *arg).and_then(|at| words.get(at + 1));
+            let next = words
+                .iter()
+                .position(|w| *w == *arg)
+                .and_then(|at| words.get(at + 1));
             next.unwrap_or(arg).to_string()
         } else {
             rest
@@ -92,7 +95,9 @@ fn arg_of(line: &str, key: &str) -> f64 {
             .map(|held| held.to_string())
     });
     let value = value.unwrap_or_else(|| panic!("the player call carries its {key}: {line}"));
-    value.parse::<f64>().unwrap_or_else(|why| panic!("{key} parses as a number in {line}: {why}"))
+    value
+        .parse::<f64>()
+        .unwrap_or_else(|why| panic!("{key} parses as a number in {line}: {why}"))
 }
 
 /// The scenario's facts. `run_round` fills it once and asserts the waits inside itself, so a press that
@@ -129,7 +134,10 @@ fn write_recorder(root: &Path, tag: &str, log: &Path) -> PathBuf {
     let script = root.join(tag);
     common::write_script(
         &script,
-        format!("#!/bin/sh\necho \"{tag} $*\" >> {}\nexit 0\n", log.display()),
+        format!(
+            "#!/bin/sh\necho \"{tag} $*\" >> {}\nexit 0\n",
+            log.display()
+        ),
     )
     .expect("the recorder script is written");
     #[cfg(unix)]
@@ -232,7 +240,8 @@ fn run_round(app: &adw::Application) {
     naivepost::cut::save(&cut, &tree).expect("cut.json written");
     // F4.6's reference on disk (S1 passes) and NOTHING under narrate/tts/, so the first press synthesizes.
     let reference = tree.voice_ref_wav();
-    std::fs::create_dir_all(reference.parent().expect("narrate/ has a parent")).expect("narrate/ made");
+    std::fs::create_dir_all(reference.parent().expect("narrate/ has a parent"))
+        .expect("narrate/ made");
     std::fs::write(&reference, b"RIFF fake voice reference").expect("reference written");
     // The bed's cue needs the footage the source row names to EXIST (`narrate_preview_media::footage_path`
     // answers None for a path that is not a file, and a picture that cannot be cued spawns nothing), so the
@@ -248,10 +257,8 @@ fn run_round(app: &adw::Application) {
 
     let entry = entry();
     // The take the PROGRAM files it under: the weighted tag becomes the 8-float vector name (§4).
-    let expected = naivepost::narrate_tts::take_path(
-        &tree,
-        &naivepost::narration::key_for(&entry, Some("")),
-    );
+    let expected =
+        naivepost::narrate_tts::take_path(&tree, &naivepost::narration::key_for(&entry, Some("")));
 
     release_last_window();
     let window = ui::build_window(app, &project, "Prepare");
@@ -337,7 +344,6 @@ fn run_round(app: &adw::Application) {
             .count();
     let bytes_after_second = std::fs::read(&expected).expect("the take is still readable");
     RAN_SECOND.store(true, Ordering::SeqCst);
-
 
     let _ = STAGE.set(Stage {
         status_after_first,
@@ -444,10 +450,7 @@ fn f4_4_s4_the_auditioned_take_reaches_a_real_player() {
 #[test]
 fn f4_4_s4_a_take_already_on_disk_is_auditioned_without_a_second_call() {
     scenario_running();
-    wait_for(
-        &RAN_SECOND,
-        "the second-press block never ran",
-    );
+    wait_for(&RAN_SECOND, "the second-press block never ran");
     let stage = STAGE.get().expect("the scenario staged its facts");
     let take_name = stage
         .take

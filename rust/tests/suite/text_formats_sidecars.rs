@@ -4,11 +4,9 @@
 
 use std::path::Path;
 
-use naivepost::requests::{self, Outcome, Request, SceneChange, Service, WordsDoc, Word};
 use crate::common;
 use common::{project_tree as project, read_file_text as read};
-
-
+use naivepost::requests::{self, Outcome, Request, SceneChange, Service, Word, WordsDoc};
 
 fn plant(path: &Path, text: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -118,7 +116,10 @@ fn sec_01_project_and_files_6_text_formats_a_cache_hit_has_no_time_on_the_wire()
 
     // Seconds always carry two decimals — 1.234 became 1.23 above, and a whole number keeps
     // its two noughts.
-    let timed = Request { on_wire_s: Some(3.0), ..cache.clone() };
+    let timed = Request {
+        on_wire_s: Some(3.0),
+        ..cache.clone()
+    };
     assert!(requests::write_line(&timed).contains("\t3.00\t"));
 }
 
@@ -218,7 +219,10 @@ fn sec_01_project_and_files_6_text_formats_a_new_project_starts_an_empty_log() {
     // An empty file gets the header on its first row, so nothing about the columns is lost.
     plant(&t.requests_tsv(), "");
     requests::record(&t, &full()).unwrap();
-    assert_eq!(read(&t.requests_tsv()).lines().next().unwrap(), requests::HEADER);
+    assert_eq!(
+        read(&t.requests_tsv()).lines().next().unwrap(),
+        requests::HEADER
+    );
 
     // A row written by an older build has none of a column added since; the fields that are
     // there still mean what they say.
@@ -288,8 +292,16 @@ fn sec_01_project_and_files_6_text_formats_words_json_is_the_asr_servers_own_doc
     let doc = WordsDoc {
         text: "we start".to_string(),
         words: vec![
-            Word { word: "we".to_string(), start_sample: 0, end_sample: 8000 },
-            Word { word: "start".to_string(), start_sample: 8000, end_sample: 17000 },
+            Word {
+                word: "we".to_string(),
+                start_sample: 0,
+                end_sample: 8000,
+            },
+            Word {
+                word: "start".to_string(),
+                start_sample: 8000,
+                end_sample: 17000,
+            },
         ],
     };
     requests::write_words(&t, "lecture", &doc).unwrap();
@@ -300,21 +312,33 @@ fn sec_01_project_and_files_6_text_formats_words_json_is_the_asr_servers_own_doc
     assert!(text.contains("\"word\":\"we\""), "{text}");
     assert!(text.contains("\"start_sample\":0"), "{text}");
     assert!(text.contains("\"end_sample\":17000"), "{text}");
-    assert_eq!(requests::read_words(&t, "lecture").unwrap(), Some(doc.clone()));
+    assert_eq!(
+        requests::read_words(&t, "lecture").unwrap(),
+        Some(doc.clone())
+    );
 
     // `words.aligned.json` is the aligner's answer: the words and nothing else.
-    let aligned = requests::AlignedDoc { words: doc.words.clone() };
+    let aligned = requests::AlignedDoc {
+        words: doc.words.clone(),
+    };
     requests::write_aligned(&t, "lecture", &aligned).unwrap();
     let text = read(&t.words_aligned_json("lecture"));
     assert!(text.starts_with("{\"words\":["), "{text}");
     assert!(!text.contains("\"text\":"), "{text}");
-    assert_eq!(requests::read_aligned(&t, "lecture").unwrap(), Some(aligned));
+    assert_eq!(
+        requests::read_aligned(&t, "lecture").unwrap(),
+        Some(aligned)
+    );
 }
 
 #[test]
 fn sec_01_project_and_files_6_text_formats_turns_and_chunks_are_bare_arrays() {
     let (_root, t) = project("arrays");
-    let turns = [requests::Turn { start_sample: 100, end_sample: 9000, speaker_id: 1 }];
+    let turns = [requests::Turn {
+        start_sample: 100,
+        end_sample: 9000,
+        speaker_id: 1,
+    }];
     requests::write_turns(&t, "lecture", &turns).unwrap();
 
     // Not wrapped in an object: the file is the list.
@@ -324,7 +348,11 @@ fn sec_01_project_and_files_6_text_formats_turns_and_chunks_are_bare_arrays() {
     assert_eq!(requests::read_turns(&t, "lecture").unwrap(), turns);
 
     // asrchunks.json: the seconds each ASR request covered and exactly what came back.
-    let chunks = [requests::Chunk { s: 0.0, e: 30.0, text: "the first thirty seconds".to_string() }];
+    let chunks = [requests::Chunk {
+        s: 0.0,
+        e: 30.0,
+        text: "the first thirty seconds".to_string(),
+    }];
     requests::write_chunks(&t, "lecture", &chunks).unwrap();
     let text = read(&t.asrchunks_json("lecture"));
     assert!(text.starts_with("[{"), "{text}");
@@ -343,8 +371,8 @@ fn sec_01_project_and_files_6_text_formats_turns_and_chunks_are_bare_arrays() {
 }
 
 #[test]
-fn sec_01_project_and_files_6_text_formats_a_recording_under_the_short_take_bound_is_written_as_silence()
-{
+fn sec_01_project_and_files_6_text_formats_a_recording_under_the_short_take_bound_is_written_as_silence(
+) {
     // P.policy.minTakeSeconds — 2.0 s by default; a shorter recording is a start and a
     // stop, written up as silence with no server asked (§6).
     assert_eq!(requests::MIN_TAKE_SECONDS, 2.0);
@@ -377,7 +405,11 @@ fn sec_01_project_and_files_6_text_formats_a_recording_under_the_short_take_boun
 
     // §1: files are 0644.
     use std::os::unix::fs::PermissionsExt;
-    for path in [t.transcript_txt("blip"), t.words_json("blip"), t.turns_json("blip")] {
+    for path in [
+        t.transcript_txt("blip"),
+        t.words_json("blip"),
+        t.turns_json("blip"),
+    ] {
         assert_eq!(
             std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
             0o644,
@@ -390,8 +422,8 @@ fn sec_01_project_and_files_6_text_formats_a_recording_under_the_short_take_boun
 // --- meta.env, .frames, scenes.tsv --------------------------------------------
 
 #[test]
-fn sec_01_project_and_files_6_text_formats_meta_env_is_key_value_lines_whose_existence_says_the_sources_were_read()
-{
+fn sec_01_project_and_files_6_text_formats_meta_env_is_key_value_lines_whose_existence_says_the_sources_were_read(
+) {
     let (_root, t) = project("meta");
     // Nothing read yet.
     assert!(!requests::sources_read(&t));
@@ -417,11 +449,20 @@ fn sec_01_project_and_files_6_text_formats_meta_env_is_key_value_lines_whose_exi
     // one only.
     let back = requests::read_meta(&t).unwrap();
     assert_eq!(back.len(), 6);
-    assert_eq!(back[4], ("AUDIO_FILE".to_string(), "=weird=path with spaces.wav".to_string()));
+    assert_eq!(
+        back[4],
+        (
+            "AUDIO_FILE".to_string(),
+            "=weird=path with spaces.wav".to_string()
+        )
+    );
     assert_eq!(back, pairs.map(|(k, v)| (k.to_string(), v.to_string())));
 
     // Blank lines and comments are not entries.
-    plant(&t.meta_env(), "# a note for whoever opens this\n\nINTERVAL=1.0\n");
+    plant(
+        &t.meta_env(),
+        "# a note for whoever opens this\n\nINTERVAL=1.0\n",
+    );
     assert_eq!(requests::read_meta(&t).unwrap().len(), 1);
     assert!(requests::sources_read(&t));
 
@@ -437,15 +478,18 @@ fn sec_01_project_and_files_6_text_formats_meta_env_is_key_value_lines_whose_exi
 }
 
 #[test]
-fn sec_01_project_and_files_6_text_formats_the_frames_marker_holds_the_grid_and_the_scene_threshold()
-{
+fn sec_01_project_and_files_6_text_formats_the_frames_marker_holds_the_grid_and_the_scene_threshold(
+) {
     let (_root, t) = project("frames");
     requests::write_frames_marker(&t, "lecture", 0.25, 0.35).unwrap();
 
     // `<grid>|<scene threshold>` and nothing else — frames are always the video's own size
     // (§6), unlike the prototype's `.interval`, which held a scale name and had no scenes.
     assert_eq!(read(&t.frames_marker("lecture")), "0.25|0.35\n");
-    assert_eq!(requests::read_frames_marker(&t, "lecture").unwrap(), Some((0.25, 0.35)));
+    assert_eq!(
+        requests::read_frames_marker(&t, "lecture").unwrap(),
+        Some((0.25, 0.35))
+    );
 
     // The marker sits beside the frames it describes.
     assert_eq!(
@@ -469,8 +513,14 @@ fn sec_01_project_and_files_6_text_formats_scenes_tsv_is_a_time_and_a_score_per_
         &t,
         "lecture",
         &[
-            SceneChange { time: 34.7, score: 0.42 },
-            SceneChange { time: 65.0, score: 1.0 },
+            SceneChange {
+                time: 34.7,
+                score: 0.42,
+            },
+            SceneChange {
+                time: 65.0,
+                score: 1.0,
+            },
         ],
     )
     .unwrap();

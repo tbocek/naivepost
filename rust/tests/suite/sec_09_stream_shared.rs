@@ -50,7 +50,8 @@ pub fn effects_chunks() -> Vec<String> {
     // reader appends whatever `arguments` piece it is given, and only the LAST fragment of a call carries the
     // name, so the pieces are sent one call at a time instead of cutting the array at a raw byte offset.
     let arg0 = "{\"clip\":1,\"kind\":\"zoom\",\"start\":1.0,\"end\":3.0}".to_string();
-    let arg1 = "{\"clip\":2,\"kind\":\"volume\",\"start\":4.0,\"end\":6.0,\"gain\":0.5}".to_string();
+    let arg1 =
+        "{\"clip\":2,\"kind\":\"volume\",\"start\":4.0,\"end\":6.0,\"gain\":0.5}".to_string();
     let n0 = arg0.len() / 2;
     let n1 = arg1.len() / 2;
     let frag = |index: u32, id: &str, name: Option<&str>, arguments: &str| {
@@ -72,9 +73,15 @@ pub fn effects_chunks() -> Vec<String> {
         // Two prose chunks the reader must NOT read as the answer this time: prose beside calls is talk.
         format!("data: {}", prose(&piece(0, third))),
         format!("data: {}", prose(&piece(third, 2 * third))),
-        format!("data: {}", frag(0, "call_0", Some("add_effect"), &arg0[..n0])),
+        format!(
+            "data: {}",
+            frag(0, "call_0", Some("add_effect"), &arg0[..n0])
+        ),
         format!("data: {}", frag(0, "", None, &arg0[n0..])),
-        format!("data: {}", frag(1, "call_1", Some("add_effect"), &arg1[..n1])),
+        format!(
+            "data: {}",
+            frag(1, "call_1", Some("add_effect"), &arg1[..n1])
+        ),
         format!("data: {}", frag(1, "", None, &arg1[n1..])),
         format!("data: {}", frag(2, "call_2", Some("finish"), "{}")),
         // Why the stream ended, last: everything the answer holds has arrived by then.

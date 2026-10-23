@@ -84,7 +84,10 @@ pub struct Summary {
 
 impl Summary {
     fn new(stage: Stage) -> Self {
-        Self { stage, calls: Vec::new() }
+        Self {
+            stage,
+            calls: Vec::new(),
+        }
     }
 
     /// Total requests this step makes.
@@ -110,7 +113,12 @@ impl Summary {
 
 /// A call whose flags come from §2's two tables rather than being typed here.
 fn from_job(model: &'static str, job: Job, calls: usize) -> Call {
-    Call { model, calls, web: roles::web_tools(job), cached: llm_cache::uses_cache(job) }
+    Call {
+        model,
+        calls,
+        web: roles::web_tools(job),
+        cached: llm_cache::uses_cache(job),
+    }
 }
 
 /// Prepare: `describe ×(frames/4) · fix ×(lines/25) · retake ×3 or textedit ×(joins)`, cached.
@@ -128,7 +136,11 @@ pub fn prepare(frames: usize, lines: usize, marking: MarkingPass, joins: usize) 
         Job::Describe,
         prepare::vision_calls(frames),
     ));
-    s.calls.push(from_job("fix", Job::CleanTranscript, prepare::fixer_calls(lines)));
+    s.calls.push(from_job(
+        "fix",
+        Job::CleanTranscript,
+        prepare::fixer_calls(lines),
+    ));
     match marking {
         MarkingPass::Retakes => s.calls.push(from_job(
             "retake",
@@ -194,7 +206,12 @@ pub fn narrate(lines: usize) -> Summary {
         cached: narrate_pass::served_from_cache(),
     });
     // Not an LLM call, so neither flag is inherited: audio.cpp speaks, and its own cache holds it.
-    s.calls.push(Call { model: "tts", calls: lines, web: false, cached: true });
+    s.calls.push(Call {
+        model: "tts",
+        calls: lines,
+        web: false,
+        cached: true,
+    });
     s
 }
 
@@ -209,7 +226,12 @@ pub fn produce(instruction: &str, frame_named: bool, cues: usize, languages: usi
     s.calls.push(from_job("youtube", Job::UploadText, 1));
     if roles::thumbnail_wanted(instruction, frame_named) {
         // sd.cpp draws once and caches nothing: there is no repeat of an image to replay.
-        s.calls.push(Call { model: "sd.cpp", calls: 1, web: false, cached: false });
+        s.calls.push(Call {
+            model: "sd.cpp",
+            calls: 1,
+            web: false,
+            cached: false,
+        });
     }
     s.calls.push(from_job(
         "translate",
@@ -227,6 +249,11 @@ pub fn produce(instruction: &str, frame_named: bool, cues: usize, languages: usi
 /// still costs the call it is asked with, and the debounce is what keeps that from costing many.
 pub fn setup() -> Summary {
     let mut s = Summary::new(Stage::Setup);
-    s.calls.push(Call { model: "policy", calls: 1, web: false, cached: false });
+    s.calls.push(Call {
+        model: "policy",
+        calls: 1,
+        web: false,
+        cached: false,
+    });
     s
 }

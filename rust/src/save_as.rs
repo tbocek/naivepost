@@ -76,12 +76,19 @@ pub fn move_failure(from: &Path, to: &Path, files: usize, err: &str) -> String {
 }
 
 pub fn save_as(project: &Project, from: &Path, named: &str) -> Result<Saved, String> {
-    let to = from.parent().unwrap_or(from).join(new_project::with_suffix(named));
+    let to = from
+        .parent()
+        .unwrap_or(from)
+        .join(new_project::with_suffix(named));
 
     // The same name is the ordinary save: nothing moves, only the file changes.
     if to == from {
         project::save(project, &to)?;
-        return Ok(Saved { path: to, status: SAVED.to_string(), logs: Vec::new() });
+        return Ok(Saved {
+            path: to,
+            status: SAVED.to_string(),
+            logs: Vec::new(),
+        });
     }
 
     let mut logs = Vec::new();
@@ -96,5 +103,9 @@ pub fn save_as(project: &Project, from: &Path, named: &str) -> Result<Saved, Str
     }
 
     project::save(project, &to)?;
-    Ok(Saved { path: to, status: SAVED.to_string(), logs })
+    Ok(Saved {
+        path: to,
+        status: SAVED.to_string(),
+        logs,
+    })
 }

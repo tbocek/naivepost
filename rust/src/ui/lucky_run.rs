@@ -150,13 +150,19 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
     // than only when the stage's first task reports. Later steps are named at their hand-over below.
     // The phase is left alone on purpose: naming a job is not claiming work, and a step that pushes
     // nothing must leave the needle where it was (S4's end leaves an untouched bar at zero).
-    handles.queue.borrow_mut().job(crate::runqueue::TRACK_FRAMES, "prepare", 0, 1);
+    handles
+        .queue
+        .borrow_mut()
+        .job(crate::runqueue::TRACK_FRAMES, "prepare", 0, 1);
     window::paint_progress(
         &handles.progress,
         &handles.log,
         &handles.log_view,
         &handles.queue.borrow(),
-        crate::ui::shell_beats::StatusLine { status: &handles.status, owned: true },
+        crate::ui::shell_beats::StatusLine {
+            status: &handles.status,
+            owned: true,
+        },
         true,
     );
     // §2: with nothing countable yet the bar pulses until a track reports.
@@ -187,10 +193,12 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
                     crate::ui::run_close::close_chain_step(handles, Some(page));
                     // §2 at the hand-over: the queue was just reset for this step, so name its job before
                     // its work starts -- the line on the row is this step's, not the last one's.
-                    handles
-                        .queue
-                        .borrow_mut()
-                        .job(crate::runqueue::TRACK_FRAMES, &name.to_lowercase(), 0, 1);
+                    handles.queue.borrow_mut().job(
+                        crate::runqueue::TRACK_FRAMES,
+                        &name.to_lowercase(),
+                        0,
+                        1,
+                    );
                 }
                 started_step = true;
                 // F0.1's synchronous move: the step's work belongs to the widgets of its own page.
@@ -212,7 +220,10 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
                 // A skip closes no running step; keep walking.
                 advance = chain.next(StepOutcome::Skipped);
             }
-            Advance::End { line, status: short } => {
+            Advance::End {
+                line,
+                status: short,
+            } => {
                 window::log_line(&line);
                 handles.status.set_text(&short);
                 // The end sentence goes into the log while the run still stands, so it is painted in the
@@ -221,11 +232,16 @@ pub fn press(button: &gtk::Button, handles: &Handles, project: &Project) {
                 close_run(handles);
                 closed = true;
                 break;
-            }            Advance::Idle => break,
+            }
+            Advance::Idle => break,
         }
         // ⏹ pressed between two steps: S5 ends the run here rather than starting the next one.
         if bar_wants_stop(handles) {
-            if let Advance::End { line, status: short } = chain.next(StepOutcome::Stopped) {
+            if let Advance::End {
+                line,
+                status: short,
+            } = chain.next(StepOutcome::Stopped)
+            {
                 window::log_line(&line);
                 handles.status.set_text(&short);
                 close_run(handles);
@@ -277,7 +293,9 @@ pub fn session_hand_edits() -> bool {
 }
 
 fn mtime(path: &std::path::Path) -> Option<SystemTime> {
-    std::fs::metadata(path).ok().and_then(|meta| meta.modified().ok())
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|meta| meta.modified().ok())
 }
 
 /// Run one page's step for real and say what became of it (§S4/S5). Timed here because the chain totals
@@ -298,7 +316,9 @@ fn run_step(page: crate::shell::Page, handles: &Handles, asked: &Project) -> Ste
             started_at,
         ),
         run::Step::Produce => stamp(
-            outcome_of_sentence(&super::produce_page::press_produce_run(&window::main_window())),
+            outcome_of_sentence(&super::produce_page::press_produce_run(
+                &window::main_window(),
+            )),
             started_at,
         ),
     }
@@ -307,18 +327,16 @@ fn run_step(page: crate::shell::Page, handles: &Handles, asked: &Project) -> Ste
 /// Put the measured duration on an outcome that earned one.
 fn stamp(outcome: StepOutcome, started_at: Instant) -> StepOutcome {
     match outcome {
-        StepOutcome::Ran { .. } => StepOutcome::Ran { seconds: whole_seconds(started_at) },
+        StepOutcome::Ran { .. } => StepOutcome::Ran {
+            seconds: whole_seconds(started_at),
+        },
         other => other,
     }
 }
 
 /// Walk one page's stage plan under the run's bookkeeping and say what came of it in the log. Split out
 /// so a test can watch the SAME walk the gears do, over a project of its own, without a window.
-pub fn walk_step(
-    page: crate::shell::Page,
-    handles: &Handles,
-    asked: &Project,
-) -> Drive {
+pub fn walk_step(page: crate::shell::Page, handles: &Handles, asked: &Project) -> Drive {
     let drive = crate::run_stages::drive_page(
         run::step(page),
         asked,
@@ -361,8 +379,12 @@ pub fn outcome_of_sentence(said: &str) -> StepOutcome {
 /// fails a test here instead of silently counting as a finished step.
 fn declined_sentence(said: &str) -> bool {
     let said = said.trim_start_matches('!').trim();
-    [crate::cut::NO_CUT_YET, crate::narrate_run::NO_SESSION_TIMELINE, crate::run::PAUSING]
-        .contains(&said)
+    [
+        crate::cut::NO_CUT_YET,
+        crate::narrate_run::NO_SESSION_TIMELINE,
+        crate::run::PAUSING,
+    ]
+    .contains(&said)
         || crate::narrate_off::refuse_run(true).is_some_and(|reason| reason == said)
 }
 

@@ -18,7 +18,7 @@ use naivepost::cut_speed_pass::{self, Call};
 use naivepost::ui;
 
 use crate::common;
-use common::{settle, status_text, widget_in, cut_page};
+use common::{cut_page, settle, status_text, widget_in};
 
 static RAN_CLICK: AtomicBool = AtomicBool::new(false);
 static RAN_PLACED_REFUSED_IGNORED: AtomicBool = AtomicBool::new(false);
@@ -81,7 +81,11 @@ fn speeds_round(app: &adw::Application) {
     let said = ui::run_speeds_pass_with_reply(&window, &calls);
     let fx: Vec<Fx> = ui::review_cut_of(&window).fx.clone();
     let added: Vec<&Fx> = fx.iter().skip(seeded_fx).collect();
-    assert_eq!(added.len(), 1, "only the ×2 over clip 1 landed, got {added:?}");
+    assert_eq!(
+        added.len(),
+        1,
+        "only the ×2 over clip 1 landed, got {added:?}"
+    );
     // What `place` really writes: kind "speed", the clip's OWN start and length, the applied rate.
     assert_eq!(added[0].kind, "speed", "a proposed speed is a speed effect");
     assert_eq!(added[0].t, 0.0, "clip 1 starts at session second 0");
@@ -110,10 +114,25 @@ fn speeds_round(app: &adw::Application) {
     // follows the rule if the rule moves.
     let mut gap_cut = Cut::default();
     gap_cut.segs = vec![
-        Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
+        Seg {
+            s: 0.0,
+            e: 10.0,
+            cam: 0,
+            ..Default::default()
+        },
         // clip 2 is NOT asked about -- it stays at 1x, which is what leaves the two fast runs separated.
-        Seg { s: 10.0, e: 13.0, cam: 0, ..Default::default() },
-        Seg { s: 13.0, e: 23.0, cam: 0, ..Default::default() },
+        Seg {
+            s: 10.0,
+            e: 13.0,
+            cam: 0,
+            ..Default::default()
+        },
+        Seg {
+            s: 13.0,
+            e: 23.0,
+            cam: 0,
+            ..Default::default()
+        },
     ];
     let window = cut_page(app, &gap_cut);
     let calls = [Call { clip: 1, rate: 2.0 }, Call { clip: 3, rate: 2.0 }];
@@ -123,10 +142,26 @@ fn speeds_round(app: &adw::Application) {
     // Raw, unmerged, the two runs start 13 s apart and each is 10 s long, so the second begins 3 s after the
     // first ends -- inside the gap.
     let raw = vec![
-        Fx { kind: "speed".into(), t: 0.0, dur: 10.0, rate: 2.0, ..Default::default() },
-        Fx { kind: "speed".into(), t: 13.0, dur: 10.0, rate: 2.0, ..Default::default() },
+        Fx {
+            kind: "speed".into(),
+            t: 0.0,
+            dur: 10.0,
+            rate: 2.0,
+            ..Default::default()
+        },
+        Fx {
+            kind: "speed".into(),
+            t: 13.0,
+            dur: 10.0,
+            rate: 2.0,
+            ..Default::default()
+        },
     ];
-    assert_eq!(raw[1].t - (raw[0].t + raw[0].dur), 3.0, "the two fast runs are 3 s apart");
+    assert_eq!(
+        raw[1].t - (raw[0].t + raw[0].dur),
+        3.0,
+        "the two fast runs are 3 s apart"
+    );
     let merged_len = cut_speed_pass::merge(&raw).len();
     assert_eq!(merged_len, 1, "and the module folds that pair into one run");
     assert_eq!(
@@ -145,7 +180,11 @@ fn speeds_round(app: &adw::Application) {
         "4",
         "// P.policy.speedGapSeconds -- params.rs reads the same constant the merge rule uses"
     );
-    assert_eq!(cut_speed_pass::GAP_SECONDS, 4.0, "// P.policy.speedGapSeconds");
+    assert_eq!(
+        cut_speed_pass::GAP_SECONDS,
+        4.0,
+        "// P.policy.speedGapSeconds"
+    );
     RAN_MERGED.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -160,17 +199,29 @@ fn speeds_round(app: &adw::Application) {
         "the control greys out when the pass is off -- a grey button always means the pass would refuse"
     );
     let refused = ui::run_speeds_pass(&window);
-    assert!(refused.contains("off"), "the pass itself refuses, got {refused}");
+    assert!(
+        refused.contains("off"),
+        "the pass itself refuses, got {refused}"
+    );
     assert_eq!(ui::review_cut_of(&window).fx.len(), 0, "and places nothing");
     // Also with a scripted reply: the gate is checked in the shared body, so no door gets around it.
     let still_refused = ui::run_speeds_pass_with_reply(&window, &[Call { clip: 1, rate: 3.0 }]);
-    assert!(still_refused.contains("off"), "nor does the with_reply seam, got {still_refused}");
+    assert!(
+        still_refused.contains("off"),
+        "nor does the with_reply seam, got {still_refused}"
+    );
     // An insensitive button swallows the emission, so what is asserted is the state rather than a
     // fired-and-ignored click: GTK will not run the handler of a control it has greyed out.
-    assert!(!button.is_sensitive(), "still grey after the refused presses");
+    assert!(
+        !button.is_sensitive(),
+        "still grey after the refused presses"
+    );
     ui::set_speeds_pass(&window, true);
     ui::refresh_speeds_gate(&window);
-    assert!(button.is_sensitive(), "switching the policy back on re-enables the control");
+    assert!(
+        button.is_sensitive(),
+        "switching the policy back on re-enables the control"
+    );
     RAN_GATE.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -181,7 +232,10 @@ fn speeds_round(app: &adw::Application) {
         &window,
         &[Call { clip: 1, rate: 2.0 }, Call { clip: 2, rate: 3.0 }],
     );
-    assert!(said.contains("run fast"), "the pass reported its result, got {said}");
+    assert!(
+        said.contains("run fast"),
+        "the pass reported its result, got {said}"
+    );
     // ADJACENT clips at DIFFERENT rates are two decisions and do not merge (§F3.10's rule as written in
     // `merge`: only same-rate stretches fold), so both are on the lane before the undo.
     assert_eq!(
@@ -207,15 +261,20 @@ fn speeds_round(app: &adw::Application) {
     // --- (6) two rounds then the failure line, and the run is NOT failed -------------------------
     let window = cut_page(app, &common::three_clips_cut());
     // A clip number outside the batch faults the whole reply (§F3.10's red box), twice, then gives up.
-    let said = ui::run_speeds_pass_with_reply(&window, &[Call { clip: 99, rate: 2.0 }]);
+    let said = ui::run_speeds_pass_with_reply(
+        &window,
+        &[Call {
+            clip: 99,
+            rate: 2.0,
+        }],
+    );
     assert_eq!(
         said,
         cut_speed_pass::no_answer(),
         "§F3.10's own give-up line, spelled by the module, got {said}"
     );
     assert_eq!(
-        said,
-        "!!! speed: no usable answer \u{2014} every clip plays at 1",
+        said, "!!! speed: no usable answer \u{2014} every clip plays at 1",
         "EM dash and all, matching the spec's bytes"
     );
     assert_eq!(
@@ -234,7 +293,10 @@ fn speeds_round(app: &adw::Application) {
         "and the give-up line reached the log, got {log:?}"
     );
     // The budget is exactly two: one rejection owes one retry, a third ask never happens.
-    assert!(cut_captions_retries_once(), "two rounds at most, pinned at the seam level too");
+    assert!(
+        cut_captions_retries_once(),
+        "two rounds at most, pinned at the seam level too"
+    );
     RAN_NO_ANSWER.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -271,6 +333,12 @@ fn f3_10_widget_the_speeds_button_reaches_the_pass() {
     );
     assert!(RAN_MERGED.load(Ordering::SeqCst), "the gap merge never ran");
     assert!(RAN_GATE.load(Ordering::SeqCst), "the gate never ran");
-    assert!(RAN_UNDO.load(Ordering::SeqCst), "the undo of the pass never ran");
-    assert!(RAN_NO_ANSWER.load(Ordering::SeqCst), "the two-round give-up never ran");
+    assert!(
+        RAN_UNDO.load(Ordering::SeqCst),
+        "the undo of the pass never ran"
+    );
+    assert!(
+        RAN_NO_ANSWER.load(Ordering::SeqCst),
+        "the two-round give-up never ran"
+    );
 }

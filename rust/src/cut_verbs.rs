@@ -236,7 +236,11 @@ pub fn snap_end(at: f64, points: &[f64]) -> f64 {
 /// borders actually made: saying "split at 10 and 20" when 20 was already a scene edge would report work
 /// that did not happen.
 pub fn split(sel: Option<&Selection>, line: f64, segs: &[Seg]) -> Outcome {
-    if let Some(Selection { scope: Scope::Sound { recording }, .. }) = sel {
+    if let Some(Selection {
+        scope: Scope::Sound { recording },
+        ..
+    }) = sel
+    {
         return Outcome::Refused(format!(
             "| Split cuts footage \u{2014} the selection is {recording}'s sound"
         ));
@@ -252,7 +256,8 @@ pub fn split(sel: Option<&Selection>, line: f64, segs: &[Seg]) -> Outcome {
     if sel.is_none() {
         if !footage_under_line(segs, line) {
             return Outcome::Refused(
-                "| Split cuts at the red line \u{2014} click a track to put it somewhere".to_string(),
+                "| Split cuts at the red line \u{2014} click a track to put it somewhere"
+                    .to_string(),
             );
         }
         let drawn = draw_borders(segs, &[line]);
@@ -633,9 +638,8 @@ fn distinct_rows(segs: &[Seg]) -> Vec<usize> {
 /// Does the cut keep any footage inside `from..to`? Every "the cut keeps nothing between a and b" refusal
 /// asks this one question.
 fn footage_kept_between(segs: &[Seg], from: f64, to: f64) -> bool {
-    segs.iter().any(|seg| {
-        is_footage(seg) && (seg.e.min(to) - seg.s.max(from)).max(0.0) >= MIN_SECONDS
-    })
+    segs.iter()
+        .any(|seg| is_footage(seg) && (seg.e.min(to) - seg.s.max(from)).max(0.0) >= MIN_SECONDS)
 }
 
 /// Is the red line standing on kept footage? The no-selection Split asks this rather than

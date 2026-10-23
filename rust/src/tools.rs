@@ -162,7 +162,10 @@ impl Tool {
 /// each list with, spelled once so a section's own table is the only thing it has to add.
 /// `web_search` and `web_read` are not here because they go only where the prototype offered them:
 /// see [`web_search_offered`].
-#[allow(dead_code, reason = "the per-job lists spell the five inline; kept as §3.1's own row")]
+#[allow(
+    dead_code,
+    reason = "the per-job lists spell the five inline; kept as §3.1's own row"
+)]
 const SHARED: [Tool; 5] = [
     Tool::GetContext,
     Tool::GetLines,
@@ -303,8 +306,7 @@ pub fn error(reason: &str) -> String {
     struct Error<'a> {
         error: &'a str,
     }
-    serde_json::to_string(&Error { error: reason })
-        .expect("one string field always serialises")
+    serde_json::to_string(&Error { error: reason }).expect("one string field always serialises")
 }
 
 /// The one shape a success comes back in: a short JSON object saying what the tool did.
@@ -336,9 +338,7 @@ pub fn asked_to_finish(silent_rounds: u32) -> bool {
 /// The log line when the budget runs out with the model still calling tools. Names the number so
 /// the log reads as a limit rather than as a hang.
 pub fn exhausted_log(step: &str) -> String {
-    format!(
-        "!!! {step}: still calling tools after {TOOL_ROUNDS} rounds -- no answer from it"
-    )
+    format!("!!! {step}: still calling tools after {TOOL_ROUNDS} rounds -- no answer from it")
 }
 
 /// Hits one `web_search` may return, with their snippets.
@@ -394,6 +394,6 @@ pub mod describe;
 pub mod fix;
 pub mod retakes;
 // §3.6's model-chosen cut, named after the pass rather than the file it writes.
+pub mod clips;
 pub mod cutpass;
 pub mod textedit;
-pub mod clips;

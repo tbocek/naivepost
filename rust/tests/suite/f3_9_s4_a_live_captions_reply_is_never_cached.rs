@@ -20,14 +20,14 @@ fn cache_dir(fixture: &Fixture) -> std::path::PathBuf {
 fn kept(fixture: &Fixture, needle: &str) -> bool {
     let mut stack = vec![cache_dir(fixture)];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
-            } else if std::fs::read_to_string(&path)
-                .is_ok_and(|text| text.contains(needle))
-            {
+            } else if std::fs::read_to_string(&path).is_ok_and(|text| text.contains(needle)) {
                 return true;
             }
         }
@@ -46,8 +46,18 @@ fn f3_9_s4_a_live_unreadable_captions_reply_is_never_cached_so_the_retry_asks_fo
     let llm = FakeLlm::start(vec![junk.clone(), junk]);
     point_at(&llm.url());
 
-    let first = captions_ask::ask(&fixture.tree, "Caption every spoken line.", &clips, &[], 0, &|| false);
-    assert!(first.failed, "an unreadable answer is a failure, not an empty request");
+    let first = captions_ask::ask(
+        &fixture.tree,
+        "Caption every spoken line.",
+        &clips,
+        &[],
+        0,
+        &|| false,
+    );
+    assert!(
+        first.failed,
+        "an unreadable answer is a failure, not an empty request"
+    );
     assert_eq!(
         first.reason,
         naivepost::clip_rules_tools_leg::no_calls_reason("captions", "add_caption"),
@@ -68,8 +78,18 @@ fn f3_9_s4_a_live_unreadable_captions_reply_is_never_cached_so_the_retry_asks_fo
     );
 
     // The retry: same junk, and it must be READ live again rather than replayed from the failed slot.
-    let second = captions_ask::ask(&fixture.tree, "Caption every spoken line.", &clips, &[], 1, &|| false);
-    assert!(second.failed, "the retry was refused too, as it must have been read live");
+    let second = captions_ask::ask(
+        &fixture.tree,
+        "Caption every spoken line.",
+        &clips,
+        &[],
+        1,
+        &|| false,
+    );
+    assert!(
+        second.failed,
+        "the retry was refused too, as it must have been read live"
+    );
     assert_eq!(
         second.reason,
         naivepost::clip_rules_tools_leg::no_calls_reason("captions", "add_caption"),
@@ -89,6 +109,10 @@ fn f3_9_s4_a_live_unreadable_captions_reply_is_never_cached_so_the_retry_asks_fo
     // ask costs two of them here: the ask itself, then the one repair round §3's content repair owes an answer it
     // cannot use (the fake answers both with the same junk, which is why the retry too ends in a refusal).
     let rows = read(&fixture.tree.requests_tsv());
-    let data_rows = rows.lines().skip(1).filter(|line| !line.trim().is_empty()).count();
+    let data_rows = rows
+        .lines()
+        .skip(1)
+        .filter(|line| !line.trim().is_empty())
+        .count();
     assert_eq!(data_rows, 4, "two asks, each with its repair round: {rows}");
 }

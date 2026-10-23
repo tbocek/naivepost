@@ -52,7 +52,10 @@ fn session_tree() -> Tree {
 /// A project with one footage source, so no tab is locked (`shell::lock`) and the cut has something to
 /// be laid out from. `no_narration` drives the F4.8 refusal.
 fn base_project(no_narration: bool) -> Project {
-    let mut project = Project { no_narration, ..Default::default() };
+    let mut project = Project {
+        no_narration,
+        ..Default::default()
+    };
     project.sources.push(Source {
         path: "/media/take.mp4".into(),
         footage: true,
@@ -233,7 +236,14 @@ fn run_round(app: &adw::Application) {
         // A cut stands: with none, the no-cut gate answers first and the narration-off sentence would
         // never be seen. §F4.1 S1's order is what (2) and (3) pin; this block pins the wording.
         let project = base_project(true);
-        let tree = seed(&project, &Cut { segs: two_clips(), ..Default::default() }, true);
+        let tree = seed(
+            &project,
+            &Cut {
+                segs: two_clips(),
+                ..Default::default()
+            },
+            true,
+        );
         let window = narrate_window(app, &project, Vec::new());
         let refused = ui::refuse_narrate_run(&project).expect("off means refused");
         assert_eq!(
@@ -243,7 +253,11 @@ fn run_round(app: &adw::Application) {
         );
         let said = ui::press_narrate_run(&window);
         assert_eq!(said, refused, "the door returns what it refused with");
-        assert_eq!(status_text(&window), refused, "and puts it on the status line");
+        assert_eq!(
+            status_text(&window),
+            refused,
+            "and puts it on the status line"
+        );
         assert!(
             !tree.narration_prev_json().exists(),
             "a refusal writes no narration.prev.json"
@@ -259,7 +273,14 @@ fn run_round(app: &adw::Application) {
     // --- (2) no session timeline -------------------------------------------------------------
     {
         let project = base_project(false);
-        seed(&project, &Cut { segs: two_clips(), ..Default::default() }, false);
+        seed(
+            &project,
+            &Cut {
+                segs: two_clips(),
+                ..Default::default()
+            },
+            false,
+        );
         let window = narrate_window(app, &project, Vec::new());
         let said = click_play(&window);
         assert_eq!(said, NO_SESSION_TIMELINE);
@@ -283,7 +304,14 @@ fn run_round(app: &adw::Application) {
     // --- (4) everything present: written, prev kept, spoken -----------------------------------
     {
         let project = base_project(false);
-        let tree = seed(&project, &Cut { segs: two_clips(), ..Default::default() }, true);
+        let tree = seed(
+            &project,
+            &Cut {
+                segs: two_clips(),
+                ..Default::default()
+            },
+            true,
+        );
         let old = Narration {
             entries: vec![Entry {
                 s: 0.0,
@@ -310,19 +338,36 @@ fn run_round(app: &adw::Application) {
                 (2, 1.5, "second line", "happy"),
             ],
         );
-        assert_eq!(said, narrate_run::DONE_SPOKEN, "S7's spoken status, got {said}");
+        assert_eq!(
+            said,
+            narrate_run::DONE_SPOKEN,
+            "S7's spoken status, got {said}"
+        );
         assert_eq!(status_text(&window), narrate_run::DONE_SPOKEN);
 
         // S2: the previous generation holds the old bytes, untouched.
         let prev_bytes = std::fs::read(tree.narration_prev_json()).expect("prev kept");
-        assert_eq!(prev_bytes, old_bytes, "narration.prev.json == the OLD narration.json");
+        assert_eq!(
+            prev_bytes, old_bytes,
+            "narration.prev.json == the OLD narration.json"
+        );
 
         // S4: both lines landed, and the user's silence marker survived the rewrite.
         let after = narration::load(&tree).expect("the record reloads");
         let text: Vec<&str> = after.entries.iter().map(|e| e.text.as_str()).collect();
-        assert!(text.contains(&"hello there"), "clip 1's line landed: {text:?}");
-        assert!(text.contains(&"second line"), "clip 2's line landed: {text:?}");
-        assert_eq!(after.entries.len(), 2, "one entry per clip, no leftovers: {text:?}");
+        assert!(
+            text.contains(&"hello there"),
+            "clip 1's line landed: {text:?}"
+        );
+        assert!(
+            text.contains(&"second line"),
+            "clip 2's line landed: {text:?}"
+        );
+        assert_eq!(
+            after.entries.len(),
+            2,
+            "one entry per clip, no leftovers: {text:?}"
+        );
         assert!(
             !text.contains(&"the OLD first line"),
             "rewriting replaced clip 1's old line: {text:?}"
@@ -334,7 +379,10 @@ fn run_round(app: &adw::Application) {
 
         // S3/S4: the log carries the reason line and the written count.
         let logs = ui::window_logs().join("\n");
-        assert!(logs.contains(">>> narrate:"), "the reason line was logged:\n{logs}");
+        assert!(
+            logs.contains(">>> narrate:"),
+            "the reason line was logged:\n{logs}"
+        );
         assert!(
             logs.contains(">>> narration written for 2 clips"),
             "the written log line:\n{logs}"
@@ -346,7 +394,14 @@ fn run_round(app: &adw::Application) {
     // --- (5) captions-only voice: written, none spoken ---------------------------------------
     {
         let project = base_project(false);
-        let tree = seed(&project, &Cut { segs: two_clips(), ..Default::default() }, true);
+        let tree = seed(
+            &project,
+            &Cut {
+                segs: two_clips(),
+                ..Default::default()
+            },
+            true,
+        );
         naivepost::narrate_data::write_voice(&tree, naivepost::narrate_screen::CAPTIONS)
             .expect("voice.txt set to captions");
         let window = narrate_window(app, &project, Vec::new());
@@ -371,7 +426,14 @@ fn run_round(app: &adw::Application) {
     // --- (6) the bar's stage sequence ran ----------------------------------------------------
     {
         let project = base_project(false);
-        let _tree = seed(&project, &Cut { segs: two_clips(), ..Default::default() }, true);
+        let _tree = seed(
+            &project,
+            &Cut {
+                segs: two_clips(),
+                ..Default::default()
+            },
+            true,
+        );
         let window = narrate_window(app, &project, Vec::new());
         let _ = click_play_with_reply(
             &window,
@@ -386,7 +448,10 @@ fn run_round(app: &adw::Application) {
         let bar = find_named(&window, "run-progress")
             .and_then(|w| w.downcast::<gtk::ProgressBar>().ok())
             .expect("the run bar has a progress widget");
-        assert_eq!(bar.text().as_deref(), Some(narrate_run::writing(2, 2).as_str()));
+        assert_eq!(
+            bar.text().as_deref(),
+            Some(narrate_run::writing(2, 2).as_str())
+        );
         assert!(bar.shows_text(), "the stage is shown, not hidden");
         RAN_STAGE_SEQUENCE.store(true, Ordering::SeqCst);
     }
@@ -395,7 +460,14 @@ fn run_round(app: &adw::Application) {
     // --- (8) S3's pulse: the bar moves while the model thinks, then shows the count -------------
     {
         let project = base_project(false);
-        let tree = seed(&project, &Cut { segs: two_clips(), ..Default::default() }, true);
+        let tree = seed(
+            &project,
+            &Cut {
+                segs: two_clips(),
+                ..Default::default()
+            },
+            true,
+        );
         // Toggle rewriting on so the reply covers BOTH clips: off, only the clip with no line yet
         // would be asked about (§F4.1 S4), and the second reply line would land nowhere — the bar would
         // then honestly read `writing 1/2`, which is what the first cut of this check tripped on.
@@ -416,7 +488,11 @@ fn run_round(app: &adw::Application) {
             &window,
             &[(1, 0.0, "pulsed line", ""), (2, 0.0, "second line", "")],
         );
-        assert_eq!(said, narrate_run::DONE_SPOKEN, "the run still finished: {said}");
+        assert_eq!(
+            said,
+            narrate_run::DONE_SPOKEN,
+            "the run still finished: {said}"
+        );
         // The door stood the shell's own timer rather than inventing a second one: `arm_pulse` is
         // `shell_beats`' single 150 ms beat (`runqueue::PROGRESS_PULSE`), the call the ▶ handler makes.
         assert!(
@@ -435,8 +511,14 @@ fn run_round(app: &adw::Application) {
         );
         // And the timer is gone once there was a countable reading: `should_pulse` answers false at
         // the fraction the writing stage carries, so `arm_pulse`'s beat breaks itself.
-        let fraction = ui::run_queue(&window).expect("this window has a queue").borrow().fraction();
-        assert!(fraction > 0.0, "the run left a countable fraction on the bar: {fraction}");
+        let fraction = ui::run_queue(&window)
+            .expect("this window has a queue")
+            .borrow()
+            .fraction();
+        assert!(
+            fraction > 0.0,
+            "the run left a countable fraction on the bar: {fraction}"
+        );
         // The countable reading exists, so `arm_pulse`'s beat ends itself on its next tick — that is
         // the timer's own rule (`should_pulse`), which the check asks rather than waiting on the clock.
         assert!(
@@ -454,7 +536,10 @@ fn run_round(app: &adw::Application) {
         let bar = find_named(&window, "run-progress")
             .and_then(|w| w.downcast::<gtk::ProgressBar>().ok())
             .expect("the run bar has a progress widget");
-        assert_eq!(bar.text().as_deref(), Some(narrate_run::writing(2, 2).as_str()));
+        assert_eq!(
+            bar.text().as_deref(),
+            Some(narrate_run::writing(2, 2).as_str())
+        );
         // Proof the count landed on the record this press wrote, not only on the bar.
         let after = narration::load(&tree).expect("the run saved the record");
         assert_eq!(
@@ -469,7 +554,14 @@ fn run_round(app: &adw::Application) {
     // --- (7) a blank written line counts as neither spoken nor cached ------------------------
     {
         let project = base_project(false);
-        let tree = seed(&project, &Cut { segs: two_clips(), ..Default::default() }, true);
+        let tree = seed(
+            &project,
+            &Cut {
+                segs: two_clips(),
+                ..Default::default()
+            },
+            true,
+        );
         // F4.4 S1 asks whether a reference exists to clone before anything else, and S6 really asks it
         // now that the run dials the synth — so plant one (the way `sample_play_wire_widgets` does) and
         // let this run speak over an audio.cpp that cannot be reached. The refusal is logged per line;
@@ -484,10 +576,8 @@ fn run_round(app: &adw::Application) {
         point_audio_at(&fake_audio_server());
         let window = narrate_window(app, &project, Vec::new());
         let before = ui::window_logs().len();
-        let said = click_play_with_reply(
-            &window,
-            &[(1, 0.0, "   ", ""), (2, 0.0, "a real line", "")],
-        );
+        let said =
+            click_play_with_reply(&window, &[(1, 0.0, "   ", ""), (2, 0.0, "a real line", "")]);
         assert_eq!(said, narrate_run::DONE_SPOKEN);
         let logs = ui::window_logs()[before..].join("\n");
         assert!(
@@ -510,7 +600,14 @@ fn run_round(app: &adw::Application) {
     // --- (9) ⏹ mid-run names the stage it caught (S7's `<stage> stopped`) --------------------------
     {
         let project = base_project(false);
-        let tree = seed(&project, &Cut { segs: two_clips(), ..Default::default() }, true);
+        let tree = seed(
+            &project,
+            &Cut {
+                segs: two_clips(),
+                ..Default::default()
+            },
+            true,
+        );
         let window = narrate_window(app, &project, Vec::new());
         // A reply that spends HALF per clip, so with two clips the run is still inside its FIRST one
         // when the thread below raises the switch HALF/2 after the press: `narration` is the stage ⏹
@@ -535,7 +632,10 @@ fn run_round(app: &adw::Application) {
         // The run is honestly still writing: HALF per clip with two clips, and the watcher raises the
         // switch HALF/2 after this run's own context opened, so `narration` is the stage ⏹ catches.
         let said = click_play(&window);
-        assert_eq!(said, "narration stopped", "a stop mid-write names narration, got {said}");
+        assert_eq!(
+            said, "narration stopped",
+            "a stop mid-write names narration, got {said}"
+        );
         assert_eq!(status_text(&window), "narration stopped");
         assert!(
             !tree.narration_json().is_file(),
@@ -574,7 +674,9 @@ fn find_named(root: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> 
         }
         for child in node.observe_children().iter::<glib::Object>() {
             let Ok(child) = child else { continue };
-            let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+            let Ok(widget) = child.downcast::<gtk::Widget>() else {
+                continue;
+            };
             if let Some(found) = walk(&widget, name) {
                 return Some(found);
             }
@@ -608,16 +710,40 @@ fn f4_1_run_bar_press_reaches_the_narrate_run() {
         app.run_with_args(&["naivepost"]);
     });
 
-    assert!(RAN_NO_NARRATION.load(Ordering::SeqCst), "the narration-off block never ran");
-    assert!(RAN_NO_TIMELINE.load(Ordering::SeqCst), "the no-timeline block never ran");
-    assert!(RAN_NO_CUT.load(Ordering::SeqCst), "the no-cut block never ran");
+    assert!(
+        RAN_NO_NARRATION.load(Ordering::SeqCst),
+        "the narration-off block never ran"
+    );
+    assert!(
+        RAN_NO_TIMELINE.load(Ordering::SeqCst),
+        "the no-timeline block never ran"
+    );
+    assert!(
+        RAN_NO_CUT.load(Ordering::SeqCst),
+        "the no-cut block never ran"
+    );
     assert!(
         RAN_WRITTEN_AND_SPOKEN.load(Ordering::SeqCst),
         "the written-and-spoken block never ran"
     );
-    assert!(RAN_CAPTIONS_ONLY.load(Ordering::SeqCst), "the captions-only block never ran");
-    assert!(RAN_STAGE_SEQUENCE.load(Ordering::SeqCst), "the stage-sequence block never ran");
-    assert!(RAN_BLANK_LINE.load(Ordering::SeqCst), "the blank-line block never ran");
-    assert!(RAN_PULSED.load(Ordering::SeqCst), "the thinking-pulse block never ran");
-    assert!(RAN_STOPPED.load(Ordering::SeqCst), "the stopped-mid-run block never ran");
+    assert!(
+        RAN_CAPTIONS_ONLY.load(Ordering::SeqCst),
+        "the captions-only block never ran"
+    );
+    assert!(
+        RAN_STAGE_SEQUENCE.load(Ordering::SeqCst),
+        "the stage-sequence block never ran"
+    );
+    assert!(
+        RAN_BLANK_LINE.load(Ordering::SeqCst),
+        "the blank-line block never ran"
+    );
+    assert!(
+        RAN_PULSED.load(Ordering::SeqCst),
+        "the thinking-pulse block never ran"
+    );
+    assert!(
+        RAN_STOPPED.load(Ordering::SeqCst),
+        "the stopped-mid-run block never ran"
+    );
 }

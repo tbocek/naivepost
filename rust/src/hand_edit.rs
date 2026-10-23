@@ -22,7 +22,8 @@ pub const KEEP_REACH: usize = 200;
 
 /// What the run says when it takes the edit over. The model is not asked, which is the point: the text
 /// is the edit, and asking again would let a model undo what the user just typed.
-pub const EDITED_NOTE: &str = ">>> final.txt was edited after Prepare -- the marks are remade from it, no model asked";
+pub const EDITED_NOTE: &str =
+    ">>> final.txt was edited after Prepare -- the marks are remade from it, no model asked";
 
 /// S2: is the text newer than the marks? A missing `final.txt` is nothing to read; a missing
 /// `retakes.tsv` means nothing has been marked yet, so an edit there is one waiting to be used. Equal
@@ -142,7 +143,10 @@ pub fn remake<'a>(
     mut edge_of: impl FnMut(f64) -> Option<&'a Edges>,
 ) -> Outcome {
     let (kept, extra) = keep_mask(words, &text_words(text));
-    let mut out = Outcome { extra, ..Default::default() };
+    let mut out = Outcome {
+        extra,
+        ..Default::default()
+    };
     out.logs.push(EDITED_NOTE.to_string());
     if extra > 0 {
         out.logs.push(format!(
@@ -250,7 +254,12 @@ fn session_lanes(tree: &Tree, sources: &[String]) -> Vec<edges::Lane> {
         .zip(offsets)
         .filter_map(|((name, stored), off)| {
             let (size, mtime) = stat_recording(tree, stored)?;
-            Some(edges::Lane { key: source_key(name), off, size, mtime })
+            Some(edges::Lane {
+                key: source_key(name),
+                off,
+                size,
+                mtime,
+            })
         })
         .collect()
 }
@@ -276,12 +285,13 @@ fn stat_recording(tree: &Tree, stored: &str) -> Option<(i64, i64)> {
     Some((meta.len() as i64, mtime))
 }
 
-
 /// A file's own modification time, or `None` when there is no such file to ask. Both halves of §F1.12's
 /// question are answered off the disk rather than off a remembered flag, which is what makes an edit
 /// seen by *any* program (not only this one) count.
 fn mtime(path: &std::path::Path) -> Option<SystemTime> {
-    std::fs::metadata(path).ok().and_then(|meta| meta.modified().ok())
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|meta| meta.modified().ok())
 }
 
 /// The session's spoken words and their seconds, read back from each source's `words.json` in the order
@@ -315,10 +325,7 @@ pub fn session_words(tree: &Tree, sources: &[String]) -> (Vec<String>, Vec<(f64,
                 continue;
             }
             words.push(word.word.clone());
-            times.push((
-                word.start_sample as f64 / hz,
-                word.end_sample as f64 / hz,
-            ));
+            times.push((word.start_sample as f64 / hz, word.end_sample as f64 / hz));
         }
     }
     (words, times)

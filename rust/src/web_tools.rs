@@ -65,11 +65,15 @@ anything.";
 pub const WEB_SEARCH_ARGUMENTS: [(&str, &str); 3] = [
     ("broad", "the general subject, e.g. the game"),
     ("medium", "the subject and the thing"),
-    ("narrow", "the thing's exact name, as the user context spells it"),
+    (
+        "narrow",
+        "the thing's exact name, as the user context spells it",
+    ),
 ];
 
 /// prompts/tools.md, verbatim; `url` is its only argument line.
-pub const WEB_READ_DESCRIPTION: &str = "Read one page from a web_search result, by its URL, when the snippet did \
+pub const WEB_READ_DESCRIPTION: &str =
+    "Read one page from a web_search result, by its URL, when the snippet did \
 not say enough. Returns the page's text, shortened.";
 
 /// The description that ships with the tool (§2 S1). Only these two have one yet: every other row of §3's
@@ -109,8 +113,11 @@ impl SearchArgs {
     pub fn from_json(args: &str) -> Result<Self, String> {
         // The reason is the parse error itself: a model that wrote `"queries": [...]` needs to see that `broad`
         // is what it left out, and one sentence naming only "bad arguments" would send it guessing.
-        serde_json::from_str(args)
-            .map_err(|problem| tools::error(&format!("web_search: could not read the arguments: {problem}")))
+        serde_json::from_str(args).map_err(|problem| {
+            tools::error(&format!(
+                "web_search: could not read the arguments: {problem}"
+            ))
+        })
     }
 }
 
@@ -122,8 +129,12 @@ pub fn read_url(args: &str) -> Result<String, String> {
         url: String,
     }
     // Same shape as SearchArgs::from_json's problem: the parse error is the thing the model can act on.
-    let parsed: Args = serde_json::from_str(args)
-        .map_err(|problem| tools::error(&format!("web_read: could not read the arguments: {problem}")))?;    if parsed.url.trim().is_empty() {
+    let parsed: Args = serde_json::from_str(args).map_err(|problem| {
+        tools::error(&format!(
+            "web_read: could not read the arguments: {problem}"
+        ))
+    })?;
+    if parsed.url.trim().is_empty() {
         return Err(tools::error("web_read: no url given"));
     }
     Ok(parsed.url)
@@ -172,7 +183,10 @@ pub fn climb(ask: &Query, broad: &str, medium: &str, narrow: &str) -> Result<Lad
                     }
                     continue;
                 }
-                best = Some(Ladder { used: rung.to_string(), hits });
+                best = Some(Ladder {
+                    used: rung.to_string(),
+                    hits,
+                });
             }
         }
     }
@@ -181,7 +195,10 @@ pub fn climb(ask: &Query, broad: &str, medium: &str, narrow: &str) -> Result<Lad
         // Only a ladder that found nothing anywhere reports the error: one dead query in three is not news.
         None => match last_error {
             Some(problem) => Err(problem),
-            None => Ok(Ladder { used: String::new(), hits: Vec::new() }),
+            None => Ok(Ladder {
+                used: String::new(),
+                hits: Vec::new(),
+            }),
         },
     }
 }
@@ -313,7 +330,13 @@ pub fn offered(firefox: &str, flatpak: bool) -> bool {
 /// nothing set at all means no browser was ever named; and a name that is not a binary quotes the filesystem's
 /// reason — §2's `firefox: <stat error>` — which only the caller can supply. That last one is why `found` is an
 /// argument: `/opt/firefox` is unavailable only once the filesystem has said so, and this module reads no disk.
-pub fn unavailable_log(step: &str, firefox: &str, flatpak: bool, found: bool, stat_error: &str) -> Option<String> {
+pub fn unavailable_log(
+    step: &str,
+    firefox: &str,
+    flatpak: bool,
+    found: bool,
+    stat_error: &str,
+) -> Option<String> {
     if flatpak {
         return Some(format!(">>> {step}: no web search inside Flatpak"));
     }
@@ -328,7 +351,11 @@ pub fn unavailable_log(step: &str, firefox: &str, flatpak: bool, found: bool, st
         return None;
     }
     // Empty means the caller could not say more, which is still worth one line.
-    let reason = if stat_error.is_empty() { "not found" } else { stat_error };
+    let reason = if stat_error.is_empty() {
+        "not found"
+    } else {
+        stat_error
+    };
     Some(format!(">>> {step}: no web search (firefox: {reason})"))
 }
 
@@ -349,8 +376,17 @@ pub fn filter(tools: &[Tool], available: bool) -> Vec<Tool> {
 
 /// A search as §2 logs it: the three rungs as asked, how many came back, and which one they came from — the
 /// last of those is what tells a reader the narrow query was useless.
-pub fn searched_log(step: &str, broad: &str, medium: &str, narrow: &str, hits: usize, used: &str) -> String {
-    format!(">>> {step}: searched {broad:?} / {medium:?} / {narrow:?} -- {hits} result(s) for {used:?}")
+pub fn searched_log(
+    step: &str,
+    broad: &str,
+    medium: &str,
+    narrow: &str,
+    hits: usize,
+    used: &str,
+) -> String {
+    format!(
+        ">>> {step}: searched {broad:?} / {medium:?} / {narrow:?} -- {hits} result(s) for {used:?}"
+    )
 }
 
 /// A read as §2 logs it. The count is in characters, not bytes: a person judging a page counts words, and the
@@ -372,7 +408,14 @@ pub fn search(step: &str, args: &str, ask: &Query) -> (String, Option<String>) {
         Err(problem) => (format!("web_search failed: {problem}"), None),
         Ok(ladder) => {
             let hits = ladder.hits.len();
-            let log = searched_log(step, &args.broad, &args.medium, &args.narrow, hits, &ladder.used);
+            let log = searched_log(
+                step,
+                &args.broad,
+                &args.medium,
+                &args.narrow,
+                hits,
+                &ladder.used,
+            );
             (format_hits(&ladder), Some(log))
         }
     }

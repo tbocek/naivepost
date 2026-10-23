@@ -18,13 +18,13 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::temp_dir_created as temp_dir;
+use naivepost::fix_transcripts;
 use naivepost::frames::{self, GRID, SCENE_THRESHOLD};
 use naivepost::layout::Tree;
 use naivepost::requests;
 use naivepost::textfmt::{self, Line};
-use naivepost::fix_transcripts;
-use crate::common;
-use common::temp_dir_created as temp_dir;
 
 /// The lane every scene here uses. A microphone's base name, so the fixed file is the commentary one.
 const SOURCE: &str = "mic.wav";
@@ -86,7 +86,11 @@ fn sec_04_prepare_5_rules_b1_a_marker_lands_whole_and_leaves_no_part() {
 
     // And the whole file is what makes the stage skip: the reader parses it, and the match is the skip.
     let found = requests::read_frames_marker(&tree, SOURCE).expect("parses");
-    assert_eq!(found, Some((GRID, SCENE_THRESHOLD)), "read back what was written");
+    assert_eq!(
+        found,
+        Some((GRID, SCENE_THRESHOLD)),
+        "read back what was written"
+    );
     assert!(
         frames::marker_matches(found, GRID, SCENE_THRESHOLD),
         "so the next run skips this stage"
@@ -112,9 +116,14 @@ fn sec_04_prepare_5_rules_b1_a_failed_write_leaves_the_real_file_alone() {
     // Open it again whatever happened: a folder nobody can write is not a folder a later cleanup sees.
     fs::set_permissions(inputs, PermissionsExt::from_mode(0o755)).expect("open again");
 
-    assert!(outcome.is_err(), "a write into a closed folder must say so, not pretend: {outcome:?}");
     assert!(
-        outcome.expect_err("the refusal").contains(&meta.display().to_string()),
+        outcome.is_err(),
+        "a write into a closed folder must say so, not pretend: {outcome:?}"
+    );
+    assert!(
+        outcome
+            .expect_err("the refusal")
+            .contains(&meta.display().to_string()),
         "the error names the file it could not write"
     );
     assert_eq!(
@@ -139,9 +148,21 @@ fn sec_04_prepare_5_rules_b1_marker_written_last_after_the_frames() {
     // First chunk fails: some of the grid was asked for, none of it is vouched for.
     let mut halfway = Extract::default();
     let first = frames::run(
-        &tree, SOURCE, BASE, 60.0, 0.0, SCENE_THRESHOLD, GRID, 8, &log, |at| halfway.run(at, true),
+        &tree,
+        SOURCE,
+        BASE,
+        60.0,
+        0.0,
+        SCENE_THRESHOLD,
+        GRID,
+        8,
+        &log,
+        |at| halfway.run(at, true),
     );
-    assert!(first.is_err(), "a failed extraction is the stage's failure: {first:?}");
+    assert!(
+        first.is_err(),
+        "a failed extraction is the stage's failure: {first:?}"
+    );
     assert!(
         !halfway.calls.lock().unwrap().is_empty(),
         "extraction had begun: the pass reached at least one chunk before it died"
@@ -150,19 +171,43 @@ fn sec_04_prepare_5_rules_b1_marker_written_last_after_the_frames() {
         !tree.frames_marker(SOURCE).exists(),
         "no marker while the stage is half done — a half marker is a skip over work never done"
     );
-    assert!(parts_under(&root).iter().all(|p| !p.contains(".frames")), "no half marker either");
+    assert!(
+        parts_under(&root).iter().all(|p| !p.contains(".frames")),
+        "no half marker either"
+    );
 
     // Now the same pass to success: the marker appears, and the second call answers skipped off it.
     let mut done = Extract::default();
     let out = frames::run(
-        &tree, SOURCE, BASE, 60.0, 0.0, SCENE_THRESHOLD, GRID, 8, &log, |at| done.run(at, false),
+        &tree,
+        SOURCE,
+        BASE,
+        60.0,
+        0.0,
+        SCENE_THRESHOLD,
+        GRID,
+        8,
+        &log,
+        |at| done.run(at, false),
     )
     .expect("a finished pass is not a failure");
     assert!(!out.skipped, "the first pass that ran was not a skip");
-    assert!(tree.frames_marker(SOURCE).is_file(), "the marker is written last, after the frames");
+    assert!(
+        tree.frames_marker(SOURCE).is_file(),
+        "the marker is written last, after the frames"
+    );
 
     let again = frames::run(
-        &tree, SOURCE, BASE, 60.0, 0.0, SCENE_THRESHOLD, GRID, 8, &log, |at| done.run(at, false),
+        &tree,
+        SOURCE,
+        BASE,
+        60.0,
+        0.0,
+        SCENE_THRESHOLD,
+        GRID,
+        8,
+        &log,
+        |at| done.run(at, false),
     )
     .expect("a skip is not a failure");
     assert!(again.skipped, "the next run skips off the marker");
@@ -218,37 +263,81 @@ fn sec_04_prepare_5_rules_b2_a_derived_file_lives_beside_the_servers_own_one() {
     // The ASR's own documents, as the server answered them.
     let doc = requests::WordsDoc {
         text: "the words as heard".into(),
-        words: vec![requests::Word { word: "the".into(), start_sample: 0, end_sample: 8000 }],
+        words: vec![requests::Word {
+            word: "the".into(),
+            start_sample: 0,
+            end_sample: 8000,
+        }],
     };
     requests::write_words(&tree, SOURCE, &doc).expect("words.json");
-    requests::write_chunks(&tree, SOURCE, &[requests::Chunk { s: 0.0, e: 60.0, text: "x".into() }])
-        .expect("asrchunks.json");
-    let lines = vec![Line { start: 0.0, end: 1.0, speaker: "NARRATOR".into(), text: "as heard".into() }];
+    requests::write_chunks(
+        &tree,
+        SOURCE,
+        &[requests::Chunk {
+            s: 0.0,
+            e: 60.0,
+            text: "x".into(),
+        }],
+    )
+    .expect("asrchunks.json");
+    let lines = vec![Line {
+        start: 0.0,
+        end: 1.0,
+        speaker: "NARRATOR".into(),
+        text: "as heard".into(),
+    }];
     textfmt::write_lines(&lines, &tree.transcript_tsv(SOURCE)).expect("transcript.tsv");
 
     let words_before = fs::read(tree.words_json(SOURCE)).expect("bytes");
     let tsv_before = fs::read(tree.transcript_tsv(SOURCE)).expect("bytes");
 
     // The fixer's answer for the same recording: a microphone, so commentary, and no subtitles.
-    let fixed = vec![Line { start: 0.0, end: 1.0, speaker: "NARRATOR".into(), text: "respelled".into() }];
-    let written = fix_transcripts::write_fixed(&tree, SOURCE, false, true, &fixed).expect("fixed files");
-    assert_eq!(written, vec![tree.commentary_fixed_tsv(SOURCE)], "one file, and it is the derived one");
+    let fixed = vec![Line {
+        start: 0.0,
+        end: 1.0,
+        speaker: "NARRATOR".into(),
+        text: "respelled".into(),
+    }];
+    let written =
+        fix_transcripts::write_fixed(&tree, SOURCE, false, true, &fixed).expect("fixed files");
+    assert_eq!(
+        written,
+        vec![tree.commentary_fixed_tsv(SOURCE)],
+        "one file, and it is the derived one"
+    );
 
     let derived = tree.commentary_fixed_tsv(SOURCE);
     assert!(derived.is_file(), "the derived file exists");
     // "Beside": inside the same prepare/ tree, one directory level per kind, sharing the session root.
     let prepare = tree.prepare_dir();
-    assert!(derived.starts_with(&prepare), "{derived:?} is not under {prepare:?}");
-    assert!(tree.words_json(SOURCE).starts_with(&prepare), "so is the server's own document");
-    assert_ne!(derived.parent(), tree.words_json(SOURCE).parent(), "in its own kind of folder");
+    assert!(
+        derived.starts_with(&prepare),
+        "{derived:?} is not under {prepare:?}"
+    );
+    assert!(
+        tree.words_json(SOURCE).starts_with(&prepare),
+        "so is the server's own document"
+    );
+    assert_ne!(
+        derived.parent(),
+        tree.words_json(SOURCE).parent(),
+        "in its own kind of folder"
+    );
     assert_eq!(
-        derived.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()),
+        derived
+            .parent()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned()),
         Some(SOURCE.to_string()),
         "the derived file is filed under the SAME source name as the document it derives from"
     );
 
     // Writing the derived file rewrote nothing of the server's.
-    assert_eq!(fs::read(tree.words_json(SOURCE)).expect("bytes"), words_before, "words.json untouched");
+    assert_eq!(
+        fs::read(tree.words_json(SOURCE)).expect("bytes"),
+        words_before,
+        "words.json untouched"
+    );
     assert_eq!(
         fs::read(tree.transcript_tsv(SOURCE)).expect("bytes"),
         tsv_before,
@@ -266,25 +355,53 @@ fn sec_04_prepare_5_rules_b2_a_derived_file_lives_beside_the_servers_own_one() {
 fn sec_04_prepare_5_rules_b2_the_servers_own_document_is_never_rewritten_by_a_fix() {
     let (_root, tree) = project("b2-never");
     let heard = vec![
-        Line { start: 0.0, end: 1.0, speaker: "NARRATOR".into(), text: "teh words as herd".into() },
-        Line { start: 1.0, end: 2.0, speaker: "NARRATOR".into(), text: "anoither line".into() },
+        Line {
+            start: 0.0,
+            end: 1.0,
+            speaker: "NARRATOR".into(),
+            text: "teh words as herd".into(),
+        },
+        Line {
+            start: 1.0,
+            end: 2.0,
+            speaker: "NARRATOR".into(),
+            text: "anoither line".into(),
+        },
     ];
     textfmt::write_lines(&heard, &tree.transcript_tsv(SOURCE)).expect("the ASR's file");
     let before = fs::read(tree.transcript_tsv(SOURCE)).expect("bytes");
 
     let respelled = vec![
-        Line { start: 0.0, end: 1.0, speaker: "NARRATOR".into(), text: "the words as heard".into() },
-        Line { start: 1.0, end: 2.0, speaker: "NARRATOR".into(), text: "another line".into() },
+        Line {
+            start: 0.0,
+            end: 1.0,
+            speaker: "NARRATOR".into(),
+            text: "the words as heard".into(),
+        },
+        Line {
+            start: 1.0,
+            end: 2.0,
+            speaker: "NARRATOR".into(),
+            text: "another line".into(),
+        },
     ];
-    fix_transcripts::write_fixed(&tree, SOURCE, false, false, &respelled).expect("the fixer's file");
+    fix_transcripts::write_fixed(&tree, SOURCE, false, false, &respelled)
+        .expect("the fixer's file");
 
     assert_eq!(
         fs::read(tree.transcript_tsv(SOURCE)).expect("bytes"),
         before,
         "the server's own document is never rewritten: transcript.tsv is byte-for-byte what the ASR sent"
     );
-    let fixed_bytes = fs::read(tree.transcript_fixed_tsv(SOURCE)).expect("the fixer wrote its own file");
-    assert_ne!(fixed_bytes, before, "the fixed text is DIFFERENT — and lives in the other file");
+    let fixed_bytes =
+        fs::read(tree.transcript_fixed_tsv(SOURCE)).expect("the fixer wrote its own file");
+    assert_ne!(
+        fixed_bytes, before,
+        "the fixed text is DIFFERENT — and lives in the other file"
+    );
     let read_back = textfmt::read_lines(&tree.transcript_fixed_tsv(SOURCE)).expect("readable");
-    assert_eq!(read_back, respelled, "every row kept its times and its speaker; only the text moved");
+    assert_eq!(
+        read_back, respelled,
+        "every row kept its times and its speaker; only the text moved"
+    );
 }

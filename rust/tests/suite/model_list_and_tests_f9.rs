@@ -10,17 +10,17 @@
 //! clock assertions (the timed probe line is matched as a shape, not a number), and one shared `ENV` lock
 //! because `XDG_*` and the working directory belong to the process while cargo runs these cases as threads.
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpListener;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use gtk4 as gtk;
 use naivepost::checks;
 use naivepost::ui;
 use naivepost::ui::settings;
-use crate::common;
-use common::{fixture_dir, settle};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpListener;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 
 /// `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and the cwd are process-wide, so only one case at a time may point
 /// them at its own folders.
@@ -50,21 +50,39 @@ impl Fake {
                 std::thread::spawn(move || {
                     let mut reader = BufReader::new(stream.try_clone().expect("a socket clone"));
                     let mut request_line = String::new();
-                    if reader.read_line(&mut request_line).ok().filter(|n| *n > 0).is_none() {
+                    if reader
+                        .read_line(&mut request_line)
+                        .ok()
+                        .filter(|n| *n > 0)
+                        .is_none()
+                    {
                         return;
                     }
-                    let path = request_line.split_whitespace().nth(1).unwrap_or("").to_string();
+                    let path = request_line
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("")
+                        .to_string();
                     let mut length = 0usize;
                     loop {
                         let mut header = String::new();
-                        if reader.read_line(&mut header).ok().filter(|n| *n > 0).is_none()
+                        if reader
+                            .read_line(&mut header)
+                            .ok()
+                            .filter(|n| *n > 0)
+                            .is_none()
                             || header.trim().is_empty()
                         {
                             break;
                         }
                         if header.to_ascii_lowercase().starts_with("content-length:") {
-                            length =
-                                header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+                            length = header
+                                .split(':')
+                                .nth(1)
+                                .unwrap_or("0")
+                                .trim()
+                                .parse()
+                                .unwrap_or(0);
                         }
                     }
                     let mut body = vec![0u8; length];
@@ -84,7 +102,10 @@ impl Fake {
                 });
             }
         });
-        Fake { url: format!("http://127.0.0.1:{port}"), seen }
+        Fake {
+            url: format!("http://127.0.0.1:{port}"),
+            seen,
+        }
     }
 
     /// Wait until `count` requests have landed, then hand back everything recorded. The recording happens
@@ -195,7 +216,7 @@ fn type_into(key: &str, value: &str) {
 
 /// What one box of the open dialog holds right now, by key (`entry-<key>`).
 #[allow(dead_code)] // kept beside `type_into`: reading back is the other half of that helper for a case
-// that wants to prove a press wrote a box.
+                    // that wants to prove a press wrote a box.
 fn read_box(key: &str) -> String {
     let dialog = settings::open_settings_window().expect("a dialog is open");
     find_in(dialog.upcast_ref(), &format!("entry-{key}"))
@@ -217,7 +238,9 @@ fn find_in(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     }
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if let Some(found) = find_in(&widget, name) {
             return Some(found);
         }
@@ -303,8 +326,16 @@ fn s1_fetch(app: &adw::Application) {
         vec!["qwen2.5vl:7b".to_string(), "llama3.2:3b".to_string()],
         "the dropdown shows the ids the server listed, in its order"
     );
-    assert_eq!(badge_mark(settings::FETCH_KEY), "\u{2713}", "a listing marks the tick");
-    assert_eq!(badge_tip(settings::FETCH_KEY), "2 model(s) served", "and its tooltip is the verdict");
+    assert_eq!(
+        badge_mark(settings::FETCH_KEY),
+        "\u{2713}",
+        "a listing marks the tick"
+    );
+    assert_eq!(
+        badge_tip(settings::FETCH_KEY),
+        "2 model(s) served",
+        "and its tooltip is the verdict"
+    );
     assert!(
         dialog_log().contains("2 model(s) served"),
         "F0.13 mirrors the verdict into the dialog's log: {:?}",
@@ -312,7 +343,10 @@ fn s1_fetch(app: &adw::Application) {
     );
     let asked = fake.waited(1);
     assert_eq!(asked.len(), 1, "exactly one request went out");
-    assert_eq!(asked[0].0, "/v1/models", "and it was the model list §9 names");
+    assert_eq!(
+        asked[0].0, "/v1/models",
+        "and it was the model list §9 names"
+    );
     std::env::remove_var("XDG_CONFIG_HOME");
     std::env::remove_var("XDG_DATA_HOME");
 }
@@ -341,7 +375,11 @@ fn s2_use(app: &adw::Application) {
     // `model_list::use_choice` refuses it (Use copies a LISTED id into Model, nothing else).
     dialog_button("use-model-button").emit_by_name::<()>("clicked", &[]);
     settle();
-    assert_eq!(badge_mark(settings::USE_KEY), "\u{2717}", "nothing picked is a cross");
+    assert_eq!(
+        badge_mark(settings::USE_KEY),
+        "\u{2717}",
+        "nothing picked is a cross"
+    );
     assert!(
         badge_tip(settings::USE_KEY).contains("no model picked"),
         "the refusal says what is missing: {:?}",
@@ -352,7 +390,9 @@ fn s2_use(app: &adw::Application) {
     settle();
 
     let list = find_in(
-        settings::open_settings_window().expect("a dialog").upcast_ref(),
+        settings::open_settings_window()
+            .expect("a dialog")
+            .upcast_ref(),
         "model-list",
     )
     .and_then(|w| w.downcast::<gtk::DropDown>().ok())
@@ -367,7 +407,10 @@ fn s2_use(app: &adw::Application) {
     settle();
 
     assert_eq!(
-        settings::entry(&window, "llm").expect("the Model box").text().as_str(),
+        settings::entry(&window, "llm")
+            .expect("the Model box")
+            .text()
+            .as_str(),
         "llama3.2:3b",
         "§9: Use copies the id into Model"
     );
@@ -398,14 +441,25 @@ fn s3_down(app: &adw::Application) {
     dialog_button("fetch-models-button").emit_by_name::<()>("clicked", &[]);
     settle();
 
-    assert_eq!(badge_mark(settings::FETCH_KEY), "\u{2717}", "a down server marks the cross");
+    assert_eq!(
+        badge_mark(settings::FETCH_KEY),
+        "\u{2717}",
+        "a down server marks the cross"
+    );
     let why = badge_tip(settings::FETCH_KEY);
     assert!(
         !why.contains("nothing wired"),
         "the live route answered this one, so the stub's words must not appear: {why}"
     );
-    assert!(why.contains("127.0.0.1"), "the reason names the address it tried: {why}");
-    assert_eq!(settings::listed_models(&window), Vec::<String>::new(), "nothing was listed");
+    assert!(
+        why.contains("127.0.0.1"),
+        "the reason names the address it tried: {why}"
+    );
+    assert_eq!(
+        settings::listed_models(&window),
+        Vec::<String>::new(),
+        "nothing was listed"
+    );
     std::env::remove_var("XDG_CONFIG_HOME");
     std::env::remove_var("XDG_DATA_HOME");
 }
@@ -434,10 +488,20 @@ fn s4_empty(app: &adw::Application) {
     dialog_button("fetch-models-button").emit_by_name::<()>("clicked", &[]);
     settle();
 
-    assert_eq!(badge_mark(settings::FETCH_KEY), "\u{2717}", "an empty list is not a pass");
+    assert_eq!(
+        badge_mark(settings::FETCH_KEY),
+        "\u{2717}",
+        "an empty list is not a pass"
+    );
     let why = badge_tip(settings::FETCH_KEY);
-    assert!(why.contains("/v1/models"), "the refusal names the endpoint: {why}");
-    assert!(why.contains("no models"), "and says what was missing: {why}");
+    assert!(
+        why.contains("/v1/models"),
+        "the refusal names the endpoint: {why}"
+    );
+    assert!(
+        why.contains("no models"),
+        "and says what was missing: {why}"
+    );
     assert_eq!(settings::listed_models(&window), Vec::<String>::new());
     fake.waited(1);
     std::env::remove_var("XDG_CONFIG_HOME");
@@ -447,7 +511,8 @@ fn s4_empty(app: &adw::Application) {
 /// F0.13's first probe through its button: ONE completion, thinking off in every place a server reads it,
 /// sixteen tokens, and a duration the row MEASURED rather than the budget it was given.
 #[test]
-fn sec_09_llm_and_tools_9_model_list_and_tests_s5_the_llm_probe_sends_one_completion_thinking_off_16_tokens() {
+fn sec_09_llm_and_tools_9_model_list_and_tests_s5_the_llm_probe_sends_one_completion_thinking_off_16_tokens(
+) {
     common::pin_private_cwd();
     let _turn: std::sync::MutexGuard<'_, ()> = ENV.lock().unwrap_or_else(|p| p.into_inner());
     window_round();
@@ -457,9 +522,7 @@ fn sec_09_llm_and_tools_9_model_list_and_tests_s5_the_llm_probe_sends_one_comple
 fn s5_completion(app: &adw::Application) {
     tag_this_case("s5");
     let fake = Fake::start(|path| match path {
-        "/v1/chat/completions" => {
-            r#"{"choices":[{"message":{"content":"ok"}}]}"#.to_string()
-        }
+        "/v1/chat/completions" => r#"{"choices":[{"message":{"content":"ok"}}]}"#.to_string(),
         other => panic!("the LLM row sends one completion, saw {other}"),
     });
     conf_pointing_at(&fake.url, "qwen2.5vl:7b");
@@ -480,25 +543,42 @@ fn s5_completion(app: &adw::Application) {
         .nth(1)
         .and_then(|rest| rest.split(" s:").next())
         .and_then(|secs| secs.parse::<f64>().ok())
-        .unwrap_or_else(|| panic!("F0.13's sentence is \"<model> answered in X s: ...\", got {said}"));
-    assert!(measured < 60.0, "a local answer cannot take the whole budget, got {said}");
-    assert!(said.starts_with("qwen2.5vl:7b answered in"), "the row names its model: {said}");
-    assert!(said.ends_with(": \"ok\""), "and quotes what came back: {said}");
+        .unwrap_or_else(|| {
+            panic!("F0.13's sentence is \"<model> answered in X s: ...\", got {said}")
+        });
+    assert!(
+        measured < 60.0,
+        "a local answer cannot take the whole budget, got {said}"
+    );
+    assert!(
+        said.starts_with("qwen2.5vl:7b answered in"),
+        "the row names its model: {said}"
+    );
+    assert!(
+        said.ends_with(": \"ok\""),
+        "and quotes what came back: {said}"
+    );
     let asked = fake.waited(1);
     assert_eq!(asked.len(), 1, "one completion, as F0.13 says");
     assert_eq!(asked[0].0, "/v1/chat/completions");
-    let body: serde_json::Value =
-    serde_json::from_str(&asked[0].1).expect("the chat body is JSON");
+    let body: serde_json::Value = serde_json::from_str(&asked[0].1).expect("the chat body is JSON");
     assert_eq!(body["max_tokens"], serde_json::json!(16), "sixteen tokens");
-    assert_eq!(body["enable_thinking"], serde_json::json!(false), "thinking off");
     assert_eq!(
-    body["chat_template_kwargs"]["enable_thinking"],
-    serde_json::json!(false),
-    "off in the template kwargs too, which is where some servers read it"
+        body["enable_thinking"],
+        serde_json::json!(false),
+        "thinking off"
+    );
+    assert_eq!(
+        body["chat_template_kwargs"]["enable_thinking"],
+        serde_json::json!(false),
+        "off in the template kwargs too, which is where some servers read it"
     );
     let messages = body["messages"].as_array().expect("the messages");
     assert_eq!(messages.len(), 1, "one turn, nothing else");
-    assert_eq!(messages[0]["content"], serde_json::json!("Reply with the single word: ok"));
+    assert_eq!(
+        messages[0]["content"],
+        serde_json::json!("Reply with the single word: ok")
+    );
     assert_eq!(body["model"], serde_json::json!("qwen2.5vl:7b"));
     std::env::remove_var("XDG_CONFIG_HOME");
     std::env::remove_var("XDG_DATA_HOME");
@@ -508,7 +588,8 @@ fn s5_completion(app: &adw::Application) {
 /// (the table gives the vision probe none — inheriting the text probe's 16 spent them on reasoning and
 /// redded a model that saw the square fine), and only the word "red" passes.
 #[test]
-fn sec_09_llm_and_tools_9_model_list_and_tests_s6_the_vision_probe_shows_the_red_square_and_needs_the_word_red() {
+fn sec_09_llm_and_tools_9_model_list_and_tests_s6_the_vision_probe_shows_the_red_square_and_needs_the_word_red(
+) {
     common::pin_private_cwd();
     let _turn: std::sync::MutexGuard<'_, ()> = ENV.lock().unwrap_or_else(|p| p.into_inner());
     window_round();
@@ -518,9 +599,7 @@ fn sec_09_llm_and_tools_9_model_list_and_tests_s6_the_vision_probe_shows_the_red
 fn s6_vision(app: &adw::Application) {
     tag_this_case("s6-sees");
     let sees = Fake::start(|path| match path {
-        "/v1/chat/completions" => {
-            r#"{"choices":[{"message":{"content":"Red"}}]}"#.to_string()
-        }
+        "/v1/chat/completions" => r#"{"choices":[{"message":{"content":"Red"}}]}"#.to_string(),
         other => panic!("the vision row sends one completion, saw {other}"),
     });
     conf_pointing_at(&sees.url, "qwen2.5vl:7b");
@@ -540,41 +619,46 @@ fn s6_vision(app: &adw::Application) {
     let asked = sees.waited(1);
     let body: serde_json::Value = serde_json::from_str(&asked[0].1).expect("a JSON body");
     assert!(
-    body.get("max_tokens").is_none(),
-    "the vision probe sets no token cap (§5): {body}"
+        body.get("max_tokens").is_none(),
+        "the vision probe sets no token cap (§5): {body}"
     );
     let parts = body["messages"][0]["content"]
-    .as_array()
-    .unwrap_or_else(|| panic!("the vision turn is a part list: {body}"));
+        .as_array()
+        .unwrap_or_else(|| panic!("the vision turn is a part list: {body}"));
     let image = parts
-    .iter()
-    .find(|part| part["type"].as_str() == Some("image_url"))
-    .unwrap_or_else(|| panic!("the probe shows the model a picture: {body}"));
+        .iter()
+        .find(|part| part["type"].as_str() == Some("image_url"))
+        .unwrap_or_else(|| panic!("the probe shows the model a picture: {body}"));
     assert_eq!(
-    image["image_url"]["url"].as_str().expect("a data url"),
-    checks::vision_probe_url(),
-    "the picture is exactly the generated 48 px red square"
+        image["image_url"]["url"].as_str().expect("a data url"),
+        checks::vision_probe_url(),
+        "the picture is exactly the generated 48 px red square"
     );
 
     // And a model that cannot see is refused with the fix attached, not just marked wrong.
     let blind = Fake::start(|path| match path {
-    "/v1/chat/completions" => {
-        r#"{"choices":[{"message":{"content":"blue"}}]}"#.to_string()
-    }
-    other => panic!("the vision row sends one completion, saw {other}"),
+        "/v1/chat/completions" => r#"{"choices":[{"message":{"content":"blue"}}]}"#.to_string(),
+        other => panic!("the vision row sends one completion, saw {other}"),
     });
     conf_pointing_at(&blind.url, "qwen2.5vl:7b");
     let window = build_shell(app);
     open_live(&window, settings::no_probe());
     type_into("llm-vision", &blind.url);
     ui::test_button(&window, "llm-vision")
-    .expect("the Vision row has a Test button")
-    .emit_by_name::<()>("clicked", &[]);
+        .expect("the Vision row has a Test button")
+        .emit_by_name::<()>("clicked", &[]);
     settle();
-    assert_eq!(badge_mark("llm-vision"), "\u{2717}", "a wrong colour is a cross");
+    assert_eq!(
+        badge_mark("llm-vision"),
+        "\u{2717}",
+        "a wrong colour is a cross"
+    );
     let why = badge_tip("llm-vision");
     assert!(why.contains("not seeing the image"), "{why}");
-    assert!(why.contains("mmproj"), "and names what to serve it with: {why}");
+    assert!(
+        why.contains("mmproj"),
+        "and names what to serve it with: {why}"
+    );
     blind.waited(1);
     std::env::remove_var("XDG_CONFIG_HOME");
     std::env::remove_var("XDG_DATA_HOME");
@@ -583,7 +667,8 @@ fn s6_vision(app: &adw::Application) {
 /// A server that answers with nothing is a failure. The row used to green-light this: the verdict formatted
 /// whatever came back, so an empty reply printed an empty quote beside a ✓.
 #[test]
-fn sec_09_llm_and_tools_9_model_list_and_tests_s7_an_answering_server_that_says_nothing_fails_the_row() {
+fn sec_09_llm_and_tools_9_model_list_and_tests_s7_an_answering_server_that_says_nothing_fails_the_row(
+) {
     common::pin_private_cwd();
     let _turn: std::sync::MutexGuard<'_, ()> = ENV.lock().unwrap_or_else(|p| p.into_inner());
     window_round();
@@ -593,9 +678,7 @@ fn sec_09_llm_and_tools_9_model_list_and_tests_s7_an_answering_server_that_says_
 fn s7_blank(app: &adw::Application) {
     tag_this_case("s7");
     let blank = Fake::start(|path| match path {
-        "/v1/chat/completions" => {
-            r#"{"choices":[{"message":{"content":""}}]}"#.to_string()
-        }
+        "/v1/chat/completions" => r#"{"choices":[{"message":{"content":""}}]}"#.to_string(),
         other => panic!("the LLM row sends one completion, saw {other}"),
     });
     conf_pointing_at(&blank.url, "qwen2.5vl:7b");

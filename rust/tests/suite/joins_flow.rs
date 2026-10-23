@@ -13,7 +13,7 @@ use naivepost::hand_edit;
 use naivepost::joins;
 use naivepost::layout::Tree;
 use naivepost::textfmt::{self, Retake};
-use naivepost::tools::textedit::{Side, Join};
+use naivepost::tools::textedit::{Join, Side};
 use naivepost::word_list::{self, Word};
 
 /// One word of a synthetic session list, one second long so word `i` spans `(i, i+1)`.
@@ -55,7 +55,10 @@ fn f1_10_s1_three_joinable_words_is_too_few_and_four_is_not() {
     let three = run("take-a", &["a", "b", "c"], 0.0);
     assert!(joins::too_few(&three), "three words cannot hold a join");
     let four = run("take-a", &["a", "b", "c", "d"], 0.0);
-    assert!(!joins::too_few(&four), "four is the bound itself, and the bound is joinable");
+    assert!(
+        !joins::too_few(&four),
+        "four is the bound itself, and the bound is joinable"
+    );
     // The sentence names the count it fell short by, so the log is readable without knowing MIN_WORDS.
     assert_eq!(
         joins::too_few_log(3),
@@ -91,7 +94,11 @@ fn f1_10_s1_words_an_earlier_join_took_are_left_out_so_it_cannot_be_blamed_twice
     // counts THAT stretch against this join and refuses an answer that was right.
     let words = two_takes();
     let _none_gone = vec![false; words.len()];
-    assert_eq!(joins::seams(&words), vec![4], "one seam, at take-b's first word");
+    assert_eq!(
+        joins::seams(&words),
+        vec![4],
+        "one seam, at take-b's first word"
+    );
 
     // Take the whole of take-a out (an earlier join's doing) and the seam moves to where the film now
     // actually changes.
@@ -121,9 +128,17 @@ fn f1_10_s2_a_seam_is_where_one_recording_ends_and_another_begins() {
         words.extend(run("c", &["m", "n"], 4.0));
         words
     };
-    assert_eq!(joins::seams(&three), vec![2, 4], "each change of source is one seam");
+    assert_eq!(
+        joins::seams(&three),
+        vec![2, 4],
+        "each change of source is one seam"
+    );
     let one = run("only", &["a", "b", "c", "d"], 0.0);
-    assert_eq!(joins::seams(&one), Vec::<usize>::new(), "one recording has no seam");
+    assert_eq!(
+        joins::seams(&one),
+        Vec::<usize>::new(),
+        "one recording has no seam"
+    );
     assert_eq!(
         joins::no_seam_log(),
         ">>> text edit: one recording, no seam to repair -- every word stands"
@@ -143,7 +158,10 @@ fn f1_10_s3_the_request_is_the_specs_message_for_one_join() {
         .map(|s| s.to_string())
         .collect();
     let ask = joins::request("", 23, 57, &before, &after);
-    assert!(ask.contains("JOIN 23 of 57."), "the join is numbered: {ask}");
+    assert!(
+        ask.contains("JOIN 23 of 57."),
+        "the join is numbered: {ask}"
+    );
     assert!(
         ask.contains("BEFORE (the end of the take that was interrupted):"),
         "BEFORE is labelled as the spec labels it: {ask}"
@@ -156,7 +174,10 @@ fn f1_10_s3_the_request_is_the_specs_message_for_one_join() {
         ask.contains(r#"Answer {"joined":"..."} and nothing else"#),
         "the shape of the answer is stated: {ask}"
     );
-    assert!(ask.contains("these 4 words and then these 4"), "counts given: {ask}");
+    assert!(
+        ask.contains("these 4 words and then these 4"),
+        "counts given: {ask}"
+    );
     // An empty User Context adds NO header over nothing.
     assert!(
         !ask.contains("USER CONTEXT"),
@@ -169,12 +190,18 @@ fn f1_10_s3_a_written_context_outranks_the_job_rules_in_the_same_message() {
     let before = vec!["alpha".to_string()];
     let after = vec!["beta".to_string()];
     let ask = joins::request("Cut nothing before the demo.", 1, 1, &before, &after);
-    assert!(ask.contains("USER CONTEXT"), "the header rides with a real context: {ask}");
+    assert!(
+        ask.contains("USER CONTEXT"),
+        "the header rides with a real context: {ask}"
+    );
     assert!(
         ask.contains("Cut nothing before the demo."),
         "the context is passed verbatim: {ask}"
     );
-    assert!(ask.contains("JOIN 1 of 1."), "and the join still gets its own number: {ask}");
+    assert!(
+        ask.contains("JOIN 1 of 1."),
+        "and the join still gets its own number: {ask}"
+    );
 }
 
 #[test]
@@ -247,7 +274,11 @@ fn f1_10_s3_repeating_everything_shown_is_keep_join_not_a_refusal() {
     let mut join = Join::new(&strings(&before), &strings(&after));
     let reply = r#"{"joined":"alpha beta gamma delta epsilon"}"#;
     let outcome = joins::answer_join(&mut join, reply, &before, &after);
-    assert_eq!(outcome, joins::Outcome::Kept, "nothing left out is the ordinary answer");
+    assert_eq!(
+        outcome,
+        joins::Outcome::Kept,
+        "nothing left out is the ordinary answer"
+    );
     assert_eq!(outcome.removed(), 0, "a kept join removes nothing");
     assert!(outcome.usable(), "keep_join is a usable answer and caches");
 }
@@ -260,7 +291,8 @@ fn f1_10_s3_two_stretches_left_out_is_refused() {
     let after = split("und wurde im Dezember aktiviert und führte dazu dass die Kosten");
     let mut join = Join::new(&strings(&before), &strings(&after));
     // Keeps a piece of BEFORE's head, skips a middle stretch, then rejoins: two separate removals.
-    let reply = r#"{"joined":"bei Fusaka Das ist der aktuellste Release und führte dazu dass die Kosten"}"#;
+    let reply =
+        r#"{"joined":"bei Fusaka Das ist der aktuellste Release und führte dazu dass die Kosten"}"#;
     let outcome = joins::answer_join(&mut join, reply, &before, &after);
     match &outcome {
         joins::Outcome::Refused(reason) => assert!(
@@ -319,8 +351,17 @@ fn f1_10_s3_a_stretch_past_the_snap_bound_is_refused_by_name() {
     let _join = Join::new(&strings(&before), &strings(&after));
     // Keep everything but the LAST two of BEFORE: that touches the seam and snaps fine.
     let ok_reply = r#"{"joined":"one two three four five six seven eight nine ten eleven twelve"}"#;
-    let untouched = joins::answer_join(&mut Join::new(&strings(&before), &strings(&after)), ok_reply, &before, &after);
-    assert_eq!(untouched, joins::Outcome::Kept, "repeating all is keep_join");
+    let untouched = joins::answer_join(
+        &mut Join::new(&strings(&before), &strings(&after)),
+        ok_reply,
+        &before,
+        &after,
+    );
+    assert_eq!(
+        untouched,
+        joins::Outcome::Kept,
+        "repeating all is keep_join"
+    );
 
     // The refusing shape: drop "seven eight nine ten"? No -- to STOP SHORT of the seam the kept head
     // must resume before the end, so drop words from the middle and keep the last ones: leaving out
@@ -378,7 +419,10 @@ fn f1_10_s3_a_retry_gets_its_own_cache_slot() {
     let base = joins::ask_slot("join-23-request", 0);
     let retry = joins::ask_slot("join-23-request", 1);
     assert_ne!(base, retry, "the retry must key elsewhere");
-    assert_eq!(base, "join-23-request", "the first ask is the request unchanged");
+    assert_eq!(
+        base, "join-23-request",
+        "the first ask is the request unchanged"
+    );
 }
 
 // ---- S4: the doubled saying straight across a cut -----------------------
@@ -406,7 +450,10 @@ fn f1_10_s4_a_saying_repeated_across_the_cut_loses_its_earlier_copy() {
     // The earlier "up fast" (indices 3, 4) went with it; the later one (7, 8) stays.
     assert!(!kept[3] && !kept[4], "the earlier saying went: {kept:?}");
     assert!(kept[7] && kept[8], "the later saying stays: {kept:?}");
-    assert!(kept[0] && kept[1] && kept[2], "words outside the reach are untouched: {kept:?}");
+    assert!(
+        kept[0] && kept[1] && kept[2],
+        "words outside the reach are untouched: {kept:?}"
+    );
 }
 
 // ---- S5: marks, edges, whole takes -------------------------------------
@@ -424,7 +471,10 @@ fn f1_10_s5_dropped_runs_become_marks_whose_edges_come_from_the_sound() {
     assert_eq!(marks.len(), 1, "one dropped run is one mark");
     assert_eq!(marks[0].s, 2.0, "the run's own start");
     assert_eq!(marks[0].e, 4.0, "the run's own end");
-    assert!(notes.is_empty(), "nothing moved with no sound to ask: {notes:?}");
+    assert!(
+        notes.is_empty(),
+        "nothing moved with no sound to ask: {notes:?}"
+    );
 }
 
 #[test]
@@ -442,7 +492,11 @@ fn f1_10_s5_a_dropped_run_reaches_the_sound_for_its_edges() {
     let words: Vec<AlignedWord> = times
         .iter()
         .enumerate()
-        .map(|(i, (s, e))| AlignedWord { word: format!("w{i}"), s: *s, e: *e })
+        .map(|(i, (s, e))| AlignedWord {
+            word: format!("w{i}"),
+            s: *s,
+            e: *e,
+        })
         .collect();
     let mut kept = vec![true; 8];
     kept[2] = false;
@@ -454,7 +508,10 @@ fn f1_10_s5_a_dropped_run_reaches_the_sound_for_its_edges() {
         "the edge lands on the last word that survives, not past it: {}",
         marks[0].s
     );
-    assert!(notes.is_empty(), "a fence with no width has nothing to report: {notes:?}");
+    assert!(
+        notes.is_empty(),
+        "a fence with no width has nothing to report: {notes:?}"
+    );
     // And a stamp that runs late does move: the aligner says the dropped word began at 2.0 s but the
     // word before it ends at 1.9 s, so the cut ends at the pad and the note names the seconds.
     let mut late: Vec<AlignedWord> = words.clone();
@@ -529,8 +586,17 @@ fn f1_11_s1_a_session_with_a_measured_envelope_moves_the_join_mark() {
         .key
         .clone();
     let (_, size_a, mtime_a) = &stamps[0];
-    naivepost::wave::write(&tree, &lane_a, &naivepost::wave::Wave { hz, chans: vec![peaks] }, *size_a, *mtime_a)
-        .expect("the cache is written");
+    naivepost::wave::write(
+        &tree,
+        &lane_a,
+        &naivepost::wave::Wave {
+            hz,
+            chans: vec![peaks],
+        },
+        *size_a,
+        *mtime_a,
+    )
+    .expect("the cache is written");
 
     let held = naivepost::edges::load(&tree, &held_lanes);
     assert_eq!(
@@ -546,7 +612,11 @@ fn f1_11_s1_a_session_with_a_measured_envelope_moves_the_join_mark() {
     let times: Vec<(f64, f64)> = words.iter().map(|word| (word.start, word.end)).collect();
     let aligned: Vec<AlignedWord> = words
         .iter()
-        .map(|word| AlignedWord { word: word.match_word.clone(), s: word.start, e: word.end })
+        .map(|word| AlignedWord {
+            word: word.match_word.clone(),
+            s: word.start,
+            e: word.end,
+        })
         .collect();
     let mut kept = vec![true; words.len()];
     kept[2] = false; // "three", 2.0-3.0: the join takes it off the end of take-a
@@ -567,7 +637,10 @@ fn f1_11_s1_a_session_with_a_measured_envelope_moves_the_join_mark() {
         "the edge came off the word time onto the envelope: {}",
         marks[0].s
     );
-    assert_eq!(marks[0].s, 1.96, "followed to where take-a's own sound drops");
+    assert_eq!(
+        marks[0].s, 1.96,
+        "followed to where take-a's own sound drops"
+    );
     assert!(
         notes.iter().any(|n| n.contains("earlier")),
         "the move is spoken with its seconds: {notes:?}"
@@ -576,8 +649,14 @@ fn f1_11_s1_a_session_with_a_measured_envelope_moves_the_join_mark() {
     // And without the cache the same mark sits on the pad instead -- the branch the no-lane case above
     // pins, shown here over identical words so the difference is the envelope alone.
     let (bare, bare_notes) = joins::marks_for(&times, &kept, &late, |_| None, &times);
-    assert!(!bare_notes.is_empty(), "the word-fence note still goes out: {bare_notes:?}");
-    assert_ne!(bare[0].s, marks[0].s, "with vs without an envelope are different answers");
+    assert!(
+        !bare_notes.is_empty(),
+        "the word-fence note still goes out: {bare_notes:?}"
+    );
+    assert_ne!(
+        bare[0].s, marks[0].s,
+        "with vs without an envelope are different answers"
+    );
 }
 
 #[test]
@@ -594,7 +673,10 @@ fn f1_10_s5_a_lane_with_no_wave_cache_answers_no_envelope() {
     );
     let held = naivepost::edges::load(&tree, &joins::session_lanes(&tree, &words));
     assert!(held.is_empty());
-    assert!(naivepost::edges::finder(&held)(1.0).is_none(), "so every second answers None");
+    assert!(
+        naivepost::edges::finder(&held)(1.0).is_none(),
+        "so every second answers None"
+    );
 }
 
 #[test]
@@ -629,7 +711,10 @@ fn f1_10_s5_a_whole_take_goes_is_flagged_not_refused() {
 fn temp_tree(tag: &str) -> Tree {
     // A project IS a folder ending in `.naivepost` (spec/00-principles), so the temp root carries
     // the suffix rather than being a bare directory `Tree::new` would refuse.
-    let root = std::env::temp_dir().join(format!("naivepost-f110-{tag}-{}.naivepost", std::process::id()));
+    let root = std::env::temp_dir().join(format!(
+        "naivepost-f110-{tag}-{}.naivepost",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("temp root");
     Tree::new(&root).expect("a .naivepost folder is a project")
@@ -651,7 +736,9 @@ fn f1_10_s6_final_txt_marks_only_where_the_recording_changes() {
     kept[3] = false;
     kept[4] = false;
     let marks: Vec<Retake> = hand_edit::marks_from(
-        &(0..8).map(|i| (i as f64, i as f64 + 1.0)).collect::<Vec<_>>(),
+        &(0..8)
+            .map(|i| (i as f64, i as f64 + 1.0))
+            .collect::<Vec<_>>(),
         &kept,
     );
     joins::write_pair(&tree, &sources, &words, &kept, &[], &marks).expect("both files written");
@@ -663,7 +750,10 @@ fn f1_10_s6_final_txt_marks_only_where_the_recording_changes() {
         "one marker, at the change of recording, counting the words gone there"
     );
     // Between survivors of the SAME recording there is no marker: nothing was spliced there.
-    assert!(!text.contains("six |cut"), "no marker inside a recording: {text}");
+    assert!(
+        !text.contains("six |cut"),
+        "no marker inside a recording: {text}"
+    );
     // The words read back are the survivors, markers gone.
     let (read_words, read_joins) = textfmt::read_final(&text);
     assert_eq!(
@@ -673,7 +763,10 @@ fn f1_10_s6_final_txt_marks_only_where_the_recording_changes() {
     );
     assert_eq!(read_joins, vec![2], "the count survives the round trip");
     // Both files landed in the same step.
-    assert!(tree.retakes_tsv().exists(), "retakes.tsv written alongside final.txt");
+    assert!(
+        tree.retakes_tsv().exists(),
+        "retakes.tsv written alongside final.txt"
+    );
 }
 
 #[test]
@@ -686,8 +779,7 @@ fn f1_10_s6_a_whole_take_transition_writes_the_longer_marker() {
         .collect();
     // Recording "b" loses both its words: the join into it took the whole take.
     let kept = vec![true, true, false, false, true, true];
-    joins::write_pair(&tree, &sources, &words, &kept, &["b".to_string()], &[])
-        .expect("written");
+    joins::write_pair(&tree, &sources, &words, &kept, &["b".to_string()], &[]).expect("written");
     let text = std::fs::read_to_string(tree.final_txt()).expect("final.txt");
     // `write_final` glues its marker with no space of its own, so the shape is exactly as written.
     assert!(
@@ -767,14 +859,21 @@ fn f1_10_s3_the_ask_offers_the_textedit_tools() {
     let offered = naivepost::tools::offered(naivepost::roles::Job::Joins);
     let names: Vec<&str> = offered.iter().map(|tool| tool.name()).collect();
     for tool in ["drop_words", "keep_join", "get_words", "finish"] {
-        assert!(names.contains(&tool), "{tool} is offered to this job: {names:?}");
+        assert!(
+            names.contains(&tool),
+            "{tool} is offered to this job: {names:?}"
+        );
     }
     // And that offer reaches the wire: `join_ask` builds its body from THIS list, through the same
     // `llm_request::body` every chat ask rides, so a body whose `tools` array names them is the proof
     // the field is sent rather than dropped. Checked on the body the builder produces.
-    let body = naivepost::join_ask::body_for_test(&["one two three".to_string(), "four five".to_string()]);
+    let body =
+        naivepost::join_ask::body_for_test(&["one two three".to_string(), "four five".to_string()]);
     let value: serde_json::Value = serde_json::from_str(&body).expect("the ask body is JSON");
-    let tools = value.get("tools").and_then(|v| v.as_array()).expect("a tools array went out");
+    let tools = value
+        .get("tools")
+        .and_then(|v| v.as_array())
+        .expect("a tools array went out");
     let sent: Vec<&str> = tools
         .iter()
         .filter_map(|t| t.pointer("/function/name").and_then(|n| n.as_str()))
@@ -811,14 +910,28 @@ fn f1_10_s3_a_drop_words_answer_applies_the_same_counts() {
             serde_json::json!({})
         };
         naivepost::join_ask::call_for_test(
-            &naivepost::exchanges::ToolCall { name: name.to_string(), args: args.to_string(), result: String::new() },
+            &naivepost::exchanges::ToolCall {
+                name: name.to_string(),
+                args: args.to_string(),
+                result: String::new(),
+            },
             &mut join,
             &mut refusals,
         );
     }
     let via_tool = naivepost::join_ask::outcome_for_test(&join);
-    assert_eq!(via_tool, joins::Outcome::Applied { before: 3, after: 0 }, "the tool's own counts: {refusals:?}");
-    assert!(refusals.is_empty(), "three off a five-word side is legal: {refusals:?}");
+    assert_eq!(
+        via_tool,
+        joins::Outcome::Applied {
+            before: 3,
+            after: 0
+        },
+        "the tool's own counts: {refusals:?}"
+    );
+    assert!(
+        refusals.is_empty(),
+        "three off a five-word side is legal: {refusals:?}"
+    );
     // The prose way, over the same words: the answer that keeps take-a's first two words and all of
     // take-b, which is the same repair said in the prototype's shape.
     let kept = format!("{} {}", TAKE_A[..2].join(" "), TAKE_B.join(" "));
@@ -854,11 +967,25 @@ fn f1_10_s3_a_tool_refusal_reaches_the_model_and_the_join_is_still_decided_by_th
         &mut join,
         &mut refusals,
     );
-    assert_eq!(join.dropped_count(Side::Before), 0, "a refused drop takes nothing");
-    assert_eq!(refusals.len(), 1, "the refusal is kept for the model AND for the log");
+    assert_eq!(
+        join.dropped_count(Side::Before),
+        0,
+        "a refused drop takes nothing"
+    );
+    assert_eq!(
+        refusals.len(),
+        1,
+        "the refusal is kept for the model AND for the log"
+    );
     let reason = refusals[0].clone();
-    assert!(reason.contains("\"error\""), "it is the tool's own error shape: {reason}");
-    assert!(reason.contains("only 5 were shown"), "the tool's sentence, unchanged: {reason}");
+    assert!(
+        reason.contains("\"error\""),
+        "it is the tool's own error shape: {reason}"
+    );
+    assert!(
+        reason.contains("only 5 were shown"),
+        "the tool's sentence, unchanged: {reason}"
+    );
     // And the JOIN's answer when that refusal is all the model ever offered: the tool's own reason,
     // said as a refusal of the answer — "a refusal still keeps the stumble", so nothing goes and the
     // reason on the log is the rule's sentence, not one invented here.
@@ -889,6 +1016,9 @@ fn f1_10_s3_a_seam_the_rules_answer_themselves() {
     // A join with nothing at all to drop is the one the rules settle themselves: `keep_join` answers it
     // without a model, and the answer says so.
     let mut join = Join::new(&["a", "b"], &["c", "d"]);
-    assert!(join.keep_join().contains("kept"), "keep_join is a whole answer");
+    assert!(
+        join.keep_join().contains("kept"),
+        "keep_join is a whole answer"
+    );
     assert!(join.kept());
 }

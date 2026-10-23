@@ -30,10 +30,15 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
     // the clips ▶✂ needs must not depend on what another test left in a shared folder.
     let session = naivepost::startup::session_dir(&std::env::current_dir().expect("a cwd"));
     std::fs::create_dir_all(&session).expect("the session folder");
-    let fixture_cut = naivepost::cut::load(&naivepost::layout::Tree::new(fixture_dir()).expect("the fixture is a project"))
-        .expect("the fixture's cut reads");
-    naivepost::cut::save(&fixture_cut, &naivepost::layout::Tree::new(&session).expect("a .naivepost folder"))
-        .expect("the cut written beside the cwd");
+    let fixture_cut = naivepost::cut::load(
+        &naivepost::layout::Tree::new(fixture_dir()).expect("the fixture is a project"),
+    )
+    .expect("the fixture's cut reads");
+    naivepost::cut::save(
+        &fixture_cut,
+        &naivepost::layout::Tree::new(&session).expect("a .naivepost folder"),
+    )
+    .expect("the cut written beside the cwd");
     let window = ui::build_window(app, &model, "Prepare");
     common::size_to_minimum(&window);
     ui::tab_button(&window, Page::Cut)
@@ -83,8 +88,16 @@ fn check_s2_switches_through_the_widget(app: &adw::Application) {
         button.is_mapped()
     );
     assert!(button.is_mapped(), "▶✂ is mapped on the visible Cut page");
-    assert!(button.width() >= 16, "wide enough to click its \u{a7}A glyph, got {} px", button.width());
-    assert!(button.height() > 16, "tall enough to click, got {} px", button.height());
+    assert!(
+        button.width() >= 16,
+        "wide enough to click its \u{a7}A glyph, got {} px",
+        button.width()
+    );
+    assert!(
+        button.height() > 16,
+        "tall enough to click, got {} px",
+        button.height()
+    );
     assert_eq!(
         button.tooltip_text().as_deref(),
         Some(naivepost::cut_screen::PLAY_CUT_TIP),
@@ -97,15 +110,26 @@ fn check_s2_switches_through_the_widget(app: &adw::Application) {
         &window,
         false,
         false,
-        naivepost::run::Transport { playing: true, started: true },
+        naivepost::run::Transport {
+            playing: true,
+            started: true,
+        },
     );
     ui::set_playhead(&window, 15.0);
 
     // Two clips with 10-20 s removed: the same shape the logic test uses.
     let cut = Cut {
         segs: vec![
-            Seg { s: 0.0, e: 10.0, ..Default::default() },
-            Seg { s: 20.0, e: 30.0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 10.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 20.0,
+                e: 30.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
@@ -113,19 +137,34 @@ fn check_s2_switches_through_the_widget(app: &adw::Application) {
     // The wire itself. `press_play_cut` is what the clicked handler calls; firing it with the same
     // input the closure passes proves the seam, and the state read back is the state the closure leaves.
     match ui::press_play_cut(&window, &cut) {
-        cut_play::Pressed::SwitchedToCut { kept_playing, status } => {
+        cut_play::Pressed::SwitchedToCut {
+            kept_playing,
+            status,
+        } => {
             assert!(kept_playing, "it was playing, so it carries on playing");
-            assert_eq!(status, cut_play::SWITCH_STATUS, "and says the clock changed meaning");
+            assert_eq!(
+                status,
+                cut_play::SWITCH_STATUS,
+                "and says the clock changed meaning"
+            );
         }
         other => panic!("expected a switch through the seam, got {other:?}"),
     }
 
     let player = ui::preview_player(&window);
-    assert!(player.cut_only && !player.reviewing, "the preview is now the plain cut");
+    assert!(
+        player.cut_only && !player.reviewing,
+        "the preview is now the plain cut"
+    );
     assert!(player.transport.playing, "switching never pauses");
-    assert_eq!(player.playhead, Some(20.0), "the line snapped off the removed stretch onto kept material");
     assert_eq!(
-        ui::state(&window).status, cut_play::SWITCH_STATUS,
+        player.playhead,
+        Some(20.0),
+        "the line snapped off the removed stretch onto kept material"
+    );
+    assert_eq!(
+        ui::state(&window).status,
+        cut_play::SWITCH_STATUS,
         "the status line shows the sentence the logic produced -- the same string f2_2_s2 asserts"
     );
 
@@ -133,9 +172,13 @@ fn check_s2_switches_through_the_widget(app: &adw::Application) {
     // to this button rather than to some other object of the same name.
     button.emit_by_name::<()>("clicked", &[]);
     let after = ui::preview_player(&window);
-    assert!(after.cut_only, "the click reached a handler that keeps the preview the cut");
+    assert!(
+        after.cut_only,
+        "the click reached a handler that keeps the preview the cut"
+    );
     assert_eq!(
-        after.playhead, Some(20.0),
+        after.playhead,
+        Some(20.0),
         "already the cut, the second press toggles rather than re-snapping elsewhere"
     );
     window.close();
@@ -185,22 +228,35 @@ fn check_other_ways_refuse_an_empty_cut(app: &adw::Application) {
         &window,
         false,
         false,
-        naivepost::run::Transport { playing: false, started: false },
+        naivepost::run::Transport {
+            playing: false,
+            started: false,
+        },
     );
     let before = ui::preview_player(&window);
-    assert!(!before.playhead.unwrap_or(0.0).is_nan(), "the player is readable");
+    assert!(
+        !before.playhead.unwrap_or(0.0).is_nan(),
+        "the player is readable"
+    );
 
     assert!(
         !ui::space_toggles(&window, false),
         "Space on an empty cut is refused, not toggled"
     );
     assert_eq!(
-        ui::state(&window).status, naivepost::cut_play::EMPTY_CUT_REFUSAL,
+        ui::state(&window).status,
+        naivepost::cut_play::EMPTY_CUT_REFUSAL,
         "the status line says what the way-in cannot do -- the same string f2_2_s2 asserts"
     );
     let after = ui::preview_player(&window);
-    assert!(!after.transport.playing, "the refusal left the transport paused");
-    assert!(!after.cut_only, "and did not switch the preview behind the person's back");
+    assert!(
+        !after.transport.playing,
+        "the refusal left the transport paused"
+    );
+    assert!(
+        !after.cut_only,
+        "and did not switch the preview behind the person's back"
+    );
     assert_eq!(after.playhead, before.playhead, "nor did it move the line");
 
     // The key controller really is attached to this window -- that is the widget the closure runs in.
@@ -220,17 +276,36 @@ fn check_s4_face_follows_the_preview(app: &adw::Application) {
     settle();
 
     // Idle: a recording preview (or nothing) means the shipped label, never the pause face.
-    ui::set_preview_state(&window, false, false, naivepost::run::Transport { playing: true, started: true });
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        naivepost::run::Transport {
+            playing: true,
+            started: true,
+        },
+    );
     crate::suite::cut_play_the_cut_widgets::ui::cut_cut_play::paint(&window);
     assert_eq!(
         button.label().as_deref(),
         Some(naivepost::ui::cut_cut_play::PLAY_LABEL),
         "while the recording runs ▶✂ still wears its idle face (\u{25b6}\u{2702}, or its words where the bar has room)"
     );
-    assert!(button.is_sensitive(), "the fixture's cut has clips, so ▶✂ is clickable");
+    assert!(
+        button.is_sensitive(),
+        "the fixture's cut has clips, so ▶✂ is clickable"
+    );
 
     // Ours and running: the ⏸ face, and only here — the button reads the player rather than remembering.
-    ui::set_preview_state(&window, true, false, naivepost::run::Transport { playing: true, started: true });
+    ui::set_preview_state(
+        &window,
+        true,
+        false,
+        naivepost::run::Transport {
+            playing: true,
+            started: true,
+        },
+    );
     crate::suite::cut_play_the_cut_widgets::ui::cut_cut_play::paint(&window);
     assert_eq!(
         button.label().as_deref(),
@@ -239,7 +314,15 @@ fn check_s4_face_follows_the_preview(app: &adw::Application) {
     );
 
     // A review owns the ⏸ instead (§D: exactly one of the three ▶s wears it).
-    ui::set_preview_state(&window, true, true, naivepost::run::Transport { playing: true, started: true });
+    ui::set_preview_state(
+        &window,
+        true,
+        true,
+        naivepost::run::Transport {
+            playing: true,
+            started: true,
+        },
+    );
     crate::suite::cut_play_the_cut_widgets::ui::cut_cut_play::paint(&window);
     assert_eq!(
         button.label().as_deref(),
@@ -249,9 +332,20 @@ fn check_s4_face_follows_the_preview(app: &adw::Application) {
 
     // S1: with no clips the button greys, and its label stays the shipped one (grey is not a relabel).
     ui::seed_review_cut(&window, &Cut::default());
-    ui::set_preview_state(&window, false, false, naivepost::run::Transport { playing: false, started: false });
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        naivepost::run::Transport {
+            playing: false,
+            started: false,
+        },
+    );
     crate::suite::cut_play_the_cut_widgets::ui::cut_cut_play::paint(&window);
-    assert!(!button.is_sensitive(), "an empty cut greys ▶✂ before any press");
+    assert!(
+        !button.is_sensitive(),
+        "an empty cut greys ▶✂ before any press"
+    );
     assert_eq!(
         button.label().as_deref(),
         Some(naivepost::ui::cut_cut_play::PLAY_LABEL),

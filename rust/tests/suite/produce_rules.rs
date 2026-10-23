@@ -13,8 +13,8 @@
 use std::collections::BTreeMap;
 
 use naivepost::cut::{Fx, Seg};
-use naivepost::narration::Entry;
 use naivepost::layout::{self, Tree};
+use naivepost::narration::Entry;
 use naivepost::produce_data as data;
 use naivepost::produce_embed as embed;
 use naivepost::produce_render as render;
@@ -23,13 +23,17 @@ use naivepost::produce_screen as screen;
 
 use naivepost::produce_stamp as stamp;
 use naivepost::produce_subtitles as subs;
-use naivepost::publish;
 use naivepost::project::{self, Codec, Container, Produce, Subtitles};
+use naivepost::publish;
 
 const ITEM: &str = "§08-produce#5-rules";
 
 fn seg(s: f64, e: f64) -> Seg {
-    Seg { s, e, ..Default::default() }
+    Seg {
+        s,
+        e,
+        ..Default::default()
+    }
 }
 
 fn no_fx(_: &Seg) -> Vec<Fx> {
@@ -67,13 +71,25 @@ fn sec_08_produce_5_rules_s1_every_clip_comes_out_at_one_size_and_layout() {
     assert_eq!(ITEM, "§08-produce#5-rules");
     // tool:ffmpeg.encode joins the clips with `-c copy`, so nothing may differ between them: not the frame
     // size, not the sample rate, not the channel layout, not whether a limiter ran.
-    let clip = render::Clip { no: 1, seg_s: 0.0, on_screen: 8.0, rate: 1.0, ..Default::default() };
+    let clip = render::Clip {
+        no: 1,
+        seg_s: 0.0,
+        on_screen: 8.0,
+        rate: 1.0,
+        ..Default::default()
+    };
     for frame in [(1920, 1080), (1080, 1920)] {
-        let boxed = render::Clip { frame, ..clip.clone() };
+        let boxed = render::Clip {
+            frame,
+            ..clip.clone()
+        };
         let video = render::video_chain(&boxed, &settings(), None).join(",");
         assert!(video.contains("scale="), "{video}");
         assert!(video.contains("pad=") || video.contains("crop="), "{video}");
-        assert!(video.contains(&format!("{}:{}", frame.0, frame.1)), "{video}");
+        assert!(
+            video.contains(&format!("{}:{}", frame.0, frame.1)),
+            "{video}"
+        );
     }
 
     // Every branch ends at 48 kHz in a named layout — mono when the row says so, stereo otherwise.
@@ -94,21 +110,43 @@ fn sec_08_produce_5_rules_s1_every_clip_comes_out_at_one_size_and_layout() {
 fn sec_08_produce_5_rules_s1_seek_on_input_and_length_on_output() {
     assert_eq!(ITEM, "§08-produce#5-rules");
     let out = std::path::Path::new("produce/clips/c001_ab.mp4");
-    let inputs = [("picture", Some("media/talk.mkv")), ("sound", Some("media/talk.m4a"))];
+    let inputs = [
+        ("picture", Some("media/talk.mkv")),
+        ("sound", Some("media/talk.m4a")),
+    ];
 
     // -ss before -i: the seek happens on input, so a clip 40 minutes in does not decode 40 minutes first.
-    let seeked = render::Clip { no: 1, seg_s: 2400.5, on_screen: 8.0, rate: 1.0, ..Default::default() };
+    let seeked = render::Clip {
+        no: 1,
+        seg_s: 2400.5,
+        on_screen: 8.0,
+        rate: 1.0,
+        ..Default::default()
+    };
     let argv = render::encode_command(&seeked, &settings(), &inputs, None, out);
     let ss = argv.iter().position(|a| a == "-ss").expect("-ss");
     let first_input = argv.iter().position(|a| a == "-i").expect("-i");
     assert!(ss < first_input, "{argv:?}");
-    assert_eq!(argv[ss + 1], "2400.500", "the same three decimals as every other time");
+    assert_eq!(
+        argv[ss + 1],
+        "2400.500",
+        "the same three decimals as every other time"
+    );
 
     // -t on the output: after every input and filter argument, immediately before the file's name.
-    let rated = render::Clip { no: 1, seg_s: 4.0, on_screen: 6.5, rate: 2.0, ..Default::default() };
+    let rated = render::Clip {
+        no: 1,
+        seg_s: 4.0,
+        on_screen: 6.5,
+        rate: 2.0,
+        ..Default::default()
+    };
     let argv = render::encode_command(&rated, &settings(), &inputs, None, out);
     let last_input = argv.iter().rposition(|a| a == "-i").expect("the last -i");
-    let t = argv.iter().position(|a| a == "-t").expect("-t on a rated clip");
+    let t = argv
+        .iter()
+        .position(|a| a == "-t")
+        .expect("-t on a rated clip");
     assert!(t > last_input, "{argv:?}");
     assert_eq!(argv[t + 1], "6.500");
     assert_eq!(argv.last().unwrap(), &out.display().to_string(), "{argv:?}");
@@ -131,20 +169,49 @@ fn sec_08_produce_5_rules_s1_which_clips_are_trimmed() {
     assert_eq!(ITEM, "§08-produce#5-rules");
     // §5 names four kinds: inserts, sounds, freezes, rated clips. The first two carry an asset in `source`;
     // a freeze reaches the planner at rate 0 with its still length in on_screen; a rated clip differs from 1.
-    let base = render::Clip { no: 1, seg_s: 0.0, on_screen: 4.0, rate: 1.0, ..Default::default() };
-    assert_eq!(render::output_limit(&base), None, "footage at 1× runs to the recording's end");
+    let base = render::Clip {
+        no: 1,
+        seg_s: 0.0,
+        on_screen: 4.0,
+        rate: 1.0,
+        ..Default::default()
+    };
+    assert_eq!(
+        render::output_limit(&base),
+        None,
+        "footage at 1× runs to the recording's end"
+    );
 
-    let insert = render::Clip { source: "media/card.mp4".to_string(), ..base.clone() };
+    let insert = render::Clip {
+        source: "media/card.mp4".to_string(),
+        ..base.clone()
+    };
     assert_eq!(render::output_limit(&insert).as_deref(), Some("4.000"));
-    let copy = render::Clip { source: "copy:12".to_string(), ..base.clone() };
+    let copy = render::Clip {
+        source: "copy:12".to_string(),
+        ..base.clone()
+    };
     assert_eq!(render::output_limit(&copy).as_deref(), Some("4.000"));
-    let freeze = render::Clip { rate: 0.0, ..base.clone() };
-    assert_eq!(render::output_limit(&freeze).as_deref(), Some("4.000"), "a stop is a still of on_screen s");
-    let rated = render::Clip { rate: 2.0, ..base.clone() };
+    let freeze = render::Clip {
+        rate: 0.0,
+        ..base.clone()
+    };
+    assert_eq!(
+        render::output_limit(&freeze).as_deref(),
+        Some("4.000"),
+        "a stop is a still of on_screen s"
+    );
+    let rated = render::Clip {
+        rate: 2.0,
+        ..base.clone()
+    };
     assert_eq!(render::output_limit(&rated).as_deref(), Some("4.000"));
 
     // And the trim is not applied to footage merely because it starts partway in: -ss already answers that.
-    let seeked = render::Clip { seg_s: 90.0, ..base };
+    let seeked = render::Clip {
+        seg_s: 90.0,
+        ..base
+    };
     assert_eq!(render::output_limit(&seeked), None);
 }
 
@@ -161,7 +228,9 @@ fn sec_08_produce_5_rules_s1_delays_in_whole_milliseconds_and_inputs_append_only
     // `adelay=346ms|346ms` — the unit is spelled once per channel, after the whole number.
     let value = delay.trim_start_matches("adelay=");
     for part in value.split('|') {
-        let number = part.strip_suffix("ms").unwrap_or_else(|| panic!("{delay} has no ms unit"));
+        let number = part
+            .strip_suffix("ms")
+            .unwrap_or_else(|| panic!("{delay} has no ms unit"));
         assert!(!number.contains('.'), "{delay} is not whole milliseconds");
         assert!(number.parse::<i64>().is_ok(), "{delay} is not an integer");
     }
@@ -170,18 +239,37 @@ fn sec_08_produce_5_rules_s1_delays_in_whole_milliseconds_and_inputs_append_only
 
     // Input indices append-only: one -i per pair, in the order given, and the `anullsrc` branch takes a slot
     // like any other input — otherwise a later filter's `[N:a]` would point at its neighbour's audio.
-    let clip = render::Clip { no: 1, seg_s: 0.0, on_screen: 8.0, rate: 1.0, ..Default::default() };
+    let clip = render::Clip {
+        no: 1,
+        seg_s: 0.0,
+        on_screen: 8.0,
+        rate: 1.0,
+        ..Default::default()
+    };
     let inputs = [
         ("picture", Some("media/talk.mkv")),
         ("sound", None),
         ("voice", Some("narrate/line1.wav")),
         ("mix", Some("lane.wav")),
     ];
-    let argv = render::encode_command(&clip, &settings(), &inputs, None, std::path::Path::new("produce/clips/c.mp4"));
+    let argv = render::encode_command(
+        &clip,
+        &settings(),
+        &inputs,
+        None,
+        std::path::Path::new("produce/clips/c.mp4"),
+    );
     assert_eq!(argv.iter().filter(|a| **a == "-i").count(), 4, "{argv:?}");
-    let paths: Vec<&str> = argv.windows(2).filter(|w| w[0] == "-i").map(|w| w[1].as_str()).collect();
+    let paths: Vec<&str> = argv
+        .windows(2)
+        .filter(|w| w[0] == "-i")
+        .map(|w| w[1].as_str())
+        .collect();
     assert_eq!(paths[0], "media/talk.mkv", "{paths:?}");
-    assert!(paths[1].starts_with("anullsrc"), "the silent bed still takes a slot: {paths:?}");
+    assert!(
+        paths[1].starts_with("anullsrc"),
+        "the silent bed still takes a slot: {paths:?}"
+    );
     assert_eq!(paths[2], "narrate/line1.wav", "{paths:?}");
     assert_eq!(paths[3], "lane.wav", "{paths:?}");
 }
@@ -199,22 +287,54 @@ fn sec_08_produce_5_rules_s1_the_clip_floor_and_the_log_it_owes() {
     gone.dur = 10.0;
     let fine = seg(20.0, 30.0);
 
-    let (clips, logs) = render::plan_clips(&[short, gone, fine], no_fx, "16:9", |_| false, &[], &[], (1920, 1080), true, render::unknown_footage);
+    let (clips, logs) = render::plan_clips(
+        &[short, gone, fine],
+        no_fx,
+        "16:9",
+        |_| false,
+        &[],
+        &[],
+        (1920, 1080),
+        true,
+        render::unknown_footage,
+    );
     // A missing insert is skipped — dropped from the video — while the too-short clip is dropped by the
     // floor. Both leave the list; each still logs its own number so the log matches the cut's numbering.
-    assert_eq!(clips.iter().map(|clip| clip.no).collect::<Vec<usize>>(), [3], "{clips:?}");
+    assert_eq!(
+        clips.iter().map(|clip| clip.no).collect::<Vec<usize>>(),
+        [3],
+        "{clips:?}"
+    );
     assert_eq!(logs.len(), 2, "{logs:?}");
     // Each names its own clip number, so a person can find it in the cut.
     assert!(logs[0].contains("clip 1"), "{}", logs[0]);
     assert!(logs[1].contains("clip 2"), "{}", logs[1]);
     assert_eq!(logs[0], render::too_short_log(1, 0.0, 0.4, 0));
-    assert!(logs[0].contains("too short to render, dropped"), "{}", logs[0]);
+    assert!(
+        logs[0].contains("too short to render, dropped"),
+        "{}",
+        logs[0]
+    );
     assert_eq!(logs[1], render::missing_insert_log(2, "media/gone.mp4"));
-    assert!(logs[1].contains("is not there any more — skipped"), "{}", logs[1]);
+    assert!(
+        logs[1].contains("is not there any more — skipped"),
+        "{}",
+        logs[1]
+    );
 
     // The floor is inclusive: exactly 0.5 s renders.
     let edge = seg(0.0, 0.5);
-    let (clips, logs) = render::plan_clips(&[edge], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
+    let (clips, logs) = render::plan_clips(
+        &[edge],
+        no_fx,
+        "16:9",
+        |_| true,
+        &[],
+        &[],
+        (1920, 1080),
+        true,
+        render::unknown_footage,
+    );
     assert_eq!(clips.len(), 1, "{logs:?}");
     assert!(logs.is_empty(), "{logs:?}");
 }
@@ -231,7 +351,11 @@ fn line(text: &str) -> Entry {
 }
 
 fn word(text: &str, s: f64, e: f64) -> subs::Word {
-    subs::Word { text: text.to_string(), s, e }
+    subs::Word {
+        text: text.to_string(),
+        s,
+        e,
+    }
 }
 
 #[test]
@@ -272,7 +396,10 @@ fn sec_08_produce_5_rules_s2_sidecars_are_deleted_by_name_and_gaps_stay_in_the_o
     for name in &stale {
         assert!(!name.contains('*'), "{name} is a pattern");
     }
-    assert_eq!(render::sidecar_names("final", None), ["final.srt".to_string(), "final.vtt".to_string()]);
+    assert_eq!(
+        render::sidecar_names("final", None),
+        ["final.srt".to_string(), "final.vtt".to_string()]
+    );
 
     // Translations are read back by number; a gap is left in the original with a warning naming it, and the
     // track still ships. `subs::merge` owns that rule — this pins that one missing line is not a lost track.
@@ -282,17 +409,29 @@ fn sec_08_produce_5_rules_s2_sidecars_are_deleted_by_name_and_gaps_stay_in_the_o
     let merged = subs::merge("de", &original, &got);
     assert_eq!(merged.lines[0], "eins");
     assert_eq!(merged.still_missing, vec![2]);
-    assert!(merged.warning.is_some(), "the log has to name what stayed untranslated");
-    assert_eq!(merged.lines.len(), 2, "a track is never dropped for one bad line");
+    assert!(
+        merged.warning.is_some(),
+        "the log has to name what stayed untranslated"
+    );
+    assert_eq!(
+        merged.lines.len(),
+        2,
+        "a track is never dropped for one bad line"
+    );
 
     // The session's own language is never translated into itself.
-    assert_eq!(subs::track_languages("en", &["en".to_string(), "de".to_string()]), ["de".to_string()]);
+    assert_eq!(
+        subs::track_languages("en", &["en".to_string(), "de".to_string()]),
+        ["de".to_string()]
+    );
 
     // webm carries no subtitle track whatever the tick says; mp4 and mkv keep theirs.
-    let (_, webm) = screen::apply_container_rules(Container::Webm, Codec::Vp9, Subtitles::TrackInFile);
+    let (_, webm) =
+        screen::apply_container_rules(Container::Webm, Codec::Vp9, Subtitles::TrackInFile);
     assert_eq!(webm, Subtitles::None);
     for container in [Container::Mp4, Container::Mkv] {
-        let (codec, kept) = screen::apply_container_rules(container, Codec::H264, Subtitles::TrackInFile);
+        let (codec, kept) =
+            screen::apply_container_rules(container, Codec::H264, Subtitles::TrackInFile);
         assert_eq!(kept, Subtitles::TrackInFile, "{container:?}");
         assert_eq!(codec, Codec::H264, "{container:?} keeps its codec");
     }
@@ -328,16 +467,31 @@ fn sec_08_produce_5_rules_s3_a_run_leaves_an_up_to_date_video_alone() {
         shape: (1920, 1080),
     };
     let current = stamp::stamp(&input, |_| None, |_| (0, 0));
-    assert!(!stamp::skip_encode(stamp::read_stamp(&tree).as_deref(), &current), "never produced");
+    assert!(
+        !stamp::skip_encode(stamp::read_stamp(&tree).as_deref(), &current),
+        "never produced"
+    );
 
     stamp::write_stamp(&tree, &current).expect("stamp");
-    assert!(data::video_is_up_to_date(Some(&current), &current), "{current}");
+    assert!(
+        data::video_is_up_to_date(Some(&current), &current),
+        "{current}"
+    );
     // The stamp lives beside the video, in `produce/` — not under `publish/`, which is the picture's own.
     assert_eq!(data::stamp_path(&tree), tree.final_stamp());
 
     // A change to anything the render reads asks for the encode again: a codec is one keystroke on §A.
-    let retuned = Produce { codec: project::Codec::Vp9, ..Produce::default() };
-    let retuned = stamp::Input { settings: &retuned, segs: &[], lines: &[], sources: &[], ..input };
+    let retuned = Produce {
+        codec: project::Codec::Vp9,
+        ..Produce::default()
+    };
+    let retuned = stamp::Input {
+        settings: &retuned,
+        segs: &[],
+        lines: &[],
+        sources: &[],
+        ..input
+    };
     let next = stamp::stamp(&retuned, |_| None, |_| (0, 0));
     assert_ne!(next, current);
     assert!(!data::video_is_up_to_date(Some(&current), &next));
@@ -345,8 +499,14 @@ fn sec_08_produce_5_rules_s3_a_run_leaves_an_up_to_date_video_alone() {
     // And a stamp is written only when an encode actually ran and did not fail: writing one on a failure would
     // let the next ▶ skip work that was never done.
     assert!(render::stamp_written(true, false));
-    assert!(!render::stamp_written(false, false), "a skipped encode writes no stamp of its own");
-    assert!(!render::stamp_written(true, true), "a failed encode leaves the old verdict standing");
+    assert!(
+        !render::stamp_written(false, false),
+        "a skipped encode writes no stamp of its own"
+    );
+    assert!(
+        !render::stamp_written(true, true),
+        "a failed encode leaves the old verdict standing"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -357,7 +517,10 @@ fn sec_08_produce_5_rules_s3_upload_text_is_written_once_per_project() {
     let _ = std::fs::remove_dir_all(&dir);
     let tree = tree_in(&dir.join("p.naivepost"));
 
-    assert!(!publish::is_written(&tree), "a new project has never had its text written");
+    assert!(
+        !publish::is_written(&tree),
+        "a new project has never had its text written"
+    );
     publish::save(&project::Publish::default(), &tree).expect("publish.json");
     assert!(publish::is_written(&tree));
     // Rewriting the text is a press of its own (↻ beside Title) and never part of ▶.
@@ -379,12 +542,20 @@ fn sec_08_produce_5_rules_s3_publish_json_goes_down_before_the_picture() {
     // ▶ finishes the job instead of rewriting text nobody asked for.
     assert_eq!(
         data::WRITE_ORDER,
-        ["publish/publish.json", "publish/thumbnail.png", "final.html"]
+        [
+            "publish/publish.json",
+            "publish/thumbnail.png",
+            "final.html"
+        ]
     );
     let json = std::path::Path::new(data::WRITE_ORDER[0]);
     let picture = std::path::Path::new(data::WRITE_ORDER[1]);
     assert_eq!(json.file_name().unwrap(), "publish.json");
-    assert_eq!(picture.parent().unwrap(), json.parent().unwrap(), "both under publish/");
+    assert_eq!(
+        picture.parent().unwrap(),
+        json.parent().unwrap(),
+        "both under publish/"
+    );
 
     // The thumbnail keeps its own stamp, which is why redrawing a picture never invalidates the encode: it is
     // `publish/thumbnail.stamp`, not `final.stamp` beside the video.
@@ -393,7 +564,11 @@ fn sec_08_produce_5_rules_s3_publish_json_goes_down_before_the_picture() {
     let tree = tree_in(&dir.join("p.naivepost"));
     let video_stamp = data::stamp_path(&tree);
     assert_eq!(video_stamp.file_name().unwrap(), "final.stamp");
-    assert_ne!(video_stamp, tree.thumbnail_stamp(), "two stamps, two questions");
+    assert_ne!(
+        video_stamp,
+        tree.thumbnail_stamp(),
+        "two stamps, two questions"
+    );
     assert_eq!(tree.thumbnail_stamp().parent().unwrap(), tree.publish_dir());
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -404,7 +579,10 @@ fn sec_08_produce_5_rules_s3_a_press_over_the_thumbnail_always_draws() {
     // ↻ over the thumbnail: one sd.cpp call whatever the box says, and the text it is not about stays alone.
     for ticked in [false, true] {
         let again = runs::redraw(ticked);
-        assert_eq!(again.sd_calls, 1, "a second draw would be a second picture, not a redraw");
+        assert_eq!(
+            again.sd_calls, 1,
+            "a second draw would be a second picture, not a redraw"
+        );
         assert_eq!(again.rewrites, usize::from(!ticked), "{again:?}");
         assert!(again.keeps.contains(&"title"), "{again:?}");
     }
@@ -413,10 +591,23 @@ fn sec_08_produce_5_rules_s3_a_press_over_the_thumbnail_always_draws() {
     // A chosen frame survives ▶: the copy lives in the app's own images folder, not in `produce/`, so the
     // render's stale-file sweep — which deletes by exact name inside the project — can never reach it.
     let chosen = runs::take_from_image("/home/dev/Pictures/screenshot.final.png", 3840, 2160, 0.0);
-    assert!(chosen.stored.ends_with("screenshot.final.png"), "{}", chosen.stored);
+    assert!(
+        chosen.stored.ends_with("screenshot.final.png"),
+        "{}",
+        chosen.stored
+    );
     assert!(!chosen.stored.contains("/produce/"), "{}", chosen.stored);
-    assert_eq!(chosen.box_, (1920, 1080), "the picture's own shape, scaled to {} wide", runs::WIDTH);
-    assert!(runs::CHOSEN_TIP.contains("it does not replace your file"), "{}", runs::CHOSEN_TIP);
+    assert_eq!(
+        chosen.box_,
+        (1920, 1080),
+        "the picture's own shape, scaled to {} wide",
+        runs::WIDTH
+    );
+    assert!(
+        runs::CHOSEN_TIP.contains("it does not replace your file"),
+        "{}",
+        runs::CHOSEN_TIP
+    );
 }
 
 #[test]
@@ -424,14 +615,25 @@ fn sec_08_produce_5_rules_s3_the_title_is_seeded_once_and_reprinting_words_costs
     assert_eq!(ITEM, "§08-produce#5-rules");
     // Seed the answer onto the picture once; from then on it is text like any other, and a second seed would
     // overwrite what a person typed over it.
-    let mut publish = project::Publish { title: "how to cut a session".to_string(), ..Default::default() };
+    let mut publish = project::Publish {
+        title: "how to cut a session".to_string(),
+        ..Default::default()
+    };
     assert!(screen::seed_title(&mut publish));
     assert_eq!(publish.thumb_title, "how to cut a session");
     assert!(!screen::seed_title(&mut publish), "once only");
 
-    let typed = project::Publish { title: "typed over".to_string(), thumb_title: String::new(), title_seeded: true, ..Default::default() };
+    let typed = project::Publish {
+        title: "typed over".to_string(),
+        thumb_title: String::new(),
+        title_seeded: true,
+        ..Default::default()
+    };
     let mut typed = typed;
-    assert!(!screen::seed_title(&mut typed), "the flag is what makes it once");
+    assert!(
+        !screen::seed_title(&mut typed),
+        "the flag is what makes it once"
+    );
     assert!(typed.thumb_title.is_empty());
 
     // Re-printing the words is one local draw: no sd.cpp call, and the type shrinks instead of wrapping onto a
@@ -449,7 +651,11 @@ fn sec_08_produce_5_rules_s3_the_title_is_seeded_once_and_reprinting_words_costs
     assert!(!long.lines.is_empty());
 
     // The tick that re-asks for the words is the only thing that makes a redraw cost an LLM call.
-    assert!(runs::ONLY_THUMBNAIL_TIP.contains("re-asks for the words"), "{}", runs::ONLY_THUMBNAIL_TIP);
+    assert!(
+        runs::ONLY_THUMBNAIL_TIP.contains("re-asks for the words"),
+        "{}",
+        runs::ONLY_THUMBNAIL_TIP
+    );
     assert_eq!(runs::WORDS_ASK_AGAIN, "Words: <previous text>");
 }
 
@@ -494,7 +700,10 @@ fn sec_08_produce_5_rules_s4_the_tag_is_rewritten_even_when_the_encode_was_skipp
     // The tag lists the `.vtt` files that survived from the run before, so a skipped encode is a reason to
     // leave every other file alone and never a reason to leave a stale tag pointing at captions this project
     // no longer has.
-    assert!(data::tag_rewritten(true), "skipped is not a reason to leave an old tag");
+    assert!(
+        data::tag_rewritten(true),
+        "skipped is not a reason to leave an old tag"
+    );
     assert!(data::tag_rewritten(false));
 
     // Whether the render failed is a different question, answered elsewhere: the tag's own write failing must
@@ -520,9 +729,23 @@ fn sec_08_produce_5_rules_s4_the_tag_is_rewritten_even_when_the_encode_was_skipp
     // inserts have gone missing plans and logs instead of failing.
     let mut rated = seg(0.0, 12.0);
     rated.rate = 2.0;
-    let (clips, logs) = render::plan_clips(&[rated], no_fx, "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
+    let (clips, logs) = render::plan_clips(
+        &[rated],
+        no_fx,
+        "16:9",
+        |_| true,
+        &[],
+        &[],
+        (1920, 1080),
+        true,
+        render::unknown_footage,
+    );
     assert!(logs.is_empty(), "{logs:?}");
     assert_eq!(clips.len(), 1);
-    assert!((clips[0].on_screen - 6.0).abs() < 1e-9, "{}", clips[0].on_screen);
+    assert!(
+        (clips[0].on_screen - 6.0).abs() < 1e-9,
+        "{}",
+        clips[0].on_screen
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

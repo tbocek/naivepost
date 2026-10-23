@@ -57,11 +57,12 @@ fn word(text: &str, start_s: f64) -> Word {
 /// Write a recording's `words.json`.
 fn write_words(tree: &Tree, source: &str, spoken: &[(&str, f64)]) {
     let doc = WordsDoc {
-        text: spoken.iter().map(|(w, _)| *w).collect::<Vec<&str>>().join(" "),
-        words: spoken
+        text: spoken
             .iter()
-            .map(|(w, t)| word(w, *t))
-            .collect(),
+            .map(|(w, _)| *w)
+            .collect::<Vec<&str>>()
+            .join(" "),
+        words: spoken.iter().map(|(w, t)| word(w, *t)).collect(),
     };
     requests::write_words(tree, source, &doc).expect("write words.json");
 }
@@ -127,7 +128,10 @@ fn f2_14_s2_the_four_kinds_are_one_list_spelled_once() {
     // §05 F2.14 S3's numbers, in the order the spec lists them: silence 0.8, word edge 0.9, line
     // edge 0.95, visual cut where nobody talks 1.0 — each one read off the kind itself, so a weight
     // can only be stated once.
-    assert_eq!(Candidate::weight(Candidate::SilenceMidpoint), WEIGHT_SILENCE);
+    assert_eq!(
+        Candidate::weight(Candidate::SilenceMidpoint),
+        WEIGHT_SILENCE
+    );
     assert_eq!(Candidate::weight(Candidate::WordEdge), WEIGHT_WORD_EDGE);
     assert_eq!(Candidate::weight(Candidate::LineEdge), WEIGHT_LINE_EDGE);
     assert_eq!(Candidate::weight(Candidate::VisualCut), WEIGHT_VISUAL_CUT);
@@ -156,14 +160,25 @@ fn f2_14_s1_no_words_file_refuses_and_names_nothing_more() {
     let tree = dir.tree();
     let cut = Cut {
         segs: vec![
-            Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-            Seg { s: 10.0, e: 20.0, cam: 1, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 10.0,
+                cam: 0,
+                ..Default::default()
+            },
+            Seg {
+                s: 10.0,
+                e: 20.0,
+                cam: 1,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
     let recs = recordings(&[0, 1]);
 
-    let states = words::read_word_states(tree, &cut, &recs).expect("reading an empty project is not a failure");
+    let states = words::read_word_states(tree, &cut, &recs)
+        .expect("reading an empty project is not a failure");
     assert_eq!(states, vec![WordState::Missing, WordState::Missing]);
     assert_eq!(words::gate(&states), words::Words::Needed);
     assert_eq!(words::reason_for(&states), None);
@@ -179,7 +194,10 @@ fn f2_14_s5_words_present_but_never_aligned_refuses_naming_the_cause() {
     // which, so a person knows whether to run ✐ Captions or wait for the aligner. Written by hand so
     // the state is pinned, not inferred from which helper wrote which file.
     let states = vec![WordState::NotAligned];
-    assert_eq!(words::reason_for(&states), Some("1 of 1 recording(s) have words we cannot use: not aligned".to_string()));
+    assert_eq!(
+        words::reason_for(&states),
+        Some("1 of 1 recording(s) have words we cannot use: not aligned".to_string())
+    );
     let (may_run, said) = words::press_answer(&Ok(states));
     assert!(!may_run);
     assert!(said.starts_with(words::WORDS_NEEDED), "{said}");
@@ -244,8 +262,18 @@ fn f2_14_s5_two_bad_causes_are_both_said() {
 
     let cut = Cut {
         segs: vec![
-            Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-            Seg { s: 10.0, e: 20.0, cam: 1, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 10.0,
+                cam: 0,
+                ..Default::default()
+            },
+            Seg {
+                s: 10.0,
+                e: 20.0,
+                cam: 1,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     };
@@ -268,11 +296,11 @@ fn f2_14_s1_a_cut_with_nothing_in_it_needs_no_words() {
     // A page opened before anything was laid out has no segments, so no recording is depended on and
     // the word gate has nothing to refuse for — §1's other guards (hand edits, no timeline) are the
     // ones that answer that press.
+    assert_eq!(words::press_answer(&Ok(Vec::new())), (true, String::new()));
     assert_eq!(
-        words::press_answer(&Ok(Vec::new())),
-        (true, String::new())
+        words::depended_cam_slots(&Cut::default()),
+        Vec::<i32>::new()
     );
-    assert_eq!(words::depended_cam_slots(&Cut::default()), Vec::<i32>::new());
 }
 
 #[test]
@@ -280,7 +308,12 @@ fn f2_14_s1_a_lane_segment_counts_as_its_own_camera() {
     // A cut lane is a recording too (§01 §B), so the words of the camera a lane shows are depended
     // on exactly like a row's.
     let cut = Cut {
-        segs: vec![Seg { s: 5.0, e: 9.0, cam: 2, ..Default::default() }],
+        segs: vec![Seg {
+            s: 5.0,
+            e: 9.0,
+            cam: 2,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     assert_eq!(words::depended_cam_slots(&cut), vec![2]);

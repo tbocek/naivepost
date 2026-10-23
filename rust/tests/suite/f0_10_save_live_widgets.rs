@@ -10,13 +10,13 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
 use adw::prelude::*;
+use common::temp_dir_created as temp_dir;
 use gtk4 as gtk;
 use naivepost::project::{self, Project};
 use naivepost::save_as::{self, SAVED};
 use naivepost::ui;
-use crate::common;
-use common::temp_dir_created as temp_dir;
 
 /// One running GTK application for this whole binary, entered once and shared by every check below:
 /// `g_application_run` may be entered only once per process, so the checks run sequentially inside one
@@ -169,7 +169,11 @@ fn check_rename_moves_the_window_too(app: &adw::Application) {
     let again = ui::save_apply::save_named(&session, &status(&window), &feb, "feb")
         .expect("saving under the name it already has just writes the file");
     assert_eq!(again.path, feb);
-    assert_eq!(again.logs, Vec::<String>::new(), "nothing moved the second time");
+    assert_eq!(
+        again.logs,
+        Vec::<String>::new(),
+        "nothing moved the second time"
+    );
     assert_eq!(status(&window).text().as_str(), SAVED);
     assert!(
         !ui::window_logs()
@@ -179,7 +183,10 @@ fn check_rename_moves_the_window_too(app: &adw::Application) {
         ui::window_logs()
     );
     assert!(feb.join(project::PROJECT_FILE).is_file());
-    assert!(!jan.exists(), "and the second save did not recreate the old folder");
+    assert!(
+        !jan.exists(),
+        "and the second save did not recreate the old folder"
+    );
 
     std::fs::remove_dir_all(&root).ok();
 }
@@ -198,7 +205,9 @@ fn check_refused_move_leaves_the_folder_alone(app: &adw::Application) {
     let session = ui::session_handle(&window);
     // What this window believes is open at its build; the refusal must leave exactly this standing.
     let before_refusal = opened_now();
-    let was_open = before_refusal.clone().expect("a window always names a folder");
+    let was_open = before_refusal
+        .clone()
+        .expect("a window always names a folder");
 
     let err = ui::save_apply::save_named(&session, &status(&window), &was_open, "taken")
         .expect_err("a folder with work in it is not overwritten");
@@ -243,11 +252,16 @@ fn check_button_refused_during_a_run(app: &adw::Application) {
     let folder = plant(&naivepost::startup::session_dir(&root));
     let (window, seeded) = window_at(app, &root);
     // The refusal must leave the memory where THIS window's build put it, whatever earlier checks did.
-    assert_eq!(ui::save_apply::open_dir().as_deref(), Some(seeded.as_path()));
+    assert_eq!(
+        ui::save_apply::open_dir().as_deref(),
+        Some(seeded.as_path())
+    );
 
     // A run under way, started the way ▶ starts one (F0.5 S4 closes what a single-step press opens).
     let model = project::load(&folder).expect("the planted working copy loads");
-    ui::play_button(&window).expect("the run bar has a ▶").emit_clicked();
+    ui::play_button(&window)
+        .expect("the run bar has a ▶")
+        .emit_clicked();
     if let (Some(bar), Some(queue)) = (ui::run_bar(&window), ui::run_queue(&window)) {
         naivepost::runqueue::start_run(
             &mut bar.borrow_mut(),
@@ -262,7 +276,9 @@ fn check_button_refused_during_a_run(app: &adw::Application) {
         .emit_clicked();
     assert_eq!(ui::state(&window).status, save_as::RUN_REFUSAL);
     assert!(
-        ui::window_logs().iter().any(|line| line == save_as::RUN_REFUSAL),
+        ui::window_logs()
+            .iter()
+            .any(|line| line == save_as::RUN_REFUSAL),
         "the refusal is logged too: {:?}",
         ui::window_logs()
     );

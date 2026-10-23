@@ -85,9 +85,16 @@ pub fn heard_before(window: &adw::ApplicationWindow) -> bool {
 /// Whether a card holds the footage at `t` — a read for a check, not a door the program uses: the card
 /// question is `apply_mix`'s own (it mutes for the same reason), and this only lets a test say WHICH reason a
 /// printed line named.
-pub fn card_holds_for_test(_window: &adw::ApplicationWindow, segs: &[crate::cut::Seg], t: f64) -> bool {
+pub fn card_holds_for_test(
+    _window: &adw::ApplicationWindow,
+    segs: &[crate::cut::Seg],
+    t: f64,
+) -> bool {
     crate::ui::cut_card_preview::card_hearing(
-        &crate::cut::Cut { segs: segs.to_vec(), ..Default::default() },
+        &crate::cut::Cut {
+            segs: segs.to_vec(),
+            ..Default::default()
+        },
         t,
     )
     .is_some_and(|hearing| hearing.footage_held)
@@ -146,11 +153,10 @@ pub fn sound_clock_noticed() -> bool {
 pub fn unpreviewable_snd_under(fx: &[crate::cut::Fx], t: f64) -> Option<&'static str> {
     fx.iter()
         .find(|effect| {
-            effect.effect_kind() == Some(crate::cut::EffectKind::Speed)
-                && {
-                    let (from, to) = effect.spans();
-                    t >= from && t < to
-                }
+            effect.effect_kind() == Some(crate::cut::EffectKind::Speed) && {
+                let (from, to) = effect.spans();
+                t >= from && t < to
+            }
         })
         .and_then(|effect| crate::effect_overlap::says_render_only(&effect.snd))
 }

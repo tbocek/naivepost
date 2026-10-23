@@ -129,7 +129,6 @@ pub fn mark_chain_row(row: Option<&gtk::Label>) {
     CHAIN_ROW.with(|held| *held.borrow_mut() = row.cloned());
 }
 
-
 /// Close the narrate run that ran to its end inside one press, finding this window's widgets here so
 /// the shell's handler stays a call. Same fallback as before: with no queue or status row to write to,
 /// the bookkeeping still ends.
@@ -232,7 +231,8 @@ pub(crate) fn hand_over_unload(kind: crate::services::Kind) {
 /// Paint the chain's widgets with the run still standing -- S1's "log expanded" for a chain, which
 /// means the log is open ACROSS the hand-overs, not only in the moment before the first step runs.
 /// `paint_closed`'s mirror: every run's own lines reach the expander before anything folds it.
-pub(crate) fn paint_chain_step(handles: &super::lucky_run::Handles) {    let main = window::main_window();
+pub(crate) fn paint_chain_step(handles: &super::lucky_run::Handles) {
+    let main = window::main_window();
     if let (Some(play), Some(lucky), Some(stop_)) = (
         window::play_button(&main),
         window::lucky_button(&main),
@@ -252,8 +252,16 @@ pub(crate) fn paint_chain_step(handles: &super::lucky_run::Handles) {    let mai
         &handles.log,
         &handles.log_view,
         &handles.queue.borrow(),
-        shell_beats::StatusLine { status: &handles.status, owned: true },
-        handles.bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
+        shell_beats::StatusLine {
+            status: &handles.status,
+            owned: true,
+        },
+        handles
+            .bar
+            .borrow()
+            .running
+            .as_ref()
+            .is_some_and(|run| run.log_expanded),
     );
 }
 
@@ -346,7 +354,14 @@ fn paint_closed(
     // disagree with what ▶'s own handler paints. The transport is the player's real one, read the same
     // way both handlers read it, so a started preview keeps ⏸ up after the run ends.
     let transport = window::preview_player(&main).transport;
-    window::paint_run_bar(&play, &lucky, &stop_, &bar.borrow(), window::state(&main).page, transport);
+    window::paint_run_bar(
+        &play,
+        &lucky,
+        &stop_,
+        &bar.borrow(),
+        window::state(&main).page,
+        transport,
+    );
     if kept {
         let buffer = log_view.buffer();
         buffer.set_text("");
@@ -360,7 +375,13 @@ fn paint_closed(
         log,
         log_view,
         &queue.borrow(),
-        shell_beats::StatusLine { status, owned: false },
-        bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
+        shell_beats::StatusLine {
+            status,
+            owned: false,
+        },
+        bar.borrow()
+            .running
+            .as_ref()
+            .is_some_and(|run| run.log_expanded),
     );
 }

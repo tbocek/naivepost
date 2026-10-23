@@ -135,7 +135,11 @@ fn write_words_files(tree: &Tree) -> Result<(), String> {
         tree,
         "cam0",
         &WordsDoc {
-            text: spoken.iter().map(|(w, _)| *w).collect::<Vec<&str>>().join(" "),
+            text: spoken
+                .iter()
+                .map(|(w, _)| *w)
+                .collect::<Vec<&str>>()
+                .join(" "),
             words: words.clone(),
         },
     )?;
@@ -179,7 +183,10 @@ fn write_envelope(tree: &Tree) -> Result<(), String> {
     crate::wave::write(
         tree,
         LANE,
-        &Wave { hz: HZ, chans: vec![peaks] },
+        &Wave {
+            hz: HZ,
+            chans: vec![peaks],
+        },
         meta.len() as i64,
         mtime,
     )

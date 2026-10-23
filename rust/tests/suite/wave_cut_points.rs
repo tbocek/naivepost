@@ -59,7 +59,10 @@ fn envelope_wave() -> Wave {
     let mut peaks = vec![QUIET; RUN_BUCKETS];
     peaks.extend(std::iter::repeat(LOUD).take((NOISE_SECONDS * HZ) as usize));
     peaks.extend(vec![QUIET; RUN_BUCKETS]);
-    Wave { hz: HZ, chans: vec![peaks] }
+    Wave {
+        hz: HZ,
+        chans: vec![peaks],
+    }
 }
 
 /// Seconds of one bucket, from the same constants the wave is built from.
@@ -76,8 +79,13 @@ fn noise_end(at: f64) -> f64 {
     noise_start(at) + NOISE_SECONDS
 }
 
-fn tree_with_cache(tag: &str, lane: &str, at: f64) -> (std::path::PathBuf, naivepost::layout::Tree) {
-    let root = std::env::temp_dir().join(format!("naivepost-wave-edges-{tag}-{}", std::process::id()));
+fn tree_with_cache(
+    tag: &str,
+    lane: &str,
+    at: f64,
+) -> (std::path::PathBuf, naivepost::layout::Tree) {
+    let root =
+        std::env::temp_dir().join(format!("naivepost-wave-edges-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let dir = root.join("demo.naivepost");
     std::fs::create_dir_all(&dir).unwrap();
@@ -106,13 +114,20 @@ fn sources() -> Vec<naivepost::project::Source> {
 fn sec_02_services_4_degraded_modes_s15_an_envelope_off_the_cache_gives_the_band_its_silences() {
     // The fixture proves itself first: the quiet really is under the threshold the module reads and the
     // loud really is not, or this would be a test of a wave that is all silence.
-    assert!(dbfs(QUIET) <= wave_edges::SILENCE_THRESHOLD_DB, "{} dB", dbfs(QUIET));
+    assert!(
+        dbfs(QUIET) <= wave_edges::SILENCE_THRESHOLD_DB,
+        "{} dB",
+        dbfs(QUIET)
+    );
     assert!(dbfs(LOUD) > wave_edges::SILENCE_THRESHOLD_DB);
     assert!(
         RUN_BUCKETS as f64 / HZ >= wave_edges::SILENCE_MIN_SECONDS,
         "each quiet run must reach the minimum"
     );
-    assert!(NOISE_SECONDS > wave_edges::TOLERANCE_SECONDS, "the noise outstretches the reach");
+    assert!(
+        NOISE_SECONDS > wave_edges::TOLERANCE_SECONDS,
+        "the noise outstretches the reach"
+    );
 
     let (_root, tree) = tree_with_cache("read", "lecture", 0.0);
     let envs = wave_edges::read_lanes(&tree, &sources());
@@ -121,7 +136,11 @@ fn sec_02_services_4_degraded_modes_s15_an_envelope_off_the_cache_gives_the_band
     assert_eq!(envs[0].hz, HZ);
 
     let silences = wave_edges::silences_of(&envs[0]);
-    assert_eq!(silences.len(), 2, "{silences:?}: a quiet run before and after the noise");
+    assert_eq!(
+        silences.len(),
+        2,
+        "{silences:?}: a quiet run before and after the noise"
+    );
     // Both runs are 4 × the minimum, so neither is the gap between two words. One bucket is a fifth of
     // a second at this rate, so a span's ends are a multiple of that — hence the half-bucket slack.
     // Each run is three buckets at 5 Hz = 0.6 s, over the 0.4 s floor; a span's ends are multiples of a
@@ -131,7 +150,10 @@ fn sec_02_services_4_degraded_modes_s15_an_envelope_off_the_cache_gives_the_band
             (to - from - RUN_BUCKETS as f64 / HZ).abs() < BUCKET,
             "{from}..{to} is not a silence one may cut in"
         );
-        assert!(to - from >= wave_edges::SILENCE_MIN_SECONDS, "{from}..{to} is a gap, not a silence");
+        assert!(
+            to - from >= wave_edges::SILENCE_MIN_SECONDS,
+            "{from}..{to} is a gap, not a silence"
+        );
     }
     // An edge inside a silence stays exactly where it was asked for: the mode does not move a cut that
     // is already clean. The far end sits past the last peak, where there is no audio to check at all,
@@ -140,7 +162,10 @@ fn sec_02_services_4_degraded_modes_s15_an_envelope_off_the_cache_gives_the_band
     let past = noise_end(0.0) + RUN_BUCKETS as f64 * BUCKET + 60.0;
     let (start, end) = wave_edges::band_edges(&envs, "lecture", inside, past);
     assert_eq!(start, Some(inside), "inside a silence: stays put");
-    assert_eq!(end, None, "beyond the recording there is no silence to cut in: refused");
+    assert_eq!(
+        end, None,
+        "beyond the recording there is no silence to cut in: refused"
+    );
 
     // An edge outside a silence is pulled onto its NEAR END, and only from within the reach.
     // `noise_start` is `RUN_BUCKETS / HZ` exactly, so it is the first bucket of the noise and its
@@ -148,8 +173,16 @@ fn sec_02_services_4_degraded_modes_s15_an_envelope_off_the_cache_gives_the_band
     // silence moves it back onto the silence. `near` lies inside the second silence, so it stays put.
     let near = near_tail(0.0);
     let (start, end) = wave_edges::band_edges(&envs, "lecture", noise_start(0.0), near);
-    assert_eq!(start, Some(silences[0].1), "one bucket off: pulled back onto the silence's end");
-    assert_eq!(end, Some(near), "inside the second silence, so it stays where it was drawn");
+    assert_eq!(
+        start,
+        Some(silences[0].1),
+        "one bucket off: pulled back onto the silence's end"
+    );
+    assert_eq!(
+        end,
+        Some(near),
+        "inside the second silence, so it stays where it was drawn"
+    );
 
     // The reach, measured from outside in. An edge just OUTSIDE the second silence's start is one bucket
     // from it, inside TOLERANCE_SECONDS, and moves back onto that start; an edge just INSIDE a silence
@@ -157,18 +190,28 @@ fn sec_02_services_4_degraded_modes_s15_an_envelope_off_the_cache_gives_the_band
     // every nearby silence.
     let near_second = silences[1].0 - BUCKET;
     let (one, _) = wave_edges::band_edges(&envs, "lecture", near_second, near);
-    assert_eq!(one, Some(silences[1].0), "{near_second} s is one bucket out: onto the silence's start");
+    assert_eq!(
+        one,
+        Some(silences[1].0),
+        "{near_second} s is one bucket out: onto the silence's start"
+    );
     let inside_second = silences[1].0 + BUCKET;
     let (stays, _) = wave_edges::band_edges(&envs, "lecture", inside_second, near);
-    assert_eq!(stays, Some(inside_second), "inside a silence: stays where it was drawn");
+    assert_eq!(
+        stays,
+        Some(inside_second),
+        "inside a silence: stays where it was drawn"
+    );
     // The wave is 23 buckets at 5 Hz = 4.6 s of centres, and the reach is 5 s, so NOTHING outside a
     // silence can be out of reach here; the refusal this mode can give comes from the far end instead, in
     // the `past` case above: past the recording's own audio, where there is no envelope left to check.
 }
 
 #[test]
-fn sec_02_services_4_degraded_modes_s15_no_envelope_means_no_cut_points_rather_than_invented_ones() {
-    let root = std::env::temp_dir().join(format!("naivepost-wave-edges-none-{}", std::process::id()));
+fn sec_02_services_4_degraded_modes_s15_no_envelope_means_no_cut_points_rather_than_invented_ones()
+{
+    let root =
+        std::env::temp_dir().join(format!("naivepost-wave-edges-none-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let dir = root.join("demo.naivepost");
     std::fs::create_dir_all(&dir).unwrap();
@@ -177,10 +220,17 @@ fn sec_02_services_4_degraded_modes_s15_no_envelope_means_no_cut_points_rather_t
     // No cache file at all: not an error, and not a guess either.
     assert!(wave_edges::read_lanes(&tree, &sources()).is_empty());
     let (start, end) = wave_edges::band_edges(&[], "lecture", 12.0, 30.0);
-    assert_eq!((start, end), (None, None), "\"unable to cut between two words of one breath\"");
+    assert_eq!(
+        (start, end),
+        (None, None),
+        "\"unable to cut between two words of one breath\""
+    );
 
     // A stale cache — made against a DIFFERENT recording — is a miss for the same reason.
-    let wave = Wave { hz: HZ, chans: vec![vec![QUIET; 8]] };
+    let wave = Wave {
+        hz: HZ,
+        chans: vec![vec![QUIET; 8]],
+    };
     wave::write(&tree, "lecture", &wave, 1, 1).unwrap();
     assert!(
         wave_edges::read_lanes(&tree, &sources()).is_empty(),
@@ -201,7 +251,11 @@ fn sec_02_services_4_degraded_modes_s15_a_bands_lane_is_the_row_it_was_dragged_o
         Some("cam-b"),
         "the sound row is not a footage row, so row 1 is the second camera"
     );
-    assert_eq!(wave_edges::lane_for_row(&all, 2), None, "no third footage row");
+    assert_eq!(
+        wave_edges::lane_for_row(&all, 2),
+        None,
+        "no third footage row"
+    );
 }
 
 #[test]
@@ -214,7 +268,8 @@ fn sec_02_services_4_degraded_modes_s16_the_settings_box_decides_where_cut_point
     assert!(!wave_edges::waveform_mode("qwen3-aligner"));
 
     // Read the way the app reads it: a config home with nothing written, and one that names an aligner.
-    let root = std::env::temp_dir().join(format!("naivepost-wave-edges-conf-{}", std::process::id()));
+    let root =
+        std::env::temp_dir().join(format!("naivepost-wave-edges-conf-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let paths = naivepost::settings::Paths {
         config_dir: root.join("config"),
@@ -223,7 +278,10 @@ fn sec_02_services_4_degraded_modes_s16_the_settings_box_decides_where_cut_point
     std::fs::create_dir_all(&paths.config_dir).unwrap();
     // No conf file: the default, which names no aligner.
     let conf = naivepost::settings::read(&paths).unwrap();
-    assert!(conf.align_model.is_empty(), "a fresh machine names no aligner");
+    assert!(
+        conf.align_model.is_empty(),
+        "a fresh machine names no aligner"
+    );
     assert!(wave_edges::waveform_mode(&conf.align_model));
 
     let mut named = conf.clone();
@@ -231,7 +289,10 @@ fn sec_02_services_4_degraded_modes_s16_the_settings_box_decides_where_cut_point
     naivepost::settings::save(&paths, &named).unwrap();
     let read = naivepost::settings::read(&paths).unwrap();
     assert_eq!(read.align_model, "qwen3-aligner");
-    assert!(!wave_edges::waveform_mode(&read.align_model), "with word timings, word edges");
+    assert!(
+        !wave_edges::waveform_mode(&read.align_model),
+        "with word timings, word edges"
+    );
 }
 
 #[test]
@@ -253,5 +314,8 @@ fn sec_02_services_4_degraded_modes_s15_a_band_higher_than_the_cameras_offers_ke
 /// of §4.1 — the mode refuses, it does not guess.
 fn cut_verbs_snap(band_end: f64, points: &[f64]) -> (f64, f64) {
     use naivepost::cut_verbs;
-    (cut_verbs::snap_end(band_end, &[]), cut_verbs::snap_end(band_end, points))
+    (
+        cut_verbs::snap_end(band_end, &[]),
+        cut_verbs::snap_end(band_end, points),
+    )
 }

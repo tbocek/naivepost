@@ -7,8 +7,8 @@
 #[path = "sec_06_effects_3_flows_s1_shared.rs"]
 mod shared;
 
-use shared::{clips, fixture, finish_json, point_at, rows_paid, FakeLlm};
 use naivepost::captions_ask;
+use shared::{clips, finish_json, fixture, point_at, rows_paid, FakeLlm};
 
 #[test]
 fn sec_06_effects_3_flows_s1_captions_offer_present_on_the_wire() {
@@ -16,8 +16,19 @@ fn sec_06_effects_3_flows_s1_captions_offer_present_on_the_wire() {
     let llm = FakeLlm::start(vec![finish_json()]);
     point_at(&llm.url());
 
-    let answer = captions_ask::ask(&fixture.tree, "Caption every spoken line.", &clips(), &[], 1, &|| false);
-    assert!(!answer.failed, "a `finish` answer is a whole answer: {:?}", answer.reason);
+    let answer = captions_ask::ask(
+        &fixture.tree,
+        "Caption every spoken line.",
+        &clips(),
+        &[],
+        1,
+        &|| false,
+    );
+    assert!(
+        !answer.failed,
+        "a `finish` answer is a whole answer: {:?}",
+        answer.reason
+    );
     assert!(answer.calls.is_empty(), "and it asked for no caption");
 
     let seen = llm.next_seen();
@@ -28,8 +39,18 @@ fn sec_06_effects_3_flows_s1_captions_offer_present_on_the_wire() {
         .iter()
         .filter_map(|tool| tool["function"]["name"].as_str())
         .collect();
-    assert!(offered.contains(&"add_caption"), "add_caption is on the wire: {offered:?}");
-    assert!(offered.contains(&"finish"), "finish is on the wire: {offered:?}");
+    assert!(
+        offered.contains(&"add_caption"),
+        "add_caption is on the wire: {offered:?}"
+    );
+    assert!(
+        offered.contains(&"finish"),
+        "finish is on the wire: {offered:?}"
+    );
     // §09 §10 wrote its row for the request (§10 counts every request, whatever the answer was).
-    assert!(rows_paid(&fixture) >= 1, "the ask left its timed row: {}", rows_paid(&fixture));
+    assert!(
+        rows_paid(&fixture) >= 1,
+        "the ask left its timed row: {}",
+        rows_paid(&fixture)
+    );
 }

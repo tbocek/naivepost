@@ -7,11 +7,9 @@
 
 use std::path::Path;
 
-use naivepost::textfmt::{self, FrameEvent, Line, Retake, SessionLine};
 use crate::common;
 use common::{project_tree as project, read_file_text as read};
-
-
+use naivepost::textfmt::{self, FrameEvent, Line, Retake, SessionLine};
 
 /// Plant a file's text at a path, making its directory.
 fn plant(path: &Path, text: &str) {
@@ -22,12 +20,17 @@ fn plant(path: &Path, text: &str) {
 // --- transcript.tsv / transcript.fixed.tsv ------------------------------------
 
 #[test]
-fn sec_01_project_and_files_6_text_formats_a_transcript_row_is_start_end_speaker_text_with_two_decimals()
-{
+fn sec_01_project_and_files_6_text_formats_a_transcript_row_is_start_end_speaker_text_with_two_decimals(
+) {
     let (_root, t) = project("transcript");
     let path = t.transcript_tsv("lecture");
     textfmt::write_lines(
-        &[Line { start: 1.005, end: 2.0, speaker: "1".to_string(), text: "We start".to_string() }],
+        &[Line {
+            start: 1.005,
+            end: 2.0,
+            speaker: "1".to_string(),
+            text: "We start".to_string(),
+        }],
         &path,
     )
     .unwrap();
@@ -40,18 +43,32 @@ fn sec_01_project_and_files_6_text_formats_a_transcript_row_is_start_end_speaker
     let back = textfmt::read_lines(&path).unwrap();
     assert_eq!(back[0].start, 1.0);
     assert_eq!(back[0].end, 2.0);
-    assert_eq!((back[0].speaker.as_str(), back[0].text.as_str()), ("1", "We start"));
+    assert_eq!(
+        (back[0].speaker.as_str(), back[0].text.as_str()),
+        ("1", "We start")
+    );
 }
 
 #[test]
-fn sec_01_project_and_files_6_text_formats_times_are_written_with_two_decimals_and_never_reflowed() {
+fn sec_01_project_and_files_6_text_formats_times_are_written_with_two_decimals_and_never_reflowed()
+{
     let (_root, t) = project("decimals");
     // The fixed transcript is the same shape in another folder (§6's `*.fixed.tsv`).
     let path = t.transcript_src_dir("lecture").join("transcript.fixed.tsv");
     textfmt::write_lines(
         &[
-            Line { start: 34.7, end: 65.0, speaker: "1".into(), text: "one line".into() },
-            Line { start: 0.5, end: 0.25, speaker: "2".into(), text: "half a second".into() },
+            Line {
+                start: 34.7,
+                end: 65.0,
+                speaker: "1".into(),
+                text: "one line".into(),
+            },
+            Line {
+                start: 0.5,
+                end: 0.25,
+                speaker: "2".into(),
+                text: "half a second".into(),
+            },
         ],
         &path,
     )
@@ -74,7 +91,12 @@ fn sec_01_project_and_files_6_text_formats_a_tab_inside_the_text_stays_with_the_
     let (_root, t) = project("tabs");
     let path = t.transcript_tsv("lecture");
     textfmt::write_lines(
-        &[Line { start: 1.0, end: 2.0, speaker: "1".into(), text: "left\tright".into() }],
+        &[Line {
+            start: 1.0,
+            end: 2.0,
+            speaker: "1".into(),
+            text: "left\tright".into(),
+        }],
         &path,
     )
     .unwrap();
@@ -97,7 +119,9 @@ fn sec_01_project_and_files_6_text_formats_a_short_row_or_a_missing_file_is_hand
     // No file: the step has not run, which is no rows and no error.
     assert!(textfmt::read_lines(&path).unwrap().is_empty());
     assert!(textfmt::read_session(&t.session_tsv()).unwrap().is_empty());
-    assert!(textfmt::read_events(&t.events_tsv("lecture")).unwrap().is_empty());
+    assert!(textfmt::read_events(&t.events_tsv("lecture"))
+        .unwrap()
+        .is_empty());
     assert!(textfmt::read_retakes(&t.retakes_tsv()).unwrap().is_empty());
 
     // A row of three columns is a cut-off file, and reading it as no words would delete
@@ -105,7 +129,10 @@ fn sec_01_project_and_files_6_text_formats_a_short_row_or_a_missing_file_is_hand
     plant(&path, "1.00\t2.00\t1\n");
     let err = textfmt::read_lines(&path).unwrap_err();
     assert!(err.contains("transcript.tsv"), "{err}");
-    assert!(err.contains("expected start, end, speaker and text"), "{err}");
+    assert!(
+        err.contains("expected start, end, speaker and text"),
+        "{err}"
+    );
 
     // A time that is not a number names the row it failed on.
     plant(&path, "not-a-time\t2.00\t1\thello\n");
@@ -172,9 +199,21 @@ fn sec_01_project_and_files_6_text_formats_events_are_one_row_per_frame_as_writt
     let path = t.events_tsv("lecture");
     textfmt::write_events(
         &[
-            FrameEvent { start: 0.0, end: 1.0, text: "a title slide".into() },
-            FrameEvent { start: 1.0, end: 2.0, text: "same".into() },
-            FrameEvent { start: 2.0, end: 3.0, text: "the code scrolls".into() },
+            FrameEvent {
+                start: 0.0,
+                end: 1.0,
+                text: "a title slide".into(),
+            },
+            FrameEvent {
+                start: 1.0,
+                end: 2.0,
+                text: "same".into(),
+            },
+            FrameEvent {
+                start: 2.0,
+                end: 3.0,
+                text: "the code scrolls".into(),
+            },
         ],
         &path,
     )
@@ -212,7 +251,10 @@ fn sec_01_project_and_files_6_text_formats_a_same_row_extends_the_previous_row_w
 
     // The older spelling folds the same way, and so does punctuation around it.
     for spelling in ["(same)", "Same.", "same\"", "(Same)"] {
-        plant(&path, &format!("0.00\t1.00\ta slide\n1.00\t2.00\t{spelling}\n"));
+        plant(
+            &path,
+            &format!("0.00\t1.00\ta slide\n1.00\t2.00\t{spelling}\n"),
+        );
         let events = textfmt::read_events(&path).unwrap();
         assert_eq!(events.len(), 1, "{spelling} should fold");
         assert_eq!(events[0].end, 2.0, "{spelling}");
@@ -237,8 +279,8 @@ fn sec_01_project_and_files_6_text_formats_a_same_row_extends_the_previous_row_w
 // --- retakes.tsv ---------------------------------------------------------------
 
 #[test]
-fn sec_01_project_and_files_6_text_formats_a_mark_writes_five_columns_and_a_sixth_only_when_it_has_whole_takes()
-{
+fn sec_01_project_and_files_6_text_formats_a_mark_writes_five_columns_and_a_sixth_only_when_it_has_whole_takes(
+) {
     let (_root, t) = project("retakes");
     let path = t.retakes_tsv();
     textfmt::write_retakes(
@@ -276,7 +318,10 @@ fn sec_01_project_and_files_6_text_formats_a_mark_writes_five_columns_and_a_sixt
     assert_eq!(back.len(), 2);
     assert_eq!(back[0].whole, "");
     assert_eq!(back[1].whole, "cam,cam2");
-    assert_eq!((back[1].s, back[1].e, back[1].again, back[1].to), (30.0, 33.0, 0.0, 33.0));
+    assert_eq!(
+        (back[1].s, back[1].e, back[1].again, back[1].to),
+        (30.0, 33.0, 0.0, 33.0)
+    );
     assert_eq!(textfmt::read_retakes(&path).unwrap(), back);
 }
 
@@ -310,7 +355,10 @@ fn sec_01_project_and_files_6_text_formats_three_to_six_column_mark_files_are_al
     plant(&path, "1.00\t2.00\t3.00\n");
     let back = textfmt::read_retakes(&path).unwrap();
     assert_eq!(back[0].text, "");
-    assert_eq!((back[0].s, back[0].e, back[0].again, back[0].to), (1.0, 2.0, 3.0, 2.0));
+    assert_eq!(
+        (back[0].s, back[0].e, back[0].again, back[0].to),
+        (1.0, 2.0, 3.0, 2.0)
+    );
 
     // A `to` of nought in the fifth-column shape means "the words alone", so it reads
     // back as the end of the mark rather than a removal ending at zero.
@@ -319,7 +367,10 @@ fn sec_01_project_and_files_6_text_formats_three_to_six_column_mark_files_are_al
 
     // A line too short to be a mark, or whose first three columns are not numbers, costs
     // that mark and not the file: these files are edited by hand.
-    plant(&path, "1.00\t2.00\nnot\tnumbers\there\n1.00\t2.00\t3.00\tkept\n");
+    plant(
+        &path,
+        "1.00\t2.00\nnot\tnumbers\there\n1.00\t2.00\t3.00\tkept\n",
+    );
     let back = textfmt::read_retakes(&path).unwrap();
     assert_eq!(back.len(), 1);
     assert_eq!(back[0].text, "kept");
@@ -341,7 +392,10 @@ fn sec_01_project_and_files_6_text_formats_final_txt_marks_every_join_with_the_w
 
     // Several joins, each with its own count, and the words as written.
     let three: Vec<String> = ["a", "b", "c"].iter().map(|w| w.to_string()).collect();
-    assert_eq!(textfmt::write_final(&three, &[12, 0]), "a |cut 12| b |cut| c");
+    assert_eq!(
+        textfmt::write_final(&three, &[12, 0]),
+        "a |cut 12| b |cut| c"
+    );
 
     // No joins at all — nothing was removed anywhere — is the words and nothing else.
     assert_eq!(textfmt::write_final(&words, &[]), "hello world");

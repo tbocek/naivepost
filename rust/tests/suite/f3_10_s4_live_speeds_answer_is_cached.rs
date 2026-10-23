@@ -7,9 +7,9 @@
 #[path = "captions_wire_harness.rs"]
 mod harness;
 
-use harness::*;
 use crate::common;
 use common::three_clips;
+use harness::*;
 use naivepost::cut_speed_pass::Call;
 use naivepost::requests;
 use naivepost::speeds_ask;
@@ -28,21 +28,31 @@ fn captioned() -> Vec<(u32, usize)> {
 
 /// The batch the Cut page hands the pass: three 20 s clips at their session seconds, one caption on clip 3.
 fn captioned_batch() -> naivepost::tools::clips::Clips {
-    let mut batch = naivepost::tools::clips::Clips::new(&[(1, 0.0, 20.0), (2, 20.0, 20.0), (3, 40.0, 20.0)]);
+    let mut batch =
+        naivepost::tools::clips::Clips::new(&[(1, 0.0, 20.0), (2, 20.0, 20.0), (3, 40.0, 20.0)]);
     batch.add_caption(3, 1.0, 6.0, "a line already on screen");
     batch
 }
 
 /// Where `ask` keeps the answer it just got: its own key, under its own step folder (§6, §F3.10 S4).
 fn slot(fixture: &Fixture) -> std::path::PathBuf {
-    speeds_ask::cache_file_for_test(&fixture.tree, CTX, &three_clips(), &captioned(), MODEL, ATTEMPT)
+    speeds_ask::cache_file_for_test(
+        &fixture.tree,
+        CTX,
+        &three_clips(),
+        &captioned(),
+        MODEL,
+        ATTEMPT,
+    )
 }
 
 /// Whether anything under this step's cache folder holds `needle`.
 fn kept(fixture: &Fixture, needle: &str) -> bool {
     let mut stack = vec![slot(fixture).parent().unwrap().to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
@@ -66,8 +76,19 @@ fn f3_10_s4_live_speeds_answer_is_cached_so_the_next_identical_ask_opens_no_sock
     let llm = FakeLlm::start(vec![set_speeds_json(&[(2, 3.0)])]);
     point_at(&llm.url());
 
-    let first = speeds_ask::ask(&fixture.tree, CTX, &three_clips(), &captioned(), ATTEMPT, &|| false);
-    assert_eq!(first.calls, vec![Call { clip: 2, rate: 3.0 }], "the ask went out and was answered");
+    let first = speeds_ask::ask(
+        &fixture.tree,
+        CTX,
+        &three_clips(),
+        &captioned(),
+        ATTEMPT,
+        &|| false,
+    );
+    assert_eq!(
+        first.calls,
+        vec![Call { clip: 2, rate: 3.0 }],
+        "the ask went out and was answered"
+    );
     // One request so far, and its shape: the ask really telephoned the address the settings hold.
     let seen = llm.next_seen();
     assert_eq!(seen.method, "POST", "a chat call is a POST");
@@ -77,13 +98,27 @@ fn f3_10_s4_live_speeds_answer_is_cached_so_the_next_identical_ask_opens_no_sock
     // double-count a reply. Since §3's answer on this item the answer IS a call list, so the slot holds the
     // answering round's envelope carrying `set_clip_speed` (see `clip_rules_tools_leg::answering_envelope`).
     // This is the file the ask's own key names, so the test reads the real slot.
-    let kept = std::fs::read_to_string(slot(&fixture)).expect("the answer was cached under its own key");
-    assert!(kept.contains("set_clip_speed"), "the slot holds the call that answered: {kept}");
+    let kept =
+        std::fs::read_to_string(slot(&fixture)).expect("the answer was cached under its own key");
+    assert!(
+        kept.contains("set_clip_speed"),
+        "the slot holds the call that answered: {kept}"
+    );
 
     // Same settings, same prompt, same round: the slot answers it. No socket, so the WIRE row count is
     // unchanged; §09 §10 does want a line for the hit, marked `cache` with no time on the wire.
-    let second = speeds_ask::ask(&fixture.tree, CTX, &three_clips(), &captioned(), ATTEMPT, &|| false);
-    assert_eq!(second.calls, first.calls, "the cached answer is the same rate");
+    let second = speeds_ask::ask(
+        &fixture.tree,
+        CTX,
+        &three_clips(),
+        &captioned(),
+        ATTEMPT,
+        &|| false,
+    );
+    assert_eq!(
+        second.calls, first.calls,
+        "the cached answer is the same rate"
+    );
     // Nothing new went out: the wire rows still count one, and reading them never waits on a request
     // that must not arrive.
     let rows = requests::read(&fixture.tree).expect("requests.tsv reads back");
@@ -98,15 +133,35 @@ fn f3_10_s4_live_speeds_answer_is_cached_so_the_next_identical_ask_opens_no_sock
             .count()
     };
     assert_eq!(wire(&rows), 1, "the identical ask dialled nobody: {rows:?}");
-    assert_eq!(hits(&rows), 1, "§10: the cache hit wrote its own line: {rows:?}");
+    assert_eq!(
+        hits(&rows),
+        1,
+        "§10: the cache hit wrote its own line: {rows:?}"
+    );
 
     // A DIFFERENT round of the same cut is a different question and keys elsewhere, so it dials again: §F3.10's
     // second round must not be served the reply that was just refused.
-    let retry = speeds_ask::ask(&fixture.tree, CTX, &three_clips(), &captioned(), 2, &|| false);
-    assert_eq!(retry.calls, first.calls, "the retry is answered afresh (the fake repeats; the socket proves it)");
+    let retry = speeds_ask::ask(&fixture.tree, CTX, &three_clips(), &captioned(), 2, &|| {
+        false
+    });
+    assert_eq!(
+        retry.calls, first.calls,
+        "the retry is answered afresh (the fake repeats; the socket proves it)"
+    );
     let rows_after_retry = requests::read(&fixture.tree).expect("requests.tsv reads back");
-    assert_eq!(wire(&rows_after_retry), 2, "the retry really dialled: one wire row per request\n{rows_after_retry:?}");
-    assert_eq!(hits(&rows_after_retry), 1, "and the retry wrote no cache line of its own\n{rows_after_retry:?}");
-    assert_ne!(slot(&fixture), speeds_ask::cache_file_for_test(&fixture.tree, CTX, &three_clips(), &captioned(), MODEL, 2),
-        "and the two rounds really do keep separate slots");
+    assert_eq!(
+        wire(&rows_after_retry),
+        2,
+        "the retry really dialled: one wire row per request\n{rows_after_retry:?}"
+    );
+    assert_eq!(
+        hits(&rows_after_retry),
+        1,
+        "and the retry wrote no cache line of its own\n{rows_after_retry:?}"
+    );
+    assert_ne!(
+        slot(&fixture),
+        speeds_ask::cache_file_for_test(&fixture.tree, CTX, &three_clips(), &captioned(), MODEL, 2),
+        "and the two rounds really do keep separate slots"
+    );
 }

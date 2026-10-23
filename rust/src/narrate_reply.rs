@@ -58,8 +58,16 @@ pub fn entries_of(answer: &str) -> Result<Vec<PlainEntry>, String> {
 
 /// The first [`SHAPE_QUOTE_CHARS`] characters of an answer, on one line and in quotes, for a refusal.
 fn quote(answer: &str) -> String {
-    let flat: String = answer.chars().take(SHAPE_QUOTE_CHARS).map(|c| if c.is_whitespace() { ' ' } else { c }).collect();
-    let more = if answer.chars().count() > SHAPE_QUOTE_CHARS { "…" } else { "" };
+    let flat: String = answer
+        .chars()
+        .take(SHAPE_QUOTE_CHARS)
+        .map(|c| if c.is_whitespace() { ' ' } else { c })
+        .collect();
+    let more = if answer.chars().count() > SHAPE_QUOTE_CHARS {
+        "…"
+    } else {
+        ""
+    };
     format!("{flat:?}{more}")
 }
 

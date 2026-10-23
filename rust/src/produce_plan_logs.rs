@@ -92,7 +92,8 @@ pub fn refusals(
         let on_screen = crate::narrate_pass::on_screen(seg);
         // The drops plan_clips already named. Skipping them here keeps one failure to one line, and the
         // clip's number still matches what the other line said.
-        let missing_asset = !seg.ins.is_empty() && !seg.ins.starts_with("copy:") && !(doors.exists)(&seg.ins);
+        let missing_asset =
+            !seg.ins.is_empty() && !seg.ins.starts_with("copy:") && !(doors.exists)(&seg.ins);
         if missing_asset || on_screen < crate::tools::cutpass::MIN_CLIP_SECONDS {
             continue;
         }
@@ -111,7 +112,11 @@ pub fn refusals(
             continue;
         }
         if copied && shortened.is_some() {
-            logs.push(details::copy_past_end_log(no, &base, shortened.unwrap_or(0.0)));
+            logs.push(details::copy_past_end_log(
+                no,
+                &base,
+                shortened.unwrap_or(0.0),
+            ));
         }
         // The sound-only halves: the picture exists, its recording does not, or stops short. §6 lists these
         // as their own sentences, so a clip whose picture survived while its sound did not says so.
@@ -119,7 +124,11 @@ pub fn refusals(
             logs.push(details::sound_in_no_recording_log(no, seg.s));
         }
         if !copied && seg.ins.is_empty() && shortened.is_some() {
-            logs.push(details::sound_past_end_log(no, &base, shortened.unwrap_or(0.0)));
+            logs.push(details::sound_past_end_log(
+                no,
+                &base,
+                shortened.unwrap_or(0.0),
+            ));
         }
         // "clip N keeps the sound under it — it plays silent": an insert is the picture that keeps what was
         // running beneath it, and with no tape under it there is nothing to keep — or the scene silences
@@ -173,7 +182,12 @@ fn heard_lanes(lanes: &[crate::cut::Lane], seg: &Seg) -> usize {
     lanes
         .iter()
         .filter(|lane| {
-            seg.hears(&lane.name) && crate::cut_hear::lane_covers(lane, crate::cut_hear::lane_seconds(lane, seg.s), seg.s)
+            seg.hears(&lane.name)
+                && crate::cut_hear::lane_covers(
+                    lane,
+                    crate::cut_hear::lane_seconds(lane, seg.s),
+                    seg.s,
+                )
         })
         .count()
 }
@@ -211,7 +225,5 @@ fn instant_on_tape(at: f64, runs: &[(f64, f64)]) -> bool {
 fn camera_moves(fx: &[crate::cut::Fx], _seg: &Seg, _on_screen: f64) -> bool {
     fx.iter()
         .filter(|e| e.effect_kind() == Some(crate::cut::EffectKind::Zoom))
-        .any(|zoom| {
-            zoom.cx.is_some() || zoom.cy.is_some() || zoom.hf.is_some()
-        })
+        .any(|zoom| zoom.cx.is_some() || zoom.cy.is_some() || zoom.hf.is_some())
 }

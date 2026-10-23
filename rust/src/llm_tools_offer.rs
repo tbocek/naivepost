@@ -36,7 +36,11 @@ fn refused() -> &'static Mutex<Refused> {
 /// resends. Nothing is logged here: a server already known to refuse is simply asked without the field, silently,
 /// which is the whole point of remembering.
 pub fn tools_for(server: &str, offered: &[Tool]) -> Option<Vec<Tool>> {
-    if refused().lock().map(|seen| seen.server(server)).unwrap_or(false) {
+    if refused()
+        .lock()
+        .map(|seen| seen.server(server))
+        .unwrap_or(false)
+    {
         return None;
     }
     Some(offered.to_vec())
@@ -50,7 +54,10 @@ pub fn tools_for(server: &str, offered: &[Tool]) -> Option<Vec<Tool>> {
 /// [`crate::tool_loop::retry_without_tools`]'s judgement, reused rather than restated. `round` is the loop's
 /// round number, counting from 1.
 pub fn honour_refusal(server: &str, error: &str, round: u32) -> bool {
-    let already = refused().lock().map(|seen| seen.server(server)).unwrap_or(false);
+    let already = refused()
+        .lock()
+        .map(|seen| seen.server(server))
+        .unwrap_or(false);
     if !crate::tool_loop::retry_without_tools(error, round, already) {
         return false;
     }

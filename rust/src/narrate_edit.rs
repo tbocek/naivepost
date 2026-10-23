@@ -233,7 +233,10 @@ pub struct EmptiedClip {
 impl EmptiedClip {
     /// The marker for `narration.json`'s `silent` list.
     pub fn marker(&self) -> Silent {
-        Silent { s: self.s, e: self.e }
+        Silent {
+            s: self.s,
+            e: self.e,
+        }
     }
 }
 

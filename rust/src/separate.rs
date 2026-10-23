@@ -214,15 +214,27 @@ pub fn finish(
         .get(index)
         .map(|source| base_name(&source.path).to_string())
         .unwrap_or_default();
-    let stem = base.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(&base).to_string();
-    let container = if is_video(Path::new(&base)) { "mkv" } else { "wav" };
+    let stem = base
+        .rsplit_once('.')
+        .map(|(stem, _)| stem)
+        .unwrap_or(&base)
+        .to_string();
+    let container = if is_video(Path::new(&base)) {
+        "mkv"
+    } else {
+        "wav"
+    };
     let rest_path = tree.split_novoice(&stem, container);
     let voice_path = tree.split_voice(&stem);
     let mut logs = logs.to_vec();
     let voice_level = loudness(&voice_path);
     let rest_level = loudness(&rest_path);
     logs.push(loudness_report(&base, mix, &voice_level, &rest_level));
-    logs.push(split_log(&base, &file_name(&rest_path), &file_name(&voice_path)));
+    logs.push(split_log(
+        &base,
+        &file_name(&rest_path),
+        &file_name(&voice_path),
+    ));
     let rest = layout::write_path(root, tree.dir(), &rest_path);
     let voice = layout::write_path(root, tree.dir(), &voice_path);
     split_rows(project, index, &rest, &voice);
@@ -238,8 +250,16 @@ pub fn finish(
 pub fn already_split(project: &Project, tree: &Tree, root: &Path, index: usize) -> Option<Outcome> {
     let source = project.sources.get(index)?;
     let base = base_name(&source.path).to_string();
-    let stem = base.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(&base).to_string();
-    let container = if is_video(Path::new(&base)) { "mkv" } else { "wav" };
+    let stem = base
+        .rsplit_once('.')
+        .map(|(stem, _)| stem)
+        .unwrap_or(&base)
+        .to_string();
+    let container = if is_video(Path::new(&base)) {
+        "mkv"
+    } else {
+        "wav"
+    };
     let rest_path = tree.split_novoice(&stem, container);
     let voice_path = tree.split_voice(&stem);
     if !both_there(&rest_path, &voice_path) {
@@ -278,15 +298,26 @@ pub fn separate(
     // Dead scissors are not a request: the row's ✂ is greyed for exactly this reason (§4), and a call
     // that arrives anyway — from a wish stored before the file was replaced, say — says so plainly.
     if !separable(source) {
-        return Err(format!("{} has no voice left to split off", base_name(&source.path)));
+        return Err(format!(
+            "{} has no voice left to split off",
+            base_name(&source.path)
+        ));
     }
     let base = base_name(&source.path).to_string();
     // The halves are named after the source's stem, so `lecture.mkv` splits into
     // `lecture.split-voice.wav` — and so "both halves already there?" asks about the same names on
     // the next run instead of looking for `lecture.mkv.split-voice.wav` forever.
-    let stem = base.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(&base).to_string();
+    let stem = base
+        .rsplit_once('.')
+        .map(|(stem, _)| stem)
+        .unwrap_or(&base)
+        .to_string();
     let stored = layout::resolve(root, tree.dir(), &source.path);
-    let container = if is_video(Path::new(&base)) { "mkv" } else { "wav" };
+    let container = if is_video(Path::new(&base)) {
+        "mkv"
+    } else {
+        "wav"
+    };
     let rest_path = tree.split_novoice(&stem, container);
     let voice_path = tree.split_voice(&stem);
 
@@ -374,7 +405,10 @@ fn both_there(rest: &Path, voice: &Path) -> bool {
 
 /// The file's own name, for the log line that names what was written.
 fn file_name(path: &PathBuf) -> String {
-    path.file_name().unwrap_or_default().to_string_lossy().into_owned()
+    path.file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// The last component of a stored or absolute path — `<base>.mkv`, whatever folder it sits in.

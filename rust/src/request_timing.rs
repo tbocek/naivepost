@@ -20,7 +20,8 @@ use crate::requests::{Outcome, Request, Service};
 /// absent, because §10 logs those as the commands they ran rather than as timed rows; giving them a
 /// service here would put two records of the same thing in two places. Fixed order so two runs'
 /// summaries line up diffably instead of following whichever service happened to finish first.
-pub const OUTSIDE_SERVICES: [Service; 4] = [Service::Llm, Service::Audio, Service::Image, Service::Web];
+pub const OUTSIDE_SERVICES: [Service; 4] =
+    [Service::Llm, Service::Audio, Service::Image, Service::Web];
 
 /// A stopwatch for one request, driven by timestamps the caller supplies.
 ///
@@ -109,12 +110,7 @@ pub fn secs(ms: i64) -> f64 {
 /// *before the reply is used*, so a step that chokes on the content afterwards still leaves its
 /// request behind. Hence this function takes the outcome as an argument and knows nothing about what
 /// came back — the caller decides the outcome, writes the row, and only then looks at the body.
-pub fn finish_row(
-    base: &Request,
-    timer: &Timer,
-    outcome: Outcome,
-    attempt: u32,
-) -> Request {
+pub fn finish_row(base: &Request, timer: &Timer, outcome: Outcome, attempt: u32) -> Request {
     Request {
         started: base.started.clone(),
         run: base.run.clone(),
@@ -193,7 +189,9 @@ fn stream_usage(body: &str) -> (Option<i64>, Option<i64>) {
 /// nothing in it is the server saying nothing, which is not the same as a zero.
 fn usage_pair(usage: Option<&serde_json::Value>) -> Option<(Option<i64>, Option<i64>)> {
     let usage = usage?;
-    let taken = usage.get("prompt_tokens").and_then(serde_json::Value::as_i64);
+    let taken = usage
+        .get("prompt_tokens")
+        .and_then(serde_json::Value::as_i64);
     let made = usage
         .get("completion_tokens")
         .and_then(serde_json::Value::as_i64);

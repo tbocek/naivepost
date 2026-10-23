@@ -20,9 +20,18 @@ use naivepost::cut::{Cut, Fx, History, Lane, Seg};
 fn full_cut(segs: usize) -> Cut {
     Cut {
         segs: (0..segs)
-            .map(|i| Seg { s: i as f64 * 10.0, e: i as f64 * 10.0 + 5.0, ..Default::default() })
+            .map(|i| Seg {
+                s: i as f64 * 10.0,
+                e: i as f64 * 10.0 + 5.0,
+                ..Default::default()
+            })
             .collect(),
-        fx: vec![Fx { kind: "zoom".into(), t: 12.0, dur: 3.0, ..Default::default() }],
+        fx: vec![Fx {
+            kind: "zoom".into(),
+            t: 12.0,
+            dur: 3.0,
+            ..Default::default()
+        }],
         aspect: "9:16".to_string(),
         shift: BTreeMap::from([("cam2".to_string(), -1.25)]),
         rows: BTreeMap::from([("cam2".to_string(), 1)]),
@@ -93,13 +102,20 @@ fn f2_13_s2_revert_goes_to_the_last_suggestion() {
     let base = history.revert();
     let mut cut_ = Cut::default();
     base.restore(&mut cut_);
-    assert_eq!(cut_.segs.len(), 3, "back to what the page opened with, which is also the base");
+    assert_eq!(
+        cut_.segs.len(),
+        3,
+        "back to what the page opened with, which is also the base"
+    );
     assert_eq!(
         naivepost::cut::reverted(3, 2),
         "reverted to the 3 segment(s) of the last suggestion (\u{21b6} Undo brings your edits back)",
         "a non-empty base is read as the last suggestion's work"
     );
-    assert!(!history.can_undo(), "the edits Revert threw away are gone from the stack too");
+    assert!(
+        !history.can_undo(),
+        "the edits Revert threw away are gone from the stack too"
+    );
 }
 
 /// S2: with an empty base everything that vanishes was hand-made, and the sentence says so instead of
@@ -125,14 +141,21 @@ fn f2_13_s2_an_empty_base_calls_the_work_hand_made() {
 fn f2_13_s2_no_change_since_the_base_is_a_refusal_not_a_revert() {
     let opened = full_cut(3);
     let history = History::open(&opened);
-    assert!(history.base_is_the_screen(&opened), "the screen IS the base");
+    assert!(
+        history.base_is_the_screen(&opened),
+        "the screen IS the base"
+    );
     assert_eq!(
         naivepost::cut::NOTHING_TO_REVERT,
         "nothing to revert \u{2014} the cut is as it was",
         "S2's refusal, verbatim"
     );
     // The refusal is taken BEFORE any revert runs, so the stack is still the opened single state.
-    assert_eq!(history.depth(), 1, "nothing was pushed on the way to refusing");
+    assert_eq!(
+        history.depth(),
+        1,
+        "nothing was pushed on the way to refusing"
+    );
 }
 
 /// S3: Clear empties the scenes and the effects and leaves every recording-side thing exactly where it was —
@@ -143,10 +166,16 @@ fn f2_13_s3_clear_takes_scenes_and_effects_not_recordings() {
     let after = naivepost::cut::cleared(&before);
     assert!(after.segs.is_empty(), "every scene is off");
     assert!(after.fx.is_empty(), "and every effect");
-    assert_eq!(after.shift, before.shift, "shifts stay: Clear is not an undo of where a file was parked");
+    assert_eq!(
+        after.shift, before.shift,
+        "shifts stay: Clear is not an undo of where a file was parked"
+    );
     assert_eq!(after.rows, before.rows, "row pins stay");
     assert_eq!(after.lanes, before.lanes, "lanes stay");
-    assert_eq!(after.nrows, before.nrows, "and the floor under the row count stays, or the tracks blank out");
+    assert_eq!(
+        after.nrows, before.nrows,
+        "and the floor under the row count stays, or the tracks blank out"
+    );
     assert_eq!(after.aspect, before.aspect, "aspect stays too");
 }
 
@@ -165,7 +194,10 @@ fn f2_13_s3_the_cleared_count_names_scenes_and_effects_apart() {
 #[test]
 fn f2_13_s3_no_cut_at_all_is_a_refusal() {
     let bare = Cut::default();
-    assert!(bare.segs.is_empty() && bare.fx.is_empty(), "no scene and no effect is 'no cut yet'");
+    assert!(
+        bare.segs.is_empty() && bare.fx.is_empty(),
+        "no scene and no effect is 'no cut yet'"
+    );
     assert_eq!(
         naivepost::cut::NOTHING_TO_CLEAR,
         "nothing to clear \u{2014} the timeline holds no cut yet",
@@ -186,11 +218,21 @@ fn f2_13_s4_only_a_real_change_reaches_the_stack() {
         !history.note_change(&opened),
         "the same cut on screen again is not an edit"
     );
-    assert_eq!(history.depth(), depth, "and no snapshot went onto the stack for it");
-    assert!(!history.can_undo(), "so Undo still has nothing to take back");
+    assert_eq!(
+        history.depth(),
+        depth,
+        "and no snapshot went onto the stack for it"
+    );
+    assert!(
+        !history.can_undo(),
+        "so Undo still has nothing to take back"
+    );
 
     // A changed scene list DOES reach it.
-    assert!(history.note_change(&full_cut(4)), "one more scene is a change");
+    assert!(
+        history.note_change(&full_cut(4)),
+        "one more scene is a change"
+    );
     assert_eq!(history.depth(), depth + 1, "and it was recorded once");
     assert!(history.can_undo(), "which is exactly why the button lights");
 }
@@ -202,11 +244,20 @@ fn f2_13_s4_shift_lanes_and_aspect_are_changes_too() {
     let opened = full_cut(2);
     let mut history = History::open(&opened);
 
-    let shifted = Cut { shift: BTreeMap::from([("cam2".to_string(), -7.0)]), ..opened.clone() };
+    let shifted = Cut {
+        shift: BTreeMap::from([("cam2".to_string(), -7.0)]),
+        ..opened.clone()
+    };
     assert!(history.note_change(&shifted), "a signed shift is an edit");
 
-    let rebranched = Cut { aspect: "1:1".to_string(), ..shifted.clone() };
-    assert!(history.note_change(&rebranched), "an aspect change is an edit");
+    let rebranched = Cut {
+        aspect: "1:1".to_string(),
+        ..shifted.clone()
+    };
+    assert!(
+        history.note_change(&rebranched),
+        "an aspect change is an edit"
+    );
 
     let longer_lane = Cut {
         lanes: vec![Lane {
@@ -218,11 +269,17 @@ fn f2_13_s4_shift_lanes_and_aspect_are_changes_too() {
         }],
         ..rebranched.clone()
     };
-    assert!(history.note_change(&longer_lane), "moving a lane is an edit");
+    assert!(
+        history.note_change(&longer_lane),
+        "moving a lane is an edit"
+    );
     assert_eq!(history.depth(), 4, "three changes over the opened state");
 
     // And repeating one of them changes nothing, so it is refused again.
-    assert!(!history.note_change(&longer_lane), "the same state twice is still not an edit");
+    assert!(
+        !history.note_change(&longer_lane),
+        "the same state twice is still not an edit"
+    );
     assert_eq!(history.depth(), 4, "the stack did not grow");
 }
 
@@ -234,7 +291,10 @@ fn f2_13_s4_sixty_writes_still_leave_fifty_states_behind() {
     let mut history = History::open(&Cut::default());
     for n in 0..60 {
         let changed = full_cut(n + 1);
-        assert!(history.note_change(&changed), "each distinct cut is a change: {n}");
+        assert!(
+            history.note_change(&changed),
+            "each distinct cut is a change: {n}"
+        );
     }
     assert!(
         history.depth() <= naivepost::cut::UNDO_DEPTH + 1,
@@ -242,7 +302,16 @@ fn f2_13_s4_sixty_writes_still_leave_fifty_states_behind() {
         naivepost::cut::UNDO_DEPTH,
         history.depth()
     );
-    let walked = (0..naivepost::cut::UNDO_DEPTH).filter(|_| history.undo().is_some()).count();
-    assert_eq!(walked, naivepost::cut::UNDO_DEPTH, "exactly the depth is walkable");
-    assert!(history.undo().is_none(), "and no further: the oldest states were dropped, not hidden");
+    let walked = (0..naivepost::cut::UNDO_DEPTH)
+        .filter(|_| history.undo().is_some())
+        .count();
+    assert_eq!(
+        walked,
+        naivepost::cut::UNDO_DEPTH,
+        "exactly the depth is walkable"
+    );
+    assert!(
+        history.undo().is_none(),
+        "and no further: the oldest states were dropped, not hidden"
+    );
 }

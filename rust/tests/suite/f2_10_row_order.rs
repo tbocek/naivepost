@@ -11,10 +11,14 @@
 
 use naivepost::cut::Cut;
 use naivepost::cut_cam::row_name;
-use naivepost::timeline::{Recording, row_count, rows_for};
+use naivepost::timeline::{row_count, rows_for, Recording};
 
 fn tape(base: &str, start: f64, end: f64) -> Recording {
-    Recording { base: base.to_string(), start, end }
+    Recording {
+        base: base.to_string(),
+        start,
+        end,
+    }
 }
 
 /// F2.10 S1: "free for its WHOLE span". A 0-10, B 5-15 shares A's row's seconds, so B takes the next row; C
@@ -31,7 +35,8 @@ fn f2_10_s1_a_row_is_only_free_for_its_whole_span() {
     let rows = rows_for(&recordings, &cut);
     println!("SPAN a[0,10) b[5,15) c[12,30) -> rows {rows:?}");
     assert_eq!(
-        rows, vec![0, 1, 0],
+        rows,
+        vec![0, 1, 0],
         "c overlaps b but not a, so the lowest row free for ALL of 12-30 is a's row 0"
     );
     assert_eq!(
@@ -50,13 +55,18 @@ fn f2_10_s1_touching_spans_share_a_row() {
     let touching = vec![tape("cam-a", 0.0, 10.0), tape("cam-b", 10.0, 20.0)];
     let rows = rows_for(&touching, &cut);
     println!("TOUCH a[0,10) b[10,20) -> rows {rows:?}");
-    assert_eq!(rows, vec![0, 0], "they touch at 10 and do not overlap: one camera's files share a row");
+    assert_eq!(
+        rows,
+        vec![0, 0],
+        "they touch at 10 and do not overlap: one camera's files share a row"
+    );
 
     let overlapping = vec![tape("cam-a", 0.0, 10.0001), tape("cam-b", 10.0, 20.0)];
     let shifted = rows_for(&overlapping, &cut);
     println!("OVERLAP a[0,10.0001) b[10,20) -> rows {shifted:?}");
     assert_eq!(
-        shifted, vec![0, 1],
+        shifted,
+        vec![0, 1],
         "one tenth of a millisecond of overlap is still both cameras filming at once"
     );
 }
@@ -74,7 +84,11 @@ fn f2_10_s1_the_third_overlap_costs_one_more_row() {
     ];
     let rows = rows_for(&three, &cut);
     println!("THREE-WAY -> rows {rows:?}");
-    assert_eq!(rows, vec![0, 1, 2], "each of the three overlaps both others, so each needs its own row");
+    assert_eq!(
+        rows,
+        vec![0, 1, 2],
+        "each of the three overlaps both others, so each needs its own row"
+    );
     assert_eq!(row_count(&three, &cut), 3, "the band is three rows deep");
 
     let mut four = three.clone();
@@ -82,10 +96,15 @@ fn f2_10_s1_the_third_overlap_costs_one_more_row() {
     let after = rows_for(&four, &cut);
     println!("FOURTH (40-50, overlaps nothing) -> rows {after:?}");
     assert_eq!(
-        after, vec![0, 1, 2, 0],
+        after,
+        vec![0, 1, 2, 0],
         "the fourth goes back to the LOWEST-numbered free row, not below the deepest one"
     );
-    assert_eq!(row_count(&four, &cut), 3, "and the band stays three rows deep");
+    assert_eq!(
+        row_count(&four, &cut),
+        3,
+        "and the band stays three rows deep"
+    );
 }
 
 /// F2.10 S1 ("row 1 at the top, each further row below the one before"): the index the colouring answers with
@@ -105,7 +124,10 @@ fn f2_10_s1_row_one_is_the_top_row() {
         .collect();
     println!("NAMES top-down -> {}", named.join(" | "));
     // Index 0 holds the FIRST camera (the earliest start wins the top row) and is called row 1.
-    assert_eq!(rows[0], 0, "the earliest recording sits on index 0, the top row");
+    assert_eq!(
+        rows[0], 0,
+        "the earliest recording sits on index 0, the top row"
+    );
     assert_eq!(
         named,
         vec!["0:cam-a", "1:cam-b", "2:cam-c"],

@@ -11,7 +11,12 @@ use crate::ui;
 /// Paint one of the effect screens onto `window`. Returns true when this module owned `screen`.
 /// `out` is the PNG this run was asked to write (`shots/06-lane.png`): a screen whose subject cannot live inside
 /// a window shot puts its own file beside it there, the way `03-runbar-busy.face.png` does.
-pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, out: &std::path::Path, screen: &str) -> bool {
+pub fn paint(
+    window: &adw::ApplicationWindow,
+    dir: &std::path::Path,
+    out: &std::path::Path,
+    screen: &str,
+) -> bool {
     // F3.5's screen is the drawing form OPEN, so the shot must drive the same doors the widgets use
     // (`tests/suite/svg_drawing_widgets.rs` fires exactly these) rather than poke state: a picture painted
     // from a shortcut would not be the picture the app draws.
@@ -39,13 +44,20 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, out: &std::
         ui::note_zoom_place(true);
         ui::set_line_position(window, cut_line::LinePos { t: 81.0 });
         let said = ui::press_zoom_item(window);
-        assert!(ui::zoom_armed(), "snapshot: 06-zoom could not arm -- {said}");
+        assert!(
+            ui::zoom_armed(),
+            "snapshot: 06-zoom could not arm -- {said}"
+        );
         // A drawn box, fired through the panel's own gesture exactly as `tests/suite/zoom_drag_widgets.rs` does:
         // begin at the press point, release with the OFFSET that signal carries.
-        let gesture = ui::zoom_gesture(window).expect("the page wired a drag onto the preview panel");
+        let gesture =
+            ui::zoom_gesture(window).expect("the page wired a drag onto the preview panel");
         gesture.emit_by_name::<()>("drag-begin", &[&120.0f64, &90.0f64]);
         gesture.emit_by_name::<()>("drag-end", &[&520.0f64, &330.0f64]);
-        assert!(ui::zoom_form_open().is_some(), "snapshot: 06-zoom drew no form");
+        assert!(
+            ui::zoom_form_open().is_some(),
+            "snapshot: 06-zoom drew no form"
+        );
         // No Apply here either: Apply closes the form, and the screen §F3.1 names IS the form.
         return true;
     }
@@ -59,7 +71,10 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, out: &std::
         ui::note_place(true);
         ui::set_line_position(window, cut_line::LinePos { t: 81.0 });
         let said = ui::press_speed_item(window);
-        assert!(ui::speed_form_open().is_some(), "snapshot: 06-speed drew no form -- {said}");
+        assert!(
+            ui::speed_form_open().is_some(),
+            "snapshot: 06-speed drew no form -- {said}"
+        );
         return true;
     }
 
@@ -77,8 +92,18 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, out: &std::
     if screen == "06-flows" {
         let two = cut::Cut {
             segs: vec![
-                cut::Seg { s: 0.0, e: 20.0, cam: 0, ..Default::default() },
-                cut::Seg { s: 20.0, e: 40.0, cam: 0, ..Default::default() },
+                cut::Seg {
+                    s: 0.0,
+                    e: 20.0,
+                    cam: 0,
+                    ..Default::default()
+                },
+                cut::Seg {
+                    s: 20.0,
+                    e: 40.0,
+                    cam: 0,
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         };
@@ -129,15 +154,25 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, out: &std::
         // scroll), so what is asserted here is that all three exist, are labelled and wired, and each reports its
         // own gate; the pixels of the row go beside the page as `06-flows-runbar.png`, where they can be read.
         let mut seen: Vec<String> = Vec::new();
-        for name in ["captions-pass-button", "speeds-pass-button", "decorations-pass-button"] {
+        for name in [
+            "captions-pass-button",
+            "speeds-pass-button",
+            "decorations-pass-button",
+        ] {
             let button = ui::window::find_widget_by_name(window.upcast_ref(), name)
                 .unwrap_or_else(|| panic!("snapshot: 06-flows found no {name}"))
                 .downcast::<gtk4::Button>()
                 .unwrap_or_else(|_| panic!("snapshot: {name} is not a button"));
             let label = button.label().unwrap_or_default().to_string();
             assert!(!label.is_empty(), "snapshot: {name} carries no label");
-            assert!(button.has_tooltip(), "snapshot: {name} says nothing about what it does");
-            seen.push(format!("{name} {label:?} sensitive:{}", button.is_sensitive()));
+            assert!(
+                button.has_tooltip(),
+                "snapshot: {name} says nothing about what it does"
+            );
+            seen.push(format!(
+                "{name} {label:?} sensitive:{}",
+                button.is_sensitive()
+            ));
         }
         println!("snapshot: 06-flows | run-bar jobs {}", seen.join(", "));
         RUNBAR_SHOT.with(|f| f.set(true));
@@ -166,8 +201,18 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, out: &std::
     if screen == "06-speeds" {
         let two = cut::Cut {
             segs: vec![
-                cut::Seg { s: 0.0, e: 20.0, cam: 0, ..Default::default() },
-                cut::Seg { s: 20.0, e: 40.0, cam: 0, ..Default::default() },
+                cut::Seg {
+                    s: 0.0,
+                    e: 20.0,
+                    cam: 0,
+                    ..Default::default()
+                },
+                cut::Seg {
+                    s: 20.0,
+                    e: 40.0,
+                    cam: 0,
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         };
@@ -204,8 +249,18 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, out: &std::
     if screen == "06-decorations" {
         let two = cut::Cut {
             segs: vec![
-                cut::Seg { s: 0.0, e: 20.0, cam: 0, ..Default::default() },
-                cut::Seg { s: 20.0, e: 40.0, cam: 0, ..Default::default() },
+                cut::Seg {
+                    s: 0.0,
+                    e: 20.0,
+                    cam: 0,
+                    ..Default::default()
+                },
+                cut::Seg {
+                    s: 20.0,
+                    e: 40.0,
+                    cam: 0,
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         };
@@ -260,7 +315,13 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, out: &std::
         // `Volume 1:21 – 1:25`, four seconds, and a band is how a person gets exactly that (a bare line
         // gives the form `LINE_SECONDS` from the line instead). Fired through the page's selection seam,
         // the same one a drag leaves behind — not by poking state.
-        ui::draw_selection(window, crate::cut_select::Surface::SelectionBand, None, 81.0, 85.0);
+        ui::draw_selection(
+            window,
+            crate::cut_select::Surface::SelectionBand,
+            None,
+            81.0,
+            85.0,
+        );
         let said = ui::press_volume_item(window);
         // No Apply here either: Apply closes the form, and the screen §F3.6 names IS the form. The record
         // it would write, and that one ↶ takes back, is proven by `tests/suite/volume_form_widgets.rs`.
@@ -293,7 +354,10 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, out: &std::
         // Compare the ORDER of the labels, read off the widget tree, against the order the spec gives. The row
         // strings carry names too (the caller prints them), but the spec's claim is about the sequence a person
         // reads, so that is what is asserted here.
-        let got: Vec<String> = rows.iter().map(|row| row.split(": ").nth(1).unwrap_or("").to_string()).collect();
+        let got: Vec<String> = rows
+            .iter()
+            .map(|row| row.split(": ").nth(1).unwrap_or("").to_string())
+            .collect();
         assert_eq!(
             got, want,
             "snapshot: 06-effect-menu's popover is not in fx_lane::MENU_ORDER"
@@ -358,7 +422,10 @@ pub fn paint(window: &adw::ApplicationWindow, dir: &std::path::Path, out: &std::
         // and the zoom's rect are the app's answer to the state above rather than a half-painted frame.
         ui::cut_view::repaint_page(window);
         let painted = ui::cut_picture::refresh(window);
-        println!("snapshot: 06-lane | held zoom: {} | frame painted: {painted}", ui::held_effect().is_some());
+        println!(
+            "snapshot: 06-lane | held zoom: {} | frame painted: {painted}",
+            ui::held_effect().is_some()
+        );
         return true;
     }
 
@@ -376,10 +443,17 @@ pub fn runbar_shot_wanted() -> bool {
 /// the same reason as [`crate::snapshot_effect_menu::write_png`]: reparenting a mapped widget out of its window
 /// leaves it with no render node. Each button keeps its label, tooltip and sensitivity because those ARE what
 /// this screen records.
-pub fn write_runbar_png(window: &adw::ApplicationWindow, out: &std::path::Path) -> Result<(), String> {
+pub fn write_runbar_png(
+    window: &adw::ApplicationWindow,
+    out: &std::path::Path,
+) -> Result<(), String> {
     let row = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     row.set_widget_name("run-controls-inner");
-    for name in ["captions-pass-button", "speeds-pass-button", "decorations-pass-button"] {
+    for name in [
+        "captions-pass-button",
+        "speeds-pass-button",
+        "decorations-pass-button",
+    ] {
         let held = ui::window::find_widget_by_name(window.upcast_ref(), name)
             .and_then(|widget| widget.downcast::<gtk4::Button>().ok())
             .unwrap_or_else(|| panic!("snapshot: found no {name}"));

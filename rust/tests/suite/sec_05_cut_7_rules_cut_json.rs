@@ -17,10 +17,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
+use gtk4::gio;
 use naivepost::cut::{self, Cut, Seg};
 use naivepost::cut_select::Surface;
 use naivepost::{cut_save, layout, ui};
-use gtk4::gio;
 
 use crate::common;
 use common::{cut_page, release_last_window, settle};
@@ -51,7 +51,8 @@ fn three_clips() -> Cut {
 /// The session folder every write in this run goes to: `session_dir(current_dir())`, §1's working copy.
 fn tree() -> layout::Tree {
     let root = std::env::current_dir().expect("the process has a working directory");
-    layout::Tree::new(naivepost::startup::session_dir(&root)).expect("the working copy is a .naivepost folder")
+    layout::Tree::new(naivepost::startup::session_dir(&root))
+        .expect("the working copy is a .naivepost folder")
 }
 
 /// Remove the 20–30 clip with the REAL widget, the same door a click uses.
@@ -102,7 +103,8 @@ fn round(app: &adw::Application) {
         let window = cut_page(app, &three_clips());
         // Plant a file by hand so "the file did not change" is a checkable fact mid-drag: §7's rule is that a
         // tick never reaches disk, which only shows up against something already there to leave alone.
-        crate::suite::sec_05_cut_7_rules_cut_json::cut_save::write_cut(&three_clips()).expect("a baseline cut.json planted through the one writer");
+        crate::suite::sec_05_cut_7_rules_cut_json::cut_save::write_cut(&three_clips())
+            .expect("a baseline cut.json planted through the one writer");
         let planted = std::fs::read(tree().cut_json()).expect("the planted file is readable");
         // The seam pair the strip's own gesture calls: `drag-begin` runs `begin_move`, which opens §7's write
         // gate; each update runs the same door `drag-update` runs; `end_move` is what `drag-end` runs, and it
@@ -129,68 +131,73 @@ fn round(app: &adw::Application) {
                 "the tick reports where it landed: asked {to}, landed {landed}, on screen {edge}"
             );
         }
-            naivepost::ui::cut_trim_press::end_move(&window);
-            settle();
-            let on_disk = cut::load(&tree()).expect("the release wrote cut.json");
-            assert!(
+        naivepost::ui::cut_trim_press::end_move(&window);
+        settle();
+        let on_disk = cut::load(&tree()).expect("the release wrote cut.json");
+        assert!(
                 !cut_save::gesture_in_flight(),
                 "the release closed §7's write gate — an open gate would leave every later edit unsaved"
             );
-            assert!(
-                on_disk.segs != three_clips().segs,
-                "the release DID write: the file moved off what it held before the drag — {:?}",
-                on_disk.segs[0]
-            );
-            assert!(
+        assert!(
+            on_disk.segs != three_clips().segs,
+            "the release DID write: the file moved off what it held before the drag — {:?}",
+            on_disk.segs[0]
+        );
+        assert!(
                 on_disk.segs[0].e <= 9.5,
                 "the FILE holds an edge the drag produced ({:?}), not the untouched value it started at",
                 on_disk.segs[0]
             );
-            RAN_TRIM.store(true, Ordering::Relaxed);
-            release_last_window();
-        }
+        RAN_TRIM.store(true, Ordering::Relaxed);
+        release_last_window();
+    }
 
-        // --- (c) the gate: false before an edit, true after ---------------------------------------------------
-        {
-            // A cut already on disk is overwritten by the edit; what §7 gates on is the file BEING there, so this
-            // check asks the question at the moment the file is absent — planted empty of cuts is not possible (no
-            // tree without a folder), so the absence is taken from a folder that has never been written: the
-            // session's own `cut/` is removed here, which is safe because nothing but this check reads it.
-            let cut_dir = tree().cut_json().parent().expect("cut/ has a parent").to_path_buf();
-            std::fs::remove_dir_all(&cut_dir).expect("the cut folder is this run's to remove");
-            let untouched = cut_save::exists();
-            let window = cut_page(app, &three_clips());
-            fire_remove_over(&window, 10.0, 20.0);
-            let after = cut_save::exists();
-            assert!(
+    // --- (c) the gate: false before an edit, true after ---------------------------------------------------
+    {
+        // A cut already on disk is overwritten by the edit; what §7 gates on is the file BEING there, so this
+        // check asks the question at the moment the file is absent — planted empty of cuts is not possible (no
+        // tree without a folder), so the absence is taken from a folder that has never been written: the
+        // session's own `cut/` is removed here, which is safe because nothing but this check reads it.
+        let cut_dir = tree()
+            .cut_json()
+            .parent()
+            .expect("cut/ has a parent")
+            .to_path_buf();
+        std::fs::remove_dir_all(&cut_dir).expect("the cut folder is this run's to remove");
+        let untouched = cut_save::exists();
+        let window = cut_page(app, &three_clips());
+        fire_remove_over(&window, 10.0, 20.0);
+        let after = cut_save::exists();
+        assert!(
                 !untouched && after,
                 "Narrate and Produce grey from the file being there: false in a session nobody has cut yet, \
                  true as soon as one edit has been written (untouched={untouched} after={after})"
             );
-            RAN_EXISTS.store(true, Ordering::Relaxed);
-        }
+        RAN_EXISTS.store(true, Ordering::Relaxed);
+    }
 
-        // --- (d) the writer resolves the session itself; it is not a seam a check fills -------------------
-        {
-            let before_cwd = std::env::current_dir().expect("cwd readable");
-            crate::suite::sec_05_cut_7_rules_cut_json::cut_save::write_cut(&three_clips()).expect("the one writer wrote");
-            let written_then_exists = tree().cut_json().is_file() && cut_save::exists();
-            std::fs::remove_dir_all(tree().cut_json().parent().expect("cut/ has a parent"))
-                .expect("cut/ removed");
-            let gone = cut_save::exists();
-            let after_cwd = std::env::current_dir().expect("cwd readable again");
-            assert!(
+    // --- (d) the writer resolves the session itself; it is not a seam a check fills -------------------
+    {
+        let before_cwd = std::env::current_dir().expect("cwd readable");
+        crate::suite::sec_05_cut_7_rules_cut_json::cut_save::write_cut(&three_clips())
+            .expect("the one writer wrote");
+        let written_then_exists = tree().cut_json().is_file() && cut_save::exists();
+        std::fs::remove_dir_all(tree().cut_json().parent().expect("cut/ has a parent"))
+            .expect("cut/ removed");
+        let gone = cut_save::exists();
+        let after_cwd = std::env::current_dir().expect("cwd readable again");
+        assert!(
                 written_then_exists && !gone,
                 "§7's writer answers from the program's OWN resolution: write_cut put the file where `exists` \
                  looks ({written_then_exists}) and taking the folder away makes the gate say no again ({gone})"
             );
-            assert_eq!(
-                before_cwd, after_cwd,
-                "neither call moved the working directory — nothing was handed in from outside"
-            );
-            RAN_NOT_A_SEAM.store(true, Ordering::Relaxed);
-        }
+        assert_eq!(
+            before_cwd, after_cwd,
+            "neither call moved the working directory — nothing was handed in from outside"
+        );
+        RAN_NOT_A_SEAM.store(true, Ordering::Relaxed);
     }
+}
 
 /// The test's own name carries §7 bullet 7 and its `s7` case; the checks inside are labelled (a)-(d).
 #[test]

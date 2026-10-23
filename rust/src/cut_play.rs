@@ -25,12 +25,14 @@ pub fn empty(cut: &Cut) -> bool {
 }
 
 /// S2, reached with no clips at all: what ▶✂ says when the person switched to a cut that holds nothing.
-pub const NOTHING_TO_PLAY: &str = "preview is the cut \u{2014} and the cut is empty, so \u{25b6}\u{2702} \
+pub const NOTHING_TO_PLAY: &str =
+    "preview is the cut \u{2014} and the cut is empty, so \u{25b6}\u{2702} \
 has nothing to play until a clip is added";
 
 /// S2's refusal from the OTHER ways in — Space, a click on the picture, the run bar. Those paths cannot
 /// switch the preview the way the button does, so they name the alternative rather than the switch.
-pub const EMPTY_CUT_REFUSAL: &str = "the cut is empty \u{2014} add a clip to play it, or press \u{25b6} \
+pub const EMPTY_CUT_REFUSAL: &str =
+    "the cut is empty \u{2014} add a clip to play it, or press \u{25b6} \
 to play the recording instead";
 
 /// S2's status once the preview has become the cut: the clock's meaning changed, so say so out loud.
@@ -118,7 +120,10 @@ pub fn pressed(player: &mut Player, cut: &Cut) -> Pressed {
         player.transport.started = true;
         let snapped = snap_to_kept(&cut.segs, player.playhead.unwrap_or(0.0));
         player.playhead = Some(snapped);
-        return Pressed::SwitchedToCut { kept_playing, status: SWITCH_STATUS.to_string() };
+        return Pressed::SwitchedToCut {
+            kept_playing,
+            status: SWITCH_STATUS.to_string(),
+        };
     }
 
     // S3: a review is running → end it, carry on as the plain cut. `switch_over` leaves the
@@ -129,7 +134,9 @@ pub fn pressed(player: &mut Player, cut: &Cut) -> Pressed {
         if let Some(line) = player.playhead {
             player.playhead = Some(snap_to_kept(&cut.segs, line));
         }
-        return Pressed::ReviewEnded { status: REVIEW_ENDED_STATUS };
+        return Pressed::ReviewEnded {
+            status: REVIEW_ENDED_STATUS,
+        };
     }
 
     // S4: already the cut — toggle.
@@ -137,7 +144,10 @@ pub fn pressed(player: &mut Player, cut: &Cut) -> Pressed {
         player.transport.playing = false;
         return Pressed::Toggled(Toggle::Paused);
     }
-    let from = snap_to_kept(&cut.segs, player.playhead.unwrap_or_else(|| first_start(&cut.segs)));
+    let from = snap_to_kept(
+        &cut.segs,
+        player.playhead.unwrap_or_else(|| first_start(&cut.segs)),
+    );
     player.transport.started = true;
     player.transport.playing = true;
     player.playhead = Some(from);
@@ -174,7 +184,10 @@ pub enum At {
 /// and a target past the final clip ends playback rather than running off the end.
 pub fn advance(segs: &[Seg], from: f64, elapsed: f64) -> At {
     let target = from + elapsed;
-    if segs.iter().any(|seg| visible(seg) && target >= seg.s && target < seg.e) {
+    if segs
+        .iter()
+        .any(|seg| visible(seg) && target >= seg.s && target < seg.e)
+    {
         return At::Kept { t: target };
     }
     match segs.iter().find(|seg| visible(seg) && seg.s > target) {
@@ -188,7 +201,11 @@ pub fn advance(segs: &[Seg], from: f64, elapsed: f64) -> At {
 /// Sorted and disjoint, the same contract [`crate::timeline::filmed_runs`] gives the recording side —
 /// which is what lets [`preview::preload_target`] answer for both.
 pub fn kept_runs(segs: &[Seg]) -> Vec<(f64, f64)> {
-    let mut clips: Vec<(f64, f64)> = segs.iter().filter(|seg| visible(seg)).map(|seg| (seg.s, seg.e)).collect();
+    let mut clips: Vec<(f64, f64)> = segs
+        .iter()
+        .filter(|seg| visible(seg))
+        .map(|seg| (seg.s, seg.e))
+        .collect();
     clips.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut runs: Vec<(f64, f64)> = Vec::with_capacity(clips.len());
     for (start, end) in clips {
@@ -220,7 +237,11 @@ pub const PRELOAD_ARM_GAP_MS: u64 = (preview::PRELOAD_LEAD_SECONDS * 1000.0) as 
 /// Whether an arm asked at `since_last_arm_ms` is worth a process at all: at or inside the lead, and the armed
 /// second is not the one the slot already holds. A plain function of two numbers so the cadence is testable
 /// without a player: `None` on the left means "never armed yet", which is always worth the first arm.
-pub fn worth_arming(since_last_arm_ms: Option<u64>, armed_held: Option<f64>, wants: Option<f64>) -> bool {
+pub fn worth_arming(
+    since_last_arm_ms: Option<u64>,
+    armed_held: Option<f64>,
+    wants: Option<f64>,
+) -> bool {
     let Some(at) = wants else { return false };
     if armed_held == Some(at) {
         return false;
@@ -277,7 +298,11 @@ pub fn shows_a_still(cut: &Cut, session_t: f64) -> bool {
 
 /// S5: the rate the preview plays a clip at — its own if it has one, otherwise flat.
 pub fn played_rate(seg: &Seg) -> f64 {
-    if seg.rate > 0.0 { seg.rate } else { FLAT_RATE }
+    if seg.rate > 0.0 {
+        seg.rate
+    } else {
+        FLAT_RATE
+    }
 }
 
 /// S5: volume effects apply during the cut preview. They always do — the rule exists as a named answer

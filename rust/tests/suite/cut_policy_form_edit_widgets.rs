@@ -130,7 +130,11 @@ fn s7_the_form_hands_a_field_over_to_the_policy(app: &adw::Application) {
         "a form pick is a person's own answer, so S4 must protect it from here on"
     );
     // The form shows the same fact it just wrote, without being rebuilt: this is "visibly".
-    assert_eq!(source_word(&form, "cutMode"), "user", "the source badge moved");
+    assert_eq!(
+        source_word(&form, "cutMode"),
+        "user",
+        "the source badge moved"
+    );
     assert!(
         !reason_line(&form, "cutMode").is_empty(),
         "and the reason column says what happened: {:?}",
@@ -205,8 +209,16 @@ fn s8_a_hand_set_field_survives_a_re_derivation(app: &adw::Application) {
         CutMode::Words,
         "F0.7 S4: a person's field is never overwritten — the derivation could not move it: {derived:?}"
     );
-    assert_eq!(stored.origin, Origin::User, "and it is still credited to them");
-    assert_eq!(source_word(&form, "cutMode"), "user", "and still reads that way on the form");
+    assert_eq!(
+        stored.origin,
+        Origin::User,
+        "and it is still credited to them"
+    );
+    assert_eq!(
+        source_word(&form, "cutMode"),
+        "user",
+        "and still reads that way on the form"
+    );
 
     form.close();
     window.close();
@@ -223,7 +235,8 @@ fn run_round() {
 }
 
 #[test]
-fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s7_the_form_hands_a_field_over_to_the_policy() {
+fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s7_the_form_hands_a_field_over_to_the_policy(
+) {
     // A working directory of its own: the app keeps `session.naivepost` there, and test files run side by side.
     common::pin_private_cwd();
     run_round();
@@ -234,7 +247,8 @@ fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s7_the_form_
 }
 
 #[test]
-fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s8_a_hand_set_field_survives_a_re_derivation() {
+fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s8_a_hand_set_field_survives_a_re_derivation(
+) {
     common::pin_private_cwd();
     run_round();
     assert!(

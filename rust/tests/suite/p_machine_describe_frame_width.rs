@@ -146,7 +146,11 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<ChatAsk> {
         let _ = reader.read_exact(&mut body);
     }
     let text = match answer {
-        BY_SIZE => events_answer(String::from_utf8_lossy(&body).matches("\"image_url\"").count()),
+        BY_SIZE => events_answer(
+            String::from_utf8_lossy(&body)
+                .matches("\"image_url\"")
+                .count(),
+        ),
         fixed => fixed.to_string(),
     };
     let framed = format!(
@@ -196,7 +200,10 @@ fn write_real_frame(dir: &Path, name: &str) {
         .arg(&out)
         .status()
         .expect("ffmpeg runs");
-    assert!(status.success(), "ffmpeg wrote a source frame at {SOURCE_WIDTH}px");
+    assert!(
+        status.success(),
+        "ffmpeg wrote a source frame at {SOURCE_WIDTH}px"
+    );
     assert!(out.exists(), "ffmpeg wrote {}", out.display());
 }
 
@@ -301,7 +308,8 @@ impl Scene {
         std::env::set_var("XDG_CONFIG_HOME", self.root.join("cfg"));
         std::env::set_var("XDG_DATA_HOME", self.root.join("data"));
         std::env::set_current_dir(&self.root).expect("the scene is the working folder");
-        settings::save(&self.paths, &conf_at(&self.server)).expect("the scene's conf stands for its walk");
+        settings::save(&self.paths, &conf_at(&self.server))
+            .expect("the scene's conf stands for its walk");
         let project = Project {
             sources: vec![Source {
                 path: "project:sources/lecture.mkv".to_string(),
@@ -314,7 +322,8 @@ impl Scene {
             context: "a lecture on linear algebra".to_string(),
             ..Default::default()
         };
-        naivepost::project::save(&project, &self.session()).expect("the session still holds its footage row");
+        naivepost::project::save(&project, &self.session())
+            .expect("the session still holds its footage row");
     }
 
     fn leave() {
@@ -385,14 +394,21 @@ fn p_machine_describeframewidth_s1_the_scaled_copies_are_made_at_the_catalogued_
     );
     // The one value, in its three spellings: the constant F1.6 owns, the alias F1.7 reads, and the
     // §10 catalogue row's answer. All three must be what ffmpeg produced.
-    assert_eq!(naivepost::frames::LLM_FRAME_WIDTH, 896, "P.machine.describeFrameWidth");
+    assert_eq!(
+        naivepost::frames::LLM_FRAME_WIDTH,
+        896,
+        "P.machine.describeFrameWidth"
+    );
     assert_eq!(describe::FRAME_WIDTH, naivepost::frames::LLM_FRAME_WIDTH);
     let row = naivepost::params::prepare()
         .into_iter()
         .find(|param| param.id == "P.machine.describeFrameWidth")
         .expect("the frame width is catalogued for Prepare, whose describe pass scales by it");
     assert_eq!(row.spelled, "896", "§10 spells the width plainly");
-    assert_eq!(row.from, "frames::LLM_FRAME_WIDTH", "the row names the constant its rule reads");
+    assert_eq!(
+        row.from, "frames::LLM_FRAME_WIDTH",
+        "the row names the constant its rule reads"
+    );
 
     let conf = scene.leg_conf();
     let mut log = Vec::new();
@@ -403,14 +419,22 @@ fn p_machine_describeframewidth_s1_the_scaled_copies_are_made_at_the_catalogued_
     assert_eq!(made, 3, "one copy per frame, made here");
     for at in &taken {
         let copy = copy_path(&tree, *at);
-        assert!(copy.exists(), "{}: the scaled copy is on disk", copy.display());
+        assert!(
+            copy.exists(),
+            "{}: the scaled copy is on disk",
+            copy.display()
+        );
         assert_eq!(
             width_of(&copy),
             describe::FRAME_WIDTH,
             "the copy on disk is as wide as the catalogued number"
         );
         assert_eq!(
-            width_of(&tree.frames_dir(LANE).join(format!("{}.jpg", frame_name(*at)))),
+            width_of(
+                &tree
+                    .frames_dir(LANE)
+                    .join(format!("{}.jpg", frame_name(*at)))
+            ),
             SOURCE_WIDTH,
             "the STORED frame keeps the video's own size: only the copies sent are scaled"
         );
@@ -436,13 +460,15 @@ fn p_machine_describeframewidth_s2_the_bytes_sent_are_the_scaled_copies_not_the_
         "the stage must create .llmframes/ itself"
     );
     let mut log = Vec::new();
-    let ran = walk(&scene, &mut |line| log.push(line.to_string())).expect("the stage describes the row");
+    let ran =
+        walk(&scene, &mut |line| log.push(line.to_string())).expect("the stage describes the row");
     assert_eq!(
         ran, 2,
         "the stage answers how many CHUNKS it walked (spec F1.7 S7: \"event log complete (N chunks)\"),"
     );
     assert!(
-        log.iter().any(|line| line.contains("event log complete (2 chunks")),
+        log.iter()
+            .any(|line| line.contains("event log complete (2 chunks")),
         "two chunks at four frames a call for five frames: {log:?}"
     );
     assert!(
@@ -450,7 +476,11 @@ fn p_machine_describeframewidth_s2_the_bytes_sent_are_the_scaled_copies_not_the_
         "the live describe run created the .llmframes/ folder: {log:?}"
     );
     let asks = fake.waited(2);
-    assert_eq!(asks.len(), 2, "five frames at four a call is two calls: {log:?}");
+    assert_eq!(
+        asks.len(),
+        2,
+        "five frames at four a call is two calls: {log:?}"
+    );
     let sent: Vec<String> = asks
         .iter()
         .flat_map(|ask| {
@@ -480,14 +510,21 @@ fn p_machine_describeframewidth_s2_the_bytes_sent_are_the_scaled_copies_not_the_
     let taken = seconds(FRAMES_PER_REQ + 1);
     let copies: Vec<String> = taken
         .iter()
-        .map(|at| naivepost::checks::base64(&std::fs::read(copy_path(&tree, *at)).expect("the scaled copy")))
+        .map(|at| {
+            naivepost::checks::base64(
+                &std::fs::read(copy_path(&tree, *at)).expect("the scaled copy"),
+            )
+        })
         .collect();
     let stored: Vec<String> = taken
         .iter()
         .map(|at| {
             naivepost::checks::base64(
-                &std::fs::read(tree.frames_dir(LANE).join(format!("{}.jpg", frame_name(*at))))
-                    .expect("the stored frame"),
+                &std::fs::read(
+                    tree.frames_dir(LANE)
+                        .join(format!("{}.jpg", frame_name(*at))),
+                )
+                .expect("the stored frame"),
             )
         })
         .collect();
@@ -511,12 +548,14 @@ fn p_machine_describeframewidth_s2_the_bytes_sent_are_the_scaled_copies_not_the_
 /// s3: the row's three artifacts, together and after one live walk: the scaled copies beside
 /// `events.tsv` (one row per frame asked) and `state.txt` (the state the model set).
 #[test]
-fn p_machine_describeframewidth_s3_the_run_writes_events_tsv_and_state_next_to_the_frames_it_sent() {
+fn p_machine_describeframewidth_s3_the_run_writes_events_tsv_and_state_next_to_the_frames_it_sent()
+{
     let fake = Fake::start(BY_SIZE.to_string());
     let scene = Scene::new("s3-files", FRAMES_PER_REQ, &fake.url);
     let tree = scene.tree();
     let mut log = Vec::new();
-    let ran = walk(&scene, &mut |line| log.push(line.to_string())).expect("the stage describes the row");
+    let ran =
+        walk(&scene, &mut |line| log.push(line.to_string())).expect("the stage describes the row");
     assert_eq!(ran, 1);
     assert!(fake.waited(1).len() == 1, "the row was asked once");
     let taken = seconds(FRAMES_PER_REQ);

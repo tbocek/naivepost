@@ -38,7 +38,11 @@ fn session_tree() -> (Tree, std::path::PathBuf, std::path::PathBuf) {
     });
     naivepost::project::save(&project, tree.dir()).expect("naivepost.json written");
     let cut = Cut {
-        segs: vec![Seg { s: 0.0, e: 10.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     naivepost::cut::save(&cut, &tree).expect("cut.json written");
@@ -79,7 +83,11 @@ fn run_round(app: &adw::Application) {
     settle();
     ui::set_state(ui::NarrateState {
         entries: vec![],
-        segs: vec![Seg { s: 0.0, e: 10.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        }],
         takes: vec![],
         voice: "narrator1".to_string(),
         pitch: 0.0,
@@ -132,7 +140,11 @@ fn run_round(app: &adw::Application) {
         "warm.wav",
         "S1: the picked voice is stored in the project's narrate/voice.txt"
     );
-    assert_eq!(ui::read_state().voice, "warm.wav", "and published on the page");
+    assert_eq!(
+        ui::read_state().voice,
+        "warm.wav",
+        "and published on the page"
+    );
     assert!(
         !served.exists(),
         "S4: the shifted reference built from the old voice was dropped"
@@ -201,7 +213,12 @@ fn controller_named(widget: &gtk::Widget, name: &str) -> gtk::EventController {
                 .is_some_and(|c| c.name().is_some_and(|n| n == name))
         })
         .and_then(|item| item.downcast::<gtk::EventController>().ok())
-        .unwrap_or_else(|| panic!("{} carries no controller named {name}", widget.widget_name()))
+        .unwrap_or_else(|| {
+            panic!(
+                "{} carries no controller named {name}",
+                widget.widget_name()
+            )
+        })
 }
 
 /// Drag on the band's own gesture from pixel 0 to `to_px`. The gesture is what a hand uses — there is
@@ -268,7 +285,8 @@ fn take_controls_round(window: &adw::ApplicationWindow, tree: &Tree) {
             // Negative dy is the notch that zooms in (§A.7: `wheel zooms 1.25^-dy`).
             let _ = wheel.emit_by_name::<bool>("scroll", &[&0.0f64, &-1.0f64]);
             settle();
-            ui::narrate_band::painted_surface_for_test(lane_px as i32, 90).expect("the lane paints");
+            ui::narrate_band::painted_surface_for_test(lane_px as i32, 90)
+                .expect("the lane paints");
             let (_now_seconds, now_pps) = ui::narrate_band::painted_view_for_test();
             pps = now_pps;
             short_px = naivepost::narrate_screen::TAKE_MIN_SECONDS * 0.5 * pps;
@@ -314,7 +332,10 @@ fn take_controls_round(window: &adw::ApplicationWindow, tree: &Tree) {
     // --- a span that clears the floor: it lands, and the status quotes it (§F4.6's caption) --------
     drag_band_to(window, long_px);
     let wanted = ui::narrate_band::live_selection().expect("the drag left a live selection");
-    assert!(wanted.1 - wanted.0 >= 4.0, "a several-second span: {wanted:?}");
+    assert!(
+        wanted.1 - wanted.0 >= 4.0,
+        "a several-second span: {wanted:?}"
+    );
     add.emit_by_name::<()>("clicked", &[]);
     settle();
     assert_eq!(
@@ -403,7 +424,10 @@ fn pitch_slider_round(window: &adw::ApplicationWindow, tree: &Tree) {
     // The shifted copy goes on disk only now: after every invalidation the rounds above caused, so the
     // only thing that can remove it is the pitch change below (or nothing, which is what fails).
     std::fs::write(&served, b"shifted wav").expect("shifted copy planted");
-    assert!(served.exists(), "the shifted reference is on disk before the drag");
+    assert!(
+        served.exists(),
+        "the shifted reference is on disk before the drag"
+    );
     let scale = widget_in(window, "pitch-slider")
         .and_then(|w| w.downcast::<gtk::Scale>().ok())
         .expect("the Narrate page carries pitch-slider");
@@ -433,7 +457,10 @@ fn pitch_slider_round(window: &adw::ApplicationWindow, tree: &Tree) {
     // through, so this checks the rule where it lands rather than hoping a 400 ms timer fired inside the
     // test's wait (the drag above already proved the state half: the clamped semitones).
     let said = naivepost::ui::press_pitch(window, 0.0);
-    assert!(said.contains("+6.0 semitones"), "the seam repeats the shift: {said}");
+    assert!(
+        said.contains("+6.0 semitones"),
+        "the seam repeats the shift: {said}"
+    );
     assert!(
         !served.exists(),
         "S4: the shifted reference is gone \u{2014} a pitch change drops it and re-shifts from the base ({})",

@@ -26,7 +26,10 @@ use crate::ui;
 /// a repeat costs nothing anyway: [`crate::play_back::set_volume`] keeps a stamp of the last ask and does
 /// exactly nothing when the answer has not changed.
 pub fn apply_paused_gain(window: &adw::ApplicationWindow, at: f64) -> f64 {
-    let total = cut_hear::mix_gain(ui::preview_volume(window), ui::paused_preview_gain(window, at));
+    let total = cut_hear::mix_gain(
+        ui::preview_volume(window),
+        ui::paused_preview_gain(window, at),
+    );
     ui::cut_cut_play::hand_gain(window, total, at);
     total
 }

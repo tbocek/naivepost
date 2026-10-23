@@ -18,7 +18,9 @@
 
 #![allow(dead_code)]
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, pin_private_cwd, settle};
 use gtk4 as gtk;
 use naivepost::cut_effect_decisions::Candidate;
 use naivepost::decision_audit::{self, Home};
@@ -26,15 +28,13 @@ use naivepost::decision_homes;
 use naivepost::exchanges::ToolCall;
 use naivepost::project::Origin;
 use naivepost::settings::{self, Conf};
+use naivepost::suggest;
 use naivepost::tool_loop::{self, Turn};
 use naivepost::tools::{self, cutpass, Tool};
 use naivepost::ui::{self, policy_form};
-use naivepost::suggest;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use crate::common;
-use common::{fixture_dir, pin_private_cwd, settle};
 
 static RAN_FORM: AtomicBool = AtomicBool::new(false);
 
@@ -117,7 +117,10 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s1_tool_argument_home_states_
         "an argument is the model's own statement: there is nothing in it for the model to react to"
     );
     assert_eq!(Home::ToolArgument.scope(), "one item");
-    assert!(Home::ToolArgument.model_sees_it(), "it is the model's own words");
+    assert!(
+        Home::ToolArgument.model_sees_it(),
+        "it is the model's own words"
+    );
 
     // The arguments the program runs ARE the model's: `add_segment` receives the seconds it asked with,
     // unedited, and the segment it makes carries the model's reason verbatim.
@@ -137,7 +140,10 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s1_tool_argument_home_states_
         "an error would mean the arguments were refused: {answer}"
     );
     let kept = &plan.segments()[0];
-    assert_eq!(kept.why, "the intro", "the model's own words travel into the plan");
+    assert_eq!(
+        kept.why, "the intro",
+        "the model's own words travel into the plan"
+    );
     assert!(
         (kept.start - 10.0).abs() <= cutpass::SNAP_TOLERANCE_SECONDS
             && (kept.end - 20.0).abs() <= cutpass::SNAP_TOLERANCE_SECONDS,
@@ -160,7 +166,8 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s1_tool_argument_home_states_
 /// Row 2: the app snapped the model's edges, so the snapped span and how far each edge moved go back to it
 /// in the tool's own answer, per item — and the loop records that this is the home it spoke from.
 #[test]
-fn sec_12_decisions_1_the_five_homes_of_a_decision_s2_tool_result_home_announces_what_the_app_made_of_it() {
+fn sec_12_decisions_1_the_five_homes_of_a_decision_s2_tool_result_home_announces_what_the_app_made_of_it(
+) {
     assert!(decision_audit::change_is_announced(Home::ToolResult));
     assert!(Home::ToolResult.may_act_in_same_conversation());
 
@@ -173,7 +180,9 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s2_tool_result_home_announces
     // The first answer is the one about the segment the model just asked for; later rounds answered
     // `cut_status`/`finish_cut`, which report the plan rather than a change to one item.
     assert!(
-        answers.iter().any(|answer| answer.contains("\"span\"") && answer.contains("\"moved\"")),
+        answers
+            .iter()
+            .any(|answer| answer.contains("\"span\"") && answer.contains("\"moved\"")),
         "the snapped span and the moves went back to the model: {answers:?}"
     );
     let told: serde_json::Value = serde_json::from_str(&answers[0]).expect("a tool answer is JSON");
@@ -183,8 +192,16 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s2_tool_result_home_announces
         "the edges as placed: {told}"
     );
     let span = told["span"].as_array().unwrap();
-    assert_eq!(span[0].as_f64(), Some(10.4), "the start snapped to the word edge");
-    assert_eq!(span[1].as_f64(), Some(19.6), "the end snapped to the word edge");
+    assert_eq!(
+        span[0].as_f64(),
+        Some(10.4),
+        "the start snapped to the word edge"
+    );
+    assert_eq!(
+        span[1].as_f64(),
+        Some(19.6),
+        "the end snapped to the word edge"
+    );
     let moved = told["moved"].as_array().expect("moved");
     assert!(
         (moved[0].as_f64().unwrap() - 0.4).abs() < 1e-9
@@ -227,7 +244,9 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s3_finish_answer_home_says_wh
     );
     assert_eq!(
         run.outcome,
-        tool_loop::Outcome::Finished { asked_finish: false },
+        tool_loop::Outcome::Finished {
+            asked_finish: false
+        },
         "the model called finish itself, so this run did not need asking"
     );
     assert!(
@@ -244,7 +263,10 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s3_finish_answer_home_says_wh
 /// loud which home its silence came from.
 #[test]
 fn sec_12_decisions_1_the_five_homes_of_a_decision_s4_walk_back_is_audited_and_never_shown() {
-    assert!(!Home::WalkBack.model_sees_it(), "this is the row that is deliberately unseen");
+    assert!(
+        !Home::WalkBack.model_sees_it(),
+        "this is the row that is deliberately unseen"
+    );
     assert!(!decision_audit::change_is_announced(Home::WalkBack));
 
     // Admitted: the walk places from real word edges, so every move is inside the bound and the result is
@@ -263,7 +285,11 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s4_walk_back_is_audited_and_n
     // And it really runs: `apply` walks the same input and reports the pair §S3 spells.
     let applied = suggest::apply(&[(10.0, 20.0)], &[], &[], &walked);
     assert_eq!(applied.log.len(), 3, "{:?}", applied.log);
-    assert!(applied.log[0].starts_with(">>> suggested"), "{:?}", applied.log);
+    assert!(
+        applied.log[0].starts_with(">>> suggested"),
+        "{:?}",
+        applied.log
+    );
 
     // Refused: with nothing to place from, nothing was placed mechanically and nothing is left to see, so
     // the change would be invisible AND unaccountable — which §1 sends to `finish` instead.
@@ -273,21 +299,26 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s4_walk_back_is_audited_and_n
         snap_points: vec![],
         marks: vec![],
     };
-    let why = suggest::walk_back_audit(&blind).expect_err("a walk with no snap points cannot run unseen");
+    let why =
+        suggest::walk_back_audit(&blind).expect_err("a walk with no snap points cannot run unseen");
     assert!(
         why.contains("leaves nothing on screen afterwards") && why.contains("`finish`"),
         "the refusal names the failed property and where such a change belongs: {why}"
     );
     // Refused means NOT performed: `apply` touches nothing and logs the reason.
     let untouched = suggest::apply(&[(10.0, 20.0)], &[], &[], &blind);
-    assert!(untouched.segs.is_empty(), "a refused walk-back places no cut");
+    assert!(
+        untouched.segs.is_empty(),
+        "a refused walk-back places no cut"
+    );
     assert_eq!(untouched.log, vec![format!("!!! {why}")]);
 
     // The other door: when the budget runs out the model is owed the reason its calls produced nothing,
     // and the line names the home that news should have travelled in.
     let exhausted = tool_loop::unannounced_calls_log("cut", 2);
     assert!(
-        exhausted.contains(Home::ToolResult.label()) && exhausted.contains(Home::ToolResult.scope()),
+        exhausted.contains(Home::ToolResult.label())
+            && exhausted.contains(Home::ToolResult.scope()),
         "the line says which home stayed silent: {exhausted}"
     );
 }
@@ -309,7 +340,10 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s5_policy_home_rows_are_polic
     );
     // Both halves of the fifth home: a `P.policy.` row and a shipped prompt key.
     assert!(policy_form::policy_home("P.policy.cutMode"));
-    assert!(policy_form::policy_home("captions"), "a prompt wording is the same kind of non-decision");
+    assert!(
+        policy_form::policy_home("captions"),
+        "a prompt wording is the same kind of non-decision"
+    );
 
     pin_private_cwd();
     settings::save(
@@ -318,7 +352,10 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s5_policy_home_rows_are_polic
     )
     .expect("the settings file");
     window_round();
-    assert!(RAN_FORM.load(Ordering::SeqCst), "the policy-form check never ran");
+    assert!(
+        RAN_FORM.load(Ordering::SeqCst),
+        "the policy-form check never ran"
+    );
 }
 
 fn check_policy_form(app: &adw::Application) {
@@ -339,7 +376,11 @@ fn check_policy_form(app: &adw::Application) {
     // Every row the catalogue lists is drawn, and each one routed to the policy home — so nothing was
     // skipped, which is what the absence of a refusal line below proves rather than asserts.
     for entry in naivepost::policy::derived_fields() {
-        assert!(policy_form::policy_home(entry.id), "{} is not the policy home", entry.field);
+        assert!(
+            policy_form::policy_home(entry.id),
+            "{} is not the policy home",
+            entry.field
+        );
         let row = widget_in_window(&form, &format!("policy-row-{}", entry.field));
         assert!(row.is_some(), "the form shows a marker for {}", entry.field);
         let value = widget_in_window(&form, &format!("policy-edit-{}", entry.field))

@@ -42,7 +42,14 @@ pub fn run_over_batch(
     batch: &mut Clips,
     ask: Ask<'_>,
 ) -> Run {
-    run_over_batch_from(step, &tool_loop::Turn::default(), messages, offered, batch, ask)
+    run_over_batch_from(
+        step,
+        &tool_loop::Turn::default(),
+        messages,
+        offered,
+        batch,
+        ask,
+    )
 }
 
 /// One answered round: what the model was shown, and its calls with each result already written on them.
@@ -69,7 +76,9 @@ pub fn run_over_batch_from(
             run: tool_loop::Run {
                 messages,
                 logs: vec![crate::tools::exhausted_log(step)],
-                outcome: tool_loop::Outcome::Finished { asked_finish: false },
+                outcome: tool_loop::Outcome::Finished {
+                    asked_finish: false,
+                },
                 announced: Vec::new(),
             },
             calls: Vec::new(),
@@ -105,15 +114,24 @@ pub fn run_over_batch_from(
         // would show every round the last one's messages. The calls travel unanswered because the loop answers
         // them next, through [`answer`]; writing their results back afterwards (see below) is what keeps a call's
         // verdict identical everywhere it is read — the log line, the next request's `tool` message, and the page.
-        rounds.push(Round { messages: conversation.to_vec(), turn: turn.clone() });
+        rounds.push(Round {
+            messages: conversation.to_vec(),
+            turn: turn.clone(),
+        });
         // `finish` is this job's own end signal (§2 S3) and the loop reads it off the Turn, so set it here, at
         // the one place that sees the real calls: a round that called `finish` beside its work tool (exactly how
         // a model closes an `add_caption` answer) ENDED the job. Leaving it false would make the loop treat a
         // closed answer as an open one and keep asking for what it was already given.
-        turn.finish = turn.finish || turn.calls.iter().any(|call| call.name == Tool::Finish.name());
+        turn.finish = turn.finish
+            || turn
+                .calls
+                .iter()
+                .any(|call| call.name == Tool::Finish.name());
         Ok(turn)
     };
-    let run = tool_loop::run(step, messages, offered, &mut probe, |call| answer(call, batch));
+    let run = tool_loop::run(step, messages, offered, &mut probe, |call| {
+        answer(call, batch)
+    });
     // Write each round's ANSWERED calls back into the round that made them. This happens after the loop rather
     // than inside the ask because answering there would need the batch twice over at once (the loop answers the
     // same calls itself), and re-running `answer` afterwards could report a different verdict for a call whose
@@ -137,7 +155,12 @@ pub fn run_over_batch_from(
     for (index, round) in rounds.iter_mut().enumerate() {
         let shown = round.messages.len();
         // This round's own turn: the first assistant turn that arrived after it was asked.
-        let mine = assistants.iter().copied().filter(|at| *at >= shown).min().unwrap_or(usize::MAX);
+        let mine = assistants
+            .iter()
+            .copied()
+            .filter(|at| *at >= shown)
+            .min()
+            .unwrap_or(usize::MAX);
         let end = assistants
             .iter()
             .copied()
@@ -165,10 +188,18 @@ pub fn run_over_batch_from(
         }
         // Whatever the loop decided about this round, `finish` was the model's own word: keep it set on the round
         // that said it, so a caller reading its rounds back sees the same end signal the loop saw.
-        round.turn.finish = round.turn.calls.iter().any(|call| call.name == Tool::Finish.name())
+        round.turn.finish = round
+            .turn
+            .calls
+            .iter()
+            .any(|call| call.name == Tool::Finish.name())
             || (round.turn.calls.is_empty() && index + 1 == last);
     }
-    Run { run, calls: asked, rounds }
+    Run {
+        run,
+        calls: asked,
+        rounds,
+    }
 }
 
 /// Answer a whole round's calls against the batch and return the §7 notes for them, in order — the lines a step
@@ -207,7 +238,9 @@ impl Run {
             .filter(|message| message.role == "assistant")
             .filter_map(|message| {
                 message.parts.iter().find_map(|part| match part {
-                    crate::exchanges::Part::Text(text) if !text.trim().is_empty() => Some(text.clone()),
+                    crate::exchanges::Part::Text(text) if !text.trim().is_empty() => {
+                        Some(text.clone())
+                    }
                     _ => None,
                 })
             })
@@ -239,8 +272,11 @@ pub fn answer(call: &ToolCall, batch: &mut Clips) -> String {
     let args: serde_json::Value =
         serde_json::from_str(&call.args).unwrap_or_else(|_| serde_json::json!({}));
     let number = |key: &str| {
-        args.get(key)
-            .and_then(|value| value.as_f64().or_else(|| value.as_str().and_then(|t| t.trim().parse::<f64>().ok())))
+        args.get(key).and_then(|value| {
+            value
+                .as_f64()
+                .or_else(|| value.as_str().and_then(|t| t.trim().parse::<f64>().ok()))
+        })
     };
     match call.name.as_str() {
         // §3.7's read: the clip's frames, so a zoom can be aimed. `at` selects the nearest stamped frame.
@@ -251,7 +287,9 @@ pub fn answer(call: &ToolCall, batch: &mut Clips) -> String {
             number("end"),
             args.get("text").and_then(|text| text.as_str()),
         ) {
-            (Some(clip), Some(start), Some(end), Some(text)) => batch.add_caption(clip, start, end, text),
+            (Some(clip), Some(start), Some(end), Some(text)) => {
+                batch.add_caption(clip, start, end, text)
+            }
             _ => crate::tools::error("add_caption needs \"clip\", \"start\", \"end\" and \"text\""),
         },
         "set_clip_speed" => match (number("clip").map(|n| n as u32), number("rate")) {
@@ -359,7 +397,10 @@ pub fn ask_again_for_calls(
     // (`prompts::mode_of` over §4's table picks `Mode::Execute` for `captions`/`speed`/`effects`), so §3's
     // `thinkAgain` has nothing left to turn off and cannot change the retry.
     let verdict = |again: &crate::llm_request::Reply| {
-        again.tool_calls.is_empty().then(|| no_calls_problem(tool_name))
+        again
+            .tool_calls
+            .is_empty()
+            .then(|| no_calls_problem(tool_name))
     };
     let repaired = crate::llm_repair_leg::ask_repair_after(
         step,
@@ -423,7 +464,8 @@ pub fn record_repair_row(
     went_out: std::time::Instant,
 ) {
     let sent_ms = crate::server_leg::epoch_ms();
-    let mut timer = crate::request_timing::Timer::sent(sent_ms - went_out.elapsed().as_millis() as i64);
+    let mut timer =
+        crate::request_timing::Timer::sent(sent_ms - went_out.elapsed().as_millis() as i64);
     timer.finished(sent_ms);
     crate::request_timing::stamp_run(&mut base);
     let row = crate::request_timing::finish_row(&base, &timer, crate::requests::Outcome::Ok, 1);
@@ -436,5 +478,10 @@ pub fn record_repair_row(
 /// clip (§F3.9), so every clip starts at zero in that space. A wrong `start` would make the tool clamp into the
 /// wrong clip — the very mistake §3.7's tool exists to prevent.
 pub fn batch_of(clips: &[(u32, f64)]) -> Clips {
-    Clips::new(&clips.iter().map(|(n, length)| (*n, 0.0, *length)).collect::<Vec<_>>())
+    Clips::new(
+        &clips
+            .iter()
+            .map(|(n, length)| (*n, 0.0, *length))
+            .collect::<Vec<_>>(),
+    )
 }

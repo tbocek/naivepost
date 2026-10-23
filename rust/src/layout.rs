@@ -224,12 +224,14 @@ impl Tree {
 
     /// The fixer's answer for one source (F1.8).
     pub fn transcript_fixed_tsv(&self, source: &str) -> PathBuf {
-        self.transcript_source_dir(source).join("transcript.fixed.tsv")
+        self.transcript_source_dir(source)
+            .join("transcript.fixed.tsv")
     }
 
     /// …or the recorder's, which is commentary rather than somebody's speech (§1).
     pub fn commentary_fixed_tsv(&self, source: &str) -> PathBuf {
-        self.transcript_source_dir(source).join("commentary.fixed.tsv")
+        self.transcript_source_dir(source)
+            .join("commentary.fixed.tsv")
     }
 
     /// Subtitles, for a video source only — an audio file has nothing to caption over.
@@ -267,7 +269,6 @@ impl Tree {
     pub fn svg_raster_dir(&self) -> PathBuf {
         self.dir.join("cache/svg")
     }
-
 
     /// Waveform envelopes, one file per lane.
     pub fn wave(&self, lane: &str) -> PathBuf {
@@ -381,7 +382,8 @@ impl Tree {
     /// video's stem — that one is `produce/final.jpg`, which the `<video>` tag's poster still reads.
     pub fn export_jpg(&self) -> PathBuf {
         let project = self.name().unwrap_or("naivepost");
-        self.produce_dir().join(crate::produce_runs::export_default(project))
+        self.produce_dir()
+            .join(crate::produce_runs::export_default(project))
     }
 
     pub fn final_jpg(&self) -> PathBuf {

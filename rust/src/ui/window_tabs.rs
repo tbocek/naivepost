@@ -33,7 +33,9 @@ fn labels_of(root: &gtk::Widget) -> Vec<gtk::Label> {
     let mut out = Vec::new();
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if let Ok(label) = widget.clone().downcast::<gtk::Label>() {
             out.push(label);
         }

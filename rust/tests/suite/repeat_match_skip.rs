@@ -29,7 +29,10 @@ fn p_eng_repeatskip_s1_the_skip_is_3_and_catalogued_once() {
         .into_iter()
         .find(|param| param.id == "P.eng.repeatSkip")
         .expect("the skip bound must be catalogued for Prepare, whose retake pass reads it");
-    assert_eq!(row.from, "prepare_decisions::TAIL_SKIP_MAX", "a row must name the constant its rule reads");
+    assert_eq!(
+        row.from, "prepare_decisions::TAIL_SKIP_MAX",
+        "a row must name the constant its rule reads"
+    );
     assert_eq!(row.spelled, "3");
     assert_eq!(row.spelled.parse::<f64>().unwrap(), 3.0);
 
@@ -38,7 +41,10 @@ fn p_eng_repeatskip_s1_the_skip_is_3_and_catalogued_once() {
 
     // And exactly one row for it across all five lists — one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.repeatSkip").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.repeatSkip")
+            .count(),
         1,
         "P.eng.repeatSkip catalogued more than once"
     );
@@ -53,10 +59,18 @@ fn p_eng_repeatskip_s2_three_words_of_step_over_are_allowed() {
     let tail = ["alpha", "bravo", "charlie", "delta"];
     let later = ["alpha", "one", "two", "three", "bravo", "charlie", "delta"];
 
-    let found = pd::suffix_match(&tail, &later).expect("three filler words must not lose the repeat");
-    assert_eq!(found.starts_at, 0, "the anchor is where the tail's first word was found");
+    let found =
+        pd::suffix_match(&tail, &later).expect("three filler words must not lose the repeat");
+    assert_eq!(
+        found.starts_at, 0,
+        "the anchor is where the tail's first word was found"
+    );
     assert_eq!(found.matched, 4, "every tail word turned up");
-    assert_eq!(found.skipped, pd::TAIL_SKIP_MAX, "exactly the allowed three were stepped over");
+    assert_eq!(
+        found.skipped,
+        pd::TAIL_SKIP_MAX,
+        "exactly the allowed three were stepped over"
+    );
     assert_eq!(found.edits, 0, "nothing here needed forgiving");
     assert!(found.share >= pd::TAIL_MATCH_MIN, "{}", found.share);
 }
@@ -68,7 +82,9 @@ fn p_eng_repeatskip_s2_three_words_of_step_over_are_allowed() {
 fn p_eng_repeatskip_s3_a_fourth_step_over_is_refused() {
     // P.eng.repeatSkip: `four` sits at step 4 past the previous match, one past the bound.
     let tail = ["alpha", "bravo", "charlie", "delta"];
-    let later = ["alpha", "one", "two", "three", "four", "bravo", "charlie", "delta"];
+    let later = [
+        "alpha", "one", "two", "three", "four", "bravo", "charlie", "delta",
+    ];
     assert!(
         pd::suffix_match(&tail, &later).is_none(),
         "step 4 is past TAIL_SKIP_MAX, so the run ends before bravo"
@@ -80,8 +96,7 @@ fn p_eng_repeatskip_s3_a_fourth_step_over_is_refused() {
     // as tail words, which is a different fixture's business.)
     let tail2 = ["alpha", "bravo"];
     let exact = ["alpha", "p", "q", "r", "bravo"];
-    let m = pd::suffix_match(&tail2, &exact)
-        .expect("three steps reaches the second tail word");
+    let m = pd::suffix_match(&tail2, &exact).expect("three steps reaches the second tail word");
     assert_eq!(m.starts_at, 0);
     assert_eq!(m.matched, 2, "{m:?}");
     assert_eq!(m.skipped, pd::TAIL_SKIP_MAX, "{m:?}");
@@ -108,7 +123,9 @@ fn p_eng_repeatskip_s4_the_bound_that_refuses_is_the_skip_not_the_share() {
     // Beyond it: `XK9` pushes every remaining tail word to step 4 and further, so no anchor in the later take
     // ever accounts for enough of the tail to clear TAIL_MATCH_MIN. The share never got a chance — the run dies
     // at the first unreachable word, which is why this is P.eng.repeatSkip refusing and not the 70 % bar.
-    let beyond = ["alpha", "one", "two", "three", "XK9", "bravo", "charlie", "delta"];
+    let beyond = [
+        "alpha", "one", "two", "three", "XK9", "bravo", "charlie", "delta",
+    ];
     assert!(pd::suffix_match(&tail, &beyond).is_none());
     assert!(
         pd::TAIL_MATCH_MIN < 1.0,
@@ -116,6 +133,12 @@ fn p_eng_repeatskip_s4_the_bound_that_refuses_is_the_skip_not_the_share() {
     );
 
     // The guard clause: an empty tail or an empty later take finds nothing, without walking anything.
-    assert!(pd::suffix_match(&[], &within).is_none(), "an empty tail repeats nothing");
-    assert!(pd::suffix_match(&tail, &[]).is_none(), "no later take holds no repeat");
+    assert!(
+        pd::suffix_match(&[], &within).is_none(),
+        "an empty tail repeats nothing"
+    );
+    assert!(
+        pd::suffix_match(&tail, &[]).is_none(),
+        "no later take holds no repeat"
+    );
 }

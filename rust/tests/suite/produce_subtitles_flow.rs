@@ -24,20 +24,27 @@ use naivepost::project::{Produce, Publish, Source};
 
 const ITEM: &str = "f5_4";
 
-
 /// An insert segment: `ins` names an asset, which is what makes the clip not-footage downstream.
 fn insert_seg(s: f64, e: f64, asset: &str) -> Seg {
-    Seg { s, e, cam: 0, ins: asset.to_string(), ..Default::default() }
+    Seg {
+        s,
+        e,
+        cam: 0,
+        ins: asset.to_string(),
+        ..Default::default()
+    }
 }
-
 
 fn cut_of(segs: Vec<Seg>) -> Cut {
-    Cut { segs, aspect: "16:9".into(), ..Default::default() }
+    Cut {
+        segs,
+        aspect: "16:9".into(),
+        ..Default::default()
+    }
 }
 
-
 use crate::common;
-use common::{clip as seg, produce_project as project, entry_span as entry, produce_row as row};
+use common::{clip as seg, entry_span as entry, produce_project as project, produce_row as row};
 
 /// The words a footage clip heard, at a rhythm that keeps them in one cue per breath pair.
 fn words(texts: &[&str], start: f64) -> Vec<subs::Word> {
@@ -77,7 +84,10 @@ fn project_sources() -> Vec<Source> {
 /// THE Materials constructor for this file. `words` is the seam under test: whatever the caller answers
 /// here is what S1 captions a line-less footage clip from, so a test sees its own words come back in the
 /// sheet or sees them refused because the clip was not footage.
-fn mats<'a>(lanes: &'a [Lane], words: &'a dyn Fn(&render::Clip) -> Vec<subs::Word>) -> exec::Materials<'a> {
+fn mats<'a>(
+    lanes: &'a [Lane],
+    words: &'a dyn Fn(&render::Clip) -> Vec<subs::Word>,
+) -> exec::Materials<'a> {
     exec::Materials {
         exists: &exists_everything,
         fx_for: &no_fx,
@@ -94,8 +104,13 @@ fn mats<'a>(lanes: &'a [Lane], words: &'a dyn Fn(&render::Clip) -> Vec<subs::Wor
         words,
         // This file is about S1/S2; the S3 leg answers every number so the walk is never the thing that
         // fails here. `tests/suite/produce_translate_flow.rs` owns the refusals.
-        translate: &|_message: &str, numbers: &[usize]| -> Result<std::collections::BTreeMap<usize, String>, String> {
-            Ok(numbers.iter().map(|n| (*n, format!("translated {n}"))).collect::<std::collections::BTreeMap<usize, String>>())
+        translate: &|_message: &str,
+                     numbers: &[usize]|
+         -> Result<std::collections::BTreeMap<usize, String>, String> {
+            Ok(numbers
+                .iter()
+                .map(|n| (*n, format!("translated {n}")))
+                .collect::<std::collections::BTreeMap<usize, String>>())
         },
         sources: &project_sources,
         // No ffprobe claim: this file is about the cue sheet, not the join's size check.
@@ -104,7 +119,12 @@ fn mats<'a>(lanes: &'a [Lane], words: &'a dyn Fn(&render::Clip) -> Vec<subs::Wor
 }
 
 /// Plan only — S1/S2 are settled before any subprocess, and this file has no spawner to distract it.
-fn planned(tag: &str, segs: Vec<Seg>, lines: Vec<Entry>, words: Vec<subs::Word>) -> (Tree, exec::Plan) {
+fn planned(
+    tag: &str,
+    segs: Vec<Seg>,
+    lines: Vec<Entry>,
+    words: Vec<subs::Word>,
+) -> (Tree, exec::Plan) {
     let (_root, tree) = common::tree_in(tag);
     let run = flow::snapshot(
         Some(cut_of(segs)),
@@ -139,18 +159,33 @@ fn f5_4_s1_a_footage_clip_with_no_narration_is_captioned_from_its_words() {
         words(&["the", "lecture", "begins"], 0.0),
     );
     let cues = sheet(&plan);
-    assert!(!cues.is_empty(), "a footage clip with no lines still gets cues from its words: {cues:?}");
-    let joined = cues.iter().map(|c| c.text.as_str()).collect::<Vec<&str>>().join(" ");
+    assert!(
+        !cues.is_empty(),
+        "a footage clip with no lines still gets cues from its words: {cues:?}"
+    );
+    let joined = cues
+        .iter()
+        .map(|c| c.text.as_str())
+        .collect::<Vec<&str>>()
+        .join(" ");
     assert!(joined.contains("the lecture begins"), "{joined:?}");
 
     // And it is EXACTLY what `subs::cues` answers for a footage clip with these words — the plan does
     // not re-decide the grouping, it calls the rule.
     let expected = subs::tidy(&subs::on_clock(
-        &subs::cues(subs::Source::Footage, &[], &words(&["the", "lecture", "begins"], 0.0), 1.0),
+        &subs::cues(
+            subs::Source::Footage,
+            &[],
+            &words(&["the", "lecture", "begins"], 0.0),
+            1.0,
+        ),
         0.0,
         1.0,
     ));
-    assert_eq!(cues, expected, "the sheet is the rule's answer, not a second opinion");
+    assert_eq!(
+        cues, expected,
+        "the sheet is the rule's answer, not a second opinion"
+    );
 }
 
 #[test]
@@ -164,14 +199,24 @@ fn f5_4_s1_an_insert_contributes_no_cues() {
         Vec::new(),
         words(&["not", "the", "session"], 0.0),
     );
-    assert!(sheet(&plan).is_empty(), "an insert gives no cues: {:?}", sheet(&plan));
+    assert!(
+        sheet(&plan).is_empty(),
+        "an insert gives no cues: {:?}",
+        sheet(&plan)
+    );
     let reason = subs::Source::Insert
         .no_cues_reason()
         .expect("an insert names why it says nothing");
     // The clip never reaches the sheet, and the plan carries no cue for it either way: what is asserted is
     // that the classification came from the clip's own `source` field.
-    let clip = plan.clips.first().expect("the insert clip survived planning");
-    assert_eq!(clip.source, "assets/thing.wav", "the clip carries its asset");
+    let clip = plan
+        .clips
+        .first()
+        .expect("the insert clip survived planning");
+    assert_eq!(
+        clip.source, "assets/thing.wav",
+        "the clip carries its asset"
+    );
     assert_eq!(
         naivepost::produce_clip_cues::source_of(clip),
         subs::Source::Insert,
@@ -193,9 +238,19 @@ fn f5_4_s1_narration_lines_beat_the_clips_own_speech_through_the_plan() {
     );
     let cues = sheet(&plan);
     assert_eq!(cues.len(), 1, "{cues:?}");
-    assert_eq!(cues[0].text, "what was written", "the line's text, not the recogniser's");
-    let joined = cues.iter().map(|c| c.text.as_str()).collect::<Vec<&str>>().join(" ");
-    assert!(!joined.contains("recognised"), "the clip's own words never reach the sheet: {joined:?}");
+    assert_eq!(
+        cues[0].text, "what was written",
+        "the line's text, not the recogniser's"
+    );
+    let joined = cues
+        .iter()
+        .map(|c| c.text.as_str())
+        .collect::<Vec<&str>>()
+        .join(" ");
+    assert!(
+        !joined.contains("recognised"),
+        "the clip's own words never reach the sheet: {joined:?}"
+    );
 }
 
 #[test]
@@ -209,9 +264,16 @@ fn f5_4_s1_a_pasted_copy_stretch_is_not_footage_either() {
         Vec::new(),
         words(&["twice", "told"], 0.0),
     );
-    assert!(sheet(&plan).is_empty(), "a pasted stretch contributes nothing: {:?}", sheet(&plan));
+    assert!(
+        sheet(&plan).is_empty(),
+        "a pasted stretch contributes nothing: {:?}",
+        sheet(&plan)
+    );
     let clip = plan.clips.first().expect("the copy clip survived planning");
-    assert_eq!(naivepost::produce_clip_cues::source_of(clip), subs::Source::Insert);
+    assert_eq!(
+        naivepost::produce_clip_cues::source_of(clip),
+        subs::Source::Insert
+    );
 }
 
 #[test]
@@ -223,15 +285,39 @@ fn f5_4_s1_subtitlebreakseconds_row_is_what_splits_a_cue() {
 
     // A gap of exactly 0.6 s between two words closes the cue — `>=`, so the boundary itself breaks.
     let tight = vec![
-        subs::Word { text: "one".into(), s: 0.0, e: 0.2 },
-        subs::Word { text: "two".into(), s: 0.5, e: 0.7 },
+        subs::Word {
+            text: "one".into(),
+            s: 0.0,
+            e: 0.2,
+        },
+        subs::Word {
+            text: "two".into(),
+            s: 0.5,
+            e: 0.7,
+        },
     ];
-    assert_eq!(subs::word_cues(&tight, 1.0).len(), 1, "half a second is a continuation");
+    assert_eq!(
+        subs::word_cues(&tight, 1.0).len(),
+        1,
+        "half a second is a continuation"
+    );
     let broken = vec![
-        subs::Word { text: "one".into(), s: 0.0, e: 0.2 },
-        subs::Word { text: "two".into(), s: 0.8, e: 1.0 },
+        subs::Word {
+            text: "one".into(),
+            s: 0.0,
+            e: 0.2,
+        },
+        subs::Word {
+            text: "two".into(),
+            s: 0.8,
+            e: 1.0,
+        },
     ];
-    assert_eq!(subs::word_cues(&broken, 1.0).len(), 2, "0.6 s of quiet is a new cue");
+    assert_eq!(
+        subs::word_cues(&broken, 1.0).len(),
+        2,
+        "0.6 s of quiet is a new cue"
+    );
 
     // And the same break reaches the sheet through the plan: two clips' worth of breath shows up as two
     // cues, not one long one.
@@ -240,13 +326,25 @@ fn f5_4_s1_subtitlebreakseconds_row_is_what_splits_a_cue() {
         vec![seg(0.0, 10.0)],
         Vec::new(),
         vec![
-            subs::Word { text: "first".into(), s: 0.0, e: 0.2 },
-            subs::Word { text: "second".into(), s: 0.8, e: 1.0 },
+            subs::Word {
+                text: "first".into(),
+                s: 0.0,
+                e: 0.2,
+            },
+            subs::Word {
+                text: "second".into(),
+                s: 0.8,
+                e: 1.0,
+            },
         ],
     );
-    assert_eq!(sheet(&plan).len(), 2, "the break survives the wiring: {:?}", sheet(&plan));
+    assert_eq!(
+        sheet(&plan).len(),
+        2,
+        "the break survives the wiring: {:?}",
+        sheet(&plan)
+    );
 }
-
 
 // ---- S2: the produced clock, across the whole track ------------------------------
 
@@ -257,12 +355,28 @@ fn f5_4_s2_the_plan_tidies_across_clips() {
     // first clip's tail overlaps the second clip's head. `tidy` runs once over the joined track (it
     // compares cues with each other), so the overlap is resolved between clips and not inside one.
     let first = vec![
-        subs::Word { text: "alpha".into(), s: 0.0, e: 9.0 },
-        subs::Word { text: "beta".into(), s: 9.4, e: 12.0 },
+        subs::Word {
+            text: "alpha".into(),
+            s: 0.0,
+            e: 9.0,
+        },
+        subs::Word {
+            text: "beta".into(),
+            s: 9.4,
+            e: 12.0,
+        },
     ];
     let second = vec![
-        subs::Word { text: "gamma".into(), s: 10.0, e: 13.0 },
-        subs::Word { text: "delta".into(), s: 13.4, e: 15.0 },
+        subs::Word {
+            text: "gamma".into(),
+            s: 10.0,
+            e: 13.0,
+        },
+        subs::Word {
+            text: "delta".into(),
+            s: 13.4,
+            e: 15.0,
+        },
     ];
     // One list carrying both clips' words, since `planned` hands the same list to every clip: what is being
     // asserted is the joined-and-tidied result, which is what the sheet holds.
@@ -293,8 +407,10 @@ fn f5_4_s2_the_plan_tidies_across_clips() {
     // left the cross-clip overlap standing.
     let unsorted = {
         let mut raw = Vec::new();
-        for (clip, (start, _len)) in
-            plan.clips.iter().zip(render::produced_clocks(&plan.clips).iter())
+        for (clip, (start, _len)) in plan
+            .clips
+            .iter()
+            .zip(render::produced_clocks(&plan.clips).iter())
         {
             raw.extend(
                 subs::cues(subs::Source::Footage, &[], &both, clip.rate)
@@ -313,7 +429,11 @@ fn f5_4_s2_the_plan_tidies_across_clips() {
         unsorted.windows(2).any(|p| p[0].e > p[1].s),
         "the untidied join really does overlap, which is what this test is about: {unsorted:?}"
     );
-    assert_eq!(cues, subs::tidy(&unsorted), "and the plan tidied the join, once, across clips");
+    assert_eq!(
+        cues,
+        subs::tidy(&unsorted),
+        "and the plan tidied the join, once, across clips"
+    );
 }
 
 #[test]
@@ -332,7 +452,11 @@ fn f5_4_s2_the_sheet_written_to_disk_is_the_tidied_track() {
     let sheet_path = tree.clips_dir().join(render::final_srt_name());
     let written = std::fs::read_to_string(&sheet_path).expect("the sheet was written");
     assert!(written.contains("spoken"), "{written}");
-    assert_eq!(written, subs::srt_text(&plan.cues.all), "byte for byte the plan's track");
+    assert_eq!(
+        written,
+        subs::srt_text(&plan.cues.all),
+        "byte for byte the plan's track"
+    );
 }
 
 /// The smallest driver that gets S4's file written: the walk's own steps are `produce_render_exec`'s
@@ -353,7 +477,6 @@ impl StubRun {
     }
 }
 
-
 // ---- S4/S5/S7: the walk WRITES the sheet, refuses when there is nothing, burns only when asked ----
 
 /// The walk's spawner: a render of this shape is three clips, a join and a mux, and what a test asks is
@@ -366,15 +489,27 @@ struct WriteSpy {
 
 impl WriteSpy {
     fn new() -> WriteSpy {
-        WriteSpy { logs: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())) }
+        WriteSpy {
+            logs: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+        }
     }
 
     /// Run the whole walk over a plan with this file's `Materials`, answering every checkpoint yes.
-    fn run(&self, run: &flow::Run, tree: &Tree, words: Vec<subs::Word>, settings: Produce) -> exec::Ran {
+    fn run(
+        &self,
+        run: &flow::Run,
+        tree: &Tree,
+        words: Vec<subs::Word>,
+        settings: Produce,
+    ) -> exec::Ran {
         let held = words;
         let logs = self.logs.clone();
         exec::walk(
-            &exec::plan(run, tree, &mats_with(&[], &|_c| held.clone(), settings.clone())),
+            &exec::plan(
+                run,
+                tree,
+                &mats_with(&[], &|_c| held.clone(), settings.clone()),
+            ),
             &mats_with(&[], &|_c| held.clone(), settings.clone()),
             move |line| {
                 logs.borrow_mut().push(line.to_string());
@@ -433,15 +568,33 @@ fn f5_4_s4_the_walk_writes_the_sheet_and_says_what_it_holds() {
     // Two footage clips with their own speech and no narration line at all.
     let (root, tree) = common::tree_in("s4-walk-sheet");
     let settings = Produce::default();
-    let run = held_run(&tree, vec![seg(0.0, 10.0), seg(10.0, 20.0)], Vec::new(), settings.clone());
+    let run = held_run(
+        &tree,
+        vec![seg(0.0, 10.0), seg(10.0, 20.0)],
+        Vec::new(),
+        settings.clone(),
+    );
     let spy = WriteSpy::new();
-    let ran = spy.run(&run, &tree, words(&["the", "lecture"], 0.0), settings.clone());
+    let ran = spy.run(
+        &run,
+        &tree,
+        words(&["the", "lecture"], 0.0),
+        settings.clone(),
+    );
     assert_eq!(ran.failed, None, "{:?}", ran.failed);
 
     let sheet_path = tree.clips_dir().join(render::final_srt_name());
-    let plan = exec::plan(&run, &tree, &mats_with(&[], &|_c| words(&["the", "lecture"], 0.0), settings));
+    let plan = exec::plan(
+        &run,
+        &tree,
+        &mats_with(&[], &|_c| words(&["the", "lecture"], 0.0), settings),
+    );
     let written = std::fs::read_to_string(&sheet_path).expect("S4 wrote the sheet");
-    assert_eq!(written, subs::srt_text(&plan.cues.all), "byte for byte the plan's track");
+    assert_eq!(
+        written,
+        subs::srt_text(&plan.cues.all),
+        "byte for byte the plan's track"
+    );
     assert!(written.contains("the lecture"), "{written}");
 
     // §S4's own sentence, with the counts of THIS sheet: both clips answered with their own speech.
@@ -462,9 +615,18 @@ fn f5_4_s4_the_walk_writes_the_sheet_and_says_what_it_holds() {
         ),
         "{logs:?}"
     );
-    assert_eq!(plan.cues.counts.from_speech, 2, "both clips spoke: {logs:?}");
-    assert_eq!(plan.cues.counts.from_lines, 0, "nothing was written: {logs:?}");
-    assert!(!logs.iter().any(|l| l.starts_with("!!!")), "cues exist, so no refusal: {logs:?}");
+    assert_eq!(
+        plan.cues.counts.from_speech, 2,
+        "both clips spoke: {logs:?}"
+    );
+    assert_eq!(
+        plan.cues.counts.from_lines, 0,
+        "nothing was written: {logs:?}"
+    );
+    assert!(
+        !logs.iter().any(|l| l.starts_with("!!!")),
+        "cues exist, so no refusal: {logs:?}"
+    );
     std::fs::remove_dir_all(&root).ok();
 }
 
@@ -483,7 +645,11 @@ fn f5_4_s4_a_run_with_nothing_to_caption_says_so_and_writes_no_sheet() {
     );
     let spy = WriteSpy::new();
     let ran = spy.run(&run, &tree, Vec::new(), settings);
-    assert_eq!(ran.failed, None, "an empty sheet is a warning, not a failed render: {:?}", ran.failed);
+    assert_eq!(
+        ran.failed, None,
+        "an empty sheet is a warning, not a failed render: {:?}",
+        ran.failed
+    );
     assert!(
         !tree.clips_dir().join(render::final_srt_name()).exists(),
         "never an empty cue: no sheet is written"
@@ -506,14 +672,23 @@ fn f5_4_s2_the_captions_only_warning_is_said_by_the_walk() {
         subtitles: naivepost::project::Subtitles::None,
         ..Default::default()
     };
-    let mut run = held_run(&tree, vec![seg(0.0, 10.0)], vec![entry(0.0, 4.0, "written")], settings.clone());
+    let mut run = held_run(
+        &tree,
+        vec![seg(0.0, 10.0)],
+        vec![entry(0.0, 4.0, "written")],
+        settings.clone(),
+    );
     run.voice = naivepost::narrate_screen::CAPTIONS.to_string();
     let spy = WriteSpy::new();
     let ran = spy.run(&run, &tree, Vec::new(), settings);
     assert_eq!(ran.failed, None, "{:?}", ran.failed);
     let logs = spy.logs.borrow();
     assert!(
-        logs.contains(&render::captions_only_warning(naivepost::project::Subtitles::None).unwrap().to_string()),
+        logs.contains(
+            &render::captions_only_warning(naivepost::project::Subtitles::None)
+                .unwrap()
+                .to_string()
+        ),
         "S2's warning is logged, not only computed: {logs:?}"
     );
     std::fs::remove_dir_all(&root).ok();
@@ -531,11 +706,28 @@ fn f5_4_s5_burned_in_lets_each_clip_down_with_its_own_cues() {
         ..Default::default()
     };
     let words = words(&["second", "clip"], 0.0);
-    let run = held_run(&tree, vec![seg(0.0, 10.0), seg(10.0, 20.0)], Vec::new(), settings.clone());
-    let plan = exec::plan(&run, &tree, &mats_with(&[], &|_c| words.clone(), settings.clone()));
+    let run = held_run(
+        &tree,
+        vec![seg(0.0, 10.0), seg(10.0, 20.0)],
+        Vec::new(),
+        settings.clone(),
+    );
+    let plan = exec::plan(
+        &run,
+        &tree,
+        &mats_with(&[], &|_c| words.clone(), settings.clone()),
+    );
     let burns = plan.burns.clone();
-    assert_eq!(burns.len(), plan.cues.per_clip.len(), "one entry per clip that spoke");
-    let second = burns.get(1).cloned().flatten().expect("the second clip is burned");
+    assert_eq!(
+        burns.len(),
+        plan.cues.per_clip.len(),
+        "one entry per clip that spoke"
+    );
+    let second = burns
+        .get(1)
+        .cloned()
+        .flatten()
+        .expect("the second clip is burned");
     assert_eq!(
         second.file_name().unwrap().to_string_lossy(),
         "c001.srt",
@@ -549,7 +741,10 @@ fn f5_4_s5_burned_in_lets_each_clip_down_with_its_own_cues() {
         text.contains("00:00:00,000 --> 00:00:00,500"),
         "clip-relative times, not the video's: {text}"
     );
-    assert!(!text.contains("00:00:10"), "nothing is shifted onto the video clock: {text}");
+    assert!(
+        !text.contains("00:00:10"),
+        "nothing is shifted onto the video clock: {text}"
+    );
     let encode = plan.encodes.get(1).expect("the second encode");
     // The graph names the sheet by the name it is written under, in the scratch folder it is written to:
     // ffmpeg resolves it from its own working directory, which is where the encode runs.
@@ -559,7 +754,11 @@ fn f5_4_s5_burned_in_lets_each_clip_down_with_its_own_cues() {
         "the filter graph names that file: {}",
         encode.command.log
     );
-    assert!(second.parent() == Some(plan.scratch.as_path()), "{second:?} beside {}", plan.scratch.display());
+    assert!(
+        second.parent() == Some(plan.scratch.as_path()),
+        "{second:?} beside {}",
+        plan.scratch.display()
+    );
     std::fs::remove_dir_all(&root).ok();
 }
 
@@ -573,13 +772,26 @@ fn f5_4_s5_a_track_or_sidecar_run_burns_nothing() {
         naivepost::project::Subtitles::TrackInFile,
         naivepost::project::Subtitles::None,
     ] {
-        let settings = Produce { subtitles, ..Default::default() };
+        let settings = Produce {
+            subtitles,
+            ..Default::default()
+        };
         let run = held_run(&tree, vec![seg(0.0, 10.0)], Vec::new(), settings.clone());
         let plan = exec::plan(&run, &tree, &mats_with(&[], &|_c| words.clone(), settings));
-        assert!(plan.burns.iter().all(Option::is_none), "{subtitles:?} letters nothing");
-        assert!(!plan.encodes[0].command.log.contains("subtitles="), "{}", plan.encodes[0].command.log);
+        assert!(
+            plan.burns.iter().all(Option::is_none),
+            "{subtitles:?} letters nothing"
+        );
+        assert!(
+            !plan.encodes[0].command.log.contains("subtitles="),
+            "{}",
+            plan.encodes[0].command.log
+        );
         // …and it still captions: the sheet exists, which is what §1's row promises for every mode.
-        assert!(!plan.cues.all.is_empty(), "{subtitles:?} still has a cue sheet");
+        assert!(
+            !plan.cues.all.is_empty(),
+            "{subtitles:?} still has a cue sheet"
+        );
     }
     std::fs::remove_dir_all(&root).ok();
 }
@@ -622,7 +834,10 @@ fn f5_4_s4_stale_sidecars_go_by_exact_name_even_with_no_cues() {
         !stale.exists(),
         "a stale translated sidecar is deleted by name; produce/ holds {:?} and the run said {:?}",
         std::fs::read_dir(&produce_dir)
-            .map(|d| d.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect::<Vec<String>>())
+            .map(|d| d
+                .filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect::<Vec<String>>())
             .unwrap_or_default(),
         spy.logs.borrow(),
     );
@@ -647,7 +862,11 @@ fn f5_4_s7_a_ticked_language_gets_its_sidecar_written_by_the_walk() {
     let held = words.clone();
     let spy = WriteSpy::new();
     let logs = spy.logs.clone();
-    let plan = exec::plan(&run, &tree, &mats_with(&[], &|_c| held.clone(), settings.clone()));
+    let plan = exec::plan(
+        &run,
+        &tree,
+        &mats_with(&[], &|_c| held.clone(), settings.clone()),
+    );
     exec::walk(
         &plan,
         &mats_with(&[], &|_c| held.clone(), settings),
@@ -669,12 +888,17 @@ fn f5_4_s7_a_ticked_language_gets_its_sidecar_written_by_the_walk() {
             Ok(())
         },
     );
-    let written = std::fs::read_to_string(tree.final_srt(Some("de"))).expect("S9 wrote the German .srt");
-    assert!(written.contains("translated 1"), "the translation, not the original: {written}");
+    let written =
+        std::fs::read_to_string(tree.final_srt(Some("de"))).expect("S9 wrote the German .srt");
+    assert!(
+        written.contains("translated 1"),
+        "the translation, not the original: {written}"
+    );
     assert!(tree.final_vtt(Some("de")).is_file(), "…and its .vtt");
     let logs = spy.logs.borrow();
     assert!(
-        logs.iter().any(|l| l.starts_with(">>> subtitles: translating")),
+        logs.iter()
+            .any(|l| l.starts_with(">>> subtitles: translating")),
         "S7 says what it is doing: {logs:?}"
     );
     assert!(

@@ -66,7 +66,10 @@ fn walk(widget: &gtk4::Widget, out: &mut Vec<(String, gtk4::Widget)>) {
     if let Some(list_box) = widget.downcast_ref::<gtk4::ListBox>() {
         let model = list_box.observe_children();
         for i in 0..model.n_items() {
-            if let Some(row) = model.item(i).and_then(|o| o.downcast::<gtk4::Widget>().ok()) {
+            if let Some(row) = model
+                .item(i)
+                .and_then(|o| o.downcast::<gtk4::Widget>().ok())
+            {
                 walk(&row, out);
             }
         }
@@ -84,7 +87,10 @@ fn walk(widget: &gtk4::Widget, out: &mut Vec<(String, gtk4::Widget)>) {
     if let Some(box_) = widget.downcast_ref::<gtk::Box>() {
         let model = box_.observe_children();
         for i in 0..model.n_items() {
-            if let Some(child) = model.item(i).and_then(|o| o.downcast::<gtk4::Widget>().ok()) {
+            if let Some(child) = model
+                .item(i)
+                .and_then(|o| o.downcast::<gtk4::Widget>().ok())
+            {
                 walk(&child, out);
             }
         }
@@ -97,7 +103,12 @@ pub fn window_box(widget: &gtk4::Widget) -> (f64, f64, f64, f64) {
     widget
         .compute_bounds(&widget.clone().upcast::<gtk4::Widget>())
         .map_or(
-            (0.0, 0.0, f64::from(widget.width()), f64::from(widget.height())),
+            (
+                0.0,
+                0.0,
+                f64::from(widget.width()),
+                f64::from(widget.height()),
+            ),
             |r| {
                 (
                     f64::from(r.x()),
@@ -150,17 +161,28 @@ fn find_stack(root: &gtk4::Widget) -> Option<gtk4::Widget> {
     let kids: Vec<gtk4::Widget> = if let Some(b) = root.downcast_ref::<gtk::Box>() {
         let model = b.observe_children();
         (0..model.n_items())
-            .filter_map(|i| model.item(i).and_then(|o| o.downcast::<gtk4::Widget>().ok()))
+            .filter_map(|i| {
+                model
+                    .item(i)
+                    .and_then(|o| o.downcast::<gtk4::Widget>().ok())
+            })
             .collect()
     } else {
         let mut kids: Vec<gtk4::Widget> = [
-            root.downcast_ref::<gtk::CenterBox>().and_then(|c| c.start_widget()),
-            root.downcast_ref::<gtk::CenterBox>().and_then(|c| c.center_widget()),
-            root.downcast_ref::<gtk::CenterBox>().and_then(|c| c.end_widget()),
-            root.downcast_ref::<gtk::HeaderBar>().and_then(|h| h.title_widget()),
-            root.downcast_ref::<gtk::Paned>().and_then(|p| p.start_child()),
-            root.downcast_ref::<gtk::Paned>().and_then(|p| p.end_child()),
-            root.downcast_ref::<gtk::ScrolledWindow>().and_then(|s| s.child()),
+            root.downcast_ref::<gtk::CenterBox>()
+                .and_then(|c| c.start_widget()),
+            root.downcast_ref::<gtk::CenterBox>()
+                .and_then(|c| c.center_widget()),
+            root.downcast_ref::<gtk::CenterBox>()
+                .and_then(|c| c.end_widget()),
+            root.downcast_ref::<gtk::HeaderBar>()
+                .and_then(|h| h.title_widget()),
+            root.downcast_ref::<gtk::Paned>()
+                .and_then(|p| p.start_child()),
+            root.downcast_ref::<gtk::Paned>()
+                .and_then(|p| p.end_child()),
+            root.downcast_ref::<gtk::ScrolledWindow>()
+                .and_then(|s| s.child()),
             root.downcast_ref::<gtk::Overlay>().and_then(|o| o.child()),
         ]
         .into_iter()

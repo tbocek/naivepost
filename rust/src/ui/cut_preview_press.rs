@@ -30,32 +30,46 @@ pub fn overlay_under_pointer(
     fit: (f64, f64),
     at_px: (f64, f64),
 ) -> Option<usize> {
-    cut_.fx.iter().enumerate().find(|(_, effect)| {
-        let Some(kind) = effect.effect_kind() else { return false };
-        if kind != EffectKind::Text && kind != EffectKind::Svg {
-            return false;
-        }
-        if effect.t > at || at >= effect.t + effect.dur {
-            return false;
-        }
-        // A record with no words draws nothing, so nothing can be pressed on it.
-        if kind == EffectKind::Text && effect.text.trim().is_empty() {
-            return false;
-        }
-        let (x, y, w, h) = box_of(effect, kind, fit);
-        // The box GROWN by `EDGE_GRIP_PX` on every side: §F3.4 S5 lets a press near an edge resize the box, so the
-        // record has to answer even when the finger is a few px outside what was drawn — otherwise a press just
-        // off the caption's edge finds nothing to grab and falls through to play/pause.
-        let grip = fx_text::EDGE_GRIP_PX;
-        at_px.0 >= x - grip && at_px.0 <= x + w + grip && at_px.1 >= y - grip && at_px.1 <= y + h + grip
-    }).map(|(index, _)| index)
+    cut_.fx
+        .iter()
+        .enumerate()
+        .find(|(_, effect)| {
+            let Some(kind) = effect.effect_kind() else {
+                return false;
+            };
+            if kind != EffectKind::Text && kind != EffectKind::Svg {
+                return false;
+            }
+            if effect.t > at || at >= effect.t + effect.dur {
+                return false;
+            }
+            // A record with no words draws nothing, so nothing can be pressed on it.
+            if kind == EffectKind::Text && effect.text.trim().is_empty() {
+                return false;
+            }
+            let (x, y, w, h) = box_of(effect, kind, fit);
+            // The box GROWN by `EDGE_GRIP_PX` on every side: §F3.4 S5 lets a press near an edge resize the box, so the
+            // record has to answer even when the finger is a few px outside what was drawn — otherwise a press just
+            // off the caption's edge finds nothing to grab and falls through to play/pause.
+            let grip = fx_text::EDGE_GRIP_PX;
+            at_px.0 >= x - grip
+                && at_px.0 <= x + w + grip
+                && at_px.1 >= y - grip
+                && at_px.1 <= y + h + grip
+        })
+        .map(|(index, _)| index)
 }
 
 /// Which TEXT record a press at `from` has grabbed, as its index into `cut.fx` and its box in the fitted px.
 /// §F3.4 S5's own hit-test: only a caption counts (an svg box is F3.5's to move), and only one that draws at
 /// this second — the same `fx_lane::drawn_paused` filter [`overlay_under_pointer`] uses, so a box cannot be
 /// grabbed where it is not painted.
-fn text_box_under(cut_: &Cut, at: f64, fit: (f64, f64), at_px: (f64, f64)) -> Option<(usize, (f64, f64, f64, f64))> {
+fn text_box_under(
+    cut_: &Cut,
+    at: f64,
+    fit: (f64, f64),
+    at_px: (f64, f64),
+) -> Option<(usize, (f64, f64, f64, f64))> {
     let index = overlay_under_pointer(cut_, at, fit, at_px)?;
     let effect = cut_.fx.get(index)?;
     (effect.kind == "text").then(|| (index, box_of(effect, EffectKind::Text, fit)))
@@ -135,7 +149,11 @@ pub fn box_edit_preview(
         Some(edge) => fx_text::resize_box(
             box_,
             edge,
-            if matches!(edge, fx_text::Edge::Left | fx_text::Edge::Right) { to.0 } else { to.1 },
+            if matches!(edge, fx_text::Edge::Left | fx_text::Edge::Right) {
+                to.0
+            } else {
+                to.1
+            },
             fit,
         ),
         None => fx_text::move_box(box_, (dx, dy), fit),
@@ -160,8 +178,13 @@ fn box_of(effect: &crate::cut::Fx, kind: EffectKind, fit: (f64, f64)) -> (f64, f
     }
     let (cx, cy) = effect.centre();
     let default = fx_text::LOWER_THIRD;
-    fx_text::Box_ { cx, cy, wf: effect.wf.unwrap_or(default.wf), hf: effect.hf.unwrap_or(default.hf) }
-        .to_px(fit.0, fit.1)
+    fx_text::Box_ {
+        cx,
+        cy,
+        wf: effect.wf.unwrap_or(default.wf),
+        hf: effect.hf.unwrap_or(default.hf),
+    }
+    .to_px(fit.0, fit.1)
 }
 
 /// §S5's toggle, performed: the same door the picture's own ▶ uses, so a click on a caption and a click on the
@@ -198,7 +221,9 @@ pub fn play_toggle_on_press(
     let shown = crate::preview::clock(window::preview_player(win).playhead);
     let _ = said;
     Some(if playing {
-        format!("{shown} \u{b7} the red line, session time \u{2014} a click on the picture plays it")
+        format!(
+            "{shown} \u{b7} the red line, session time \u{2014} a click on the picture plays it"
+        )
     } else {
         format!("paused at {shown} \u{2014} a click on the picture again plays it")
     })

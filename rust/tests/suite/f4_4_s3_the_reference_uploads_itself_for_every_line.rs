@@ -15,15 +15,26 @@ use harness::*;
 #[test]
 fn f4_4_s3_the_reference_uploads_itself_for_every_line() {
     let fixture = fixture("s3");
-    write_reference(&fixture, b"RIFF fake reference, forty-odd bytes long, not empty");
+    write_reference(
+        &fixture,
+        b"RIFF fake reference, forty-odd bytes long, not empty",
+    );
     let audio = FakeAudio::start(Script::healthy());
     point_at(&audio.url());
 
     // Two lines, two speaks. Each must put the reference up on its own.
     let first = speak_tagged(&fixture, "calm", "en", "one");
-    assert!(first.wav().is_some(), "the first line was spoken: {:?}", first.refused());
+    assert!(
+        first.wav().is_some(),
+        "the first line was spoken: {:?}",
+        first.refused()
+    );
     let second = speak_tagged(&fixture, "calm", "en", "two");
-    assert!(second.wav().is_some(), "the second line was spoken: {:?}", second.refused());
+    assert!(
+        second.wav().is_some(),
+        "the second line was spoken: {:?}",
+        second.refused()
+    );
 
     // Wait on the CONDITION: both lines' uploads actually reached the server. `drain` alone stops at the first
     // 900 ms gap in the socket, which on a busy machine can come before a request is handed over -- and then the
@@ -34,7 +45,10 @@ fn f4_4_s3_the_reference_uploads_itself_for_every_line() {
     seen.extend(audio.drain());
     wait_until("both lines' uploads reaching the fake server", || {
         seen.extend(audio.drain());
-        seen.iter().filter(|seen| seen.path == "/v1/ui/upload").count() >= 2
+        seen.iter()
+            .filter(|seen| seen.path == "/v1/ui/upload")
+            .count()
+            >= 2
     });
     let uploads: Vec<&Seen> = seen
         .iter()
@@ -66,10 +80,10 @@ fn f4_4_s3_the_reference_uploads_itself_for_every_line() {
         .filter(|seen| seen.path == "/v1/audio/speech")
         .collect();
     assert_eq!(speeches.len(), 2, "each line posted its own speech call");
-    let first_body: serde_json::Value = serde_json::from_str(&speeches[0].body_text())
-        .expect("the speech body is JSON");
-    let second_body: serde_json::Value = serde_json::from_str(&speeches[1].body_text())
-        .expect("the second speech body is JSON");
+    let first_body: serde_json::Value =
+        serde_json::from_str(&speeches[0].body_text()).expect("the speech body is JSON");
+    let second_body: serde_json::Value =
+        serde_json::from_str(&speeches[1].body_text()).expect("the second speech body is JSON");
     assert_eq!(
         first_body["voice_ref"],
         serde_json::json!("/tmp/uploaded/voice_ref.wav"),

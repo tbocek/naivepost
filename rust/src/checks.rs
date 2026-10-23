@@ -84,7 +84,7 @@ pub fn red_square_png() -> Vec<u8> {
     header.push(0);
     header.push(0); // compression, filter, interlace
     chunk(&mut png, b"IHDR", &header);
-    chunk(&mut png, b"IDAT", &zlib_stored(&raw), );
+    chunk(&mut png, b"IDAT", &zlib_stored(&raw));
     chunk(&mut png, b"IEND", b"");
     png
 }
@@ -159,7 +159,11 @@ const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 pub fn base64(data: &[u8]) -> String {
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for group in data.chunks(3) {
-        let bytes = [group[0], *group.get(1).unwrap_or(&0), *group.get(2).unwrap_or(&0)];
+        let bytes = [
+            group[0],
+            *group.get(1).unwrap_or(&0),
+            *group.get(2).unwrap_or(&0),
+        ];
         let joined = (u32::from(bytes[0]) << 16) | (u32::from(bytes[1]) << 8) | u32::from(bytes[2]);
         for index in 0..4 {
             out.push(if index > group.len() && index > 2 {
@@ -200,11 +204,20 @@ pub fn tts_endpoint_verdict(models: &[AudioModel]) -> Result<String, String> {
     models
         .iter()
         .find(|model| model.family == "index_tts2" || model.task == "clon")
-        .map(|model| format!("will narrate with {:?}, of {} model(s)", model.id, models.len()))
+        .map(|model| {
+            format!(
+                "will narrate with {:?}, of {} model(s)",
+                model.id,
+                models.len()
+            )
+        })
         .ok_or_else(|| {
             let mut ids: Vec<&str> = models.iter().map(|model| model.id.as_str()).collect();
             ids.sort();
-            format!("serves {} -- none of them can clone a voice", ids.join(", "))
+            format!(
+                "serves {} -- none of them can clone a voice",
+                ids.join(", ")
+            )
         })
 }
 
@@ -223,7 +236,10 @@ pub fn model_verdict(
     wanted_id: &str,
     needed: services::Need<'_>,
 ) -> Result<String, String> {
-    let services::Need { task: wanted_task, step } = needed;
+    let services::Need {
+        task: wanted_task,
+        step,
+    } = needed;
     match models.iter().find(|model| model.id == wanted_id) {
         None => Err(services::missing_model(
             "the audio.cpp server",
@@ -255,10 +271,12 @@ pub fn aligner_verdict(configured: &str, models: &[AudioModel]) -> Result<String
             "{configured:?} is not served as task \"align\" -- the server's own list has: {}",
             declared(models)
         )),
-        None => Ok("no model does forced alignment, so cut points come off the waveform: clean \
+        None => Ok(
+            "no model does forced alignment, so cut points come off the waveform: clean \
                     wherever there is a silence to cut in, unable to cut between two words of one \
                     breath"
-            .to_string()),
+                .to_string(),
+        ),
     }
 }
 
@@ -318,9 +336,11 @@ pub fn ffmpeg_verdict(
     encoders_list: Option<&str>,
 ) -> Result<String, String> {
     let Some(ffmpeg) = resolved_path else {
-        return Err("not on PATH -- every step shells out to it. Leave the box empty to use PATH, \
+        return Err(
+            "not on PATH -- every step shells out to it. Leave the box empty to use PATH, \
                     or name a binary"
-            .to_string());
+                .to_string(),
+        );
     };
     if !ffprobe_beside {
         let probe = services::ffprobe_for(ffmpeg, "ffprobe");
@@ -348,7 +368,9 @@ pub fn ffmpeg_verdict(
             missing.join(", ")
         ));
     }
-    Ok(format!("{version} at {ffmpeg}, with every filter and encoder the pipeline uses"))
+    Ok(format!(
+        "{version} at {ffmpeg}, with every filter and encoder the pipeline uses"
+    ))
 }
 
 /// The value in the firefox box that means "no web search", not "a binary called off".
@@ -366,9 +388,11 @@ pub fn firefox_verdict(
     search_hits: Option<usize>,
 ) -> Result<String, String> {
     if box_value.trim().eq_ignore_ascii_case(FIREFOX_OFF) {
-        return Ok("off -- the model is offered no web search, and writes only what the material \
+        return Ok(
+            "off -- the model is offered no web search, and writes only what the material \
                    says"
-            .to_string());
+                .to_string(),
+        );
     }
     let version = match version_stdout {
         Some(stdout) => {
@@ -381,10 +405,10 @@ pub fn firefox_verdict(
         None => return Err("will not run: --version failed".to_string()),
     };
     match search_hits {
-        Some(hits) => Ok(format!("{version}, drove a headless search: {hits} result(s)")),
-        None => Err(format!(
-            "{version} runs, but could not be driven headless"
+        Some(hits) => Ok(format!(
+            "{version}, drove a headless search: {hits} result(s)"
         )),
+        None => Err(format!("{version} runs, but could not be driven headless")),
     }
 }
 
@@ -639,7 +663,11 @@ pub struct TestRow {
 impl TestRow {
     /// A button for `name`, untouched.
     pub fn new(name: &'static str) -> Self {
-        Self { name, typed: String::new(), phase: Phase::Idle }
+        Self {
+            name,
+            typed: String::new(),
+            phase: Phase::Idle,
+        }
     }
 
     /// The press: remember what was typed, drop any earlier verdict, start spinning. An old ✓ beside

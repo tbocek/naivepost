@@ -20,13 +20,13 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::common;
+pub use common::{serve, Seen};
 use naivepost::layout::Tree;
 use naivepost::policy::{self, DerivationRequest, Proposal};
 use naivepost::project::{Policy, Project};
 use naivepost::settings::{self, Conf};
 use serde_json::json;
-use crate::common;
-pub use common::{serve, Seen};
 
 /// A fake LLM on a free loopback port, answering each ask with the next scripted reply.
 pub struct FakeLlm {
@@ -57,7 +57,10 @@ impl FakeLlm {
             std::thread::spawn(move || loop {
                 // Take the listener only for the instant `accept` needs it: a caller polling in
                 // `next_seen` must be able to win the lock between connections.
-                let accepted = shared.lock().map(|l| l.accept()).unwrap_or(Err(other_would_block()));
+                let accepted = shared
+                    .lock()
+                    .map(|l| l.accept())
+                    .unwrap_or(Err(other_would_block()));
                 match accepted {
                     Ok((stream, _)) => serve_and_report(stream, &sender, &script),
                     // WouldBlock: nothing waiting; another poller may have taken this one. Spin briefly
@@ -162,7 +165,10 @@ impl FakeLlm {
 
 /// The error the accept loops treat as "nothing waiting yet" when a poller holds the listener.
 fn other_would_block() -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::WouldBlock, "another poller holds the listener")
+    std::io::Error::new(
+        std::io::ErrorKind::WouldBlock,
+        "another poller holds the listener",
+    )
 }
 
 /// Read one request, answer it with `reply`, and hand what was seen to the channel. Shared by the accept
@@ -248,7 +254,10 @@ pub fn fixture(tag: &str) -> Fixture {
     // The pid rides the name: `cargo test` runs binaries in parallel, two of them may ask for the same tag, and
     // `depth` restarts at 0 in every process -- without it they share one folder and one `requests.tsv`. Same rule
     // as `join_live_harness::fixture`.
-    let root = std::env::temp_dir().join(format!("naivepost-f07live-{tag}-{}-{depth}", std::process::id()));
+    let root = std::env::temp_dir().join(format!(
+        "naivepost-f07live-{tag}-{}-{depth}",
+        std::process::id()
+    ));
     // Wipe everything, INCLUDING any answer cached under an earlier run of this tag: a cached reply
     // would answer the ask without ever reaching the fake server, and the test would then assert about
     // a request that never went out.

@@ -19,7 +19,7 @@ use naivepost::params;
 use naivepost::textfmt::Retake;
 
 use crate::common;
-use common::{all_rows, word, anywhere};
+use common::{all_rows, anywhere, word};
 
 const HZ: f64 = 200.0;
 const ROOM: u8 = 8;
@@ -33,7 +33,14 @@ fn edges(total: f64, spans: &[(f64, f64, u8)]) -> Edges {
 
 #[allow(dead_code)]
 fn mark(s: f64, e: f64, again: f64, to: f64) -> Retake {
-    Retake { s, e, again, to, text: String::new(), whole: String::new() }
+    Retake {
+        s,
+        e,
+        again,
+        to,
+        text: String::new(),
+        whole: String::new(),
+    }
 }
 
 /// No envelope anywhere. Kept for shape-parity with the sibling fixture files; every case here
@@ -61,16 +68,25 @@ fn p_eng_edgetailmaxseconds_s1_the_cap_is_0_25_and_catalogued_once() {
         .into_iter()
         .find(|param| param.id == "P.eng.edgeTailMaxSeconds")
         .expect("the tail cap must be catalogued for Prepare, whose fenced placement reads it");
-    assert_eq!(row.from, "edges::EDGE_TAIL_MAX", "a row must name the constant its rule reads");
+    assert_eq!(
+        row.from, "edges::EDGE_TAIL_MAX",
+        "a row must name the constant its rule reads"
+    );
     assert_eq!(row.spelled, "0.25");
     assert_eq!(row.spelled.parse::<f64>().unwrap(), 0.25);
 
     // §10 files it among the engineering constants, so the prefix answers to Eng.
-    assert_eq!(params::family("P.eng.edgeTailMaxSeconds"), params::Family::Eng);
+    assert_eq!(
+        params::family("P.eng.edgeTailMaxSeconds"),
+        params::Family::Eng
+    );
 
     // And exactly one row for it across all five lists — one row, one home.
     assert_eq!(
-        all_rows().iter().filter(|param| param.id == "P.eng.edgeTailMaxSeconds").count(),
+        all_rows()
+            .iter()
+            .filter(|param| param.id == "P.eng.edgeTailMaxSeconds")
+            .count(),
         1,
         "P.eng.edgeTailMaxSeconds catalogued more than once"
     );
@@ -86,9 +102,20 @@ fn p_eng_edgetailmaxseconds_s2_the_cap_stops_the_follow_when_the_sound_kept_goin
     let w = word("stays", 1.0, 1.5);
     // Sound runs on to bucket 600; the walk is bounded at 300 + 50 = 350, and the trough scan from
     // there finds nothing quieter than 170, so the answer is 350/200.
-    assert_eq!(e.end_after(&w, 4.0), 1.75, "the follow stops at the cap, not where the sound stops");
-    assert_eq!(e.end_after(&w, 4.0), w.e + edge::EDGE_TAIL_MAX, "exactly the cap past the aligner's end");
-    assert!(e.end_after(&w, 4.0) < 3.0, "the cap cuts the tail off long before the sound does");
+    assert_eq!(
+        e.end_after(&w, 4.0),
+        1.75,
+        "the follow stops at the cap, not where the sound stops"
+    );
+    assert_eq!(
+        e.end_after(&w, 4.0),
+        w.e + edge::EDGE_TAIL_MAX,
+        "exactly the cap past the aligner's end"
+    );
+    assert!(
+        e.end_after(&w, 4.0) < 3.0,
+        "the cap cuts the tail off long before the sound does"
+    );
 }
 
 /// S3: the cap is a ceiling, not a target. A tail that ends early is answered early — the cap never
@@ -99,12 +126,22 @@ fn p_eng_edgetailmaxseconds_s3_the_cap_is_a_ceiling_not_a_target() {
     // inside the fifty-bucket window, and the trough after it finds nothing quieter.
     let e = edges(8.0, &[(1.0, 1.5, WORD), (1.5, 1.6, 170)]);
     let w = word("stays", 1.0, 1.5);
-    assert_eq!(e.end_after(&w, 4.0), 1.6, "a short tail lands where it stops, well short of the cap");
-    assert!(e.end_after(&w, 4.0) < w.e + edge::EDGE_TAIL_MAX, "nowhere near the ceiling");
+    assert_eq!(
+        e.end_after(&w, 4.0),
+        1.6,
+        "a short tail lands where it stops, well short of the cap"
+    );
+    assert!(
+        e.end_after(&w, 4.0) < w.e + edge::EDGE_TAIL_MAX,
+        "nowhere near the ceiling"
+    );
 
     // Against the long tail: 1.6 vs 1.75. The cap only ever truncates a follow, it never lengthens one.
     let long = edges(8.0, &[(1.0, 1.5, WORD), (1.5, 3.0, 170)]);
-    assert!(e.end_after(&w, 4.0) < long.end_after(&w, 4.0), "1.6 < 1.75: the cap truncates, never extends");
+    assert!(
+        e.end_after(&w, 4.0) < long.end_after(&w, 4.0),
+        "1.6 < 1.75: the cap truncates, never extends"
+    );
 }
 
 /// S4: the same cap bounds the resume side, walking back over the retake's leading sound.
@@ -115,9 +152,20 @@ fn p_eng_edgetailmaxseconds_s4_the_same_cap_bounds_the_resume_side() {
     let e = edges(8.0, &[(1.0, 2.0, 170), (2.0, 2.5, WORD)]);
     let w = word("resumes", 2.0, 2.5);
     // The trough scan back over 270..350 finds nothing quieter than the plateau, so 350/200 stands.
-    assert_eq!(e.start_before(&w, 1.0), 1.75, "the walk back stops at the cap: 2.0 - 0.25");
-    assert_eq!(e.start_before(&w, 1.0), w.s - edge::EDGE_TAIL_MAX, "exactly the cap before the word starts");
-    assert!(e.start_before(&w, 1.0) > 1.0, "and nowhere near the fence the words set");
+    assert_eq!(
+        e.start_before(&w, 1.0),
+        1.75,
+        "the walk back stops at the cap: 2.0 - 0.25"
+    );
+    assert_eq!(
+        e.start_before(&w, 1.0),
+        w.s - edge::EDGE_TAIL_MAX,
+        "exactly the cap before the word starts"
+    );
+    assert!(
+        e.start_before(&w, 1.0) > 1.0,
+        "and nowhere near the fence the words set"
+    );
 }
 
 /// S5: the cap is fenced-side only, and it is not any of the bounds that sit next to it.
@@ -132,8 +180,14 @@ fn p_eng_edgetailmaxseconds_s5_the_cap_is_fenced_only_and_is_not_its_neighbours(
     // That travel (0.45 s) is LONGER than the tail cap, which the fenced side could never manage — the
     // fenced side asks "how long is this word's tail" (bounded here), the envelope-only side asks
     // "where did the sound before me end" (bounded by EDGE_REACH instead).
-    assert!((e.end_before(3.5) - 3.05).abs() < 1e-9, "end_before ignores the tail cap: the pad lands after the run");
-    assert!(3.5 - e.end_before(3.5) > edge::EDGE_TAIL_MAX, "it travels further than the tail cap allows");
+    assert!(
+        (e.end_before(3.5) - 3.05).abs() < 1e-9,
+        "end_before ignores the tail cap: the pad lands after the run"
+    );
+    assert!(
+        3.5 - e.end_before(3.5) > edge::EDGE_TAIL_MAX,
+        "it travels further than the tail cap allows"
+    );
 
     // Each neighbour answers a different question.
     // P.eng.edgeTailDB (12 dB): the paired LEVEL bound — which sound is still the word. This one is the
@@ -153,15 +207,49 @@ fn p_eng_edgetailmaxseconds_s5_the_cap_is_fenced_only_and_is_not_its_neighbours(
     // P.eng.envelopeWindowSeconds (4.0): the stretch the room itself is measured over.
     assert_eq!(edge::ENVELOPE_WINDOW, 4.0);
 
-    assert_ne!(edge::EDGE_TAIL_MAX, edge::EDGE_TAIL_DB, "how long to chase the tail is not how deep it may be");
-    assert_ne!(edge::EDGE_TAIL_MAX, edge::TROUGH_REACH, "the follow window is not the search window after it");
-    assert_ne!(edge::EDGE_TAIL_MAX, edge::EDGE_PAD, "a follow bound is not a leftover pad");
-    assert_ne!(edge::EDGE_TAIL_MAX, edge::WORD_PAD, "a follow bound is not a word's room");
-    assert_ne!(edge::EDGE_TAIL_MAX, edge::EDGE_REACH, "the tail cap is not the edge's reach");
-    assert_ne!(edge::EDGE_TAIL_MAX, edge::LATE_STAMP, "the tail cap is not the stamp-lateness bound");
-    assert_ne!(edge::EDGE_TAIL_MAX, edge::ENVELOPE_WINDOW, "the tail cap is not the room window");
-    assert!(edge::EDGE_TAIL_MAX < edge::TROUGH_REACH, "the tail is followed for less time than the trough is searched after it");
+    assert_ne!(
+        edge::EDGE_TAIL_MAX,
+        edge::EDGE_TAIL_DB,
+        "how long to chase the tail is not how deep it may be"
+    );
+    assert_ne!(
+        edge::EDGE_TAIL_MAX,
+        edge::TROUGH_REACH,
+        "the follow window is not the search window after it"
+    );
+    assert_ne!(
+        edge::EDGE_TAIL_MAX,
+        edge::EDGE_PAD,
+        "a follow bound is not a leftover pad"
+    );
+    assert_ne!(
+        edge::EDGE_TAIL_MAX,
+        edge::WORD_PAD,
+        "a follow bound is not a word's room"
+    );
+    assert_ne!(
+        edge::EDGE_TAIL_MAX,
+        edge::EDGE_REACH,
+        "the tail cap is not the edge's reach"
+    );
+    assert_ne!(
+        edge::EDGE_TAIL_MAX,
+        edge::LATE_STAMP,
+        "the tail cap is not the stamp-lateness bound"
+    );
+    assert_ne!(
+        edge::EDGE_TAIL_MAX,
+        edge::ENVELOPE_WINDOW,
+        "the tail cap is not the room window"
+    );
+    assert!(
+        edge::EDGE_TAIL_MAX < edge::TROUGH_REACH,
+        "the tail is followed for less time than the trough is searched after it"
+    );
 
     // And this row points at the cap, not at any neighbour's constant.
-    assert_eq!(anywhere("P.eng.edgeTailMaxSeconds").from, "edges::EDGE_TAIL_MAX");
+    assert_eq!(
+        anywhere("P.eng.edgeTailMaxSeconds").from,
+        "edges::EDGE_TAIL_MAX"
+    );
 }

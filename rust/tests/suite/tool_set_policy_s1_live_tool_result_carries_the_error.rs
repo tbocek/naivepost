@@ -49,7 +49,10 @@ fn tool_set_policy_s1_live_tool_result_carries_the_error() {
     );
     // S3's other door still works alongside it: the same sentence is in the refusals the loop keeps.
     assert!(
-        run.derived.refusals.iter().any(|say| say.contains("markingStyle")),
+        run.derived
+            .refusals
+            .iter()
+            .any(|say| say.contains("markingStyle")),
         "{:?}",
         run.derived.refusals
     );

@@ -9,11 +9,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::temp_dir_created as temp_dir;
 use naivepost::add_sources::{self, Progress};
 use naivepost::layout;
 use naivepost::project::{Project, Source};
-use crate::common;
-use common::{temp_dir_created as temp_dir};
 
 /// A throwaway application root with a project folder in it and a `card/` beside that, standing for
 /// where a session's files land from the camera: outside the project, which is what makes "copy into
@@ -36,15 +36,27 @@ fn file(dir: &Path, name: &str, bytes: usize) -> PathBuf {
 
 /// The session plus the rows it already holds, for S3's and S4's "what was here before".
 fn session(rows: Vec<Source>) -> Project {
-    Project { sources: rows, ..Default::default() }
+    Project {
+        sources: rows,
+        ..Default::default()
+    }
 }
 
 fn row(path: &str, footage: bool, narrator: u32) -> Source {
-    Source { path: path.to_string(), footage, narrator, ..Default::default() }
+    Source {
+        path: path.to_string(),
+        footage,
+        narrator,
+        ..Default::default()
+    }
 }
 
 fn narrator_of(project: &Project, path: &str) -> Option<u32> {
-    project.sources.iter().find(|row| row.path == path).map(|row| row.narrator)
+    project
+        .sources
+        .iter()
+        .find(|row| row.path == path)
+        .map(|row| row.narrator)
 }
 
 #[test]
@@ -78,7 +90,10 @@ fn f0_12_s0_a_copy_abandons_when_the_sources_folder_cannot_be_made() {
         add_sources::NO_SOURCES_DIR,
         "could not make the project's sources folder \u{2014} see log"
     );
-    assert!(project.sources.is_empty(), "nothing is added when the copy cannot start");
+    assert!(
+        project.sources.is_empty(),
+        "nothing is added when the copy cannot start"
+    );
 
     fs::remove_dir_all(&root).ok();
 }
@@ -110,7 +125,10 @@ fn f0_12_s1_the_chooser_is_titled_and_filtered_to_audio_and_video() {
 
     // What the filter cannot offer is not a source either, whatever its name says.
     for name in ["notes.txt", "noext", "clip.MKVX", "archive.zip"] {
-        assert!(!add_sources::is_media(&PathBuf::from(name)), "{name} is not media");
+        assert!(
+            !add_sources::is_media(&PathBuf::from(name)),
+            "{name} is not media"
+        );
     }
     // And the filter's own case-insensitivity: a camera writes what it writes.
     assert!(add_sources::is_media(&PathBuf::from("CAM.MKV")));
@@ -136,11 +154,21 @@ fn f0_12_s2_copy_on_lands_in_sources_and_stores_the_one_path_rule() {
     let audio = file(&card, "mic.wav", 3);
 
     let mut project = Project::default();
-    let found = add_sources::add(&mut project, &root, &dir, &[video.clone(), audio.clone()], true).unwrap();
+    let found = add_sources::add(
+        &mut project,
+        &root,
+        &dir,
+        &[video.clone(), audio.clone()],
+        true,
+    )
+    .unwrap();
 
     assert_eq!(fs::read(&dir.join("sources/cam.mkv")).unwrap().len(), 5);
     assert_eq!(fs::read(&dir.join("sources/mic.wav")).unwrap().len(), 3);
-    assert_eq!(found.paths, vec!["project:sources/cam.mkv", "project:sources/mic.wav"]);
+    assert_eq!(
+        found.paths,
+        vec!["project:sources/cam.mkv", "project:sources/mic.wav"]
+    );
     // A stored path resolves back to the copy, by the one path rule.
     assert_eq!(
         layout::resolve(&root, &dir, &found.paths[0]),
@@ -177,7 +205,10 @@ fn f0_12_s2_the_same_name_and_size_is_not_copied_again() {
     let mut project = Project::default();
     let found = add_sources::add(&mut project, &root, &dir, &[picked], true).unwrap();
 
-    assert_eq!(fs::read_to_string(dir.join("sources/mic.wav")).unwrap(), "the bytes already here");
+    assert_eq!(
+        fs::read_to_string(dir.join("sources/mic.wav")).unwrap(),
+        "the bytes already here"
+    );
     assert_eq!(found.paths, vec!["project:sources/mic.wav"]);
     assert_eq!(project.sources.len(), 1, "added exactly once");
     // The bar still completes: a skipped copy is done work.
@@ -204,7 +235,11 @@ fn f0_12_s2_a_file_already_inside_the_project_is_added_in_place() {
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
         .collect();
-    assert_eq!(names, vec!["own.wav".to_string()], "nothing was copied beside it");
+    assert_eq!(
+        names,
+        vec!["own.wav".to_string()],
+        "nothing was copied beside it"
+    );
 
     fs::remove_dir_all(&root).ok();
 }
@@ -219,9 +254,16 @@ fn f0_12_s2_copy_off_references_in_place() {
     let mut project = Project::default();
     let found = add_sources::add(&mut project, &root, &dir, &[picked.clone()], false).unwrap();
 
-    assert_eq!(found.paths, vec!["card/cam.mkv"], "root-relative, as the one path rule stores it");
+    assert_eq!(
+        found.paths,
+        vec!["card/cam.mkv"],
+        "root-relative, as the one path rule stores it"
+    );
     assert_eq!(layout::resolve(&root, &dir, &found.paths[0]), picked);
-    assert!(!dir.join("sources").exists(), "referencing needs no folder, and makes none");
+    assert!(
+        !dir.join("sources").exists(),
+        "referencing needs no folder, and makes none"
+    );
     assert!(picked.exists(), "the original is untouched");
 
     fs::remove_dir_all(&root).ok();
@@ -236,8 +278,14 @@ fn f0_12_s3_duplicates_and_non_media_are_skipped() {
     let txt = file(&card, "notes.txt", 4);
 
     let mut project = Project::default();
-    let found =
-        add_sources::add(&mut project, &root, &dir, &[wav.clone(), wav.clone(), txt], false).unwrap();
+    let found = add_sources::add(
+        &mut project,
+        &root,
+        &dir,
+        &[wav.clone(), wav.clone(), txt],
+        false,
+    )
+    .unwrap();
 
     assert_eq!((found.added, found.asked), (1, 3));
     assert_eq!(project.sources.len(), 1);
@@ -306,8 +354,19 @@ fn f0_12_s3_a_slot_the_user_left_untagged_stays_untagged() {
     // The rows are footage and one of them already holds slot 2, so this pins the guard alone: an
     // untagged list comes back as they left it rather than being filled from the front.
     let mut emptied = session(vec![row("keeper.mkv", true, 0), row("other.mkv", true, 2)]);
-    add_sources::add(&mut emptied, &root, &dir, &[file(&card, "notes.txt", 1)], false).unwrap();
-    assert_eq!(narrator_of(&emptied, "other.mkv"), Some(2), "its holder is untouched");
+    add_sources::add(
+        &mut emptied,
+        &root,
+        &dir,
+        &[file(&card, "notes.txt", 1)],
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        narrator_of(&emptied, "other.mkv"),
+        Some(2),
+        "its holder is untouched"
+    );
     // Whether the untagged footage takes the empty slot is F0.11's rule, not this flow's: a press
     // that adds nothing changes nothing here either way.
 
@@ -318,7 +377,11 @@ fn f0_12_s3_a_slot_the_user_left_untagged_stays_untagged() {
     let mut open_slot = session(vec![row("keeper.mkv", false, 0)]);
     add_sources::add(&mut open_slot, &root, &dir, &[audio], false).unwrap();
     assert_eq!(narrator_of(&open_slot, "keeper.mkv"), Some(1));
-    assert_eq!(narrator_of(&open_slot, "card/mic.wav"), Some(0), "asked in list order");
+    assert_eq!(
+        narrator_of(&open_slot, "card/mic.wav"),
+        Some(0),
+        "asked in list order"
+    );
 
     fs::remove_dir_all(&root).ok();
 }
@@ -347,8 +410,19 @@ fn f0_12_s4_the_folder_is_remembered_per_kind() {
     // What is remembered is where to look next: a copy does not move the folder that was picked from.
     let (root2, dir2, card2) = workspace("s4-copied");
     let mut copied = Project::default();
-    add_sources::add(&mut copied, &root2, &dir2, &[file(&card2, "cam.mkv", 5)], true).unwrap();
-    assert_eq!(copied.vid_dir.as_deref(), Some("card"), "not project:sources");
+    add_sources::add(
+        &mut copied,
+        &root2,
+        &dir2,
+        &[file(&card2, "cam.mkv", 5)],
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        copied.vid_dir.as_deref(),
+        Some("card"),
+        "not project:sources"
+    );
 
     fs::remove_dir_all(&root).ok();
     fs::remove_dir_all(&root2).ok();
@@ -368,8 +442,18 @@ fn f0_12_s5_the_status_counts_what_was_added() {
     assert_eq!(all.status, "added 2 source(s)");
 
     // One of three: the same file again and one that cannot be a source.
-    let some = add_sources::add(&mut project, &root, &dir, &[video.clone(), txt, file(&card, "cam2.mp4", 2)], false).unwrap();
-    assert_eq!(some.status, "added 1 of 3 \u{2014} the rest were already in");
+    let some = add_sources::add(
+        &mut project,
+        &root,
+        &dir,
+        &[video.clone(), txt, file(&card, "cam2.mp4", 2)],
+        false,
+    )
+    .unwrap();
+    assert_eq!(
+        some.status,
+        "added 1 of 3 \u{2014} the rest were already in"
+    );
 
     // Nothing new at all.
     let none = add_sources::add(&mut project, &root, &dir, &[video], false).unwrap();

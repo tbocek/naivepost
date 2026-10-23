@@ -23,7 +23,8 @@ use naivepost::{startup, ui};
 /// flow writes into is `session.naivepost` beside the working root, so a tick that runs while cwd is
 /// `rust/` would stamp the repository.
 fn pin_root(tag: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!("naivepost-autosave-{tag}-{}", std::process::id()));
+    let root =
+        std::env::temp_dir().join(format!("naivepost-autosave-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("temp root");
     std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
@@ -89,7 +90,11 @@ fn sec_01_project_and_files_2_naivepostjson_s5_a_tick_writes_then_writes_only_wh
         json_of(&dir).is_some_and(|text| text.contains("\"language\": \"de\"")),
         "the second write carries the edit"
     );
-    assert_eq!(autosave::tick(&slot), Tick::Unchanged, "and then settles again");
+    assert_eq!(
+        autosave::tick(&slot),
+        Tick::Unchanged,
+        "and then settles again"
+    );
 }
 
 /// S5 + F0.11 S1: a flow that wrote the session itself costs the next tick nothing.
@@ -134,7 +139,11 @@ fn sec_01_project_and_files_2_naivepostjson_s5_a_flow_write_leaves_the_timer_not
 
     // And the rule still works after a flow write: change the session, the next tick owes it again.
     session.borrow_mut().language = "nl".to_string();
-    assert_eq!(autosave::tick(&slot), Tick::Wrote, "a later edit is still written");
+    assert_eq!(
+        autosave::tick(&slot),
+        Tick::Wrote,
+        "a later edit is still written"
+    );
 }
 
 /// S5: a tick with nothing installed writes nothing — a window that has not taken on a project has
@@ -144,7 +153,10 @@ fn sec_01_project_and_files_2_naivepostjson_s5_a_tick_with_no_project_installed_
     let root = pin_root("empty");
     let slot = Rc::new(RefCell::new(autosave::Ticker::default()));
     assert_eq!(autosave::tick(&slot), Tick::Nothing);
-    assert!(json_of(&session_dir(&root)).is_none(), "nothing was created");
+    assert!(
+        json_of(&session_dir(&root)).is_none(),
+        "nothing was created"
+    );
 }
 
 /// S6: `window.close()` puts the session on disk, in the folder the working copy lives in, through
@@ -173,7 +185,10 @@ fn sec_01_project_and_files_2_naivepostjson_s6_closing_the_window_flushes_the_pr
         });
         app.run_with_args::<String>(&[]);
     });
-    assert!(RAN_CLOSE.load(Ordering::SeqCst), "the close check never ran");
+    assert!(
+        RAN_CLOSE.load(Ordering::SeqCst),
+        "the close check never ran"
+    );
 }
 
 fn check_close_writes_the_session(app: &adw::Application) {
@@ -196,10 +211,12 @@ fn check_close_writes_the_session(app: &adw::Application) {
         "the window is the built shell, so its close hook is the real one"
     );
 
-    let entry = widget_in(&window, "language-entry").expect("the Prepare page draws the Language box");
+    let entry =
+        widget_in(&window, "language-entry").expect("the Prepare page draws the Language box");
     let entry = entry
         .downcast::<gtk4::Entry>()
-        .expect("the Language box is an entry");    entry.set_text("de");
+        .expect("the Language box is an entry");
+    entry.set_text("de");
     settle();
     assert_eq!(
         ui::bench_language(&window).as_deref(),
@@ -234,8 +251,16 @@ fn sec_01_project_and_files_2_naivepostjson_s6_the_close_flush_is_not_skippable(
     // the flush goes around it, and still says the file landed.
     let session: Rc<RefCell<Project>> = Rc::new(RefCell::new(model.clone()));
     let slot = autosave::slot_for_test(&session, &dir);
-    assert_eq!(autosave::tick(&slot), Tick::Wrote, "install forgets the last write");
-    assert_eq!(autosave::tick(&slot), Tick::Unchanged, "so the rule itself is the one being tested");
+    assert_eq!(
+        autosave::tick(&slot),
+        Tick::Wrote,
+        "install forgets the last write"
+    );
+    assert_eq!(
+        autosave::tick(&slot),
+        Tick::Unchanged,
+        "so the rule itself is the one being tested"
+    );
     assert!(
         autosave::flush_on_close(&model, &dir),
         "the close writes whatever the tick would have refused"

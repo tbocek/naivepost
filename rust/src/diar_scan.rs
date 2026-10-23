@@ -42,7 +42,14 @@ pub struct Rung {
 /// `log` receives §6's lines as they become true — pass 1's `finding voices i/n`, the anchor line, pass 2's
 /// `placing speakers i/n`, and `no voice long enough to anchor` when that is the answer. A rung that is
 /// refused costs no line of its own: it is a rung the run never used.
-pub fn run<F, G, L>(duration: f64, model: &str, base: &str, mut scan: F, mut place: G, mut log: L) -> Result<Rung, String>
+pub fn run<F, G, L>(
+    duration: f64,
+    model: &str,
+    base: &str,
+    mut scan: F,
+    mut place: G,
+    mut log: L,
+) -> Result<Rung, String>
 where
     F: FnMut(&[(f64, f64)]) -> Result<Vec<Vec<Turn>>, String>,
     G: FnMut((f64, f64), f64) -> Result<Vec<Turn>, String>,
@@ -66,27 +73,50 @@ where
         }
         let heard = scan(&windows)?;
         match diarize::plan(duration, *window, &windows, &heard) {
-            Scan::Planned { anchor, place: spans, .. } => {
-                log(&diarize::anchor_log(base, &anchor, *window, diarize::anchor_per(*window)));
+            Scan::Planned {
+                anchor,
+                place: spans,
+                ..
+            } => {
+                log(&diarize::anchor_log(
+                    base,
+                    &anchor,
+                    *window,
+                    diarize::anchor_per(*window),
+                ));
                 // The serving rung's own answers: pass 1's flattened, then pass 2's with every slot
                 // renamed against the anchor. Asking pass 1 again would be a second set of requests for
                 // one result.
                 let mut turns: Vec<Turn> = heard.into_iter().flatten().collect();
                 turns.extend(placed(&spans, &anchor, base, &mut place, &mut log)?);
-                return Ok(Rung { window: *window, scan: windows, turns });
+                return Ok(Rung {
+                    window: *window,
+                    scan: windows,
+                    turns,
+                });
             }
             Scan::NoVoice => {
                 log(&diarize::no_voice_log(base));
                 // An empty answer is an answer: §6 wants the line, and `turns.json` written from what was
                 // heard, which is `[]` — the file is the resume marker a later run reads as "nobody spoke".
-                return Ok(Rung { window: *window, scan: windows, turns: heard.into_iter().flatten().collect() });
+                return Ok(Rung {
+                    window: *window,
+                    scan: windows,
+                    turns: heard.into_iter().flatten().collect(),
+                });
             }
             // Too much anchor for this window: try the next rung down before believing it.
-            Scan::AnchorTooLong { anchor, window: rung } => last = Some((anchor, rung)),
+            Scan::AnchorTooLong {
+                anchor,
+                window: rung,
+            } => last = Some((anchor, rung)),
         }
     }
     let (anchor, window) = last.expect("the ladder has rungs");
-    Err(format!("{model}: {}", diarize::anchor_too_long(anchor, window)))
+    Err(format!(
+        "{model}: {}",
+        diarize::anchor_too_long(anchor, window)
+    ))
 }
 
 /// Pass 2, one request per span `plan` left to place, each answered with its slots named after the anchor's
@@ -97,7 +127,13 @@ where
 /// sample falls, and an anchor whose first cut starts away from the recording's zero would otherwise have
 /// its whole file counted twice over. The id is the answer's own slot number, so a slot the anchor reaches
 /// keeps that voice's slot and one it never heard earns `slot_base + slot`.
-fn placed<F, L>(spans: &[(f64, f64)], anchor: &Anchor, base: &str, mut ask: F, mut log: L) -> Result<Vec<Turn>, String>
+fn placed<F, L>(
+    spans: &[(f64, f64)],
+    anchor: &Anchor,
+    base: &str,
+    mut ask: F,
+    mut log: L,
+) -> Result<Vec<Turn>, String>
 where
     F: FnMut((f64, f64), f64) -> Result<Vec<Turn>, String>,
     L: FnMut(&str),
@@ -119,7 +155,12 @@ where
         let claims = slot_claims(&heard, anchor);
         let named: Vec<(u32, u32)> = diarize::match_slots(&claims, anchor)
             .into_iter()
-            .map(|(slot, block)| (slot, block.map_or(slot_base + slot, |block| anchor.slots[block].slot)))
+            .map(|(slot, block)| {
+                (
+                    slot,
+                    block.map_or(slot_base + slot, |block| anchor.slots[block].slot),
+                )
+            })
             .collect();
         for turn in heard {
             let slot = named
@@ -152,8 +193,13 @@ fn slot_claims(heard: &[Turn], anchor: &Anchor) -> Vec<(u32, f64, f64)> {
     let mut claims: Vec<(u32, f64, f64)> = Vec::new();
     for turn in heard {
         let from = (turn.start_sample as f64 / SAMPLE_RATE as f64).min(width);
-        let to = (turn.end_sample as f64 / SAMPLE_RATE as f64).min(width).max(from);
-        match claims.iter_mut().find(|(slot, _, _)| *slot == turn.speaker_id) {
+        let to = (turn.end_sample as f64 / SAMPLE_RATE as f64)
+            .min(width)
+            .max(from);
+        match claims
+            .iter_mut()
+            .find(|(slot, _, _)| *slot == turn.speaker_id)
+        {
             Some((_, low, high)) => {
                 *low = low.min(from);
                 *high = high.max(to);

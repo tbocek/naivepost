@@ -11,7 +11,9 @@ use naivepost::asr::{self, Answer};
 use naivepost::layout::Tree;
 use naivepost::params;
 use naivepost::tools::{describe, retakes, textedit};
-use naivepost::{align, degraded, frames, hand_edit, prepare, requests, roles, separate, transcribe};
+use naivepost::{
+    align, degraded, frames, hand_edit, prepare, requests, roles, separate, transcribe,
+};
 
 /// A project folder of §1's shape: the scratch paths are only interesting under a real `.naivepost` tree.
 fn tree(tag: &str) -> Tree {
@@ -30,7 +32,9 @@ fn spelled(id: &str) -> String {
 
 /// The value of one entry, read as a number — for the rows this test compares against a constant.
 fn number(id: &str) -> f64 {
-    spelled(id).parse().unwrap_or_else(|_| panic!("{id} spells a number"))
+    spelled(id)
+        .parse()
+        .unwrap_or_else(|_| panic!("{id} spells a number"))
 }
 
 // --- S1: §4's own eighteen, by id and spelling -----------------------------------------------------
@@ -58,7 +62,10 @@ fn sec_04_prepare_4_parameters_used_s1_every_parameter_the_section_names_is_cata
         "P.machine.describeCtxWindowSeconds",
         "P.machine.fixBlockLines",
     ];
-    let ids: Vec<&str> = params::prepare().into_iter().map(|param| param.id).collect();
+    let ids: Vec<&str> = params::prepare()
+        .into_iter()
+        .map(|param| param.id)
+        .collect();
     for id in named {
         assert!(ids.contains(&id), "{id} missing from the catalogue");
     }
@@ -106,7 +113,10 @@ fn sec_04_prepare_4_parameters_used_s1_every_parameter_the_section_names_is_cata
 
     // An id Prepare never reads is simply not there.
     assert_eq!(params::find("P.policy.deadAirMaxSeconds"), None);
-    assert_eq!(params::family("P.policy.markingPass"), params::Family::Policy);
+    assert_eq!(
+        params::family("P.policy.markingPass"),
+        params::Family::Policy
+    );
     assert_eq!(params::family("P.machine.slots"), params::Family::Machine);
     assert_eq!(params::family("P.eng.llmAttempts"), params::Family::Eng);
     // The JPEG quality is §10's unlisted engineering value, so it claims no `P.` prefix.
@@ -118,18 +128,39 @@ fn sec_04_prepare_4_parameters_used_s1_every_parameter_the_section_names_is_cata
 #[test]
 fn sec_04_prepare_4_parameters_used_s2_the_retake_numbers_are_the_ones_the_pass_uses() {
     // P.policy.minTakeSeconds — a shorter recording is a start/stop, not a take.
-    assert_eq!(number("P.policy.minTakeSeconds"), requests::MIN_TAKE_SECONDS);
+    assert_eq!(
+        number("P.policy.minTakeSeconds"),
+        requests::MIN_TAKE_SECONDS
+    );
     assert_eq!(spelled("P.policy.minTakeSeconds"), "2");
 
     // P.machine.retakePauseSeconds / retakeRuns / retakeReachSeconds / retakeMinSeconds / retakeCeil /
     // retakeFragmentSeconds / againReachSeconds.
-    assert_eq!(number("P.machine.retakePauseSeconds"), retakes::RETAKE_PAUSE_SECONDS);
-    assert_eq!(spelled("P.machine.retakeRuns"), roles::RETAKE_RUNS_POOLED.to_string());
-    assert_eq!(number("P.machine.retakeReachSeconds"), retakes::RETAKE_REACH_SECONDS);
-    assert_eq!(number("P.machine.retakeMinSeconds"), retakes::RETAKE_MIN_SECONDS);
+    assert_eq!(
+        number("P.machine.retakePauseSeconds"),
+        retakes::RETAKE_PAUSE_SECONDS
+    );
+    assert_eq!(
+        spelled("P.machine.retakeRuns"),
+        roles::RETAKE_RUNS_POOLED.to_string()
+    );
+    assert_eq!(
+        number("P.machine.retakeReachSeconds"),
+        retakes::RETAKE_REACH_SECONDS
+    );
+    assert_eq!(
+        number("P.machine.retakeMinSeconds"),
+        retakes::RETAKE_MIN_SECONDS
+    );
     assert_eq!(number("P.machine.retakeCeil"), retakes::RETAKE_CEIL);
-    assert_eq!(number("P.machine.retakeFragmentSeconds"), retakes::RETAKE_FRAGMENT_SECONDS);
-    assert_eq!(number("P.machine.againReachSeconds"), retakes::AGAIN_REACH_SECONDS);
+    assert_eq!(
+        number("P.machine.retakeFragmentSeconds"),
+        retakes::RETAKE_FRAGMENT_SECONDS
+    );
+    assert_eq!(
+        number("P.machine.againReachSeconds"),
+        retakes::AGAIN_REACH_SECONDS
+    );
 
     // The ceiling is a share, not seconds: it has to stay under one or every mark would be refused.
     assert!(retakes::RETAKE_CEIL < 1.0);
@@ -145,11 +176,23 @@ fn sec_04_prepare_4_parameters_used_s2_the_retake_numbers_are_the_ones_the_pass_
 fn sec_04_prepare_4_parameters_used_s3_the_seam_numbers_are_the_join_pass_owns() {
     // P.machine.seamReachWords / seamMaxWords / seamCeil / seamSnapWords / seamNoiseWords.
     assert_eq!(textedit::SEAM_REACH_WORDS, 140);
-    assert_eq!(spelled("P.machine.seamReachWords"), textedit::SEAM_REACH_WORDS.to_string());
-    assert_eq!(spelled("P.machine.seamMaxWords"), textedit::SEAM_MAX_WORDS.to_string());
+    assert_eq!(
+        spelled("P.machine.seamReachWords"),
+        textedit::SEAM_REACH_WORDS.to_string()
+    );
+    assert_eq!(
+        spelled("P.machine.seamMaxWords"),
+        textedit::SEAM_MAX_WORDS.to_string()
+    );
     assert_eq!(number("P.machine.seamCeil"), textedit::SEAM_CEIL);
-    assert_eq!(spelled("P.machine.seamSnapWords"), textedit::SEAM_SNAP_WORDS.to_string());
-    assert_eq!(spelled("P.machine.seamNoiseWords"), textedit::SEAM_NOISE_WORDS.to_string());
+    assert_eq!(
+        spelled("P.machine.seamSnapWords"),
+        textedit::SEAM_SNAP_WORDS.to_string()
+    );
+    assert_eq!(
+        spelled("P.machine.seamNoiseWords"),
+        textedit::SEAM_NOISE_WORDS.to_string()
+    );
 
     // One rule read three ways: what a stretch may be off by is smaller than the most a join may remove,
     // and that in turn sits inside what is shown on either side of it.
@@ -158,7 +201,10 @@ fn sec_04_prepare_4_parameters_used_s3_the_seam_numbers_are_the_join_pass_owns()
     assert!(textedit::SEAM_MAX_WORDS < textedit::SEAM_REACH_WORDS);
 
     // P.eng.keepReachWords — the hand edit's backward match, the same family of look-back.
-    assert_eq!(spelled("P.eng.keepReachWords"), hand_edit::KEEP_REACH.to_string());
+    assert_eq!(
+        spelled("P.eng.keepReachWords"),
+        hand_edit::KEEP_REACH.to_string()
+    );
     assert_eq!(hand_edit::KEEP_REACH, 200);
 }
 
@@ -169,16 +215,33 @@ fn sec_04_prepare_4_parameters_used_s4_describe_s_frames_per_call_and_context_si
     // P.machine.describeFramesPerReq: four frames a call, and the readout counts requests against it.
     assert_eq!(spelled("P.machine.describeFramesPerReq"), "4");
     assert_eq!(roles::VISION_FRAMES_PER_CALL, 4);
-    assert_eq!(prepare::vision_calls(12), 3, "twelve frames are three calls of four");
-    assert_eq!(prepare::vision_calls(9), 3, "and a part-call still costs one");
+    assert_eq!(
+        prepare::vision_calls(12),
+        3,
+        "twelve frames are three calls of four"
+    );
+    assert_eq!(
+        prepare::vision_calls(9),
+        3,
+        "and a part-call still costs one"
+    );
     assert_eq!(prepare::vision_calls(0), 0);
 
     // P.machine.describeRecentEvents / describeCtxSegs / describeCtxWindowSeconds.
-    assert_eq!(spelled("P.machine.describeRecentEvents"), describe::RECENT_EVENTS.to_string());
+    assert_eq!(
+        spelled("P.machine.describeRecentEvents"),
+        describe::RECENT_EVENTS.to_string()
+    );
     assert_eq!(describe::RECENT_EVENTS, 3);
-    assert_eq!(spelled("P.machine.describeCtxSegs"), describe::CTX_SEGS.to_string());
+    assert_eq!(
+        spelled("P.machine.describeCtxSegs"),
+        describe::CTX_SEGS.to_string()
+    );
     assert_eq!(describe::CTX_SEGS, 2);
-    assert_eq!(number("P.machine.describeCtxWindowSeconds"), describe::CTX_WINDOW_SECONDS);
+    assert_eq!(
+        number("P.machine.describeCtxWindowSeconds"),
+        describe::CTX_WINDOW_SECONDS
+    );
     assert_eq!(describe::CTX_WINDOW_SECONDS, 10.0);
 
     // The context window is per side per source, so the brief it builds is bounded by segs × window
@@ -191,9 +254,18 @@ fn sec_04_prepare_4_parameters_used_s4_describe_s_frames_per_call_and_context_si
 #[test]
 fn sec_04_prepare_4_parameters_used_s5_the_audio_numbers_are_the_servers_bounds() {
     // Chunk sizes: qwen3 takes 60 s, everything else 300 s, and an out-of-memory answer halves to 20.
-    assert_eq!(spelled("P.machine.asrChunkQwenSeconds"), asr::CHUNK_QWEN.to_string());
-    assert_eq!(spelled("P.machine.asrChunkMaxSeconds"), asr::CHUNK_MAX.to_string());
-    assert_eq!(spelled("P.machine.asrChunkMinSeconds"), asr::CHUNK_MIN.to_string());
+    assert_eq!(
+        spelled("P.machine.asrChunkQwenSeconds"),
+        asr::CHUNK_QWEN.to_string()
+    );
+    assert_eq!(
+        spelled("P.machine.asrChunkMaxSeconds"),
+        asr::CHUNK_MAX.to_string()
+    );
+    assert_eq!(
+        spelled("P.machine.asrChunkMinSeconds"),
+        asr::CHUNK_MIN.to_string()
+    );
     // `asr::chunk_limit` matches the family name as a plain substring, so it is the lowercase spelling
     // that gets the short chunk; [`roles::asr_chunk_is_qwen_family`] is the case-insensitive read of the
     // same fact, since the value is whatever the audio box declared in its own model list (§1).
@@ -207,13 +279,22 @@ fn sec_04_prepare_4_parameters_used_s5_the_audio_numbers_are_the_servers_bounds(
     // The alignment window and its floor, and separation's chunk.
     assert_eq!(number("P.machine.alignChunkMaxSeconds"), align::WINDOW);
     assert_eq!(number("P.machine.alignChunkMinSeconds"), align::MIN_PIECE);
-    assert_eq!(number("P.machine.sepChunkMaxSeconds"), separate::CHUNK_MAX_SECONDS);
+    assert_eq!(
+        number("P.machine.sepChunkMaxSeconds"),
+        separate::CHUNK_MAX_SECONDS
+    );
 
     // The silence pair, from both modules that state it.
     assert_eq!(spelled("P.machine.silenceThresholdDB"), "-35");
     assert_eq!(number("P.machine.silenceMinSeconds"), 0.4);
     let (db, min) = params::silence();
-    assert_eq!((db, min), (degraded::SILENCE_THRESHOLD_DB, degraded::SILENCE_MIN_SECONDS));
+    assert_eq!(
+        (db, min),
+        (
+            degraded::SILENCE_THRESHOLD_DB,
+            degraded::SILENCE_MIN_SECONDS
+        )
+    );
     assert_eq!(db, asr::QUIET_DB);
     assert_eq!(min, asr::QUIET_MIN);
 
@@ -223,7 +304,10 @@ fn sec_04_prepare_4_parameters_used_s5_the_audio_numbers_are_the_servers_bounds(
     assert_eq!(roles::diar_window(1), 45.0);
     assert_eq!(roles::diar_window(2), 25.0);
     assert_eq!(spelled("P.machine.diarHopShare"), "2/3");
-    assert_eq!(number("P.machine.anchorPerSeconds"), roles::ANCHOR_PER_SECONDS);
+    assert_eq!(
+        number("P.machine.anchorPerSeconds"),
+        roles::ANCHOR_PER_SECONDS
+    );
     // A quarter of the biggest window is 22.5, so the anchor is what §10 says at that rung: twelve
     // seconds a voice, less than the window it was measured at.
     assert!(roles::ANCHOR_PER_SECONDS < roles::diar_window(0));
@@ -231,7 +315,10 @@ fn sec_04_prepare_4_parameters_used_s5_the_audio_numbers_are_the_servers_bounds(
     // Merge gap/length for segment building, and the two engineering numbers beside them.
     assert_eq!(number("P.eng.mergeGapSeconds"), transcribe::MERGE_GAP);
     assert_eq!(number("P.eng.mergeMaxSeconds"), transcribe::MERGE_MAX_LEN);
-    assert_eq!(number("P.eng.mergeMaxWordSeconds"), transcribe::MERGE_MAX_WORD);
+    assert_eq!(
+        number("P.eng.mergeMaxWordSeconds"),
+        transcribe::MERGE_MAX_WORD
+    );
     assert_eq!(number("P.eng.mergeNearSeconds"), transcribe::MERGE_NEAR);
     assert_eq!(spelled("P.eng.asrSampleRate"), "16000");
     assert_eq!(number("P.eng.asrCutSeekSeconds"), asr::SEEK_MAX);
@@ -254,18 +341,30 @@ fn sec_04_prepare_4_parameters_used_s6_frames_workers_quality_and_scratch() {
     for cpus in [0usize, 1, 4, 8, 64] {
         for jobs in [0usize, 1, frames::TINY_JOB_FRAMES, 1000] {
             let got = frames::workers(cpus, jobs);
-            assert!((1..=frames::WORKERS_MAX).contains(&got), "cpus {cpus} jobs {jobs} -> {got}");
+            assert!(
+                (1..=frames::WORKERS_MAX).contains(&got),
+                "cpus {cpus} jobs {jobs} -> {got}"
+            );
         }
     }
     assert_eq!(frames::workers(32, 1000), frames::WORKERS_MAX);
-    assert_eq!(frames::workers(8, frames::TINY_JOB_FRAMES + 1), frames::WORKERS_MIN);
-    assert_eq!(spelled("P.eng.frameWorkersMinFrames"), frames::WORKER_MIN_FRAMES.to_string());
+    assert_eq!(
+        frames::workers(8, frames::TINY_JOB_FRAMES + 1),
+        frames::WORKERS_MIN
+    );
+    assert_eq!(
+        spelled("P.eng.frameWorkersMinFrames"),
+        frames::WORKER_MIN_FRAMES.to_string()
+    );
     // Four frames a worker at the ceiling is what "a tiny job is one process" means in practice.
     assert!(frames::TINY_JOB_FRAMES <= frames::WORKER_MIN_FRAMES * frames::WORKERS_MAX);
 
     // The scene pair that restarts the grid.
     assert_eq!(number("P.machine.sceneThreshold"), frames::SCENE_THRESHOLD);
-    assert_eq!(number("P.machine.sceneMinGapSeconds"), frames::SCENE_MIN_GAP);
+    assert_eq!(
+        number("P.machine.sceneMinGapSeconds"),
+        frames::SCENE_MIN_GAP
+    );
 
     // Quality: the frames sent are scaled to 896 wide (§1's `.llmframes/`), and what a project keeps is
     // written at -q:v 2 with no scale anywhere in the command.
@@ -278,25 +377,42 @@ fn sec_04_prepare_4_parameters_used_s6_frames_workers_quality_and_scratch() {
         .collect::<Vec<_>>()
         .join("\n");
     assert_eq!(plans.len(), 2);
-    assert!(!args.contains("scale"), "the delivered frames stay full size: {args}");
+    assert!(
+        !args.contains("scale"),
+        "the delivered frames stay full size: {args}"
+    );
     assert!(args.contains("-q:v 2"), "at the stored quality: {args}");
 
     // Scratch handling: all three scratch folders live under prepare/inputs/<source>/, and the one
     // stage that cleans up here does so on success only — a stopped run leaves `asr/c03.wav` behind.
     let tree = tree("scratch");
     fs::create_dir_all(tree.input_dir(SOURCE)).unwrap();
-    for path in [tree.asr_scratch(SOURCE), tree.diar_scratch(SOURCE), align_dir(&tree)] {
-        assert!(path.starts_with(tree.prepare_dir().join("inputs").join(SOURCE)), "{}", path.display());
+    for path in [
+        tree.asr_scratch(SOURCE),
+        tree.diar_scratch(SOURCE),
+        align_dir(&tree),
+    ] {
+        assert!(
+            path.starts_with(tree.prepare_dir().join("inputs").join(SOURCE)),
+            "{}",
+            path.display()
+        );
     }
 
     let mut asked = 0;
     asr::run(&tree, SOURCE, 10.0, "nemotron-asr", "en", &[], |_file| {
         asked += 1;
-        Ok(Answer { text: "one take".into(), words: vec![] })
+        Ok(Answer {
+            text: "one take".into(),
+            words: vec![],
+        })
     })
     .expect("one request");
     assert_eq!(asked, 1);
-    assert!(!tree.asr_scratch(SOURCE).exists(), "success clears its own mess");
+    assert!(
+        !tree.asr_scratch(SOURCE).exists(),
+        "success clears its own mess"
+    );
 
     let stopped = asr::run(&tree, SOURCE, 10.0, "nemotron-asr", "en", &[], |_file| {
         Err("no room for the model".into())

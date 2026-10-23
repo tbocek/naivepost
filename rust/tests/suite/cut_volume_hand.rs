@@ -20,10 +20,17 @@ use naivepost::tools;
 use crate::common;
 use common::assert_close;
 
-
 /// A volume over its own seconds. `gain` is what the file stores — a linear multiplier, not the form's percent.
 fn vol(gain: f64, t: f64, dur: f64, fade: f64) -> Fx {
-    Fx { kind: "volume".into(), t, dur, gain, trans: fade, tout: fade, ..Default::default() }
+    Fx {
+        kind: "volume".into(),
+        t,
+        dur,
+        gain,
+        trans: fade,
+        tout: fade,
+        ..Default::default()
+    }
 }
 
 /// The form as Apply would receive it: 200 % over four seconds with quarter-second ramps, i.e. what a press leaves.
@@ -56,16 +63,29 @@ fn f3_6_s1_a_band_or_a_line_and_neither_refuses() {
     // The floor itself counts as a band. 0.2 is not representable in binary, so the width is built from the bound
     // rather than written as `30.2 - 30.0`, which would be a hair under it and get thrown away.
     let (from, to) = (30.0, 30.0 + cut_speed::MIN_MARKED_SECONDS);
-    assert_eq!(fx_volume::press(Some((from, to)), None), Pressed::Stretched { t: from, dur: to - from });
+    assert_eq!(
+        fx_volume::press(Some((from, to)), None),
+        Pressed::Stretched {
+            t: from,
+            dur: to - from
+        }
+    );
 
     // Under the floor it is not a band: with a line the line answers …
-    assert_eq!(fx_volume::press(Some((30.0, 30.1)), Some(12.0)), Pressed::LoudAtLine);
+    assert_eq!(
+        fx_volume::press(Some((30.0, 30.1)), Some(12.0)),
+        Pressed::LoudAtLine
+    );
     // … and without one there is nothing to be loud over.
     assert_eq!(fx_volume::press(Some((30.0, 30.1)), None), Pressed::Refused);
 
     // Only a line: two seconds start where the red line is.
     assert_eq!(fx_volume::press(None, Some(12.0)), Pressed::LoudAtLine);
-    assert_eq!(fx_volume::press(None, Some(0.0)), Pressed::LoudAtLine, "the first second is a line like any other");
+    assert_eq!(
+        fx_volume::press(None, Some(0.0)),
+        Pressed::LoudAtLine,
+        "the first second is a line like any other"
+    );
 
     // Neither — the refusal whole, and this button's own sentence. §F3.1 lists one per button, so volume's must not
     // be speed's with the noun swapped at print time; asserted apart or they would quietly become one string.
@@ -74,7 +94,11 @@ fn f3_6_s1_a_band_or_a_line_and_neither_refuses() {
         fx_volume::NO_SECONDS,
         "click a track or mark a stretch first \u{2014} volume needs seconds to work on"
     );
-    assert_ne!(fx_volume::NO_SECONDS, cut_speed::NO_SECONDS, "a volume asks in a volume's words");
+    assert_ne!(
+        fx_volume::NO_SECONDS,
+        cut_speed::NO_SECONDS,
+        "a volume asks in a volume's words"
+    );
 }
 
 // --- S2: the first record ------------------------------------------------------------------------------------------
@@ -86,11 +110,16 @@ fn f3_6_s2_the_first_record_is_twice_as_loud_with_quarter_second_ramps() {
     // P.policy.effectDefaultSeconds ("stop/speed/volume/label 2") is where LINE_SECONDS comes from; §10 has no row of
     // its own for the default gain, so that one is `effects.defaultGain` (see fx_volume::DEFAULT_GAIN).
     assert_close("a line gives two seconds", fx_volume::LINE_SECONDS, 2.0);
-    assert_close("P.policy.effectDefaultFades: volume 0.25", fx_volume::FADE_SECONDS, 0.25);
+    assert_close(
+        "P.policy.effectDefaultFades: volume 0.25",
+        fx_volume::FADE_SECONDS,
+        0.25,
+    );
     // §A.6 "defaults gain 2" — twice as loud, the ask a too-quiet lav mic actually is.
     assert_close("effects.defaultGain", fx_volume::DEFAULT_GAIN, 2.0);
 
-    let band = fx_volume::initial(Pressed::Stretched { t: 30.0, dur: 17.5 }).expect("a band places something");
+    let band = fx_volume::initial(Pressed::Stretched { t: 30.0, dur: 17.5 })
+        .expect("a band places something");
     assert_eq!(band.kind, "volume");
     assert_close("the band's own start", band.t, 30.0);
     assert_close("the band's own length", band.dur, 17.5);
@@ -129,26 +158,50 @@ fn f3_6_s3_the_form() {
     // Asserted through tools::mm_ss rather than spelled: mm_ss pads, so the title reads `Volume 00:12 – 00:16`.
     assert_eq!(
         fx_volume::form_title(12.0, 4.0),
-        format!("Volume {} \u{2013} {}", tools::mm_ss(12.0), tools::mm_ss(16.0))
+        format!(
+            "Volume {} \u{2013} {}",
+            tools::mm_ss(12.0),
+            tools::mm_ss(16.0)
+        )
     );
-    assert_eq!(fx_volume::form_title(12.0, 4.0), "Volume 00:12 \u{2013} 00:16");
+    assert_eq!(
+        fx_volume::form_title(12.0, 4.0),
+        "Volume 00:12 \u{2013} 00:16"
+    );
 
     // The order is the sentence §A.6 reads, and the percent is first because it is the only answer about the sound.
     assert_eq!(
         fx_volume::FORM_FIELDS,
-        ["Volume %", "Length (s)", "Fade in (s)", "Fade out (s)", "Curve"]
+        [
+            "Volume %",
+            "Length (s)",
+            "Fade in (s)",
+            "Fade out (s)",
+            "Curve"
+        ]
     );
 
     // The 1000 in the tooltip IS playbin's ceiling: one sentence, not a number someone must keep agreeing with
     // `P.eng.maxGain`. Read through max_percent() because a const cannot call fx_record::gain_ceiling().
-    assert_close("Volume % tops out at 1000", fx_volume::max_percent(), 1000.0);
-    assert_close("and that is the ceiling times 100", fx_volume::max_percent(), fx_record::gain_ceiling() * 100.0);
+    assert_close(
+        "Volume % tops out at 1000",
+        fx_volume::max_percent(),
+        1000.0,
+    );
+    assert_close(
+        "and that is the ceiling times 100",
+        fx_volume::max_percent(),
+        fx_record::gain_ceiling() * 100.0,
+    );
     assert_eq!(
         fx_volume::VOLUME_HELP,
         "up to 1000 for a passage recorded too quietly to hear \u{2014} though a passage lifted that far brings its \
          hiss up with it"
     );
-    assert!(fx_volume::VOLUME_HELP.contains("1000"), "the ceiling is stated where the field is filled in");
+    assert!(
+        fx_volume::VOLUME_HELP.contains("1000"),
+        "the ceiling is stated where the field is filled in"
+    );
 
     // §A.6's fuller wording: 100 untouched, 50 half, 0 silent, and the same hiss clause at the end.
     assert_eq!(
@@ -157,7 +210,10 @@ fn f3_6_s3_the_form() {
          silent, and up to 1000 for a passage recorded too quietly to hear \u{2014} though a passage lifted that far \
          brings its hiss up with it"
     );
-    assert!(fx_volume::VOLUME_HELP_FULL.ends_with(fx_volume::VOLUME_HELP), "one tooltip, the longer one");
+    assert!(
+        fx_volume::VOLUME_HELP_FULL.ends_with(fx_volume::VOLUME_HELP),
+        "one tooltip, the longer one"
+    );
 
     // Fade in: nought is explained rather than forbidden, because the ramp exists precisely because a step is a click.
     assert_eq!(
@@ -169,7 +225,7 @@ fn f3_6_s3_the_form() {
         "how long it takes to come back to the recorded loudness at the end, on the same terms"
     );
 
-        // The curve list is §A.1's, owned by zoom: volume borrows it rather than keeping a copy that could drift — the
+    // The curve list is §A.1's, owned by zoom: volume borrows it rather than keeping a copy that could drift — the
     // borrowing happens at [`fx_zoom::curve_stored`], which is what `apply` calls, and is pinned in f3_6_s4 below.
     assert_eq!(fx_zoom::CURVE_CHOICES, ["Linear"]);
 }
@@ -180,10 +236,24 @@ fn f3_6_s3_the_form() {
 fn f3_6_s3b_the_percent_and_the_gain_are_one_number() {
     // (percent, gain): 100 is untouched and 1000 is playbin's ceiling, so both ends of the field are meanings, not
     // merely numbers. 0.5 and 5.0 are exact in binary; 2.0/10.0 are whole.
-    let table = [(0.0, 0.0), (50.0, 0.5), (100.0, 1.0), (200.0, 2.0), (1000.0, 10.0)];
+    let table = [
+        (0.0, 0.0),
+        (50.0, 0.5),
+        (100.0, 1.0),
+        (200.0, 2.0),
+        (1000.0, 10.0),
+    ];
     for (percent, gain) in table {
-        assert_close(&format!("{percent} % as a gain"), fx_volume::gain_of_percent(percent), gain);
-        assert_close(&format!("{gain} as a percent"), fx_volume::percent_of(gain), percent);
+        assert_close(
+            &format!("{percent} % as a gain"),
+            fx_volume::gain_of_percent(percent),
+            gain,
+        );
+        assert_close(
+            &format!("{gain} as a percent"),
+            fx_volume::percent_of(gain),
+            percent,
+        );
         // Round trip both directions, so neither reading is the inverse of a different rule.
         assert_close(
             &format!("{percent} % typed, stored and read back"),
@@ -200,8 +270,16 @@ fn f3_6_s3b_the_percent_and_the_gain_are_one_number() {
     // Outside the field: 1500 % means "as loud as this goes", not an error to explain. Clamped at both ends, and the
     // ceiling is the same one cut_hear works in.
     assert_close("nought is silence", fx_volume::gain_of_percent(-50.0), 0.0);
-    assert_close("the top of the field", fx_volume::gain_of_percent(1500.0), fx_record::gain_ceiling());
-    assert_close("a stored gain above the ceiling still reads 1000", fx_volume::percent_of(100.0), 1000.0);
+    assert_close(
+        "the top of the field",
+        fx_volume::gain_of_percent(1500.0),
+        fx_record::gain_ceiling(),
+    );
+    assert_close(
+        "a stored gain above the ceiling still reads 1000",
+        fx_volume::percent_of(100.0),
+        1000.0,
+    );
     // The percent is what the field and the lane print, so it stays a whole number without decimals.
     let loud = vol(2.0, 12.0, 4.0, 0.25);
     assert_eq!(fx_volume::percent_label(&loud), "200%");
@@ -219,15 +297,26 @@ fn f3_6_s4_the_floor_and_the_ceiling() {
     assert!(fx_volume::apply(&form(200.0, fx_volume::MIN_SECONDS, 0.25, 0.25)).is_ok());
     assert_eq!(
         fx_volume::apply(&form(200.0, 0.09, 0.25, 0.25)),
-        Err("a volume change of 0.09 s is shorter than the shortest one this form takes (0.1) s".to_string())
+        Err(
+            "a volume change of 0.09 s is shorter than the shortest one this form takes (0.1) s"
+                .to_string()
+        )
     );
 
     // The percent arrives as loudness and leaves as a factor; typed over the top it clamps at the ceiling instead of
     // writing a gain cut_hear would have to clamp again.
-    assert_close("500 % is five times", fx_volume::apply(&form(500.0, 4.0, 0.25, 0.25)).unwrap().gain, 5.0);
+    assert_close(
+        "500 % is five times",
+        fx_volume::apply(&form(500.0, 4.0, 0.25, 0.25))
+            .unwrap()
+            .gain,
+        5.0,
+    );
     assert_close(
         "1500 % is as loud as this goes",
-        fx_volume::apply(&form(1500.0, 4.0, 0.25, 0.25)).unwrap().gain,
+        fx_volume::apply(&form(1500.0, 4.0, 0.25, 0.25))
+            .unwrap()
+            .gain,
         cut_hear::MAX_GAIN,
     );
 
@@ -242,19 +331,39 @@ fn f3_6_s4_the_floor_and_the_ceiling() {
     );
 
     // The curve is §A.1's storage: Linear writes no `ease` key, a name this build does not know is kept verbatim.
-    assert_eq!(fx_volume::apply(&form(200.0, 4.0, 0.25, 0.25)).unwrap().ease, fx_record::LINEAR_EASE);
-    assert_eq!(fx_volume::apply(&form(200.0, 4.0, 0.25, 0.25)).unwrap().ease, "");
-    let glide = fx_volume::Form { curve: "Glide".into(), ..form(200.0, 4.0, 0.25, 0.25) };
+    assert_eq!(
+        fx_volume::apply(&form(200.0, 4.0, 0.25, 0.25))
+            .unwrap()
+            .ease,
+        fx_record::LINEAR_EASE
+    );
+    assert_eq!(
+        fx_volume::apply(&form(200.0, 4.0, 0.25, 0.25))
+            .unwrap()
+            .ease,
+        ""
+    );
+    let glide = fx_volume::Form {
+        curve: "Glide".into(),
+        ..form(200.0, 4.0, 0.25, 0.25)
+    };
     assert_eq!(fx_volume::apply(&glide).unwrap().ease, "Glide");
 
     // A volume writes nothing else on the record: no words (§1's table marks `text` "–" for it), no file, no camera
     // row, and no lane so that it rides the whole bed.
     let fx = fx_volume::apply(&form(200.0, 4.0, 0.25, 0.25)).unwrap();
-    assert_eq!((fx.text.as_str(), fx.src.as_str(), fx.lane.as_str()), ("", "", ""));
+    assert_eq!(
+        (fx.text.as_str(), fx.src.as_str(), fx.lane.as_str()),
+        ("", "", "")
+    );
     assert_eq!((fx.cx, fx.cy, fx.hf, fx.wf), (None, None, None, None));
     assert_eq!(fx.snd, "");
     assert_eq!(fx.cam, 0);
-    assert_eq!((fx.t, fx.dur), (12.0, 4.0), "the form's own seconds pass through");
+    assert_eq!(
+        (fx.t, fx.dur),
+        (12.0, 4.0),
+        "the form's own seconds pass through"
+    );
 }
 
 // --- S5: heard, not seen ----------------------------------------------------------------------------------------------
@@ -268,32 +377,70 @@ fn f3_6_s5_overlapping_gains_multiply() {
     let loud = vol(2.0, 12.0, 4.0, 0.25);
 
     // Mid-band the envelope is 1, so the gain is what it says: trans = tout = 0.25 around t = 14 well inside 4 s.
-    assert_close("one volume doubles it", cut_hear::gain_under(&[loud.clone()], 14.0), 2.0);
+    assert_close(
+        "one volume doubles it",
+        cut_hear::gain_under(&[loud.clone()], 14.0),
+        2.0,
+    );
     // Two of them are two things done to the same sound: 2 times 2, not the average of 2 and 2.
-    assert_close("two overlapping gains multiply", cut_hear::gain_under(&[loud.clone(), loud.clone()], 14.0), 4.0);
+    assert_close(
+        "two overlapping gains multiply",
+        cut_hear::gain_under(&[loud.clone(), loud.clone()], 14.0),
+        4.0,
+    );
     // Nought is silence and stays silence however it is reached; fx_record's own reading agrees.
     let hush = vol(0.0, 12.0, 4.0, 0.25);
-    assert_close("a volume at nought is silence", cut_hear::gain_under(&[hush.clone()], 14.0), 0.0);
+    assert_close(
+        "a volume at nought is silence",
+        cut_hear::gain_under(&[hush.clone()], 14.0),
+        0.0,
+    );
     assert!(fx_record::gain_is_silence(&hush));
     assert!(!fx_record::gain_is_silence(&loud));
     // A volume at 100 % changes nothing, which is the same number as no volume at all.
-    assert_close("100 % is untouched", cut_hear::gain_under(&[vol(1.0, 12.0, 4.0, 0.25)], 14.0), 1.0);
+    assert_close(
+        "100 % is untouched",
+        cut_hear::gain_under(&[vol(1.0, 12.0, 4.0, 0.25)], 14.0),
+        1.0,
+    );
     // The ceiling caps the product, so a fourth one after it buys nothing — that is why the field tops out at 1000 %.
-    assert_close("playbin's ceiling", cut_hear::gain_under(&[vol(100.0, 12.0, 4.0, 0.25)], 14.0), 10.0);
+    assert_close(
+        "playbin's ceiling",
+        cut_hear::gain_under(&[vol(100.0, 12.0, 4.0, 0.25)], 14.0),
+        10.0,
+    );
     assert!(
-        cut_hear::gain_under(&[vol(100.0, 12.0, 4.0, 0.25), vol(4.0, 12.0, 4.0, 0.25)], 14.0) <= cut_hear::MAX_GAIN
+        cut_hear::gain_under(
+            &[vol(100.0, 12.0, 4.0, 0.25), vol(4.0, 12.0, 4.0, 0.25)],
+            14.0
+        ) <= cut_hear::MAX_GAIN
     );
 
     // Mid-ramp: with a one-second ramp at half a second in the envelope is 0.5, so gain 2 reads halfway from 1 —
     // 1 + (2 - 1) × 0.5 = 1.5. The fades are why a volume is never a step unless asked to be.
     let ramped = vol(2.0, 12.0, 4.0, 1.0);
-    assert_close("halfway up the ramp", cut_hear::gain_under(&[ramped.clone()], 12.5), 1.5);
+    assert_close(
+        "halfway up the ramp",
+        cut_hear::gain_under(&[ramped.clone()], 12.5),
+        1.5,
+    );
 
     // Paused or playing: §A.6's "Preview gain applies even paused". Same function, so the same number at a second
     // where the envelope is not even 1 — which is the point, since the fades can only be judged without a moving frame.
-    assert_close("heard paused mid-band", fx_volume::heard_while_paused(&[loud.clone()], 14.0), 2.0);
-    assert_eq!(fx_volume::heard_while_paused(&[loud.clone()], 14.0), cut_hear::gain_under(&[loud.clone()], 14.0));
-    assert_close("heard paused mid-ramp", fx_volume::heard_while_paused(&[ramped.clone()], 12.5), 1.5);
+    assert_close(
+        "heard paused mid-band",
+        fx_volume::heard_while_paused(&[loud.clone()], 14.0),
+        2.0,
+    );
+    assert_eq!(
+        fx_volume::heard_while_paused(&[loud.clone()], 14.0),
+        cut_hear::gain_under(&[loud.clone()], 14.0)
+    );
+    assert_close(
+        "heard paused mid-ramp",
+        fx_volume::heard_while_paused(&[ramped.clone()], 12.5),
+        1.5,
+    );
     assert_eq!(
         fx_volume::heard_while_paused(&[ramped.clone()], 12.5),
         cut_hear::gain_under(&[ramped], 12.5)
@@ -331,12 +478,18 @@ fn f3_6_s5b_the_status_says_the_picture_is_untouched() {
 
     // The status whole, including §F3.6's em dash — and no `↶ Undo takes it back` tail, which belongs to speed's §A.3
     // wording rather than to this flow's quote.
-    assert_eq!(fx_volume::placed_status(&loud), format!("{label} \u{2014} the picture is untouched"));
+    assert_eq!(
+        fx_volume::placed_status(&loud),
+        format!("{label} \u{2014} the picture is untouched")
+    );
     assert_eq!(
         fx_volume::placed_status(&loud),
         "00:12 louder at 200% for 4.0s \u{2014} the picture is untouched"
     );
-    assert!(!fx_volume::placed_status(&loud).contains("Undo"), "that suffix is §A.3's, not §F3.6's");
+    assert!(
+        !fx_volume::placed_status(&loud).contains("Undo"),
+        "that suffix is §A.3's, not §F3.6's"
+    );
 
     // A silenced passage and a quiet one read as what they are; the lane and the status line are the same string, so
     // one cannot promise a loudness the other denies.
@@ -364,7 +517,11 @@ fn f3_6_s6_no_box_no_drag_and_the_whole_bed() {
     let bed = vol(2.0, 12.0, 4.0, 0.25);
     assert_eq!(bed.lane, "");
     assert!(fx_record::rides_whole_bed(&bed));
-    let one_lane = Fx { kind: "volume".into(), lane: "mic1".into(), ..Default::default() };
+    let one_lane = Fx {
+        kind: "volume".into(),
+        lane: "mic1".into(),
+        ..Default::default()
+    };
     assert!(!fx_record::rides_whole_bed(&one_lane));
 
     // Silence is a stored nought, and the field's nought stores exactly that.

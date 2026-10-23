@@ -38,12 +38,21 @@ impl Fixture {
         let dir = root.join("session.naivepost");
         std::fs::create_dir_all(&dir).expect("create the session folder");
         let tree = Tree::new(&dir).expect("a .naivepost folder is a project");
-        std::fs::create_dir_all(tree.session_txt().parent().expect("session.txt sits in a folder"))
-            .expect("the transcript folder");
+        std::fs::create_dir_all(
+            tree.session_txt()
+                .parent()
+                .expect("session.txt sits in a folder"),
+        )
+        .expect("the transcript folder");
         let project = naivepost::project::load(&fixture_dir()).expect("fixture loads");
         let json = serde_json::to_string_pretty(&project).expect("project serialises");
-        std::fs::write(dir.join(naivepost::project::PROJECT_FILE), json).expect("write naivepost.json");
-        Self { root, tree, project }
+        std::fs::write(dir.join(naivepost::project::PROJECT_FILE), json)
+            .expect("write naivepost.json");
+        Self {
+            root,
+            tree,
+            project,
+        }
     }
 
     /// §S1's timeline marker, and the seconds the model copies its stamps off.
@@ -67,7 +76,11 @@ impl Fixture {
             })
             .collect();
         let doc = WordsDoc {
-            text: spoken.iter().map(|(w, _)| *w).collect::<Vec<&str>>().join(" "),
+            text: spoken
+                .iter()
+                .map(|(w, _)| *w)
+                .collect::<Vec<&str>>()
+                .join(" "),
             words,
         };
         requests::write_words(&self.tree, "cam0", &doc).expect("write words.json");
@@ -93,14 +106,22 @@ fn textfmt_write_retakes(marks: &[Retake], path: &std::path::Path) -> Result<(),
 }
 
 pub fn retake(s: f64, e: f64) -> Retake {
-    Retake { s, e, again: 0.0, to: e, text: String::new(), whole: String::new() }
+    Retake {
+        s,
+        e,
+        again: 0.0,
+        to: e,
+        text: String::new(),
+        whole: String::new(),
+    }
 }
 
 /// The WORDS arm's starting point (§S2a): nothing marked, no `final.txt`, so `no_model` has real work
 /// to do, and the page's own cut as its base — the fixture's is a multi-scene session, which gives the
 /// walk something to trim.
 pub fn words_cut() -> Cut {
-    let text = std::fs::read_to_string(fixture_dir().join("cut/cut.json")).expect("fixture cut.json");
+    let text =
+        std::fs::read_to_string(fixture_dir().join("cut/cut.json")).expect("fixture cut.json");
     serde_json::from_str(&text).expect("the fixture cut parses")
 }
 
@@ -108,7 +129,12 @@ pub fn words_cut() -> Cut {
 /// change on screen.
 pub fn one_scene_cut() -> Cut {
     Cut {
-        segs: vec![Seg { s: 0.0, e: 60.0, cam: 0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 60.0,
+            cam: 0,
+            ..Default::default()
+        }],
         ..Default::default()
     }
 }
@@ -138,7 +164,8 @@ pub fn point_llm_at(url: &str) {
 pub fn run_tree() -> Tree {
     crate::common::pin_private_cwd();
     let root = std::env::current_dir().expect("the process has a working directory");
-    Tree::new(naivepost::startup::session_dir(&root)).expect("the working copy is a .naivepost folder")
+    Tree::new(naivepost::startup::session_dir(&root))
+        .expect("the working copy is a .naivepost folder")
 }
 
 /// The model's answer, framed the way a real server frames it: `choices[0].message.tool_calls`, each

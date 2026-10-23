@@ -9,8 +9,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use naivepost::icons;
 use crate::common;
+use naivepost::icons;
 
 /// The icon tree the checkout ships: the app icon and nothing else.
 fn repo_icons() -> PathBuf {
@@ -21,7 +21,10 @@ fn repo_icons() -> PathBuf {
 fn theme(root: &Path, name: &str, folders: &[(&str, &[&str])]) -> PathBuf {
     let theme = root.join(name);
     let directories: Vec<String> = folders.iter().map(|(dir, _)| dir.to_string()).collect();
-    let mut index = format!("[Icon Theme]\nName={name}\nDirectories={}\n", directories.join(";"));
+    let mut index = format!(
+        "[Icon Theme]\nName={name}\nDirectories={}\n",
+        directories.join(";")
+    );
     for (dir, icons) in folders {
         let path = theme.join(dir);
         fs::create_dir_all(&path).unwrap();
@@ -65,7 +68,10 @@ fn the_names_are_the_ones_the_code_asks_for() {
         .map(|name| name.as_str())
         .collect();
     missing.sort();
-    assert!(missing.is_empty(), "widgets ask for {missing:?}, which nothing checks");
+    assert!(
+        missing.is_empty(),
+        "widgets ask for {missing:?}, which nothing checks"
+    );
 }
 
 /// Every `"...-symbolic"` string literal under `dir`, recursively, deduplicated and sorted.
@@ -110,7 +116,11 @@ fn a_tree_with_no_theme_resolves_none_of_them() {
 fn a_theme_resolves_the_names_it_holds_and_only_those() {
     let root = common::temp_dir_tagged("one-theme");
     let icons_dir = root.join("icons");
-    let held: Vec<&str> = icons::NAMED_SYMBOLIC_ICONS.iter().copied().skip(1).collect();
+    let held: Vec<&str> = icons::NAMED_SYMBOLIC_ICONS
+        .iter()
+        .copied()
+        .skip(1)
+        .collect();
     theme(&icons_dir, "Adwaita", &[("symbolic/16x16", &held)]);
     // One name is missing from the theme: the list alone answers which button stays broken.
     assert_eq!(
@@ -142,7 +152,11 @@ fn a_folder_without_an_index_theme_is_not_a_theme() {
     let bare = icons_dir.join("NotATheme");
     fs::create_dir_all(bare.join("symbolic/16x16")).unwrap();
     for name in &all {
-        fs::write(bare.join("symbolic/16x16").join(format!("{name}.svg")), "<svg/>").unwrap();
+        fs::write(
+            bare.join("symbolic/16x16").join(format!("{name}.svg")),
+            "<svg/>",
+        )
+        .unwrap();
     }
     assert_eq!(icons::themes(&icons_dir), vec![] as Vec<PathBuf>);
     assert_eq!(icons::missing_in_for_test(&icons_dir).len(), all.len());
@@ -158,7 +172,10 @@ fn the_tree_beside_the_binary_is_where_a_package_carries_its_theme() {
     fs::write(&bin, "not really an exe").unwrap();
     let icons_dir = bin.parent().unwrap().join("icons");
     theme(&icons_dir, "Adwaita", &[("symbolic/16x16", &[])]);
-    assert_eq!(icons::bundled_themes(&bin, &root), vec![icons_dir.join("Adwaita")]);
+    assert_eq!(
+        icons::bundled_themes(&bin, &root),
+        vec![icons_dir.join("Adwaita")]
+    );
     assert_eq!(
         icons::missing_in_for_test(&icons_dir).len(),
         icons::NAMED_SYMBOLIC_ICONS.len()

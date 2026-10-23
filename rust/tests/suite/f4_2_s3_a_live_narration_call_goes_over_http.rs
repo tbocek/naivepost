@@ -16,7 +16,13 @@ fn f4_2_s3_a_live_narration_call_goes_over_http_to_the_settings_address() {
     // reply that speaks for one clip and skips the other is refused ("clip 2 ... got no entry") —
     // silence has to be said, here as an empty-text entry on clip 2.
     let answer = entries_answer(&[
-        (0.0, 10.0, 2.0, "Proof of stake changed the whole cost.", "calm"),
+        (
+            0.0,
+            10.0,
+            2.0,
+            "Proof of stake changed the whole cost.",
+            "calm",
+        ),
         (10.0, 20.0, 1.0, "", ""),
     ]);
     let llm = FakeLlm::start(vec![answer]);
@@ -35,39 +41,66 @@ fn f4_2_s3_a_live_narration_call_goes_over_http_to_the_settings_address() {
     let before = std::fs::read_to_string(fixture.tree.requests_tsv())
         .map(|_| rows(&fixture).len())
         .unwrap_or(0);
-    let round = ask_one(&fixture, 1, true, &|| false)
-        .expect("the live call answers over the socket");
-    assert!(!round.used_tools, "this answer came back as content, not as tool calls");
+    let round =
+        ask_one(&fixture, 1, true, &|| false).expect("the live call answers over the socket");
+    assert!(
+        !round.used_tools,
+        "this answer came back as content, not as tool calls"
+    );
     // The matching is what `drive` does, run over the answer ALREADY read from this one request:
     // calling `drive` here would dial again and land a second `requests.tsv` row for a request this
     // test never made. Same forward-only ±0.5 s rule, same tolerance constant.
     let mut written: Vec<naivepost::narrate_run::Written> = Vec::new();
     let document: serde_json::Value = serde_json::from_str(&round.answer)
         .expect("the answer read off the socket is the entries document");
-    let entries = document.get("entries").and_then(|e| e.as_array())
+    let entries = document
+        .get("entries")
+        .and_then(|e| e.as_array())
         .expect("the document has an entries list");
     let mut cursor = 0usize;
     for entry in entries {
-        let start = entry.get("start").and_then(|v| v.as_f64()).unwrap_or_default();
-        let end = entry.get("end").and_then(|v| v.as_f64()).unwrap_or_default();
+        let start = entry
+            .get("start")
+            .and_then(|v| v.as_f64())
+            .unwrap_or_default();
+        let end = entry
+            .get("end")
+            .and_then(|v| v.as_f64())
+            .unwrap_or_default();
         let found = (cursor..segs.len()).find(|&i| {
             (start - segs[i].s).abs() <= naivepost::narrate_reply::ENTRY_MATCH_TOLERANCE_SECONDS
-                && (end - segs[i].e).abs() <= naivepost::narrate_reply::ENTRY_MATCH_TOLERANCE_SECONDS
+                && (end - segs[i].e).abs()
+                    <= naivepost::narrate_reply::ENTRY_MATCH_TOLERANCE_SECONDS
         });
         let Some(index) = found else {
-            panic!("{}", naivepost::narrate_reply::unmatched_entry_fault(start, end));
+            panic!(
+                "{}",
+                naivepost::narrate_reply::unmatched_entry_fault(start, end)
+            );
         };
         cursor = index + 1;
         written.push(naivepost::narrate_run::Written {
             start: segs[index].s,
             end: segs[index].e,
             at: entry.get("at").and_then(|v| v.as_f64()).unwrap_or_default(),
-            text: entry.get("text").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-            emotion: entry.get("emotion").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
+            text: entry
+                .get("text")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            emotion: entry
+                .get("emotion")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
         });
     }
 
-    assert_eq!(written.len(), 2, "both clips answered over the socket — one line, one said-silent");
+    assert_eq!(
+        written.len(),
+        2,
+        "both clips answered over the socket — one line, one said-silent"
+    );
     assert_eq!(written[0].start, 0.0, "matched to clip 1's own start");
     assert_eq!(written[0].end, 10.0, "and its end");
     assert_eq!(written[0].at, 2.0, "at the offset the reply gave");
@@ -75,7 +108,10 @@ fn f4_2_s3_a_live_narration_call_goes_over_http_to_the_settings_address() {
     // The empty-text entry survives as an ANSWER (F4.2: empty text is a deliberate answer), it is not
     // a missing clip; only a whole reply of empty lines is refused.
     assert_eq!(written[1].start, 10.0, "clip 2 got its answer too");
-    assert!(written[1].text.is_empty(), "and that answer is silence, kept as such");
+    assert!(
+        written[1].text.is_empty(),
+        "and that answer is silence, kept as such"
+    );
 
     // The wire: a POST to the chat path, at the address the Settings now name.
     let seen = llm.next_seen();

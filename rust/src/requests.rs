@@ -215,7 +215,9 @@ pub fn parse_line(line: &str) -> Result<Request, String> {
         kind: f[6].to_string(),
         sent_bytes: opt_number(7)?,
         images: match opt_number(8)? {
-            Some(v) => Some(u32::try_from(v).map_err(|_| format!("{row}: {:?} is not an image count", f[8]))?),
+            Some(v) => Some(
+                u32::try_from(v).map_err(|_| format!("{row}: {:?} is not an image count", f[8]))?,
+            ),
             None => None,
         },
         received_bytes: opt_number(9)?,
@@ -272,11 +274,8 @@ pub fn record(tree: &layout::Tree, request: &Request) -> Result<(), String> {
     file.write_all(write_line(request).as_bytes())
         .map_err(|err| format!("{}: {err}", path.display()))?;
     // §1's 0644, set after the creation because a new file's mode is masked by the umask.
-    fs::set_permissions(
-        &path,
-        std::os::unix::fs::PermissionsExt::from_mode(0o644),
-    )
-    .map_err(|err| format!("{}: {err}", path.display()))
+    fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o644))
+        .map_err(|err| format!("{}: {err}", path.display()))
 }
 
 /// The log's rows, in the order they were appended. A missing file is no rows: a new
@@ -319,12 +318,17 @@ pub fn format_started(epoch_ms: i64, offset_secs: i32) -> String {
     let days = days + 719_468;
     let era = if days >= 0 { days } else { days - 146_096 } / 146_097;
     let day_of_era = days - era * 146_097;
-    let year_of_day = (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year_of_day =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
     let year = year_of_day + era * 400;
     let day_of_year = day_of_era - (365 * year_of_day + year_of_day / 4 - year_of_day / 100);
     let shifted_month = (5 * day_of_year + 2) / 153;
     let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
-    let month = if shifted_month < 10 { shifted_month + 3 } else { shifted_month - 9 };
+    let month = if shifted_month < 10 {
+        shifted_month + 3
+    } else {
+        shifted_month - 9
+    };
     let year = if month <= 2 { year + 1 } else { year };
 
     let (hours, rest) = ((millis / 3_600_000) as u32, millis % 3_600_000);
@@ -542,7 +546,11 @@ pub struct SceneChange {
 
 /// Write `scenes.tsv`: `time\tscore` per scene change, times with two decimals like every
 /// other time in these files.
-pub fn write_scenes(tree: &layout::Tree, source: &str, scenes: &[SceneChange]) -> Result<(), String> {
+pub fn write_scenes(
+    tree: &layout::Tree,
+    source: &str,
+    scenes: &[SceneChange],
+) -> Result<(), String> {
     let mut out = String::new();
     for scene in scenes {
         out.push_str(&format!("{:.2}\t{}\n", scene.time, scene.score));
@@ -567,7 +575,10 @@ pub fn read_scenes(tree: &layout::Tree, source: &str) -> Result<Vec<SceneChange>
             v.parse::<f64>()
                 .map_err(|_| format!("{}: {v:?} is not a number", path.display()))
         };
-        out.push(SceneChange { time: parse(time)?, score: parse(score)? });
+        out.push(SceneChange {
+            time: parse(time)?,
+            score: parse(score)?,
+        });
     }
     Ok(out)
 }

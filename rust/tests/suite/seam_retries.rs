@@ -40,7 +40,10 @@ fn p_machine_seamretries_s2_each_ask_keys_elsewhere() {
     let k1 = params_key(&first);
     let k2 = params_key(&second);
     assert!(k1.is_some() && k2.is_some());
-    assert_ne!(k1, k2, "a refused answer must not be re-served to the retry");
+    assert_ne!(
+        k1, k2,
+        "a refused answer must not be re-served to the retry"
+    );
     // A third ask differs from both, so N retries need N distinct slots.
     assert_ne!(k2, params_key(&sr::ask_slot(base, 2)));
 }
@@ -115,7 +118,10 @@ fn p_machine_seamretries_s5_a_refusal_removes_nothing() {
     // What the tool answers when the model gives up on the join: kept, zero removed.
     let mut kept = Join::new(&words_before, &words_after);
     let answer = kept.keep_join();
-    assert!(answer.contains("\"kept\":true") || answer.contains("kept"), "{answer}");
+    assert!(
+        answer.contains("\"kept\":true") || answer.contains("kept"),
+        "{answer}"
+    );
     assert!(answer.contains("removed"), "{answer}");
     assert!(kept.kept());
     assert_eq!(kept.dropped_count(Side::Before), 0);
@@ -127,7 +133,10 @@ fn p_machine_seamretries_s5_a_refusal_removes_nothing() {
     let err = refused.drop_words(Side::After, 0);
     assert!(err.contains("keep_join"), "{err}");
     assert_eq!(refused.dropped_count(Side::After), 0);
-    assert!(!refused.kept(), "a refusal is not the whole answer the pass wanted");
+    assert!(
+        !refused.kept(),
+        "a refusal is not the whole answer the pass wanted"
+    );
     // So after the last refusal of S4 the join is exactly as it arrived: nothing dropped either side.
     assert_eq!(refused.words_taken(Side::After).len(), 0);
 }
@@ -155,6 +164,9 @@ fn p_machine_seamretries_s6_family_is_machine_and_the_row_is_deliberately_unrowe
         "P.machine.seamSnapWords",
         "P.machine.seamNoiseWords",
     ] {
-        assert!(params::find(sibling).is_some(), "{sibling} should have a row");
+        assert!(
+            params::find(sibling).is_some(),
+            "{sibling} should have a row"
+        );
     }
 }

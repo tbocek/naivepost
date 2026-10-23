@@ -26,7 +26,8 @@ fn card_name(path: &str) -> &str {
 
 /// The status line's answer when the press landed on footage: the hand is left EXACTLY as it was, because a
 /// card nobody aimed at must not throw away a card someone already holds.
-pub const NOTHING: &str = "no card there \u{2014} a right-click or a double click holds a card, not the footage";
+pub const NOTHING: &str =
+    "no card there \u{2014} a right-click or a double click holds a card, not the footage";
 
 /// Which presses mean "hold that card": the right button, on its first press, or a left press that is the
 /// second or later click of a multi-click.
@@ -64,7 +65,10 @@ pub fn press(window: &adw::ApplicationWindow, seconds: f64) -> String {
     let name = card_name(&card.ins).to_string();
     ui::set_held_clip(Some(card));
     ui::refresh_insert_button(window);
-    let said = format!("{name} is held \u{2014} {} now re-opens it", cut_insert::edit_verb(true));
+    let said = format!(
+        "{name} is held \u{2014} {} now re-opens it",
+        cut_insert::edit_verb(true)
+    );
     if let Some(status) = ui::window::find_status(window.upcast_ref()) {
         status.set_text(&said);
     }

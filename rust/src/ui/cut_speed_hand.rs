@@ -12,9 +12,9 @@ use crate::cut_speed;
 use crate::fx_zoom;
 use crate::shell::Page;
 use crate::ui::window::{
-    find_status, find_widget_by_name, INSERT_PLACE_KNOWN, line_step_button,
-    live_form_answer_is_undo, log_line, paste_line, press_band_esc, record_edit,
-    refresh_effects_lane, review_cut_of, save_insert_cut, selection, trim_seconds, zoom_field_row,
+    find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo, log_line,
+    paste_line, press_band_esc, record_edit, refresh_effects_lane, review_cut_of, save_insert_cut,
+    selection, trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
 };
 
 // --- F3.3 Speed and stop by hand: the press, the form, the Apply ----------------------------------------------
@@ -46,8 +46,7 @@ pub fn press_speed_item(window: &adw::ApplicationWindow) -> String {
             // `initial` is the effect the press opens the form with: a half-speed stretch over the marked
             // seconds, or a stop faded on and off. Its `t`/`dur` are the form's Length; its rate is the
             // dropdown's starting row.
-            let fx = cut_speed::initial(pressed)
-                .unwrap_or_default();
+            let fx = cut_speed::initial(pressed).unwrap_or_default();
             let title = cut_speed::form_title(fx.t, fx.dur);
             show_speed_form(window, &fx);
             format!("{title} \u{2014} say the rate and \u{25b8} Apply places it")
@@ -194,7 +193,6 @@ pub(crate) fn show_speed_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
 
     let footer = super::cut_form_buttons::form_note("speed");
 
-
     holder.append(&heading);
     holder.append(&rate_row);
     holder.append(&sound_row);
@@ -261,8 +259,7 @@ fn speed_entry(name: &str) -> Option<gtk::Entry> {
 
 /// The same lookup with the window passed in: a debounced commit only has the window it was handed.
 fn speed_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
-    find_widget_by_name(window.upcast_ref(), name)
-        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+    find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
 }
 
 /// Read one of the speed form's dropdowns back from THIS window's tree.
@@ -325,7 +322,8 @@ fn refresh_custom_rate_sensitivity(drop: &gtk::DropDown, custom: &gtk::Entry) {
 /// and shares the fades), and puts the result on the cut as ONE edit.
 pub fn press_speed_apply(window: &adw::ApplicationWindow) -> String {
     if !speed_form_owner(window) {
-        return "no speed form on this page \u{2014} mark a stretch or put the line down first".to_string();
+        return "no speed form on this page \u{2014} mark a stretch or put the line down first"
+            .to_string();
     }
     let Some(stored) = speed_form_open() else {
         return "no speed to apply \u{2014} press \u{23e9} Speed first".to_string();
@@ -396,9 +394,9 @@ pub fn sound_promise(snd: &str) -> Option<&'static str> {
     if crate::effect_overlap::preview_plays_pitch_as_render(snd) {
         return Some("the preview plays this sound the way the render does");
     }
-    crate::effect_overlap::says_render_only(snd).is_none().then_some(
-        "the preview silences the whole bed, and so now does the render",
-    )
+    crate::effect_overlap::says_render_only(snd)
+        .is_none()
+        .then_some("the preview silences the whole bed, and so now does the render")
 }
 
 /// F3.3 S3: Cancel drops the form and changes nothing on the cut — no record pushed, no history written, so ↶
@@ -420,7 +418,9 @@ pub fn press_speed_esc(window: &adw::ApplicationWindow) -> Option<String> {
 /// The debounced commit: re-read THIS window's speed form's number entries into its stored state and print the kept
 /// length. Form state only — the cut waits for Apply (§F3.8 S5, `wire_live_fields`).
 fn keep_speed_fields(window: &adw::ApplicationWindow) {
-    let Some(stored) = speed_form_open() else { return };
+    let Some(stored) = speed_form_open() else {
+        return;
+    };
     let read = |name: &str, keep: f64| -> f64 {
         speed_entry_of(window, name)
             .map(|entry| entry.text().trim().to_string())
@@ -442,10 +442,7 @@ fn keep_speed_fields(window: &adw::ApplicationWindow) {
 
 /// Wire the form's two buttons BY NAME. Each forwards one press and prints what comes back; neither holds a rule.
 pub(crate) fn wire_speed_buttons(window: &adw::ApplicationWindow) {
-    for (name, door) in [
-        ("speed-apply-button", true),
-        ("speed-cancel-button", false),
-    ] {
+    for (name, door) in [("speed-apply-button", true), ("speed-cancel-button", false)] {
         if let Some(button) = line_step_button(window, name) {
             let win = window.clone();
             button.connect_clicked(move |_| {

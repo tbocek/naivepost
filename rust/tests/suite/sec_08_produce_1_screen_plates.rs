@@ -37,7 +37,13 @@ fn near(a: f64, b: f64) -> bool {
 }
 
 fn mark(cx: f64, cy: f64, wf: f64, hf: f64) -> TextMark {
-    TextMark { cx, cy, wf, hf, text: "words".into() }
+    TextMark {
+        cx,
+        cy,
+        wf,
+        hf,
+        text: "words".into(),
+    }
 }
 
 /// The title band: one box across the top, inset from both edges, and NOTHING when there is no title to print.
@@ -47,15 +53,33 @@ fn sec_08_produce_1_screen_s7_the_title_band_is_one_inset_box_only_while_a_title
     let boxes = layout_marks(&[], "a title", true, w, h);
     assert_eq!(boxes.len(), 1, "{ITEM} s7: a title prints exactly one band");
     let (x, y, bw, bh, text) = boxes[0].clone();
-    assert!(near(y, h * 0.06), "{ITEM} s7: band top {} != {}", y, h * 0.06);
-    assert!(near(bw, w - 2.0 * (w * 0.06)), "{ITEM} s7: band width {bw} is not inset on both sides");
-    assert!(bh > 0.0 && x > 0.0, "{ITEM} s7: band {x},{y} {bw}x{bh} is not a box inside the plate");
-    assert_eq!(text, "a title", "{ITEM} s7: the band must carry the title itself");
+    assert!(
+        near(y, h * 0.06),
+        "{ITEM} s7: band top {} != {}",
+        y,
+        h * 0.06
+    );
+    assert!(
+        near(bw, w - 2.0 * (w * 0.06)),
+        "{ITEM} s7: band width {bw} is not inset on both sides"
+    );
+    assert!(
+        bh > 0.0 && x > 0.0,
+        "{ITEM} s7: band {x},{y} {bw}x{bh} is not a box inside the plate"
+    );
+    assert_eq!(
+        text, "a title",
+        "{ITEM} s7: the band must carry the title itself"
+    );
 
-    assert!(layout_marks(&[], "a title", false, w, h).is_empty(),
-        "{ITEM} s7: a retitle must not repaint the picture, so no band once the title has printed");
-    assert!(layout_marks(&[], "", true, w, h).is_empty(),
-        "{ITEM} s7: an empty title prints no band");
+    assert!(
+        layout_marks(&[], "a title", false, w, h).is_empty(),
+        "{ITEM} s7: a retitle must not repaint the picture, so no band once the title has printed"
+    );
+    assert!(
+        layout_marks(&[], "", true, w, h).is_empty(),
+        "{ITEM} s7: an empty title prints no band"
+    );
     RAN_BAND.store(true, Ordering::SeqCst);
 }
 
@@ -63,15 +87,42 @@ fn sec_08_produce_1_screen_s7_the_title_band_is_one_inset_box_only_while_a_title
 #[test]
 fn sec_08_produce_1_screen_s7_a_mark_keeps_its_centre_and_stays_inside_the_plate() {
     let (w, h) = (400.0, 200.0);
-    let boxes = layout_marks(std::slice::from_ref(&mark(0.5, 0.25, 0.5, 0.2)), "", false, w, h);
+    let boxes = layout_marks(
+        std::slice::from_ref(&mark(0.5, 0.25, 0.5, 0.2)),
+        "",
+        false,
+        w,
+        h,
+    );
     assert_eq!(boxes.len(), 1, "{ITEM} s7: one mark, one box");
     let (x, y, bw, bh, _) = boxes[0];
-    assert!(near(bw, 200.0) && near(bh, 40.0), "{ITEM} s7: box {bw}x{bh} is not wf/hf of the plate");
-    assert!(near(x + bw / 2.0, 200.0), "{ITEM} s7: box centre x {} != cx*w", x + bw / 2.0);
-    assert!(near(y + bh / 2.0, 50.0), "{ITEM} s7: box centre y {} != cy*h", y + bh / 2.0);
+    assert!(
+        near(bw, 200.0) && near(bh, 40.0),
+        "{ITEM} s7: box {bw}x{bh} is not wf/hf of the plate"
+    );
+    assert!(
+        near(x + bw / 2.0, 200.0),
+        "{ITEM} s7: box centre x {} != cx*w",
+        x + bw / 2.0
+    );
+    assert!(
+        near(y + bh / 2.0, 50.0),
+        "{ITEM} s7: box centre y {} != cy*h",
+        y + bh / 2.0
+    );
 
-    let hung = layout_marks(std::slice::from_ref(&mark(0.95, 0.5, 0.5, 0.2)), "", false, w, h)[0].clone();
-    assert!(hung.0 >= 0.0 && hung.0 + hung.2 <= w, "{ITEM} s7: a mark at the edge drew off the plate: {hung:?}");
+    let hung = layout_marks(
+        std::slice::from_ref(&mark(0.95, 0.5, 0.5, 0.2)),
+        "",
+        false,
+        w,
+        h,
+    )[0]
+    .clone();
+    assert!(
+        hung.0 >= 0.0 && hung.0 + hung.2 <= w,
+        "{ITEM} s7: a mark at the edge drew off the plate: {hung:?}"
+    );
     RAN_MARK.store(true, Ordering::SeqCst);
 }
 
@@ -99,7 +150,11 @@ fn publish(state: ui::produce_page::ProduceState, window: &adw::ApplicationWindo
 }
 
 fn with_mark(texts: Vec<TextMark>, frames: Vec<String>) -> ui::produce_page::ProduceState {
-    ui::produce_page::ProduceState { texts, frames, ..Default::default() }
+    ui::produce_page::ProduceState {
+        texts,
+        frames,
+        ..Default::default()
+    }
 }
 
 /// §A's Inputs readout (item **15**) and the Outputs count beside it. The two counts the SESSION owns —
@@ -121,12 +176,16 @@ fn check_inputs_and_outputs_readouts(_app: &adw::Application) {
     };
     let lines = vec![line(1.0, 4.0, "one"), line(5.0, 8.0, "two")];
     naivepost::narration::save(
-        &naivepost::narration::Narration { entries: lines.clone(), silent: Vec::new() },
+        &naivepost::narration::Narration {
+            entries: lines.clone(),
+            silent: Vec::new(),
+        },
         &tree,
     )
     .expect("narration.json written");
     // One of the two HAS a take, so exactly one line is owed.
-    let spoken = naivepost::produce_stamp::wav_of(&tree, &lines[0], None, 0).expect("a path for a spoken line");
+    let spoken = naivepost::produce_stamp::wav_of(&tree, &lines[0], None, 0)
+        .expect("a path for a spoken line");
     std::fs::create_dir_all(spoken.parent().unwrap()).unwrap();
     std::fs::write(&spoken, vec![3u8; 64]).unwrap();
     let window = produce_window(_app);
@@ -176,7 +235,11 @@ fn check_inputs_and_outputs_readouts(_app: &adw::Application) {
         naivepost::produce_screen::inputs_line(7, 254.0, true, 0, false),
         "{ITEM}: narration off reads “no narration”, not a speak count"
     );
-    assert_eq!(label_of("produce-outputs"), "0 files", "{ITEM}: nothing written yet says so plainly");
+    assert_eq!(
+        label_of("produce-outputs"),
+        "0 files",
+        "{ITEM}: nothing written yet says so plainly"
+    );
     publish(ui::produce_page::ProduceState::default(), &window);
     assert_eq!(
         label_of("produce-inputs"),
@@ -214,25 +277,37 @@ thread_local! {
 #[test]
 fn sec_08_produce_1_screen_s7_the_dashed_box_lives_on_the_picture() {
     plate_round();
-    assert!(RAN_ON_PICTURE.load(Ordering::SeqCst), "{ITEM} s7: the on-picture check never ran");
+    assert!(
+        RAN_ON_PICTURE.load(Ordering::SeqCst),
+        "{ITEM} s7: the on-picture check never ran"
+    );
 }
 
 #[test]
 fn sec_08_produce_1_screen_s7_no_dashed_box_while_no_mark_exists() {
     plate_round();
-    assert!(RAN_NO_WRAPPER.load(Ordering::SeqCst), "{ITEM} s7: the no-mark check never ran");
+    assert!(
+        RAN_NO_WRAPPER.load(Ordering::SeqCst),
+        "{ITEM} s7: the no-mark check never ran"
+    );
 }
 
 #[test]
 fn sec_08_produce_1_screen_s2_both_plates_are_laid_out_to_be_painted() {
     plate_round();
-    assert!(RAN_ALLOCATION.load(Ordering::SeqCst), "{ITEM} s2: the allocation check never ran");
+    assert!(
+        RAN_ALLOCATION.load(Ordering::SeqCst),
+        "{ITEM} s2: the allocation check never ran"
+    );
 }
 
 #[test]
 fn sec_08_produce_1_screen_s4_inputs_and_outputs_read_their_counts() {
     plate_round();
-    assert!(RAN_READOUTS.load(Ordering::SeqCst), "{ITEM} s4: the readout check never ran");
+    assert!(
+        RAN_READOUTS.load(Ordering::SeqCst),
+        "{ITEM} s4: the readout check never ran"
+    );
 }
 
 fn on_picture(window: &adw::ApplicationWindow) {
@@ -240,11 +315,14 @@ fn on_picture(window: &adw::ApplicationWindow) {
     // `place_overlay_box` finds its names through the page's root slot, which is THIS window (what `wire`
     // published), so the walk starts at the box in this window's tree.
     let root = ui::produce_page::page_root().unwrap_or_else(|| panic!("{ITEM} s7: no page root"));
-    let box_on_picture = find_in(&root, "words-box-0")
-        .unwrap_or_else(|| panic!("{ITEM} s7: publishing one mark drew no ✎ box under the page root"));
+    let box_on_picture = find_in(&root, "words-box-0").unwrap_or_else(|| {
+        panic!("{ITEM} s7: publishing one mark drew no ✎ box under the page root")
+    });
     // "Over the picture" is proved by climbing from the box: its parent is the float holder, and THAT
     // holder's parent is the overlay that also holds the plate — so the plate and the box share a parent.
-    let holder = box_on_picture.parent().expect("{ITEM} s7: the ✎ box has no parent");
+    let holder = box_on_picture
+        .parent()
+        .expect("{ITEM} s7: the ✎ box has no parent");
     let overlay = holder
         .parent()
         .unwrap_or_else(|| panic!("{ITEM} s7: the word-box holder floats in nothing"));
@@ -252,10 +330,16 @@ fn on_picture(window: &adw::ApplicationWindow) {
         .downcast_ref::<gtk::Overlay>()
         .and_then(|o| o.child())
         .unwrap_or_else(|| panic!("{ITEM} s7: {} holds no picture", overlay.widget_name()));
-    assert_eq!(drawn.widget_name(), "thumbnail-picture",
-        "{ITEM} s7: the ✎ box is over {}, not over the picture", drawn.widget_name());
-    assert!(drawn.has_css_class("produce-plate"),
-        "{ITEM} s7: what the box floats over is not the painted plate");
+    assert_eq!(
+        drawn.widget_name(),
+        "thumbnail-picture",
+        "{ITEM} s7: the ✎ box is over {}, not over the picture",
+        drawn.widget_name()
+    );
+    assert!(
+        drawn.has_css_class("produce-plate"),
+        "{ITEM} s7: what the box floats over is not the painted plate"
+    );
     RAN_ON_PICTURE.store(true, Ordering::SeqCst);
     window.close();
     common::settle();
@@ -274,7 +358,6 @@ fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     }
     None
 }
-
 
 fn no_wrapper(window: &adw::ApplicationWindow) {
     publish(with_mark(vec![], vec![]), window);
@@ -297,8 +380,12 @@ fn no_wrapper(window: &adw::ApplicationWindow) {
     }
     let holder = holder.expect("{ITEM} s7: the plate's overlay has no word-box holder");
     // The column still calls the thumbnail's slot by the plate's name, which is what §1's order list reads.
-    assert_eq!(column_entry_of(window), "thumbnail-picture",
-        "{ITEM} s7: the left column's thumbnail slot is {}", column_entry_of(window));
+    assert_eq!(
+        column_entry_of(window),
+        "thumbnail-picture",
+        "{ITEM} s7: the left column's thumbnail slot is {}",
+        column_entry_of(window)
+    );
     let mut boxes = 0;
     let mut cursor = holder.first_child();
     while let Some(child) = cursor {
@@ -307,7 +394,10 @@ fn no_wrapper(window: &adw::ApplicationWindow) {
         }
         cursor = child.next_sibling();
     }
-    assert_eq!(boxes, 0, "{ITEM} s7: a removed mark left its dashed box on the picture");
+    assert_eq!(
+        boxes, 0,
+        "{ITEM} s7: a removed mark left its dashed box on the picture"
+    );
     RAN_NO_WRAPPER.store(true, Ordering::SeqCst);
     window.close();
     common::settle();
@@ -328,7 +418,9 @@ fn column_entry_of(window: &adw::ApplicationWindow) -> String {
 }
 
 fn allocation(window: &adw::ApplicationWindow) {
-    let frames = (1..=3).map(|n| format!("project:produce/publish/frame-{n}.jpg")).collect();
+    let frames = (1..=3)
+        .map(|n| format!("project:produce/publish/frame-{n}.jpg"))
+        .collect();
     publish(with_mark(vec![], frames), window);
     for name in ["thumbnail-picture", "image-picture-0"] {
         let plate = widget(window, name);
@@ -336,7 +428,10 @@ fn allocation(window: &adw::ApplicationWindow) {
             .compute_bounds(window.upcast_ref::<gtk::Widget>())
             .map(|b| b.width())
             .unwrap_or(0.0);
-        assert!(wide > 0.0, "{ITEM} s2: {name} was never allocated, so nothing paints on it");
+        assert!(
+            wide > 0.0,
+            "{ITEM} s2: {name} was never allocated, so nothing paints on it"
+        );
     }
     RAN_ALLOCATION.store(true, Ordering::SeqCst);
     window.close();

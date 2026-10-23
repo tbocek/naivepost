@@ -12,9 +12,9 @@ use crate::cut;
 use crate::fx_label;
 use crate::shell::Page;
 use crate::ui::window::{
-    find_status, find_widget_by_name, INSERT_PLACE_KNOWN, line_step_button,
-    live_form_answer_is_undo, live_form_refused, log_line, paste_line, record_edit,
-    refresh_effects_lane, review_cut_of, save_insert_cut, selection, trim_seconds, zoom_field_row,
+    find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo,
+    live_form_refused, log_line, paste_line, record_edit, refresh_effects_lane, review_cut_of,
+    save_insert_cut, selection, trim_seconds, zoom_field_row, INSERT_PLACE_KNOWN,
 };
 
 // --- F3.7 Label by hand: the press, the form, the Apply --------------------------------------------------
@@ -158,7 +158,11 @@ pub(crate) fn show_label_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
 /// The form a press starts from, built out of the record so no default is invented in the widget layer. The name
 /// is whatever the mark holds — empty until the human types one.
 fn label_form_of(fx: &cut::Fx) -> fx_label::Form {
-    fx_label::Form { t: fx.t, name: fx.text.clone(), dur: fx.dur }
+    fx_label::Form {
+        t: fx.t,
+        name: fx.text.clone(),
+        dur: fx.dur,
+    }
 }
 
 /// F3.7 S2/S3: the form waiting on the page, before Apply. What a widget test reads to assert the same state
@@ -204,8 +208,7 @@ fn label_entry(name: &str) -> Option<gtk::Entry> {
 
 /// The same lookup with the window passed in: a debounced commit only has the window it was handed.
 fn label_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
-    find_widget_by_name(window.upcast_ref(), name)
-        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+    find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
 }
 
 /// F3.7 S2/S4: Apply. Reads the two fields back, hands them to [`fx_label::apply`] (which refuses an empty
@@ -213,7 +216,8 @@ fn label_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::En
 /// cut as ONE edit.
 pub fn press_label_apply(window: &adw::ApplicationWindow) -> String {
     if !label_form_owner(window) {
-        return "no label form on this page \u{2014} mark a stretch or put the line down first".to_string();
+        return "no label form on this page \u{2014} mark a stretch or put the line down first"
+            .to_string();
     }
     let Some(stored) = label_form_open() else {
         return "no label to apply \u{2014} press \u{1f3f7} Label first".to_string();
@@ -276,7 +280,9 @@ pub fn press_label_esc(window: &adw::ApplicationWindow) -> Option<String> {
 /// The debounced commit: this label form's fields into its stored state, then the kept length on the status row.
 /// Form state only — the cut waits for Apply (§F3.8 S5, `wire_live_fields`).
 fn keep_label_fields(window: &adw::ApplicationWindow) {
-    let Some(stored) = label_form_open() else { return };
+    let Some(stored) = label_form_open() else {
+        return;
+    };
     let read = |name: &str, keep: f64| -> f64 {
         label_entry_of(window, name)
             .map(|entry| entry.text().trim().to_string())
@@ -339,4 +345,3 @@ pub(crate) fn wire_label_esc(window: &adw::ApplicationWindow) {
     });
     window.add_controller(controller);
 }
-

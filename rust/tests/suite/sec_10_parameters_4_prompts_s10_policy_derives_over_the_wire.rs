@@ -11,12 +11,12 @@
 #[path = "captions_wire_harness.rs"]
 mod harness;
 
-use harness::*;
 use crate::common;
 use adw::prelude::*;
-use gtk4 as gtk;
-use naivepost::{prompts, ui};
 use common::{fixture_dir, settle};
+use gtk4 as gtk;
+use harness::*;
+use naivepost::{prompts, ui};
 use serde_json::json;
 
 /// A `set_policy` tool call in the shape a real server answers a tool conversation with — the same
@@ -65,10 +65,17 @@ fn check_the_gear_dials_the_policy_prompt(app: &adw::Application) {
     settle();
 
     let seen = llm.next_seen();
-    assert_eq!(seen.path, "/v1/chat/completions", "the derivation dialled the chat path at {addr}");
+    assert_eq!(
+        seen.path, "/v1/chat/completions",
+        "the derivation dialled the chat path at {addr}"
+    );
     let sent: serde_json::Value = serde_json::from_str(&seen.body).expect("the ask sent JSON");
     // §4: policy is NOT one of the four thinking-on prompts.
-    assert_eq!(sent["enable_thinking"], json!(false), "F0.7 S2 asks the policy prompt thinking-off");
+    assert_eq!(
+        sent["enable_thinking"],
+        json!(false),
+        "F0.7 S2 asks the policy prompt thinking-off"
+    );
     assert_eq!(
         sent["chat_template_kwargs"]["enable_thinking"],
         json!(false),
@@ -102,7 +109,10 @@ fn check_the_gear_dials_the_policy_prompt(app: &adw::Application) {
     );
     // And the answer was APPLIED, not just read: cutMode moved off its default.
     let after = ui::session_policy(&window).cut_mode.value;
-    assert_ne!(before, after, "the model's proposal landed in the session policy");
+    assert_ne!(
+        before, after,
+        "the model's proposal landed in the session policy"
+    );
     assert!(
         ui::policy_is_current(&window, "cut on the words, not the model"),
         "the tracker recorded the derivation, so the next press costs no wire"
@@ -115,10 +125,12 @@ fn check_the_gear_dials_the_policy_prompt(app: &adw::Application) {
 /// `policy_call::wording` uses, so this proves the live path reads the override rather than the tree.
 fn check_an_edited_policy_prompt_wins_on_the_wire(app: &adw::Application) {
     let marker = "EDITED-ON-THIS-MACHINE: keep every cut on a word edge.";
-    let paths = naivepost::settings::from_environment().expect("the pinned settings folder resolves");
+    let paths =
+        naivepost::settings::from_environment().expect("the pinned settings folder resolves");
     let shipped = prompts::shipped_text("policy").expect("the policy prompt ships");
     std::fs::create_dir_all(paths.prompts_dir()).expect("the prompts folder");
-    std::fs::write(paths.prompt_file("policy"), format!("{marker}\n{shipped}")).expect("edit written");
+    std::fs::write(paths.prompt_file("policy"), format!("{marker}\n{shipped}"))
+        .expect("edit written");
 
     // A second scenario root would re-point the process-wide env under S10's window, so this case
     // reuses the one pinned above and only moves two things: the address (still a loopback fake) and
@@ -177,11 +189,17 @@ fn window_round() {
 #[test]
 fn sec_10_parameters_4_prompts_s10_pressing_the_gear_sends_the_policy_prompt_over_the_wire() {
     window_round();
-    assert!(RAN_S10.load(std::sync::atomic::Ordering::SeqCst), "the wire check never ran");
+    assert!(
+        RAN_S10.load(std::sync::atomic::Ordering::SeqCst),
+        "the wire check never ran"
+    );
 }
 
 #[test]
 fn sec_10_parameters_4_prompts_s11_an_edited_policy_prompt_is_the_one_sent() {
     window_round();
-    assert!(RAN_S11.load(std::sync::atomic::Ordering::SeqCst), "the edited-wording check never ran");
+    assert!(
+        RAN_S11.load(std::sync::atomic::Ordering::SeqCst),
+        "the edited-wording check never ran"
+    );
 }

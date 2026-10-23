@@ -17,8 +17,8 @@ use naivepost::layout::Tree;
 use naivepost::project::{Field, MarkingPass, Origin, Project, Source};
 use naivepost::requests::{self, AlignedDoc, Word as DocWord};
 use naivepost::run::{self, Subprocesses};
-use naivepost::runqueue::{self, Queue};
 use naivepost::run_stages::{self, Stage, Task};
+use naivepost::runqueue::{self, Queue};
 use naivepost::textfmt::{self, Line};
 use naivepost::transcribe;
 use naivepost::word_list::{self as words, WORDS_TASK};
@@ -53,7 +53,10 @@ impl Scene {
         let session = naivepost::startup::session_dir(&root);
         std::fs::create_dir_all(&session).expect("the session folder");
         std::env::set_current_dir(&root).expect("cwd is the scene root");
-        Scene { guard, tree: Tree::new(&session).expect("a .naivepost folder is a project") }
+        Scene {
+            guard,
+            tree: Tree::new(&session).expect("a .naivepost folder is a project"),
+        }
     }
 
     fn leave(&self) {
@@ -84,7 +87,10 @@ impl Scene {
     /// the walk did not finish, since a failed row is a bug rather than a state to assert on.
     fn drive_row(&self) -> Vec<String> {
         let (drive, log) = self.drive_row_open();
-        assert!(matches!(drive, run_stages::Drive::Done { .. }), "the row finished: {drive:?} / log {log:?}");
+        assert!(
+            matches!(drive, run_stages::Drive::Done { .. }),
+            "the row finished: {drive:?} / log {log:?}"
+        );
         log
     }
 
@@ -116,7 +122,11 @@ impl Scene {
 /// A policy that names a marking pass, which is what makes the row exist at all.
 fn policy_pass(pass: MarkingPass) -> naivepost::project::Policy {
     naivepost::project::Policy {
-        marking_pass: Field { value: pass, origin: Origin::User, because: None },
+        marking_pass: Field {
+            value: pass,
+            origin: Origin::User,
+            because: None,
+        },
         ..Default::default()
     }
 }
@@ -178,7 +188,12 @@ fn write_raw_transcript(tree: &Tree, lane: &str, text: &str) {
 
 /// Plant the fix pass's answer for one line, through the writer F1.8 uses.
 fn write_fixed_line(tree: &Tree, lane: &str, start: f64, end: f64, text: &str) {
-    let lines = [Line { start, end, speaker: "SPEAKER_00".into(), text: text.into() }];
+    let lines = [Line {
+        start,
+        end,
+        speaker: "SPEAKER_00".into(),
+        text: text.into(),
+    }];
     textfmt::write_lines(&lines, &tree.transcript_fixed_tsv(lane)).expect("the fixed file");
 }
 
@@ -229,19 +244,37 @@ fn f1_13_s7_the_fix_stage_plans_a_word_list_row_after_the_fix_rows() {
     };
 
     let order = programs(&naivepost::fix_call::stage(&project).tasks);
-    let words_at = order.iter().position(|kind| *kind == "words").expect("the fix stage plans the row");
+    let words_at = order
+        .iter()
+        .position(|kind| *kind == "words")
+        .expect("the fix stage plans the row");
     let fix_last = order
         .iter()
         .rposition(|kind| *kind == "fix")
         .expect("the per-source fix rows are there too");
-    let merge_at = order.iter().position(|kind| *kind == "merge").expect("the merge row is there");
-    assert_eq!(order[0], "place", "S1's placement row still goes first: {order:?}");
-    assert!(fix_last < words_at, "the list is dressed from the fix rows' output: {order:?}");
-    assert!(words_at < merge_at, "the marking pass must find the list already written: {order:?}");
+    let merge_at = order
+        .iter()
+        .position(|kind| *kind == "merge")
+        .expect("the merge row is there");
+    assert_eq!(
+        order[0], "place",
+        "S1's placement row still goes first: {order:?}"
+    );
+    assert!(
+        fix_last < words_at,
+        "the list is dressed from the fix rows' output: {order:?}"
+    );
+    assert!(
+        words_at < merge_at,
+        "the marking pass must find the list already written: {order:?}"
+    );
 
     // And the real Prepare plan carries it, inside the stage whose bar slice is Understand.
     let stages = run_stages::plan(run::Step::Prepare, &project);
-    let fix = stages.iter().find(|stage| stage.name == "fix").expect("the fix stage is planned");
+    let fix = stages
+        .iter()
+        .find(|stage| stage.name == "fix")
+        .expect("the fix stage is planned");
     assert!(
         fix.tasks.iter().any(|task| task.program == WORDS_TASK),
         "the walked plan holds the row: {:?}",
@@ -267,7 +300,10 @@ fn f1_13_s7_a_policy_with_no_marking_pass_plans_no_row() {
         policy: policy_pass(MarkingPass::None),
         ..Project::default()
     };
-    assert!(words::row(&project).is_none(), "MarkingPass::None plans nothing");
+    assert!(
+        words::row(&project).is_none(),
+        "MarkingPass::None plans nothing"
+    );
     let order = programs(&naivepost::fix_call::stage(&project).tasks);
     assert!(!order.contains(&"words"), "{order:?}");
     for stage in run_stages::plan(run::Step::Prepare, &project) {
@@ -292,7 +328,16 @@ fn f1_13_s7_the_walk_builds_the_list_from_the_files_the_stages_wrote() {
         policy: policy_pass(MarkingPass::Retakes),
         ..Project::default()
     });
-    write_aligned(&scene.tree, LANE, &[("hello", 0.0, 0.4), ("world", 0.4, 0.8), ("again", 0.8, 1.2), ("here", 1.2, 1.6)]);
+    write_aligned(
+        &scene.tree,
+        LANE,
+        &[
+            ("hello", 0.0, 0.4),
+            ("world", 0.4, 0.8),
+            ("again", 0.8, 1.2),
+            ("here", 1.2, 1.6),
+        ],
+    );
     // The raw transcript S3 dresses from is deliberately the bare tokens here: the dressing rule itself is
     // `tests/suite/session_word_list.rs`'s S3 case. What this scene proves is that the door reads the three files
     // the stages wrote off their real paths — a wrong lane or a wrong folder leaves the words undressed and
@@ -305,19 +350,41 @@ fn f1_13_s7_the_walk_builds_the_list_from_the_files_the_stages_wrote() {
     let log = scene.drive_row();
     scene.leave();
 
-    assert!(log.iter().any(|line| line.starts_with(">>> words: 4 words in the session list")), "the build line: {log:?}");
-    assert!(scene.tree.session_word_list_json().exists(), "the press left the list behind");
-    let list = words::load(&scene.tree).expect("readable").expect("written");
+    assert!(
+        log.iter()
+            .any(|line| line.starts_with(">>> words: 4 words in the session list")),
+        "the build line: {log:?}"
+    );
+    assert!(
+        scene.tree.session_word_list_json().exists(),
+        "the press left the list behind"
+    );
+    let list = words::load(&scene.tree)
+        .expect("readable")
+        .expect("written");
     assert_eq!(list.len(), 4, "every aligned token made a word");
     // The line is printed whole on the run's first word and the rest emptied (§F1.13 S4), which is what
     // `joins` later matches its answer against — one row of text per line the fix pass answered.
-    assert_eq!(words::written(&list)[0], "hello world again here", "the fix pass's spelling landed on the list");
-    assert_eq!(list[0].match_word, "hello", "matching never follows the dressing");
-    assert_eq!(list[1].match_word, "world", "an emptied word still holds its seconds");
+    assert_eq!(
+        words::written(&list)[0],
+        "hello world again here",
+        "the fix pass's spelling landed on the list"
+    );
+    assert_eq!(
+        list[0].match_word, "hello",
+        "matching never follows the dressing"
+    );
+    assert_eq!(
+        list[1].match_word, "world",
+        "an emptied word still holds its seconds"
+    );
     // Times never change, only the written form (§F1.13's own sentence).
     assert_eq!((list[0].start, list[0].end), (0.0, 0.4));
     assert_eq!((list[3].start, list[3].end), (1.2, 1.6));
-    assert!(list.iter().all(|word| !word.stray), "nothing here sits on no sound");
+    assert!(
+        list.iter().all(|word| !word.stray),
+        "nothing here sits on no sound"
+    );
 }
 
 /// Nothing transcribed yet is NOT a reason to write a list: the file is this step's resume marker, so an
@@ -337,10 +404,14 @@ fn f1_13_s7_a_session_with_nothing_transcribed_yet_writes_no_list() {
     scene.leave();
 
     assert!(
-        log.iter().any(|line| line.contains("nothing transcribed") && line.starts_with("!!!")),
+        log.iter()
+            .any(|line| line.contains("nothing transcribed") && line.starts_with("!!!")),
         "the refusal names why: {log:?}"
     );
-    assert!(!scene.tree.session_word_list_json().exists(), "no list, so the next run still builds one");
+    assert!(
+        !scene.tree.session_word_list_json().exists(),
+        "no list, so the next run still builds one"
+    );
 }
 
 /// The saved file IS the evidence the step ran (spec/00-principles): a second walk resumes off it instead
@@ -354,15 +425,35 @@ fn f1_13_s7_a_second_walk_resumes_off_the_saved_list() {
         policy: policy_pass(MarkingPass::Retakes),
         ..Project::default()
     });
-    write_aligned(&scene.tree, LANE, &[("hello", 0.0, 0.4), ("world", 0.4, 0.8), ("again", 0.8, 1.2), ("here", 1.2, 1.6)]);
+    write_aligned(
+        &scene.tree,
+        LANE,
+        &[
+            ("hello", 0.0, 0.4),
+            ("world", 0.4, 0.8),
+            ("again", 0.8, 1.2),
+            ("here", 1.2, 1.6),
+        ],
+    );
     write_raw_transcript(&scene.tree, LANE, "Hello, world again here.");
 
     let first = scene.drive_row();
     let bytes = std::fs::read(scene.tree.session_word_list_json()).unwrap();
-    assert!(first.iter().any(|line| line.starts_with(">>> words: 4 words in the session list")), "{first:?}");
+    assert!(
+        first
+            .iter()
+            .any(|line| line.starts_with(">>> words: 4 words in the session list")),
+        "{first:?}"
+    );
 
     // Change what the stages wrote AFTER the list exists: the resume must not reach it.
-    write_fixed_line(&scene.tree, LANE, 0.0, 1.7, "completely different words now");
+    write_fixed_line(
+        &scene.tree,
+        LANE,
+        0.0,
+        1.7,
+        "completely different words now",
+    );
     let second = scene.drive_row();
     scene.leave();
 
@@ -408,16 +499,29 @@ fn f1_13_s2_the_wave_cache_a_prepare_run_measures_is_what_finds_the_stray() {
     // The producer itself, at the same lane key the edge rules read it back with. Its stamp is the
     // recording's own size/mtime, which is what `wave::read` accepts the cache against.
     let recording: &Path = &scene.tree.sources_dir().join("lecture.mkv");
-    naivepost::wave_build::ensure(&scene.tree, LANE, recording, &mut |_| ()).expect("the envelope is measured");
-    assert!(scene.tree.wave(LANE).exists(), "the cache is where the reader looks");
+    naivepost::wave_build::ensure(&scene.tree, LANE, recording, &mut |_| ())
+        .expect("the envelope is measured");
+    assert!(
+        scene.tree.wave(LANE).exists(),
+        "the cache is where the reader looks"
+    );
 
     let log = scene.drive_row();
     scene.leave();
 
-    let list = words::load(&scene.tree).expect("readable").expect("written");
-    let stray = list.iter().find(|word| word.stray).expect("the late word was retimed");
+    let list = words::load(&scene.tree)
+        .expect("readable")
+        .expect("written");
+    let stray = list
+        .iter()
+        .find(|word| word.stray)
+        .expect("the late word was retimed");
     assert_eq!(stray.match_word, "spat");
-    assert_eq!((stray.start, stray.end), (0.8, 0.8), "timed at the end of the word before it");
+    assert_eq!(
+        (stray.start, stray.end),
+        (0.8, 0.8),
+        "timed at the end of the word before it"
+    );
     let line = log
         .iter()
         .find(|line| line.starts_with(">>> words: \u{201c}"))
@@ -429,7 +533,8 @@ fn f1_13_s2_the_wave_cache_a_prepare_run_measures_is_what_finds_the_stray() {
         "spec wording, quoted"
     );
     assert!(
-        log.iter().any(|line| line.starts_with(">>> words: 3 words in the session list, 1 retimed")),
+        log.iter()
+            .any(|line| line.starts_with(">>> words: 3 words in the session list, 1 retimed")),
         "the summary counts what moved: {log:?}"
     );
 }

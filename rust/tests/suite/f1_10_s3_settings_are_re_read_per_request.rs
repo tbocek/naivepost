@@ -33,7 +33,10 @@ fn f1_10_s3_settings_are_re_read_per_request() {
     // the spot. Do NOT hold a listener open here: an accepted-but-never-answered connect parks the seam for the
     // whole 10-minute ceiling (job 58). The other case -- keeping a LIVE address from being re-dialled -- is
     // what `FakeLlm::dead_listener` is for, and it is held only by scenarios that want it.
-    let dead = FakeLlm::dead_listener().local_addr().expect("a port").port();
+    let dead = FakeLlm::dead_listener()
+        .local_addr()
+        .expect("a port")
+        .port();
     // The answered-endpoints table (`llm_retry_leg::answered_once`) is process-wide and keyed by URL, and this
     // number came from the OS's ephemeral pool: an earlier scenario in this binary may have been ANSWERED on
     // it before releasing its listener. This half of the scenario means "the server went away", so say so to

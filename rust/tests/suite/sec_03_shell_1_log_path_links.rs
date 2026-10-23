@@ -57,7 +57,9 @@ fn tagged_spans(view: &gtk::TextView) -> Vec<(i32, i32, i32)> {
         .expect("painting a link draws its tag");
     let mut out = Vec::new();
     for line in 0..buffer.line_count() {
-        let Some(mut at) = buffer.iter_at_line(line) else { continue };
+        let Some(mut at) = buffer.iter_at_line(line) else {
+            continue;
+        };
         let end_of_line = buffer
             .iter_at_line(line + 1)
             .unwrap_or_else(|| buffer.end_iter());
@@ -78,7 +80,10 @@ fn tagged_spans(view: &gtk::TextView) -> Vec<(i32, i32, i32)> {
 
 /// The lines carrying the tag at all.
 fn tagged(view: &gtk::TextView) -> Vec<i32> {
-    let mut seen: Vec<i32> = tagged_spans(view).into_iter().map(|(line, _, _)| line).collect();
+    let mut seen: Vec<i32> = tagged_spans(view)
+        .into_iter()
+        .map(|(line, _, _)| line)
+        .collect();
     seen.dedup();
     seen
 }
@@ -104,14 +109,35 @@ fn sec_03_shell_1_the_window_the_log_links_every_path_a_line_names() {
             "  this run's exchanges, images included: llm/0307-142201-Describe.html",
             &["llm/0307-142201-Describe.html"],
         ),
-        ("opened /home/dev/lectures/session.naivepost", &["/home/dev/lectures/session.naivepost"]),
-        ("saved produce/final.mp4 \u{2014} 220 MB", &["produce/final.mp4"]),
-        ("exported /tmp/p/produce/final.jpg (1.9 MB)", &["/tmp/p/produce/final.jpg"]),
-        ("narrate/narration.json holds 4 line(s)", &["narrate/narration.json"]),
-        ("frame project:produce/publish/frame-1.jpg kept", &["project:produce/publish/frame-1.jpg"]),
+        (
+            "opened /home/dev/lectures/session.naivepost",
+            &["/home/dev/lectures/session.naivepost"],
+        ),
+        (
+            "saved produce/final.mp4 \u{2014} 220 MB",
+            &["produce/final.mp4"],
+        ),
+        (
+            "exported /tmp/p/produce/final.jpg (1.9 MB)",
+            &["/tmp/p/produce/final.jpg"],
+        ),
+        (
+            "narrate/narration.json holds 4 line(s)",
+            &["narrate/narration.json"],
+        ),
+        (
+            "frame project:produce/publish/frame-1.jpg kept",
+            &["project:produce/publish/frame-1.jpg"],
+        ),
         ("requests.tsv carries 1740 row(s)", &["requests.tsv"]),
-        ("cut/cut.json and cut/line.json written", &["cut/cut.json", "cut/line.json"]),
-        ("(prepare/transcript/session.tsv)", &["prepare/transcript/session.tsv"]),
+        (
+            "cut/cut.json and cut/line.json written",
+            &["cut/cut.json", "cut/line.json"],
+        ),
+        (
+            "(prepare/transcript/session.tsv)",
+            &["prepare/transcript/session.tsv"],
+        ),
     ];
     for (message, want) in naming {
         let got = ui::log_paths::paths_of(message);
@@ -200,7 +226,9 @@ fn s_log_lines_naming_a_path_are_links_on_screen(app: &adw::Application) {
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
     naivepost::runqueue::start_run(
         &mut bar.borrow_mut(),
-        &mut ui::run_queue(&window).expect("the window carries a queue").borrow_mut(),
+        &mut ui::run_queue(&window)
+            .expect("the window carries a queue")
+            .borrow_mut(),
         &mut exchanges::RunLog::new(),
         naivepost::run::Step::Prepare,
         naivepost::run::snapshot_sources(
@@ -223,7 +251,11 @@ fn s_log_lines_naming_a_path_are_links_on_screen(app: &adw::Application) {
     let base = said.len() - 5;
     assert_eq!(said.len(), before + 5, "all five lines landed");
     // §1: each line is the message alone — no marker survives into the drawing.
-    assert!(!said[base].starts_with(">>> "), "drawn without its marker: {}", said[base]);
+    assert!(
+        !said[base].starts_with(">>> "),
+        "drawn without its marker: {}",
+        said[base]
+    );
     assert_eq!(
         said[base + 2],
         "saved produce/final.mp4 \u{2014} 220 MB",
@@ -232,11 +264,7 @@ fn s_log_lines_naming_a_path_are_links_on_screen(app: &adw::Application) {
     // The plain lines stay plain; the path-naming lines and §7's page line carry the tag.
     assert_eq!(
         tagged(&view),
-        vec![
-            base as i32 + 2,
-            base as i32 + 3,
-            base as i32 + 4
-        ],
+        vec![base as i32 + 2, base as i32 + 3, base as i32 + 4],
         "every line naming a path is a link, and only those: {:?}",
         &said[base..]
     );
@@ -246,10 +274,18 @@ fn s_log_lines_naming_a_path_are_links_on_screen(app: &adw::Application) {
         .into_iter()
         .find(|(line, _, _)| *line == base as i32 + 2)
         .expect("the produce line is tagged");
-    let buffer = view.buffer();    let tagged_text = buffer
-        .text(&buffer.iter_at_offset(from), &buffer.iter_at_offset(to), false)
+    let buffer = view.buffer();
+    let tagged_text = buffer
+        .text(
+            &buffer.iter_at_offset(from),
+            &buffer.iter_at_offset(to),
+            false,
+        )
         .to_string();
-    assert_eq!(tagged_text, "produce/final.mp4", "the link is the path itself");
+    assert_eq!(
+        tagged_text, "produce/final.mp4",
+        "the link is the path itself"
+    );
     // §7's page line is tagged WHOLE (its own tests read exactly one tagged line for a run). The tag
     // covers the drawn message INCLUDING the newline `log_level::paint` puts after it — that is how §7 has
     // always marked its line, and its tests only ask which line carries the tag — so the span is measured
@@ -288,9 +324,7 @@ fn s_log_lines_naming_a_path_are_links_on_screen(app: &adw::Application) {
     // assertion here, because the shell repaints the body with `set_text` between scenarios.
     let put_caret = |line: i32| {
         let buffer = view.buffer();
-        let where_ = buffer
-            .iter_at_line(line)
-            .expect("the log holds that line");
+        let where_ = buffer.iter_at_line(line).expect("the log holds that line");
         buffer.place_cursor(&where_);
     };
     // Prove the fired signal reaches this program's handler at all, before aiming it anywhere: a controller
@@ -314,16 +348,17 @@ fn s_log_lines_naming_a_path_are_links_on_screen(app: &adw::Application) {
     // assertion here, because the shell repaints the body with `set_text` between scenarios.
     let put_caret = |line: i32| {
         let buffer = view.buffer();
-        let where_ = buffer
-            .iter_at_line(line)
-            .expect("the log holds that line");
+        let where_ = buffer.iter_at_line(line).expect("the log holds that line");
         buffer.place_cursor(&where_);
     };
     let fire = || fire_key(&keys, gtk::gdk::Key::Return);
     // A plain line opens nothing. The caret goes first because the handler reads the caret's LINE.
     put_caret(base as i32);
     fire();
-    assert!(opened.borrow().is_empty(), "a line naming no path opens nothing");
+    assert!(
+        opened.borrow().is_empty(),
+        "a line naming no path opens nothing"
+    );
     // Same rule asked at the door directly, which is how §7's own tests read it: a plain line answers
     // nothing, and a path-naming line hands the seam the file it names.
     assert_eq!(
@@ -347,7 +382,10 @@ fn s_log_lines_naming_a_path_are_links_on_screen(app: &adw::Application) {
     view.set_can_focus(true);
     view.grab_focus();
     settle();
-    assert!(view.is_focus(), "the log view can hold the focus, so its key controller is reachable");
+    assert!(
+        view.is_focus(),
+        "the log view can hold the focus, so its key controller is reachable"
+    );
     put_caret(base as i32 + 4);
     fire();
     assert_eq!(
@@ -366,12 +404,21 @@ fn s_log_lines_naming_a_path_are_links_on_screen(app: &adw::Application) {
     opened.borrow_mut().clear();
     put_caret(base as i32);
     fire();
-    assert!(opened.borrow().is_empty(), "a line naming no path opens nothing");
+    assert!(
+        opened.borrow().is_empty(),
+        "a line naming no path opens nothing"
+    );
     let page_uri = ui::log_link::activate_line(&view, base as i32 + 4, &direct_door)
         .expect("the page line is a link");
-    assert!(page_uri.ends_with(page), "§7's page line opens the run's page: {page_uri}");
+    assert!(
+        page_uri.ends_with(page),
+        "§7's page line opens the run's page: {page_uri}"
+    );
     // The seam proved it; the drawn text is untouched by any of this.
-    assert_eq!(lines(&view)[base + 2], "saved produce/final.mp4 \u{2014} 220 MB");
+    assert_eq!(
+        lines(&view)[base + 2],
+        "saved produce/final.mp4 \u{2014} 220 MB"
+    );
 }
 
 #[test]

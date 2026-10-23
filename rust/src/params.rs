@@ -9,63 +9,57 @@
 
 use crate::align;
 use crate::asr;
-use crate::watchdog;
+use crate::cut;
+use crate::cut_captions;
 use crate::cut_cards;
 use crate::cut_clamp;
-use crate::fx_record;
-use crate::cut_insert;
-use crate::cut_select;
-use crate::ui;
-use crate::cut_play_back;
-use crate::suggest;
 use crate::cut_copy;
-use crate::cut_captions;
+use crate::cut_effects_pass;
+use crate::cut_insert;
+use crate::cut_line;
+use crate::cut_play_back;
+use crate::cut_review;
+use crate::cut_screen;
+use crate::cut_select;
+use crate::cut_speed;
+use crate::cut_speed_pass;
+use crate::cut_trim;
 use crate::degraded;
+use crate::diarize;
 use crate::edges;
 use crate::frames;
 use crate::fx_aspect;
 use crate::fx_band;
-use crate::fx_svg;
 use crate::fx_lane;
+use crate::fx_record;
+use crate::fx_svg;
 use crate::fx_text;
 use crate::fx_volume;
 use crate::fx_zoom;
-use crate::render_fx;
-use crate::runqueue;
 use crate::hand_edit;
 use crate::llm_budget;
 use crate::llm_liveness;
 use crate::llm_retry;
-use crate::narrate_data;
-use crate::narrate_pass;
-use crate::narrate_preview;
-use crate::narrate_screen;
-use crate::narrate_tts;
 use crate::prepare;
 use crate::prepare_decisions;
-use crate::diarize;
+use crate::preview;
+use crate::produce_render;
+use crate::produce_runs;
+use crate::produce_screen;
+use crate::produce_subtitles;
+use crate::produce_upload;
+use crate::project;
+use crate::render_fx;
 use crate::requests;
 use crate::roles;
+use crate::runqueue;
 use crate::separate;
-use crate::cut;
-use crate::cut_line;
-use crate::cut_review;
-use crate::cut_screen;
-use crate::cut_speed;
-use crate::cut_speed_pass;
-use crate::cut_effects_pass;
-use crate::cut_trim;
-use crate::preview;
-use crate::project;
-use crate::produce_render;
-use crate::produce_screen;
-use crate::produce_upload;
-use crate::produce_subtitles;
-use crate::produce_runs;
+use crate::suggest;
 use crate::tools::{clips, cutpass, describe, retakes, textedit};
-use crate::wave;
 use crate::transcribe;
-use crate::voice_ref;
+use crate::ui;
+use crate::watchdog;
+use crate::wave;
 use crate::word_list;
 
 /// One row of §10's table as Prepare uses it.
@@ -98,7 +92,7 @@ pub enum Family {
 }
 
 /// A number the way §10 writes it: whole numbers lose the `.0`, fractions keep as few digits as they need.
-fn num(value: f64) -> String {
+pub(crate) fn num(value: f64) -> String {
     if value == value.trunc() {
         return format!("{}", value as i64);
     }
@@ -110,17 +104,26 @@ fn num(value: f64) -> String {
 }
 
 /// A list of seconds, §10-style: `90, 45, 25`.
-fn secs(values: &[f64]) -> String {
-    values.iter().copied().map(num).collect::<Vec<_>>().join(", ")
+pub(crate) fn secs(values: &[f64]) -> String {
+    values
+        .iter()
+        .copied()
+        .map(num)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
-fn param(id: &'static str, spelled: String, from: &'static str) -> Param {
+pub(crate) fn param(id: &'static str, spelled: String, from: &'static str) -> Param {
     Param { id, spelled, from }
 }
 
 /// One of §6's colours, spelled as three components (`0.2 0.8 0.3`) so a reader can compare it with the tuple in
 /// `spec/inventory/cut.md` §D without decoding a hex string.
-fn colour(id: &'static str, rgb: crate::ui::cut_colours::Rgb, from: &'static str) -> Param {
+pub(crate) fn colour(
+    id: &'static str,
+    rgb: crate::ui::cut_colours::Rgb,
+    from: &'static str,
+) -> Param {
     param(id, crate::ui::cut_colours::spell(rgb), from)
 }
 
@@ -220,7 +223,11 @@ pub fn prepare() -> Vec<Param> {
             "prepare::FIX_BLOCK_LINES",
         ),
         // F3.9 S1: how many clips one caption request carries, read from the pass that builds the batches.
-        param("P.machine.captionBatch", cut_captions::BATCH.to_string(), "cut_captions::BATCH"),
+        param(
+            "P.machine.captionBatch",
+            cut_captions::BATCH.to_string(),
+            "cut_captions::BATCH",
+        ),
         // F0.5's two clocks. §10 lists them only inside its prose line ("progress pulse 150 ms;
         // checkpoint poll 200 ms") and gives neither a `P.` id, so they take the bare `machine.`
         // prefix — the same choice `machine.jpegQuality` made over inventing ids §10 does not carry.
@@ -287,8 +294,16 @@ fn audio() -> Vec<Param> {
         ),
         // The silencedetect pair, spelled twice over: the same two numbers live in asr's own names for
         // the ffmpeg filter and in degraded's, which is where silence is measured off an envelope.
-        param("P.machine.silenceThresholdDB", num(asr::QUIET_DB), "asr::QUIET_DB"),
-        param("P.machine.silenceMinSeconds", num(asr::QUIET_MIN), "asr::QUIET_MIN"),
+        param(
+            "P.machine.silenceThresholdDB",
+            num(asr::QUIET_DB),
+            "asr::QUIET_DB",
+        ),
+        param(
+            "P.machine.silenceMinSeconds",
+            num(asr::QUIET_MIN),
+            "asr::QUIET_MIN",
+        ),
         param(
             "P.machine.diarWindowsSeconds",
             secs(&roles::DIAR_WINDOWS_SECONDS),
@@ -312,7 +327,11 @@ fn audio() -> Vec<Param> {
             num(diarize::MIN_ANCHOR_OVERLAP),
             "diarize::MIN_ANCHOR_OVERLAP",
         ),
-        param("P.eng.mergeGapSeconds", num(transcribe::MERGE_GAP), "transcribe::MERGE_GAP"),
+        param(
+            "P.eng.mergeGapSeconds",
+            num(transcribe::MERGE_GAP),
+            "transcribe::MERGE_GAP",
+        ),
         param(
             "P.eng.mergeMaxSeconds",
             num(transcribe::MERGE_MAX_LEN),
@@ -341,7 +360,11 @@ fn audio() -> Vec<Param> {
             transcribe::SAMPLE_RATE.to_string(),
             "transcribe::SAMPLE_RATE",
         ),
-        param("P.eng.asrCutSeekSeconds", num(asr::SEEK_MAX), "asr::SEEK_MAX"),
+        param(
+            "P.eng.asrCutSeekSeconds",
+            num(asr::SEEK_MAX),
+            "asr::SEEK_MAX",
+        ),
         // §10's row for the alignment cut's own reach: one constant answers both this row and
         // `align::pieces`' call into the shared cutter, so the catalogue cannot drift from the rule.
         param(
@@ -351,11 +374,7 @@ fn audio() -> Vec<Param> {
         ),
         // §10's row for the sound kept on each side of an alignment piece: one constant answers both
         // this row and `trim()`/`bare_voiced()`, so the catalogue cannot drift from the rule.
-        param(
-            "P.eng.alignSoundPadSeconds",
-            num(align::PAD),
-            "align::PAD",
-        ),
+        param("P.eng.alignSoundPadSeconds", num(align::PAD), "align::PAD"),
         // §10's row for the sanity ceiling on a returned "second": one constant answers both this row
         // and `time()`'s bare-key branch, so the catalogue cannot drift from the rule. A bare number
         // past it was a sample count that did not say so.
@@ -403,8 +422,16 @@ fn engineering() -> Vec<Param> {
             frames::WORKER_MIN_FRAMES.to_string(),
             "frames::WORKER_MIN_FRAMES",
         ),
-        param("P.eng.frameWorkersMin", frames::WORKERS_MIN.to_string(), "frames::WORKERS_MIN"),
-        param("P.eng.frameWorkersMax", frames::WORKERS_MAX.to_string(), "frames::WORKERS_MAX"),
+        param(
+            "P.eng.frameWorkersMin",
+            frames::WORKERS_MIN.to_string(),
+            "frames::WORKERS_MIN",
+        ),
+        param(
+            "P.eng.frameWorkersMax",
+            frames::WORKERS_MAX.to_string(),
+            "frames::WORKERS_MAX",
+        ),
         param(
             "P.machine.sceneThreshold",
             num(frames::SCENE_THRESHOLD),
@@ -427,7 +454,11 @@ fn engineering() -> Vec<Param> {
             frames::STORED_FRAME_JPEG_QUALITY.to_string(),
             "frames::STORED_FRAME_JPEG_QUALITY",
         ),
-        param("P.eng.keepReachWords", hand_edit::KEEP_REACH.to_string(), "hand_edit::KEEP_REACH"),
+        param(
+            "P.eng.keepReachWords",
+            hand_edit::KEEP_REACH.to_string(),
+            "hand_edit::KEEP_REACH",
+        ),
         // §10's row for how many kept words either side of a join are compared for a doubled saying.
         // One constant answers both this row and `textedit::dedupe_joins`' cap, so the catalogue
         // cannot drift from the rule that reads it.
@@ -527,7 +558,11 @@ fn engineering() -> Vec<Param> {
             "word_list::RESPPELL_REACH_WORDS",
         ),
         // F2.5's mix: the ceiling every gain is held to, an effect's own and the slider's alike.
-        param("P.eng.maxGain", num(fx_record::gain_ceiling()), "fx_record::gain_ceiling"),
+        param(
+            "P.eng.maxGain",
+            num(fx_record::gain_ceiling()),
+            "fx_record::gain_ceiling",
+        ),
         // §10's own row for the rejoin dip, catalogued from the module that fades it: the lane draws it and the render
         // plans its read head around the same number.
         param(
@@ -544,7 +579,11 @@ fn engineering() -> Vec<Param> {
         ),
         // F2.6's two floors, each held by the rule that reads it: a resize may not close the band, and
         // ＋ Add / ⧉ Copy will not take a region too short to be a scene.
-        param("P.eng.minPieceSeconds", num(cut_select::MIN_SECONDS), "cut_select::MIN_SECONDS"),
+        param(
+            "P.eng.minPieceSeconds",
+            num(cut_select::MIN_SECONDS),
+            "cut_select::MIN_SECONDS",
+        ),
         param(
             "P.policy.minSceneSeconds",
             num(cut_select::MIN_SCENE_SECONDS),
@@ -561,17 +600,37 @@ fn engineering() -> Vec<Param> {
         // decision — five waits that together outlast a container restart and a weight load.
         param(
             "llm.backoffSeconds",
-            llm_retry::BACKOFF_SECONDS.iter().map(|s| s.to_string()).collect::<Vec<String>>().join(", "),
+            llm_retry::BACKOFF_SECONDS
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>()
+                .join(", "),
             "llm_retry::BACKOFF_SECONDS",
         ),
-        param("llm.retrySeconds", llm_retry::RETRY_SECONDS.to_string(), "llm_retry::RETRY_SECONDS"),
+        param(
+            "llm.retrySeconds",
+            llm_retry::RETRY_SECONDS.to_string(),
+            "llm_retry::RETRY_SECONDS",
+        ),
         // §09 §4's liveness bounds and the gate's default. These three DO have rows of their own in §10, so they
         // carry real `P.` ids (unlike the two above). One `P.machine.slots` row covers all seven models: each keeps
         // its own count in `settings::Slots`, and one value per model is what makes two models on one GPU two
         // slot counts rather than one shared number.
-        param("P.eng.llmStallMinutes", llm_liveness::STALL_MINUTES.to_string(), "llm_liveness::STALL_MINUTES"),
-        param("P.eng.llmWholeMinutes", llm_liveness::WHOLE_MINUTES.to_string(), "llm_liveness::WHOLE_MINUTES"),
-        param("P.machine.slots", llm_liveness::DEFAULT_SLOTS.to_string(), "llm_liveness::DEFAULT_SLOTS"),
+        param(
+            "P.eng.llmStallMinutes",
+            llm_liveness::STALL_MINUTES.to_string(),
+            "llm_liveness::STALL_MINUTES",
+        ),
+        param(
+            "P.eng.llmWholeMinutes",
+            llm_liveness::WHOLE_MINUTES.to_string(),
+            "llm_liveness::WHOLE_MINUTES",
+        ),
+        param(
+            "P.machine.slots",
+            llm_liveness::DEFAULT_SLOTS.to_string(),
+            "llm_liveness::DEFAULT_SLOTS",
+        ),
         // §09 §5: the most one request may carry. Spelled plain (no thousands separator), the way
         // P.eng.thumbnailJPEGMax spells its 2 MiB cap.
         param(
@@ -1077,144 +1136,11 @@ pub fn effects() -> Vec<Param> {
     ]
 }
 
-/// Every number the Narrate page draws or waits with, in §1's order: the take band first (its floor, its label
-/// bound, its geometry), then the pitch slider, then the two clocks and the two debounces.
-///
-/// The ids are of two kinds, and each says so. `P.eng.*` rows are §10's own; the bare `narrate.*` ones are the
-/// numbers §10 lists only inside its prose line (`Narrate take band: ruler 12, lane 56, max 200 px/s, click slop 3
-/// px`, and §07's `Engineering: tick 100 ms · seek debounce 120 ms · autosave 400 ms`), which have no `P.` row to
-/// inherit — the same bare-prefix rule §06-effects#6 took for `machine.` and `preview.` values. They are spelled as
-/// §10 spells them so a reader comparing this list against that line is comparing the same words.
-///
-/// Every §4 item now has a row. Two of them are catalogued under an id other than the one §10's table prints,
-/// and say so rather than being quietly moved: `P.eng.speechCharsPerSecond` (§10:194, "15 (8..28)") lives under
-/// the id §07-narrate#1-screen chose, `narrate.speechCharsPerSecond`, with its band spelled in the same row;
-/// and F4.3's packing, growing and speeding (`P.eng.narrationLeadSeconds`, `P.eng.narrationGapSeconds`,
-/// `P.eng.narrationMaxTempo`) are catalogued here because §07's §4 names them, while the rule that reads them is
-/// the render's ([`produce_render::fit`]) — the same one-home-per-number rule [`effects`] gives for values whose
-/// section differs from their owner's.
+/// Every number the Narrate page draws or waits with, in §1's order. The rows live in
+/// [`crate::params_narrate`] — this file is at its size budget, and moving the section changed neither
+/// its ids, its spellings, nor their order.
 pub fn narrate() -> Vec<Param> {
-    vec![
-        // --- the take band (§1's number 10) ---------------------------------------------------------
-        param("P.eng.takeMinSeconds", num(narrate_screen::TAKE_MIN_SECONDS), "narrate_screen::TAKE_MIN_SECONDS"),
-        param("narrate.takeLabelPx", num(narrate_screen::TAKE_LABEL_MIN_PX), "narrate_screen::TAKE_LABEL_MIN_PX"),
-        // §10:133 lists the band's geometry by area rather than as rows, so these four carry no `P.` id.
-        param("narrate.bandRulerPx", num(narrate_screen::BAND_RULER_PX), "narrate_screen::BAND_RULER_PX"),
-        param("narrate.bandLanePx", num(narrate_screen::BAND_LANE_PX), "narrate_screen::BAND_LANE_PX"),
-        param("narrate.bandMaxPps", num(narrate_screen::BAND_MAX_PPS), "narrate_screen::BAND_MAX_PPS"),
-        param("narrate.clickSlopPx", num(narrate_screen::CLICK_SLOP_PX), "narrate_screen::CLICK_SLOP_PX"),
-        // --- the pitch slider (§1's number 13) ------------------------------------------------------
-        // §10 gives one row to the whole range, so the row spells both ends and the step between them.
-        param(
-            "P.eng.pitchRangeSemitones",
-            format!(
-                "{}..+{}, step {}",
-                num(narrate_screen::PITCH_MIN_SEMITONES),
-                num(narrate_screen::PITCH_MAX_SEMITONES),
-                num(narrate_screen::PITCH_STEP)
-            ),
-            "narrate_screen::PITCH_MIN_SEMITONES + PITCH_MAX_SEMITONES + PITCH_STEP",
-        ),
-        // --- what the page waits for (§1's numbers 5, 9, 20) -----------------------------------------
-        param("narrate.tickMs", narrate_screen::TICK_MS.to_string(), "narrate_screen::TICK_MS"),
-        param("narrate.seekDebounceMs", narrate_screen::SEEK_DEBOUNCE_MS.to_string(), "narrate_screen::SEEK_DEBOUNCE_MS"),
-        // The autosave is §10:133's `typing debounce 400 ms`, and the timer itself is the shell's.
-        param(
-            "narrate.autosaveMs",
-            crate::shell::NARRATION_AUTOSAVE.as_millis().to_string(),
-            "shell::NARRATION_AUTOSAVE",
-        ),
-        // --- what a row says about a line that is not spoken yet (§1's numbers 15, 21) -----------------
-        param("P.eng.narrationTailSeconds", num(narrate_screen::SPEECH_TAIL_SECONDS), "narrate_screen::SPEECH_TAIL_SECONDS"),
-        // §C.2's fallback rate and §F4.3's clamp band, in the one row §10 gives them: the estimate is what both
-        // the row's warning and the transport ＋'s refusal are built on until a take exists to measure, and once
-        // it does, `narrate_page::speech_for` measures the rate off the wav and pushes it through 8..28.
-        param(
-            "narrate.speechCharsPerSecond",
-            speech_rate_spelled(),
-            "narrate_screen::SPEECH_CHARS_PER_SECOND + CHAR_RATE_MIN + CHAR_RATE_MAX",
-        ),
-        // F4.7's "within 1 s of a line": the window in which ＋ jumps to a line instead of adding one.
-        param("narrate.addNearSeconds", num(narrate_screen::ADD_NEAR_SECONDS), "narrate_screen::ADD_NEAR_SECONDS"),
-        // --- what F4.2's call asks for (§10 puts these in §1's machine table and §2's policy table, and the
-        // narration call is the only reader of all four: how far a clip's block reaches, and the word budget
-        // it prints) -----------------------------------------------------------------------------------------------
-        param("P.machine.narrationContextSeconds", num(narrate_pass::CONTEXT_SECONDS), "narrate_pass::CONTEXT_SECONDS"),
-        param("P.policy.narrationMinWords", num(narrate_pass::MIN_WORDS as f64), "narrate_pass::MIN_WORDS"),
-        param("P.policy.narrationMaxWords", num(narrate_pass::MAX_WORDS as f64), "narrate_pass::MAX_WORDS"),
-        param("P.policy.narrationWordsPerSecond", num(narrate_pass::WORDS_PER_SECOND), "narrate_pass::WORDS_PER_SECOND"),
-        // --- what one line is spoken with -----------------------------------------------------------------------
-        // §10 spells this default as "project language", so the row spells that; the constant named is the
-        // fallback the prototype hard-coded, which is all a project without a language can be given.
-        param("P.policy.ttsLanguage", "project language".to_string(), narrate_tts::LANGUAGE_SOURCE),
-        // --- P.eng.emotionAlpha (§4, and the same alpha the frozen cache key spells) ------------------------
-        // F4.4 sends it for every take that is not an exact emotion vector; it rides in the request's
-        // `options`, and §4 lists it among the parameters this page's narration uses.
-        param("P.eng.emotionAlpha", narrate_tts::EMOTION_ALPHA.to_string(), "narrate_tts::EMOTION_ALPHA"),
-        // --- what the preview holds and how far it looks ahead (§10 lines 191 and 193; F4.5 is the flow that
-        // reads both: a boundary held while a line speaks, and where ▶ drops the picture for a line) -----
-        param("P.eng.narrationMaxExtendSeconds", num(narrate_preview::MAX_EXTEND_SECONDS), "narrate_preview::MAX_EXTEND_SECONDS"),
-        param("P.eng.narrationRunInSeconds", num(narrate_screen::AUDITION_LEAD_SECONDS), "narrate_screen::AUDITION_LEAD_SECONDS"),
-        // --- F4.1 S4's toggle: off (the default) ▶ writes a line only for clips that have none; on,
-        // every clip's line is rewritten. Spelled as §10 spells it, read from the project's own
-        // default. §07's own §4 list does not name this id — it appears in that chapter only in F4.1's
-        // flow diagram — so `narrate_parameters.rs`'s foreign-row whitelist carries it with that note.
-        param(
-            "P.policy.narrationRewrite",
-            if project::Policy::default().narration_rewrite.value {
-                "on".to_string()
-            } else {
-                "off".to_string()
-            },
-            "project::Policy::default — narration_rewrite",
-        ),
-        // §10's row for the rate the voice reference is written at: one constant answers both this row
-        // and the write, so the catalogue cannot drift from what the server will accept.
-        param(
-            "P.eng.refSampleRate",
-            narrate_data::REF_SAMPLE_RATE.to_string(),
-            "narrate_data::REF_SAMPLE_RATE",
-        ),
-        // §10's row for the level the voice reference is written at: spelled straight out of the
-        // filter the reference write applies, so the row cannot drift from what ffmpeg is sent.
-        param(
-            "P.eng.refLoudness",
-            loudnorm_spelled(narrate_data::REF_LOUDNESS),
-            "narrate_data::REF_LOUDNESS",
-        ),
-        // --- what the render does with a line that does not fit (§07 §4 names all three; the rule that reads
-        // them is `produce_render::fit`, so each names its owner rather than this page) -----------------------
-        param("P.eng.narrationLeadSeconds", num(produce_render::LEAD_SECONDS), "produce_render::LEAD_SECONDS"),
-        param("P.eng.narrationGapSeconds", num(produce_render::GAP_SECONDS), "produce_render::GAP_SECONDS"),
-        param("P.eng.narrationMaxTempo", num(produce_render::MAX_TEMPO), "produce_render::MAX_TEMPO"),
-        // --- the automatic voice reference (§F4.6 S2): every one read by `voice_ref::plan_reference` --------
-        param(
-            "P.eng.refMinTakeSeconds",
-            num(voice_ref::REF_MIN_TAKE_SECONDS),
-            "voice_ref::REF_MIN_TAKE_SECONDS",
-        ),
-        param(
-            "P.eng.refMinWordsPerSecond",
-            num(voice_ref::REF_MIN_WORDS_PER_SECOND),
-            "voice_ref::REF_MIN_WORDS_PER_SECOND",
-        ),
-        param(
-            "P.machine.refWantSeconds",
-            num(voice_ref::REF_WANT_SECONDS),
-            "voice_ref::REF_WANT_SECONDS",
-        ),
-        param(
-            "P.machine.refTakeMax",
-            voice_ref::REF_TAKE_MAX.to_string(),
-            "voice_ref::REF_TAKE_MAX",
-        ),
-        // --- §08 §4's fitting bound, read where the render applies it (the rest of F4.3 lives in §7) -------
-        param(
-            "P.eng.refPadSeconds",
-            num(voice_ref::REF_PAD_SECONDS),
-            "voice_ref::REF_PAD_SECONDS",
-        ),
-    ]
+    crate::params_narrate::rows()
 }
 
 /// §08 Produce's own rows (§10): the five numbers that build a cue and the size of one translation request.
@@ -1223,21 +1149,65 @@ pub fn narrate() -> Vec<Param> {
 pub fn produce() -> Vec<Param> {
     vec![
         // --- cue building (§10's four `sub*` rows) ------------------------------------------------------
-        param("P.policy.subtitleBreakSeconds", num(produce_subtitles::SUBBREAK_SECONDS), "produce_subtitles::SUBBREAK_SECONDS"),
-        param("P.policy.subtitleRowChars", produce_subtitles::ROW_CHARS.to_string(), "produce_subtitles::ROW_CHARS"),
-        param("P.policy.subtitleMaxSeconds", num(produce_subtitles::MAX_SECONDS), "produce_subtitles::MAX_SECONDS"),
+        param(
+            "P.policy.subtitleBreakSeconds",
+            num(produce_subtitles::SUBBREAK_SECONDS),
+            "produce_subtitles::SUBBREAK_SECONDS",
+        ),
+        param(
+            "P.policy.subtitleRowChars",
+            produce_subtitles::ROW_CHARS.to_string(),
+            "produce_subtitles::ROW_CHARS",
+        ),
+        param(
+            "P.policy.subtitleMaxSeconds",
+            num(produce_subtitles::MAX_SECONDS),
+            "produce_subtitles::MAX_SECONDS",
+        ),
         // §10 lists the hold and the floor beside the other three; both are S2's tidy, not S1's grouping.
-        param("P.policy.subtitleHoldSeconds", num(produce_subtitles::HOLD_SECONDS), "produce_subtitles::HOLD_SECONDS"),
-        param("P.policy.subtitleMinSeconds", num(produce_subtitles::MIN_SECONDS), "produce_subtitles::MIN_SECONDS"),
+        param(
+            "P.policy.subtitleHoldSeconds",
+            num(produce_subtitles::HOLD_SECONDS),
+            "produce_subtitles::HOLD_SECONDS",
+        ),
+        param(
+            "P.policy.subtitleMinSeconds",
+            num(produce_subtitles::MIN_SECONDS),
+            "produce_subtitles::MIN_SECONDS",
+        ),
         // --- one translation request's size (§10: new; the prototype sent the whole track) ---------------
-        param("P.machine.translateBatch", produce_subtitles::BATCH.to_string(), "produce_subtitles::BATCH"),
+        param(
+            "P.machine.translateBatch",
+            produce_subtitles::BATCH.to_string(),
+            "produce_subtitles::BATCH",
+        ),
         // --- §F5.7's page runs: the cap an upload puts on a picture, and the snap grid its words box stops on.
-        param("P.eng.thumbnailJPEGMax", produce_runs::JPEG_MAX_BYTES.to_string(), "produce_runs::JPEG_MAX_BYTES"),
-        param("P.policy.publishWordsSnapPx", produce_runs::words_snap_px().to_string(), "produce_runs::words_snap_px"),
+        param(
+            "P.eng.thumbnailJPEGMax",
+            produce_runs::JPEG_MAX_BYTES.to_string(),
+            "produce_runs::JPEG_MAX_BYTES",
+        ),
+        param(
+            "P.policy.publishWordsSnapPx",
+            produce_runs::words_snap_px().to_string(),
+            "produce_runs::words_snap_px",
+        ),
         // --- §08 §4's mix: the bed under the narration, and the two targets the final audio is set to ------
-        param("P.policy.gameVolume", num(project::Produce::default().game_volume), "project::Produce::default — game_volume"),
-        param("P.eng.loudness", loudnorm_spelled(produce_render::LOUDNORM), "produce_render::LOUDNORM"),
-        param("P.eng.clipLimiter", limiter_spelled(), "produce_render::LIMITER"),
+        param(
+            "P.policy.gameVolume",
+            num(project::Produce::default().game_volume),
+            "project::Produce::default — game_volume",
+        ),
+        param(
+            "P.eng.loudness",
+            loudnorm_spelled(produce_render::LOUDNORM),
+            "produce_render::LOUDNORM",
+        ),
+        param(
+            "P.eng.clipLimiter",
+            limiter_spelled(),
+            "produce_render::LIMITER",
+        ),
         // §10 spells this row as a whole rule, `0.02·height, min 4`, so both constants `blur_sigma`
         // reads go into the spelling; a change to either shows up in the catalogue without a hand edit.
         param(
@@ -1248,31 +1218,59 @@ pub fn produce() -> Vec<Param> {
         // --- §08 §4's thumbnail: its size, its band, and how many frames the row holds ---------------------
         // (`P.eng.narrationMaxTempo` used to sit here: §07's §4 names it too, so it now has one home in
         // `narrate()`, still pointing at `produce_render::MAX_TEMPO`.)
-        param("P.machine.thumbnailLongSide", produce_screen::THUMB_LONG_SIDE.to_string(), "produce_screen::THUMB_LONG_SIDE"),
-        param("P.eng.titleBand", title_band_spelled(), "project::TitleBox::default"),
-        param("P.policy.publishFrames", produce_screen::FIRST_IMAGES.to_string(), "produce_screen::FIRST_IMAGES"),
-        param("P.eng.publishMaxFrames", produce_screen::MAX_IMAGES.to_string(), "produce_screen::MAX_IMAGES"),
-        param("P.machine.briefMaxChars", produce_upload::BRIEF_MAX_CHARS.to_string(), "produce_upload::BRIEF_MAX_CHARS"),
+        param(
+            "P.machine.thumbnailLongSide",
+            produce_screen::THUMB_LONG_SIDE.to_string(),
+            "produce_screen::THUMB_LONG_SIDE",
+        ),
+        param(
+            "P.eng.titleBand",
+            title_band_spelled(),
+            "project::TitleBox::default",
+        ),
+        param(
+            "P.policy.publishFrames",
+            produce_screen::FIRST_IMAGES.to_string(),
+            "produce_screen::FIRST_IMAGES",
+        ),
+        param(
+            "P.eng.publishMaxFrames",
+            produce_screen::MAX_IMAGES.to_string(),
+            "produce_screen::MAX_IMAGES",
+        ),
+        param(
+            "P.machine.briefMaxChars",
+            produce_upload::BRIEF_MAX_CHARS.to_string(),
+            "produce_upload::BRIEF_MAX_CHARS",
+        ),
         // --- §4's engineering sentence: values §10 keeps in prose, so each takes the bare `produce.` prefix
         // and spells itself out of the constant or function its rule reads (`params_produce` builds the spelling).
-        param("produce.exportLadder", crate::params_produce::export_ladder(), "produce_runs::JPEG_QUALITIES + JPEG_RETRY_LIMIT"),
-        param("produce.posterJPEGQuality", crate::params_produce::poster_quality(), "produce_embed::POSTER_JPEG_QUALITY + POSTER_QSCALE"),
-        param("produce.sdWaitSeconds", crate::params_produce::sd_timeouts(), "bodies::sd_waits"),
-        param("produce.seekBeforeInput", crate::params_produce::seek_rule(), "produce_render::SEEK_FLAG + INPUT_FLAG"),
-        param("produce.mp4StreamFlags", crate::params_produce::mp4_flags(), "produce_render::MP4_STREAM_FLAGS + MP4_START_FLAGS"),
+        param(
+            "produce.exportLadder",
+            crate::params_produce::export_ladder(),
+            "produce_runs::JPEG_QUALITIES + JPEG_RETRY_LIMIT",
+        ),
+        param(
+            "produce.posterJPEGQuality",
+            crate::params_produce::poster_quality(),
+            "produce_embed::POSTER_JPEG_QUALITY + POSTER_QSCALE",
+        ),
+        param(
+            "produce.sdWaitSeconds",
+            crate::params_produce::sd_timeouts(),
+            "bodies::sd_waits",
+        ),
+        param(
+            "produce.seekBeforeInput",
+            crate::params_produce::seek_rule(),
+            "produce_render::SEEK_FLAG + INPUT_FLAG",
+        ),
+        param(
+            "produce.mp4StreamFlags",
+            crate::params_produce::mp4_flags(),
+            "produce_render::MP4_STREAM_FLAGS + MP4_START_FLAGS",
+        ),
     ]
-}
-
-/// §10 spells this row as `15 (8..28)`: the default a line is estimated at, and the band a MEASURED rate is
-/// clamped into (`narrate_screen::char_rate_clamped`). Spelling all three from the constants keeps the row from
-/// drifting from either half of the rule.
-fn speech_rate_spelled() -> String {
-    format!(
-        "{} ({}..{})",
-        num(narrate_screen::SPEECH_CHARS_PER_SECOND),
-        num(narrate_screen::CHAR_RATE_MIN),
-        num(narrate_screen::CHAR_RATE_MAX)
-    )
 }
 
 /// §10 spells `P.eng.loudness` as `I -14, TP -1.5, LRA 11`, which is the filter string read backwards: the
@@ -1280,7 +1278,7 @@ fn speech_rate_spelled() -> String {
 /// is actually sent, and only their spelling lives here.
 /// §10's spelling of a `loudnorm` target: the three numbers taken out of the filter string the
 /// renderer is actually sent, so a row cannot disagree with the command line.
-fn loudnorm_spelled(filter: &str) -> String {
+pub(crate) fn loudnorm_spelled(filter: &str) -> String {
     let tail = filter.split("loudnorm=").nth(1).unwrap_or_default();
     // `I=-14:TP=-1.5:LRA=11` → `I -14, TP -1.5, LRA 11`: pairs apart on commas, each value off its key.
     tail.split(':')
@@ -1355,5 +1353,8 @@ pub fn family(id: &str) -> Family {
 /// The silence pair as §10 spells it, from the module that measures an envelope: both spellings of the
 /// same two numbers are here so a caller never has to know which one a given module reached for.
 pub fn silence() -> (f64, f64) {
-    (degraded::SILENCE_THRESHOLD_DB, degraded::SILENCE_MIN_SECONDS)
+    (
+        degraded::SILENCE_THRESHOLD_DB,
+        degraded::SILENCE_MIN_SECONDS,
+    )
 }

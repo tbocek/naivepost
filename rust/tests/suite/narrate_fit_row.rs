@@ -25,7 +25,11 @@ fn f4_3_s1_lines_pack_from_the_lead_and_never_before_the_previous_end_plus_the_g
     // P.eng.narrationLeadSeconds 0.3: a line placed at 0.0 (or anywhere before the lead) starts AT the lead.
     let (placed, logs) = r::fit(&[(0, 0.0, 2.0)], 10.0);
     assert_eq!(placed.len(), 1);
-    assert_eq!(placed[0].at, r::LEAD_SECONDS, "the first line never starts before the lead");
+    assert_eq!(
+        placed[0].at,
+        r::LEAD_SECONDS,
+        "the first line never starts before the lead"
+    );
     assert!(logs.is_empty(), "{logs:?}");
 
     // P.eng.narrationGapSeconds 0.3 + P.eng.narrationTailSeconds 0.2: the second line is held to the
@@ -69,7 +73,10 @@ fn f4_3_s3_growing_the_clip_within_the_extend_bound_still_reads_as_fitting() {
     assert!(placed[0].extend > 0.0, "{placed:?}");
     assert!(placed[0].extend < r::MAX_EXTEND_SECONDS, "{placed:?}");
     assert!(logs.is_empty(), "growth says nothing: {logs:?}");
-    assert_eq!(placed[0].tempo, 1.0, "nothing was sped up when growth was enough");
+    assert_eq!(
+        placed[0].tempo, 1.0,
+        "nothing was sped up when growth was enough"
+    );
 
     // ...and the mirror agrees: growing alone is not a remedy worth warning about, since the render fixes it
     // silently. What the row may still say is that there is no breath left after the last word — `Tight`,
@@ -79,7 +86,12 @@ fn f4_3_s3_growing_the_clip_within_the_extend_bound_still_reads_as_fitting() {
         Fit::Tight { speech, .. } => assert_eq!(speech, 5.0),
         other => panic!("expected Tight, got {other:?}"),
     }
-    assert_eq!(narrate_screen::fit_warning(fit).unwrap().contains("sped up"), false);
+    assert_eq!(
+        narrate_screen::fit_warning(fit)
+            .unwrap()
+            .contains("sped up"),
+        false
+    );
     // 30 chars at the page's default rate is 2 s of speech on a 1 s clip: 0.5 s over, inside the extend
     // bound, and again nothing about tempo.
     let page_lines = [(0usize, 0.3f64, spoken(30))];
@@ -96,7 +108,8 @@ fn f4_3_s4_a_slide_fix_shows_the_moved_earlier_warning_not_a_sped_up_one() {
     let lines = [(0, 12.0, 2.5)];
     let (_placed, logs) = r::fit(&lines, 10.0);
     assert!(
-        logs.iter().any(|l| l.contains("moved") && l.contains("earlier")),
+        logs.iter()
+            .any(|l| l.contains("moved") && l.contains("earlier")),
         "expected the slide sentence: {logs:?}"
     );
     assert!(
@@ -122,7 +135,8 @@ fn f4_3_s5_the_tempo_step_shows_the_sped_up_warning() {
     let lines = [(0, 0.3, 7.0)];
     let (_placed, logs) = r::fit(&lines, 2.0);
     assert!(
-        logs.iter().any(|l| l.contains("moved") && l.contains("earlier")),
+        logs.iter()
+            .any(|l| l.contains("moved") && l.contains("earlier")),
         "{logs:?}"
     );
     assert!(
@@ -151,12 +165,20 @@ fn f4_3_s6_speech_length_is_the_wav_when_it_exists_else_chars_over_a_rate_clampe
     // §F4.3: `characters / the narration's own measured rate (default 15 chars/s, clamped 8..28)`.
     // The wav half is the render's rule (a line with no synthesis has length 0.0 and takes no room); the
     // page half is this arithmetic, bounded by CHAR_RATE_MIN/CHAR_RATE_MAX.
-    assert_eq!(narrate_screen::SPEECH_CHARS_PER_SECOND, 15.0, "the default rate");
+    assert_eq!(
+        narrate_screen::SPEECH_CHARS_PER_SECOND,
+        15.0,
+        "the default rate"
+    );
     assert_eq!(narrate_screen::CHAR_RATE_MIN, 8.0);
     assert_eq!(narrate_screen::CHAR_RATE_MAX, 28.0);
 
     assert_eq!(spoken(30), 2.0, "30 chars at 15/s is 2 s");
-    assert_eq!(narrate_screen::char_rate_clamped(15.0), 15.0, "inside the band: unchanged");
+    assert_eq!(
+        narrate_screen::char_rate_clamped(15.0),
+        15.0,
+        "inside the band: unchanged"
+    );
 
     // Fast and slow rates are pulled back to the bounds, which shows in the seconds they yield:
     // 280 chars at 40/s would be 7.0 s, but clamped to 28/s it is 10.0 s.
@@ -173,7 +195,10 @@ fn f4_3_s6_speech_length_is_the_wav_when_it_exists_else_chars_over_a_rate_clampe
     assert_eq!(narrate_screen::page_speech_seconds(80, 2.0), 10.0);
 
     // A rate with no usable value falls back to the default rather than dividing by zero.
-    assert_eq!(narrate_screen::char_rate_clamped(0.0), narrate_screen::SPEECH_CHARS_PER_SECOND);
+    assert_eq!(
+        narrate_screen::char_rate_clamped(0.0),
+        narrate_screen::SPEECH_CHARS_PER_SECOND
+    );
     assert_eq!(
         narrate_screen::char_rate_clamped(f64::NAN),
         narrate_screen::SPEECH_CHARS_PER_SECOND
@@ -186,23 +211,30 @@ fn f4_3_s7_what_still_overruns_after_the_ladder_is_cut_by_the_clips_end() {
     // cuts the rest at the clip's end.
     let lines = [(0, 0.3, 12.0)];
     let (placed, logs) = r::fit(&lines, 2.0);
-    assert_eq!(placed[0].tempo, r::MAX_TEMPO, "never faster than P.eng.narrationMaxTempo");
-    assert!(placed[0].tempo <= 1.25 + 1e-9);
-    assert!(
-        logs.iter().any(|l| l.contains("sped up")),
-        "{logs:?}"
+    assert_eq!(
+        placed[0].tempo,
+        r::MAX_TEMPO,
+        "never faster than P.eng.narrationMaxTempo"
     );
+    assert!(placed[0].tempo <= 1.25 + 1e-9);
+    assert!(logs.iter().any(|l| l.contains("sped up")), "{logs:?}");
 
     let fit = narrate_screen::mirror_fit(2.0, &lines);
     match fit {
         Fit::Overruns { past, sped_up } => {
             assert!(sped_up, "{fit:?}");
             assert!(past.is_finite(), "{fit:?}");
-            assert!(past >= 0.0, "the shortfall is floored at the clip's end, never negative");
+            assert!(
+                past >= 0.0,
+                "the shortfall is floored at the clip's end, never negative"
+            );
             // The ladder grew the clip to its 4 s ceiling, so the room it could fill is 2.0 + 4.0; the run
             // still wants 12.3 s and speaks it in 9.6 s at 1.25x from the lead, leaving 8.1 s past the
             // clip's own end for the splice to cut.
-            assert!(past > 8.0 && past < 8.2, "the part the ladder could not remove: {past}");
+            assert!(
+                past > 8.0 && past < 8.2,
+                "the part the ladder could not remove: {past}"
+            );
         }
         other => panic!("expected Overruns, got {other:?}"),
     }
@@ -222,7 +254,9 @@ fn f4_3_s8_the_mirror_never_invents_a_shortfall() {
     // here starts line 2 at 3.8 and speaks to 6.8, so a 6.5 s clip has 0.3 s of speech left over it.
     let crowded = [(0usize, 0.3f64, 3.0), (1, 0.5, 3.0)];
     match narrate_screen::mirror_fit(6.5, &crowded) {
-        Fit::Tight { next_line, .. } => assert!(next_line, "a pushed line blames the next line: see below"),
+        Fit::Tight { next_line, .. } => {
+            assert!(next_line, "a pushed line blames the next line: see below")
+        }
         other => panic!("expected Tight, got {other:?}"),
     }
     // Same two lines spread far enough apart that packing pushes nothing (line 2 sits at 4.0, past the
@@ -240,7 +274,10 @@ fn f4_3_s8_the_mirror_never_invents_a_shortfall() {
         for speech in [0.5f64, 2.0, 5.0, 9.0, 20.0] {
             let fit = narrate_screen::mirror_fit(clip, &[(0, 0.3, speech)]);
             if let Fit::Overruns { past, .. } = fit {
-                assert!(past.is_finite() && past >= 0.0, "clip {clip}s speech {speech}s -> {fit:?}");
+                assert!(
+                    past.is_finite() && past >= 0.0,
+                    "clip {clip}s speech {speech}s -> {fit:?}"
+                );
             }
         }
     }
@@ -291,7 +328,8 @@ fn f4_3_s9_the_grow_stops_at_the_footage_not_at_the_ceiling() {
         "a run the footage starved cannot fit in silence: {logs:?}"
     );
     assert!(
-        logs.iter().any(|l| l.contains("moved") && l.contains("earlier")),
+        logs.iter()
+            .any(|l| l.contains("moved") && l.contains("earlier")),
         "{logs:?}"
     );
 
@@ -303,7 +341,10 @@ fn f4_3_s9_the_grow_stops_at_the_footage_not_at_the_ceiling() {
         "unknown footage keeps §10's ceiling: {:?}",
         blind[0].extend
     );
-    assert!(blind_logs.is_empty(), "growth alone stays silent: {blind_logs:?}");
+    assert!(
+        blind_logs.is_empty(),
+        "growth alone stays silent: {blind_logs:?}"
+    );
     // And `fit` — the page's door, which has no footage in hand — agrees with that reading.
     let (_page_placed, page_logs) = r::fit(&lines, 2.0);
     assert!(page_logs.is_empty(), "{page_logs:?}");
@@ -336,13 +377,24 @@ fn f4_3_s10_the_ladder_log_names_the_clip_not_the_entry() {
         true,
         r::unknown_footage,
     );
-    assert_eq!(clips.len(), 2, "both segments are long enough to survive S3");
+    assert_eq!(
+        clips.len(),
+        2,
+        "both segments are long enough to survive S3"
+    );
     assert_eq!(clips[1].lines.len(), 2, "the run sits on the second clip");
-    assert_eq!(clips[0].lines.len(), 0, "the first clip carries nothing and says nothing");
+    assert_eq!(
+        clips[0].lines.len(),
+        0,
+        "the first clip carries nothing and says nothing"
+    );
     assert_eq!(logs.len(), 1, "one slide, about clip 2: {logs:?}");
     let slide = logs[0].clone();
     assert!(slide.starts_with("clip 2: "), "{slide}");
-    assert!(!slide.contains("entry"), "a person reads clip numbers, not indices: {slide}");
+    assert!(
+        !slide.contains("entry"),
+        "a person reads clip numbers, not indices: {slide}"
+    );
 
     // The same shortage through `fit_in` with the clip number the planner would pass reproduces the
     // sentence exactly, digits and all. A line placed at 8.0 on a 3 s clip overruns by 5.7 s; §10's 4 s of
@@ -379,9 +431,7 @@ fn f4_3_s11_a_line_without_a_wav_takes_no_room() {
     // room is the bug this pins: the bed ducked for words nobody says, and every later cue pushed late.
     // `seconds_of` answers for entry 0 only, which is what a missing wav looks like from here.
     let entries = [entry(0.0, 3.0, 0.3), entry(0.0, 4.0, 3.5)];
-    let seconds_of = |entry: &Entry| -> Option<f64> {
-        (entry.at < 1.0).then_some(2.5)
-    };
+    let seconds_of = |entry: &Entry| -> Option<f64> { (entry.at < 1.0).then_some(2.5) };
     let mut clip = r::Clip {
         no: 1,
         seg_s: 0.0,
@@ -418,8 +468,16 @@ fn f4_3_s11_a_line_without_a_wav_takes_no_room() {
         ],
     };
     naivepost::produce_exec::fill_speech(std::slice::from_mut(&mut clip), &entries, &seconds_of);
-    assert!((clip.lines[0].speech - 2.5).abs() < 1e-9, "{:?}", clip.lines[0]);
-    assert!((clip.lines[1].speech - 0.0).abs() < 1e-9, "{:?}", clip.lines[1]);
+    assert!(
+        (clip.lines[0].speech - 2.5).abs() < 1e-9,
+        "{:?}",
+        clip.lines[0]
+    );
+    assert!(
+        (clip.lines[1].speech - 0.0).abs() < 1e-9,
+        "{:?}",
+        clip.lines[1]
+    );
     assert_ne!(
         clip.lines[1].speech,
         entries[1].e - entries[1].s,
@@ -457,7 +515,10 @@ fn f4_3_s12_speech_length_is_measured_from_the_wav_header() {
     let exact = dir.join("one-second.wav");
     std::fs::write(&exact, pcm_wav(48_000, 48_000, 0)).expect("write wav");
     let seconds = naivepost::voice_ref::wav_seconds(&exact).expect("a real wav measures");
-    assert!((seconds - 1.0).abs() < 0.01, "48000 frames at 48 kHz: {seconds}");
+    assert!(
+        (seconds - 1.0).abs() < 0.01,
+        "48000 frames at 48 kHz: {seconds}"
+    );
 
     // Half a second, to show the arithmetic follows the data chunk and not the file's size: a header
     // and chunk tags ride on top of either.
@@ -479,7 +540,10 @@ fn f4_3_s12_speech_length_is_measured_from_the_wav_header() {
     let junk = dir.join("not-a-wav.wav");
     std::fs::write(&junk, b"OggS some container that is not RIFF/WAVE").expect("write junk");
     assert_eq!(naivepost::voice_ref::wav_seconds(&junk), None);
-    assert_eq!(naivepost::voice_ref::wav_seconds(&dir.join("missing.wav")), None);
+    assert_eq!(
+        naivepost::voice_ref::wav_seconds(&dir.join("missing.wav")),
+        None
+    );
 
     std::fs::remove_dir_all(&dir).ok();
 }

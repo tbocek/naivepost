@@ -17,11 +17,11 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use crate::common;
+pub use common::{serve, Seen};
 use naivepost::layout::Tree;
 use naivepost::settings::{self, Conf};
 use serde_json::json;
-use crate::common;
-pub use common::{serve, Seen};
 
 /// A fake LLM on a free loopback port, answering each ask with the next scripted reply.
 pub struct FakeLlm {
@@ -261,8 +261,7 @@ static FIXTURES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize
 
 /// Read a file the scenario wrote, empty when it never appeared (so the assertion names the path).
 pub fn read(path: &PathBuf) -> String {
-    std::fs::read_to_string(path)
-        .unwrap_or_else(|_| panic!("expected a file at {path:?}"))
+    std::fs::read_to_string(path).unwrap_or_else(|_| panic!("expected a file at {path:?}"))
 }
 
 /// Two kept clips of 14.2 s and 9.0 s, with three words inside the first at +0.4, +2.0 and +5.0.

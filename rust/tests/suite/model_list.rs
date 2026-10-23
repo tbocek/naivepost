@@ -29,16 +29,28 @@ fn sec_09_llm_and_tools_9_model_list_and_tests_s1_the_list_is_a_get_with_a_fifte
     assert_eq!(models::LIST_MODELS_SECONDS, 15);
     // Not the completion budget: a minute of spinner on Fetch models reads as a hung dialog, and a
     // model list loads no weights, so fifteen seconds already means the address is wrong.
-    assert_ne!(seconds, checks::LLM_TEST_SECONDS, "must not inherit the 60 s completion budget");
+    assert_ne!(
+        seconds,
+        checks::LLM_TEST_SECONDS,
+        "must not inherit the 60 s completion budget"
+    );
     // And it is its own rule, not /health's, even though both are 15 today.
-    assert_eq!(seconds, checks::HEALTH_SECONDS, "both 15 by coincidence, different sections");
+    assert_eq!(
+        seconds,
+        checks::HEALTH_SECONDS,
+        "both 15 by coincidence, different sections"
+    );
 }
 
 #[test]
 fn sec_09_llm_and_tools_9_model_list_and_tests_s2_ids_are_parsed_in_the_servers_own_order() {
     let body = json!({"data": [{"id": "z-model"}, {"id": "a-model"}]});
     let ids = models::parse_ids(&body);
-    assert_eq!(ids, vec!["z-model".to_string(), "a-model".to_string()], "order preserved, not sorted");
+    assert_eq!(
+        ids,
+        vec!["z-model".to_string(), "a-model".to_string()],
+        "order preserved, not sorted"
+    );
 
     // Junk entries are skipped, never fatal: a server that grows a field must not take the dropdown
     // down with it.
@@ -50,7 +62,10 @@ fn sec_09_llm_and_tools_9_model_list_and_tests_s2_ids_are_parsed_in_the_servers_
         {"id": "   "},
         {"id": "good-two"},
     ]});
-    assert_eq!(models::parse_ids(&messy), vec!["good-one".to_string(), "good-two".to_string()]);
+    assert_eq!(
+        models::parse_ids(&messy),
+        vec!["good-one".to_string(), "good-two".to_string()]
+    );
 
     // Nothing shaped like a list yields nothing, without panicking.
     assert!(models::parse_ids(&json!({"data": []})).is_empty());
@@ -91,7 +106,10 @@ fn sec_09_llm_and_tools_9_model_list_and_tests_s4_use_copies_the_picked_id_into_
     // A member comes back exactly as listed -- that string is what lands in the Model box.
     let picked = models::use_choice(&listed, "qwen-vl").expect("a listed id is usable");
     assert_eq!(picked, "qwen-vl");
-    assert!(listed.contains(&picked), "round-trips into the list it came from");
+    assert!(
+        listed.contains(&picked),
+        "round-trips into the list it came from"
+    );
 
     // A non-member is refused, naming the id so the operator can see what went wrong.
     let refused = models::use_choice(&listed, "qwen-vision").unwrap_err();
@@ -99,7 +117,10 @@ fn sec_09_llm_and_tools_9_model_list_and_tests_s4_use_copies_the_picked_id_into_
 
     // No prefix matching: ids share prefixes across vision/text variants, and half an id produces a
     // completion that fails for a reason nobody can see.
-    assert!(models::use_choice(&listed, "qwen").is_err(), "a prefix is not an id");
+    assert!(
+        models::use_choice(&listed, "qwen").is_err(),
+        "a prefix is not an id"
+    );
     assert!(models::use_choice(&listed, "qwen-v").is_err());
     // Nor a superstring.
     assert!(models::use_choice(&listed, "qwen-vl-plus").is_err());
@@ -129,7 +150,10 @@ fn sec_09_llm_and_tools_9_model_list_and_tests_s5_the_two_probes_carry_f013s_num
     assert_eq!(vision.name, "LLM vision");
     assert_eq!(vision.seconds, 120);
     assert_eq!(vision.seconds, checks::VISION_TEST_SECONDS);
-    assert_eq!(vision.max_tokens, None, "an image prompt is not capped at sixteen tokens");
+    assert_eq!(
+        vision.max_tokens, None,
+        "an image prompt is not capped at sixteen tokens"
+    );
     assert!(vision.vision);
 
     // Vision gets the longer budget of the two, and they are not equal.
@@ -143,12 +167,21 @@ fn sec_09_llm_and_tools_9_model_list_and_tests_s5_the_two_probes_carry_f013s_num
 
     // Pass conditions: any non-blank answer passes the completion; blank does not.
     assert!(models::probe_passes(text, "ok").is_ok());
-    assert!(models::probe_passes(text, "").is_err(), "nothing back is not a pass");
+    assert!(
+        models::probe_passes(text, "").is_err(),
+        "nothing back is not a pass"
+    );
     assert!(models::probe_passes(text, "   ").is_err());
     // Vision passes only on a reply that names red -- same rule as checks::vision_verdict.
-    assert!(models::probe_passes(vision, "Red").is_ok(), "case-insensitive");
+    assert!(
+        models::probe_passes(vision, "Red").is_ok(),
+        "case-insensitive"
+    );
     assert!(models::probe_passes(vision, "It is red.").is_ok());
-    assert!(models::probe_passes(vision, "blue").is_err(), "it is not seeing the image");
+    assert!(
+        models::probe_passes(vision, "blue").is_err(),
+        "it is not seeing the image"
+    );
     assert!(models::probe_passes(vision, "").is_err());
     // And it really is the same function behind both, not a second copy of the rule.
     assert_eq!(
@@ -175,7 +208,9 @@ fn sec_09_llm_and_tools_9_model_list_and_tests_s6_the_probe_bodies_are_what_f013
     assert_eq!(kwargs["enable_thinking"], false);
     // It is not streamed: there is nothing to watch arrive.
     assert!(
-        body.get("stream").map(|v| v.as_bool() == Some(false)).unwrap_or(true),
+        body.get("stream")
+            .map(|v| v.as_bool() == Some(false))
+            .unwrap_or(true),
         "the test request must not stream"
     );
 

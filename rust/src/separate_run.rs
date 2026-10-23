@@ -45,7 +45,10 @@ pub fn stage(project: &Project) -> Stage {
         .map(|(index, source)| Task {
             // The lane is the same word the recording's own rows use (§F1.3's stem rule), so one
             // recording reads as one thing in the run log however many stages touch it.
-            label: format!("separating {}", crate::audio_task::source_lane(&source.path)),
+            label: format!(
+                "separating {}",
+                crate::audio_task::source_lane(&source.path)
+            ),
             program: run_stages::AUDIO_TASK.to_string(),
             args: vec![
                 SEPARATE_MARK.to_string(),
@@ -82,8 +85,12 @@ pub fn run_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let paths = crate::settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
     let session = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
-    let tree = Tree::new(&session)
-        .map_err(|_| format!("{}: not a project folder to split a recording in", session.display()))?;
+    let tree = Tree::new(&session).map_err(|_| {
+        format!(
+            "{}: not a project folder to split a recording in",
+            session.display()
+        )
+    })?;
     let mut project = crate::project::load(tree.dir())?;
     let index = task
         .args
@@ -169,21 +176,25 @@ fn split(
     let silences = media::silences(&ffmpeg, &decoded)?;
     let plan = separate::chunk_plan(seconds, &silences);
     let logs = split_parts(
-        &ffmpeg, tree, paths, model, &lane, &source, &decoded, &plan, &work, &voice_path, &rest_path,
+        &ffmpeg,
+        tree,
+        paths,
+        model,
+        &lane,
+        &source,
+        &decoded,
+        &plan,
+        &work,
+        &voice_path,
+        &rest_path,
         log,
     )?;
     // S6 wants the mix as it was recorded, which is the decode itself: same tool, same filter, so the
     // three numbers in the line are comparable.
     let mix = loudness(where_.configured_ffmpeg, &decoded, log);
-    let outcome = separate::finish(
-        project,
-        tree,
-        tree.dir(),
-        index,
-        &logs,
-        &mix,
-        |path| loudness(where_.configured_ffmpeg, path, log),
-    );
+    let outcome = separate::finish(project, tree, tree.dir(), index, &logs, &mix, |path| {
+        loudness(where_.configured_ffmpeg, path, log)
+    });
     // Success-only cleanup: after a failure the parts stay, because they are what a person can look at
     // and what the resume rule reads.
     let _ = std::fs::remove_dir_all(&work);
@@ -221,18 +232,25 @@ fn split_parts(
     for (number, (from, to)) in plan.iter().enumerate() {
         let piece = work.join(media::chunk_file(lane, number));
         media::cut(ffmpeg, decoded, *from, *to, &piece, log)?;
-        let name = piece.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = piece
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let bytes = std::fs::read(&piece).map_err(|why| format!("{}: {why}", piece.display()))?;
         let upload = crate::audio_task::upload_bytes(&held, paths, &name, &bytes)?;
         let reply = crate::audio_task::dial(
             &held,
             paths,
-            crate::audio_task::Ask { step: "Separate", job: &name, task: "separate" },
+            crate::audio_task::Ask {
+                step: "Separate",
+                job: &name,
+                task: "separate",
+            },
             model,
             &crate::audio_task::separation_body(model, &upload, &name),
         )?;
-        let parsed: serde_json::Value =
-            serde_json::from_str(&reply).map_err(|why| format!("the stems answer is not JSON: {why}"))?;
+        let parsed: serde_json::Value = serde_json::from_str(&reply)
+            .map_err(|why| format!("the stems answer is not JSON: {why}"))?;
         let stems = crate::audio_task::chunk_stems(&parsed)?;
         // Which stem holds the speech is decided by the rule that owns the question, not by position:
         // a RoFormer answers `vocals`+`instrumental`, an HTDemucs four instruments.
@@ -256,7 +274,9 @@ fn split_parts(
             plan.len()
         ));
     }
-    fetch_halves(ffmpeg, tree, paths, source, &voices, &rests, work, voice_path, rest_path, log)?;
+    fetch_halves(
+        ffmpeg, tree, paths, source, &voices, &rests, work, voice_path, rest_path, log,
+    )?;
     Ok(logs)
 }
 
@@ -285,7 +305,10 @@ fn total(plan: &[(f64, f64)]) -> f64 {
 /// The ids [`separate::pick_stems`] reads, in the reply's own order: the names the server used, which
 /// is what makes that rule's `vocals`/`instrumental` test meaningful rather than decorative.
 fn stem_names(parsed: &serde_json::Value, stems: &crate::audio_task::ChunkStems) -> Vec<String> {
-    let reply = parsed.get("result").cloned().unwrap_or_else(|| parsed.clone());
+    let reply = parsed
+        .get("result")
+        .cloned()
+        .unwrap_or_else(|| parsed.clone());
     let mut names: Vec<String> = Vec::new();
     if let Some(list) = reply.get("stems").and_then(serde_json::Value::as_array) {
         names = list
@@ -335,17 +358,33 @@ fn fetch_halves(
     assemble(ffmpeg, tree, paths, rests, &work.join("r"), work, log)?;
     // The voice half is always pcm-in-a-wav the model wrote, so it joins straight out; the REST of a
     // VIDEO goes through the mux below, because its picture comes from the source, not from the model.
-    media::join_parts(ffmpeg, &sorted_parts(&work.join("v")), voice_path, work, log)?;
+    media::join_parts(
+        ffmpeg,
+        &sorted_parts(&work.join("v")),
+        voice_path,
+        work,
+        log,
+    )?;
     let rest_parts = sorted_parts(&work.join("r"));
     if rest_parts.is_empty() {
         // An all-voice recording legitimately has no rest, and an empty file is a worse answer than a
         // silent one: write nothing and let the loudness pass say what it finds.
         return Ok(());
     }
-    if rest_path.extension().map(|ext| ext == "mkv").unwrap_or(false) {
+    if rest_path
+        .extension()
+        .map(|ext| ext == "mkv")
+        .unwrap_or(false)
+    {
         // S4/S5: the video's own picture, copied, with the joined rest as FLAC sound (lossless, because
         // Cut splices on it later). `mux_video` names the source it takes the picture from.
-        return media::mux_video(ffmpeg, source, &rest_joined(ffmpeg, work, &rest_parts, log)?, rest_path, log);
+        return media::mux_video(
+            ffmpeg,
+            source,
+            &rest_joined(ffmpeg, work, &rest_parts, log)?,
+            rest_path,
+            log,
+        );
     }
     media::join_parts(ffmpeg, &rest_parts, rest_path, work, log)
 }
@@ -425,12 +464,7 @@ fn sorted_parts(folder: &Path) -> Vec<PathBuf> {
 /// down: the server answers a plain GET of the path it just named (the same address an upload was
 /// posted to), which is the one read that needs no invented endpoint. A refusal or a miss fails the
 /// row — a half that was never downloaded is not a half.
-fn fetch_stem(
-    tree: &Tree,
-    paths: &Paths,
-    stem: &ServerPath,
-    out: &Path,
-) -> Result<(), String> {
+fn fetch_stem(tree: &Tree, paths: &Paths, stem: &ServerPath, out: &Path) -> Result<(), String> {
     let endpoint = services::endpoint_for(paths, Server::Audio, |name| std::env::var(name).ok());
     let url = format!("{}{}", endpoint.url.trim_end_matches('/'), stem.as_str());
     // Same shape as `server_leg::send_pinged`: config first, then the headers on the request itself,
@@ -561,7 +595,13 @@ pub fn probe_duration(
     let ffprobe = services::ffprobe_for(configured_ffmpeg, "ffprobe");
     let header = run(
         &ffprobe,
-        &["-show_entries", "format=duration", "-of", "default=nw=1:nk=1", &shown],
+        &[
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=nw=1:nk=1",
+            &shown,
+        ],
     )
     .ok()
     .and_then(|answer| answer.trim().parse::<f64>().ok())
@@ -582,7 +622,13 @@ pub fn probe_duration(
             ],
         )
         .ok()
-        .and_then(|answer| answer.trim().lines().next().and_then(|line| line.trim().parse::<f64>().ok()))
+        .and_then(|answer| {
+            answer
+                .trim()
+                .lines()
+                .next()
+                .and_then(|line| line.trim().parse::<f64>().ok())
+        })
         .filter(|secs| *secs > 0.0),
     };
     let (secs, how) = probes::duration(&shown, header, decoded)?;
@@ -592,7 +638,9 @@ pub fn probe_duration(
     // One line when a decode was paid for: "why did this take so long" has an answer in the log then,
     // and nothing is printed when the header answered as it always does.
     if matches!(how, probes::Source::Decoded) {
-        log(&format!(">>> {shown} has no header duration; measured by decoding"));
+        log(&format!(
+            ">>> {shown} has no header duration; measured by decoding"
+        ));
     }
     Ok(secs)
 }
@@ -602,7 +650,10 @@ pub fn probe_duration(
 /// bytes would cost a second decode there.
 fn durations() -> std::sync::MutexGuard<'static, probes::Cache> {
     static CACHE: std::sync::OnceLock<std::sync::Mutex<probes::Cache>> = std::sync::OnceLock::new();
-    match CACHE.get_or_init(|| std::sync::Mutex::new(probes::Cache::new())).lock() {
+    match CACHE
+        .get_or_init(|| std::sync::Mutex::new(probes::Cache::new()))
+        .lock()
+    {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
     }
@@ -627,7 +678,9 @@ fn loudness(configured_ffmpeg: &str, path: &Path, log: &mut impl FnMut(&str)) ->
         "-",
     ];
     match crate::subprocess::run(&ffmpeg, &shown, |line| log(line)) {
-        Ok(out) => separate::mean_db(&out).map(|db| format!("{db} dB")).unwrap_or_default(),
+        Ok(out) => separate::mean_db(&out)
+            .map(|db| format!("{db} dB"))
+            .unwrap_or_default(),
         Err(_) => String::new(),
     }
 }

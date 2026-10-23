@@ -22,12 +22,13 @@ use crate::startup;
 use crate::ui::rescan_apply;
 use crate::ui::source_rows;
 use crate::ui::window::{
-    copy_into_project, find_status, find_widget_by_name, log_line, progress_bar, SESSION, WINDOW_BAR,
-    WINDOW_QUEUE,
+    copy_into_project, find_status, find_widget_by_name, log_line, progress_bar, SESSION,
+    WINDOW_BAR, WINDOW_QUEUE,
 };
 
 /// The New button's tooltip, §1's wording for badge **1**.
-pub(crate) const NEW_TIP: &str = "New project \u{2014} name it, put it where you want it, and start over";
+pub(crate) const NEW_TIP: &str =
+    "New project \u{2014} name it, put it where you want it, and start over";
 
 /// S3's confirmation, drawn from [`new_project`]'s strings and deciding nothing: the question, the
 /// two paragraphs, and the two answers. "Start new…" is destructive because what it does cannot be
@@ -52,7 +53,12 @@ pub fn new_project_confirm(
 /// user sees comes from that module, including the refusal's and the confirmation's. Whether the
 /// session is empty comes from the live handle the pages mutate, so S2 asks only when there is
 /// something to lose; a run under way comes from F0.2's [`run::RunBar`], which ▶ answers for too.
-pub(crate) fn wire_new(new_: &gtk::Button, bar: &Rc<RefCell<run::RunBar>>, status: &gtk::Label, session: &Rc<RefCell<Project>>) {
+pub(crate) fn wire_new(
+    new_: &gtk::Button,
+    bar: &Rc<RefCell<run::RunBar>>,
+    status: &gtk::Label,
+    session: &Rc<RefCell<Project>>,
+) {
     let bar = bar.clone();
     let status = status.clone();
     let session = session.clone();
@@ -277,7 +283,8 @@ fn ask_add_sources(
     session: &Rc<RefCell<Project>>,
     copy_into: &gtk::CheckButton,
 ) {
-    let chooser = gtk::FileChooserNative::builder()        .title(add_sources::CHOOSER_TITLE)
+    let chooser = gtk::FileChooserNative::builder()
+        .title(add_sources::CHOOSER_TITLE)
         .modal(true)
         .action(gtk::FileChooserAction::Open)
         .build();
@@ -527,7 +534,6 @@ const TRACK_IMPORT: usize = 0;
 /// The Open button's tooltip, §1's wording for badge **2**.
 pub(crate) const OPEN_TIP: &str = "Load a project \u{2014} sources, prompts and settings";
 
-
 /// Where a press of Open goes. [`open_project`] decides everything — which folder the pick names,
 /// whether it is an old single-file project, what the read produced and what had to be dropped; this
 /// only asks for a folder, then draws the answer.
@@ -633,7 +639,10 @@ thread_local! {
 }
 
 /// Put an opened project into the window's remembered list AND into `llm.conf`, the one conf door.
-pub(crate) fn remember_opened(root: &Path, file: &Path) -> Result<open_project::Remembered, String> {
+pub(crate) fn remember_opened(
+    root: &Path,
+    file: &Path,
+) -> Result<open_project::Remembered, String> {
     let paths = crate::settings::from_environment().ok_or("no settings folder to write into")?;
     REMEMBERED.with(|list| {
         let mut projects = list.borrow_mut();

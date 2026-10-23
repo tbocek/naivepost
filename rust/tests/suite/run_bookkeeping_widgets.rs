@@ -4,11 +4,10 @@
 //! checks assert is that a press reaches them and that the two widgets F0.5 owns draw the state, not
 //! that a press means something (spec/00-principles.md §5).
 
-
-use adw::prelude::*;
-use naivepost::ui;
 use crate::common;
-use common::{fixture_dir};
+use adw::prelude::*;
+use common::fixture_dir;
+use naivepost::ui;
 
 /// One running GTK application for this test binary, taken in turn by the checks below.
 fn window_round() {
@@ -38,7 +37,10 @@ fn idle_window_carries_both_widgets(app: &adw::Application) {
     assert!(!expander.is_expanded(), "idle: the log stays collapsed");
     let state = ui::state(&window);
     assert_eq!(state.progress, 0.0, "the same zero through `state()`");
-    assert!(!state.log_expanded, "and the same collapse through `state()`");
+    assert!(
+        !state.log_expanded,
+        "and the same collapse through `state()`"
+    );
     window.close();
 }
 
@@ -90,7 +92,10 @@ fn play_expands_the_log_through_the_widget(app: &adw::Application) {
         !expander.is_expanded(),
         "S4: a finished single-step press puts the expander back the way it came"
     );
-    assert!(!ui::state(&window).log_expanded, "and the flag behind it agrees");
+    assert!(
+        !ui::state(&window).log_expanded,
+        "and the flag behind it agrees"
+    );
     stand_a_run_open(&window, &model);
     assert!(
         expander.is_expanded(),
@@ -123,7 +128,10 @@ fn stop_leaves_the_bar_where_the_step_left_it(app: &adw::Application) {
     // F0.5 S4 closes a single-step press's own bookkeeping, so the run under way is stood up with
     // `start_run` (the call ▶ makes) and ⏹ repainted busy the way ▶'s tail does.
     stand_a_run_open(&window, &model);
-    assert!(stop.is_sensitive(), "with a run under way ⏹ must be sensitive");
+    assert!(
+        stop.is_sensitive(),
+        "with a run under way ⏹ must be sensitive"
+    );
 
     stop.emit_clicked();
 
@@ -139,7 +147,9 @@ fn stop_leaves_the_bar_where_the_step_left_it(app: &adw::Application) {
     );
     // The log stays open across the stop: collapsing it would hide the reason the run ended.
     assert!(
-        ui::log_expander(&window).expect("log expander").is_expanded(),
+        ui::log_expander(&window)
+            .expect("log expander")
+            .is_expanded(),
         "S4: the log stays open so the stop's own line is visible"
     );
     window.close();
@@ -154,7 +164,9 @@ fn lucky_opens_the_bookkeeping_the_same_way(app: &adw::Application) {
 
     let lucky = ui::lucky_button(&window).expect("F0.4's gears are in the run bar");
     assert!(
-        !ui::log_expander(&window).expect("log expander").is_expanded(),
+        !ui::log_expander(&window)
+            .expect("log expander")
+            .is_expanded(),
         "closed before the press"
     );
 
@@ -164,7 +176,9 @@ fn lucky_opens_the_bookkeeping_the_same_way(app: &adw::Application) {
     // step -- is the mid-chain state this check is about, painted through the shell's own door.
     stand_a_run_open(&window, &model);
     assert!(
-        ui::log_expander(&window).expect("log expander").is_expanded(),
+        ui::log_expander(&window)
+            .expect("log expander")
+            .is_expanded(),
         "S1: a run under way keeps the log open the same way ▶ does"
     );
     assert!(ui::state(&window).log_expanded, "and `state()` agrees");
@@ -177,7 +191,10 @@ fn lucky_opens_the_bookkeeping_the_same_way(app: &adw::Application) {
         0.0,
         "S4: the chain's end leaves no progress standing"
     );
-    assert!(lucky.is_sensitive(), "the gears are handed back once the chain ends");
+    assert!(
+        lucky.is_sensitive(),
+        "the gears are handed back once the chain ends"
+    );
     window.close();
 }
 
@@ -208,7 +225,9 @@ fn play_walks_the_stage_onto_the_bar(app: &adw::Application) {
     // work pushed on top -- which is what "▶ put the step's work ON the queue" claims.
     stand_a_run_open(&window, &model);
     naivepost::runqueue::start_run(
-        &mut ui::run_bar(&window).expect("the window carries a run bar").borrow_mut(),
+        &mut ui::run_bar(&window)
+            .expect("the window carries a run bar")
+            .borrow_mut(),
         &mut queue.borrow_mut(),
         &mut naivepost::exchanges::RunLog::new(),
         naivepost::run::Step::Prepare,
@@ -227,11 +246,18 @@ fn play_walks_the_stage_onto_the_bar(app: &adw::Application) {
     let held = queue.borrow();
     // The fixture session has sources, so the Prepare plan is not empty and the walk reached qJob:
     // some track now carries a named stage rather than an unnamed nothing.
-    let named = (0..2).filter(|t| !held.track(*t).job.is_empty()).count();    assert!(named >= 1, "S2: ▶ named a stage on the bar, got two blank tracks");
+    let named = (0..2).filter(|t| !held.track(*t).job.is_empty()).count();
+    assert!(
+        named >= 1,
+        "S2: ▶ named a stage on the bar, got two blank tracks"
+    );
     let pushed = (0..2).map(|t| held.track(t).queued).sum::<usize>();
     assert!(pushed > 0, "S2: ▶ pushed the step's tasks onto the bar");
     let taken = (0..2).map(|t| held.track(t).taken).sum::<usize>();
-    assert_eq!(taken, pushed, "S2: every pushed task was taken, none left unaccounted");
+    assert_eq!(
+        taken, pushed,
+        "S2: every pushed task was taken, none left unaccounted"
+    );
     // The fraction is the bar's own reading of that walked state. A session whose first task cannot
     // run (no ffmpeg on this box) stops at 0.0 with the failure logged, so the load-bearing claim is
     // the queue above; the needle only has to have been driven from it.

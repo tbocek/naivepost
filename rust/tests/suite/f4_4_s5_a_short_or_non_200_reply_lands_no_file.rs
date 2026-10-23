@@ -25,9 +25,15 @@ fn f4_4_s5_a_short_or_non_200_reply_lands_no_file() {
     // Three asks in order: a 900-byte 200, a 500, then a real wav. The script repeats its last
     // entry after it runs out, so these three are spent in order by three speaks.
     let audio = FakeAudio::start(Script::healthy().speech_with(vec![
-        Reply { status: 200, body: wav_bytes(900) },
+        Reply {
+            status: 200,
+            body: wav_bytes(900),
+        },
         Reply::json(500, r#"{"error":"out of memory"}"#),
-        Reply { status: 200, body: wav_bytes(2400) },
+        Reply {
+            status: 200,
+            body: wav_bytes(2400),
+        },
     ]));
     point_at(&audio.url());
 
@@ -59,11 +65,18 @@ fn f4_4_s5_a_short_or_non_200_reply_lands_no_file() {
 
     // (c) a real 2400-byte reply: written where the key says, holding exactly what came back.
     let good = speak_tagged(&fixture, "calm", "en", "good");
-    assert!(good.refused().is_none(), "the good reply is a take: {:?}", good.refused());
+    assert!(
+        good.refused().is_none(),
+        "the good reply is a take: {:?}",
+        good.refused()
+    );
     let landed = good.wav().expect("the take path");
     assert_eq!(
         landed,
-        expected_take(&fixture, "calm").parent().unwrap().join(landed.file_name().unwrap()),
+        expected_take(&fixture, "calm")
+            .parent()
+            .unwrap()
+            .join(landed.file_name().unwrap()),
         "the take sits inside narrate/tts/"
     );
     assert_eq!(
@@ -72,5 +85,8 @@ fn f4_4_s5_a_short_or_non_200_reply_lands_no_file() {
         "and holds the bytes the server sent, byte for byte"
     );
     let name = landed.file_name().unwrap().to_string_lossy().into_owned();
-    assert!(name.ends_with(".wav") && name.len() == 20, "‹16 hex›.wav: {name}");
+    assert!(
+        name.ends_with(".wav") && name.len() == 20,
+        "‹16 hex›.wav: {name}"
+    );
 }

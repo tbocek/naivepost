@@ -44,7 +44,11 @@ fn run(source: &str, words: &[&str], start: f64) -> Vec<Word> {
 /// Two recordings meeting at one seam: take-a says seven words and trails off into a false start, then
 /// take-b picks the sentence up. Seven plus four is comfortably over `joins::MIN_WORDS`.
 fn two_takes() -> Vec<Word> {
-    let mut words = run("take-a", &["one", "two", "three", "four", "five", "six", "seven"], 0.0);
+    let mut words = run(
+        "take-a",
+        &["one", "two", "three", "four", "five", "six", "seven"],
+        0.0,
+    );
     words.extend(run("take-b", &["eight", "nine", "ten", "eleven"], 7.0));
     words
 }
@@ -76,7 +80,8 @@ struct Scene {
 
 impl Scene {
     fn new(tag: &str) -> Scene {
-        let root = std::env::temp_dir().join(format!("naivepost-p6-joinsum-{tag}-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("naivepost-p6-joinsum-{tag}-{}", std::process::id()));
         // Wipe the whole scenario root INCLUDING anything cached under an earlier run of this tag: a
         // leftover reply would answer an ask this scenario means to leave un-answered.
         let _ = std::fs::remove_dir_all(&root);
@@ -143,7 +148,12 @@ impl Scene {
         let n = self.seams.len();
         let before = naivepost::join_ask::window_before(&self.words(), kept, self.seams[0]);
         let after = naivepost::join_ask::window_after(&self.words(), kept, self.seams[0]);
-        naivepost::join_ask::seam_parts(&self.system(), &self.user(k, n, &before, &after), &self.conf.model, 0)
+        naivepost::join_ask::seam_parts(
+            &self.system(),
+            &self.user(k, n, &before, &after),
+            &self.conf.model,
+            0,
+        )
     }
 
     /// Plant a reply in `cache/llm/textedit` under the key the live door will look up, so the next ask
@@ -156,7 +166,11 @@ impl Scene {
             &self.parts(k, kept),
             reply,
         );
-        assert_eq!(stored, naivepost::llm_cache::Stored::Written, "the reply landed in the cache");
+        assert_eq!(
+            stored,
+            naivepost::llm_cache::Stored::Written,
+            "the reply landed in the cache"
+        );
     }
 
     fn system(&self) -> String {
@@ -209,28 +223,48 @@ impl Scene {
 }
 
 #[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_summary_names_both_halves() {
+fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_summary_names_both_halves(
+) {
     let scene = Scene::new("cached");
     let words = scene.words();
     let kept: Vec<bool> = vec![true; words.len()];
-    assert_eq!(scene.seams.len(), 1, "one recording change, one seam to ask about");
+    assert_eq!(
+        scene.seams.len(),
+        1,
+        "one recording change, one seam to ask about"
+    );
     scene.plant(1, &kept, REPAIRED);
 
     // One ask, answered off the cache: no socket, so none of §3's patience ladder either. `from_cache` is
     // the flag §6's summary counts, and it is true only of a reply read back from disk.
     let answered = scene.ask(1, &kept);
-    assert!(answered.from_cache, "the planted reply was read back: {:?}", answered.outcome);
+    assert!(
+        answered.from_cache,
+        "the planted reply was read back: {:?}",
+        answered.outcome
+    );
     assert_eq!(
         answered.outcome,
-        naivepost::joins::Outcome::Applied { before: 2, after: 0 },
+        naivepost::joins::Outcome::Applied {
+            before: 2,
+            after: 0
+        },
         "and it repaired the seam by taking take-a's last two words"
     );
 
     // The same door with the whole pass over it: planted answer, then the pass's own lines.
     scene.plant(1, &kept, REPAIRED);
     let pass = naivepost::join_ask::run_seams(&scene.tree, &scene.project, &words, &scene.times);
-    let applied = pass.logs.iter().filter(|line| line.contains("word(s) off")).count();
-    assert_eq!(applied, 1, "the planted reply was read back and applied: {:?}", pass.logs);
+    let applied = pass
+        .logs
+        .iter()
+        .filter(|line| line.contains("word(s) off"))
+        .count();
+    assert_eq!(
+        applied, 1,
+        "the planted reply was read back and applied: {:?}",
+        pass.logs
+    );
     assert!(pass.removed > 0, "a repair removed words: {:?}", pass.logs);
 
     // §6's summary line, said by the pass itself, with both halves read off the pass's own logs rather
@@ -241,17 +275,37 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_s
         .iter()
         .find(|line| line.contains("join(s) repaired"))
         .unwrap_or_else(|| panic!("the pass ended without its summary line: {:?}", pass.logs));
-    assert_eq!(said, &want, "every answer came from the cache, so both numbers are the same");
+    assert_eq!(
+        said, &want,
+        "every answer came from the cache, so both numbers are the same"
+    );
     // It comes before the arithmetic line, and both after the seam's own line: a reader learns where the
     // answers came from before being told what they cost.
-    let at = pass.logs.iter().position(|line| line.contains("join(s) repaired")).expect("present");
-    let seam_at = pass.logs.iter().position(|line| line.contains("word(s) off")).expect("seam line");
-    let written_at = pass.logs.iter().position(|line| line.contains("words removed in")).expect("arithmetic");
-    assert!(seam_at < at && at < written_at, "seam, summary, arithmetic, in that order: {:?}", pass.logs);
+    let at = pass
+        .logs
+        .iter()
+        .position(|line| line.contains("join(s) repaired"))
+        .expect("present");
+    let seam_at = pass
+        .logs
+        .iter()
+        .position(|line| line.contains("word(s) off"))
+        .expect("seam line");
+    let written_at = pass
+        .logs
+        .iter()
+        .position(|line| line.contains("words removed in"))
+        .expect("arithmetic");
+    assert!(
+        seam_at < at && at < written_at,
+        "seam, summary, arithmetic, in that order: {:?}",
+        pass.logs
+    );
 }
 
 #[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_summary_absent_when_nothing_repaired() {
+fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_summary_absent_when_nothing_repaired(
+) {
     let scene = Scene::new("nothing");
     // Nothing planted and nothing to read back: nothing was repaired, so there is no count to report. A
     // "0 join(s) repaired" line would read as a press that asked and got answers, which is the opposite
@@ -259,7 +313,10 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_s
     // gate is checked from both sides here rather than by dialling a dead socket and sitting through §3's
     // whole patience ladder to watch a line NOT get printed.
     let gate = |removed: usize| removed > 0;
-    assert!(!gate(0), "nothing removed means the summary's gate stays shut");
+    assert!(
+        !gate(0),
+        "nothing removed means the summary's gate stays shut"
+    );
     assert!(gate(1), "one word removed opens it");
     // And a seam with nothing standing on one side of it is skipped whole.
     let (words, all_before_gone, seam) = scene.all_before_gone();
@@ -272,7 +329,10 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_s
     let pass = naivepost::join_ask::run_seams(&scene.tree, &scene.project, &words, &empty_times);
     assert_eq!(pass.removed, 0, "nothing was removed");
     assert!(
-        !pass.logs.iter().any(|line| line.contains("join(s) repaired") || line.contains("words removed in")),
+        !pass
+            .logs
+            .iter()
+            .any(|line| line.contains("join(s) repaired") || line.contains("words removed in")),
         "no repair, neither line: {:?}",
         pass.logs
     );
@@ -303,14 +363,22 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_s
 }
 
 #[test]
-fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_per_mark_line_spells_the_words() {
+fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_per_mark_line_spells_the_words(
+) {
     // §6's other join line: one per mark, its seconds and the words it took out. The hand edit's remake
     // is the door that spells them, driven here the way §F1.12 drives it — an edited `final.txt` newer
     // than `retakes.tsv`, and the session's own `words.json` to place the edges against.
     let scene = Marked::new();
-    let outcome = naivepost::hand_edit::before_cut(&scene.tree, &["project:sources/lecture.mkv".to_string()])
-        .expect("the edited text is newer than the marks, so the remake runs");    assert!(!outcome.refused, "two of six is under the ceiling");
-    assert_eq!(outcome.marks.len(), 1, "one deleted stretch: {:?}", outcome.marks);
+    let outcome =
+        naivepost::hand_edit::before_cut(&scene.tree, &["project:sources/lecture.mkv".to_string()])
+            .expect("the edited text is newer than the marks, so the remake runs");
+    assert!(!outcome.refused, "two of six is under the ceiling");
+    assert_eq!(
+        outcome.marks.len(),
+        1,
+        "one deleted stretch: {:?}",
+        outcome.marks
+    );
     let mark = &outcome.marks[0];
     let line = outcome
         .logs
@@ -342,7 +410,11 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_p
         "and the shape is `a-b goes (\"…\")`: {line:?}"
     );
     // The mark's own seconds land where the deleted words were: two seconds in, one second long.
-    assert_eq!(naivepost::tools::mm_ss(mark.s), "00:02", "the stretch starts at 'three'");
+    assert_eq!(
+        naivepost::tools::mm_ss(mark.s),
+        "00:02",
+        "the stretch starts at 'three'"
+    );
 }
 
 /// A session whose `final.txt` has been edited (two words deleted) and whose `retakes.tsv` predates it.
@@ -354,7 +426,8 @@ struct Marked {
 
 impl Marked {
     fn new() -> Marked {
-        let root = std::env::temp_dir().join(format!("naivepost-p6-joinmark-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("naivepost-p6-joinmark-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let session = root.join("session.naivepost");
         std::fs::create_dir_all(&session).expect("session folder");
@@ -377,7 +450,8 @@ impl Marked {
         requests::write_words(&tree, "lecture", &doc).expect("words.json written");
         // The edited text: "three four" gone, which is what makes the mark. `final.txt` sits under
         // `prepare/transcript/`, a folder the writer creates and a bare `fs::write` does not.
-        std::fs::create_dir_all(tree.final_txt().parent().expect("final.txt has a parent")).expect("transcript dir");
+        std::fs::create_dir_all(tree.final_txt().parent().expect("final.txt has a parent"))
+            .expect("transcript dir");
         std::fs::write(tree.final_txt(), "one two five six").expect("final.txt");
         std::fs::write(tree.retakes_tsv(), "0\t0\t0\t0\tthe old mark\t\n").expect("retakes.tsv");
         stamp(&tree.retakes_tsv(), Duration::from_secs(60));

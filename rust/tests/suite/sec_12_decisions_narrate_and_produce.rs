@@ -16,8 +16,18 @@ use crate::common;
 /// The two clips every scenario uses: ten seconds each, camera down so nothing is "over a drawing".
 fn two_clips() -> Vec<Seg> {
     vec![
-        Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-        Seg { s: 10.0, e: 20.0, cam: 0, ..Default::default() },
+        Seg {
+            s: 0.0,
+            e: 10.0,
+            cam: 0,
+            ..Default::default()
+        },
+        Seg {
+            s: 10.0,
+            e: 20.0,
+            cam: 0,
+            ..Default::default()
+        },
     ]
 }
 
@@ -28,12 +38,14 @@ fn fits(_: &[Written]) -> Vec<u32> {
 /// One round's worth of tool picks, in the order given, as `narrate_live` hands them over.
 fn picks(list: &[(u32, f64, &str, &str)]) -> Vec<naivepost::narrate_live::Picked> {
     list.iter()
-        .map(|(clip, at, text, emotion)| naivepost::narrate_live::Picked {
-            clip: *clip,
-            at: *at,
-            text: (*text).to_string(),
-            emotion: (*emotion).to_string(),
-        })
+        .map(
+            |(clip, at, text, emotion)| naivepost::narrate_live::Picked {
+                clip: *clip,
+                at: *at,
+                text: (*text).to_string(),
+                emotion: (*emotion).to_string(),
+            },
+        )
         .collect()
 }
 
@@ -53,12 +65,22 @@ fn sec_12_decisions_narrate_and_produce_s22_a_skipped_clip_is_named_not_mysterio
     let mut refusals: Vec<String> = Vec::new();
     let got = narrate_call::drive_by_clips(
         &two_clips(),
-        |_, _| Ok(tool_round(&[(1, 2.0, "Proof of stake changed the cost.", "calm")])),
+        |_, _| {
+            Ok(tool_round(&[(
+                1,
+                2.0,
+                "Proof of stake changed the cost.",
+                "calm",
+            )]))
+        },
         |_, _| {},
         &fits,
         |line| refusals.push(line.to_string()),
     );
-    assert!(got.is_err(), "a reply that never spoke for clip 2 is refused");
+    assert!(
+        got.is_err(),
+        "a reply that never spoke for clip 2 is refused"
+    );
     assert!(
         refusals.iter().any(|line| line.contains("clip 2")),
         "the refusal names the clip nobody answered: {refusals:?}"
@@ -67,14 +89,21 @@ fn sec_12_decisions_narrate_and_produce_s22_a_skipped_clip_is_named_not_mysterio
     let mut said: Vec<String> = Vec::new();
     let outside = narrate_call::drive_by_clips(
         &two_clips(),
-        |_, _| Ok(tool_round(&[(1, 0.0, "one", ""), (2, 0.0, "two", ""), (7, 0.0, "seven", "")])),
+        |_, _| {
+            Ok(tool_round(&[
+                (1, 0.0, "one", ""),
+                (2, 0.0, "two", ""),
+                (7, 0.0, "seven", ""),
+            ]))
+        },
         |_, _| {},
         &fits,
         |line| said.push(line.to_string()),
     );
     assert!(outside.is_err(), "clip 7 is not one of two clips");
     assert!(
-        said.iter().any(|line| line.contains("clip 7") && line.contains("not one of")),
+        said.iter()
+            .any(|line| line.contains("clip 7") && line.contains("not one of")),
         "the refusal quotes the out-of-range number: {said:?}"
     );
 }
@@ -82,12 +111,16 @@ fn sec_12_decisions_narrate_and_produce_s22_a_skipped_clip_is_named_not_mysterio
 /// Entry 23: `write_line` answers where the line lands AND whether it will be squeezed, and `finish` names
 /// the clips whose lines will not fit, so they get rewritten instead of sped up by the render.
 #[test]
-fn sec_12_decisions_narrate_and_produce_s23_the_answer_says_where_it_lands_and_whether_it_is_squeezed() {
+fn sec_12_decisions_narrate_and_produce_s23_the_answer_says_where_it_lands_and_whether_it_is_squeezed(
+) {
     let clips = two_clips();
     let short = narrate_pass::write_line(&clips, 1, 1.0, "A short line.", "", "");
     let body: serde_json::Value = serde_json::from_str(&short).expect("write_line answers JSON");
     assert_eq!(body["clip"], 1, "the answer confirms the clip it wrote to");
-    assert!(body.get("squeeze").is_none(), "a short line on a ten-second clip is not squeezed: {body}");
+    assert!(
+        body.get("squeeze").is_none(),
+        "a short line on a ten-second clip is not squeezed: {body}"
+    );
 
     // A line far too long for the room left after its offset gets the render's own warning, in the answer.
     let long_text = "and ".repeat(200);
@@ -111,26 +144,49 @@ fn sec_12_decisions_narrate_and_produce_s25_the_emotion_comes_back_resolved() {
     let clips = two_clips();
     // A weighted tag is the case §12 #25 is about: one intent must make ONE performance, so the answer
     // states the weights the engine will be sent rather than echoing the word back.
-    let answer = narrate_pass::write_line(&clips, 1, 1.0, "The chain moved.", "happy=1,surprised=0.5", "");
+    let answer = narrate_pass::write_line(
+        &clips,
+        1,
+        1.0,
+        "The chain moved.",
+        "happy=1,surprised=0.5",
+        "",
+    );
     let body: serde_json::Value = serde_json::from_str(&answer).expect("write_line answers JSON");
-    let weights = body.get("weights").expect("the answer carries the resolved weights");
-    assert!(!weights.is_null(), "a weighted emotion resolves to weights: {body}");
+    let weights = body
+        .get("weights")
+        .expect("the answer carries the resolved weights");
+    assert!(
+        !weights.is_null(),
+        "a weighted emotion resolves to weights: {body}"
+    );
     assert_eq!(
         weights.as_str().unwrap(),
         naivepost::narrate_tts::weights_of("happy=1,surprised=0.5").unwrap_or_default(),
         "the answer states the SAME string the speech engine is sent, not a second reading of the tag"
     );
     // A bare tag names an intent but no numbers; the answer says so instead of inventing a default weight.
-    let bare: serde_json::Value =
-        serde_json::from_str(&narrate_pass::write_line(&clips, 1, 1.0, "x", "excited", "")).expect("ok");
-    assert!(bare["weights"].is_null(), "a bare tag has no weights to report: {bare}");
+    let bare: serde_json::Value = serde_json::from_str(&narrate_pass::write_line(
+        &clips, 1, 1.0, "x", "excited", "",
+    ))
+    .expect("ok");
+    assert!(
+        bare["weights"].is_null(),
+        "a bare tag has no weights to report: {bare}"
+    );
     // An unknown name is refused outright rather than routed elsewhere (§12 #25's second half).
     let bad = narrate_pass::write_line(&clips, 1, 1.0, "x", "not-an-emotion", "");
-    assert!(bad.contains("error"), "an unknown emotion is an error: {bad}");
+    assert!(
+        bad.contains("error"),
+        "an unknown emotion is an error: {bad}"
+    );
 
     let table = narrate_pass::list_emotions();
     for base in naivepost::narrate_screen::EMOTIONS {
-        assert!(table.contains(base), "`list_emotions` omits {base}: {table}");
+        assert!(
+            table.contains(base),
+            "`list_emotions` omits {base}: {table}"
+        );
     }
 }
 
@@ -139,8 +195,14 @@ fn sec_12_decisions_narrate_and_produce_s25_the_emotion_comes_back_resolved() {
 fn sec_12_decisions_narrate_and_produce_s26_an_unknown_pos_is_refused_not_silently_bottom() {
     let clips = two_clips();
     let answer = narrate_pass::write_line(&clips, 1, 1.0, "A line.", "", "middle-ish");
-    assert!(answer.contains("error"), "an unspellable placement is refused: {answer}");
-    assert!(answer.contains("middle-ish"), "the refusal quotes what was sent: {answer}");
+    assert!(
+        answer.contains("error"),
+        "an unspellable placement is refused: {answer}"
+    );
+    assert!(
+        answer.contains("middle-ish"),
+        "the refusal quotes what was sent: {answer}"
+    );
     // The three real placements still land, and bottom stays the default.
     for (word, stored) in [("top", "top"), ("center", "center"), ("bottom", "")] {
         let ok = narrate_pass::write_line(&clips, 1, 1.0, "A line.", "", word);
@@ -154,9 +216,24 @@ fn sec_12_decisions_narrate_and_produce_s26_an_unknown_pos_is_refused_not_silent
 #[test]
 fn sec_12_decisions_narrate_and_produce_s27_one_policy_the_tool_takes_any_order() {
     let clips = vec![
-        Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-        Seg { s: 10.0, e: 20.0, cam: 0, ..Default::default() },
-        Seg { s: 20.0, e: 30.0, cam: 0, ..Default::default() },
+        Seg {
+            s: 0.0,
+            e: 10.0,
+            cam: 0,
+            ..Default::default()
+        },
+        Seg {
+            s: 10.0,
+            e: 20.0,
+            cam: 0,
+            ..Default::default()
+        },
+        Seg {
+            s: 20.0,
+            e: 30.0,
+            cam: 0,
+            ..Default::default()
+        },
     ];
     let got = narrate_call::drive_by_clips(
         &clips,
@@ -197,9 +274,13 @@ fn sec_12_decisions_narrate_and_produce_s27_one_policy_the_tool_takes_any_order(
         &fits,
         |line| said.push(line.to_string()),
     );
-    assert!(twice.is_err(), "a clip written twice is not silently de-duplicated");
     assert!(
-        said.iter().any(|line| line.contains("clip 1") && line.contains("twice")),
+        twice.is_err(),
+        "a clip written twice is not silently de-duplicated"
+    );
+    assert!(
+        said.iter()
+            .any(|line| line.contains("clip 1") && line.contains("twice")),
         "the refusal names the clip: {said:?}"
     );
 }
@@ -213,7 +294,9 @@ fn sec_12_decisions_narrate_and_produce_s31_the_word_ceiling_is_counted_in_the_a
     assert_eq!(body["words"], 5, "the count is in the answer: {body}");
     assert_eq!(
         body["at_most_words"],
-        serde_json::json!(narrate_pass::word_ceiling(narrate_pass::on_screen(&clips[0]))),
+        serde_json::json!(narrate_pass::word_ceiling(narrate_pass::on_screen(
+            &clips[0]
+        ))),
         "and it is stated against the same ceiling the brief prints"
     );
 }
@@ -258,11 +341,20 @@ fn sec_12_decisions_narrate_and_produce_s27_the_live_call_answers_through_write_
     .unwrap_or_else(|why| panic!("the tool answer should land, refusals were {refusals:?}: {why}"));
     assert_eq!(written.len(), 2, "both clips came from write_line calls");
     assert_eq!(
-        written.iter().map(|line| line.text.as_str()).collect::<Vec<_>>(),
-        vec!["Proof of stake changed the cost.", "Second clip, written first."],
+        written
+            .iter()
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "Proof of stake changed the cost.",
+            "Second clip, written first."
+        ],
         "ordered by clip, built from the clip-numbered picks"
     );
-    assert_eq!(written[0].emotion, "calm", "the emotion the tool call carried survived");
+    assert_eq!(
+        written[0].emotion, "calm",
+        "the emotion the tool call carried survived"
+    );
     assert!(refusals.is_empty(), "nothing was refused: {refusals:?}");
 }
 
@@ -293,17 +385,25 @@ fn sec_12_decisions_narrate_and_produce_s28_describe_insert_reports_the_rendered
         ..Default::default()
     }];
     let answer = narrate_pass::describe_insert(&clips, 1);
-    let body: serde_json::Value = serde_json::from_str(&answer).expect("describe_insert answers JSON");
-    assert_eq!(body["seconds_on_screen"], 6.0, "the length is stated: {body}");
+    let body: serde_json::Value =
+        serde_json::from_str(&answer).expect("describe_insert answers JSON");
+    assert_eq!(
+        body["seconds_on_screen"], 6.0,
+        "the length is stated: {body}"
+    );
     // §12 #39's second half: the answer says WHERE the app placed the card, in the spelling the cut carries.
     assert_eq!(
         body["placed_at"].as_str(),
         Some("1.50s from the clip's start"),
         "the placement is stated, not left for the model to guess: {body}"
     );
-    let params = body["params"].as_array().expect("the parameters are listed");
+    let params = body["params"]
+        .as_array()
+        .expect("the parameters are listed");
     assert!(
-        params.iter().any(|p| p.as_str().is_some_and(|p| p.starts_with("new="))),
+        params
+            .iter()
+            .any(|p| p.as_str().is_some_and(|p| p.starts_with("new="))),
         "the path's arguments come back as parameters: {body}"
     );
     // §12 #38: a card is not footage, and the answer says so — the description writer is told this clip is a
@@ -313,15 +413,22 @@ fn sec_12_decisions_narrate_and_produce_s28_describe_insert_reports_the_rendered
         Some(true),
         "a card clip is reported as a still, not as footage: {body}"
     );
-    let footage = vec![Seg { s: 0.0, e: 6.0, ..Default::default() }];
+    let footage = vec![Seg {
+        s: 0.0,
+        e: 6.0,
+        ..Default::default()
+    }];
     let refused = narrate_pass::describe_insert(&footage, 1);
     assert!(
         refused.contains("footage"),
         "a footage clip is refused, not silently answered as a still: {refused}"
     );
-    let says = body["says"].as_array().expect("the card's words are in the answer");
+    let says = body["says"]
+        .as_array()
+        .expect("the card's words are in the answer");
     assert!(
-        says.iter().any(|w| w.as_str().is_some_and(|w| w.contains("Dust II"))),
+        says.iter()
+            .any(|w| w.as_str().is_some_and(|w| w.contains("Dust II"))),
         "what the viewer sees is named, not just the file: {body}"
     );
     // Footage is refused rather than answered with an empty card.
@@ -337,10 +444,32 @@ fn sec_12_decisions_narrate_and_produce_s29_the_brief_lists_every_effect_kind() 
     use naivepost::cut::Fx;
     let clips = two_clips();
     let marks = vec![
-        Fx { kind: "zoom".into(), t: 1.0, dur: 3.0, ..Default::default() },
-        Fx { kind: "svg".into(), t: 2.0, dur: 2.0, ..Default::default() },
-        Fx { kind: "volume".into(), t: 12.0, dur: 4.0, gain: 0.0, ..Default::default() },
-        Fx { kind: "speed".into(), t: 15.0, dur: 2.0, rate: 4.0, ..Default::default() },
+        Fx {
+            kind: "zoom".into(),
+            t: 1.0,
+            dur: 3.0,
+            ..Default::default()
+        },
+        Fx {
+            kind: "svg".into(),
+            t: 2.0,
+            dur: 2.0,
+            ..Default::default()
+        },
+        Fx {
+            kind: "volume".into(),
+            t: 12.0,
+            dur: 4.0,
+            gain: 0.0,
+            ..Default::default()
+        },
+        Fx {
+            kind: "speed".into(),
+            t: 15.0,
+            dur: 2.0,
+            rate: 4.0,
+            ..Default::default()
+        },
     ];
     let brief = narrate_pass::brief(&clips, &[], &marks, "");
     for tag in ["ZOOM", "GRAPHIC", "VOLUME", "SPEED"] {
@@ -354,10 +483,21 @@ fn sec_12_decisions_narrate_and_produce_s29_the_brief_lists_every_effect_kind() 
 fn sec_12_decisions_narrate_and_produce_s30_the_upload_brief_prints_the_rate() {
     use naivepost::cut::Fx;
     use naivepost::produce_upload::{self, BriefClip};
-    let seg = Seg { s: 0.0, e: 8.0, rate: 4.0, ..Default::default() };
+    let seg = Seg {
+        s: 0.0,
+        e: 8.0,
+        rate: 4.0,
+        ..Default::default()
+    };
     assert_eq!(produce_upload::brief_rate(&seg), 4.0);
     let marked = produce_upload::brief_marks(
-        &[Fx { kind: "label".into(), t: 1.0, dur: 2.0, text: "the reveal".into(), ..Default::default() }],
+        &[Fx {
+            kind: "label".into(),
+            t: 1.0,
+            dur: 2.0,
+            text: "the reveal".into(),
+            ..Default::default()
+        }],
         &seg,
     );
     assert!(
@@ -376,7 +516,10 @@ fn sec_12_decisions_narrate_and_produce_s30_the_upload_brief_prints_the_rate() {
     }];
     let brief = produce_upload::brief(&clips, &[], usize::MAX);
     assert!(brief.contains("4"), "the rate is printed: {brief}");
-    assert!(brief.contains("MARKED:"), "the decoration is printed: {brief}");
+    assert!(
+        brief.contains("MARKED:"),
+        "the decoration is printed: {brief}"
+    );
 }
 
 // ---- the upload side's answers (entries 32-36) ---------------------------------------------------
@@ -420,11 +563,15 @@ fn upload_walk(
         calls.lock().unwrap().push("publish".to_string());
         Ok(())
     };
-    let ask_draw = |_b: &serde_json::Value| {
-        Ok::<up::DrawnJob, String>(up::DrawnJob { id: "job-1".into() })
-    };
+    let ask_draw =
+        |_b: &serde_json::Value| Ok::<up::DrawnJob, String>(up::DrawnJob { id: "job-1".into() });
     let poll = |_j: &up::DrawnJob| {
-        Ok(up::PollState { status: "done".into(), ahead: 0, done: true, png: vec![1, 2, 3] })
+        Ok(up::PollState {
+            status: "done".into(),
+            ahead: 0,
+            done: true,
+            png: vec![1, 2, 3],
+        })
     };
     // A closure with NO captures is the one kind that can be a `&'static dyn Fn`, which is what `Materials`
     // asks for; the legs that touch `calls` borrow it with the fn's own lifetime (see the mats block below).
@@ -483,7 +630,8 @@ fn upload_walk(
     };
     let out = up::walk("THE BRIEF", publish, answers, &mats, log);
     // The recording legs wrote into the statics and the leaked cell; hand the test back what they saw.
-    legs.calls.replace(std::mem::take(&mut *calls.lock().unwrap()));
+    legs.calls
+        .replace(std::mem::take(&mut *calls.lock().unwrap()));
     for kind in PRINTED.lock().unwrap().iter() {
         legs.calls.borrow_mut().push(kind.clone());
     }
@@ -501,15 +649,25 @@ fn sec_12_decisions_narrate_and_produce_s32_a_named_frame_reports_the_distance_i
     // Clip 3 starts at 20 s on the produced clock; the only frame extracted sits at 34 s.
     let picked = naivepost::produce_upload::pick_frame(3, 12.0, &[0.0, 10.0, 20.0], &[34.0])
         .expect("a frame was extracted, so one can be taken");
-    assert_eq!(picked.asked, 32.0, "clip 3 + 12 s is 32 s on the produced clock");
+    assert_eq!(
+        picked.asked, 32.0,
+        "clip 3 + 12 s is 32 s on the produced clock"
+    );
     assert_eq!(picked.taken, 34.0, "the frame actually taken is stated");
-    assert_eq!(picked.distance, 2.0, "and so is how far it was from what was asked");
+    assert_eq!(
+        picked.distance, 2.0,
+        "and so is how far it was from what was asked"
+    );
     assert!(
         picked.answer.contains("from the moment asked for"),
         "the answer says the distance, not only the frame: {}",
         picked.answer
     );
-    assert!(picked.answer.contains("clip 3"), "and names what was asked for: {}", picked.answer);
+    assert!(
+        picked.answer.contains("clip 3"),
+        "and names what was asked for: {}",
+        picked.answer
+    );
     // The same words come out of the walk's own door, which has a moment and no clip number: one rule, two
     // doors, so neither can print the frame and leave the distance out.
     let said = picked_frame_answer(32.0, 34.0, "the moment the answer named");
@@ -523,7 +681,8 @@ fn sec_12_decisions_narrate_and_produce_s32_a_named_frame_reports_the_distance_i
 /// Entry 33: a frame that cannot be resolved is refused by name, and the instruction the person typed is not
 /// thrown away over it.
 #[test]
-fn sec_12_decisions_narrate_and_produce_s33_an_unresolvable_frame_is_refused_and_leaves_the_instruction_alone() {
+fn sec_12_decisions_narrate_and_produce_s33_an_unresolvable_frame_is_refused_and_leaves_the_instruction_alone(
+) {
     // No clip 9: refused, and the refusal names the clip rather than picking "the first frame".
     let no_clip = naivepost::produce_upload::pick_frame(9, 0.0, &[0.0, 10.0], &[34.0]);
     assert_eq!(no_clip.err().as_deref(), Some("the cut has no clip 9"));
@@ -549,22 +708,39 @@ fn sec_12_decisions_narrate_and_produce_s33_an_unresolvable_frame_is_refused_and
         picked_frame: Some(400.0),
     };
     let mut said: Vec<String> = Vec::new();
-    let out = upload_walk(&legs, &publish, &answers, false, &mut |line| said.push(line.to_string()));
+    let out = upload_walk(&legs, &publish, &answers, false, &mut |line| {
+        said.push(line.to_string())
+    });
     assert!(
         said.iter().any(|line| line.contains("drawn instead")),
         "the failure is said, not swallowed: {said:?}"
     );
-    let row = legs.published.borrow().clone().expect("the publish leg ran");
-    assert_eq!(row.prompt, "brighten the last frame", "the instruction survives the failed frame");
+    let row = legs
+        .published
+        .borrow()
+        .clone()
+        .expect("the publish leg ran");
+    assert_eq!(
+        row.prompt, "brighten the last frame",
+        "the instruction survives the failed frame"
+    );
     assert_eq!(row.thumb_title, "A win", "and so does the title");
-    assert!(!row.own, "nothing was picked, so the thumbnail is still the drawn one");
-    assert!(out.error.is_none(), "the run carries on to draw: {:?}", out.error);
+    assert!(
+        !row.own,
+        "nothing was picked, so the thumbnail is still the drawn one"
+    );
+    assert!(
+        out.error.is_none(),
+        "the run carries on to draw: {:?}",
+        out.error
+    );
 }
 
 /// Entry 34: a rewritten title reprints onto the picture every time the WORDS change — until the picture is
 /// edited by hand, after which it is the person's and the app keeps its hands off it.
 #[test]
-fn sec_12_decisions_narrate_and_produce_s34_a_rewritten_title_reprints_until_the_picture_is_hand_edited() {
+fn sec_12_decisions_narrate_and_produce_s34_a_rewritten_title_reprints_until_the_picture_is_hand_edited(
+) {
     let answers = naivepost::produce_upload::Answers {
         title: Some("A win nobody expected".into()),
         instruction: Some("brighten it".into()),
@@ -573,11 +749,18 @@ fn sec_12_decisions_narrate_and_produce_s34_a_rewritten_title_reprints_until_the
         picked_frame: None,
     };
     // First run: a title, so the title pass runs.
-    let first = Publish { prompt: "brighten it".into(), ..Default::default() };
+    let first = Publish {
+        prompt: "brighten it".into(),
+        ..Default::default()
+    };
     let legs = Legs::default();
     let out = upload_walk(&legs, &first, &answers, false, &mut |_| {});
     assert!(out.reprinted, "the first title is printed: {:?}", out.calls);
-    assert!(out.calls.iter().any(|c| c == "print-title"), "{:?}", out.calls);
+    assert!(
+        out.calls.iter().any(|c| c == "print-title"),
+        "{:?}",
+        out.calls
+    );
 
     // Second run, same words: nothing to reprint. The pass is decided by whether the TEXT differs.
     let same = Publish {
@@ -625,10 +808,19 @@ fn sec_12_decisions_narrate_and_produce_s34_a_rewritten_title_reprints_until_the
 /// Entry 35: a title too long for its band is NOT refused — it prints and the answer says so — and a title
 /// the band had to shrink gets that said too, so "four to seven words" stops being unenforced advice.
 #[test]
-fn sec_12_decisions_narrate_and_produce_s35_a_title_too_long_for_its_band_answers_with_the_fitted_size_or_the_warning() {
-    let band = TitleBox { cx: 0.5, cy: 0.8, wf: 0.8, hf: 0.18 };
+fn sec_12_decisions_narrate_and_produce_s35_a_title_too_long_for_its_band_answers_with_the_fitted_size_or_the_warning(
+) {
+    let band = TitleBox {
+        cx: 0.5,
+        cy: 0.8,
+        wf: 0.8,
+        hf: 0.18,
+    };
     let short = naivepost::produce_upload::set_title(&Publish::default(), "A win", &band, false);
-    assert!(!short.overflows, "two words is inside the advice: {short:?}");
+    assert!(
+        !short.overflows,
+        "two words is inside the advice: {short:?}"
+    );
     assert!(
         short.answer.contains("words at") && !short.answer.contains("overflows"),
         "a title that fits just reports its size: {}",
@@ -637,20 +829,31 @@ fn sec_12_decisions_narrate_and_produce_s35_a_title_too_long_for_its_band_answer
 
     let long_text = "a title with rather too many words to sit in one band";
     let long = naivepost::produce_upload::set_title(&Publish::default(), long_text, &band, false);
-    assert!(long.overflows, "{} words is over the seven the prompt asks for", long.words);
+    assert!(
+        long.overflows,
+        "{} words is over the seven the prompt asks for",
+        long.words
+    );
     assert!(
         long.answer.contains("overflows the band"),
         "the warning is in the answer, never a silent overflow: {}",
         long.answer
     );
-    assert!(long.shrunk, "and the size the band forced is what is reported: {long:?}");
-    assert!(long.size > 0.0, "a title that overflows still prints at a real size: {long:?}");
+    assert!(
+        long.shrunk,
+        "and the size the band forced is what is reported: {long:?}"
+    );
+    assert!(
+        long.size > 0.0,
+        "a title that overflows still prints at a real size: {long:?}"
+    );
 }
 
 /// Entry 36: a missing TITLE: or THUMBNAIL: keeps the previous run's value — deliberately (an empty box is
 /// easier to notice than a wrong line) — and the log SAYS which value was kept rather than going quiet.
 #[test]
-fn sec_12_decisions_narrate_and_produce_s36_a_missing_title_or_instruction_says_it_kept_the_previous_value() {
+fn sec_12_decisions_narrate_and_produce_s36_a_missing_title_or_instruction_says_it_kept_the_previous_value(
+) {
     let missing = naivepost::produce_upload::finish_needs("", "");
     assert_eq!(missing, vec!["title", "description"]);
     let said = naivepost::produce_upload::kept_previous_log(&missing);
@@ -680,13 +883,22 @@ fn sec_12_decisions_narrate_and_produce_s36_a_missing_title_or_instruction_says_
         picked_frame: None,
     };
     let mut said: Vec<String> = Vec::new();
-    let out = upload_walk(&legs, &publish, &answers, false, &mut |line| said.push(line.to_string()));
-    let row = legs.published.borrow().clone().expect("the publish leg ran");
+    let out = upload_walk(&legs, &publish, &answers, false, &mut |line| {
+        said.push(line.to_string())
+    });
+    let row = legs
+        .published
+        .borrow()
+        .clone()
+        .expect("the publish leg ran");
     assert_eq!(row.thumb_title, "Last run's title", "the title was kept");
-    assert_eq!(row.description, "", "an empty description replaces, which is what makes it worth saying");
+    assert_eq!(
+        row.description, "",
+        "an empty description replaces, which is what makes it worth saying"
+    );
     assert!(
-        said.iter()
-            .any(|line| line.contains("no description") && line.contains("keeping what was there before")),
+        said.iter().any(|line| line.contains("no description")
+            && line.contains("keeping what was there before")),
         "the log says what was kept: {said:?}"
     );
     assert!(out.published, "the kept values still land: {:?}", out.calls);
@@ -701,12 +913,25 @@ fn sec_12_decisions_narrate_and_produce_s36_a_missing_title_or_instruction_says_
 fn sec_12_decisions_narrate_and_produce_s37_the_translation_keeps_the_placement_tag_out_of_the_text_and_answers_with_the_wrapped_line(
 ) {
     use naivepost::produce_subtitles as subs;
-    let cue = subs::Cue { s: 0.0, e: 2.0, text: r"{\an8}Top of the frame".into(), pos: "top".into() };
+    let cue = subs::Cue {
+        s: 0.0,
+        e: 2.0,
+        text: r"{\an8}Top of the frame".into(),
+        pos: "top".into(),
+    };
     // Going out: the tag is not in the message, and a cue on two rows is one numbered entry.
     let sent = subs::sent_text(&cue);
-    assert!(!sent.contains(r"{\an8}"), "the tag does not travel as a word: {sent:?}");
+    assert!(
+        !sent.contains(r"{\an8}"),
+        "the tag does not travel as a word: {sent:?}"
+    );
     assert_eq!(sent, "Top of the frame");
-    let two_rows = subs::Cue { s: 0.0, e: 2.0, text: "first row\nsecond row".into(), pos: String::new() };
+    let two_rows = subs::Cue {
+        s: 0.0,
+        e: 2.0,
+        text: "first row\nsecond row".into(),
+        pos: String::new(),
+    };
     assert_eq!(
         subs::sent_text(&two_rows),
         "first row / second row",
@@ -716,21 +941,46 @@ fn sec_12_decisions_narrate_and_produce_s37_the_translation_keeps_the_placement_
     // and a break of its own choosing.
     let part = vec![(1usize, sent.clone())];
     let request = format!("{}\n{}", subs::message(1, "de"), subs::numbered(&part));
-    assert!(request.contains("Top of the frame") && !request.contains(r"{\an8}"), "{request}");
+    assert!(
+        request.contains("Top of the frame") && !request.contains(r"{\an8}"),
+        "{request}"
+    );
     let answered = "  oben der\nRand";
     let echoed = format!(" {{\\an8}}{answered}");
     // Coming back: the app's own tag leads (a leading space would otherwise leave it in the middle), the
     // model's break survives, and `carried` says the model had echoed a tag of its own.
     let (text, carried) = subs::keep_placement(&cue, &echoed);
-    assert!(carried, "a tag the model carried back is noticed, not trusted");
-    assert!(text.starts_with(r"{\an8}"), "the ORIGINAL cue's placement leads: {text:?}");
-    assert_eq!(text.matches(r"{\an8}").count(), 1, "exactly one tag in the caption: {text:?}");
-    assert!(text.contains("oben der\nRand"), "the model's own break is kept: {text:?}");
-    assert_eq!(subs::keep_breaks(answered), answered, "keeping breaks is not re-wrapping");
+    assert!(
+        carried,
+        "a tag the model carried back is noticed, not trusted"
+    );
+    assert!(
+        text.starts_with(r"{\an8}"),
+        "the ORIGINAL cue's placement leads: {text:?}"
+    );
+    assert_eq!(
+        text.matches(r"{\an8}").count(),
+        1,
+        "exactly one tag in the caption: {text:?}"
+    );
+    assert!(
+        text.contains("oben der\nRand"),
+        "the model's own break is kept: {text:?}"
+    );
+    assert_eq!(
+        subs::keep_breaks(answered),
+        answered,
+        "keeping breaks is not re-wrapping"
+    );
     // A cue with no placement keeps none, even if the model invented one.
     let plain_echoed = format!(" {}mitte", r"{\an8}");
     let (plain, _) = subs::keep_placement(
-        &subs::Cue { s: 0.0, e: 2.0, text: "middle".into(), pos: String::new() },
+        &subs::Cue {
+            s: 0.0,
+            e: 2.0,
+            text: "middle".into(),
+            pos: String::new(),
+        },
         &plain_echoed,
     );
     assert_eq!(plain, "mitte", "a bottom cue stays a bottom cue: {plain:?}");
@@ -739,12 +989,28 @@ fn sec_12_decisions_narrate_and_produce_s37_the_translation_keeps_the_placement_
 /// Entry 38: a line that cannot be translated ships in the original language — one bad line must not drop a
 /// whole track — and it is NAMED, in the log and in what the walk hands back.
 #[test]
-fn sec_12_decisions_narrate_and_produce_s38_an_untranslatable_line_keeps_the_original_but_says_so() {
+fn sec_12_decisions_narrate_and_produce_s38_an_untranslatable_line_keeps_the_original_but_says_so()
+{
     use naivepost::produce_subtitles as subs;
     let cues = vec![
-        subs::Cue { s: 0.0, e: 2.0, text: "first line".into(), pos: String::new() },
-        subs::Cue { s: 2.0, e: 4.0, text: "a line the model will not answer".into(), pos: String::new() },
-        subs::Cue { s: 4.0, e: 6.0, text: "third line".into(), pos: String::new() },
+        subs::Cue {
+            s: 0.0,
+            e: 2.0,
+            text: "first line".into(),
+            pos: String::new(),
+        },
+        subs::Cue {
+            s: 2.0,
+            e: 4.0,
+            text: "a line the model will not answer".into(),
+            pos: String::new(),
+        },
+        subs::Cue {
+            s: 4.0,
+            e: 6.0,
+            text: "third line".into(),
+            pos: String::new(),
+        },
     ];
     let ticked = vec!["de".to_string()];
     // The model answers lines 1 and 3, and hands back an EMPTY line 2 — the shape a refusal takes on the
@@ -764,15 +1030,23 @@ fn sec_12_decisions_narrate_and_produce_s38_an_untranslatable_line_keeps_the_ori
     });
     assert_eq!(tracks.len(), 1);
     let track = &tracks[0];
-    assert_eq!(track.missing, vec![2], "the line that stayed behind is recorded by number");
-    let warning = track.warning.clone().expect("and there is a warning about it");
+    assert_eq!(
+        track.missing,
+        vec![2],
+        "the line that stayed behind is recorded by number"
+    );
+    let warning = track
+        .warning
+        .clone()
+        .expect("and there is a warning about it");
     assert!(
         warning.contains("line 2") || warning.contains("(2)"),
         "the warning names the line that stayed behind: {warning}"
     );
     assert!(warning.contains("rest of the track is good"), "{warning}");
     assert!(
-        said.iter().any(|line| line.contains("came back missing line 2")),
+        said.iter()
+            .any(|line| line.contains("came back missing line 2")),
         "the re-ask is explained while it runs: {said:?}"
     );
     // The track SHIPPED: three cues, the good lines translated, the bad one still in the original language.
@@ -785,11 +1059,15 @@ fn sec_12_decisions_narrate_and_produce_s38_an_untranslatable_line_keeps_the_ori
     );
     assert!(!track.cached, "a track with a hole in it is never cached");
     // And the same rule read straight off the merge, which is what `finish`'s answer is built from.
-    let merged = subs::merge("de", &[(1, "first line".into()), (2, "second line".into())], &{
-        let mut m = std::collections::BTreeMap::new();
-        m.insert(1, "erste zeile".to_string());
-        m
-    });
+    let merged = subs::merge(
+        "de",
+        &[(1, "first line".into()), (2, "second line".into())],
+        &{
+            let mut m = std::collections::BTreeMap::new();
+            m.insert(1, "erste zeile".to_string());
+            m
+        },
+    );
     assert_eq!(merged.lines[1], "second line");
     assert_eq!(merged.still_missing, vec![2]);
 }

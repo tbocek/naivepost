@@ -114,7 +114,9 @@ pub fn paint(buffer: &gtk::TextBuffer, line: &str) {
         let from = buffer.iter_at_offset(start);
         // The tag covers every buffer line this message occupies, which is one: a log line never
         // contains a newline of its own, the view wraps it visually without adding buffer lines.
-        let to = buffer.iter_at_line(from.line() + 1).unwrap_or_else(|| buffer.end_iter());
+        let to = buffer
+            .iter_at_line(from.line() + 1)
+            .unwrap_or_else(|| buffer.end_iter());
         buffer.apply_tag_by_name(tag, &from, &to);
     }
 }

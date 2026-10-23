@@ -80,7 +80,9 @@ pub fn aligners(configured: &str, url: &str, models: &[AudioModel]) -> Result<Ve
 /// S1: what to say when the configured id is not served for alignment. Cut points come off the
 /// waveform either way, so this is a log line and not a failure.
 pub fn not_served(url: &str, id: &str) -> String {
-    format!("!!! align: {url} does not serve {id:?} for alignment -- cut points come off the waveform")
+    format!(
+        "!!! align: {url} does not serve {id:?} for alignment -- cut points come off the waveform"
+    )
 }
 
 /// S1: what to say when an aligner further down the list answered: the first that answers serves the
@@ -129,18 +131,22 @@ pub fn counts_agree(chunks: &[Chunk], words: &[Word]) -> bool {
     let count = |text: &str| text.split_whitespace().count();
     // The totals first: a chunk whose times ran past the end of the recording would otherwise make
     // the last piece look short and every earlier one right.
-    let total = chunks.iter().map(|chunk| count(&chunk.text) as u64).sum::<u64>();
-    total == words.len() as u64 && chunks.iter().all(|chunk| {
-        let inside = words
-            .iter()
-            // The last chunk owns the recording's end: a word said exactly at `duration` is in it.
-            .filter(|word| {
-                let at = crate::transcribe::seconds(word.start_sample);
-                at >= chunk.s && (at < chunk.e || chunk.e == last_edge(chunks))
-            })
-            .count() as u64;
-        count(&chunk.text) as u64 == inside
-    })
+    let total = chunks
+        .iter()
+        .map(|chunk| count(&chunk.text) as u64)
+        .sum::<u64>();
+    total == words.len() as u64
+        && chunks.iter().all(|chunk| {
+            let inside = words
+                .iter()
+                // The last chunk owns the recording's end: a word said exactly at `duration` is in it.
+                .filter(|word| {
+                    let at = crate::transcribe::seconds(word.start_sample);
+                    at >= chunk.s && (at < chunk.e || chunk.e == last_edge(chunks))
+                })
+                .count() as u64;
+            count(&chunk.text) as u64 == inside
+        })
 }
 
 /// The recording's end, which is the last chunk's — the pieces tile the recording with no gap.
@@ -162,10 +168,7 @@ pub fn pieces(
         return chunks.iter().map(|chunk| (chunk.s, chunk.e)).collect();
     }
     let edges = asr::cut_points(duration, silences, window, CUT_SEEK);
-    edges
-        .windows(2)
-        .map(|pair| (pair[0], pair[1]))
-        .collect()
+    edges.windows(2).map(|pair| (pair[0], pair[1])).collect()
 }
 
 /// S2: the text each piece was asked to align, its share of the transcript by how much of it has
@@ -187,7 +190,10 @@ pub fn share_text(pieces: &[(f64, f64)], text: &str, silences: &[Silence]) -> Ve
     let weights: Vec<f64> = if total > 0.0 {
         voiced
     } else {
-        pieces.iter().map(|(from, to)| (to - from).max(0.0)).collect()
+        pieces
+            .iter()
+            .map(|(from, to)| (to - from).max(0.0))
+            .collect()
     };
     let weight_total: f64 = weights.iter().sum::<f64>().max(1.0);
 
@@ -199,8 +205,7 @@ pub fn share_text(pieces: &[(f64, f64)], text: &str, silences: &[Silence]) -> Ve
         let take = if index + 1 == weights.len() {
             words.len() - at
         } else {
-            ((words.len() as f64 * weight / weight_total).floor() as usize)
-                .min(words.len() - at)
+            ((words.len() as f64 * weight / weight_total).floor() as usize).min(words.len() - at)
         };
         out.push(words[at..at + take].join(" "));
         at += take;
@@ -254,10 +259,7 @@ pub fn trim(span: (f64, f64), silences: &[Silence]) -> Option<(f64, f64)> {
         parts.push((at, t1));
     }
     let (first, last) = (parts.first()?.0, parts.last()?.1);
-    Some((
-        (first - PAD).max(t0),
-        (last + PAD).min(t1),
-    ))
+    Some(((first - PAD).max(t0), (last + PAD).min(t1)))
 }
 
 /// S3: one window's seconds and the text to align over them.
@@ -381,7 +383,11 @@ pub fn parse_words(body: &Value) -> Result<Vec<Word>, String> {
     let lists = ["words", "alignment", "segments"]
         .iter()
         .map(|key| body.get(*key))
-        .chain(["words", "alignment"].iter().map(|key| body.pointer(&format!("/result/{key}"))));
+        .chain(
+            ["words", "alignment"]
+                .iter()
+                .map(|key| body.pointer(&format!("/result/{key}"))),
+        );
     for list in lists.flatten() {
         let entries = match list.as_array() {
             Some(entries) if !entries.is_empty() => entries,
@@ -418,7 +424,11 @@ pub fn parse_words(body: &Value) -> Result<Vec<Word>, String> {
 /// S4: one time, read the four ways a server writes it. `kind` is "start" or "end"; the suffixed keys
 /// are tried before the bare one, and the bare one last because its unit is a guess.
 fn time(entry: &Value, kind: &str) -> Option<f64> {
-    let get = |suffix: &str| entry.get(format!("{kind}_{suffix}")).and_then(Value::as_f64);
+    let get = |suffix: &str| {
+        entry
+            .get(format!("{kind}_{suffix}"))
+            .and_then(Value::as_f64)
+    };
     if let Some(secs) = get("sample").map(|s| s / SAMPLE_RATE as f64) {
         return Some(secs);
     }
@@ -610,7 +620,17 @@ where
         out.steps.push(progress(index, spans.len()));
         let text = texts.get(index).cloned().unwrap_or_default();
         let windows = align_windows(
-            tree, &mut picker, aligners, source, *from, *to, &text, language, silences, &mut ask, &mut out,
+            tree,
+            &mut picker,
+            aligners,
+            source,
+            *from,
+            *to,
+            &text,
+            language,
+            silences,
+            &mut ask,
+            &mut out,
         )?;
         placed.extend(windows);
     }
@@ -618,7 +638,10 @@ where
     // S5: written whole, once, after the last window succeeded. Not per window: `words.aligned.json`
     // is what F1.3 reads as "the times are the aligner's", and a half-written file would be that
     // marker for work that was never done.
-    let all: Vec<Word> = placed.iter().flat_map(|piece| piece.words.clone()).collect();
+    let all: Vec<Word> = placed
+        .iter()
+        .flat_map(|piece| piece.words.clone())
+        .collect();
     requests::write_aligned(tree, source, &requests::AlignedDoc { words: all.clone() })?;
     // §5 bullet 1: the scratch is this stage's own mess — gone once its answer is on disk, kept when it
     // is not. A window that failed returns before this line, so `align/wNNNN.wav.plan` survives exactly
@@ -690,15 +713,7 @@ where
         // speech — so its seconds are what the retry of a smaller piece is compared on.
         let asked = window.1 - window.0;
         match ask_span(
-            tree,
-            picker,
-            all,
-            source,
-            &window,
-            &span.text,
-            language,
-            ask,
-            out,
+            tree, picker, all, source, &window, &span.text, language, ask, out,
         ) {
             Ok(words) => done.push(Placed {
                 from: span.from,
@@ -727,7 +742,11 @@ where
             Err(err) => return Err(err),
         }
     }
-    done.sort_by(|a, b| a.from.partial_cmp(&b.from).unwrap_or(std::cmp::Ordering::Equal));
+    done.sort_by(|a, b| {
+        a.from
+            .partial_cmp(&b.from)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(done)
 }
 

@@ -26,7 +26,11 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::Mutex;
 
+use crate::common;
 use adw::prelude::*;
+use common::{
+    fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle,
+};
 use gtk4 as gtk;
 use naivepost::cut::Seg;
 use naivepost::layout::Tree;
@@ -34,8 +38,6 @@ use naivepost::produce_subtitles as subs;
 use naivepost::produce_translate as trans;
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle};
 
 // ---- logic helpers -------------------------------------------------------------------------------
 
@@ -66,7 +68,10 @@ impl Asks {
     fn answer_all(&self) -> Box<trans::Ask> {
         let calls = self.calls.clone();
         Box::new(move |message: &str, numbers: &[usize]| {
-            calls.lock().unwrap().push((message.to_string(), numbers.to_vec()));
+            calls
+                .lock()
+                .unwrap()
+                .push((message.to_string(), numbers.to_vec()));
             Ok(numbers
                 .iter()
                 .map(|n| (*n, format!("translated line {n}")))
@@ -78,7 +83,10 @@ impl Asks {
     fn answer_skipping(&self, skipped: Vec<usize>) -> Box<trans::Ask> {
         let calls = self.calls.clone();
         Box::new(move |message: &str, numbers: &[usize]| {
-            calls.lock().unwrap().push((message.to_string(), numbers.to_vec()));
+            calls
+                .lock()
+                .unwrap()
+                .push((message.to_string(), numbers.to_vec()));
             Ok(numbers
                 .iter()
                 .filter(|n| !skipped.contains(n))
@@ -93,9 +101,16 @@ impl Asks {
         let calls = self.calls.clone();
         let skipped = std::sync::Arc::new(std::sync::Mutex::new(skipped_by_call));
         Box::new(move |message: &str, numbers: &[usize]| {
-            calls.lock().unwrap().push((message.to_string(), numbers.to_vec()));
+            calls
+                .lock()
+                .unwrap()
+                .push((message.to_string(), numbers.to_vec()));
             let mut rounds = skipped.lock().unwrap();
-            let skip = if rounds.is_empty() { Vec::new() } else { rounds.remove(0) };
+            let skip = if rounds.is_empty() {
+                Vec::new()
+            } else {
+                rounds.remove(0)
+            };
             drop(rounds);
             Ok(numbers
                 .iter()
@@ -148,18 +163,35 @@ fn f5_4_s3_a_ticked_language_gets_translated_cues_not_the_original() {
     assert_eq!(german.language, "German");
     assert_eq!(tracked.len(), 1, "one ticked language, one track");
     assert_eq!(
-        german.cues.iter().map(|c| c.text.clone()).collect::<Vec<String>>(),
-        vec!["translated line 1", "translated line 2", "translated line 3"],
+        german
+            .cues
+            .iter()
+            .map(|c| c.text.clone())
+            .collect::<Vec<String>>(),
+        vec![
+            "translated line 1",
+            "translated line 2",
+            "translated line 3"
+        ],
         "the track carries the answers, not the originals"
     );
     for (index, cue) in german.cues.iter().enumerate() {
         // Only the text travels: the spans stay where the original put them.
         assert_eq!(cue.s, original[index].s);
         assert_eq!(cue.e, original[index].e);
-        assert_ne!(cue.text, original[index].text, "cue {} still the original", index + 1);
+        assert_ne!(
+            cue.text,
+            original[index].text,
+            "cue {} still the original",
+            index + 1
+        );
     }
     assert!(german.missing.is_empty(), "nothing missing: {german:?}");
-    assert_eq!(german.cached, subs::cached(true), "a complete answer is cacheable");
+    assert_eq!(
+        german.cached,
+        subs::cached(true),
+        "a complete answer is cacheable"
+    );
 }
 
 /// §F5.4 S3 + P.machine.translateBatch (150): 150 lines ride in ONE request, 151 cost two.
@@ -172,16 +204,32 @@ fn f5_4_s3_150_lines_is_one_request_and_151_is_two() {
 
     let asks = Asks::default();
     let ask = asks.answer_all();
-    let tracked = trans::track(&cues(150), "English", &ticked(&["German"]), &ask, ignore_log);
+    let tracked = trans::track(
+        &cues(150),
+        "English",
+        &ticked(&["German"]),
+        &ask,
+        ignore_log,
+    );
     assert_eq!(asks.count(), 1, "a full 150-line track asked once");
     assert_eq!(tracked[0].missing.len(), 0);
 
     let asks = Asks::default();
     let ask = asks.answer_all();
-    let tracked = trans::track(&cues(151), "English", &ticked(&["German"]), &ask, ignore_log);
+    let tracked = trans::track(
+        &cues(151),
+        "English",
+        &ticked(&["German"]),
+        &ask,
+        ignore_log,
+    );
     assert_eq!(asks.count(), 2, "151 lines asked twice, one per batch");
     // The second batch keeps the TRACK's numbers: line 151 is asked for as 151, never as 1.
-    assert_eq!(asks.numbers_at(1), vec![151], "second batch asked for line 151 by its own number");
+    assert_eq!(
+        asks.numbers_at(1),
+        vec![151],
+        "second batch asked for line 151 by its own number"
+    );
     assert!(tracked[0].missing.is_empty());
 }
 
@@ -198,8 +246,16 @@ fn f5_4_s3_a_missing_number_is_asked_once_more_with_its_original_number() {
     let ask = asks.answer_sequence(seq);
     let tracked = trans::track(&original, "English", &ticked(&["German"]), &ask, ignore_log);
 
-    assert_eq!(asks.count(), 2, "one batch, one refusal of line 2, so exactly one re-ask");
-    assert_eq!(asks.numbers_at(1), vec![2], "the re-ask named line 2 by the number it was given");
+    assert_eq!(
+        asks.count(),
+        2,
+        "one batch, one refusal of line 2, so exactly one re-ask"
+    );
+    assert_eq!(
+        asks.numbers_at(1),
+        vec![2],
+        "the re-ask named line 2 by the number it was given"
+    );
     // The re-ask is `ask_again_text`, not the plain sentence: it says outright that the numbers do not
     // start at 1, which is what stops the model renumbering them.
     let second = asks.message_at(1);
@@ -207,7 +263,11 @@ fn f5_4_s3_a_missing_number_is_asked_once_more_with_its_original_number() {
         second.contains("2") && second.contains('\t'),
         "the re-ask carries the number and a tab: {second:?}"
     );
-    assert!(tracked[0].missing.is_empty(), "the second round filled it: {:?}", tracked[0]);
+    assert!(
+        tracked[0].missing.is_empty(),
+        "the second round filled it: {:?}",
+        tracked[0]
+    );
     assert_eq!(tracked[0].cues[1].text, "translated line 2");
     assert_eq!(tracked[0].cached, subs::cached(true));
 }
@@ -232,7 +292,10 @@ fn f5_4_s3_still_missing_ships_the_original_with_a_warning_and_caches_nothing() 
     assert_eq!(german.cues[1].s, original[1].s, "its span is untouched");
     let warning = german.warning.clone().expect("a warning was raised");
     assert!(warning.contains('2'), "the warning names line 2: {warning}");
-    assert!(warning.contains("German"), "and the language it belongs to: {warning}");
+    assert!(
+        warning.contains("German"),
+        "and the language it belongs to: {warning}"
+    );
     assert!(!german.cached, "a partial answer is never cached");
     assert_eq!(german.missing, vec![2]);
     // The other two lines still arrived translated: one bad line costs one line, not the track.
@@ -253,9 +316,18 @@ fn f5_4_s3_the_session_language_is_track_zero_and_never_asked() {
 
     let asks = Asks::default();
     let ask = asks.answer_all();
-    let tracked =
-        trans::track(&cues(3), "English", &ticked(&["English", "German"]), &ask, ignore_log);
-    assert_eq!(tracked.len(), 1, "only the translated language gets a track here");
+    let tracked = trans::track(
+        &cues(3),
+        "English",
+        &ticked(&["English", "German"]),
+        &ask,
+        ignore_log,
+    );
+    assert_eq!(
+        tracked.len(),
+        1,
+        "only the translated language gets a track here"
+    );
     assert_eq!(tracked[0].language, "German");
     assert_eq!(asks.count(), 1, "exactly one ask for the whole run");
     assert!(
@@ -268,8 +340,15 @@ fn f5_4_s3_the_session_language_is_track_zero_and_never_asked() {
     let asks = Asks::default();
     let ask = asks.answer_all();
     let tracked = trans::track(&cues(3), "English", &ticked(&["English"]), &ask, ignore_log);
-    assert!(tracked.is_empty(), "the session's own language is not a translation target");
-    assert_eq!(asks.count(), 0, "no ask was made for the session's own language");
+    assert!(
+        tracked.is_empty(),
+        "the session's own language is not a translation target"
+    );
+    assert_eq!(
+        asks.count(),
+        0,
+        "no ask was made for the session's own language"
+    );
 }
 
 /// §3.10's two must-fixes on the return path: the tag goes out stripped and comes back attached by the
@@ -290,7 +369,13 @@ fn f5_4_s3_the_placement_tag_goes_stripped_and_comes_back_attached() {
     );
     let asks = Asks::default();
     let ask = asks.answer_all();
-    let tracked = trans::track(std::slice::from_ref(&top), "English", &ticked(&["German"]), &ask, ignore_log);
+    let tracked = trans::track(
+        std::slice::from_ref(&top),
+        "English",
+        &ticked(&["German"]),
+        &ask,
+        ignore_log,
+    );
     assert!(
         !asks.message_at(0).contains(r"\an8"),
         "the message carried no tag: {:?}",
@@ -302,11 +387,15 @@ fn f5_4_s3_the_placement_tag_goes_stripped_and_comes_back_attached() {
         "the placement came back attached: {:?}",
         tracked[0].cues[0].text
     );
-    assert_eq!(tracked[0].cues[0].pos, "top", "and its pos field still says so");
+    assert_eq!(
+        tracked[0].cues[0].pos, "top",
+        "and its pos field still says so"
+    );
 
     // A model answer that wraps the line itself is KEPT, not re-wrapped at
     // P.policy.subtitleRowChars (42): the break was chosen in the other language, on purpose.
-    let long_line = "a translated line long enough that the app would certainly break it at forty-two";
+    let long_line =
+        "a translated line long enough that the app would certainly break it at forty-two";
     // The model answers with its own break in it; the return path must keep it (S3/§3.10 second fix).
     let wanted = long_line.replace("that", "that\n");
     let answers: BTreeMap<usize, String> = BTreeMap::from([(1usize, wanted.clone())]);
@@ -314,19 +403,32 @@ fn f5_4_s3_the_placement_tag_goes_stripped_and_comes_back_attached() {
     let calls = asks.calls.clone();
     let scripted: std::rc::Rc<dyn Fn(&str, &[usize]) -> Result<BTreeMap<usize, String>, String>> =
         Rc::new(move |message: &str, numbers: &[usize]| {
-        calls.lock().unwrap().push((message.to_string(), numbers.to_vec()));
-        Ok(numbers
-            .iter()
-            .filter_map(|number| answers.get(number).cloned().map(|text| (*number, text)))
-            .collect::<BTreeMap<usize, String>>())
-    });
-    let tracked = trans::track(&cues(1), "English", &ticked(&["German"]), &*scripted, ignore_log);
+            calls
+                .lock()
+                .unwrap()
+                .push((message.to_string(), numbers.to_vec()));
+            Ok(numbers
+                .iter()
+                .filter_map(|number| answers.get(number).cloned().map(|text| (*number, text)))
+                .collect::<BTreeMap<usize, String>>())
+        });
+    let tracked = trans::track(
+        &cues(1),
+        "English",
+        &ticked(&["German"]),
+        &*scripted,
+        ignore_log,
+    );
     assert_eq!(
         tracked[0].cues[0].text, wanted,
         "the model's own break survived — a re-wrap at 42 would have moved it"
     );
     assert!(tracked[0].cues[0].text.contains('\n'));
-    assert!(tracked[0].missing.is_empty(), "the answer covered line 1: {:?}", tracked[0]);
+    assert!(
+        tracked[0].missing.is_empty(),
+        "the answer covered line 1: {:?}",
+        tracked[0]
+    );
 }
 
 // ---- the widget wire -----------------------------------------------------------------------------
@@ -338,7 +440,11 @@ static SIDECAR_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static SHEET_FAIL: Mutex<Option<String>> = Mutex::new(None);
 
 /// Run one check so a panic becomes a recorded message rather than an abort through the C trampoline.
-fn record(slot: &Mutex<Option<String>>, label: &str, body: impl FnOnce() -> Result<(), String> + std::panic::UnwindSafe) {
+fn record(
+    slot: &Mutex<Option<String>>,
+    label: &str,
+    body: impl FnOnce() -> Result<(), String> + std::panic::UnwindSafe,
+) {
     let outcome = std::panic::catch_unwind(body);
     let failure = match outcome {
         Ok(Ok(())) => None,
@@ -473,7 +579,10 @@ fn tick_language(window: &adw::ApplicationWindow, language: &str) {
     tick.emit_by_name::<()>("toggled", &[]);
     settle();
     let now = ui::produce_page::read_state().translate.clone();
-    assert!(now.iter().any(|t| t == language), "emitting {name} did not reach `state.translate` (state is {now:?})");
+    assert!(
+        now.iter().any(|t| t == language),
+        "emitting {name} did not reach `state.translate` (state is {now:?})"
+    );
 }
 
 /// The check: press the real ▶ and read the ticked language's `.srt` back off disk.
@@ -489,7 +598,8 @@ fn dead_server_url() -> String {
 
 /// Rewrite the settings' LLM address — the seam the real leg reads per batch.
 fn point_at(url: &str) {
-    let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+    let paths =
+        naivepost::settings::from_environment().expect("settings folder from the pinned env");
     let mut conf = naivepost::settings::read(&paths).expect("settings read back");
     conf.server = url.to_string();
     naivepost::settings::save(&paths, &conf).expect("new address written");
@@ -527,7 +637,8 @@ fn check_press_writes_the_translated_sidecar(root: &Path) {
     seed_page(&window);
     tick_language(&window, "German");
 
-    let button = ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
+    let button =
+        ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
     button.emit_by_name::<()>("clicked", &[]);
     settle();
 
@@ -553,13 +664,23 @@ fn check_press_writes_the_translated_sidecar(root: &Path) {
     assert!(
         sidecar_logged,
         "the run logged the ticked language's sidecars: {:?}",
-        logs.iter().filter(|l| l.contains("subtitles")).collect::<Vec<&String>>()
+        logs.iter()
+            .filter(|l| l.contains("subtitles"))
+            .collect::<Vec<&String>>()
     );
 
     let srt = tree.final_srt(Some("German"));
     let bare = tree.final_srt(None);
-    assert!(bare.exists(), "the session's own .srt is beside it at {}", bare.display());
-    assert!(srt.exists(), "the ticked language's .srt was written at {}", srt.display());
+    assert!(
+        bare.exists(),
+        "the session's own .srt is beside it at {}",
+        bare.display()
+    );
+    assert!(
+        srt.exists(),
+        "the ticked language's .srt was written at {}",
+        srt.display()
+    );
     let text = std::fs::read_to_string(&srt).expect("the sidecar reads back");
     // S3's unanswered-batch rule, reached through the real leg: no server answers, so this track is the
     // original text and the run says so out loud rather than dropping the language.
@@ -569,7 +690,9 @@ fn check_press_writes_the_translated_sidecar(root: &Path) {
     );
     let said_logs = ui::window::window_logs();
     assert!(
-        said_logs.iter().any(|l| l.contains("did not answer") || l.contains("original")),
+        said_logs
+            .iter()
+            .any(|l| l.contains("did not answer") || l.contains("original")),
         "the unanswered translation is said, not swallowed: {:?}",
         said_logs
             .iter()
@@ -627,7 +750,8 @@ fn check_press_writes_the_sheet_and_says_what_it_holds(root: &Path) {
     ui::produce_page::set_state(page);
     ui::produce_page::refresh(&window);
     settle();
-    let button = ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
+    let button =
+        ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
     button.emit_by_name::<()>("clicked", &[]);
     settle();
 
@@ -635,11 +759,17 @@ fn check_press_writes_the_sheet_and_says_what_it_holds(root: &Path) {
         .expect("the window has a status line")
         .text()
         .to_string();
-    assert_ne!(said, naivepost::cut::NO_CUT_YET, "the press thought there was no cut: {said:?}");
+    assert_ne!(
+        said,
+        naivepost::cut::NO_CUT_YET,
+        "the press thought there was no cut: {said:?}"
+    );
 
     // §S4's file, on disk, holding the clip's own speech: the render handed its cue sheet to the encoder's
     // folder rather than an empty list to nothing.
-    let sheet_path = tree.clips_dir().join(naivepost::produce_render::final_srt_name());
+    let sheet_path = tree
+        .clips_dir()
+        .join(naivepost::produce_render::final_srt_name());
     let sheet = std::fs::read_to_string(&sheet_path)
         .unwrap_or_else(|why| panic!("{} was not written: {why}", sheet_path.display()));
     assert!(
@@ -649,9 +779,12 @@ fn check_press_writes_the_sheet_and_says_what_it_holds(root: &Path) {
 
     let logs = ui::window::window_logs();
     assert!(
-        logs.iter().any(|l| l.starts_with(">>> subtitles:") && l.contains("cues from")),
+        logs.iter()
+            .any(|l| l.starts_with(">>> subtitles:") && l.contains("cues from")),
         "S4 says what its sheet holds: {:?}",
-        logs.iter().filter(|l| l.contains("subtitles")).collect::<Vec<&String>>()
+        logs.iter()
+            .filter(|l| l.contains("subtitles"))
+            .collect::<Vec<&String>>()
     );
     assert!(
         logs.contains(
@@ -662,11 +795,16 @@ fn check_press_writes_the_sheet_and_says_what_it_holds(root: &Path) {
         "F5.2 S2's captions-only warning is logged, not only computed: {logs:?}"
     );
     assert!(
-        !logs.iter().any(|l| l.starts_with("!!! nothing to put in a subtitle")),
+        !logs
+            .iter()
+            .any(|l| l.starts_with("!!! nothing to put in a subtitle")),
         "there WAS something to caption, so the refusal must not print: {logs:?}"
     );
     // The sentence's own shape, pinned against the rule it came from: at least one clip spoke for itself.
-    let counts = naivepost::produce_subtitles_run::CueCounts { from_lines: 0, from_speech: 1 };
+    let counts = naivepost::produce_subtitles_run::CueCounts {
+        from_lines: 0,
+        from_speech: 1,
+    };
     assert_eq!(
         cue_count_sentence(counts, 1),
         ">>> subtitles: 1 cues from 0 spoken line(s) and 1 clip(s) of their own speech."

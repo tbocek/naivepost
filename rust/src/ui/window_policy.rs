@@ -100,7 +100,10 @@ pub fn refresh_policy_form(form: &adw::Window) {
             find_widget_by_name(form.upcast_ref(), &format!("policy-source-{}", entry.field))
         {
             if let Ok(label) = label.downcast::<gtk::Label>() {
-                label.set_text(policy_form::origin_word(policy_form::field_origin(&policy, entry.field)));
+                label.set_text(policy_form::origin_word(policy_form::field_origin(
+                    &policy,
+                    entry.field,
+                )));
             }
         }
         if let Some(label) =
@@ -276,7 +279,13 @@ pub fn forget_policy_form(form: &adw::Window) {
 
 /// Who answers one derivation request, injected so a check can stub the HTTP layer (`POLICY_SENDERS`).
 type PolicySenders = std::cell::RefCell<
-    Vec<Rc<std::cell::RefCell<dyn FnMut(&policy::DerivationRequest, &[String]) -> Vec<policy::Proposal>>>>,
+    Vec<
+        Rc<
+            std::cell::RefCell<
+                dyn FnMut(&policy::DerivationRequest, &[String]) -> Vec<policy::Proposal>,
+            >,
+        >,
+    >,
 >;
 
 thread_local! {
@@ -364,7 +373,10 @@ pub fn policy_is_current(window: &adw::ApplicationWindow, context: &str) -> bool
 /// The live answer a derivation dials through: the real HTTP leg, with the session's policy handed to it
 /// so `get_context` answers with the fields as they stand. `set_policy_sender_for_tests` still wins when
 /// a check installs one (newest-slot), which is how the widget tests keep injecting.
-fn live_policy_answer(req: &policy::DerivationRequest, refusals: &[String]) -> Vec<policy::Proposal> {
+fn live_policy_answer(
+    req: &policy::DerivationRequest,
+    refusals: &[String],
+) -> Vec<policy::Proposal> {
     // `session_policy` is the same slot the ⚙ form reads, so the model's view of the fields and the
     // form's cannot drift.
     crate::policy_call::set_live_policy(&session_policy(&main_window()));

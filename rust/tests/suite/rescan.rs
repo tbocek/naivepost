@@ -7,14 +7,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::temp_dir_created as temp_dir;
 use naivepost::cut::{self, Cut, Seg};
 use naivepost::layout::Tree;
 use naivepost::narration::{self, Entry, Narration};
 use naivepost::project::{Project, Source};
 use naivepost::rescan::{self, Refreshed, RESCANNED};
 use naivepost::shell::{Page, Shell};
-use crate::common;
-use common::temp_dir_created as temp_dir;
 
 /// A project folder with the three recordings a session names, so "gone" and "there" are both real
 /// files rather than paths that merely look plausible.
@@ -52,7 +52,9 @@ fn session() -> Project {
 }
 
 fn run(root: &Path, tree: Option<&Tree>, project: &mut Project) -> rescan::Rescan {
-    let dir = tree.map(|t| t.dir().to_path_buf()).unwrap_or_else(|| root.join("talk.naivepost"));
+    let dir = tree
+        .map(|t| t.dir().to_path_buf())
+        .unwrap_or_else(|| root.join("talk.naivepost"));
     rescan::rescan(project, root, &dir, tree)
 }
 
@@ -110,7 +112,10 @@ fn f0_11_s1_slot_1_goes_to_the_first_surviving_recording() {
 
     let found = run(&root, Some(&tree), &mut project);
 
-    assert_eq!(found.reassigned.as_deref(), Some("project:sources/second.wav"));
+    assert_eq!(
+        found.reassigned.as_deref(),
+        Some("project:sources/second.wav")
+    );
     let narrator = |path: &str| {
         project
             .sources
@@ -265,12 +270,18 @@ fn f0_11_s2_the_refreshed_files_drive_the_tabs_readouts() {
     // "N frames → M vision · L lines → K fixer", and this fixture has written neither yet.
     let cut = found.cut.clone().unwrap();
     let narration_file = found.narration.clone().unwrap();
-    let on = |page: Page| Shell { page, ..Default::default() };
+    let on = |page: Page| Shell {
+        page,
+        ..Default::default()
+    };
     assert_eq!(
         on(Page::Prepare).inputs(Some(&tree), &project, &cut, &narration_file),
         "0 frames \u{2192} 0 vision \u{b7} 0 lines \u{2192} 0 fixer"
     );
-    assert_eq!(on(Page::Cut).inputs(Some(&tree), &project, &cut, &Narration::default()), "1 clip(s)");
+    assert_eq!(
+        on(Page::Cut).inputs(Some(&tree), &project, &cut, &Narration::default()),
+        "1 clip(s)"
+    );
     assert_eq!(
         on(Page::Narrate).inputs(Some(&tree), &project, &cut, &narration_file),
         "1 line(s) over 1 clip(s)"

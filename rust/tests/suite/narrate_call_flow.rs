@@ -11,11 +11,11 @@ use naivepost::cut::Seg;
 use naivepost::narrate_call::drive;
 use naivepost::narrate_pass as pass;
 use naivepost::narrate_reply::{
-    ENTRY_MATCH_TOLERANCE_SECONDS, all_silent_fault, clip_without_entry, unmatched_entry_fault,
+    all_silent_fault, clip_without_entry, unmatched_entry_fault, ENTRY_MATCH_TOLERANCE_SECONDS,
 };
 
 use crate::common;
-use common::{seg};
+use common::seg;
 
 /// One entry in the prototype's reply shape, with the bounds the model echoed.
 fn entry(start: f64, end: f64, at: f64, text: &str, emotion: &str) -> String {
@@ -44,8 +44,14 @@ fn everything_fits(_: &[naivepost::narrate_run::Written]) -> Vec<u32> {
 #[test]
 fn f4_2_s16_an_echo_within_the_tolerance_lands_and_one_outside_it_is_refused_by_name() {
     // 0.4 is inside 0.5; both bounds of clip 1 shift together so only the closeness varies.
-    assert!(0.4 <= ENTRY_MATCH_TOLERANCE_SECONDS, "the near miss is inside the bound");
-    assert!(0.6 > ENTRY_MATCH_TOLERANCE_SECONDS, "the far miss is outside it");
+    assert!(
+        0.4 <= ENTRY_MATCH_TOLERANCE_SECONDS,
+        "the near miss is inside the bound"
+    );
+    assert!(
+        0.6 > ENTRY_MATCH_TOLERANCE_SECONDS,
+        "the far miss is outside it"
+    );
 
     let clips = two_clips();
     let near = entries(&[
@@ -91,8 +97,14 @@ fn f4_2_s17_entries_are_matched_forward_only_and_a_replay_of_a_passed_clip_is_re
         entry(100.0, 120.0, 0.0, "first", "calm"),
         entry(120.0, 130.0, 2.0, "second", "happy"),
     ]);
-    let written = drive(&clips, |_, _| Ok(good.clone()), |_, _| {}, &everything_fits, |_| {})
-        .expect("in-order entries land");
+    let written = drive(
+        &clips,
+        |_, _| Ok(good.clone()),
+        |_, _| {},
+        &everything_fits,
+        |_| {},
+    )
+    .expect("in-order entries land");
     assert_eq!(
         written.iter().map(|w| w.start).collect::<Vec<_>>(),
         vec![100.0, 120.0],
@@ -105,8 +117,14 @@ fn f4_2_s17_entries_are_matched_forward_only_and_a_replay_of_a_passed_clip_is_re
         entry(120.0, 130.0, 2.0, "second", "happy"),
         entry(100.0, 120.0, 5.0, "again", "angry"),
     ]);
-    let refused = drive(&clips, |_, _| Ok(walked_back.clone()), |_, _| {}, &everything_fits, |_| {})
-        .expect_err("a replay of a passed clip cannot be placed");
+    let refused = drive(
+        &clips,
+        |_, _| Ok(walked_back.clone()),
+        |_, _| {},
+        &everything_fits,
+        |_| {},
+    )
+    .expect_err("a replay of a passed clip cannot be placed");
     assert_eq!(refused, unmatched_entry_fault(100.0, 120.0));
 }
 
@@ -136,8 +154,16 @@ fn f4_2_s18_a_reply_that_wrote_nothing_switches_thinking_off_for_the_next_attemp
         |_| {},
     );
     assert!(got.is_ok());
-    assert_eq!(seen[0], (1, true), "the first attempt thinks (§F4.2: Thinking on)");
-    assert_eq!(seen[1], (2, false), "an attempt that wrote nothing does not get to think again");
+    assert_eq!(
+        seen[0],
+        (1, true),
+        "the first attempt thinks (§F4.2: Thinking on)"
+    );
+    assert_eq!(
+        seen[1],
+        (2, false),
+        "an attempt that wrote nothing does not get to think again"
+    );
 
     // Case B: attempt 1 places one line but leaves clip 2 open, so it wrote SOMETHING -> thinking stays.
     let mut kept: Vec<bool> = Vec::new();
@@ -156,14 +182,22 @@ fn f4_2_s18_a_reply_that_wrote_nothing_switches_thinking_off_for_the_next_attemp
         &everything_fits,
         |_| {},
     );
-    assert_eq!(kept, vec![true, true], "a call that wrote a line was not held back by reasoning");
+    assert_eq!(
+        kept,
+        vec![true, true],
+        "a call that wrote a line was not held back by reasoning"
+    );
 }
 
 /// s19 — three unusable replies give up. The count is `pass::attempts()` and the error names the last
 /// problem, so the log says what broke rather than just that something did.
 #[test]
 fn f4_2_s19_three_unusable_replies_give_up_naming_the_last_problem() {
-    assert_eq!(pass::attempts(), roles_attempts(), "one attempt count for every LLM job");
+    assert_eq!(
+        pass::attempts(),
+        roles_attempts(),
+        "one attempt count for every LLM job"
+    );
     let mut calls = 0u32;
     // Each reply echoes bounds that match no clip, so the refusal names them: attempt 3's echo is
     // `0-4`, which is what the run must end on rather than attempt 1's `0-2`.
@@ -171,14 +205,24 @@ fn f4_2_s19_three_unusable_replies_give_up_naming_the_last_problem() {
         &two_clips(),
         |attempt, _| {
             calls += 1;
-            Ok(entries(&[entry(0.0, 1.0 + attempt as f64, 0.0, "nothing", "calm")]))
+            Ok(entries(&[entry(
+                0.0,
+                1.0 + attempt as f64,
+                0.0,
+                "nothing",
+                "calm",
+            )]))
         },
         |_, _| {},
         &everything_fits,
         |_| {},
     );
     let err = got.expect_err("the run gives up with nothing written");
-    assert_eq!(calls, pass::attempts(), "exactly the allowed number of asks, no more");
+    assert_eq!(
+        calls,
+        pass::attempts(),
+        "exactly the allowed number of asks, no more"
+    );
     assert!(
         err.contains("0-4") && !err.contains("0-2"),
         "the error names the LAST rejection (attempt 3 echoed 0-4), not the first: {err}"
@@ -197,7 +241,13 @@ fn f4_2_s20_progress_counts_closed_clips_and_never_goes_backwards_across_a_retry
     ]);
     let got = drive(
         &two_clips(),
-        |attempt, _| Ok(if attempt == 1 { partial.clone() } else { full.clone() }),
+        |attempt, _| {
+            Ok(if attempt == 1 {
+                partial.clone()
+            } else {
+                full.clone()
+            })
+        },
         |written, total| ticks.push((written, total)),
         &everything_fits,
         |_| {},
@@ -209,7 +259,11 @@ fn f4_2_s20_progress_counts_closed_clips_and_never_goes_backwards_across_a_retry
         "the total is always the whole batch"
     );
     let counted: Vec<u32> = ticks.iter().map(|t| t.0).collect();
-    assert_eq!(counted, vec![1, 1, 2], "closed clips only, and the retry resumes at 1 rather than 0");
+    assert_eq!(
+        counted,
+        vec![1, 1, 2],
+        "closed clips only, and the retry resumes at 1 rather than 0"
+    );
     let mut previous = 0u32;
     for value in &counted {
         assert!(*value >= previous, "the bar never falls: {counted:?}");
@@ -223,18 +277,40 @@ fn f4_2_s20_progress_counts_closed_clips_and_never_goes_backwards_across_a_retry
 #[test]
 fn f4_2_s21_an_all_empty_reply_and_a_reply_with_a_hole_are_both_refused() {
     let clips = two_clips();
-    let empty = entries(&[entry(100.0, 120.0, 0.0, "", ""), entry(120.0, 130.0, 0.0, "   ", "")]);
-    let refused = drive(&clips, |_, _| Ok(empty.clone()), |_, _| {}, &everything_fits, |_| {})
-        .expect_err("every line empty is a refusal, not taste");
+    let empty = entries(&[
+        entry(100.0, 120.0, 0.0, "", ""),
+        entry(120.0, 130.0, 0.0, "   ", ""),
+    ]);
+    let refused = drive(
+        &clips,
+        |_, _| Ok(empty.clone()),
+        |_, _| {},
+        &everything_fits,
+        |_| {},
+    )
+    .expect_err("every line empty is a refusal, not taste");
     assert_eq!(refused, all_silent_fault());
-    assert_eq!(refused, pass::no_line_fault(), "one string for the fault, wherever it is asked");
+    assert_eq!(
+        refused,
+        pass::no_line_fault(),
+        "one string for the fault, wherever it is asked"
+    );
 
     let hole = entries(&[entry(120.0, 130.0, 0.0, "only the second", "calm")]);
-    let refused = drive(&clips, |_, _| Ok(hole.clone()), |_, _| {}, &everything_fits, |_| {})
-        .expect_err("a skipped clip fails the attempt");
+    let refused = drive(
+        &clips,
+        |_, _| Ok(hole.clone()),
+        |_, _| {},
+        &everything_fits,
+        |_| {},
+    )
+    .expect_err("a skipped clip fails the attempt");
     // Clip 1 is the one nobody answered; the forward walk put the second entry on clip 2.
     assert_eq!(refused, clip_without_entry(0, &clips));
-    assert!(refused.contains("got no entry"), "it says so plainly: {refused}");
+    assert!(
+        refused.contains("got no entry"),
+        "it says so plainly: {refused}"
+    );
 }
 
 /// s22 — never served from the reply cache. Driving the same request twice asks the model twice, and
@@ -242,7 +318,10 @@ fn f4_2_s21_an_all_empty_reply_and_a_reply_with_a_hole_are_both_refused() {
 /// is the cache.
 #[test]
 fn f4_2_s22_the_same_request_driven_twice_asks_again_and_is_never_answered_from_cache() {
-    assert!(!pass::served_from_cache(), "the writer is never cached (§F4.2)");
+    assert!(
+        !pass::served_from_cache(),
+        "the writer is never cached (§F4.2)"
+    );
     let clips = two_clips();
     let script = entries(&[
         entry(100.0, 120.0, 0.0, "same brief", "calm"),
@@ -271,7 +350,10 @@ fn f4_2_s22_the_same_request_driven_twice_asks_again_and_is_never_answered_from_
         |_| {},
     )
     .expect("second drive writes too -- nothing was remembered");
-    assert_eq!(asked, 2, "an identical request is asked again, not replayed from disk");
+    assert_eq!(
+        asked, 2,
+        "an identical request is asked again, not replayed from disk"
+    );
     assert_eq!(first, second, "and both drives produce the same lines");
 }
 
@@ -292,13 +374,31 @@ fn f4_2_a_bare_json_array_answer_is_used() {
     )
     .expect("the array answer is used, not refused");
     assert_eq!(written.len(), 2, "both clips answered: {written:?}");
-    assert_eq!((written[0].start, written[0].end), (0.0, 10.0), "clip 1's own bounds");
-    assert_eq!((written[1].start, written[1].end), (10.0, 20.0), "clip 2's own bounds");
+    assert_eq!(
+        (written[0].start, written[0].end),
+        (0.0, 10.0),
+        "clip 1's own bounds"
+    );
+    assert_eq!(
+        (written[1].start, written[1].end),
+        (10.0, 20.0),
+        "clip 2's own bounds"
+    );
     assert_eq!(written[0].at, 1.0, "the offset the writer gave survives");
     assert_eq!(written[0].text, "Proof of stake changed the cost.");
-    assert!(written[1].text.is_empty(), "clip 2's empty text is said silence, kept as written");
-    assert!(!seen.is_empty(), "streaming progress reached the caller: {seen:?}");
-    assert_eq!(seen.last().copied(), Some((2, 2)), "and ended at every clip written: {seen:?}");
+    assert!(
+        written[1].text.is_empty(),
+        "clip 2's empty text is said silence, kept as written"
+    );
+    assert!(
+        !seen.is_empty(),
+        "streaming progress reached the caller: {seen:?}"
+    );
+    assert_eq!(
+        seen.last().copied(),
+        Some((2, 2)),
+        "and ended at every clip written: {seen:?}"
+    );
 }
 
 /// One clip, and the model answered with a single entry object instead of a list. Same reasoning: the
@@ -340,13 +440,30 @@ fn f4_2_an_answer_that_is_not_entries_says_what_came_back() {
     )
     .expect_err("prose is not an answer");
     assert_eq!(asked, pass::attempts(), "every attempt was spent: {asked}");
-    assert_eq!(asked, roles_attempts(), "and the count is the one `roles` owns");
-    assert!(refused.contains("narration entries"), "it says what failed: {refused}");
-    assert!(refused.contains(prose), "and quotes what came instead: {refused}");
+    assert_eq!(
+        asked,
+        roles_attempts(),
+        "and the count is the one `roles` owns"
+    );
+    assert!(
+        refused.contains("narration entries"),
+        "it says what failed: {refused}"
+    );
+    assert!(
+        refused.contains(prose),
+        "and quotes what came instead: {refused}"
+    );
     // One rejection line per unusable reply, plus the thinking-off line the loop adds once when an
     // attempt wrote nothing (§F4.2: a call spent entirely thinking gets no reasoning budget again).
-    let rejections: Vec<&String> = rejects.iter().filter(|line| line.contains("rejected")).collect();
-    assert_eq!(rejections.len(), pass::attempts() as usize, "each rejection was reported: {rejects:?}");
+    let rejections: Vec<&String> = rejects
+        .iter()
+        .filter(|line| line.contains("rejected"))
+        .collect();
+    assert_eq!(
+        rejections.len(),
+        pass::attempts() as usize,
+        "each rejection was reported: {rejects:?}"
+    );
     for (index, line) in rejections.iter().enumerate() {
         assert_eq!(
             *line,
@@ -360,7 +477,10 @@ fn f4_2_an_answer_that_is_not_entries_says_what_came_back() {
         "the first prose reply wrote nothing, so thinking went off for the next: {rejects:?}"
     );
     // Nothing was claimed as written: a failed run writes nothing (§F4.2's last paragraph).
-    assert!(!refused.contains("written"), "a refusal claims no lines: {refused}");
+    assert!(
+        !refused.contains("written"),
+        "a refusal claims no lines: {refused}"
+    );
 }
 
 /// §F4.2's streaming progress: the bar is told about EVERY clip as it closes, in order, with the total
@@ -383,7 +503,11 @@ fn f4_2_the_bar_is_told_every_clip_that_closes() {
         |problem| panic!("a complete reply has nothing to reject: {problem}"),
     )
     .expect("all three clips answered");
-    assert_eq!(ticks, vec![(1, 3), (2, 3), (3, 3)], "one step per closed clip, total always the batch");
+    assert_eq!(
+        ticks,
+        vec![(1, 3), (2, 3), (3, 3)],
+        "one step per closed clip, total always the batch"
+    );
 }
 
 /// The single attempt count lives in `roles`; asserted here so a retuned number moves this test rather

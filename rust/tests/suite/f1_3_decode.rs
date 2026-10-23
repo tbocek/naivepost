@@ -9,11 +9,11 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::common;
+use common::temp_dir_created as temp_dir;
 use naivepost::decode_audio;
 use naivepost::layout::Tree;
 use naivepost::transcribe;
-use crate::common;
-use common::temp_dir_created as temp_dir;
 
 /// A stub ffmpeg that logs each invocation (one argv per line into `argv.log`) and creates the file its
 /// argv names, the way the tool does: the last argument is the output unless it is `-`.
@@ -61,7 +61,10 @@ fn session(tag: &str) -> (Tree, PathBuf) {
 fn f1_3_s1_the_run_decodes_the_source_to_mono_16khz_when_it_is_absent() {
     let tools = stub("decode");
     let (tree, source) = session("absent");
-    assert!(!decode_audio::already_decoded(&tree, LANE), "the state S1 acts on");
+    assert!(
+        !decode_audio::already_decoded(&tree, LANE),
+        "the state S1 acts on"
+    );
     let mut log: Vec<String> = Vec::new();
 
     let pcm = decode_audio::ensure(
@@ -73,9 +76,16 @@ fn f1_3_s1_the_run_decodes_the_source_to_mono_16khz_when_it_is_absent() {
     )
     .expect("the decode runs");
 
-    assert_eq!(pcm, tree.voice16k_wav(LANE), "the path every later step reads");
+    assert_eq!(
+        pcm,
+        tree.voice16k_wav(LANE),
+        "the path every later step reads"
+    );
     assert!(pcm.exists(), "{} was written", pcm.display());
-    assert!(decode_audio::already_decoded(&tree, LANE), "and now the marker is there");
+    assert!(
+        decode_audio::already_decoded(&tree, LANE),
+        "and now the marker is there"
+    );
     let argv = calls(&tools);
     assert_eq!(argv.len(), 1, "one command for one decode: {argv:?}");
     assert!(
@@ -83,8 +93,16 @@ fn f1_3_s1_the_run_decodes_the_source_to_mono_16khz_when_it_is_absent() {
         "mono 16 kHz signed 16-bit, in order: {}",
         argv[0]
     );
-    assert!(argv[0].starts_with("-y -i "), "the recording is the input: {}", argv[0]);
-    assert!(argv[0].ends_with(&pcm.display().to_string()), "and its output is last: {}", argv[0]);
+    assert!(
+        argv[0].starts_with("-y -i "),
+        "the recording is the input: {}",
+        argv[0]
+    );
+    assert!(
+        argv[0].ends_with(&pcm.display().to_string()),
+        "and its output is last: {}",
+        argv[0]
+    );
     assert_eq!(
         decode_audio::decode_plan(),
         vec!["-vn", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le"]
@@ -99,7 +117,10 @@ fn f1_3_s1_the_run_decodes_the_source_to_mono_16khz_when_it_is_absent() {
         "and that constant is still the rate the word times are divided by"
     );
     // §8: the command line reaches the log before it runs, so a hung decode is identifiable.
-    assert!(log.iter().any(|line| line.contains("-ar 16000")), "the run logged it: {log:?}");
+    assert!(
+        log.iter().any(|line| line.contains("-ar 16000")),
+        "the run logged it: {log:?}"
+    );
 }
 
 const LANE: &str = "lecture";
@@ -124,8 +145,16 @@ fn f1_3_s1_an_existing_voice16k_is_not_decoded_again() {
     .expect("nothing needed doing");
 
     assert_eq!(back, pcm);
-    assert_eq!(std::fs::read(&pcm).ok().as_deref(), Some("already-here".as_bytes()), "untouched");
-    assert!(calls(&tools).is_empty(), "no ffmpeg ran: {:?}", calls(&tools));
+    assert_eq!(
+        std::fs::read(&pcm).ok().as_deref(),
+        Some("already-here".as_bytes()),
+        "untouched"
+    );
+    assert!(
+        calls(&tools).is_empty(),
+        "no ffmpeg ran: {:?}",
+        calls(&tools)
+    );
 }
 
 /// A tool that exits successfully without producing the file is an error naming the file. Silence here
@@ -146,5 +175,8 @@ fn f1_3_s1_a_decode_that_produces_nothing_is_an_error_naming_the_file() {
         err.contains(&tree.voice16k_wav(LANE).display().to_string()),
         "the reason names the missing file: {err}"
     );
-    assert!(!tree.voice16k_wav(LANE).exists(), "and nothing was left behind");
+    assert!(
+        !tree.voice16k_wav(LANE).exists(),
+        "and nothing was left behind"
+    );
 }

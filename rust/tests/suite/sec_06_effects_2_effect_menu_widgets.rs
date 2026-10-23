@@ -100,13 +100,20 @@ fn menu_shows_the_rows(app: &adw::Application) {
         .collect();
 
     // One row per effect the menu is specced to list, in that order, each labelled as the table spells it.
-    let wanted: Vec<(&str, &str)> = EFFECT_ITEMS.iter().map(|item| (item.name, item.label)).collect();
+    let wanted: Vec<(&str, &str)> = EFFECT_ITEMS
+        .iter()
+        .map(|item| (item.name, item.label))
+        .collect();
     assert_eq!(
         wanted.len(),
         fx_lane::MENU_ORDER.len(),
         "the dropdown table and `fx_lane::MENU_ORDER` disagree about how many effects there are"
     );
-    assert_eq!(rows.len(), wanted.len(), "the popover drew the six effect rows");
+    assert_eq!(
+        rows.len(),
+        wanted.len(),
+        "the popover drew the six effect rows"
+    );
     for (index, (name, label)) in wanted.iter().enumerate() {
         let row = &rows[index];
         assert_eq!(
@@ -126,13 +133,22 @@ fn menu_shows_the_rows(app: &adw::Application) {
     // Mapped, not just visible: a row that never got laid out is not on the screen anyone can see. The popover
     // has its own surface, so the walk asks each widget for itself rather than the window for the lot.
     for (name, _) in wanted.iter() {
-        let row = rows.iter().find(|row| row.widget_name() == *name).expect("row found above");
-        assert!(row.is_mapped(), "`{name}` is visible but never drawn -- a popover that did not map");
+        let row = rows
+            .iter()
+            .find(|row| row.widget_name() == *name)
+            .expect("row found above");
+        assert!(
+            row.is_mapped(),
+            "`{name}` is visible but never drawn -- a popover that did not map"
+        );
     }
 
     // The spec's order is `fx_lane::MENU_ORDER`, so the labels the widget tree gives must match the order the
     // module that owns the menu spells -- read back, not restated.
-    let spec_order: Vec<String> = rows.iter().map(|row| row.label().unwrap_or_default().to_string()).collect();
+    let spec_order: Vec<String> = rows
+        .iter()
+        .map(|row| row.label().unwrap_or_default().to_string())
+        .collect();
     assert_eq!(
         spec_order,
         naivepost::snapshot_effect_menu::labels_in_menu_order(),
@@ -141,7 +157,10 @@ fn menu_shows_the_rows(app: &adw::Application) {
 
     button.set_active(false);
     settle();
-    assert!(!button.is_active(), "and it closes again, so the check proved a toggle both ways");
+    assert!(
+        !button.is_active(),
+        "and it closes again, so the check proved a toggle both ways"
+    );
 
     RAN_MENU.store(true, Ordering::SeqCst);
     window.close();
@@ -185,5 +204,8 @@ fn sec_06_effects_2_the_lane_and_the_preview_s1_the_effect_menu_shows_the_six_ro
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_MENU.load(Ordering::SeqCst), "the open-the-menu check never ran");
+    assert!(
+        RAN_MENU.load(Ordering::SeqCst),
+        "the open-the-menu check never ran"
+    );
 }

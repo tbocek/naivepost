@@ -20,16 +20,16 @@
 
 use std::sync::Mutex;
 
+use crate::common;
 use adw::prelude::*;
+use common::{
+    fixture_dir, hold_last_window, pin_private_cwd, release_last_window,
+    session_tree_of as session, settle, wait_until, widget_in,
+};
 use gtk4 as gtk;
 use naivepost::project::TextMark;
 use naivepost::shell::Page;
 use naivepost::{produce_screen, ui};
-use crate::common;
-use common::{
-    fixture_dir, hold_last_window, pin_private_cwd, release_last_window, session_tree_of as session,
-    settle, wait_until, widget_in,
-};
 
 thread_local! {
     static CURRENT_APP: std::cell::RefCell<Option<adw::Application>> =
@@ -81,7 +81,10 @@ fn produce_window(app: &adw::Application) -> adw::ApplicationWindow {
 /// Publish a page state carrying exactly the given word boxes, and repaint so the chips and the plate
 /// show them. Repainting needs the window: `refresh` is the page's own door.
 fn publish_texts(window: &adw::ApplicationWindow, texts: Vec<TextMark>) {
-    let state = ui::produce_page::ProduceState { texts, ..Default::default() };
+    let state = ui::produce_page::ProduceState {
+        texts,
+        ..Default::default()
+    };
     ui::produce_page::set_state(state);
     ui::produce_page::refresh(window);
 }
@@ -152,7 +155,11 @@ fn distance_to_plate_target(value: f64, wide: f64) -> f64 {
 /// §A: "boxes snap to the picture's and each other's edges and middles". A corner inside
 /// `OVERLAY_SNAP_PX` of a target lands ON it; a corner further away keeps the pixel it was drawn at.
 fn held_app() -> adw::Application {
-    APP.with(|held| held.borrow().clone().expect("run_round published the application"))
+    APP.with(|held| {
+        held.borrow()
+            .clone()
+            .expect("run_round published the application")
+    })
 }
 
 fn f5_7_s5_a_dragged_box_snaps_to_the_pictures_edges_and_middles() {
@@ -161,7 +168,8 @@ fn f5_7_s5_a_dragged_box_snaps_to_the_pictures_edges_and_middles() {
     let (wide, high) = plate_size(&window);
     println!(
         "f5_7_s5 | plate measures {wide:.1} x {high:.1} px; §A snap radius {} px, floor {} px",
-        produce_screen::OVERLAY_SNAP_PX, produce_screen::OVERLAY_MIN_PX
+        produce_screen::OVERLAY_SNAP_PX,
+        produce_screen::OVERLAY_MIN_PX
     );
     publish_texts(&window, vec![]);
     let snap = produce_screen::OVERLAY_SNAP_PX;
@@ -174,7 +182,10 @@ fn f5_7_s5_a_dragged_box_snaps_to_the_pictures_edges_and_middles() {
     answer(&dialog, "save", "snapped line");
     let marks = ui::produce_page::read_state().texts;
     if marks.len() != 1 {
-        return fail(format!("one drag must place exactly one box, got {}", marks.len()));
+        return fail(format!(
+            "one drag must place exactly one box, got {}",
+            marks.len()
+        ));
     }
     let (left, right, _, _) = edges(&marks[0], wide, high);
     println!(
@@ -182,7 +193,9 @@ fn f5_7_s5_a_dragged_box_snaps_to_the_pictures_edges_and_middles() {
         from.0, to.0, wide / 2.0
     );
     if !near(left, 0.0) {
-        return fail(format!("left corner {left:.1} px did not snap to the plate's left edge 0"));
+        return fail(format!(
+            "left corner {left:.1} px did not snap to the plate's left edge 0"
+        ));
     }
     if !near(right, wide / 2.0) {
         return fail(format!(
@@ -194,7 +207,10 @@ fn f5_7_s5_a_dragged_box_snaps_to_the_pictures_edges_and_middles() {
     // direction: the width is exactly the plate's half, so the snap moved each corner by its own slack.
     let width = right - left;
     if !near(width, wide / 2.0) {
-        return fail(format!("the snapped box is {width:.1} px wide, not half the plate ({:.1})", wide / 2.0));
+        return fail(format!(
+            "the snapped box is {width:.1} px wide, not half the plate ({:.1})",
+            wide / 2.0
+        ));
     }
 
     // A free drag: both corners well outside the radius of every target (edges 0 / mid / right, and no
@@ -207,7 +223,10 @@ fn f5_7_s5_a_dragged_box_snaps_to_the_pictures_edges_and_middles() {
     answer(&dialog, "save", "free line");
     let marks = ui::produce_page::read_state().texts;
     if marks.len() != 1 {
-        return fail(format!("the free drag must place one box, got {}", marks.len()));
+        return fail(format!(
+            "the free drag must place one box, got {}",
+            marks.len()
+        ));
     }
     let (left, right, _, _) = edges(&marks[0], wide, high);
     println!(
@@ -215,7 +234,8 @@ fn f5_7_s5_a_dragged_box_snaps_to_the_pictures_edges_and_middles() {
         distance_to_plate_target(left, wide),
         distance_to_plate_target(right, wide)
     );
-    if distance_to_plate_target(left, wide) <= snap || distance_to_plate_target(right, wide) <= snap {
+    if distance_to_plate_target(left, wide) <= snap || distance_to_plate_target(right, wide) <= snap
+    {
         return fail(format!(
             "a drag {:.1} px from every target was swallowed: left {left:.1}, right {right:.1}",
             distance_to_plate_target(left, wide).min(distance_to_plate_target(right, wide))
@@ -255,16 +275,25 @@ fn f5_7_s5_a_dragged_box_snaps_to_another_boxes_edge() {
     answer(&dialog, "save", "aligned line");
     let marks = ui::produce_page::read_state().texts;
     if marks.len() != 2 {
-        return fail(format!("the drag adds a box beside the existing one, got {}", marks.len()));
+        return fail(format!(
+            "the drag adds a box beside the existing one, got {}",
+            marks.len()
+        ));
     }
     let (new_left, new_right, _, _) = edges(&marks[1], wide, high);
-    println!("f5_7_s5 | new box right edge {new_right:.1} px vs the existing box's {ex_right:.1} px");
+    println!(
+        "f5_7_s5 | new box right edge {new_right:.1} px vs the existing box's {ex_right:.1} px"
+    );
     if !near(new_right, ex_right) {
         return fail(format!(
             "the new box's right edge {new_right:.1} did not line up with the existing box's {ex_right:.1}"
         ));
     }
-    if near(new_left, ex_left) || near(new_left, 0.0) || near(new_left, wide / 2.0) || near(new_left, wide) {
+    if near(new_left, ex_left)
+        || near(new_left, 0.0)
+        || near(new_left, wide / 2.0)
+        || near(new_left, wide)
+    {
         return fail(format!(
             "the new box's left edge {new_left:.1} was dragged onto a target it was not near"
         ));
@@ -283,16 +312,27 @@ fn f5_7_s5_a_box_under_the_minimum_is_not_a_box() {
     publish_texts(&window, vec![]);
     let floor = produce_screen::OVERLAY_MIN_PX;
     // 20 px wide, plenty tall: the smaller direction is what §A's floor measures.
-    drag(&window, (wide * 0.2, high * 0.2), (wide * 0.2 + floor - 8.0, high * 0.7));
+    drag(
+        &window,
+        (wide * 0.2, high * 0.2),
+        (wide * 0.2 + floor - 8.0, high * 0.7),
+    );
     if ui::produce_words::open_dialog().is_some() {
         return fail("a box under the floor opened the words dialog".to_string());
     }
     if !ui::produce_page::read_state().texts.is_empty() {
         return fail("a box under the floor stored a mark".to_string());
     }
-    println!("f5_7_s5 | a {} px-wide box: no dialog, no mark", floor - 8.0);
+    println!(
+        "f5_7_s5 | a {} px-wide box: no dialog, no mark",
+        floor - 8.0
+    );
     // Just over the floor: the same drag shape now counts as a box.
-    drag(&window, (wide * 0.2, high * 0.2), (wide * 0.2 + floor + 8.0, high * 0.7));
+    drag(
+        &window,
+        (wide * 0.2, high * 0.2),
+        (wide * 0.2 + floor + 8.0, high * 0.7),
+    );
     let dialog = opened_dialog();
     answer(&dialog, "save", "just big enough");
     let marks = ui::produce_page::read_state().texts;
@@ -380,7 +420,10 @@ fn f5_7_s5_the_dialog_offers_remove_cancel_and_save_in_order() {
         ));
     }
     if ui::produce_words::open_dialog().is_some() {
-        return fail("answering left the dialog standing; the next press would be refused by its guard".to_string());
+        return fail(
+            "answering left the dialog standing; the next press would be refused by its guard"
+                .to_string(),
+        );
     }
     // Now a box EXISTS: reopening it (the ✎ chip the refresh drew) must offer Remove first.
     let chip = widget_in(&window, "words-chip-0").expect("every box on the plate gets its ✎ chip");
@@ -390,7 +433,10 @@ fn f5_7_s5_the_dialog_offers_remove_cancel_and_save_in_order() {
     settle();
     let reword = opened_dialog();
     let labels = answer_labels(&reword);
-    println!("f5_7_s5 | an EXISTING box's answers: [{}]", labels.join(", "));
+    println!(
+        "f5_7_s5 | an EXISTING box's answers: [{}]",
+        labels.join(", ")
+    );
     if labels != ["Remove", "Cancel", "Save"] {
         return fail(format!(
             "an existing box's dialog answers are [{}], not §A's Remove, Cancel, Save",
@@ -399,7 +445,10 @@ fn f5_7_s5_the_dialog_offers_remove_cancel_and_save_in_order() {
     }
     reword.response("cancel");
     settle();
-    assert!(ui::produce_words::open_dialog().is_none(), "Cancel closes the dialog");
+    assert!(
+        ui::produce_words::open_dialog().is_none(),
+        "Cancel closes the dialog"
+    );
 }
 
 thread_local! {
@@ -413,7 +462,10 @@ fn run_round(app: &adw::Application) {
             "picture snap",
             f5_7_s5_a_dragged_box_snaps_to_the_pictures_edges_and_middles as fn(),
         ),
-        ("box-to-box snap", f5_7_s5_a_dragged_box_snaps_to_another_boxes_edge),
+        (
+            "box-to-box snap",
+            f5_7_s5_a_dragged_box_snaps_to_another_boxes_edge,
+        ),
         ("minimum box", f5_7_s5_a_box_under_the_minimum_is_not_a_box),
         (
             "dialog answers",

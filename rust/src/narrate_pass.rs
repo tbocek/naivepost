@@ -196,7 +196,9 @@ pub fn brief(segs: &[Seg], rows: &[SessionLine], fx: &[Fx], narrator: &str) -> S
             }
             // \u00a712 #29: every kind is read here, not only a label and a caption. A zoom, a burned-in graphic
             // or a mute are decisions about the picture the writer can speak to and cannot otherwise see.
-            let Some((tag, words)) = effect_tag(effect) else { continue };
+            let Some((tag, words)) = effect_tag(effect) else {
+                continue;
+            };
             out.push_str(&format!("  [{:+.0}s] {tag}: {words}\n", from - seg.s));
         }
     }
@@ -244,7 +246,13 @@ pub fn system(prompt: &str, speech: bool, captions_only: bool) -> String {
 /// F4.2 S2 (`USER User Context (+ the speech rule) + "THE CLIPS…" + per clip …`): the whole second message.
 /// An empty context adds nothing at all, not an empty block — a header over nothing would read as a note the
 /// writer should still obey — and the speech rule is only ever about a context that exists.
-pub fn user_message(context: &str, segs: &[Seg], rows: &[SessionLine], fx: &[Fx], narrator: &str) -> String {
+pub fn user_message(
+    context: &str,
+    segs: &[Seg],
+    rows: &[SessionLine],
+    fx: &[Fx],
+    narrator: &str,
+) -> String {
     let mut out = String::new();
     if !context.trim().is_empty() {
         out.push_str(CTX_INTRO);
@@ -267,16 +275,107 @@ pub fn user_message(context: &str, segs: &[Seg], rows: &[SessionLine], fx: &[Fx]
 /// path for a spelling. What lives here is only the *vocabulary* — the eight weights a word mixes stay with
 /// the TTS side, as do the named blends' recipes.
 pub const EMOTION_KIN: [(&str, &[&str]); 8] = [
-    ("happy", &["happy", "happiness", "joy", "joyful", "cheerful", "glad", "delighted", "upbeat", "pleased"]),
-    ("angry", &["angry", "anger", "mad", "furious", "fury", "rage", "annoyed", "irritated", "indignant"]),
-    ("sad", &["sad", "sadness", "unhappy", "sorrow", "sorrowful", "hurt", "crying", "tearful"]),
-    ("afraid", &["afraid", "fear", "fearful", "scared", "frightened", "terrified", "nervous", "anxious", "panicked"]),
-    ("disgusted", &["disgusted", "disgust", "revolted", "repulsed", "grossed"]),
-    ("melancholic", &["melancholic", "melancholy", "low", "gloomy", "down", "depressed", "depression", "wistful", "weary"]),
-    ("surprised", &["surprised", "surprise", "shocked", "amazed", "astonished", "startled", "stunned"]),
+    (
+        "happy",
+        &[
+            "happy",
+            "happiness",
+            "joy",
+            "joyful",
+            "cheerful",
+            "glad",
+            "delighted",
+            "upbeat",
+            "pleased",
+        ],
+    ),
+    (
+        "angry",
+        &[
+            "angry",
+            "anger",
+            "mad",
+            "furious",
+            "fury",
+            "rage",
+            "annoyed",
+            "irritated",
+            "indignant",
+        ],
+    ),
+    (
+        "sad",
+        &[
+            "sad",
+            "sadness",
+            "unhappy",
+            "sorrow",
+            "sorrowful",
+            "hurt",
+            "crying",
+            "tearful",
+        ],
+    ),
+    (
+        "afraid",
+        &[
+            "afraid",
+            "fear",
+            "fearful",
+            "scared",
+            "frightened",
+            "terrified",
+            "nervous",
+            "anxious",
+            "panicked",
+        ],
+    ),
+    (
+        "disgusted",
+        &["disgusted", "disgust", "revolted", "repulsed", "grossed"],
+    ),
+    (
+        "melancholic",
+        &[
+            "melancholic",
+            "melancholy",
+            "low",
+            "gloomy",
+            "down",
+            "depressed",
+            "depression",
+            "wistful",
+            "weary",
+        ],
+    ),
+    (
+        "surprised",
+        &[
+            "surprised",
+            "surprise",
+            "shocked",
+            "amazed",
+            "astonished",
+            "startled",
+            "stunned",
+        ],
+    ),
     // The eighth base is spelled three ways by the people writing it: `calm` is what §1 calls it, `natural`
     // and `neutral` are what a model sends.
-    ("calm", &["natural", "neutral", "calm", "deadpan", "flat", "plain", "even", "relaxed", "matter-of-fact"]),
+    (
+        "calm",
+        &[
+            "natural",
+            "neutral",
+            "calm",
+            "deadpan",
+            "flat",
+            "plain",
+            "even",
+            "relaxed",
+            "matter-of-fact",
+        ],
+    ),
 ];
 
 /// `list_emotions(–)` (§3.8: "the eight bases with their kin words **and the named blends with recipes**
@@ -288,7 +387,11 @@ pub fn list_emotions() -> String {
     let mut lines: Vec<String> = EMOTION_KIN
         .iter()
         .map(|(base, kin)| {
-            let words = kin.iter().copied().filter(|word| *word != *base).collect::<Vec<_>>();
+            let words = kin
+                .iter()
+                .copied()
+                .filter(|word| *word != *base)
+                .collect::<Vec<_>>();
             format!("{base}: {}", words.join(", "))
         })
         .collect();
@@ -349,9 +452,9 @@ pub fn emotion_known(emotion: &str) -> bool {
             }
         }
         let lower = name.to_lowercase();
-        let known = EMOTION_KIN.iter().any(|(base, kin)| {
-            *base == lower.as_str() || kin.iter().any(|word| *word == lower)
-        });
+        let known = EMOTION_KIN
+            .iter()
+            .any(|(base, kin)| *base == lower.as_str() || kin.iter().any(|word| *word == lower));
         if !known {
             return false;
         }
@@ -368,7 +471,14 @@ pub fn emotion_known(emotion: &str) -> bool {
 /// line above, whether the clip will be grown or the speech sped up. That arithmetic is F4.3's and belongs
 /// to the render; a tool answer says what this call decided (the clamped offset, the ceiling it must stay
 /// under) so a long line can be rewritten shorter instead of squeezed later.
-pub fn write_line(clips: &[Seg], clip: u32, at: f64, text: &str, emotion: &str, pos: &str) -> String {
+pub fn write_line(
+    clips: &[Seg],
+    clip: u32,
+    at: f64,
+    text: &str,
+    emotion: &str,
+    pos: &str,
+) -> String {
     if let Some(problem) = cut_captions::clip_outside(clip, 1, clips.len() as u32) {
         return crate::tools::error(&problem);
     }
@@ -430,9 +540,16 @@ pub fn pack_warning(
     clip: u32,
 ) -> Option<String> {
     let speech_of = |count: usize| {
-        crate::narrate_screen::page_speech_seconds(count, crate::narrate_screen::SPEECH_CHARS_PER_SECOND)
+        crate::narrate_screen::page_speech_seconds(
+            count,
+            crate::narrate_screen::SPEECH_CHARS_PER_SECOND,
+        )
     };
-    let speech: f64 = before.iter().map(|(_, count)| speech_of(*count)).sum::<f64>() + speech_of(chars);
+    let speech: f64 = before
+        .iter()
+        .map(|(_, count)| speech_of(*count))
+        .sum::<f64>()
+        + speech_of(chars);
     // Pack in clip order, as the render does: each line starts after the one above it finishes + gap + tail.
     let mut placed: Vec<(f64, f64)> = before
         .iter()
@@ -454,7 +571,12 @@ pub fn pack_warning(
     // remedy the render does not have is the mistake \u00a712 #23 was written about.
     let needed = (end + crate::produce_render::TAIL_SECONDS) / screen.max(f64::MIN_POSITIVE);
     let tempo = needed.clamp(1.0, crate::produce_render::MAX_TEMPO);
-    Some(crate::produce_render::sped_up_log(clip as usize, speech, screen, tempo))
+    Some(crate::produce_render::sped_up_log(
+        clip as usize,
+        speech,
+        screen,
+        tempo,
+    ))
 }
 
 /// `leave_silent(clip)` — ok, and nothing else. Silence has to be *said*: a clip with no entry at all is a
@@ -541,27 +663,48 @@ pub fn effect_tag(effect: &Fx) -> Option<(&'static str, String)> {
         "text" => (!text.is_empty()).then(|| ("CAPTION", text.to_string())),
         "zoom" => Some((
             "ZOOM",
-            if text.is_empty() { "the picture is punched in here".to_string() } else { text.to_string() },
+            if text.is_empty() {
+                "the picture is punched in here".to_string()
+            } else {
+                text.to_string()
+            },
         )),
         // A rate of nought is a stop, the same reading the cut and the render give it.
         "speed" | "stop" => Some(if effect.rate == 0.0 {
             ("STOP", "the picture holds here".to_string())
         } else {
-            ("SPEED", format!("the footage runs at {}x here", rate_words(effect.rate)))
+            (
+                "SPEED",
+                format!("the footage runs at {}x here", rate_words(effect.rate)),
+            )
         }),
         "volume" => Some((
             "VOLUME",
-            format!("the sound runs at {}x of its own level here", rate_words(effect.gain)),
+            format!(
+                "the sound runs at {}x of its own level here",
+                rate_words(effect.gain)
+            ),
         )),
         "svg" => Some((
             "GRAPHIC",
-            if text.is_empty() { "a graphic is burned over the picture".to_string() } else { text.to_string() },
+            if text.is_empty() {
+                "a graphic is burned over the picture".to_string()
+            } else {
+                text.to_string()
+            },
         )),
         // An unknown kind is still said rather than dropped, under its own word: not knowing what it does is
         // not a reason to hide that it is there.
         other => Some((
             "EFFECT",
-            format!("{other}{}", if text.is_empty() { String::new() } else { format!(": {text}") }),
+            format!(
+                "{other}{}",
+                if text.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {text}")
+                }
+            ),
         )),
     }
 }
@@ -610,11 +753,11 @@ pub fn describe_insert(clips: &[Seg], clip: u32) -> String {
             None => "the head of the clip".to_string(),
         },
     };
-        // §12 #28: the card's WORDS, read out of the document the app would draw — through the same door the
-// render goes (`produce_cards::draw`: a stamped card is redrawn from its arguments, an unstamped one has
-// its holes filled), then the `<text>` elements picked out of the result. A file that cannot be read
-// answers with what the cut knows (kind + length) rather than an empty string or a refusal: the writer is
-// told what it can be told and nothing is invented.
+    // §12 #28: the card's WORDS, read out of the document the app would draw — through the same door the
+    // render goes (`produce_cards::draw`: a stamped card is redrawn from its arguments, an unstamped one has
+    // its holes filled), then the `<text>` elements picked out of the result. A file that cannot be read
+    // answers with what the cut knows (kind + length) rather than an empty string or a refusal: the writer is
+    // told what it can be told and nothing is invented.
     let words = match std::fs::read_to_string(&path.file) {
         Ok(raw) => {
             let card = crate::produce_cards::draw(&seg.ins, &raw);
@@ -649,7 +792,12 @@ pub fn describe_insert(clips: &[Seg], clip: u32) -> String {
 /// re-sorting them anyway). The numbers are sorted for the message alone so the sentence reads in clip
 /// order whatever order the answers arrived in.
 pub fn finish(answered: &[u32], unfitted: &[u32]) -> String {
-    let total = answered.iter().chain(unfitted.iter()).max().copied().unwrap_or(0);
+    let total = answered
+        .iter()
+        .chain(unfitted.iter())
+        .max()
+        .copied()
+        .unwrap_or(0);
     let mut missing: Vec<u32> = (1..=total).filter(|n| !answered.contains(n)).collect();
     let mut bad: Vec<u32> = unfitted.to_vec();
     bad.sort_unstable();

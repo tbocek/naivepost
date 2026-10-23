@@ -11,13 +11,13 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::fixture_dir;
 use naivepost::preview::{self, Press};
 use naivepost::run::Transport;
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir};
 
 static RAN_WIDGET: AtomicBool = AtomicBool::new(false);
 static RAN_LAYOUT: AtomicBool = AtomicBool::new(false);
@@ -66,8 +66,8 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 /// The Cut page carries its own ▶ (§F2.1), labelled and tooled with the spec's own words.
 fn check_button_exists_with_the_specs_tooltip(app: &adw::Application) {
     let window = cut_window(app);
-    let button = ui::play_recording_button(&window)
-        .expect("the Cut page has a play-the-recording button");
+    let button =
+        ui::play_recording_button(&window).expect("the Cut page has a play-the-recording button");
     let tip = button.tooltip_text().unwrap_or_default();
     assert!(
         tip.contains("cuts and all"),
@@ -103,7 +103,10 @@ fn check_the_button_is_laid_out_on_the_page(app: &adw::Application) {
         button.height(),
         button.is_mapped()
     );
-    assert!(button.is_mapped(), "the button is mapped on the visible Cut page");
+    assert!(
+        button.is_mapped(),
+        "the button is mapped on the visible Cut page"
+    );
     assert!(
         button.width() >= 16,
         "wide enough to click a \u{a7}A glyph, got {} px",
@@ -126,7 +129,10 @@ fn check_s2_plays_from_the_red_line_through_the_click(app: &adw::Application) {
     button.emit_clicked();
     let playing = ui::preview_player(&window);
     assert!(playing.transport.playing, "the click started playback");
-    assert!(playing.transport.started, "and the preview is now the bar's business");
+    assert!(
+        playing.transport.started,
+        "and the preview is now the bar's business"
+    );
     assert_eq!(
         playing.playhead,
         Some(12.5),
@@ -140,7 +146,11 @@ fn check_s2_plays_from_the_red_line_through_the_click(app: &adw::Application) {
         paused.transport.started,
         "`started` survives a pause: ⏹ still has something to end (run.rs)"
     );
-    assert_eq!(paused.playhead, Some(12.5), "pausing leaves the line where it was");
+    assert_eq!(
+        paused.playhead,
+        Some(12.5),
+        "pausing leaves the line where it was"
+    );
     window.close();
 }
 
@@ -151,7 +161,9 @@ fn check_s1_switches_back_to_the_recording_through_the_click(app: &adw::Applicat
     let window = cut_window(app);
     ui::set_playhead(&window, 30.0);
     ui::set_preview_state(&window, true, false, Transport::default());
-    ui::play_recording_button(&window).expect("▶").emit_clicked();
+    ui::play_recording_button(&window)
+        .expect("▶")
+        .emit_clicked();
 
     let after = ui::preview_player(&window);
     assert!(!after.cut_only, "the preview is the recording now");
@@ -160,7 +172,11 @@ fn check_s1_switches_back_to_the_recording_through_the_click(app: &adw::Applicat
         preview::RECORDING_STATUS,
         "the clock changed meaning and the status line says exactly that"
     );
-    assert_eq!(after.playhead, Some(30.0), "switching costs the red line nothing");
+    assert_eq!(
+        after.playhead,
+        Some(30.0),
+        "switching costs the red line nothing"
+    );
     window.close();
 
     // From a running review: "already playing: carry on" -- the switch must not pause it.
@@ -171,7 +187,10 @@ fn check_s1_switches_back_to_the_recording_through_the_click(app: &adw::Applicat
         &reviewing,
         false,
         true,
-        Transport { playing: true, started: true },
+        Transport {
+            playing: true,
+            started: true,
+        },
     );
     ui::play_recording_button(&reviewing)
         .expect("▶")
@@ -198,7 +217,11 @@ fn check_nothing_filmed_refuses_through_the_click(app: &adw::Application) {
     // `wire_play_recording`), so clicking is already the empty-runs case; the seam is driven with the
     // same empty list to read the `Press` value back and pin which branch answered.
     let refused = ui::press_play_recording(&window, &[]);
-    assert_eq!(refused, Press::NoFootage, "the refusal came from the seam, not from the test");
+    assert_eq!(
+        refused,
+        Press::NoFootage,
+        "the refusal came from the seam, not from the test"
+    );
     let idle = ui::preview_player(&window);
     assert!(!idle.transport.playing, "nothing started");
     assert_eq!(idle.playhead, None, "no line was invented to play from");
@@ -214,13 +237,22 @@ fn check_nothing_filmed_refuses_through_the_click(app: &adw::Application) {
 fn f2_1_s2_the_recording_button_plays_through_the_widget() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_WIDGET.load(Ordering::SeqCst), "the widget-exists check never ran");
+    assert!(
+        RAN_WIDGET.load(Ordering::SeqCst),
+        "the widget-exists check never ran"
+    );
     assert!(
         RAN_LAYOUT.load(Ordering::SeqCst),
         "the laid-out-on-the-page check never ran"
     );
-    assert!(RAN_S2.load(Ordering::SeqCst), "the S2 click check never ran");
-    assert!(RAN_S1.load(Ordering::SeqCst), "the S1 click check never ran");
+    assert!(
+        RAN_S2.load(Ordering::SeqCst),
+        "the S2 click check never ran"
+    );
+    assert!(
+        RAN_S1.load(Ordering::SeqCst),
+        "the S1 click check never ran"
+    );
     assert!(
         RAN_REFUSAL.load(Ordering::SeqCst),
         "the no-footage click check never ran"

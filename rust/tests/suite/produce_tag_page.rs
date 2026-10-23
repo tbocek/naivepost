@@ -15,7 +15,11 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Mutex;
 
+use crate::common;
 use adw::prelude::*;
+use common::{
+    fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle,
+};
 use naivepost::cut::Seg;
 use naivepost::layout::Tree;
 use naivepost::produce_embed as embed;
@@ -24,8 +28,6 @@ use naivepost::project::{Codec, Container};
 use naivepost::roles::Language;
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, session_tree_of as session, settle};
 
 // ---- logic helpers -----------------------------------------------------------------
 
@@ -40,8 +42,16 @@ fn tree_in(tag_name: &str) -> (PathBuf, Tree) {
 
 fn langs() -> Vec<Language> {
     vec![
-        Language { code: "en".into(), tag: "en-US".into(), name: "English".into() },
-        Language { code: "de".into(), tag: "de-DE".into(), name: "German".into() },
+        Language {
+            code: "en".into(),
+            tag: "en-US".into(),
+            name: "English".into(),
+        },
+        Language {
+            code: "de".into(),
+            tag: "de-DE".into(),
+            name: "German".into(),
+        },
     ]
 }
 
@@ -93,11 +103,7 @@ impl Legs {
     }
 
     fn last(&self) -> Vec<String> {
-        self.calls
-            .borrow()
-            .last()
-            .cloned()
-            .unwrap_or_default()
+        self.calls.borrow().last().cloned().unwrap_or_default()
     }
 }
 
@@ -148,8 +154,14 @@ fn f5_5_s5_the_page_is_the_bare_tag_with_every_vtt_on_disk() {
         .find(r#"<track src="final.de.vtt" srclang="de">"#)
         .unwrap_or_else(|| panic!("the German track is missing: {body}"));
     assert!(own_at < de_at, "own language first: {body}");
-    assert!(body.starts_with(r#"<video poster="final.jpg" controls src="final.mp4" preload="none">"#), "{body}");
-    assert!(!body.contains("label="), "the tag stays bare, no label=: {body}");
+    assert!(
+        body.starts_with(r#"<video poster="final.jpg" controls src="final.mp4" preload="none">"#),
+        "{body}"
+    );
+    assert!(
+        !body.contains("label="),
+        "the tag stays bare, no label=: {body}"
+    );
     assert!(!body.contains("kind="), "…and no kind=: {body}");
     assert!(body.ends_with("</video>\n"), "{body}");
     // It equals what the rule module itself would have written for the same inputs.
@@ -162,7 +174,10 @@ fn f5_5_s5_the_page_is_the_bare_tag_with_every_vtt_on_disk() {
             &langs(),
         ),
     );
-    assert_eq!(body, expected, "the page is `embed::tag`'s answer, unchanged");
+    assert_eq!(
+        body, expected,
+        "the page is `embed::tag`'s answer, unchanged"
+    );
 }
 
 /// §F5.5's "JPEG 90": the poster is asked for as ffmpeg's `-q:v 2` off `publish/thumbnail.png`, into
@@ -181,10 +196,22 @@ fn f5_5_s5_the_poster_is_asked_as_jpeg_90_from_the_thumbnail() {
         .iter()
         .position(|a| a == "-q:v")
         .unwrap_or_else(|| panic!("no -q:v in the poster command: {argv:?}"));
-    assert_eq!(argv[q + 1], embed::POSTER_QSCALE, "the ladder rung for JPEG 90");
+    assert_eq!(
+        argv[q + 1],
+        embed::POSTER_QSCALE,
+        "the ladder rung for JPEG 90"
+    );
     let i = argv.iter().position(|a| a == "-i").expect("-i present");
-    assert_eq!(argv[i + 1], tree.thumbnail_png().display().to_string(), "{argv:?}");
-    assert_eq!(argv.last().unwrap(), &tree.final_jpg().display().to_string(), "{argv:?}");
+    assert_eq!(
+        argv[i + 1],
+        tree.thumbnail_png().display().to_string(),
+        "{argv:?}"
+    );
+    assert_eq!(
+        argv.last().unwrap(),
+        &tree.final_jpg().display().to_string(),
+        "{argv:?}"
+    );
     assert!(page.poster, "the poster is there to point at: {page:?}");
 }
 
@@ -198,10 +225,16 @@ fn f5_5_s5_no_thumbnail_is_said_and_the_tag_has_no_poster() {
     let page = run_walk(&tree, Container::Mp4, Codec::H264, &legs, &log);
 
     assert!(!page.poster, "nothing to point at: {page:?}");
-    assert!(legs.calls.borrow().is_empty(), "no poster job was sent without a thumbnail");
+    assert!(
+        legs.calls.borrow().is_empty(),
+        "no poster job was sent without a thumbnail"
+    );
     let body = read_html(&tree);
     assert!(!body.contains("poster="), "no poster attribute: {body}");
-    assert!(body.starts_with("<video controls src=\"final.mp4\""), "{body}");
+    assert!(
+        body.starts_with("<video controls src=\"final.mp4\""),
+        "{body}"
+    );
     let logged = log.borrow();
     assert!(
         logged.iter().any(|l| l.contains(embed::no_poster_reason())),
@@ -259,7 +292,9 @@ fn f5_5_s5_the_web_notes_reach_the_log() {
     run_walk(&tree, Container::Mp4, Codec::H264, &legs, &log);
     let logged = log.borrow();
     assert!(
-        !logged.iter().any(|l| l.contains("Matroska") || l.contains("h265")),
+        !logged
+            .iter()
+            .any(|l| l.contains("Matroska") || l.contains("h265")),
         "mp4/h264 is a page's own format and says nothing: {logged:?}"
     );
     // And with a track present, the http-vs-file:// note is there in every case.
@@ -314,11 +349,17 @@ fn f5_5_s5_a_poster_job_that_fails_still_writes_the_tag_without_a_poster() {
         |line| log.borrow_mut().push(line.to_string()),
     );
 
-    assert!(!page.poster, "the job failed, so there is no poster: {page:?}");
+    assert!(
+        !page.poster,
+        "the job failed, so there is no poster: {page:?}"
+    );
     assert!(page.written, "the page still got written: {page:?}");
     let body = read_html(&tree);
     assert!(!body.contains("poster="), "and says so by omission: {body}");
-    assert!(!legs.calls.borrow().is_empty(), "the job was still attempted");
+    assert!(
+        !legs.calls.borrow().is_empty(),
+        "the job was still attempted"
+    );
 }
 
 // ---- the widget wire ---------------------------------------------------------------
@@ -327,7 +368,11 @@ static TAG_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static SKIP_TAG_FAIL: Mutex<Option<String>> = Mutex::new(None);
 
 /// Run one check so a panic becomes a recorded message rather than an abort through the C trampoline.
-fn record(slot: &Mutex<Option<String>>, label: &str, body: impl FnOnce() -> Result<(), String> + std::panic::UnwindSafe) {
+fn record(
+    slot: &Mutex<Option<String>>,
+    label: &str,
+    body: impl FnOnce() -> Result<(), String> + std::panic::UnwindSafe,
+) {
     let outcome = std::panic::catch_unwind(body);
     let failure = match outcome {
         Ok(Ok(())) => None,
@@ -421,7 +466,8 @@ fn scripted_spawn() -> naivepost::produce_translate::SpawnSlot {
 }
 
 fn press_play(window: &adw::ApplicationWindow) -> String {
-    let button = ui::line_step_button(window, "play-button").expect("the run bar drew a play-button");
+    let button =
+        ui::line_step_button(window, "play-button").expect("the run bar drew a play-button");
     button.emit_by_name::<()>("clicked", &[]);
     settle();
     ui::find_status(window.upcast_ref())
@@ -449,7 +495,11 @@ fn check_press_writes_the_tag_page(root: &Path) {
     );
     seed_page(&window);
     let said = press_play(&window);
-    assert_ne!(said, naivepost::cut::NO_CUT_YET, "refused for want of a cut: {said:?}");
+    assert_ne!(
+        said,
+        naivepost::cut::NO_CUT_YET,
+        "refused for want of a cut: {said:?}"
+    );
 
     let html = tree.final_html();
     assert!(html.exists(), "S5 wrote the page at {}", html.display());
@@ -460,13 +510,18 @@ fn check_press_writes_the_tag_page(root: &Path) {
     let de_at = body
         .find(r#"<track src="final.de.vtt" srclang="de">"#)
         .unwrap_or_else(|| panic!("the German track is missing: {body}"));
-    assert!(own_at < de_at, "the video's own language comes first: {body}");
+    assert!(
+        own_at < de_at,
+        "the video's own language comes first: {body}"
+    );
     let logs = ui::window::window_logs();
     assert!(
         logs.iter()
             .any(|l| l == &embed::wrote_tag_log(&html.display().to_string())),
         "the run announced the page it wrote: {:?}",
-        logs.iter().filter(|l| l.contains("video")).collect::<Vec<&String>>()
+        logs.iter()
+            .filter(|l| l.contains("video"))
+            .collect::<Vec<&String>>()
     );
     window.close();
     settle();
@@ -487,7 +542,11 @@ fn check_skipped_encode_still_rewrites_the_page(root: &Path) {
     let current = naivepost::produce_stamp::gate_stamp(
         &tree,
         &settings,
-        &naivepost::cut::Cut { segs: two_segs(), aspect: "16:9".to_string(), ..Default::default() },
+        &naivepost::cut::Cut {
+            segs: two_segs(),
+            aspect: "16:9".to_string(),
+            ..Default::default()
+        },
         &project.sources,
         Some("1"),
         project.no_narration,
@@ -509,9 +568,16 @@ fn check_skipped_encode_still_rewrites_the_page(root: &Path) {
     );
     seed_page(&window);
     let said = press_play(&window);
-    assert_eq!(said, naivepost::produce_flow::SKIP_LOG, "the press skipped the encode: {said:?}");
+    assert_eq!(
+        said,
+        naivepost::produce_flow::SKIP_LOG,
+        "the press skipped the encode: {said:?}"
+    );
     let body = std::fs::read_to_string(tree.final_html()).expect("the page is there");
-    assert!(!body.contains("<<<OLD>>>"), "the sentinel survived — S5 did not run on the skip path: {body}");
+    assert!(
+        !body.contains("<<<OLD>>>"),
+        "the sentinel survived — S5 did not run on the skip path: {body}"
+    );
     assert!(
         body.contains(r#"srclang="en" default"#),
         "the rewritten page carries the own-language track: {body}"

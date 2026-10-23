@@ -95,7 +95,10 @@ impl Fake {
                 });
             }
         });
-        Fake { url: format!("http://127.0.0.1:{port}"), asks }
+        Fake {
+            url: format!("http://127.0.0.1:{port}"),
+            asks,
+        }
     }
 
     /// The chat requests this fake has recorded. Recording happens on the connection's own thread, so
@@ -145,7 +148,10 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<ChatAsk> {
     let _ = stream.write_all(framed.as_bytes());
     let _ = stream.flush();
     let _ = stream.shutdown(std::net::Shutdown::Both);
-    Some(ChatAsk { path, body: String::from_utf8_lossy(&body).into_owned() })
+    Some(ChatAsk {
+        path,
+        body: String::from_utf8_lossy(&body).into_owned(),
+    })
 }
 
 /// One recording, its transcript on disk, and its own settings folder pointing at its own fake LLM.
@@ -183,7 +189,8 @@ impl Scene {
                 text: (*text).to_string(),
             })
             .collect();
-        naivepost::textfmt::write_lines(&lines, &tree.transcript_tsv(LANE)).expect("the transcript");
+        naivepost::textfmt::write_lines(&lines, &tree.transcript_tsv(LANE))
+            .expect("the transcript");
         settings::save(&paths, &conf_at(llm_url)).expect("the conf");
         Scene { root, paths }
     }
@@ -260,7 +267,10 @@ fn scripted(replies: Vec<String>) -> Fake {
             });
         }
     });
-    Fake { url: format!("http://127.0.0.1:{port}"), asks }
+    Fake {
+        url: format!("http://127.0.0.1:{port}"),
+        asks,
+    }
 }
 
 /// One call inside the chat envelope, with whatever arguments the caller built.
@@ -307,7 +317,10 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
         .fix(&conf_at(&fake.url), &mut |line| log.push(line.to_string()))
         .expect("the stage fixes the row");
     let asks = fake.waited(1);
-    assert_eq!(blocks, 1, "four lines fit one block of P.machine.fixBlockLines");
+    assert_eq!(
+        blocks, 1,
+        "four lines fit one block of P.machine.fixBlockLines"
+    );
     assert_eq!(asks.len(), 1, "one ask for one block: {asks:?}");
     assert!(
         asks[0].path.contains("/v1/chat/completions"),
@@ -335,11 +348,19 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
     );
     for (index, (start, end, speaker, text)) in SOURCE_ROWS.iter().enumerate() {
         let row = format!("{n}\t{start}\t{end}\t{speaker}\t{text}", n = index + 1);
-        assert!(user.contains(&row), "line {} went out whole: {user}", index + 1);
+        assert!(
+            user.contains(&row),
+            "line {} went out whole: {user}",
+            index + 1
+        );
     }
     // §2's thinking column for this row is OFF. `llm_request` writes the switch in both places a
     // server reads it, so both copies have to say false.
-    assert_eq!(sent["enable_thinking"], serde_json::json!(false), "thinking OFF: {sent}");
+    assert_eq!(
+        sent["enable_thinking"],
+        serde_json::json!(false),
+        "thinking OFF: {sent}"
+    );
     assert_eq!(
         sent["chat_template_kwargs"]["enable_thinking"],
         serde_json::json!(false),
@@ -352,7 +373,10 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
         .filter_map(|tool| tool["function"]["name"].as_str())
         .collect();
     for name in ["fix_line", "flag_line", "finish"] {
-        assert!(offered.contains(&name), "{name} is offered to the fix job: {offered:?}");
+        assert!(
+            offered.contains(&name),
+            "{name} is offered to the fix job: {offered:?}"
+        );
     }
 }
 
@@ -366,19 +390,37 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
     let scene = Scene::new("files", &fake.url);
     let source = scene.source();
     let mut log = Vec::new();
-    scene.fix(&conf_at(&fake.url), &mut |line| log.push(line.to_string())).expect("the fix ran");
+    scene
+        .fix(&conf_at(&fake.url), &mut |line| log.push(line.to_string()))
+        .expect("the fix ran");
     fake.waited(1);
     let fixed = scene.fixed();
     let before: Vec<&str> = source.lines().filter(|row| !row.is_empty()).collect();
     let after: Vec<&str> = fixed.lines().filter(|row| !row.is_empty()).collect();
-    assert_eq!(after.len(), before.len(), "a fix never adds or drops a row: {fixed}");
+    assert_eq!(
+        after.len(),
+        before.len(),
+        "a fix never adds or drops a row: {fixed}"
+    );
     let first = fields(after[0]);
-    assert_eq!(first[3], respelled, "the model's spelling is what the row holds: {fixed}");
+    assert_eq!(
+        first[3], respelled,
+        "the model's spelling is what the row holds: {fixed}"
+    );
     // Times and speaker byte-identical to the source row: `fix_line(n, text)` has nowhere to change them.
     let origin = fields(before[0]);
-    assert_eq!(first[..3], origin[..3], "start, end and speaker are untouched: {fixed}");
+    assert_eq!(
+        first[..3],
+        origin[..3],
+        "start, end and speaker are untouched: {fixed}"
+    );
     for (index, (row, origin)) in after.iter().zip(&before).enumerate().skip(1) {
-        assert_eq!(fields(row), fields(origin), "line {} was not asked about: {row}", index + 1);
+        assert_eq!(
+            fields(row),
+            fields(origin),
+            "line {} was not asked about: {row}",
+            index + 1
+        );
     }
 }
 
@@ -387,21 +429,35 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
 #[test]
 fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript_a_reply_cannot_move_a_time_or_a_speaker(
 ) {
-    let fake = Fake::start(flag_answer(2, "the speaker on this row is the interviewer, not S1"));
+    let fake = Fake::start(flag_answer(
+        2,
+        "the speaker on this row is the interviewer, not S1",
+    ));
     let scene = Scene::new("flags", &fake.url);
     let source = scene.source();
     let mut log = Vec::new();
-    scene.fix(&conf_at(&fake.url), &mut |line| log.push(line.to_string())).expect("the fix ran");
+    scene
+        .fix(&conf_at(&fake.url), &mut |line| log.push(line.to_string()))
+        .expect("the fix ran");
     fake.waited(1);
     let fixed = scene.fixed();
     let before: Vec<&str> = source.lines().filter(|row| !row.is_empty()).collect();
     let after: Vec<&str> = fixed.lines().filter(|row| !row.is_empty()).collect();
-    assert_eq!(after.len(), before.len(), "a flag changes no row count: {fixed}");
+    assert_eq!(
+        after.len(),
+        before.len(),
+        "a flag changes no row count: {fixed}"
+    );
     for (row, origin) in after.iter().zip(&before) {
-        assert_eq!(fields(row), fields(origin), "every field stands as the ASR wrote it: {fixed}");
+        assert_eq!(
+            fields(row),
+            fields(origin),
+            "every field stands as the ASR wrote it: {fixed}"
+        );
     }
     assert!(
-        log.iter().any(|line| line.contains("line 2") && line.contains("interviewer")),
+        log.iter()
+            .any(|line| line.contains("line 2") && line.contains("interviewer")),
         "the note reaches the log rather than being dropped: {log:?}"
     );
 }
@@ -439,7 +495,10 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
 fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_a_shared_read_reaches_the_model_and_the_answer_comes_back(
 ) {
     let read_first = call_answer("get_lines", serde_json::json!({ "from": 1, "to": 2 }));
-    let fake = scripted(vec![read_first, fix_answer(1, "so the algorithm receives the input")]);
+    let fake = scripted(vec![
+        read_first,
+        fix_answer(1, "so the algorithm receives the input"),
+    ]);
     let scene = Scene::new("readback", &fake.url);
     let mut log = Vec::new();
     scene
@@ -456,15 +515,24 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_a_shared_read_re
         .iter()
         .filter_map(|tool| tool["function"]["name"].as_str().map(str::to_string))
         .collect();
-    assert!(offered.iter().any(|name| name == "get_lines"), "get_lines is offered to the fix job: {offered:?}");
+    assert!(
+        offered.iter().any(|name| name == "get_lines"),
+        "get_lines is offered to the fix job: {offered:?}"
+    );
 
     // The second ask carries the answer to the read: both requested rows, stamped, with their speaker.
     // Read back out of the JSON rather than matched as raw text, so the escaping is not what is tested.
     let answers = tool_answers(&asks[1]);
-    let body: serde_json::Value = serde_json::from_str(&answers).expect("the read answered in JSON");
-    let rows = body["lines"].as_array().expect("the lines the model asked for");
+    let body: serde_json::Value =
+        serde_json::from_str(&answers).expect("the read answered in JSON");
+    let rows = body["lines"]
+        .as_array()
+        .expect("the lines the model asked for");
     assert_eq!(rows.len(), 2, "both rows came back: {answers}");
-    assert_eq!(rows[0], "00:00-00:01\tS1\tso the algorithum recieves the input");
+    assert_eq!(
+        rows[0],
+        "00:00-00:01\tS1\tso the algorithum recieves the input"
+    );
     assert_eq!(rows[1], "00:01-00:03\tS1\tand writes it down again");
 
     // And the fix the model made AFTER reading still lands: the read cost a round, not the answer.
@@ -489,13 +557,19 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s7_a_read_with_bad_
         .expect("a bad argument is not a failure");
     let asks = fake.waited(2);
     let answers = tool_answers(&asks[1]);
-    assert!(answers.contains("\"error\""), "the refusal shape reaches the model: {answers}");
+    assert!(
+        answers.contains("\"error\""),
+        "the refusal shape reaches the model: {answers}"
+    );
     assert!(
         answers.contains("from") && answers.contains("to"),
         "it names the arguments to send instead: {answers}"
     );
     // The flow continued past the error: the next round's fix is in the file.
-    assert!(scene.fixed().contains("and writes it down again"), "the block was still fixed");
+    assert!(
+        scene.fixed().contains("and writes it down again"),
+        "the block was still fixed"
+    );
 }
 
 /// §6 on this job's live path: a block's answer is filed under `cache/llm/fix/<sha256 hex>` — §6's
@@ -517,38 +591,63 @@ fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_its_answer_and_replays_it_wit
     assert_eq!(fake.waited(1).len(), 1, "the first pass made one ask");
 
     let tree = scene.tree();
-    let dir = tree.dir().join("cache/llm").join(naivepost::fix_transcripts::FIX_STEP);
+    let dir = tree
+        .dir()
+        .join("cache/llm")
+        .join(naivepost::fix_transcripts::FIX_STEP);
     let slots: Vec<String> = std::fs::read_dir(&dir)
         .unwrap_or_else(|why| panic!("{} exists after an answered block: {why}", dir.display()))
         .flatten()
         .filter_map(|entry| entry.file_name().into_string().ok())
         .collect();
-    assert!(!slots.is_empty(), "an answered block leaves a slot under cache/llm/fix/");
+    assert!(
+        !slots.is_empty(),
+        "an answered block leaves a slot under cache/llm/fix/"
+    );
     for slot in &slots {
-        assert_eq!(slot.len(), 64, "every slot is named by a sha256 hex digest: {slot}");
+        assert_eq!(
+            slot.len(),
+            64,
+            "every slot is named by a sha256 hex digest: {slot}"
+        );
         assert!(
-            slot.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            slot.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
             "lowercase hex, §6's shape: {slot}"
         );
-        assert!(tree.cache_llm(naivepost::fix_transcripts::FIX_STEP, slot).exists());
+        assert!(tree
+            .cache_llm(naivepost::fix_transcripts::FIX_STEP, slot)
+            .exists());
     }
     // The key `fix_transcripts` resumes from is one of them: §6's digest over the block's rows.
     let lines = naivepost::fix_transcripts::load_transcript(&tree, LANE).expect("the source rows");
     let blocks = naivepost::fix_transcripts::blocks(&lines);
     assert_eq!(blocks.len(), 1, "four rows fit one block");
     let block_key = naivepost::fix_transcripts::block_key(&blocks[0]);
-    assert_eq!(block_key.len(), 64, "§6's digest names the resume marker: {block_key}");
-    assert!(slots.contains(&block_key), "the resume slot is filed: {slots:?}");
+    assert_eq!(
+        block_key.len(),
+        64,
+        "§6's digest names the resume marker: {block_key}"
+    );
+    assert!(
+        slots.contains(&block_key),
+        "the resume slot is filed: {slots:?}"
+    );
 
     let rows = naivepost::requests::read(&tree).expect("requests.tsv");
-    assert!(!rows.is_empty(), "the request that earned the answer is recorded");
+    assert!(
+        !rows.is_empty(),
+        "the request that earned the answer is recorded"
+    );
     let fixed = scene.fixed();
     assert!(fixed.contains(respelled), "{fixed}");
 
     // The second pass: same door, same rows, same model — so the cache answers before the gate and the
     // exchange log (§6 + §10), and the file it produces is the same file.
     let mut again = Vec::new();
-    scene.fix(&conf, &mut |line| again.push(line.to_string())).expect("the second fix ran");
+    scene
+        .fix(&conf, &mut |line| again.push(line.to_string()))
+        .expect("the second fix ran");
     assert_eq!(
         fake.asks.lock().expect("the record lock").bodies.len(),
         1,
@@ -565,14 +664,24 @@ fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_its_answer_and_replays_it_wit
         .iter()
         .filter(|row| row.outcome == naivepost::requests::Outcome::Cache)
         .count();
-    assert_eq!(cached_rows, 1, "§10: the cached block wrote its own marked row, and no wire row");
-    assert_eq!(scene.fixed(), fixed, "and the cached pass writes the same fixed transcript");
+    assert_eq!(
+        cached_rows, 1,
+        "§10: the cached block wrote its own marked row, and no wire row"
+    );
+    assert_eq!(
+        scene.fixed(),
+        fixed,
+        "and the cached pass writes the same fixed transcript"
+    );
 }
 
 /// The names of the files filed under `cache/llm/fix/` — §6's slots for this job, at either height
 /// (`fix_call::ask_once`'s reply and `store_block`'s resume rows both land in this one folder).
 fn slots_under(tree: &naivepost::layout::Tree) -> Vec<String> {
-    let dir = tree.dir().join("cache/llm").join(naivepost::fix_transcripts::FIX_STEP);
+    let dir = tree
+        .dir()
+        .join("cache/llm")
+        .join(naivepost::fix_transcripts::FIX_STEP);
     std::fs::read_dir(&dir)
         .map(|rd| {
             rd.flatten()
@@ -606,20 +715,39 @@ fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_only_its_first_attempt() {
 
     // The fix landed anyway: withholding the CACHE is all §6 asks for.
     let fixed = scene.fixed();
-    assert!(fixed.contains(respelled), "the repaired answer still writes the file: {fixed}");
+    assert!(
+        fixed.contains(respelled),
+        "the repaired answer still writes the file: {fixed}"
+    );
     // The repair round's own key is NOT filed: §6 caches the first attempt only, and the plain-ask key
     // that did earn a slot is `block_key`'s (the resume marker), which is why exactly one slot stands.
     let slots = slots_under(&scene.tree());
     assert_eq!(slots.len(), 1, "only the resume marker stands -- {slots:?}");
     let lines = naivepost::fix_transcripts::load_transcript(&scene.tree(), LANE).expect("rows");
-    let marker = naivepost::fix_transcripts::block_key(&naivepost::fix_transcripts::blocks(&lines)[0]);
-    assert!(slots.contains(&marker), "the slot is the block's own marker: {slots:?}");
+    let marker =
+        naivepost::fix_transcripts::block_key(&naivepost::fix_transcripts::blocks(&lines)[0]);
+    assert!(
+        slots.contains(&marker),
+        "the slot is the block's own marker: {slots:?}"
+    );
     let repair_key = naivepost::llm_cache::key(&naivepost::llm_cache::parts(
         &naivepost::llm_cache::Request {
-            system: "", user: "x", state: "", speech: "", context: "",
-            images: Vec::new(), run_index: None, model: "", thinking: false }))
-        .expect("keys");
-    assert!(!slots.contains(&repair_key), "no stray reply slot: {slots:?}");
+            system: "",
+            user: "x",
+            state: "",
+            speech: "",
+            context: "",
+            images: Vec::new(),
+            run_index: None,
+            model: "",
+            thinking: false,
+        },
+    ))
+    .expect("keys");
+    assert!(
+        !slots.contains(&repair_key),
+        "no stray reply slot: {slots:?}"
+    );
 
     // The other half: a first-try answer IS filed, under §6's digest, and the next pass replays it.
     let other = Fake::start(fix_answer(1, respelled));
@@ -631,21 +759,28 @@ fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_only_its_first_attempt() {
         .expect("the first try fixes the block");
     assert_eq!(other.waited(1).len(), 1, "one ask, answered straight off");
     let tree = first_scene.tree();
-    let slots: Vec<String> = std::fs::read_dir(tree.dir().join("cache/llm").join(naivepost::fix_transcripts::FIX_STEP))
-        .expect("a first-try answer leaves a slot")
-        .flatten()
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .collect();
+    let slots: Vec<String> = std::fs::read_dir(
+        tree.dir()
+            .join("cache/llm")
+            .join(naivepost::fix_transcripts::FIX_STEP),
+    )
+    .expect("a first-try answer leaves a slot")
+    .flatten()
+    .filter_map(|entry| entry.file_name().into_string().ok())
+    .collect();
     assert!(!slots.is_empty(), "the first attempt is filed");
     for slot in &slots {
         assert_eq!(slot.len(), 64, "named by a sha256 hex digest: {slot}");
         assert!(
-            slot.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+            slot.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
             "lowercase hex, §6's shape: {slot}"
         );
     }
     let mut replay = Vec::new();
-    first_scene.fix(&first_conf, &mut |line| replay.push(line.to_string())).expect("the replay ran");
+    first_scene
+        .fix(&first_conf, &mut |line| replay.push(line.to_string()))
+        .expect("the replay ran");
     assert_eq!(
         other.asks.lock().expect("the record lock").bodies.len(),
         1,

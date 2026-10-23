@@ -40,10 +40,8 @@ static RAN_BENCH: AtomicBool = AtomicBool::new(false);
 /// A Cut-page window in its own temp folder, so the stage has a real session tree to write its lane file and
 /// its one extracted frame into — the same shape the F2.7/F2.8 shot tests use for the same reason.
 fn shot_window(app: &adw::Application, slug: &str) -> adw::ApplicationWindow {
-    let root = std::env::temp_dir().join(format!(
-        "naivepost-f210-rows-{}-{slug}",
-        std::process::id()
-    ));
+    let root =
+        std::env::temp_dir().join(format!("naivepost-f210-rows-{}-{slug}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let session = naivepost::startup::session_dir(&root);
     std::fs::create_dir_all(session.join("cut")).expect("a session cut folder");
@@ -70,14 +68,17 @@ fn find_named_panic(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget 
         }
         for child in root.observe_children().iter::<glib::Object>() {
             let Ok(child) = child else { continue };
-            let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+            let Ok(widget) = child.downcast::<gtk::Widget>() else {
+                continue;
+            };
             if let Some(found) = walk(&widget, name) {
                 return Some(found);
             }
         }
         None
     }
-    walk(window.upcast_ref(), name).unwrap_or_else(|| panic!("no widget named `{name}` on the page"))
+    walk(window.upcast_ref(), name)
+        .unwrap_or_else(|| panic!("no widget named `{name}` on the page"))
 }
 
 /// The two recordings of the figure, spelled the way `snapshot_rows::recordings` spells them: camera 1 for
@@ -133,7 +134,8 @@ fn check_the_two_plates_name_their_own_recordings(app: &adw::Application) {
     let second = plate(&window, "watch-row-2");
     println!("plates: [{first}] [{second}]");
     assert_eq!(
-        first, snapshot_rows::CAM1,
+        first,
+        snapshot_rows::CAM1,
         "badge 1: the first row's plate names the recording it speaks for"
     );
     assert!(
@@ -155,13 +157,17 @@ fn check_the_two_plates_name_their_own_recordings(app: &adw::Application) {
         "badge 7: the status row carries the spec's sentence: {status}"
     );
     assert!(
-        said.iter().any(|line| line.starts_with("watching camera 2")),
+        said.iter()
+            .any(|line| line.starts_with("watching camera 2")),
         "and the recipe prints the same sentence it painted"
     );
     // The two rows really are two rows: the stage's two recordings, laid out on different rows by the
     // greedy colouring, and each named by its own base rather than by a row number.
     let placed = naivepost::timeline::rows_for(&recordings(), &ui::review_cut_of(&window));
-    assert_ne!(placed[0], placed[1], "the overlap put the two cameras on different rows");
+    assert_ne!(
+        placed[0], placed[1],
+        "the overlap put the two cameras on different rows"
+    );
     assert_eq!(
         bases(&recordings()),
         vec![snapshot_rows::CAM1, snapshot_rows::CAM2],
@@ -192,7 +198,11 @@ fn check_clicking_the_other_plate_moves_the_outline(app: &adw::Application) {
     let asked = ui::cut_picture::preview_asked_for_test();
     println!("preview asked: {asked:?}");
     let (base, at) = asked.expect("the panel asked frames for a recording");
-    assert_eq!(base, snapshot_rows::CAM2, "badge 5: the preview asked the WATCHED row's camera");
+    assert_eq!(
+        base,
+        snapshot_rows::CAM2,
+        "badge 5: the preview asked the WATCHED row's camera"
+    );
     // `timeline::local_at` answers in the FILE's own clock, shift included: 25 − 20 + (−19) = −14, i.e. the
     // line stands 14 s BEFORE camera 2's tape begins (its stamp puts it 19 s earlier and only 5 s of that
     // correction was undone by the difference in stamps). The ask and the frame looked up are computed in one
@@ -243,7 +253,10 @@ fn check_clicking_the_other_plate_moves_the_outline(app: &adw::Application) {
     let back_said = ui::hand_preview_back(&window);
     settle();
     println!("hand-back said: {back_said:?}");
-    assert!(back_said.is_some(), "the play button hands a watched row back to the cut");
+    assert!(
+        back_said.is_some(),
+        "the play button hands a watched row back to the cut"
+    );
     assert_eq!(
         ui::camera_watch(&window).borrow().row,
         None,
@@ -269,13 +282,19 @@ fn check_the_lens_badge_moves_the_picture_to_the_other_row(app: &adw::Applicatio
     snapshot_rows::stage(&window, &fixture_dir());
     settle();
     let before = scene_at_line(&window).cam;
-    assert_eq!(before, 0, "badge 6: the one kept scene starts on camera 1's row");
+    assert_eq!(
+        before, 0,
+        "badge 6: the one kept scene starts on camera 1's row"
+    );
     ui::line_step_button(&window, "scene-lens-0")
         .expect("the scene drew its lens badge")
         .emit_by_name::<()>("clicked", &[]);
     settle();
     let after = scene_at_line(&window).cam;
-    assert_eq!(after, 1, "the press moved the scene's picture to the row that filmed the overlap");
+    assert_eq!(
+        after, 1,
+        "the press moved the scene's picture to the row that filmed the overlap"
+    );
     let status = status_text(&window);
     println!("lens status: {status}");
     assert!(
@@ -327,7 +346,11 @@ fn check_a_speaker_badge_silences_one_scene_and_the_switch_the_cut(app: &adw::Ap
         naivepost::cut_hear::lane_is_heard_anywhere(&switched, &[snapshot_rows::MIC])
             != naivepost::cut_hear::lane_is_heard_anywhere(&hushed, &[snapshot_rows::MIC]),
         "the gutter switch answers for the whole cut, so its own reading flipped: {:?}",
-        switched.segs.iter().map(|seg| seg.quiet.clone()).collect::<Vec<_>>()
+        switched
+            .segs
+            .iter()
+            .map(|seg| seg.quiet.clone())
+            .collect::<Vec<_>>()
     );
     RAN_HEARING.store(true, Ordering::SeqCst);
     window.close();
@@ -348,7 +371,10 @@ fn check_add_over_the_same_seconds_on_the_other_camera_adds_nothing(app: &adw::A
     let after = ui::review_cut_segs_count(&window);
     match outcome {
         naivepost::cut_verbs::Outcome::Refused(_) => {
-            assert_eq!(after, before, "a refusal changed nothing: {before} -> {after}")
+            assert_eq!(
+                after, before,
+                "a refusal changed nothing: {before} -> {after}"
+            )
         }
         // The other answer the rule gives: the seconds were TAKEN OFF the other camera and handed to camera 2
         // (cut_verbs::add's steal). The kept footage is then the same 0-37 stretch either way -- what may not
@@ -454,13 +480,28 @@ fn round() {
         let log = log.clone();
         app.connect_activate(move |app| {
             for (name, check) in [
-                ("plates", check_the_two_plates_name_their_own_recordings as fn(&adw::Application)),
+                (
+                    "plates",
+                    check_the_two_plates_name_their_own_recordings as fn(&adw::Application),
+                ),
                 ("watch", check_clicking_the_other_plate_moves_the_outline),
-                ("lens", check_the_lens_badge_moves_the_picture_to_the_other_row),
-                ("hearing", check_a_speaker_badge_silences_one_scene_and_the_switch_the_cut),
-                ("add", check_add_over_the_same_seconds_on_the_other_camera_adds_nothing),
+                (
+                    "lens",
+                    check_the_lens_badge_moves_the_picture_to_the_other_row,
+                ),
+                (
+                    "hearing",
+                    check_a_speaker_badge_silences_one_scene_and_the_switch_the_cut,
+                ),
+                (
+                    "add",
+                    check_add_over_the_same_seconds_on_the_other_camera_adds_nothing,
+                ),
                 ("covers", check_the_shot_covers_both_camera_rows),
-                ("bench", check_the_bench_stays_scrolled_and_the_rows_are_painted),
+                (
+                    "bench",
+                    check_the_bench_stays_scrolled_and_the_rows_are_painted,
+                ),
             ] {
                 if let Err(panic) =
                     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check(app)))
@@ -478,7 +519,9 @@ fn round() {
                         "lens" => RAN_LENS.store(true, Ordering::SeqCst),
                         "hearing" => RAN_HEARING.store(true, Ordering::SeqCst),
                         "covers" => RAN_COVERS.store(true, Ordering::SeqCst),
-                        "bench" => { let _ = (); }
+                        "bench" => {
+                            let _ = ();
+                        }
                         _ => RAN_ADD.store(true, Ordering::SeqCst),
                     }
                 }
@@ -488,13 +531,20 @@ fn round() {
         app.run_with_args::<String>(&[]);
     });
     let failed = failures.lock().unwrap().clone();
-    assert!(failed.is_empty(), "05-rows shot checks failed -> {}", failed.join(" // "));
+    assert!(
+        failed.is_empty(),
+        "05-rows shot checks failed -> {}",
+        failed.join(" // ")
+    );
 }
 
 #[test]
 fn f2_10_s1_the_shot_covers_both_camera_rows() {
     round();
-    assert!(RAN_COVERS.load(Ordering::SeqCst), "the shot-coverage check never ran");
+    assert!(
+        RAN_COVERS.load(Ordering::SeqCst),
+        "the shot-coverage check never ran"
+    );
 }
 
 #[test]
@@ -509,7 +559,10 @@ fn f2_10_s3_a_seeded_second_camera_keeps_its_own_base_on_its_plate() {
 #[test]
 fn f2_10_s4_clicking_the_other_plate_moves_the_outline_and_the_preview() {
     round();
-    assert!(RAN_WATCH.load(Ordering::SeqCst), "the watch-wire check never ran");
+    assert!(
+        RAN_WATCH.load(Ordering::SeqCst),
+        "the watch-wire check never ran"
+    );
 }
 
 #[test]
@@ -521,7 +574,10 @@ fn f2_10_s1_the_lens_badge_names_the_row_the_scene_is_shown_from() {
 #[test]
 fn f2_10_s2_a_speaker_badge_silences_one_scene_and_the_gutter_switch_the_whole_cut() {
     round();
-    assert!(RAN_HEARING.load(Ordering::SeqCst), "the hearing check never ran");
+    assert!(
+        RAN_HEARING.load(Ordering::SeqCst),
+        "the hearing check never ran"
+    );
 }
 
 #[test]
@@ -536,5 +592,8 @@ fn f2_10_s5_the_bench_stays_scrolled_and_both_rows_are_painted() {
 #[test]
 fn f2_10_s3_add_over_the_same_seconds_on_the_other_camera_adds_nothing() {
     round();
-    assert!(RAN_ADD.load(Ordering::SeqCst), "the Add-over-the-overlap check never ran");
+    assert!(
+        RAN_ADD.load(Ordering::SeqCst),
+        "the Add-over-the-overlap check never ran"
+    );
 }

@@ -20,19 +20,38 @@ const CAM_TWO: &str = "17-25-45";
 /// The two recordings of the figure, overlapping from 20 — **3**, "both cameras filmed it".
 fn pair() -> Vec<Recording> {
     vec![
-        Recording { base: CAM_ONE.to_string(), start: 0.0, end: 37.0 },
-        Recording { base: CAM_TWO.to_string(), start: 20.0, end: 37.0 },
+        Recording {
+            base: CAM_ONE.to_string(),
+            start: 0.0,
+            end: 37.0,
+        },
+        Recording {
+            base: CAM_TWO.to_string(),
+            start: 20.0,
+            end: 37.0,
+        },
     ]
 }
 
 /// Kept footage taken from `row`.
 fn film(s: f64, e: f64, row: i32) -> Seg {
-    Seg { s, e, cam: row, ..Default::default() }
+    Seg {
+        s,
+        e,
+        cam: row,
+        ..Default::default()
+    }
 }
 
 /// A card at the line: it owns no footage and answers to no row.
 fn card(at: f64) -> Seg {
-    Seg { s: at, e: at, ins: "assets/sting.mp4".into(), dur: 3.0, ..Default::default() }
+    Seg {
+        s: at,
+        e: at,
+        ins: "assets/sting.mp4".into(),
+        dur: 3.0,
+        ..Default::default()
+    }
 }
 
 /// The rows the figure's pair gets colouring-free: greedy colouring in start order puts the overlap lower.
@@ -47,10 +66,23 @@ fn two_rows(cut: &Cut) -> Vec<usize> {
 #[test]
 fn f2_10_s1_the_lens_badge_lights_on_the_row_a_scene_is_shown_from() {
     let scene = film(6.0, 12.0, 1);
-    assert_eq!(cam::scene_row(&scene), 1, "the badge reads the scene's own row");
-    assert!(cam::shown_from(cam::scene_row(&scene), 1), "lit on the row it is shown from");
-    assert!(!cam::shown_from(cam::scene_row(&scene), 0), "dark on the row above");
-    assert!(!cam::shown_from(cam::scene_row(&scene), 2), "and dark on the row below");
+    assert_eq!(
+        cam::scene_row(&scene),
+        1,
+        "the badge reads the scene's own row"
+    );
+    assert!(
+        cam::shown_from(cam::scene_row(&scene), 1),
+        "lit on the row it is shown from"
+    );
+    assert!(
+        !cam::shown_from(cam::scene_row(&scene), 0),
+        "dark on the row above"
+    );
+    assert!(
+        !cam::shown_from(cam::scene_row(&scene), 2),
+        "and dark on the row below"
+    );
 }
 
 /// F2.10 (Cameras and hearing) S1 — `the scene at m:ss is shown from <cam> now`: picking a row takes the scene's
@@ -61,8 +93,12 @@ fn f2_10_s1_picking_a_row_says_which_camera_the_scene_uses() {
     cut.segs.push(film(6.0, 12.0, 0));
     let rows = two_rows(&cut);
 
-    let said = cam::show_scene_from(&mut cut, 0, 1, &pair(), &rows).expect("a kept scene has a picture to move");
-    assert_eq!(said, "the scene at 0:06 is shown from 17-25-45 now", "the spec's own sentence, m:ss unpadded");
+    let said = cam::show_scene_from(&mut cut, 0, 1, &pair(), &rows)
+        .expect("a kept scene has a picture to move");
+    assert_eq!(
+        said, "the scene at 0:06 is shown from 17-25-45 now",
+        "the spec's own sentence, m:ss unpadded"
+    );
 
     // And the badges follow what was written: one row lit, the row it left dark.
     let scene = &cut.segs[0];
@@ -77,12 +113,24 @@ fn f2_10_s1_picking_a_row_says_which_camera_the_scene_uses() {
 #[test]
 fn f2_10_s1_a_row_with_no_recording_is_called_its_number() {
     let rows = two_rows(&Cut::default());
-    assert_eq!(cam::row_name(0, &pair(), &rows), CAM_ONE, "the recording on the row speaks for it");
+    assert_eq!(
+        cam::row_name(0, &pair(), &rows),
+        CAM_ONE,
+        "the recording on the row speaks for it"
+    );
     assert_eq!(cam::row_name(1, &pair(), &rows), CAM_TWO);
 
     // A third row nothing was laid on — the ✕ has not been pressed yet.
-    assert_eq!(cam::row_name(2, &pair(), &rows), "row 3", "one-based, because that is how the page numbers rows");
-    assert_eq!(cam::row_name(0, &[], &[]), "row 1", "and a page with no recordings at all still has a row 1");
+    assert_eq!(
+        cam::row_name(2, &pair(), &rows),
+        "row 3",
+        "one-based, because that is how the page numbers rows"
+    );
+    assert_eq!(
+        cam::row_name(0, &[], &[]),
+        "row 1",
+        "and a page with no recordings at all still has a row 1"
+    );
 }
 
 /// F2.10 (Cameras and hearing) S1 — an insert has no picture of its own to be shown from a row: asking it which
@@ -94,8 +142,15 @@ fn f2_10_s1_an_insert_has_no_picture_to_show_from_a_row() {
     let before = cut.segs[0].cam;
     let rows = two_rows(&cut);
 
-    assert_eq!(cam::show_scene_from(&mut cut, 0, 1, &pair(), &rows), None, "a card answers to no row");
-    assert_eq!(cut.segs[0].cam, before, "and its cam stays as it was rather than becoming a number nothing reads");
+    assert_eq!(
+        cam::show_scene_from(&mut cut, 0, 1, &pair(), &rows),
+        None,
+        "a card answers to no row"
+    );
+    assert_eq!(
+        cut.segs[0].cam, before,
+        "and its cam stays as it was rather than becoming a number nothing reads"
+    );
 
     // A press aimed at a scene the cut does not hold changes nothing either.
     assert_eq!(cam::show_scene_from(&mut cut, 9, 1, &pair(), &rows), None);
@@ -108,15 +163,24 @@ fn f2_10_s1_an_insert_has_no_picture_to_show_from_a_row() {
 #[test]
 fn f2_10_s1_the_name_plate_shows_a_shift_correction() {
     let plate = cam::name_plate(CAM_TWO, -19.0, 0.0);
-    assert!(plate.starts_with(CAM_TWO), "the plate speaks for the recording: {plate}");
-    assert!(plate.ends_with("-19.00 s"), "signed and to two decimals, so it reads as a correction: {plate}");
+    assert!(
+        plate.starts_with(CAM_TWO),
+        "the plate speaks for the recording: {plate}"
+    );
+    assert!(
+        plate.ends_with("-19.00 s"),
+        "signed and to two decimals, so it reads as a correction: {plate}"
+    );
 
     // No correction, no mention: an untouched camera's plate is its name and nothing else.
     assert_eq!(cam::name_plate(CAM_ONE, 0.0, 0.0), CAM_ONE);
     // A lane cut from a recording says which part of it the row shows.
     assert_eq!(cam::name_plate(CAM_TWO, 0.0, 60.0), "17-25-45 from 1:00");
     // Both at once, in the order the page writes them.
-    assert_eq!(cam::name_plate(CAM_TWO, 2.5, 60.0), "17-25-45 from 1:00 +2.50 s");
+    assert_eq!(
+        cam::name_plate(CAM_TWO, 2.5, 60.0),
+        "17-25-45 from 1:00 +2.50 s"
+    );
 }
 
 /// F2.10 (Cameras and hearing) — the rewrite's own rule from the Prototype paragraph: a row-drag pins ONLY the
@@ -128,9 +192,21 @@ fn f2_10_s1_a_drag_pins_only_what_it_dragged() {
     before.insert("older".to_string(), 3);
 
     let pinned = cam::pin_for_drag(CAM_TWO, 0, &before);
-    assert_eq!(pinned.get(CAM_TWO), Some(&0), "the dragged recording is pinned where it was dropped");
-    assert_eq!(pinned.get("older"), Some(&3), "every other pin is carried over untouched");
-    assert_eq!(pinned.len(), 2, "and a drag adds no pin for anything else — the prototype pinned the whole row");
+    assert_eq!(
+        pinned.get(CAM_TWO),
+        Some(&0),
+        "the dragged recording is pinned where it was dropped"
+    );
+    assert_eq!(
+        pinned.get("older"),
+        Some(&3),
+        "every other pin is carried over untouched"
+    );
+    assert_eq!(
+        pinned.len(),
+        2,
+        "and a drag adds no pin for anything else — the prototype pinned the whole row"
+    );
 
     // (a) A drag that creates an overlap: the second recording is dropped onto the first's row. Pinning only
     // what was dragged lets the colouring re-run, and the new overlap gets a row of its own — which is what the
@@ -138,8 +214,14 @@ fn f2_10_s1_a_drag_pins_only_what_it_dragged() {
     let mut cut = Cut::default();
     cut.rows = cam::pin_for_drag(CAM_TWO, 0, &BTreeMap::new());
     let rows = rows_for(&pair(), &cut);
-    assert_eq!(rows[1], 0, "the recording dragged is pinned to the row it was dropped on");
-    assert_ne!(rows[0], rows[1], "and the overlap made by the drag gets a row of its own: {rows:?}");
+    assert_eq!(
+        rows[1], 0,
+        "the recording dragged is pinned to the row it was dropped on"
+    );
+    assert_ne!(
+        rows[0], rows[1],
+        "and the overlap made by the drag gets a row of its own: {rows:?}"
+    );
 
     // (b) A pin read from the file is still taken LITERAL — the editor moved that recording knowing what was
     // under it — even when it overlaps what already sits there.
@@ -149,7 +231,11 @@ fn f2_10_s1_a_drag_pins_only_what_it_dragged() {
     let mut cut = Cut::default();
     cut.rows = literal;
     let rows = rows_for(&pair(), &cut);
-    assert_eq!(rows, vec![1, 1], "both stay on the row the file named them, overlap and all");
+    assert_eq!(
+        rows,
+        vec![1, 1],
+        "both stay on the row the file named them, overlap and all"
+    );
 
     // (c) The gesture itself says WHICH recording it took, because that is the only thing the page may pin.
     // A drag that moved a scene or a whole row names no file and therefore pins nothing — pinning the row's
@@ -206,9 +292,21 @@ fn f2_10_s1_s2_a_badge_means_the_held_scene_or_the_one_under_the_line() {
     };
 
     // Nothing held: the line decides, and only a line INSIDE a kept footage scene decides anything.
-    assert_eq!(cam::held_or_line_scene(&cut, Some(5.0), None), Some(0), "the line's own scene");
-    assert_eq!(cam::held_or_line_scene(&cut, Some(15.0), None), None, "a line over a hole names nothing");
-    assert_eq!(cam::held_or_line_scene(&cut, None, None), None, "no line, no scene");
+    assert_eq!(
+        cam::held_or_line_scene(&cut, Some(5.0), None),
+        Some(0),
+        "the line's own scene"
+    );
+    assert_eq!(
+        cam::held_or_line_scene(&cut, Some(15.0), None),
+        None,
+        "a line over a hole names nothing"
+    );
+    assert_eq!(
+        cam::held_or_line_scene(&cut, None, None),
+        None,
+        "no line, no scene"
+    );
 
     // Held wins over the line — the thing in hand is the thing the person is working on.
     let held = film(20.0, 30.0, 0);
@@ -222,10 +320,18 @@ fn f2_10_s1_s2_a_badge_means_the_held_scene_or_the_one_under_the_line() {
         segs: vec![card(5.0)],
         ..Default::default()
     };
-    assert_eq!(cam::held_or_line_scene(&cards, Some(5.0), None), None, "an insert has no picture to re-source");
+    assert_eq!(
+        cam::held_or_line_scene(&cards, Some(5.0), None),
+        None,
+        "an insert has no picture to re-source"
+    );
     // A hold that no longer matches any kept scene (renumbered away) names nothing rather than a neighbour.
     let gone = film(99.0, 99.5, 0);
-    assert_eq!(cam::held_or_line_scene(&cut, Some(5.0), Some(&gone)), None, "a spent hold edits nothing");
+    assert_eq!(
+        cam::held_or_line_scene(&cut, Some(5.0), Some(&gone)),
+        None,
+        "a spent hold edits nothing"
+    );
 }
 
 /// F2.10 (Cameras and hearing) S1 — the rows a scene's 🔍 can cycle through, and where a press lands.
@@ -239,19 +345,41 @@ fn f2_10_s1_the_scene_lens_cycles_over_the_rows_that_filmed_it() {
     // The spec's scene: 0–37 on camera 1, with camera 2 rolling from 20.
     let scene = film(0.0, 37.0, 0);
     let filming = cam::filming_rows(&scene, &recordings, &rows);
-    assert_eq!(filming, vec![0, 1], "both tapes were running inside those seconds");
-    assert_eq!(cam::next_filming_row(0, &filming), Some(1), "from camera 1 the press goes to camera 2");
-    assert_eq!(cam::next_filming_row(1, &filming), Some(0), "and it wraps back, so every camera is reachable");
+    assert_eq!(
+        filming,
+        vec![0, 1],
+        "both tapes were running inside those seconds"
+    );
+    assert_eq!(
+        cam::next_filming_row(0, &filming),
+        Some(1),
+        "from camera 1 the press goes to camera 2"
+    );
+    assert_eq!(
+        cam::next_filming_row(1, &filming),
+        Some(0),
+        "and it wraps back, so every camera is reachable"
+    );
 
     // One camera only: nowhere to switch to, which is what greys the badge rather than hiding it. The tape
     // has to overlap the scene for its row to count — `pair()`'s two tapes both stop at 37.
     let alone = film(25.0, 30.0, 0);
-    assert_eq!(cam::filming_rows(&alone, &[recordings[0].clone()], &[0]), vec![0]);
-    assert_eq!(cam::next_filming_row(0, &[0]), None, "a lone camera has no next row");
+    assert_eq!(
+        cam::filming_rows(&alone, &[recordings[0].clone()], &[0]),
+        vec![0]
+    );
+    assert_eq!(
+        cam::next_filming_row(0, &[0]),
+        None,
+        "a lone camera has no next row"
+    );
 
     // A tape that stopped before the scene began is not an option at all.
     let later = film(50.0, 60.0, 0);
-    assert!(cam::filming_rows(&later, &recordings, &rows).is_empty(), "nothing filmed those seconds");
+    assert!(
+        cam::filming_rows(&later, &recordings, &rows).is_empty(),
+        "nothing filmed those seconds"
+    );
 }
 
 // --- S2: what a scene hears -------------------------------------------------------------------------------
@@ -264,14 +392,24 @@ fn f2_10_s2_a_speaker_badge_silences_one_lane_in_one_scene() {
     cut.segs.push(film(40.0, 50.0, 0));
     cut.segs.push(film(60.0, 70.0, 0));
 
-    assert_eq!(hear::toggle_heard(&mut cut, 0, CAM_TWO), Some(format!("{CAM_TWO} is silent in the scene at 0:40")));
+    assert_eq!(
+        hear::toggle_heard(&mut cut, 0, CAM_TWO),
+        Some(format!("{CAM_TWO} is silent in the scene at 0:40"))
+    );
 
     let scene = &cut.segs[0];
     assert!(!scene.hears(CAM_TWO), "the scene no longer hears that lane");
-    assert_eq!(hear::hush(scene), [CAM_TWO.to_string()], "and its quiet list is what says so");
+    assert_eq!(
+        hear::hush(scene),
+        [CAM_TWO.to_string()],
+        "and its quiet list is what says so"
+    );
     assert!(scene.hears(CAM_ONE), "another lane keeps its say");
     // The other scene was not pressed and hears everything, as it did.
-    assert!(cut.segs[1].hears(CAM_TWO), "a badge speaks for one scene only");
+    assert!(
+        cut.segs[1].hears(CAM_TWO),
+        "a badge speaks for one scene only"
+    );
 }
 
 /// F2.10 (Cameras and hearing) S2 — the same press again turns the lane back on and says so in the same
@@ -282,11 +420,17 @@ fn f2_10_s2_the_second_press_says_it_is_heard_again() {
     cut.segs.push(film(40.0, 50.0, 0));
 
     hear::toggle_heard(&mut cut, 0, CAM_TWO);
-    assert_eq!(hear::toggle_heard(&mut cut, 0, CAM_TWO), Some(format!("{CAM_TWO} is heard in the scene at 0:40")));
+    assert_eq!(
+        hear::toggle_heard(&mut cut, 0, CAM_TWO),
+        Some(format!("{CAM_TWO} is heard in the scene at 0:40"))
+    );
 
     let scene = &cut.segs[0];
     assert!(scene.hears(CAM_TWO), "heard again");
-    assert!(scene.quiet.is_empty(), "and nothing left behind claiming otherwise");
+    assert!(
+        scene.quiet.is_empty(),
+        "and nothing left behind claiming otherwise"
+    );
 }
 
 /// F2.10 (Cameras and hearing) S2 — `quiet` is a SET, compared as a set and written fresh per press
@@ -301,7 +445,11 @@ fn f2_10_s2_quiet_is_a_set_written_fresh_each_press() {
 
     // Pressing it as though silencing: heard is false, so the press brings it back — once, and entirely.
     hear::toggle_heard(&mut cut, 0, CAM_TWO);
-    assert_eq!(cut.segs[0].quiet, Vec::<String>::new(), "un-listing leaves no hole and no duplicate");
+    assert_eq!(
+        cut.segs[0].quiet,
+        Vec::<String>::new(),
+        "un-listing leaves no hole and no duplicate"
+    );
 
     // Two lanes silenced in order: the list holds each once, whatever order they arrived in.
     hear::toggle_heard(&mut cut, 0, CAM_TWO);
@@ -315,7 +463,11 @@ fn f2_10_s2_quiet_is_a_set_written_fresh_each_press() {
     hear::toggle_heard(&mut cut, 0, CAM_TWO);
     quiet = cut.segs[0].quiet.clone();
     quiet.sort();
-    assert_eq!(quiet, vec![CAM_ONE.to_string()], "and the lane that was not pressed is still silent");
+    assert_eq!(
+        quiet,
+        vec![CAM_ONE.to_string()],
+        "and the lane that was not pressed is still silent"
+    );
 }
 
 /// F2.10 (Cameras and hearing) S2 — a row's gutter switch stands for EVERY recording on that row, so it reads as
@@ -328,18 +480,30 @@ fn f2_10_s2_a_row_switch_stands_for_every_recording_on_its_row() {
     cut.segs.push(film(60.0, 70.0, 0));
     let row = [CAM_ONE, CAM_TWO];
 
-    assert!(hear::lane_is_heard_anywhere(&cut, &row), "everything heard, so the switch is on");
+    assert!(
+        hear::lane_is_heard_anywhere(&cut, &row),
+        "everything heard, so the switch is on"
+    );
 
     // Silence one of the two in one scene: the row is still heard — here and everywhere else.
     hear::toggle_heard(&mut cut, 0, CAM_ONE);
-    assert!(hear::lane_is_heard_anywhere(&cut, &row), "half-silenced is still heard");
+    assert!(
+        hear::lane_is_heard_anywhere(&cut, &row),
+        "half-silenced is still heard"
+    );
 
     // And the switch finishes it: both lanes silent in every scene that could hear them.
     let said = hear::toggle_lane_all(&mut cut, &row, CAM_ONE);
     assert!(said.contains("off for the whole cut"), "{said}");
-    assert!(!hear::lane_is_heard_anywhere(&cut, &row), "the row is off now, in every scene");
+    assert!(
+        !hear::lane_is_heard_anywhere(&cut, &row),
+        "the row is off now, in every scene"
+    );
     for seg in &cut.segs {
-        assert!(!seg.hears(CAM_ONE) && !seg.hears(CAM_TWO), "{seg:?} still hears part of the row");
+        assert!(
+            !seg.hears(CAM_ONE) && !seg.hears(CAM_TWO),
+            "{seg:?} still hears part of the row"
+        );
     }
 
     // A recording outside the row is heard by exactly the same rule — nothing lists it — so a switch about it
@@ -355,12 +519,18 @@ fn f2_10_s2_the_gutter_switch_speaks_for_the_whole_cut() {
     cut.segs.push(film(40.0, 50.0, 0));
     cut.segs.push(film(60.0, 70.0, 0));
 
-    assert_eq!(hear::toggle_lane_all(&mut cut, &[CAM_TWO], CAM_TWO), format!("{CAM_TWO} off for the whole cut \u{2014} 2 scene(s) changed"));
+    assert_eq!(
+        hear::toggle_lane_all(&mut cut, &[CAM_TWO], CAM_TWO),
+        format!("{CAM_TWO} off for the whole cut \u{2014} 2 scene(s) changed")
+    );
     for seg in &cut.segs {
         assert!(!seg.hears(CAM_TWO), "{seg:?} was left hearing it");
     }
 
-    assert_eq!(hear::toggle_lane_all(&mut cut, &[CAM_TWO], CAM_TWO), format!("{CAM_TWO} is on for the whole cut \u{2014} every scene hears it (2 changed)"));
+    assert_eq!(
+        hear::toggle_lane_all(&mut cut, &[CAM_TWO], CAM_TWO),
+        format!("{CAM_TWO} is on for the whole cut \u{2014} every scene hears it (2 changed)")
+    );
     for seg in &cut.segs {
         assert!(seg.hears(CAM_TWO), "{seg:?} was left silent");
     }
@@ -369,7 +539,10 @@ fn f2_10_s2_the_gutter_switch_speaks_for_the_whole_cut() {
     let mut cut = Cut::default();
     cut.segs.push(film(40.0, 50.0, 0));
     hear::toggle_lane_all(&mut cut, &[CAM_TWO], CAM_TWO);
-    assert!(cut.segs[0].hears(CAM_ONE), "the first camera was never in question");
+    assert!(
+        cut.segs[0].hears(CAM_ONE),
+        "the first camera was never in question"
+    );
 }
 
 /// F2.10 (Cameras and hearing) S2 — a cut with nothing in it has no scene to answer for a lane, and the page
@@ -378,8 +551,14 @@ fn f2_10_s2_the_gutter_switch_speaks_for_the_whole_cut() {
 #[test]
 fn f2_10_s2_a_lane_in_no_scene_says_so_and_changes_nothing() {
     let mut empty = Cut::default();
-    assert_eq!(hear::toggle_lane_all(&mut empty, &[CAM_TWO], CAM_TWO), format!("{CAM_TWO} is in no scene yet \u{2014} cut something first"));
-    assert!(empty.segs.is_empty(), "and the refusal invented no scene to hear it with");
+    assert_eq!(
+        hear::toggle_lane_all(&mut empty, &[CAM_TWO], CAM_TWO),
+        format!("{CAM_TWO} is in no scene yet \u{2014} cut something first")
+    );
+    assert!(
+        empty.segs.is_empty(),
+        "and the refusal invented no scene to hear it with"
+    );
 
     // A recording no scene was cut with is not silent anywhere either: `quiet` names what a scene does NOT hear,
     // so a lane nobody lists is heard — which is the whole of F2.5 S1's rule, and why silencing a lane means
@@ -387,13 +566,25 @@ fn f2_10_s2_a_lane_in_no_scene_says_so_and_changes_nothing() {
     let mut cut = Cut::default();
     cut.segs.push(film(40.0, 50.0, 0));
     let stranger = "18-01-01 09-00-00";
-    assert!(hear::lane_is_heard_anywhere(&cut, &[stranger]), "no scene says otherwise about it");
-    assert!(!hear::all_silent(&cut, &[stranger]), "and silence is only ever what was written down");
+    assert!(
+        hear::lane_is_heard_anywhere(&cut, &[stranger]),
+        "no scene says otherwise about it"
+    );
+    assert!(
+        !hear::all_silent(&cut, &[stranger]),
+        "and silence is only ever what was written down"
+    );
 
     // So its switch reads ON, and pressing it does the work: every kept scene lists it, counted honestly.
     let before: Vec<Vec<String>> = cut.segs.iter().map(|seg| seg.quiet.clone()).collect();
-    assert!(before.iter().all(Vec::is_empty), "no scene named anything yet");
-    assert_eq!(hear::toggle_lane_all(&mut cut, &[stranger], stranger), format!("{stranger} off for the whole cut \u{2014} 1 scene(s) changed"));
+    assert!(
+        before.iter().all(Vec::is_empty),
+        "no scene named anything yet"
+    );
+    assert_eq!(
+        hear::toggle_lane_all(&mut cut, &[stranger], stranger),
+        format!("{stranger} off for the whole cut \u{2014} 1 scene(s) changed")
+    );
     assert!(!cut.segs[0].hears(stranger), "and now the scene says so");
 }
 
@@ -407,13 +598,27 @@ fn f2_10_s2_an_inserts_hearing_is_not_the_switches_business() {
 
     // The badge on the card reports what is already true and writes nothing.
     let said = hear::toggle_heard(&mut cut, 1, CAM_TWO).expect("the scene index exists");
-    assert_eq!(said, format!("{CAM_TWO} is heard in the scene at 1:00"), "no change, so no silence claimed");
-    assert!(cut.segs[1].quiet.is_empty(), "and the card's quiet list stayed empty");
+    assert_eq!(
+        said,
+        format!("{CAM_TWO} is heard in the scene at 1:00"),
+        "no change, so no silence claimed"
+    );
+    assert!(
+        cut.segs[1].quiet.is_empty(),
+        "and the card's quiet list stayed empty"
+    );
 
     // The gutter switch moves the kept scene and leaves the card out of the count it reports.
     let off = hear::toggle_lane_all(&mut cut, &[CAM_TWO], CAM_TWO);
-    assert_eq!(off, format!("{CAM_TWO} off for the whole cut \u{2014} 1 scene(s) changed"), "one kept scene, not two");
-    assert!(cut.segs[1].quiet.is_empty(), "a card was never asked which lanes it hears");
+    assert_eq!(
+        off,
+        format!("{CAM_TWO} off for the whole cut \u{2014} 1 scene(s) changed"),
+        "one kept scene, not two"
+    );
+    assert!(
+        cut.segs[1].quiet.is_empty(),
+        "a card was never asked which lanes it hears"
+    );
     assert!(!cut.segs[0].hears(CAM_TWO), "the footage did move");
 }
 
@@ -424,16 +629,38 @@ fn f2_10_s2_an_inserts_hearing_is_not_the_switches_business() {
 #[test]
 fn f2_10_s3_a_click_watches_the_row_and_the_preview_follows() {
     let mut watch = cam::Watch::default();
-    assert_eq!(watch.preview_shows(0), 0, "with nothing watched the preview shows the cut");
+    assert_eq!(
+        watch.preview_shows(0),
+        0,
+        "with nothing watched the preview shows the cut"
+    );
 
     cam::click_row(&mut watch, 1, &[], None);
-    assert_eq!(watch.row, Some(1), "a click always watches, whatever else it says");
-    assert_eq!(watch.preview_shows(0), 1, "**5** the preview shows the watched row, not the cut");
+    assert_eq!(
+        watch.row,
+        Some(1),
+        "a click always watches, whatever else it says"
+    );
+    assert_eq!(
+        watch.preview_shows(0),
+        1,
+        "**5** the preview shows the watched row, not the cut"
+    );
 
-    assert!(watch.play_hands_back(), "▶ took the preview back to the cut");
+    assert!(
+        watch.play_hands_back(),
+        "▶ took the preview back to the cut"
+    );
     assert_eq!(watch.row, None);
-    assert_eq!(watch.preview_shows(0), 0, "and the cut is what the preview shows again");
-    assert!(!watch.play_hands_back(), "with nothing watched there was nothing to hand back");
+    assert_eq!(
+        watch.preview_shows(0),
+        0,
+        "and the cut is what the preview shows again"
+    );
+    assert!(
+        !watch.play_hands_back(),
+        "with nothing watched there was nothing to hand back"
+    );
 
     // Watching the row the cut already shows is still a watch — it just has nothing to explain.
     cam::click_row(&mut watch, 0, &[film(6.0, 12.0, 0)], Some(8.0));
@@ -450,7 +677,10 @@ fn f2_10_s3_the_status_says_what_the_cut_shows_there() {
 
     assert_eq!(
         cam::click_row(&mut watch, 1, &segs, Some(8.0)),
-        Some("watching camera 2 \u{2014} the cut shows camera 1 here; \u{25b6} plays the cut".to_string())
+        Some(
+            "watching camera 2 \u{2014} the cut shows camera 1 here; \u{25b6} plays the cut"
+                .to_string()
+        )
     );
 }
 
@@ -462,7 +692,11 @@ fn f2_10_s3_the_same_camera_is_said_without_a_word() {
     let segs = [film(6.0, 12.0, 1)];
 
     let mut same = cam::Watch::default();
-    assert_eq!(cam::click_row(&mut same, 1, &segs, Some(8.0)), None, "the row already shown needs no word");
+    assert_eq!(
+        cam::click_row(&mut same, 1, &segs, Some(8.0)),
+        None,
+        "the row already shown needs no word"
+    );
     assert_eq!(same.row, Some(1), "and it is still the row being watched");
 
     // The line over a gap: no kept scene, so nothing about this second contradicts the click.
@@ -483,13 +717,27 @@ fn f2_10_s3_the_word_is_said_once() {
     let segs = [film(6.0, 12.0, 0)];
     let mut watch = cam::Watch::default();
 
-    assert!(cam::click_row(&mut watch, 1, &segs, Some(8.0)).is_some(), "said the first time");
+    assert!(
+        cam::click_row(&mut watch, 1, &segs, Some(8.0)).is_some(),
+        "said the first time"
+    );
     assert!(watch.said, "and marked as said");
-    assert_eq!(cam::watch_status(&mut watch, &segs, Some(9.0)), None, "the line moved; the word was already spent");
-    assert_eq!(cam::watch_status(&mut watch, &segs, Some(10.0)), None, "again");
+    assert_eq!(
+        cam::watch_status(&mut watch, &segs, Some(9.0)),
+        None,
+        "the line moved; the word was already spent"
+    );
+    assert_eq!(
+        cam::watch_status(&mut watch, &segs, Some(10.0)),
+        None,
+        "again"
+    );
 
     // A second click on the same row is a fresh question, and gets a fresh answer.
-    assert!(cam::click_row(&mut watch, 1, &segs, Some(8.0)).is_some(), "a new click says it again");
+    assert!(
+        cam::click_row(&mut watch, 1, &segs, Some(8.0)).is_some(),
+        "a new click says it again"
+    );
     // ▶ disarms it too: with nothing watched there is no sentence to keep repeating.
     watch.play_hands_back();
     assert_eq!(cam::watch_status(&mut watch, &segs, Some(8.0)), None);
@@ -502,7 +750,11 @@ fn f2_10_s3_a_card_at_the_line_never_says_the_cut_shows_another_camera() {
     let segs = [card(40.0)];
     let mut watch = cam::Watch::default();
 
-    assert_eq!(cam::click_row(&mut watch, 1, &segs, Some(40.0)), None, "a card is not a kept scene shown from elsewhere");
+    assert_eq!(
+        cam::click_row(&mut watch, 1, &segs, Some(40.0)),
+        None,
+        "a card is not a kept scene shown from elsewhere"
+    );
     assert_eq!(watch.row, Some(1), "the row is watched all the same");
 
     // A kept scene further away still contradicts nothing at this second: only where the line stands counts.
@@ -532,8 +784,16 @@ fn f2_10_s1_the_seam_changes_only_the_row_a_picture_is_read_off() {
     // Exactly what `press_lens_scene` builds before calling the rule.
     let recordings = naivepost::timeline::kept_footage_recordings(&cut);
     let rows = rows_for(&recordings, &cut);
-    assert_eq!(recordings.len(), 2, "two kept footage segments are two recordings");
-    assert_eq!(rows, vec![0, 1], "the overlap from 20 is what puts the second camera on its own row");
+    assert_eq!(
+        recordings.len(),
+        2,
+        "two kept footage segments are two recordings"
+    );
+    assert_eq!(
+        rows,
+        vec![0, 1],
+        "the overlap from 20 is what puts the second camera on its own row"
+    );
 
     // The scene under the line is index 0 (0 <= 25 < 37), the same pick `cut_cam::held_or_line_scene` makes.
     let said = cam::show_scene_from(&mut cut, 0, 1, &recordings, &rows)
@@ -543,9 +803,16 @@ fn f2_10_s1_the_seam_changes_only_the_row_a_picture_is_read_off() {
     // which recording the seam hands over, not just that a string came back.
     let named = cam::row_name(1, &recordings, &rows);
     assert_eq!(said, format!("the scene at 0:00 is shown from {named} now"));
-    assert_eq!(named, "cam1", "row 1 of this cut carries the second camera's footage");
+    assert_eq!(
+        named, "cam1",
+        "row 1 of this cut carries the second camera's footage"
+    );
     assert_eq!(cut.segs[0].cam, 1, "the scene is shown from row 1 now");
-    assert_eq!((cut.segs[0].s, cut.segs[0].e), (0.0, 37.0), "only the row moved; the scene keeps its seconds");
+    assert_eq!(
+        (cut.segs[0].s, cut.segs[0].e),
+        (0.0, 37.0),
+        "only the row moved; the scene keeps its seconds"
+    );
 }
 
 /// F2.10 (Cameras and hearing) S2 — `the gutter switch toggles a lane for the whole cut`, read back the
@@ -555,19 +822,46 @@ fn f2_10_s1_the_seam_changes_only_the_row_a_picture_is_read_off() {
 #[test]
 fn f2_10_s2_the_gutter_switch_is_read_from_what_the_page_shows() {
     let lane = "cam0";
-    let mut cut = Cut { segs: vec![film(0.0, 10.0, 0), film(12.0, 20.0, 0)], ..Default::default() };
-    assert!(hear::lane_is_heard_anywhere(&cut, &[lane]), "nothing listed yet, so every scene hears it");
-    assert!(!hear::all_silent(&cut, &[lane]), "and silence is not the state before the first press");
+    let mut cut = Cut {
+        segs: vec![film(0.0, 10.0, 0), film(12.0, 20.0, 0)],
+        ..Default::default()
+    };
+    assert!(
+        hear::lane_is_heard_anywhere(&cut, &[lane]),
+        "nothing listed yet, so every scene hears it"
+    );
+    assert!(
+        !hear::all_silent(&cut, &[lane]),
+        "and silence is not the state before the first press"
+    );
 
     let off = hear::toggle_lane_all(&mut cut, &[lane], lane);
-    assert_eq!(off, format!("{lane} off for the whole cut \u{2014} 2 scene(s) changed"));
-    assert!(hear::all_silent(&cut, &[lane]), "every kept scene now lists the lane");
-    assert!(!hear::lane_is_heard_anywhere(&cut, &[lane]), "so the switch's face goes OFF");
+    assert_eq!(
+        off,
+        format!("{lane} off for the whole cut \u{2014} 2 scene(s) changed")
+    );
+    assert!(
+        hear::all_silent(&cut, &[lane]),
+        "every kept scene now lists the lane"
+    );
+    assert!(
+        !hear::lane_is_heard_anywhere(&cut, &[lane]),
+        "so the switch's face goes OFF"
+    );
 
     let on = hear::toggle_lane_all(&mut cut, &[lane], lane);
-    assert_eq!(on, format!("{lane} is on for the whole cut \u{2014} every scene hears it (2 changed)"));
-    assert!(hear::lane_is_heard_anywhere(&cut, &[lane]), "back ON, which is what the page must show");
-    assert!(!hear::all_silent(&cut, &[lane]), "and no scene still lists it");
+    assert_eq!(
+        on,
+        format!("{lane} is on for the whole cut \u{2014} every scene hears it (2 changed)")
+    );
+    assert!(
+        hear::lane_is_heard_anywhere(&cut, &[lane]),
+        "back ON, which is what the page must show"
+    );
+    assert!(
+        !hear::all_silent(&cut, &[lane]),
+        "and no scene still lists it"
+    );
 }
 
 /// F2.10 (Cameras and hearing) S3 — the refusal `ui::press_lens_scene` propagates when the line lies on a
@@ -577,7 +871,10 @@ fn f2_10_s2_the_gutter_switch_is_read_from_what_the_page_shows() {
 /// false rather than claiming the preview was taken off a row.
 #[test]
 fn f2_10_s3_a_card_at_the_line_leaves_the_lens_refused() {
-    let mut cut = Cut { segs: vec![film(0.0, 10.0, 0), card(12.0)], ..Default::default() };
+    let mut cut = Cut {
+        segs: vec![film(0.0, 10.0, 0), card(12.0)],
+        ..Default::default()
+    };
     let before = serde_json::to_string(&cut).expect("the fixture serialises");
     let recordings = naivepost::timeline::kept_footage_recordings(&cut);
     let rows = rows_for(&recordings, &cut);
@@ -596,5 +893,8 @@ fn f2_10_s3_a_card_at_the_line_leaves_the_lens_refused() {
     );
 
     let mut watch = cam::Watch::default();
-    assert!(!watch.play_hands_back(), "with nothing watched there is nothing to hand back");
+    assert!(
+        !watch.play_hands_back(),
+        "with nothing watched there is nothing to hand back"
+    );
 }

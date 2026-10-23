@@ -32,7 +32,10 @@ fn told_steps() -> &'static Mutex<HashSet<String>> {
 
 /// Has this step already heard why it has no web tools? True means the line was said, so say nothing more.
 pub fn told(step: &str) -> bool {
-    told_steps().lock().map(|seen| seen.contains(step)).unwrap_or(false)
+    told_steps()
+        .lock()
+        .map(|seen| seen.contains(step))
+        .unwrap_or(false)
 }
 
 /// Mark this step as told. Idempotent; a lock failure simply means the line may be said again, which is the
@@ -75,10 +78,18 @@ pub fn unavailable_log(step: &str, firefox: &str) -> Option<String> {
     let flatpak = crate::machine_store::inside_flatpak();
     let (found, reason) = availability(firefox);
     // The wording door handles the two settings-only cases itself and takes the lookup's answer for the rest.
-    let stat = if firefox.trim().is_empty() || flatpak { String::new() } else { reason };
+    let stat = if firefox.trim().is_empty() || flatpak {
+        String::new()
+    } else {
+        reason
+    };
     let line = crate::web_tools::unavailable_log(
         step,
-        if firefox.trim().is_empty() && found { "firefox" } else { firefox },
+        if firefox.trim().is_empty() && found {
+            "firefox"
+        } else {
+            firefox
+        },
         flatpak,
         found,
         &stat,

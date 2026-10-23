@@ -39,8 +39,8 @@
 //! the record itself (F4.1, [`crate::narration`]), speaking a line (F4.4), or the render's filter chain (F5.x).
 
 use crate::narrate_data::{Take, OWN_VOICE};
-use crate::narrate_screen::{CAPTIONS, VoiceOption};
-use crate::run::{NARRATOR_SLOTS, Transport};
+use crate::narrate_screen::{VoiceOption, CAPTIONS};
+use crate::run::{Transport, NARRATOR_SLOTS};
 
 /// §5 (`captions-only short-circuits everything that speaks`): is the chosen voice the one that speaks nothing?
 /// `captions` is the picker's first row and an **id**, not a label with no id behind it, which is why every step

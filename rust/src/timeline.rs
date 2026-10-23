@@ -65,7 +65,11 @@ pub fn rows_for(recordings: &[Recording], cut: &Cut) -> Vec<usize> {
         // A pin names a row of its own accord (§3's `rows`), so it may overlap what is already there —
         // the editor moved this recording here knowing what was under it. A negative pin is not a row:
         // such a recording falls back to the greedy answer rather than indexing off the front.
-        let pinned = cut.rows.get(&recording.base).filter(|row| **row >= 0).map(|row| *row as usize);
+        let pinned = cut
+            .rows
+            .get(&recording.base)
+            .filter(|row| **row >= 0)
+            .map(|row| *row as usize);
         let row = pinned.unwrap_or_else(|| first_free(&taken, recording.start, recording.end));
         if taken.len() <= row {
             taken.resize(row + 1, Vec::new());
@@ -141,16 +145,32 @@ pub fn cells(runs: &[(f64, f64)], folds: &[[f64; 2]]) -> Vec<Cell> {
                 continue;
             }
             if start > at {
-                out.push(Cell { start: at, end: start, folded: false });
+                out.push(Cell {
+                    start: at,
+                    end: start,
+                    folded: false,
+                });
             }
-            out.push(Cell { start: at.max(start), end: end.min(to), folded: true });
+            out.push(Cell {
+                start: at.max(start),
+                end: end.min(to),
+                folded: true,
+            });
             at = at.max(end);
         }
         if at < to {
-            out.push(Cell { start: at, end: to, folded: false });
+            out.push(Cell {
+                start: at,
+                end: to,
+                folded: false,
+            });
         }
     }
-    out.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     out
 }
 
@@ -165,7 +185,11 @@ pub struct Span {
 
 impl Span {
     pub fn new(cells: Vec<Cell>, pps: f64, gutter_px: f64) -> Self {
-        Self { cells, pps, gutter_px }
+        Self {
+            cells,
+            pps,
+            gutter_px,
+        }
     }
 
     /// A folded cell is widthless — that is the whole trick behind a fold: the time is still there and
@@ -229,7 +253,12 @@ impl Span {
             .rev()
             .find(|cell| !cell.folded)
             .map(|cell| cell.end)
-            .or_else(|| self.cells.iter().find(|cell| !cell.folded).map(|cell| cell.start))
+            .or_else(|| {
+                self.cells
+                    .iter()
+                    .find(|cell| !cell.folded)
+                    .map(|cell| cell.start)
+            })
             .unwrap_or(0.0)
     }
 }

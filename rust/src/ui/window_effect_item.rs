@@ -12,7 +12,9 @@ use crate::ui::cut_svg::press_svg_item;
 use crate::ui::cut_text_hand::press_text_item;
 use crate::ui::cut_volume_hand::press_volume_item;
 use crate::ui::cut_zoom_hand::press_zoom_item;
-use crate::ui::window::{paste_line, record_edit, refresh_effects_lane, review_cut_of, save_insert_cut};
+use crate::ui::window::{
+    paste_line, record_edit, refresh_effects_lane, review_cut_of, save_insert_cut,
+};
 
 /// §06-effects#1-record: record one effect of this kind on this window's cut.
 ///

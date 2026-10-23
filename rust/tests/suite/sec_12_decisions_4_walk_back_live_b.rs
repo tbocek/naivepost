@@ -24,8 +24,8 @@ use walk_fixture::{base_cut, words_fixture};
 /// the walked cut with the walk's own line in the log. One scenario per binary (libadwaita initialises only
 /// inside the one `run_with_args` per process), the arrangement `tests/suite/f2_14_press_words.rs` uses.
 #[test]
-fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s3_the_cut_page_press_reaches_the_walk_back()
-{
+fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s3_the_cut_page_press_reaches_the_walk_back(
+) {
     static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -82,11 +82,13 @@ fn round(app: &adw::Application) {
     // reads, beside §S2a's own sentence.
     let logs = ui::window_logs();
     assert!(
-        logs.iter().any(|line| line.starts_with(">>> cut by the words: ")),
+        logs.iter()
+            .any(|line| line.starts_with(">>> cut by the words: ")),
         "§S2a's line is there: {logs:?}"
     );
     assert!(
-        logs.iter().any(|line| line.contains("walk-back:") && line.contains("edge(s) moved")),
+        logs.iter()
+            .any(|line| line.contains("walk-back:") && line.contains("edge(s) moved")),
         "the walk-back said what it did on this press: {logs:?}"
     );
     // Fewer stretches than `words_cut` produced means the hole really was closed on the page, not just in

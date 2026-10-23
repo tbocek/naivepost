@@ -16,11 +16,11 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk4 as gtk;
 
+use super::settings_info;
 use crate::checks;
 use crate::machine_store;
 use crate::model_list;
 use crate::settings::Conf;
-use super::settings_info;
 
 /// What a probe hands back for one row: the detail that goes on the ✓, or the reason that goes on ✗.
 pub type Answer = Result<String, String>;
@@ -152,7 +152,10 @@ impl Dialog {
             .map(|(key, entry)| (key.clone(), entry.text().to_string()))
             .collect();
         values.extend(self.spins.borrow().iter().map(|(key, spin)| {
-            (machine_store::slot_key(key), (spin.value().round() as u32).to_string())
+            (
+                machine_store::slot_key(key),
+                (spin.value().round() as u32).to_string(),
+            )
         }));
         values
     }
@@ -165,7 +168,9 @@ impl Dialog {
             .entries
             .borrow()
             .iter()
-            .filter_map(|(key, _)| machine_store::text_for(&base, key).map(|value| (key.clone(), value)))
+            .filter_map(|(key, _)| {
+                machine_store::text_for(&base, key).map(|value| (key.clone(), value))
+            })
             .collect();
         for (key, value) in seeded {
             if let Some(entry) = self.entries.borrow().iter().find(|(row, _)| *row == key) {
@@ -225,10 +230,14 @@ impl Dialog {
             return;
         }
         self.save_armed.set(true);
-        let owned = Rc::clone(&self.this.borrow().clone().expect("the dialog holds itself while open"));
-        glib::timeout_add_local(checks::CONF_SAVE_WAIT, move || {
-            owned.land_save()
-        });
+        let owned = Rc::clone(
+            &self
+                .this
+                .borrow()
+                .clone()
+                .expect("the dialog holds itself while open"),
+        );
+        glib::timeout_add_local(checks::CONF_SAVE_WAIT, move || owned.land_save());
     }
 
     /// The timer's job: write if the beat elapsed, say so in both logs, and stop until the next key.
@@ -317,7 +326,9 @@ impl Dialog {
         };
         let line = checks::log_line(name_for(key), verdict);
         // The dialog's own expander opens on the first failure and never closes itself again.
-        self.test_log.borrow_mut().push(line.clone(), verdict.is_ok());
+        self.test_log
+            .borrow_mut()
+            .push(line.clone(), verdict.is_ok());
         self.paint_log();
         self.log_expander.set_expanded(self.test_log.borrow().open);
         // And the same line goes to the main log, where it is read after this dialog is gone (§5).
@@ -401,10 +412,19 @@ impl Dialog {
         let ids = self.fetched.borrow().clone();
         match model_list::use_choice(&ids, &chosen) {
             Ok(id) => {
-                if let Some(entry) = self.entries.borrow().iter().find(|(k, _)| k == "llm").map(|(_, e)| e) {
+                if let Some(entry) = self
+                    .entries
+                    .borrow()
+                    .iter()
+                    .find(|(k, _)| k == "llm")
+                    .map(|(_, e)| e)
+                {
                     entry.set_text(&id);
                 }
-                self.report(USE_KEY, &press_test(USE_KEY, &chosen, Ok(format!("Model set to {id}"))));
+                self.report(
+                    USE_KEY,
+                    &press_test(USE_KEY, &chosen, Ok(format!("Model set to {id}"))),
+                );
             }
             Err(reason) => {
                 self.report(USE_KEY, &press_test(USE_KEY, &chosen, Err(reason)));
@@ -443,11 +463,7 @@ pub fn build(parent: Option<&gtk::Window>, provider: Provider) -> adw::Window {
 /// The same dialog showing `conf`'s own values, for the `03-settings` picture only: a real session
 /// seeds from the file through [`Dialog::seed_entries`], and this is the one door that paints a conf
 /// handed in rather than read. It writes nothing anywhere.
-pub fn build_from(
-    parent: Option<&gtk::Window>,
-    provider: Provider,
-    conf: &Conf,
-) -> adw::Window {
+pub fn build_from(parent: Option<&gtk::Window>, provider: Provider, conf: &Conf) -> adw::Window {
     let dialog = build_owned(parent, provider);
     dialog.paint_from(conf);
     dialog.window.clone()
@@ -487,15 +503,15 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
     // Five columns: section | label | value | badge | Test. The section label appears once per
     // group, on its first row, as the inventory draws it.
     let add = |section: Option<&str>,
-              label: &str,
-              entry_key: &str,
-              placeholder: &str,
-              secret: bool,
-              test_key: Option<&str>,
-              slot_key: Option<&str>,
-              tip: &str,
-              row: i32,
-              grid: &gtk::Grid| {
+               label: &str,
+               entry_key: &str,
+               placeholder: &str,
+               secret: bool,
+               test_key: Option<&str>,
+               slot_key: Option<&str>,
+               tip: &str,
+               row: i32,
+               grid: &gtk::Grid| {
         if let Some(section) = section {
             // §5: "Each section's ⓘ explains at length what the server is expected to speak." The
             // heading, its ⓘ and (for the two optional servers) the word "optional" share one box in
@@ -505,7 +521,8 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
             // name is borrowed for it.
             let key = settings_info::section_key(section);
             head.set_widget_name(&format!("settings-section-{}", key.unwrap_or(section)));
-            let title = gtk::Label::new(Some(section.strip_suffix(" (optional)").unwrap_or(section)));
+            let title =
+                gtk::Label::new(Some(section.strip_suffix(" (optional)").unwrap_or(section)));
             title.add_css_class("heading");
             title.set_halign(gtk::Align::Start);
             head.append(&title);
@@ -791,8 +808,12 @@ fn build_owned(parent: Option<&gtk::Window>, provider: Provider) -> Rc<Dialog> {
         provider,
         // §5's no-Save write, over the conf as it stands now. No config folder at all (a bare test
         // box with no XDG_HOME) leaves it `None`: the dialog still tests, it just has nowhere to save.
-        store: RefCell::new(crate::settings::from_environment().and_then(|paths| machine_store::Store::open(&paths).ok())),
-        started: std::time::Instant::now(),        save_armed: Rc::new(std::cell::Cell::new(false)),
+        store: RefCell::new(
+            crate::settings::from_environment()
+                .and_then(|paths| machine_store::Store::open(&paths).ok()),
+        ),
+        started: std::time::Instant::now(),
+        save_armed: Rc::new(std::cell::Cell::new(false)),
         this: RefCell::new(None),
     });
     *dialog.this.borrow_mut() = Some(Rc::clone(&dialog));
@@ -834,7 +855,10 @@ fn wire_spins(dialog: &Rc<Dialog>) -> usize {
         else {
             continue;
         };
-        dialog.spins.borrow_mut().push((key.to_string(), spin.clone()));
+        dialog
+            .spins
+            .borrow_mut()
+            .push((key.to_string(), spin.clone()));
         let owned = Rc::clone(dialog);
         spin.connect_value_changed(move |_| owned.touched());
         wired += 1;
@@ -845,18 +869,27 @@ fn wire_spins(dialog: &Rc<Dialog>) -> usize {
 /// Each `test-<key>-button` gets the row whose entry shares its key.
 fn wire_buttons(dialog: &Rc<Dialog>) {
     for key in test_keys() {
-        let Some(button) = find_in(dialog.window.upcast_ref(), &format!("test-{key}-button")).and_then(|w| w.downcast::<gtk::Button>().ok()) else {
+        let Some(button) = find_in(dialog.window.upcast_ref(), &format!("test-{key}-button"))
+            .and_then(|w| w.downcast::<gtk::Button>().ok())
+        else {
             continue;
         };
-        let Some(entry) = find_in(dialog.window.upcast_ref(), &format!("entry-{key}")).and_then(|w| w.downcast::<gtk::Entry>().ok()) else {
+        let Some(entry) = find_in(dialog.window.upcast_ref(), &format!("entry-{key}"))
+            .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        else {
             continue;
         };
-        let Some(badge) = find_in(dialog.window.upcast_ref(), &format!("badge-{key}")).and_then(|w| w.downcast::<gtk::Label>().ok()) else {
+        let Some(badge) = find_in(dialog.window.upcast_ref(), &format!("badge-{key}"))
+            .and_then(|w| w.downcast::<gtk::Label>().ok())
+        else {
             continue;
         };
         dialog.entries.borrow_mut().push((key.to_string(), entry));
         dialog.badges.borrow_mut().push((key.to_string(), badge));
-        dialog.buttons.borrow_mut().push((key.to_string(), button.clone()));
+        dialog
+            .buttons
+            .borrow_mut()
+            .push((key.to_string(), button.clone()));
 
         let owned = Rc::clone(dialog);
         let key = key.to_string();
@@ -871,7 +904,9 @@ fn wire_buttons(dialog: &Rc<Dialog>) {
         "every model box §5 gives a Slots spin to is built AND wired"
     );
 
-    if let Some(all) = find_in(dialog.window.upcast_ref(), "test-all-button").and_then(|w| w.downcast::<gtk::Button>().ok()) {
+    if let Some(all) = find_in(dialog.window.upcast_ref(), "test-all-button")
+        .and_then(|w| w.downcast::<gtk::Button>().ok())
+    {
         let owned = Rc::clone(dialog);
         all.connect_clicked(move |_| owned.ask_all());
     }
@@ -909,7 +944,8 @@ pub const FETCH_KEY: &str = "fetch-models";
 pub const USE_KEY: &str = "use-model";
 
 /// Every key that has a Test button, in dialog order.
-fn test_keys() -> [&'static str; 11] {    [
+fn test_keys() -> [&'static str; 11] {
+    [
         "llm",
         "llm-vision",
         "ffmpeg",
@@ -927,7 +963,11 @@ fn test_keys() -> [&'static str; 11] {    [
 /// The provider a build with nothing wired uses: every row fails with a reason that says so, rather
 /// than showing a ✓ nobody probed for.
 pub fn no_probe() -> Provider {
-    Rc::new(|key, _| Err(format!("nothing wired to probe {key} -- run this in a real session")))
+    Rc::new(|key, _| {
+        Err(format!(
+            "nothing wired to probe {key} -- run this in a real session"
+        ))
+    })
 }
 
 /// Open the dialog over `parent`, answering from `provider`.
@@ -990,7 +1030,9 @@ pub fn listed_models(_window: &adw::ApplicationWindow) -> Vec<String> {
     else {
         return Vec::new();
     };
-    let Some(model) = list.model() else { return Vec::new() };
+    let Some(model) = list.model() else {
+        return Vec::new();
+    };
     let strings = match model.downcast::<gtk::StringList>() {
         Ok(strings) => strings,
         Err(_) => return Vec::new(),
@@ -1030,7 +1072,8 @@ pub fn badge(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::Label> {
 }
 
 /// One row's value box, by key (`entry-<key>`) — the box a Test press reads what was typed from.
-pub fn entry(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::Entry> {    last_dialog()
+pub fn entry(window: &adw::ApplicationWindow, key: &str) -> Option<gtk::Entry> {
+    last_dialog()
         .and_then(|dialog| dialog.entry(key))
         .or_else(|| {
             find_in(window.upcast_ref(), &format!("entry-{key}"))?

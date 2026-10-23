@@ -31,7 +31,10 @@ fn f1_10_s3_a_down_llm_is_reported_and_every_word_stands() {
     //   hold that number and have ANSWERED on it, which makes a death here read as "gone away mid-call" and
     //   spends the ladder -- three asks where two were promised, the second half of the same race.
     let dead = harness::FakeLlm::dead_listener();
-    let dead_port = dead.local_addr().expect("the dead port has an address").port();
+    let dead_port = dead
+        .local_addr()
+        .expect("the dead port has an address")
+        .port();
     // State the precondition this scenario ASSUMES, BEFORE any dial can record history: "a server this app has
     // never had an answer from" is a claim about the process-wide answered-endpoints table
     // (`llm_retry_leg::answered_once`), not about the port -- and the port is EPHEMERAL. An earlier scenario in
@@ -53,11 +56,15 @@ fn f1_10_s3_a_down_llm_is_reported_and_every_word_stands() {
     // that has never answered spends no ladder at all, and the pass stops asking once it has said the
     // failure: §3's one retry, and `seam_retries` spends none of its retries on a wire that never answered.
     assert!(
-        lines.iter().any(|line| line.contains("llm") && line.contains("not answering")),
+        lines
+            .iter()
+            .any(|line| line.contains("llm") && line.contains("not answering")),
         "the failure names the server that is down: {lines:?}"
     );
     assert!(
-        lines.iter().any(|line| line.contains("nothing removed there")),
+        lines
+            .iter()
+            .any(|line| line.contains("nothing removed there")),
         "the join ends with nothing removed: {lines:?}"
     );
     // §3 (F6.2) gives this branch ONE retry after 2 s, so the wire is dialled TWICE for this seam and never a
@@ -68,11 +75,17 @@ fn f1_10_s3_a_down_llm_is_reported_and_every_word_stands() {
         .lines()
         .filter(|line| line.contains("chat"))
         .count();
-    assert_eq!(rows, 2, "§3's short patience is one retry after 2 s: two asks, no ladder, no storm: {rows}");
+    assert_eq!(
+        rows, 2,
+        "§3's short patience is one retry after 2 s: two asks, no ladder, no storm: {rows}"
+    );
     let text = read(&fixture.tree.final_txt());
     assert!(
         text.contains("today") && text.contains("now"),
         "a down server takes no words out: {text}"
     );
-    assert!(fixture.tree.retakes_tsv().exists(), "retakes.tsv still written");
+    assert!(
+        fixture.tree.retakes_tsv().exists(),
+        "retakes.tsv still written"
+    );
 }

@@ -251,8 +251,7 @@ fn is_track_code(code: &str) -> bool {
     // A language code, not a filename: any alphabetic tag names a sidecar the run owns a translation for
     // (`de`, `en`, and §C's three-letter forms alike). What it must not be is blank or punctuation, which
     // would name `final..srt` — a file no run writes and no run should delete.
-    !code.is_empty()
-        && code.bytes().all(|byte| byte.is_ascii_alphabetic())
+    !code.is_empty() && code.bytes().all(|byte| byte.is_ascii_alphabetic())
 }
 
 /// The stems whose sidecar files this run owns — `final.<tick>` for every language the page ticked — which is
@@ -265,7 +264,9 @@ fn is_track_code(code: &str) -> bool {
 /// whatever `.vtt` files are on disk with the video's own language first and `default`. Deleting it here
 /// would silently drop that default track from the page over a press that wrote no subtitles at all.
 fn sidecar_stems(ticked: &[String]) -> Vec<String> {
-    let stem = render::final_srt_name().trim_end_matches(".srt").to_string();
+    let stem = render::final_srt_name()
+        .trim_end_matches(".srt")
+        .to_string();
     // Only translated tracks are cleared; see the note above about the session's own language.
     let mut stems: Vec<String> = Vec::new();
     stems.extend(
@@ -337,12 +338,7 @@ fn cue_on_clock(cue: &subs::Cue, produced_start: f64, rate: f64) -> subs::Cue {
 /// narration tick nor a blank line (a deliberate silence) can be missed here. The list that seam
 /// returns is then asked of [`render::speak_job`] so the "which of these still need a take" rule stays
 /// in one place, and each answer is turned into the file it lands in.
-pub fn speech_plan(
-    run: &Run,
-    tree: &Tree,
-    mats: &Materials,
-    speaking: bool,
-) -> Vec<ToSpeak> {
+pub fn speech_plan(run: &Run, tree: &Tree, mats: &Materials, speaking: bool) -> Vec<ToSpeak> {
     if !speaking {
         return Vec::new();
     }
@@ -393,7 +389,9 @@ pub fn fill_speech(
 ) {
     for clip in clips.iter_mut() {
         for line in clip.lines.iter_mut() {
-            let Some(entry) = entries.get(line.entry_index) else { continue };
+            let Some(entry) = entries.get(line.entry_index) else {
+                continue;
+            };
             line.speech = seconds_of(entry).unwrap_or(0.0).max(0.0);
         }
     }
@@ -480,14 +478,17 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
     // bare-stem pair if this run has cues to replace it with. Whether it does is `sheet_will_have_cues`, which
     // `plan` answers a little later from the same clip list, so the two cannot disagree.
     let sheet_will_have_cues = clips.iter().any(|clip| {
-        !crate::produce_clip_cues::build(clip, &clip.lines, &run.lines, &(mats.words)(clip)).is_empty()
+        !crate::produce_clip_cues::build(clip, &clip.lines, &run.lines, &(mats.words)(clip))
+            .is_empty()
     });
     // The bare-stem pair is swept only when this run has cues to rewrite it with. An up-to-date video lets a
     // press skip the encodes but not the sheet, and F5.5's `<video>` page lists whatever `.vtt` files are on
     // disk with the video's own language first and `default`, so deleting the bare pair on a run that writes
     // nothing would drop the default track over a press that said nothing.
     let bare_stem: &[String] = if sheet_will_have_cues {
-        &[render::final_srt_name().trim_end_matches(".srt").to_string()]
+        &[render::final_srt_name()
+            .trim_end_matches(".srt")
+            .to_string()]
     } else {
         &[]
     };
@@ -523,7 +524,8 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         // S1 (§F5.4): the clip's lines if it has any, else its own speech where it is footage. The kind
         // of clip and the branch order are `produce_clip_cues`' answer, read off the fields the render
         // itself filled, and the cue rule is `produce_subtitles::cues`'.
-        let mine = crate::produce_clip_cues::build(clip, &clip.lines, &run.lines, &(mats.words)(clip));
+        let mine =
+            crate::produce_clip_cues::build(clip, &clip.lines, &run.lines, &(mats.words)(clip));
         if mine.is_empty() {
             continue;
         }
@@ -532,12 +534,9 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         let mut mine = mine;
         subs::extend_previous(&mut mine);
         // Which half of S1 this clip answered, counted before anything is folded or moved.
-        crate::produce_subtitles_run::count_cue_source(
-            &mut cues.counts,
-            &mine,
-            clip.lines.len(),
-        );
-        cues.all.extend(mine.iter().map(|c| cue_on_clock(c, *start, clip.rate)));
+        crate::produce_subtitles_run::count_cue_source(&mut cues.counts, &mine, clip.lines.len());
+        cues.all
+            .extend(mine.iter().map(|c| cue_on_clock(c, *start, clip.rate)));
         cues.per_clip.push(mine);
     }
     cues.all = subs::tidy(&cues.all);
@@ -659,7 +658,10 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             // §6 names this file `joined.<container>` — the same container the run writes `final.<ext>`
             // under, so the scratch join and the finished video agree about their shape. One expression
             // feeds both the writer here and the mux's input below, so the two cannot disagree.
-            render::join_command(&list, &scratch.join(details::joined(container_ext(settings)))),
+            render::join_command(
+                &list,
+                &scratch.join(details::joined(container_ext(settings))),
+            ),
         ))
     };
 
@@ -688,8 +690,10 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             tracks.push((code.clone(), tree.final_srt(Some(code))));
         }
     }
-    let track_refs: Vec<(&str, &Path)> =
-        tracks.iter().map(|(code, path)| (code.as_str(), path.as_path())).collect();
+    let track_refs: Vec<(&str, &Path)> = tracks
+        .iter()
+        .map(|(code, path)| (code.as_str(), path.as_path()))
+        .collect();
     // The tag/name pair comes from the app's own language list (`SUBTITLE_LANGUAGES`, 03-shell §6), read
     // here rather than inside `mux_command` so that stays a pure argv builder. No settings file = no list,
     // and every track then falls back the way §6 spells it: `und`, named by its upper-cased code.
@@ -840,7 +844,10 @@ where
     match render::clear_scratch(&plan.scratch) {
         Ok(gone) => {
             ran.cleared = gone;
-            log(&crate::produce_data::scratch_clear_log(crate::produce_data::scratch_groups(), gone));
+            log(&crate::produce_data::scratch_clear_log(
+                crate::produce_data::scratch_groups(),
+                gone,
+            ));
         }
         Err(why) => {
             ran.failed = Some(why);
@@ -922,7 +929,8 @@ where
     if let Some(join) = &plan.join {
         let list = plan.scratch.join("concat.txt");
         let body = render::concat_list(
-            &plan.encodes
+            &plan
+                .encodes
                 .iter()
                 .map(|e| e.file.display().to_string())
                 .collect::<Vec<String>>(),
@@ -943,8 +951,11 @@ where
         // the program's own door), never guessed from byte counts — two clips at one size differ in bytes
         // every time. The base is the first clip that yields a size, so a session with no ffprobe probes
         // everything to `None`, claims nothing, and says nothing: absence is not an all-clear.
-        let sizes: Vec<Option<(i32, i32)>> =
-            plan.encodes.iter().map(|encode| (mats.probe)(&encode.file)).collect();
+        let sizes: Vec<Option<(i32, i32)>> = plan
+            .encodes
+            .iter()
+            .map(|encode| (mats.probe)(&encode.file))
+            .collect();
         if let Some(base) = sizes.iter().flatten().next().copied() {
             for (encode, size) in plan.encodes.iter().zip(sizes.iter()).skip(1) {
                 // A clip the probe could not read contributes no claim; a clip that disagrees with the
@@ -1013,8 +1024,14 @@ where
         let out = match &sidecar.language {
             None => sidecar.clone(),
             Some(code) => match by_code.get(code) {
-                Some(cues) if !cues.is_empty() => Sidecar { cues: cues.clone(), ..sidecar.clone() },
-                _ => Sidecar { cues: plan.cues.all.clone(), ..sidecar.clone() },
+                Some(cues) if !cues.is_empty() => Sidecar {
+                    cues: cues.clone(),
+                    ..sidecar.clone()
+                },
+                _ => Sidecar {
+                    cues: plan.cues.all.clone(),
+                    ..sidecar.clone()
+                },
             },
         };
         if let Err(why) = write_sidecar(&out) {

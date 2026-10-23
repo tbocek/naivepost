@@ -140,7 +140,11 @@ pub fn place(clips: &Clips, calls: &[Call]) -> Reply {
     let count = clips.clips().len() as u32;
     for call in calls {
         if let Some(problem) = cut_captions::clip_outside(call.clip, 1, count) {
-            return Reply { effects: Vec::new(), answers: Vec::new(), fault: Some(problem) };
+            return Reply {
+                effects: Vec::new(),
+                answers: Vec::new(),
+                fault: Some(problem),
+            };
         }
     }
 
@@ -166,18 +170,28 @@ pub fn place(clips: &Clips, calls: &[Call]) -> Reply {
             answers.push(Answer::Refused(reason.to_string()));
             continue;
         }
-        let (Some(kind), Some(span)) = (body.get("kind").and_then(|v| v.as_str()), span_of(&body)) else {
+        let (Some(kind), Some(span)) = (body.get("kind").and_then(|v| v.as_str()), span_of(&body))
+        else {
             answers.push(Answer::Refused(answer.clone()));
             continue;
         };
         let gain = body.get("gain").and_then(|v| v.as_f64());
         // The clip's own start: the state's session second for it, not a sum of lengths (see cut_speed_pass::place).
-        let at = batch.clips().iter().find(|c| c.n == call.clip).expect("S2 checked membership").start;
+        let at = batch
+            .clips()
+            .iter()
+            .find(|c| c.n == call.clip)
+            .expect("S2 checked membership")
+            .start;
         let fx = defaults(kind, at, span, gain);
         answers.push(Answer::Placed(fx.clone()));
         effects.push(fx);
     }
-    Reply { effects, answers, fault: None }
+    Reply {
+        effects,
+        answers,
+        fault: None,
+    }
 }
 
 /// F3.11 S3 (`gain of 1 or none ignored`): does this volume ask for a change at all? Asked before the tool runs so the
@@ -263,8 +277,16 @@ pub fn defaults(kind: &str, at: f64, span: (f64, f64), gain: Option<f64>) -> Fx 
         }
         "stop" => {
             let fade = stop_fade(dur);
-            Fx { kind: "speed".into(), t, dur, rate: 0.0, trans: fade, tout: fade,
-                cam: crate::effect_overlap::SUGGESTED_ROW, ..Default::default() }
+            Fx {
+                kind: "speed".into(),
+                t,
+                dur,
+                rate: 0.0,
+                trans: fade,
+                tout: fade,
+                cam: crate::effect_overlap::SUGGESTED_ROW,
+                ..Default::default()
+            }
         }
         _ => {
             let ramp = ramp(dur);

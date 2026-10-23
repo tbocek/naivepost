@@ -8,12 +8,12 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
+use common::temp_dir_created as temp_dir;
 use naivepost::layout::Tree;
 use naivepost::requests::{self, AlignedDoc, Turn, Word, WordsDoc};
 use naivepost::textfmt;
 use naivepost::transcribe::{self, Align};
-use crate::common;
-use common::temp_dir_created as temp_dir;
 
 /// A project folder with the one source this flow reads, so "already on disk" is a real file rather
 /// than a path that merely looks plausible.
@@ -120,8 +120,14 @@ fn f1_3_s2_a_short_take_is_written_up_as_silence_without_asking_anything() {
     assert!(!asked.load(Ordering::SeqCst), "no ASR for a start/stop");
 
     // Silence spelled the way §6 spells it, so every later step resumes rather than re-asking.
-    assert_eq!(fs::read_to_string(tree.transcript_txt(SOURCE)).unwrap(), "\n");
-    assert_eq!(fs::read_to_string(tree.words_json(SOURCE)).unwrap(), r#"{"text":""}"#);
+    assert_eq!(
+        fs::read_to_string(tree.transcript_txt(SOURCE)).unwrap(),
+        "\n"
+    );
+    assert_eq!(
+        fs::read_to_string(tree.words_json(SOURCE)).unwrap(),
+        r#"{"text":""}"#
+    );
     assert_eq!(fs::read_to_string(tree.turns_json(SOURCE)).unwrap(), "[]");
     // No asrchunks.json: it would claim an ASR request that never happened.
     assert!(!tree.asrchunks_json(SOURCE).exists());
@@ -129,7 +135,10 @@ fn f1_3_s2_a_short_take_is_written_up_as_silence_without_asking_anything() {
     // And the two transcripts exist anyway — empty, because there is nothing to read.
     assert!(tree.transcript_tsv(SOURCE).exists());
     assert!(tree.transcript_srt(SOURCE).exists());
-    assert_eq!(textfmt::read_lines(&tree.transcript_tsv(SOURCE)).unwrap(), vec![]);
+    assert_eq!(
+        textfmt::read_lines(&tree.transcript_tsv(SOURCE)).unwrap(),
+        vec![]
+    );
     assert_eq!(transcribe::srt_text(&[]), "");
 }
 
@@ -187,7 +196,9 @@ fn f1_3_s3_asr_is_skipped_when_words_json_exists() {
 
     assert_eq!(passage.logs[1], ">>> [mic.wav] ASR (nemotron-asr)");
     // Written whole, since it is the marker: the next pass must not ask again.
-    let saved = requests::read_words(&tree, SOURCE).unwrap().expect("words.json");
+    let saved = requests::read_words(&tree, SOURCE)
+        .unwrap()
+        .expect("words.json");
     assert_eq!(saved.text, "hello there");
 }
 
@@ -283,10 +294,21 @@ fn f1_3_s4_no_transcript_means_nothing_to_align() {
         transcribe::Alignment::Skipped
     );
     // No error at all is the ordinary answer.
-    assert_eq!(transcribe::align_outcome(None, false, ""), transcribe::Alignment::Aligned);
+    assert_eq!(
+        transcribe::align_outcome(None, false, ""),
+        transcribe::Alignment::Aligned
+    );
 
     let (_root, tree) = project("s4-silent");
-    requests::write_words(&tree, SOURCE, &WordsDoc { text: String::new(), words: vec![] }).unwrap();
+    requests::write_words(
+        &tree,
+        SOURCE,
+        &WordsDoc {
+            text: String::new(),
+            words: vec![],
+        },
+    )
+    .unwrap();
 
     let passage = transcribe::run(
         &tree,
@@ -313,24 +335,38 @@ fn f1_3_s4_no_transcript_means_nothing_to_align() {
         30.0,
         "nemotron-asr",
         |_| Align::None,
-        || Ok(WordsDoc { text: "hi".into(), words: words_at(&[("hi", 0.0, 0.3)]) }),
+        || {
+            Ok(WordsDoc {
+                text: "hi".into(),
+                words: words_at(&[("hi", 0.0, 0.3)]),
+            })
+        },
         || Ok(vec![]),
     )
     .expect("a session with no aligner is a working setup");
-    assert!(passage.logs.iter().all(|line| !line.contains("align")), "{:?}", passage.logs);
+    assert!(
+        passage.logs.iter().all(|line| !line.contains("align")),
+        "{:?}",
+        passage.logs
+    );
 
     // And an answer already on disk is read instead of asked for again.
     let (_root, tree) = project("s4-aligned");
     requests::write_words(
         &tree,
         SOURCE,
-        &WordsDoc { text: "hi".into(), words: words_at(&[("hi", 0.0, 0.3)]) },
+        &WordsDoc {
+            text: "hi".into(),
+            words: words_at(&[("hi", 0.0, 0.3)]),
+        },
     )
     .unwrap();
     requests::write_aligned(
         &tree,
         SOURCE,
-        &AlignedDoc { words: words_at(&[("hi", 0.1, 0.35)]) },
+        &AlignedDoc {
+            words: words_at(&[("hi", 0.1, 0.35)]),
+        },
     )
     .unwrap();
     let passage = transcribe::run(
@@ -343,7 +379,11 @@ fn f1_3_s4_no_transcript_means_nothing_to_align() {
         || Ok(vec![]),
     )
     .expect("the answer was on disk");
-    assert!(passage.logs.iter().all(|line| !line.starts_with("!!! ")), "{:?}", passage.logs);
+    assert!(
+        passage.logs.iter().all(|line| !line.starts_with("!!! ")),
+        "{:?}",
+        passage.logs
+    );
     // The aligner's times are the ones used: 0.1 s, not the ASR's 0.0.
     let lines = textfmt::read_lines(&tree.transcript_tsv(SOURCE)).unwrap();
     assert_eq!(lines[0].start, 0.1);
@@ -362,7 +402,10 @@ fn f1_3_s5_diarization_is_skipped_when_turns_json_exists() {
     requests::write_words(
         &tree,
         SOURCE,
-        &WordsDoc { text: "hello".into(), words: words_at(&[("hello", 0.5, 0.9)]) },
+        &WordsDoc {
+            text: "hello".into(),
+            words: words_at(&[("hello", 0.5, 0.9)]),
+        },
     )
     .unwrap();
 
@@ -392,7 +435,10 @@ fn f1_3_s5_diarization_is_skipped_when_turns_json_exists() {
     requests::write_words(
         &tree,
         SOURCE,
-        &WordsDoc { text: "hello".into(), words: words_at(&[("hello", 0.5, 0.9)]) },
+        &WordsDoc {
+            text: "hello".into(),
+            words: words_at(&[("hello", 0.5, 0.9)]),
+        },
     )
     .unwrap();
     transcribe::run(
@@ -405,7 +451,10 @@ fn f1_3_s5_diarization_is_skipped_when_turns_json_exists() {
         || Ok(turns(&[(0.0, 2.0, 2)])),
     )
     .expect("diarization answered");
-    assert_eq!(requests::read_turns(&tree, SOURCE).unwrap(), turns(&[(0.0, 2.0, 2)]));
+    assert_eq!(
+        requests::read_turns(&tree, SOURCE).unwrap(),
+        turns(&[(0.0, 2.0, 2)])
+    );
 }
 
 /// S6: a segment ends at a speaker change, at a silence over `mergeGap`, or at the length cap — the
@@ -421,24 +470,18 @@ fn f1_3_s6_words_become_segments_at_a_speaker_change_a_gap_or_12s() {
         &two_voices,
     );
     assert_eq!(lines.len(), 2);
-    assert_eq!((lines[0].speaker.as_str(), lines[1].speaker.as_str()), ("SPEAKER_00", "SPEAKER_01"));
+    assert_eq!(
+        (lines[0].speaker.as_str(), lines[1].speaker.as_str()),
+        ("SPEAKER_00", "SPEAKER_01")
+    );
 
     // A silence over 0.7 s, and one that is not: the bound is `>`, so exactly 0.7 stays together.
-    let lines = transcribe::segments(
-        &words_at(&[("one", 0.0, 0.4), ("two", 1.2, 1.5)]),
-        &nobody,
-    );
+    let lines = transcribe::segments(&words_at(&[("one", 0.0, 0.4), ("two", 1.2, 1.5)]), &nobody);
     assert_eq!(lines.len(), 2, "0.8 s of silence ends a segment");
-    let lines = transcribe::segments(
-        &words_at(&[("one", 0.0, 0.4), ("two", 1.2, 1.5)]),
-        &nobody,
-    );
+    let lines = transcribe::segments(&words_at(&[("one", 0.0, 0.4), ("two", 1.2, 1.5)]), &nobody);
     assert_eq!(lines.len(), 2, "0.8 s of silence ends a segment");
     // The bound itself is `>`, not `>=`: exactly 0.7 s of pause keeps the phrase in one subtitle.
-    let lines = transcribe::segments(
-        &words_at(&[("one", 0.0, 1.4), ("two", 2.05, 2.5)]),
-        &nobody,
-    );
+    let lines = transcribe::segments(&words_at(&[("one", 0.0, 1.4), ("two", 2.05, 2.5)]), &nobody);
     assert_eq!(lines.len(), 1, "650 ms of pause does not: {:?}", lines);
 
     // And the cap, however unbroken the speech is.
@@ -450,9 +493,15 @@ fn f1_3_s6_words_become_segments_at_a_speaker_change_a_gap_or_12s() {
         .map(|(text, start, end)| word(text, (start * 16000.0) as u64, (end * 16000.0) as u64))
         .collect();
     let lines = transcribe::segments(&words, &nobody);
-    assert!(lines.len() >= 2, "12 s of unbroken speech is capped: {:?}", lines);
     assert!(
-        lines.iter().all(|line| line.end - line.start <= transcribe::MERGE_MAX_LEN + 0.001),
+        lines.len() >= 2,
+        "12 s of unbroken speech is capped: {:?}",
+        lines
+    );
+    assert!(
+        lines
+            .iter()
+            .all(|line| line.end - line.start <= transcribe::MERGE_MAX_LEN + 0.001),
         "{:?}",
         lines
     );
@@ -497,21 +546,23 @@ fn f1_3_s6_speaker_by_greatest_overlap_then_the_nearest_turn() {
 
     // Such a word keeps the running speaker rather than being shown as a name — 0.4 s after the
     // previous word, so it is still the same subtitle.
-    let lines = transcribe::segments(
-        &words_at(&[("first", 0.1, 0.4), ("stray", 0.8, 1.0)]),
-        &far,
+    let lines = transcribe::segments(&words_at(&[("first", 0.1, 0.4), ("stray", 0.8, 1.0)]), &far);
+    assert_eq!(
+        lines.len(),
+        1,
+        "a stray word joins the phrase before it: {lines:?}"
     );
-    assert_eq!(lines.len(), 1, "a stray word joins the phrase before it: {lines:?}");
     assert_eq!(lines[0].speaker, "SPEAKER_00");
     assert_eq!(lines[0].text, "first stray");
 
     // And when the pause does start a new subtitle, that line carries the previous voice too rather
     // than a question mark: it is who was speaking, and "?" would be shown as somebody's name.
-    let lines = transcribe::segments(
-        &words_at(&[("first", 0.1, 0.4), ("stray", 3.0, 3.2)]),
-        &far,
+    let lines = transcribe::segments(&words_at(&[("first", 0.1, 0.4), ("stray", 3.0, 3.2)]), &far);
+    assert_eq!(
+        lines.len(),
+        2,
+        "2.6 s of silence ends a subtitle: {lines:?}"
     );
-    assert_eq!(lines.len(), 2, "2.6 s of silence ends a subtitle: {lines:?}");
     assert_eq!(lines[1].speaker, "SPEAKER_00");
 
     // No turns at all is a recording diarization found no voices in, whose ASR heard words anyway:
@@ -530,7 +581,10 @@ fn f1_3_s6_speaker_by_greatest_overlap_then_the_nearest_turn() {
         &far,
     );
     assert_eq!(lines.len(), 2, "{lines:?}");
-    assert_eq!(lines[0].speaker, "?", "nothing before it to keep: {lines:?}");
+    assert_eq!(
+        lines[0].speaker, "?",
+        "nothing before it to keep: {lines:?}"
+    );
     assert_eq!(lines[1].speaker, "SPEAKER_01");
 }
 
@@ -583,7 +637,10 @@ fn f1_3_s6_the_two_transcript_files_and_the_count() {
     .expect("the pass finished");
 
     assert_eq!(passage.logs.last().unwrap(), ">>> [mic.wav] 2 segments");
-    assert_eq!(transcribe::segments_log(SOURCE, 2), ">>> [mic.wav] 2 segments");
+    assert_eq!(
+        transcribe::segments_log(SOURCE, 2),
+        ">>> [mic.wav] 2 segments"
+    );
 
     // The tsv reads back through the same reader Cut uses, times at two decimals.
     let lines = textfmt::read_lines(&tree.transcript_tsv(SOURCE)).unwrap();
@@ -595,8 +652,14 @@ fn f1_3_s6_the_two_transcript_files_and_the_count() {
 
     // The srt: number, times, speaker tag, text — and no tag for a word nobody was named for.
     let srt = fs::read_to_string(tree.transcript_srt(SOURCE)).unwrap();
-    assert!(srt.starts_with("1\n00:00:00,000 --> 00:00:00,400\n[SPEAKER_00] one\n\n"), "{srt}");
-    assert!(srt.contains("\n2\n00:00:01,200 --> 00:00:01,500\n[SPEAKER_00] two\n"), "{srt}");
+    assert!(
+        srt.starts_with("1\n00:00:00,000 --> 00:00:00,400\n[SPEAKER_00] one\n\n"),
+        "{srt}"
+    );
+    assert!(
+        srt.contains("\n2\n00:00:01,200 --> 00:00:01,500\n[SPEAKER_00] two\n"),
+        "{srt}"
+    );
 
     let unnamed = transcribe::srt_text(&[textfmt::Line {
         start: 0.0,

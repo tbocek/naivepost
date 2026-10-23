@@ -953,7 +953,10 @@ pub fn cut_window_with_footage(app: &adw::Application) -> adw::ApplicationWindow
 /// frame, so a check read it or the real layout depending on timing, and a layout bug the program has (a
 /// divider that never opens) passed in the tests and showed in the shots.
 pub fn size_to_minimum(window: &adw::ApplicationWindow) {
-    let (w, h) = (naivepost::shell::WINDOW_MIN_W, naivepost::shell::WINDOW_MIN_H);
+    let (w, h) = (
+        naivepost::shell::WINDOW_MIN_W,
+        naivepost::shell::WINDOW_MIN_H,
+    );
     window.set_default_size(w, h);
     window.present();
     wait_for_stable_layout(window);
@@ -975,7 +978,9 @@ const STABLE_PAINTS: u32 = 3;
 /// box unchanged: the layout GTK settled on, the one a person would see, read after its frames rather than
 /// guessed with a number of loop turns. Fails after [`WAIT_LIMIT`] when the layout keeps moving.
 pub fn wait_for_stable_layout(window: &adw::ApplicationWindow) {
-    let clock = window.frame_clock().expect("a presented window has a frame clock");
+    let clock = window
+        .frame_clock()
+        .expect("a presented window has a frame clock");
     let paints = std::rc::Rc::new(std::cell::Cell::new(0u32));
     let counter = paints.clone();
     let handler = clock.connect_after_paint(move |_| counter.set(counter.get() + 1));

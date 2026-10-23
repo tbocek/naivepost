@@ -52,7 +52,10 @@ pub fn tag(video: &str, poster: Option<&str>, tracks: &[Track]) -> String {
     if let Some(poster) = poster {
         out.push_str(&format!("poster=\"{}\" ", escape(poster)));
     }
-    out.push_str(&format!("controls src=\"{}\" preload=\"none\">\n", escape(video)));
+    out.push_str(&format!(
+        "controls src=\"{}\" preload=\"none\">\n",
+        escape(video)
+    ));
     for (index, track) in tracks.iter().enumerate() {
         // Only the first is `default`: two defaults is two sets of captions drawn over each other in some
         // players, and nothing on the page says which won.
@@ -122,9 +125,12 @@ pub fn tracks(names: &[String], own_language: &str, known: &[Language]) -> Vec<T
                 own = Some(Track {
                     file: name.clone(),
                     name: known
-                    .iter()
-                    .find(|language| language.code == own_language)
-                    .map_or_else(|| own_language.to_string(), |language| language.name.clone()),
+                        .iter()
+                        .find(|language| language.code == own_language)
+                        .map_or_else(
+                            || own_language.to_string(),
+                            |language| language.name.clone(),
+                        ),
                     code: own_language.to_string(),
                 });
                 continue;

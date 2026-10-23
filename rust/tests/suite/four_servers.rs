@@ -9,12 +9,12 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::common;
+use common::temp_dir_tagged as temp_dir;
 use naivepost::layout::Tree;
 use naivepost::requests::{self, Outcome, Request, Service};
 use naivepost::services as svc;
 use naivepost::settings::{self, Conf, Paths};
-use crate::common;
-use common::temp_dir_tagged as temp_dir;
 
 /// A settings tree with nothing in it: the state a fresh install is in, where every box is empty.
 fn paths(root: &Path) -> Paths {
@@ -54,7 +54,9 @@ fn sec_02_services_1_the_four_servers_s1_empty_boxes_mean_loopback() {
     assert_eq!(svc::image_default(), "http://127.0.0.1:1234");
 
     let conf = Conf::default();
-    fn none(_: &str) -> Option<String> { None }
+    fn none(_: &str) -> Option<String> {
+        None
+    }
     assert_eq!(
         svc::llm_endpoint(&conf),
         svc::Endpoint {
@@ -62,11 +64,21 @@ fn sec_02_services_1_the_four_servers_s1_empty_boxes_mean_loopback() {
             key: String::new()
         }
     );
-    assert_eq!(svc::audio_endpoint(&conf, none).url, "http://127.0.0.1:8765");
-    assert_eq!(svc::image_endpoint(&conf, none).url, "http://127.0.0.1:1234");
+    assert_eq!(
+        svc::audio_endpoint(&conf, none).url,
+        "http://127.0.0.1:8765"
+    );
+    assert_eq!(
+        svc::image_endpoint(&conf, none).url,
+        "http://127.0.0.1:1234"
+    );
 
     // http, not https: this is the machine talking to itself.
-    for url in [svc::llm_default(), svc::audio_default(), svc::image_default()] {
+    for url in [
+        svc::llm_default(),
+        svc::audio_default(),
+        svc::image_default(),
+    ] {
         assert!(url.starts_with("http://"), "{url}");
     }
 }
@@ -111,10 +123,13 @@ fn sec_02_services_1_the_four_servers_s3_audio_server_precedence() {
     let mut conf = Conf::default();
     conf.audio_server = "box.example.com".into();
     assert_eq!(
-        svc::audio_endpoint(&conf, env(&[
-            ("NAIVEPOST_TTS_URL", "http://tts-var:1"),
-            ("AUDIOCPP_SERVER", "http://cpp-var:2"),
-        ]))
+        svc::audio_endpoint(
+            &conf,
+            env(&[
+                ("NAIVEPOST_TTS_URL", "http://tts-var:1"),
+                ("AUDIOCPP_SERVER", "http://cpp-var:2"),
+            ])
+        )
         .url,
         "https://box.example.com"
     );
@@ -122,10 +137,13 @@ fn sec_02_services_1_the_four_servers_s3_audio_server_precedence() {
     // No box: the app's own variable moves this app alone.
     let conf = Conf::default();
     assert_eq!(
-        svc::audio_endpoint(&conf, env(&[
-            ("NAIVEPOST_TTS_URL", "http://tts-var:1"),
-            ("AUDIOCPP_SERVER", "http://cpp-var:2"),
-        ]))
+        svc::audio_endpoint(
+            &conf,
+            env(&[
+                ("NAIVEPOST_TTS_URL", "http://tts-var:1"),
+                ("AUDIOCPP_SERVER", "http://cpp-var:2"),
+            ])
+        )
         .url,
         "http://tts-var:1"
     );
@@ -138,26 +156,44 @@ fn sec_02_services_1_the_four_servers_s3_audio_server_precedence() {
 
     // Nothing at all: the loopback. A variable set to empty is not a setting.
     assert_eq!(
-        svc::audio_endpoint(&conf, env(&[("AUDIOCPP_SERVER", ""), ("NAIVEPOST_TTS_URL", "  ")]))
-            .url,
+        svc::audio_endpoint(
+            &conf,
+            env(&[("AUDIOCPP_SERVER", ""), ("NAIVEPOST_TTS_URL", "  ")])
+        )
+        .url,
         svc::audio_default()
     );
 
     // sd.cpp: box, then SD_SERVER, then the loopback.
     let mut conf = Conf::default();
     conf.sd_server = "gpu:1234".into();
-    assert_eq!(svc::image_endpoint(&conf, env(&[("SD_SERVER", "http://var")])).url, "https://gpu:1234");
+    assert_eq!(
+        svc::image_endpoint(&conf, env(&[("SD_SERVER", "http://var")])).url,
+        "https://gpu:1234"
+    );
     let conf = Conf::default();
-    assert_eq!(svc::image_endpoint(&conf, env(&[("SD_SERVER", "http://var")])).url, "http://var");
-    assert_eq!(svc::image_endpoint(&conf, env(&[])).url, svc::image_default());
+    assert_eq!(
+        svc::image_endpoint(&conf, env(&[("SD_SERVER", "http://var")])).url,
+        "http://var"
+    );
+    assert_eq!(
+        svc::image_endpoint(&conf, env(&[])).url,
+        svc::image_default()
+    );
 }
 
 /// Keys travel as `Authorization: Bearer …`, and only when there is one.
 #[test]
 fn sec_02_services_1_the_four_servers_s4_keys_are_bearer_only_when_non_empty() {
-    assert_eq!(svc::authorization("sk-abc").as_deref(), Some("Bearer sk-abc"));
+    assert_eq!(
+        svc::authorization("sk-abc").as_deref(),
+        Some("Bearer sk-abc")
+    );
     // Trimmed, so a key pasted with a newline still authenticates.
-    assert_eq!(svc::authorization("  sk-abc \n").as_deref(), Some("Bearer sk-abc"));
+    assert_eq!(
+        svc::authorization("  sk-abc \n").as_deref(),
+        Some("Bearer sk-abc")
+    );
     // Empty sends no header at all rather than a credential that says "none".
     assert_eq!(svc::authorization(""), None);
     assert_eq!(svc::authorization("   "), None);
@@ -165,9 +201,14 @@ fn sec_02_services_1_the_four_servers_s4_keys_are_bearer_only_when_non_empty() {
     let mut conf = Conf::default();
     conf.key = "  llm-key ".into();
     conf.sd_key = "sd-key".into();
-    fn none(_: &str) -> Option<String> { None }
+    fn none(_: &str) -> Option<String> {
+        None
+    }
     assert_eq!(svc::llm_endpoint(&conf).key, "  llm-key ");
-    assert_eq!(svc::authorization(&svc::llm_endpoint(&conf).key).as_deref(), Some("Bearer llm-key"));
+    assert_eq!(
+        svc::authorization(&svc::llm_endpoint(&conf).key).as_deref(),
+        Some("Bearer llm-key")
+    );
     assert_eq!(svc::audio_endpoint(&conf, none).key, "");
     assert_eq!(svc::audio_endpoint(&conf, none).key.trim(), "");
     assert_eq!(svc::image_endpoint(&conf, none).key, "sd-key");
@@ -183,11 +224,7 @@ fn sec_02_services_1_the_four_servers_s5_api_table_paths_and_methods() {
         (svc::Kind::Upload, "POST", "/v1/ui/upload"),
         (svc::Kind::RunTask, "POST", "/v1/tasks/run"),
         (svc::Kind::Speech, "POST", "/v1/audio/speech"),
-        (
-            svc::Kind::UnloadAll,
-            "POST",
-            "/v1/tasks/unload_all_models",
-        ),
+        (svc::Kind::UnloadAll, "POST", "/v1/tasks/unload_all_models"),
         (svc::Kind::Capabilities, "GET", "/sdcpp/v1/capabilities"),
         (svc::Kind::SubmitImage, "POST", "/sdcpp/v1/img_gen"),
     ];
@@ -260,26 +297,31 @@ fn sec_02_services_1_the_four_servers_s6_timeouts_and_cancel_context() {
 fn sec_02_services_1_the_four_servers_s7_settings_are_reread_per_request() {
     let root = temp_dir("per-request");
     let paths = paths(&root);
-    update(&paths, |conf| conf.audio_server = "http://first:8765".into())
-        .expect("write first server url");
+    update(&paths, |conf| {
+        conf.audio_server = "http://first:8765".into()
+    })
+    .expect("write first server url");
 
-    fn none(_: &str) -> Option<String> { None }
+    fn none(_: &str) -> Option<String> {
+        None
+    }
     assert_eq!(
         svc::endpoint_for(&paths, svc::Server::Audio, &none).url,
         "http://first:8765"
     );
 
     // Change the file between two requests: nothing is cached, so the next one goes elsewhere.
-    update(&paths, |conf| conf.audio_server = "http://second:8765".into())
-        .expect("write second server url");
+    update(&paths, |conf| {
+        conf.audio_server = "http://second:8765".into()
+    })
+    .expect("write second server url");
     assert_eq!(
         svc::endpoint_for(&paths, svc::Server::Audio, &none).url,
         "http://second:8765"
     );
 
     // A model id moves the same way: the read is per request, not per run.
-    update(&paths, |conf| conf.asr_model = "whisper-large".into())
-        .expect("write asr model");
+    update(&paths, |conf| conf.asr_model = "whisper-large".into()).expect("write asr model");
     let conf = settings::read(&paths).expect("read back");
     assert_eq!(svc::asr_model(&conf), "whisper-large");
 
@@ -339,7 +381,10 @@ fn sec_02_services_1_the_four_servers_s9_aligner_is_picked_by_task() {
         svc::pick_aligner("", &models).as_deref(),
         Some("qwen3-aligner")
     );
-    let only_weak = vec![model("aab-alignment-ctc", "align"), model("nemotron-asr", "asr")];
+    let only_weak = vec![
+        model("aab-alignment-ctc", "align"),
+        model("nemotron-asr", "asr"),
+    ];
     assert_eq!(
         svc::pick_aligner("", &only_weak).as_deref(),
         Some("aab-alignment-ctc")
@@ -387,12 +432,23 @@ fn sec_02_services_1_the_four_servers_s10_missing_model_names_the_server_and_its
         family: String::new(),
         task: task.into(),
     };
-    let models = vec![model("sortformer-diar", "diar"), model("nemotron-asr", "asr")];
+    let models = vec![
+        model("sortformer-diar", "diar"),
+        model("nemotron-asr", "asr"),
+    ];
     let url = "http://127.0.0.1:8765";
 
     // A shipped default: the message carries the install command for its weights, and lists what
     // the server does serve so the user can see how far off they are.
-    let msg = svc::missing_model(url, &models, svc::SEP_MODEL, svc::Need { task: "sep", step: "Prepare" });
+    let msg = svc::missing_model(
+        url,
+        &models,
+        svc::SEP_MODEL,
+        svc::Need {
+            task: "sep",
+            step: "Prepare",
+        },
+    );
     assert!(msg.contains(url), "{msg}");
     assert!(msg.contains("nemotron-asr"), "{msg}");
     assert!(msg.contains("sortformer-diar"), "{msg}");
@@ -409,24 +465,46 @@ fn sec_02_services_1_the_four_servers_s10_missing_model_names_the_server_and_its
     );
 
     // A hand-picked id gets the same message with no command: its weights would be a guess.
-    let msg = svc::missing_model(url, &models, "my-separation-model", svc::Need { task: "sep", step: "Prepare" });
+    let msg = svc::missing_model(
+        url,
+        &models,
+        "my-separation-model",
+        svc::Need {
+            task: "sep",
+            step: "Prepare",
+        },
+    );
     assert!(msg.contains("my-separation-model"), "{msg}");
     assert!(!msg.contains("model_manager_v2.py"), "{msg}");
 
     // Present but declared for another task says so — the usual cause is a catalog entry copied
     // from another model with its task left as it was.
-    let msg = svc::missing_model(url, &models, "nemotron-asr", svc::Need { task: "sep", step: "Prepare" });
+    let msg = svc::missing_model(
+        url,
+        &models,
+        "nemotron-asr",
+        svc::Need {
+            task: "sep",
+            step: "Prepare",
+        },
+    );
     assert!(msg.contains("task"), "{msg}");
     assert!(msg.contains("\"asr\""), "{msg}");
     assert!(msg.contains("\"sep\""), "{msg}");
 
     // The three shipped defaults have packages; the TTS model does not get a hint.
-    assert_eq!(svc::install_package(svc::ASR_MODEL), Some("nemotron_asr_q8_0"));
+    assert_eq!(
+        svc::install_package(svc::ASR_MODEL),
+        Some("nemotron_asr_q8_0")
+    );
     assert_eq!(
         svc::install_package(svc::DIAR_MODEL),
         Some("sortformer_diar_4spk_v1_q8_0")
     );
-    assert_eq!(svc::install_package(svc::SEP_MODEL), Some("bs_roformer_q8_0"));
+    assert_eq!(
+        svc::install_package(svc::SEP_MODEL),
+        Some("bs_roformer_q8_0")
+    );
     assert_eq!(svc::install_package(svc::TTS_MODEL), None);
     assert_eq!(svc::install_package("whisper-large-v3"), None);
 }
@@ -545,13 +623,13 @@ fn sec_02_services_1_the_four_servers_s13_every_kind_is_recorded_with_its_cost()
         (svc::Kind::UnloadAll, Service::Audio, None, Outcome::Ok),
         (svc::Kind::Capabilities, Service::Image, None, Outcome::Ok),
         (svc::Kind::SubmitImage, Service::Image, None, Outcome::Ok),
-        (svc::Kind::PollImage, Service::Image, Some("job-7"), Outcome::Ok),
         (
-            svc::Kind::Speech,
-            Service::Audio,
-            None,
-            Outcome::Cancelled,
+            svc::Kind::PollImage,
+            Service::Image,
+            Some("job-7"),
+            Outcome::Ok,
         ),
+        (svc::Kind::Speech, Service::Audio, None, Outcome::Cancelled),
     ];
     let count = calls.len();
     for (kind, service, job, outcome) in calls.into_iter() {
@@ -629,10 +707,15 @@ fn sec_02_services_1_the_four_servers_s14_model_choice_survives_the_settings_fil
     }
 
     let conf = settings::read(&paths).expect("read back");
-    fn none(_: &str) -> Option<String> { None }
+    fn none(_: &str) -> Option<String> {
+        None
+    }
     let endpoint = svc::audio_endpoint(&conf, none);
     assert_eq!(endpoint.url, "https://gpu:8765");
-    assert_eq!(svc::authorization(&endpoint.key).as_deref(), Some("Bearer audio-key"));
+    assert_eq!(
+        svc::authorization(&endpoint.key).as_deref(),
+        Some("Bearer audio-key")
+    );
     assert_eq!(svc::asr_model(&conf), "whisper-large-v3");
     // The aligner the file names is the one to try, given a server that declares it.
     let models = vec![
@@ -660,5 +743,8 @@ fn sec_02_services_1_the_four_servers_s14_model_choice_survives_the_settings_fil
     .expect("clear model choice");
     let conf = settings::read(&paths).expect("read back again");
     assert_eq!(svc::asr_model(&conf), "nemotron-asr");
-    assert_eq!(svc::pick_aligner(&conf.align_model, &models).as_deref(), Some("qwen3-aligner"));
+    assert_eq!(
+        svc::pick_aligner(&conf.align_model, &models).as_deref(),
+        Some("qwen3-aligner")
+    );
 }

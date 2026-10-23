@@ -34,17 +34,15 @@ const ASR_ONLY_DUAL: &str = r#"{"data":[
   {"id":"sortformer-diar","family":"qwen3","task":"diar"}]}"#;
 
 struct Dirs {
-    #[allow(dead_code)] // the folder is what keeps each scenario's settings apart; nothing reads the path back
+    #[allow(dead_code)]
+    // the folder is what keeps each scenario's settings apart; nothing reads the path back
     root: PathBuf,
     paths: Paths,
 }
 
 impl Dirs {
     fn new(label: &str) -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "np-f11-s5-{label}-{}",
-            std::process::id()
-        ));
+        let root = std::env::temp_dir().join(format!("np-f11-s5-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("the temp folder");
         let paths = Paths {
@@ -92,7 +90,13 @@ fn handle(mut stream: TcpStream, health: u16, models: &str) {
             break;
         }
         if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = header
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
     }
     let mut body = vec![0u8; length];
@@ -175,7 +179,8 @@ fn f1_1_s5_a_server_without_the_diarization_model_is_refused_by_name() {
         .expect("a server missing a model Prepare needs must refuse");
     assert_eq!(
         why,
-        prepare_run::preflight_error(true, true, false, false, false).expect("the diarization sentence"),
+        prepare_run::preflight_error(true, true, false, false, false)
+            .expect("the diarization sentence"),
         "the refusal is the one §S5's order puts third"
     );
     assert!(

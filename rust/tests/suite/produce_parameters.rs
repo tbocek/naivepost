@@ -16,6 +16,10 @@
 //! P.eng.publishMaxFrames 8, P.eng.thumbnailJPEGMax 2 MiB. Tools: `tool:ffmpeg.encode` (the encode, the mux
 //! and the poster).
 
+use crate::common;
+use adw::prelude::*;
+use gtk4 as gtk;
+use naivepost::cut::Seg;
 use naivepost::params;
 use naivepost::produce_embed as embed;
 use naivepost::produce_render as render;
@@ -23,22 +27,21 @@ use naivepost::produce_runs as runs;
 use naivepost::produce_screen as screen;
 use naivepost::produce_stamp as stamp;
 use naivepost::produce_subtitles as subs;
-use naivepost::cut::Seg;
 use naivepost::project::{self, Container, Produce, Resolution, TitleBox};
-use adw::prelude::*;
-use gtk4 as gtk;
 use naivepost::shell::Page;
 use naivepost::ui;
-use crate::common;
 
 const ITEM: &str = "§08-produce#4-parameters-used";
 
 /// One row of this section's own list.
 fn row(id: &str) -> params::Param {
-    params::produce().into_iter().find(|param| param.id == id).unwrap_or_else(|| {
-        let ids: Vec<&str> = params::produce().iter().map(|param| param.id).collect();
-        panic!("{id} is in §08's §4 list and so must be catalogued; this section holds {ids:?}")
-    })
+    params::produce()
+        .into_iter()
+        .find(|param| param.id == id)
+        .unwrap_or_else(|| {
+            let ids: Vec<&str> = params::produce().iter().map(|param| param.id).collect();
+            panic!("{id} is in §08's §4 list and so must be catalogued; this section holds {ids:?}")
+        })
 }
 
 /// Every id, whichever page's rows it is filed under — `params::find` answers Prepare's list only.
@@ -55,7 +58,10 @@ fn anywhere(id: &str) -> Option<params::Param> {
 /// A number §4 writes with a decimal point, compared as a number: `params::num` trims the trailing zero, so
 /// comparing strings would pin a spelling neither side chose.
 fn number(id: &str) -> f64 {
-    row(id).spelled.parse().unwrap_or_else(|_| panic!("{id} spells a number"))
+    row(id)
+        .spelled
+        .parse()
+        .unwrap_or_else(|_| panic!("{id} spells a number"))
 }
 
 fn settings() -> Produce {
@@ -76,22 +82,43 @@ fn sec_08_produce_4_parameters_used_s1_the_shortest_clip_and_the_bed_under_the_n
     let mut short = Seg::default();
     short.s = 10.0;
     short.e = 10.4;
-    let (clips, logs) = render::plan_clips(&[short], |_| Vec::new(), "16:9", |_| true, &[], &[], (1920, 1080), true, render::unknown_footage);
+    let (clips, logs) = render::plan_clips(
+        &[short],
+        |_| Vec::new(),
+        "16:9",
+        |_| true,
+        &[],
+        &[],
+        (1920, 1080),
+        true,
+        render::unknown_footage,
+    );
     assert!(clips.is_empty(), "{clips:?}");
     assert_eq!(logs.len(), 1, "{logs:?}");
-    assert!(logs[0].contains("too short to render, dropped"), "{}", logs[0]);
+    assert!(
+        logs[0].contains("too short to render, dropped"),
+        "{}",
+        logs[0]
+    );
 
     // P.policy.gameVolume — 0.22, the bed's level under a narration that rides at full.
     assert_eq!(number("P.policy.gameVolume"), 0.22);
     assert_eq!(settings().game_volume, 0.22);
-    let clip = render::Clip { no: 1, seg_s: 0.0, on_screen: 5.0, rate: 1.0, lines: vec![render::Placed {
-        entry_index: 0,
-        at: 0.3,
-        tempo: 1.0,
-        extend: 0.0,
-        text: String::new(),
-        speech: 2.0,
-    }], ..Default::default() };
+    let clip = render::Clip {
+        no: 1,
+        seg_s: 0.0,
+        on_screen: 5.0,
+        rate: 1.0,
+        lines: vec![render::Placed {
+            entry_index: 0,
+            at: 0.3,
+            tempo: 1.0,
+            extend: 0.0,
+            text: String::new(),
+            speech: 2.0,
+        }],
+        ..Default::default()
+    };
     let chain = render::audio_chain(&clip, &settings(), 0, &[]).join(",");
     assert!(chain.contains("volume=0.22"), "{chain}");
 }
@@ -104,20 +131,38 @@ fn sec_08_produce_4_parameters_used_s2_the_cue_bounds_and_the_translation_batch(
     // Each row must read as its module's constant, so a change on one side fails here.
     // P.policy.subtitleBreakSeconds: the pause that ends a cue.
     assert_eq!(number("P.policy.subtitleBreakSeconds"), 0.6);
-    assert_eq!(row("P.policy.subtitleBreakSeconds").spelled, subs::SUBBREAK_SECONDS.to_string());
+    assert_eq!(
+        row("P.policy.subtitleBreakSeconds").spelled,
+        subs::SUBBREAK_SECONDS.to_string()
+    );
     // P.policy.subtitleRowChars: two rows of this many characters end a cue.
-    assert_eq!(row("P.policy.subtitleRowChars").spelled, subs::ROW_CHARS.to_string());
+    assert_eq!(
+        row("P.policy.subtitleRowChars").spelled,
+        subs::ROW_CHARS.to_string()
+    );
     assert_eq!(row("P.policy.subtitleRowChars").spelled, "42");
     // P.policy.subtitleMaxSeconds, subtitleHoldSeconds, subtitleMinSeconds: the longest cue, the shortest
     // hold after speech, and the floor a cue is never cut below.
     assert_eq!(number("P.policy.subtitleMaxSeconds"), 6.0);
-    assert_eq!(row("P.policy.subtitleMaxSeconds").spelled, subs::MAX_SECONDS.to_string());
+    assert_eq!(
+        row("P.policy.subtitleMaxSeconds").spelled,
+        subs::MAX_SECONDS.to_string()
+    );
     assert_eq!(number("P.policy.subtitleHoldSeconds"), 1.2);
-    assert_eq!(row("P.policy.subtitleHoldSeconds").spelled, subs::HOLD_SECONDS.to_string());
+    assert_eq!(
+        row("P.policy.subtitleHoldSeconds").spelled,
+        subs::HOLD_SECONDS.to_string()
+    );
     assert_eq!(number("P.policy.subtitleMinSeconds"), 0.8);
-    assert_eq!(row("P.policy.subtitleMinSeconds").spelled, subs::MIN_SECONDS.to_string());
+    assert_eq!(
+        row("P.policy.subtitleMinSeconds").spelled,
+        subs::MIN_SECONDS.to_string()
+    );
     // P.machine.translateBatch: numbered lines per translation request.
-    assert_eq!(row("P.machine.translateBatch").spelled, subs::BATCH.to_string());
+    assert_eq!(
+        row("P.machine.translateBatch").spelled,
+        subs::BATCH.to_string()
+    );
     assert_eq!(row("P.machine.translateBatch").spelled, "150");
 }
 
@@ -131,9 +176,15 @@ fn sec_08_produce_4_parameters_used_s3_fitting_a_line_to_its_clip() {
     // whichever section carries them (§07-narrate#4-parameters-used moved the tempo row).
     assert_eq!(anywhere("P.eng.narrationMaxTempo").unwrap().spelled, "1.25");
     assert_eq!(render::MAX_TEMPO, 1.25);
-    assert_eq!(anywhere("P.eng.narrationMaxExtendSeconds").unwrap().spelled, "4");
+    assert_eq!(
+        anywhere("P.eng.narrationMaxExtendSeconds").unwrap().spelled,
+        "4"
+    );
     assert_eq!(render::MAX_EXTEND_SECONDS, 4.0);
-    assert_eq!(anywhere("P.eng.narrationTailSeconds").unwrap().spelled, "0.2");
+    assert_eq!(
+        anywhere("P.eng.narrationTailSeconds").unwrap().spelled,
+        "0.2"
+    );
     assert_eq!(render::TAIL_SECONDS, 0.2);
 
     // A line over the room grows the clip, and never past the ceiling.
@@ -144,7 +195,11 @@ fn sec_08_produce_4_parameters_used_s3_fitting_a_line_to_its_clip() {
     // A hopeless line comes back at the tempo ceiling with a log naming what was left over.
     let (placed, logs) = render::fit(&[(0, 0.3, 60.0)], 2.0);
     assert!(placed[0].extend <= 4.0);
-    assert!(placed[0].tempo <= 1.25 + f64::EPSILON, "tempo {}", placed[0].tempo);
+    assert!(
+        placed[0].tempo <= 1.25 + f64::EPSILON,
+        "tempo {}",
+        placed[0].tempo
+    );
     let joined = logs.join("\n");
     assert!(joined.contains("does not fit"), "{joined}");
     assert!(joined.contains("sped up 1.25x"), "{joined}");
@@ -157,25 +212,45 @@ fn sec_08_produce_4_parameters_used_s4_the_loudness_target_and_the_ceiling() {
     assert_eq!(ITEM, "§08-produce#4-parameters-used");
     // tool:ffmpeg.encode applies both. §10 spells them; the rows are read out of the filter strings, so a
     // change to what ffmpeg is sent moves the row with it.
-    assert!(render::LOUDNORM.contains("loudnorm=I=-14:TP=-1.5:LRA=11"), "{}", render::LOUDNORM);
+    assert!(
+        render::LOUDNORM.contains("loudnorm=I=-14:TP=-1.5:LRA=11"),
+        "{}",
+        render::LOUDNORM
+    );
     assert_eq!(row("P.eng.loudness").spelled, "I -14, TP -1.5, LRA 11");
     assert_eq!(render::LIMITER, "alimiter=limit=0.891:level=disabled");
     assert_eq!(row("P.eng.clipLimiter").spelled, "-1 dBFS (0.891)");
 
     // Order is part of the claim: the limiter is the last thing before the format, and it sits after the
     // narration's bed — a ceiling applied before the mix would let the mix clip instead.
-    let clip = render::Clip { no: 1, seg_s: 0.0, on_screen: 5.0, rate: 1.0, lines: vec![render::Placed {
-        entry_index: 0,
-        at: 0.3,
-        tempo: 1.0,
-        extend: 0.0,
-        text: String::new(),
-        speech: 2.0,
-    }], ..Default::default() };
+    let clip = render::Clip {
+        no: 1,
+        seg_s: 0.0,
+        on_screen: 5.0,
+        rate: 1.0,
+        lines: vec![render::Placed {
+            entry_index: 0,
+            at: 0.3,
+            tempo: 1.0,
+            extend: 0.0,
+            text: String::new(),
+            speech: 2.0,
+        }],
+        ..Default::default()
+    };
     let chain = render::audio_chain(&clip, &settings(), 0, &[]);
-    let bed = chain.iter().position(|f| f == "volume=0.22").expect("the bed");
-    let limiter = chain.iter().position(|f| f == render::LIMITER).expect("the limiter");
-    let format = chain.iter().position(|f| f.starts_with("format=sample_fmts=fltp:sample_rates=48000")).expect("the format");
+    let bed = chain
+        .iter()
+        .position(|f| f == "volume=0.22")
+        .expect("the bed");
+    let limiter = chain
+        .iter()
+        .position(|f| f == render::LIMITER)
+        .expect("the limiter");
+    let format = chain
+        .iter()
+        .position(|f| f.starts_with("format=sample_fmts=fltp:sample_rates=48000"))
+        .expect("the format");
     assert!(bed < limiter && limiter < format, "{chain:?}");
 }
 
@@ -201,12 +276,23 @@ fn sec_08_produce_4_parameters_used_s5_the_thumbnails_size_and_band() {
     ] {
         assert_eq!(box_.0 % 2, 0, "{box_:?} has an odd edge");
         assert_eq!(box_.1 % 2, 0, "{box_:?} has an odd edge");
-        assert!(box_.0.max(box_.1) <= screen::THUMB_LONG_SIDE, "{box_:?} leaves the tier");
+        assert!(
+            box_.0.max(box_.1) <= screen::THUMB_LONG_SIDE,
+            "{box_:?} leaves the tier"
+        );
     }
 
     // P.eng.titleBand — §01 §5's example box, spelled once by project.
     assert_eq!(row("P.eng.titleBand").spelled, "{0.5, 0.25, 1, 0.4}");
-    assert_eq!(TitleBox::default(), TitleBox { cx: 0.5, cy: 0.25, wf: 1.0, hf: 0.4 });
+    assert_eq!(
+        TitleBox::default(),
+        TitleBox {
+            cx: 0.5,
+            cy: 0.25,
+            wf: 1.0,
+            hf: 0.4
+        }
+    );
 }
 
 #[test]
@@ -226,7 +312,10 @@ fn sec_08_produce_4_parameters_used_s5_three_frames_to_start_and_eight_at_most()
     // The first of them is the base the image model edits.
     let mut record = project::Publish::default();
     record.frames = seeded;
-    assert_eq!(naivepost::publish::base(&record), Some("project:frame0.jpg"));
+    assert_eq!(
+        naivepost::publish::base(&record),
+        Some("project:frame0.jpg")
+    );
 
     // P.eng.publishMaxFrames — the row's ceiling, and the ninth is refused rather than dropped silently.
     assert_eq!(row("P.eng.publishMaxFrames").spelled, "8");
@@ -302,8 +391,14 @@ fn sec_08_produce_4_parameters_used_s6_the_encoder_settings_are_stored_state() {
     }
     let facts_fn = facts;
     let wav_fn = wav;
-    assert_ne!(first.stamp_of(&wav_fn, &facts_fn), second.stamp_of(&wav_fn, &facts_fn));
-    let named = stamp::parts(&first, &wav_fn, &facts_fn).into_iter().map(|(name, _)| name).collect::<Vec<_>>();
+    assert_ne!(
+        first.stamp_of(&wav_fn, &facts_fn),
+        second.stamp_of(&wav_fn, &facts_fn)
+    );
+    let named = stamp::parts(&first, &wav_fn, &facts_fn)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect::<Vec<_>>();
     assert!(named.contains(&"settings"), "{named:?}");
 }
 
@@ -314,8 +409,20 @@ fn sec_08_produce_4_parameters_used_s7_input_order_and_the_faststart_flags() {
     assert_eq!(ITEM, "§08-produce#4-parameters-used");
     // tool:ffmpeg.encode. Input ordering: the picture's seek goes before its -i, so a clip starting at 40
     // minutes does not decode 40 minutes first.
-    let clip = render::Clip { no: 1, seg_s: 12.5, on_screen: 5.0, rate: 1.0, ..Default::default() };
-    let argv = render::encode_command(&clip, &settings(), &[("picture", Some("media/talk.mkv"))], None, std::path::Path::new("produce/final.mp4"));
+    let clip = render::Clip {
+        no: 1,
+        seg_s: 12.5,
+        on_screen: 5.0,
+        rate: 1.0,
+        ..Default::default()
+    };
+    let argv = render::encode_command(
+        &clip,
+        &settings(),
+        &[("picture", Some("media/talk.mkv"))],
+        None,
+        std::path::Path::new("produce/final.mp4"),
+    );
     let ss = argv.iter().position(|a| a == "-ss").expect("-ss");
     let input = argv.iter().position(|a| a == "-i").expect("-i");
     assert!(ss < input, "{argv:?}");
@@ -332,7 +439,10 @@ fn sec_08_produce_4_parameters_used_s7_input_order_and_the_faststart_flags() {
         let mut other = settings();
         other.container = container;
         let line = render::mux_command(video, audio, &[], &other, out, &[]).join(" ");
-        assert!(!line.contains("faststart"), "{container:?} should carry none: {line}");
+        assert!(
+            !line.contains("faststart"),
+            "{container:?} should carry none: {line}"
+        );
         assert!(!line.contains("use_editlist"), "{line}");
     }
 }
@@ -342,7 +452,13 @@ fn sec_08_produce_4_parameters_used_s7_the_servers_deadlines_the_poster_and_the_
     assert_eq!(ITEM, "§08-produce#4-parameters-used");
     // sd.cpp's timeouts (15/60/30/1/10 s) are §10 prose with no `P.` row, so nothing is catalogued under an
     // sd id — and inventing one would be a number with no rule behind it.
-    for section in [params::prepare(), params::cut(), params::effects(), params::narrate(), params::produce()] {
+    for section in [
+        params::prepare(),
+        params::cut(),
+        params::effects(),
+        params::narrate(),
+        params::produce(),
+    ] {
         for param in section {
             assert!(
                 !(param.id.starts_with("P.eng.sd") || param.id.starts_with("P.machine.sd")),
@@ -360,16 +476,28 @@ fn sec_08_produce_4_parameters_used_s7_the_servers_deadlines_the_poster_and_the_
     // Poster quality: §F5.5's "JPEG 90" and the rung ffmpeg takes for it. tool:ffmpeg.encode does the job.
     assert_eq!(embed::POSTER_JPEG_QUALITY, 90);
     assert_eq!(embed::POSTER_QSCALE, "2");
-    let argv = embed::poster_command(std::path::Path::new("publish/thumbnail.png"), std::path::Path::new("produce/final.jpg")).join(" ");
+    let argv = embed::poster_command(
+        std::path::Path::new("publish/thumbnail.png"),
+        std::path::Path::new("produce/final.jpg"),
+    )
+    .join(" ");
     assert!(argv.contains("-q:v 2"), "{argv}");
 
     // P.eng.thumbnailJPEGMax — the cap an upload puts on the picture, and the ladder it is tried against.
     assert_eq!(number("P.eng.thumbnailJPEGMax"), 2_097_152.0);
     assert_eq!(runs::JPEG_MAX_BYTES, 2 * 1024 * 1024);
     assert_eq!(runs::JPEG_QUALITIES, [92, 85, 75, 60, 40]);
-    assert!(runs::JPEG_QUALITIES.windows(2).all(|pair| pair[0] > pair[1]), "best first");
+    assert!(
+        runs::JPEG_QUALITIES
+            .windows(2)
+            .all(|pair| pair[0] > pair[1]),
+        "best first"
+    );
     let over = runs::jpeg_target(runs::JPEG_MAX_BYTES + 1).unwrap_err();
-    assert_eq!(over, "JPEG exceeds 2 MiB after 92/85/75 — check the sd.cpp encoder");
+    assert_eq!(
+        over,
+        "JPEG exceeds 2 MiB after 92/85/75 — check the sd.cpp encoder"
+    );
 }
 
 // ---- S8: what §4 names that has no row ----------------------------------------------------
@@ -386,7 +514,9 @@ fn sec_08_produce_4_parameters_used_s8_the_brief_bound_and_the_one_row_per_param
         include_str!("../../src/publish.rs"),
     ];
     assert!(
-        sources.iter().any(|text| text.contains("THE FINISHED VIDEO")),
+        sources
+            .iter()
+            .any(|text| text.contains("THE FINISHED VIDEO")),
         "the upload brief is built, so this test must keep watching its bound"
     );
     assert_eq!(number("P.machine.briefMaxChars"), 120_000.0);
@@ -398,12 +528,30 @@ fn sec_08_produce_4_parameters_used_s8_the_brief_bound_and_the_one_row_per_param
     assert_eq!(rows[0].from, "produce_upload::BRIEF_MAX_CHARS");
 
     // One row per parameter: the two fitting numbers §4 borrows from F4.3 live in §7 and are not repeated here.
-    let in_produce = params::produce().into_iter().filter(|p| p.id == "P.eng.narrationTailSeconds").count();
+    let in_produce = params::produce()
+        .into_iter()
+        .filter(|p| p.id == "P.eng.narrationTailSeconds")
+        .count();
     assert_eq!(in_produce, 0, "its home is narrate()");
-    assert_eq!(params::narrate().into_iter().filter(|p| p.id == "P.eng.narrationTailSeconds").count(), 1);
-    let in_produce = params::produce().into_iter().filter(|p| p.id == "P.eng.narrationMaxExtendSeconds").count();
+    assert_eq!(
+        params::narrate()
+            .into_iter()
+            .filter(|p| p.id == "P.eng.narrationTailSeconds")
+            .count(),
+        1
+    );
+    let in_produce = params::produce()
+        .into_iter()
+        .filter(|p| p.id == "P.eng.narrationMaxExtendSeconds")
+        .count();
     assert_eq!(in_produce, 0);
-    assert_eq!(params::narrate().into_iter().filter(|p| p.id == "P.eng.narrationMaxExtendSeconds").count(), 1);
+    assert_eq!(
+        params::narrate()
+            .into_iter()
+            .filter(|p| p.id == "P.eng.narrationMaxExtendSeconds")
+            .count(),
+        1
+    );
 }
 
 // ---- S9: the section's own shape ------------------------------------------------------------
@@ -436,8 +584,8 @@ fn sec_08_produce_4_parameters_used_s9_the_sections_rows_are_exactly_these() {
             "P.eng.titleBand",
             "P.policy.publishFrames",
             "P.eng.publishMaxFrames",
-        // F5.6 S1's upload-brief bound, catalogued where the brief reads it.
-        "P.machine.briefMaxChars",
+            // F5.6 S1's upload-brief bound, catalogued where the brief reads it.
+            "P.machine.briefMaxChars",
             // §4's engineering sentence: values §10 keeps in prose, so each takes the bare `produce.` prefix
             // AGENT.md gives a value with no `P.` id, and spells itself out of its rule's own constant.
             "produce.exportLadder",
@@ -454,16 +602,29 @@ fn sec_08_produce_4_parameters_used_s9_the_sections_rows_are_exactly_these() {
 
     // Every row names where its value lives, and that name is really in the module it points at.
     let files: &[(&str, &str)] = &[
-        ("produce_subtitles", include_str!("../../src/produce_subtitles.rs")),
+        (
+            "produce_subtitles",
+            include_str!("../../src/produce_subtitles.rs"),
+        ),
         ("produce_runs", include_str!("../../src/produce_runs.rs")),
-        ("produce_render", include_str!("../../src/produce_render.rs")),
-        ("produce_screen", include_str!("../../src/produce_screen.rs")),
+        (
+            "produce_render",
+            include_str!("../../src/produce_render.rs"),
+        ),
+        (
+            "produce_screen",
+            include_str!("../../src/produce_screen.rs"),
+        ),
         // The engineering rows name the module their rule lives in, not `params_produce`, which only spells.
         ("produce_embed", include_str!("../../src/produce_embed.rs")),
         ("bodies", include_str!("../../src/bodies.rs")),
     ];
     for param in params::produce() {
-        assert!(!param.spelled.is_empty(), "{} catalogued with no value", param.id);
+        assert!(
+            !param.spelled.is_empty(),
+            "{} catalogued with no value",
+            param.id
+        );
         // A row may name several homes of one rule (`mod::A + mod2::B`), so every `+`-separated half is
         // checked on its own; the split here only decides whether the row names a home at all.
         if !param.from.contains("::") {
@@ -476,14 +637,22 @@ fn sec_08_produce_4_parameters_used_s9_the_sections_rows_are_exactly_these() {
         let mut homes: Vec<(String, String)> = Vec::new();
         for half in param.from.split('+') {
             let half = half.trim();
-            let Some((module, name)) = half.split_once("::") else { continue };
+            let Some((module, name)) = half.split_once("::") else {
+                continue;
+            };
             homes.push((module.to_string(), name.trim().to_string()));
         }
         for (module, name) in homes {
             let Some((_, text)) = files.iter().find(|(file, _)| *file == module) else {
                 continue; // project:: and tools:: live outside this section's own files
             };
-            assert!(text.contains(&name), "{} names {}::{} which {module} does not hold", param.id, module, name);
+            assert!(
+                text.contains(&name),
+                "{} names {}::{} which {module} does not hold",
+                param.id,
+                module,
+                name
+            );
         }
     }
 }
@@ -492,7 +661,11 @@ fn sec_08_produce_4_parameters_used_s9_the_sections_rows_are_exactly_these() {
 
 /// A stamp input over `settings` with everything else empty: enough for the settings group to be the only
 /// thing two stamps differ on.
-fn stamp_input<'a>(settings: &'a Produce, segs: &'a [Seg], sources: &'a [project::Source]) -> stamp::Input<'a> {
+fn stamp_input<'a>(
+    settings: &'a Produce,
+    segs: &'a [Seg],
+    sources: &'a [project::Source],
+) -> stamp::Input<'a> {
     stamp::Input {
         settings,
         segs,
@@ -523,7 +696,11 @@ fn sec_08_produce_4_parameters_used_s10_the_export_ladder_and_the_poster_quality
     // Every rung appears, best first, and the ones whose failure the export reports are the ones
     // `jpeg_target` would name — so a reordered or added rung moves this row instead of hiding from it.
     for rung in runs::JPEG_QUALITIES {
-        assert!(ladder.spelled.contains(&rung.to_string()), "{} omits {rung}", ladder.spelled);
+        assert!(
+            ladder.spelled.contains(&rung.to_string()),
+            "{} omits {rung}",
+            ladder.spelled
+        );
     }
     let order = runs::JPEG_QUALITIES;
     let mut at = 0usize;
@@ -532,20 +709,38 @@ fn sec_08_produce_4_parameters_used_s10_the_export_ladder_and_the_poster_quality
             .spelled
             .find(&rung.to_string())
             .unwrap_or_else(|| panic!("{} lacks {rung}", ladder.spelled));
-        assert!(found >= at, "the ladder must read best first: {}", ladder.spelled);
+        assert!(
+            found >= at,
+            "the ladder must read best first: {}",
+            ladder.spelled
+        );
         at = found;
     }
-    assert_eq!(ladder.from, "produce_runs::JPEG_QUALITIES + JPEG_RETRY_LIMIT");
+    assert_eq!(
+        ladder.from,
+        "produce_runs::JPEG_QUALITIES + JPEG_RETRY_LIMIT"
+    );
     // And the poster: the requirement and the `-q:v` rung ffmpeg is sent, both named constants.
     let poster = row("produce.posterJPEGQuality");
     assert_eq!(
         poster.spelled,
-        format!("{} (-q:v {})", embed::POSTER_JPEG_QUALITY, embed::POSTER_QSCALE)
+        format!(
+            "{} (-q:v {})",
+            embed::POSTER_JPEG_QUALITY,
+            embed::POSTER_QSCALE
+        )
     );
-    assert_eq!(poster.from, "produce_embed::POSTER_JPEG_QUALITY + POSTER_QSCALE");
+    assert_eq!(
+        poster.from,
+        "produce_embed::POSTER_JPEG_QUALITY + POSTER_QSCALE"
+    );
     // Exactly one row each: a second spelling would be a second opinion about one number.
     for id in ["produce.exportLadder", "produce.posterJPEGQuality"] {
-        assert_eq!(params::produce().into_iter().filter(|p| p.id == id).count(), 1, "{id} twice");
+        assert_eq!(
+            params::produce().into_iter().filter(|p| p.id == id).count(),
+            1,
+            "{id} twice"
+        );
     }
 }
 
@@ -558,29 +753,58 @@ fn sec_08_produce_4_parameters_used_s11_the_sd_wait_and_the_command_rules_have_r
     // cannot quote a deadline the code stopped setting. Each kind's seconds must appear in the spelling.
     let waits = row("produce.sdWaitSeconds");
     assert_eq!(waits.from, "bodies::sd_waits");
-    for kind in [Kind::Capabilities, Kind::SubmitImage, Kind::PollImage, Kind::CancelImage] {
+    for kind in [
+        Kind::Capabilities,
+        Kind::SubmitImage,
+        Kind::PollImage,
+        Kind::CancelImage,
+    ] {
         let wait = sd_waits(kind).unwrap_or_else(|| panic!("{kind:?} has no sd.cpp wait"));
         assert!(
-            waits.spelled.contains(&format!("{}s", wait.timeout.as_secs())),
+            waits
+                .spelled
+                .contains(&format!("{}s", wait.timeout.as_secs())),
             "{} omits {kind:?}'s {}s timeout",
             waits.spelled,
             wait.timeout.as_secs()
         );
         if let Some(gap) = wait.interval {
-            assert!(waits.spelled.contains(&format!("every {}s", gap.as_secs())), "{}", waits.spelled);
+            assert!(
+                waits.spelled.contains(&format!("every {}s", gap.as_secs())),
+                "{}",
+                waits.spelled
+            );
         }
     }
     // Input ordering: the row says `-ss before -i`, and a real encode command obeys it.
     let seek = row("produce.seekBeforeInput");
     assert_eq!(seek.spelled, "-ss before -i");
-    let clip = render::Clip { no: 2, seg_s: 40.5, on_screen: 5.0, rate: 1.0, ..Default::default() };
-    let argv = render::encode_command(&clip, &settings(), &[("picture", Some("media/take.mkv"))], None, std::path::Path::new("produce/final.mp4"));
-    let ss = argv.iter().position(|a| a == "-ss").expect("a clip starting at 40.5 s carries -ss");
+    let clip = render::Clip {
+        no: 2,
+        seg_s: 40.5,
+        on_screen: 5.0,
+        rate: 1.0,
+        ..Default::default()
+    };
+    let argv = render::encode_command(
+        &clip,
+        &settings(),
+        &[("picture", Some("media/take.mkv"))],
+        None,
+        std::path::Path::new("produce/final.mp4"),
+    );
+    let ss = argv
+        .iter()
+        .position(|a| a == "-ss")
+        .expect("a clip starting at 40.5 s carries -ss");
     let input = argv.iter().position(|a| a == "-i").expect("and an input");
     assert!(ss < input, "{argv:?}");
     // The faststart flags: mp4's only, and the row lists exactly what the mux appends.
     let flags = row("produce.mp4StreamFlags");
-    assert_eq!(flags.from, "produce_render::MP4_STREAM_FLAGS + MP4_START_FLAGS");
+    assert_eq!(
+        flags.from,
+        "produce_render::MP4_STREAM_FLAGS + MP4_START_FLAGS"
+    );
     let (video, audio, out) = (
         std::path::Path::new("produce/video.mp4"),
         std::path::Path::new("produce/audio.m4a"),
@@ -588,13 +812,19 @@ fn sec_08_produce_4_parameters_used_s11_the_sd_wait_and_the_command_rules_have_r
     );
     let mp4 = render::mux_command(video, audio, &[], &settings(), out, &[]).join(" ");
     for flag in flags.spelled.split(' ') {
-        assert!(mp4.contains(flag), "{flag} from the row is missing from {mp4}");
+        assert!(
+            mp4.contains(flag),
+            "{flag} from the row is missing from {mp4}"
+        );
     }
     for container in [Container::Mkv, Container::Webm] {
         let mut other = settings();
         other.container = container;
         let line = render::mux_command(video, audio, &[], &other, out, &[]).join(" ");
-        assert!(!line.contains("faststart"), "{container:?} carries none: {line}");
+        assert!(
+            !line.contains("faststart"),
+            "{container:?} carries none: {line}"
+        );
         assert!(!line.contains("use_editlist"), "{line}");
     }
 }
@@ -624,39 +854,70 @@ fn sec_08_produce_4_parameters_used_s12_the_project_encoder_settings_survive_a_l
         &root,
         r#"{"subs": "sidecar", "subs_from": "narration", "game_vol": 0.0, "bare": true}"#,
     );
-    assert_eq!(loaded.produce.subtitles, project::Subtitles::None, "\"sidecar\" is \"none in the video\"");
-    assert_eq!(loaded.produce.game_volume, 0.0, "a stored 0 is silence, not the 0.22 default");
-    assert!(!loaded.produce.blurred_edges, "`bare: true` means the edges are left bare");
+    assert_eq!(
+        loaded.produce.subtitles,
+        project::Subtitles::None,
+        "\"sidecar\" is \"none in the video\""
+    );
+    assert_eq!(
+        loaded.produce.game_volume, 0.0,
+        "a stored 0 is silence, not the 0.22 default"
+    );
+    assert!(
+        !loaded.produce.blurred_edges,
+        "`bare: true` means the edges are left bare"
+    );
     // Nothing was folded in silently: each key says what it became.
     for said in ["sidecar", "subs_from", "game_vol", "bare"] {
-        assert!(notes.iter().any(|note| note.contains(said)), "{said} folded without a note: {notes:?}");
+        assert!(
+            notes.iter().any(|note| note.contains(said)),
+            "{said} folded without a note: {notes:?}"
+        );
     }
 
     // Absent `game_vol` keeps §4's default — the same number `P.policy.gameVolume` spells — which is the
     // distinction serde alone could not make.
     let (plain, plain_notes) = load_with(&root, r#"{"crf": 20}"#);
     let default_volume = number("P.policy.gameVolume");
-    assert_eq!(plain.produce.game_volume, default_volume, "absent means the default {default_volume}");
+    assert_eq!(
+        plain.produce.game_volume, default_volume,
+        "absent means the default {default_volume}"
+    );
     assert_eq!(plain.produce.crf, 20, "and the current keys still arrive");
-    assert!(plain_notes.is_empty(), "a project with no legacy key says nothing: {plain_notes:?}");
+    assert!(
+        plain_notes.is_empty(),
+        "a project with no legacy key says nothing: {plain_notes:?}"
+    );
 
     // A stored value that is not zero arrives as itself, and the fold is reported.
     let (stored, stored_notes) = load_with(&root, r#"{"game_vol": 0.4}"#);
     assert_eq!(stored.produce.game_volume, 0.4);
-    assert!(stored_notes.iter().any(|note| note.contains("game_vol")), "{stored_notes:?}");
+    assert!(
+        stored_notes.iter().any(|note| note.contains("game_vol")),
+        "{stored_notes:?}"
+    );
 
     // An unknown `subs` spelling is refused in words rather than guessed at, and the load still succeeds.
     let (_, odd_notes) = load_with(&root, r#"{"subs": "burned"}"#);
-    assert!(odd_notes.iter().any(|note| note.contains("ignored")), "{odd_notes:?}");
+    assert!(
+        odd_notes.iter().any(|note| note.contains("ignored")),
+        "{odd_notes:?}"
+    );
 
     // And the fold is stable: re-saving what loaded and loading again changes nothing — silence stays silence
     // rather than drifting back to the default behind the person's back.
     let saved = root.join("again.naivepost");
     project::save(&loaded, &saved).expect("the loaded project saves");
     let (again, again_notes) = project::load_report(&saved).expect("and reloads");
-    assert_eq!(again.produce, loaded.produce, "a round trip is byte-for-byte the same settings");
+    assert_eq!(
+        again.produce, loaded.produce,
+        "a round trip is byte-for-byte the same settings"
+    );
     assert_eq!(again.produce.game_volume, 0.0, "silence survived the save");
-    assert!(again_notes.is_empty(), "the second load had nothing left to fold: {again_notes:?}");
+    assert!(
+        again_notes.is_empty(),
+        "the second load had nothing left to fold: {again_notes:?}"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -681,7 +942,9 @@ fn produce_page(app: &adw::Application) -> adw::ApplicationWindow {
 /// render hashes: the row's numbers are only worth cataloguing if a change to them makes a different video.
 fn check_settings_wire(root: &std::path::Path) {
     std::env::set_current_dir(root).expect("cwd pinned for the session lookup");
-    let app = WIDGET_APP.with(|held| held.borrow().clone()).expect("the round published the application");
+    let app = WIDGET_APP
+        .with(|held| held.borrow().clone())
+        .expect("the round published the application");
     let window = produce_page(&app);
     // Seed the rows so the page starts where §A's defaults say it does.
     let mut state = ui::produce_page::read_state();
@@ -720,9 +983,15 @@ fn check_settings_wire(root: &std::path::Path) {
     common::settle();
 
     let after = ui::produce_page::read_state();
-    assert_eq!(after.crf, 19.0, "the scale's value reached the page's state");
+    assert_eq!(
+        after.crf, 19.0,
+        "the scale's value reached the page's state"
+    );
     assert!(after.mono, "and so did the tick");
-    assert_eq!(after.game_volume, before.game_volume, "untouched rows keep their value");
+    assert_eq!(
+        after.game_volume, before.game_volume,
+        "untouched rows keep their value"
+    );
 
     // The point of cataloguing them: these settings are what the render hashes, so the video goes stale.
     let segs = vec![Seg::default()];
@@ -756,12 +1025,17 @@ fn check_settings_wire(root: &std::path::Path) {
 
 fn widget_round(app: &adw::Application) {
     WIDGET_APP.with(|held| *held.borrow_mut() = Some(app.clone()));
-    let root = std::env::current_dir().expect("cwd pinned before the run").join("wire");
+    let root = std::env::current_dir()
+        .expect("cwd pinned before the run")
+        .join("wire");
     std::fs::create_dir_all(&root).unwrap();
-    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check_settings_wire(&root)));
+    let outcome =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check_settings_wire(&root)));
     if outcome.is_err() {
-        *WIDGET_FAIL.lock().unwrap() =
-            Some("the settings controls did not reach the page's state and the render's stamp".to_string());
+        *WIDGET_FAIL.lock().unwrap() = Some(
+            "the settings controls did not reach the page's state and the render's stamp"
+                .to_string(),
+        );
     }
     let app = app.clone();
     glib::idle_add_local(move || {

@@ -48,7 +48,9 @@ fn walk(root: &Path) -> Vec<String> {
     while let Some(dir) = stack.pop() {
         // A folder that was never created holds nothing — `write_prompt` correctly writes no
         // file when the text is the shipped one, so `prompts/` may simply not exist.
-        let Ok(entries) = fs::read_dir(&dir) else { continue };
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
@@ -85,18 +87,38 @@ fn sec_01_project_and_files_7_machine_files_s1_llm_conf_is_bash_sourceable_and_0
     settings::save(&d.paths, &conf).unwrap();
     let written = fs::read_to_string(d.paths.conf_path()).unwrap();
     for key in [
-        "LLM_SERVER=", "LLM_MODEL=", "LLM_API_KEY=", "AUDIOCPP_SERVER=", "AUDIOCPP_API_KEY=",
-        "AUDIOCPP_VOICES=", "AUDIOCPP_ASR_MODEL=", "AUDIOCPP_DIAR_MODEL=", "AUDIOCPP_TTS_MODEL=",
-        "AUDIOCPP_SEP_MODEL=", "AUDIOCPP_ALIGN_MODEL=", "FFMPEG=", "FIREFOX=", "SD_SERVER=",
-        "SD_API_KEY=", "SUBTITLE_LANGUAGES=",
+        "LLM_SERVER=",
+        "LLM_MODEL=",
+        "LLM_API_KEY=",
+        "AUDIOCPP_SERVER=",
+        "AUDIOCPP_API_KEY=",
+        "AUDIOCPP_VOICES=",
+        "AUDIOCPP_ASR_MODEL=",
+        "AUDIOCPP_DIAR_MODEL=",
+        "AUDIOCPP_TTS_MODEL=",
+        "AUDIOCPP_SEP_MODEL=",
+        "AUDIOCPP_ALIGN_MODEL=",
+        "FFMPEG=",
+        "FIREFOX=",
+        "SD_SERVER=",
+        "SD_API_KEY=",
+        "SUBTITLE_LANGUAGES=",
     ] {
         assert!(written.contains(key), "{key} missing from:\n{written}");
     }
 
     // Every value is one double-quoted word, so the file sources in bash.
-    for line in written.lines().filter(|l| !l.starts_with('#') && !l.is_empty()) {
-        let (_, value) = line.split_once('=').unwrap_or_else(|| panic!("not KEY=value: {line}"));
-        assert!(value.starts_with('"') && value.ends_with('"'), "unquoted: {line}");
+    for line in written
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+    {
+        let (_, value) = line
+            .split_once('=')
+            .unwrap_or_else(|| panic!("not KEY=value: {line}"));
+        assert!(
+            value.starts_with('"') && value.ends_with('"'),
+            "unquoted: {line}"
+        );
     }
 
     // Round trip, including the keys that need quoting.
@@ -116,7 +138,10 @@ fn sec_01_project_and_files_7_machine_files_s1_llm_conf_is_bash_sourceable_and_0
     settings::save(&d.paths, &conf).unwrap();
     let written = fs::read_to_string(d.paths.conf_path()).unwrap();
     assert_eq!(written.matches("LLM_MODEL=").count(), 1, "{written}");
-    assert!(!written.contains("qwen3-6"), "old value still there:\n{written}");
+    assert!(
+        !written.contains("qwen3-6"),
+        "old value still there:\n{written}"
+    );
 
     // No file at all is the empty config — a machine that never opened the dialog. The fresh
     // root stands beside the one just written, so it exists but holds no conf.
@@ -176,8 +201,10 @@ fn sec_01_project_and_files_7_machine_files_s1_project_pairs_sorted_so_save_is_i
     let d = Dirs::new("pairs");
     let mut conf = Conf::default();
     // Inserted out of order on purpose: the numbering must not depend on insertion.
-    conf.projects
-        .insert("/mnt/media/NP".into(), "/mnt/media/NP/b.naivepost/project.json".into());
+    conf.projects.insert(
+        "/mnt/media/NP".into(),
+        "/mnt/media/NP/b.naivepost/project.json".into(),
+    );
     conf.projects.insert(
         "/home/bocek/Videos".into(),
         "/home/bocek/Videos/a.naivepost/project.json".into(),
@@ -185,8 +212,14 @@ fn sec_01_project_and_files_7_machine_files_s1_project_pairs_sorted_so_save_is_i
 
     settings::save(&d.paths, &conf).unwrap();
     let first = fs::read_to_string(d.paths.conf_path()).unwrap();
-    assert!(first.contains("PROJECT_1_ROOT=\"/home/bocek/Videos\""), "{first}");
-    assert!(first.contains("PROJECT_2_FILE=\"/mnt/media/NP/b.naivepost/project.json\""), "{first}");
+    assert!(
+        first.contains("PROJECT_1_ROOT=\"/home/bocek/Videos\""),
+        "{first}"
+    );
+    assert!(
+        first.contains("PROJECT_2_FILE=\"/mnt/media/NP/b.naivepost/project.json\""),
+        "{first}"
+    );
 
     // An unchanged save leaves the bytes alone.
     let again = settings::save(&d.paths, &conf).unwrap();
@@ -284,8 +317,11 @@ fn sec_01_project_and_files_7_machine_files_s2_legacy_settings_read_once_never_w
     // Once the conf has its own pairs, the legacy file is not consulted again.
     let mut conf = settings::read(&d.paths).unwrap();
     assert!(!conf.projects().is_empty());
-    fs::write(d.paths.settings_path(), r#"{"projects":{"/x":"/x/y.naivepost/project.json"}}"#)
-        .unwrap();
+    fs::write(
+        d.paths.settings_path(),
+        r#"{"projects":{"/x":"/x/y.naivepost/project.json"}}"#,
+    )
+    .unwrap();
     assert!(!settings::recover_projects(&mut conf, &d.paths).unwrap());
     assert_eq!(conf.projects()[0].root, "/mnt/media/NP");
 
@@ -352,7 +388,10 @@ fn sec_01_project_and_files_7_machine_files_s4_prompt_saved_only_when_it_differs
     let shipped = "Rewrite these sentences for a reader who has not seen the video.";
 
     // Nothing on disk: the shipped text runs.
-    assert_eq!(settings::read_prompt(&d.paths, "narrate.rephrase").unwrap(), None);
+    assert_eq!(
+        settings::read_prompt(&d.paths, "narrate.rephrase").unwrap(),
+        None
+    );
     assert_eq!(
         settings::prompt_text(&d.paths, "narrate.rephrase", shipped).unwrap(),
         shipped
@@ -363,7 +402,10 @@ fn sec_01_project_and_files_7_machine_files_s4_prompt_saved_only_when_it_differs
     assert_eq!(walk(&d.root), Vec::<String>::new());
 
     // An actual edit lands in `<key>.txt` and wins over the shipped text.
-    assert!(settings::write_prompt(&d.paths, "narrate.rephrase", "terse, no preamble", shipped).unwrap());
+    assert!(
+        settings::write_prompt(&d.paths, "narrate.rephrase", "terse, no preamble", shipped)
+            .unwrap()
+    );
     assert_eq!(
         settings::prompt_text(&d.paths, "narrate.rephrase", shipped).unwrap(),
         "terse, no preamble"
@@ -379,7 +421,10 @@ fn sec_01_project_and_files_7_machine_files_s4_prompt_saved_only_when_it_differs
     // Reverting to the shipped wording drops the override rather than leaving a copy of it
     // behind that would shadow a future change to the shipped text.
     assert!(settings::clear_prompt(&d.paths, "narrate.rephrase").unwrap());
-    assert_eq!(settings::read_prompt(&d.paths, "narrate.rephrase").unwrap(), None);
+    assert_eq!(
+        settings::read_prompt(&d.paths, "narrate.rephrase").unwrap(),
+        None
+    );
     assert!(!settings::clear_prompt(&d.paths, "narrate.rephrase").unwrap());
 
     // A key is a file name: one that climbs out of `prompts/` is refused.
@@ -434,7 +479,10 @@ fn sec_01_project_and_files_7_machine_files_s5_hang_dump_names_the_stalled_compo
         .filter(|n| n.starts_with("hang-"))
         .collect();
     assert_eq!(dumps.len(), 2, "{dumps:?}");
-    assert!(fs::read_to_string(&second).unwrap().contains("4s"), "whole seconds print plain");
+    assert!(
+        fs::read_to_string(&second).unwrap().contains("4s"),
+        "whole seconds print plain"
+    );
 
     fs::remove_dir_all(&d.root).unwrap();
 }
@@ -447,13 +495,28 @@ fn sec_01_project_and_files_7_machine_files_s6_precedence_dialog_then_file_then_
     let file = Some("http://file:2");
     let legacy = Some("http://legacy:3");
 
-    assert_eq!(settings::resolve(dialog, file, legacy, "default"), "http://dialog:1");
-    assert_eq!(settings::resolve(None, file, legacy, "default"), "http://file:2");
-    assert_eq!(settings::resolve(None, None, legacy, "default"), "http://legacy:3");
+    assert_eq!(
+        settings::resolve(dialog, file, legacy, "default"),
+        "http://dialog:1"
+    );
+    assert_eq!(
+        settings::resolve(None, file, legacy, "default"),
+        "http://file:2"
+    );
+    assert_eq!(
+        settings::resolve(None, None, legacy, "default"),
+        "http://legacy:3"
+    );
     assert_eq!(settings::resolve(None, None, None, "default"), "default");
     // A cleared box means "back to the default", so it must not shadow anything below it.
-    assert_eq!(settings::resolve(Some(""), file, legacy, "default"), "http://file:2");
-    assert_eq!(settings::resolve(Some(""), Some(""), Some(""), "default"), "default");
+    assert_eq!(
+        settings::resolve(Some(""), file, legacy, "default"),
+        "http://file:2"
+    );
+    assert_eq!(
+        settings::resolve(Some(""), Some(""), Some(""), "default"),
+        "default"
+    );
 }
 
 #[test]
@@ -470,14 +533,22 @@ fn sec_01_project_and_files_7_machine_files_s6_audio_url_honours_the_environment
         "http://dialog:1"
     );
     assert_eq!(
-        settings::audio_url(None, Some("http://env:2"), Some("http://conf:3"), "http://default:4"),
+        settings::audio_url(
+            None,
+            Some("http://env:2"),
+            Some("http://conf:3"),
+            "http://default:4"
+        ),
         "http://env:2"
     );
     assert_eq!(
         settings::audio_url(None, None, Some("http://conf:3"), "http://default:4"),
         "http://conf:3"
     );
-    assert_eq!(settings::audio_url(None, None, None, "http://default:4"), "http://default:4");
+    assert_eq!(
+        settings::audio_url(None, None, None, "http://default:4"),
+        "http://default:4"
+    );
 }
 
 #[test]
@@ -498,7 +569,10 @@ fn sec_01_project_and_files_7_machine_files_s6_the_two_folders_come_from_the_env
 
     let p = settings::paths_from(None, Some("/home/bocek"), None, None).unwrap();
     assert_eq!(p.config_dir, PathBuf::from("/home/bocek/.config/naivepost"));
-    assert_eq!(p.data_dir, PathBuf::from("/home/bocek/.local/share/naivepost"));
+    assert_eq!(
+        p.data_dir,
+        PathBuf::from("/home/bocek/.local/share/naivepost")
+    );
 
     // `XDG_DATA_HOME` beats the `$HOME` fallback and loses to `data_home`.
     let p = settings::paths_from(None, Some("/app"), None, Some("/xdg/data")).unwrap();
@@ -517,10 +591,22 @@ fn sec_01_project_and_files_7_machine_files_s7_desktop_entry_points_at_the_real_
     let d = Dirs::new("desktop");
 
     // Inside a Flatpak, and out of a build cache: nothing is registered.
-    assert!(!settings::wants_desktop_file(Path::new("/usr/bin/naivepost"), true, false));
-    assert!(!settings::wants_desktop_file(Path::new("/usr/bin/naivepost"), false, true));
+    assert!(!settings::wants_desktop_file(
+        Path::new("/usr/bin/naivepost"),
+        true,
+        false
+    ));
+    assert!(!settings::wants_desktop_file(
+        Path::new("/usr/bin/naivepost"),
+        false,
+        true
+    ));
     // A source tree that was never installed has no launcher for the entry to name.
-    assert!(!settings::wants_desktop_file(&d.root.join("target/debug/naivepost"), false, false));
+    assert!(!settings::wants_desktop_file(
+        &d.root.join("target/debug/naivepost"),
+        false,
+        false
+    ));
 
     // An installed copy: yes.
     let exe = d.root.join("bin/naivepost");
@@ -530,12 +616,21 @@ fn sec_01_project_and_files_7_machine_files_s7_desktop_entry_points_at_the_real_
 
     let entry = settings::desktop_file(&exe);
     assert!(entry.contains("[Desktop Entry]"), "{entry}");
-    assert!(entry.contains(&format!("Exec={}", exe.display())), "{entry}");
-    assert!(entry.contains("MimeType=application/x-naivepost-project;"), "{entry}");
+    assert!(
+        entry.contains(&format!("Exec={}", exe.display())),
+        "{entry}"
+    );
+    assert!(
+        entry.contains("MimeType=application/x-naivepost-project;"),
+        "{entry}"
+    );
 
     // An install path with a space has to survive as one argument.
     let spaced = settings::desktop_file(Path::new("/home/bocek my app/naivepost"));
-    assert!(spaced.contains("Exec=\"/home/bocek my app/naivepost\""), "{spaced}");
+    assert!(
+        spaced.contains("Exec=\"/home/bocek my app/naivepost\""),
+        "{spaced}"
+    );
 
     // Installed under the data dir, at 0644 like every ordinary file.
     settings::install_desktop_file(&d.paths, &exe).unwrap();
@@ -586,7 +681,11 @@ fn sec_01_project_and_files_7_machine_files_s8_every_machine_file_is_under_the_t
     settings::install_mime_package(&d.paths).unwrap();
 
     assert_eq!(mode(&d.paths.conf_path()), 0o600, "the settings file");
-    assert_eq!(mode(&d.paths.prompt_file("narrate.rephrase")), 0o600, "prompts");
+    assert_eq!(
+        mode(&d.paths.prompt_file("narrate.rephrase")),
+        0o600,
+        "prompts"
+    );
     assert_eq!(mode(&hang), 0o600, "watchdog dumps");
     assert_eq!(mode(&d.paths.desktop_file()), 0o644);
     assert_eq!(mode(&d.paths.mime_package()), 0o644);
@@ -602,7 +701,12 @@ fn sec_01_project_and_files_7_machine_files_s8_every_machine_file_is_under_the_t
         ],
         "everything machine-wide under the config or data folder"
     );
-    assert_eq!(fs::read_dir(d.root.join("session.naivepost")).unwrap().count(), 0);
+    assert_eq!(
+        fs::read_dir(d.root.join("session.naivepost"))
+            .unwrap()
+            .count(),
+        0
+    );
 
     fs::remove_dir_all(&d.root).unwrap();
 }

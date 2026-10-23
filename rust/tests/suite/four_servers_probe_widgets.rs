@@ -18,11 +18,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
+use crate::common;
 use adw::prelude::*;
+use common::{fixture_dir, settle};
 use naivepost::settings_probe;
 use naivepost::ui;
-use crate::common;
-use common::{fixture_dir, settle};
 
 /// A minimal answering server on a free loopback port, replying per path.
 ///
@@ -170,7 +170,8 @@ fn install_conf() {
     std::fs::create_dir_all(&root).expect("a config folder");
     std::env::set_var("XDG_CONFIG_HOME", &root);
     std::env::set_var("XDG_DATA_HOME", &root);
-    let paths = naivepost::settings::from_environment().expect("an absolute XDG_CONFIG_HOME is a config home");
+    let paths = naivepost::settings::from_environment()
+        .expect("an absolute XDG_CONFIG_HOME is a config home");
     let mut conf = naivepost::settings::Conf::default();
     conf.model = "qwen3-test".to_string();
     naivepost::settings::save(&paths, &conf).expect("the conf writes");
@@ -196,8 +197,14 @@ fn type_and_test(window: &adw::ApplicationWindow, key: &str, url: &str) {
 /// address is unchanged in shape: the path the request arrived at.
 fn check_llm_row_answers_live(window: &adw::ApplicationWindow) {
     let server = Live::start(&[
-        ("/v1/chat/completions", r#"{"choices":[{"message":{"content":"hello"}}]}"#),
-        ("/v1/models", r#"{"data":[{"id":"qwen3-test"},{"id":"llama-vision"}]}"#),
+        (
+            "/v1/chat/completions",
+            r#"{"choices":[{"message":{"content":"hello"}}]}"#,
+        ),
+        (
+            "/v1/models",
+            r#"{"data":[{"id":"qwen3-test"},{"id":"llama-vision"}]}"#,
+        ),
     ]);
 
     // The LLM row's Test reads the value typed under its own key (`typed("llm")`) as the ADDRESS, so the
@@ -238,10 +245,7 @@ fn check_llm_row_answers_live(window: &adw::ApplicationWindow) {
     );
     // §03 §5: mirrored into the main log as "settings: …". The row's name in that line is "LLM",
     // not the widget key, so the check is on the prefix and the verdict's own word.
-    let logged = ui::window_logs()
-        .last()
-        .cloned()
-        .unwrap_or_default();
+    let logged = ui::window_logs().last().cloned().unwrap_or_default();
     assert!(
         logged.starts_with("settings:") && logged.contains("answered"),
         "the main log carries the mirrored line, got {logged:?}"
@@ -341,7 +345,10 @@ fn check_sd_row_asks_capabilities(window: &adw::ApplicationWindow) {
 fn sec_02_services_1_the_four_servers_s21_the_llm_test_button_telephones_the_typed_address() {
     common::pin_private_cwd();
     round();
-    assert!(RAN_LLM.load(Ordering::SeqCst), "the llm row's live check ran");
+    assert!(
+        RAN_LLM.load(Ordering::SeqCst),
+        "the llm row's live check ran"
+    );
 }
 
 #[test]

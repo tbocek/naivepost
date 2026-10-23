@@ -102,7 +102,8 @@ fn bar_gesture(window: &adw::ApplicationWindow) -> BarGesture {
 /// Press in the bar's MIDDLE and travel `dx` px, then release.
 fn drag_middle(bar: &BarGesture, dx: f64) {
     // All three signals in one go, then one settle: see `drag_end_of` for why a settle between them loses it.
-    bar.gesture.emit_by_name::<()>("drag-begin", &[&bar.bar_x, &0.0f64]);
+    bar.gesture
+        .emit_by_name::<()>("drag-begin", &[&bar.bar_x, &0.0f64]);
     bar.gesture
         .emit_by_name::<()>("drag-update", &[&dx, &0.0f64]);
     bar.gesture.emit_by_name::<()>("drag-end", &[&dx, &0.0f64]);
@@ -128,7 +129,8 @@ fn drag_end_of(bar: &BarGesture, leading: bool, dx: f64) {
 /// `<root>/session.naivepost`.
 fn session_tree() -> Tree {
     let root = std::env::current_dir().expect("cwd is pinned");
-    Tree::new(naivepost::startup::session_dir(&root)).expect("the working copy is a .naivepost folder")
+    Tree::new(naivepost::startup::session_dir(&root))
+        .expect("the working copy is a .naivepost folder")
 }
 
 // --- the round ----------------------------------------------------------------------------------------
@@ -190,7 +192,11 @@ fn gesture_round(app: &adw::Application) {
     );
     // The line rode with the band (otherwise the refresh would have read the old line against the new
     // position and dropped the hold as "walked off the band").
-    assert_eq!(ui::line_position(&window).t, moved.t, "the line sits on the band");
+    assert_eq!(
+        ui::line_position(&window).t,
+        moved.t,
+        "the line sits on the band"
+    );
     // §7's one writer: the RELEASE is where `cut.json` gets the answer, so the disk agrees with the page.
     let on_disk = naivepost::cut::load(&session_tree()).expect("cut.json was written");
     assert_eq!(
@@ -318,8 +324,14 @@ fn f3_8_s1_s2_s3_the_lane_bar_carries_a_real_press() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_CLICK.load(Ordering::SeqCst), "S1 click-through-gesture never ran");
-    assert!(RAN_MOVE.load(Ordering::SeqCst), "S2 move-through-gesture never ran");
+    assert!(
+        RAN_CLICK.load(Ordering::SeqCst),
+        "S1 click-through-gesture never ran"
+    );
+    assert!(
+        RAN_MOVE.load(Ordering::SeqCst),
+        "S2 move-through-gesture never ran"
+    );
     assert!(
         RAN_GRIP_SNAP.load(Ordering::SeqCst),
         "S2 grip-resize-and-snap never ran"

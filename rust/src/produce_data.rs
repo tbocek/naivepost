@@ -153,14 +153,21 @@ pub const CLIPS_EXTRA: [&str; 5] = [
 /// [`crate::produce_exec`]'s scratch sweep, which clears exactly these `clips/` groups at the start of a
 /// render, so the list a person can read out of the spec and the list the run honours are the same data.
 pub fn catalogue() -> Vec<&'static str> {
-    DATA_FILES.iter().chain(CLIPS_EXTRA.iter()).copied().collect()
+    DATA_FILES
+        .iter()
+        .chain(CLIPS_EXTRA.iter())
+        .copied()
+        .collect()
 }
 
 /// How many of [`catalogue`]'s entries live in `clips/` — the count §6's "cleared at the start of every
 /// render" sweeps. [`crate::produce_exec`] logs it on the S1 line so the log names how many kinds of scratch
 /// file the sweep covers instead of only how many files happened to be there.
 pub fn scratch_groups() -> usize {
-    catalogue().iter().filter(|entry| kind(entry) == Kind::Scratch).count()
+    catalogue()
+        .iter()
+        .filter(|entry| kind(entry) == Kind::Scratch)
+        .count()
 }
 
 /// The S1 line: what the sweep covered and what it found. Program's own caller is
@@ -182,11 +189,20 @@ pub fn scratch_clear_log(groups: usize, gone: usize) -> String {
 pub fn written(tree: &Tree) -> Vec<&'static str> {
     let mut found = Vec::new();
     // tool:ffmpeg.encode's scratch folder — present once a run has started writing clips.
-    if tree.clips_dir().is_dir() && tree.clips_dir().read_dir().map(|mut d| d.next().is_some()).unwrap_or(false) {
+    if tree.clips_dir().is_dir()
+        && tree
+            .clips_dir()
+            .read_dir()
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false)
+    {
         found.push(DATA_FILES[0]);
     }
     // The video and its stamp are §3's pair: one is what plays, the other is what says it is current.
-    if produce_embed::paths(tree, crate::project::Container::Mp4).0.is_file() {
+    if produce_embed::paths(tree, crate::project::Container::Mp4)
+        .0
+        .is_file()
+    {
         found.push(DATA_FILES[4]);
     }
     if produce_stamp::stamp_path(tree).is_file() {
@@ -242,7 +258,10 @@ pub fn video_is_up_to_date(stored: Option<&str>, current: &str) -> bool {
 /// The poster's quality as the spec asks for it (§F5.5's "JPEG 90") and as ffmpeg takes it — both
 /// spelled by [`crate::produce_embed`], since §3 lists `final.jpg` without a rule of its own.
 pub fn poster_quality() -> (u8, &'static str) {
-    (produce_embed::POSTER_JPEG_QUALITY, produce_embed::POSTER_QSCALE)
+    (
+        produce_embed::POSTER_JPEG_QUALITY,
+        produce_embed::POSTER_QSCALE,
+    )
 }
 
 /// The scratch folder as [`render::clear_scratch`] empties it: every file inside, never the folder.
@@ -287,14 +306,22 @@ pub fn render_files() -> &'static [&'static str] {
 pub fn publish_files() -> &'static [&'static str] {
     // §3's list has exactly one `publish/` entry today; filtering by kind keeps that true when it grows, and
     // the leak is the only way to hand back a `'static` slice built from a filter.
-    DATA_FILES.iter().filter(|entry| kind(entry) == Kind::State).copied().collect::<Vec<_>>().leak()
+    DATA_FILES
+        .iter()
+        .filter(|entry| kind(entry) == Kind::State)
+        .copied()
+        .collect::<Vec<_>>()
+        .leak()
 }
 
 /// §5: "the two halves touch no common file", computed rather than asserted — the one entry both lists name,
 /// or `None` when there is none. This is why the halves can run in parallel without a lock: neither has ever
 /// had to ask what the other was doing with a path.
 pub fn share_a_file() -> Option<&'static str> {
-    render_files().iter().copied().find(|entry| publish_files().contains(entry))
+    render_files()
+        .iter()
+        .copied()
+        .find(|entry| publish_files().contains(entry))
 }
 
 /// §5 fixes this order, and each step's reason is in it: the record goes down **before** the picture is drawn

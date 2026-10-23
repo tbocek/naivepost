@@ -168,9 +168,11 @@ impl Plan {
         let placed = self.snap((start, end));
         // Checked after the snap, so an edge moved by tolerance cannot smuggle an overlap past it.
         // Touching is not overlapping: this pass joins takes, and a cut lands on a frame.
-        if let Some(other) = self.segments.iter().find(|other| {
-            crate::timeline::spans_overlap(placed, (other.start, other.end))
-        }) {
+        if let Some(other) = self
+            .segments
+            .iter()
+            .find(|other| crate::timeline::spans_overlap(placed, (other.start, other.end)))
+        {
             return crate::tools::error(&format!(
                 "{} to {} overlaps the segment already added at {} to {}",
                 clock(placed.0),
@@ -330,9 +332,7 @@ impl Plan {
     fn mark_seconds(&self, start: f64, end: f64) -> f64 {
         self.marks
             .iter()
-            .map(|(from, to)| {
-                (*to).min(end) - (*from).max(start)
-            })
+            .map(|(from, to)| (*to).min(end) - (*from).max(start))
             .filter(|seconds| *seconds > 0.0)
             .sum()
     }

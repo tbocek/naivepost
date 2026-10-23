@@ -25,9 +25,11 @@ static RAN_REFUSALS: AtomicBool = AtomicBool::new(false);
 
 /// A session folder of our own, so nothing this test writes lands in a real project or another test's.
 fn scratch_root(tag: &str) -> std::path::PathBuf {
-    let root = naivepost::startup::session_dir(
-        &std::env::temp_dir().join(format!("np-071-wire-{}-{}", tag, std::process::id())),
-    );
+    let root = naivepost::startup::session_dir(&std::env::temp_dir().join(format!(
+        "np-071-wire-{}-{}",
+        tag,
+        std::process::id()
+    )));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("scratch session folder");
     std::env::set_current_dir(&root).expect("cwd pinned to this root");
@@ -77,8 +79,16 @@ fn narrate_page(app: &adw::Application, state: ui::NarrateState) -> adw::Applica
 fn base_state() -> ui::NarrateState {
     ui::NarrateState {
         segs: vec![
-            naivepost::cut::Seg { s: 0.0, e: 30.0, ..Default::default() },
-            naivepost::cut::Seg { s: 30.0, e: 60.0, ..Default::default() },
+            naivepost::cut::Seg {
+                s: 0.0,
+                e: 30.0,
+                ..Default::default()
+            },
+            naivepost::cut::Seg {
+                s: 30.0,
+                e: 60.0,
+                ..Default::default()
+            },
         ],
         takes: vec![],
         voice: "narrator1".into(),
@@ -129,7 +139,8 @@ fn rgb(px: &[u8], width: i32, x: i32, y: i32) -> (i32, i32, i32) {
 
 /// Drag on the band the way GTK fires its own gesture, and hand back the seconds it stored.
 fn drag_on_band(window: &adw::ApplicationWindow, from_px: f64, to_px: f64) -> Option<(f64, f64)> {
-    let gesture = ui::narrate_band::band_gesture_for_test(window).expect("the page wired the band's gesture");
+    let gesture =
+        ui::narrate_band::band_gesture_for_test(window).expect("the page wired the band's gesture");
     gesture.emit_by_name::<()>("drag-begin", &[&from_px, &20.0f64]);
     gesture.emit_by_name::<()>("drag-update", &[&to_px, &20.0f64]);
     gesture.emit_by_name::<()>("drag-end", &[&to_px, &20.0f64]);
@@ -158,7 +169,10 @@ fn round(app: &adw::Application) {
         settle();
         let _ = common::widget(&window, "take-band");
         let (seconds, pps) = ui::narrate_band::painted_view_for_test();
-        assert!(seconds > 30.0, "the lane is drawn across the 45 s reference: {seconds} s");
+        assert!(
+            seconds > 30.0,
+            "the lane is drawn across the 45 s reference: {seconds} s"
+        );
         // Pixels that map to seconds the band's OWN rule accepts (≥ P.eng.takeMinSeconds) and that stay
         // inside the recording. The drag is placed by SECONDS converted through the band's live px/s, and it
         // must be a LONG span (15 s): the take's own seconds decide where it lands once the recording is refit
@@ -170,7 +184,8 @@ fn round(app: &adw::Application) {
             to_px / pps < seconds,
             "the drag must land inside the recording: {to_px} px at {pps:.2} px/s over {seconds} s"
         );
-        let dragged = drag_on_band(&window, from_px, to_px).expect("the drag left a live selection");
+        let dragged =
+            drag_on_band(&window, from_px, to_px).expect("the drag left a live selection");
         assert!(
             dragged.1 - dragged.0 >= narrate_screen::take_min(),
             "the dragged span reaches the floor: {:.2} s",
@@ -185,14 +200,24 @@ fn round(app: &adw::Application) {
         ui::refresh(&window);
         settle();
         let takes = ui::read_state().takes;
-        assert_eq!(takes.len(), 1, "the press committed exactly one take: {takes:?}");
+        assert_eq!(
+            takes.len(),
+            1,
+            "the press committed exactly one take: {takes:?}"
+        );
         assert!(
             (takes[0].0 - dragged.0).abs() < 0.01 && (takes[0].1 - dragged.1).abs() < 0.01,
             "the take is the dragged span: {:?} vs {dragged:?}",
             takes[0]
         );
-        assert!(takes[0].1 - takes[0].0 >= narrate_screen::take_min(), "and cleaned: {:?}", takes[0]);
-        wait_until("the status line to name the take", || status_text(&window).contains("take"));
+        assert!(
+            takes[0].1 - takes[0].0 >= narrate_screen::take_min(),
+            "and cleaned: {:?}",
+            takes[0]
+        );
+        wait_until("the status line to name the take", || {
+            status_text(&window).contains("take")
+        });
         assert!(
             status_text(&window).contains("take"),
             "the commit says what landed: {:?}",
@@ -200,7 +225,8 @@ fn round(app: &adw::Application) {
         );
         // §3-data: the picks are the PROJECT's, filed under the recording's stem, and what a later page
         // build re-seeds from. `load_takes` is that file's own reader.
-        let key = ui::narrate_seed::take_recording_key(&tree).expect("the narrator recording's key");
+        let key =
+            ui::narrate_seed::take_recording_key(&tree).expect("the narrator recording's key");
         let stored = narrate_data::load_takes(&tree).expect("takes.json reads");
         assert_eq!(
             stored.get(&key).map(|list| list.len()),
@@ -214,7 +240,12 @@ fn round(app: &adw::Application) {
         );
         assert_eq!(
             stored.get(&key).map(|list| list.as_slice()),
-            Some(&[Take { s: stored_span.s, e: stored_span.e }][..]),
+            Some(
+                &[Take {
+                    s: stored_span.s,
+                    e: stored_span.e
+                }][..]
+            ),
             "and nothing else is filed under it"
         );
         // And the page's own seed door — what a rebuild re-reads that file through — shows the same span.
@@ -262,11 +293,16 @@ fn round(app: &adw::Application) {
                 g > r + 30 && g > b + 20
             })
         });
-        assert!(shaded, "the take the button made is SHADED across its own seconds ({left}..{} px)", left + take_w);
+        assert!(
+            shaded,
+            "the take the button made is SHADED across its own seconds ({left}..{} px)",
+            left + take_w
+        );
         // The label's ink sits at `left + 3` on one baseline, so that box is the strip to read. Nothing else
         // in those rows passes the strict near-white filter: the red ▶-start bar is (219,51,46) with r leading,
         // and the waiting sentence is grey at 191 — both rejected by the filter itself, no exclusion needed.
-        let strip = (((left + 3.0) as i32).max(0))..(((left + 63.0).min((width - 1) as f64)) as i32);
+        let strip =
+            (((left + 3.0) as i32).max(0))..(((left + 63.0).min((width - 1) as f64)) as i32);
         let glyphed = strip
             .flat_map(|x| ((ruler + 3)..(ruler + 16)).map(move |y| (x, y)))
             .filter(|&(x, y)| {
@@ -315,7 +351,8 @@ fn round(app: &adw::Application) {
             short_seconds < narrate_screen::take_min(),
             "and still be under the floor: {short_seconds:.3} s at {pps:.2} px/s"
         );
-        let dragged_short = drag_on_band(&window, 60.0, 60.0 + short).expect("even a short drag selects");
+        let dragged_short =
+            drag_on_band(&window, 60.0, 60.0 + short).expect("even a short drag selects");
         assert!(
             dragged_short.1 - dragged_short.0 < narrate_screen::take_min(),
             "the drag is under the floor: {:.3} s at {pps:.2} px/s",
@@ -323,9 +360,13 @@ fn round(app: &adw::Application) {
         );
         common::widget(&window, "take-add").emit_by_name::<()>("clicked", &[]);
         settle();
-        assert!(ui::read_state().takes.is_empty(), "a too-short selection makes no take");
+        assert!(
+            ui::read_state().takes.is_empty(),
+            "a too-short selection makes no take"
+        );
         wait_until("the too-short sentence", || {
-            status_text(&window) == narrate_screen::take_too_short(dragged_short.1 - dragged_short.0)
+            status_text(&window)
+                == narrate_screen::take_too_short(dragged_short.1 - dragged_short.0)
         });
         assert_eq!(
             status_text(&window),
@@ -335,11 +376,20 @@ fn round(app: &adw::Application) {
         // A press with NOTHING dragged is a different sentence (§6 keeps the two apart, and it names the
         // gesture to use). A click — begin and end within 3 px — is exactly that.
         let _ = drag_on_band(&window, 200.0, 202.0);
-        assert_eq!(ui::narrate_band::live_selection(), None, "a click clears the selection");
+        assert_eq!(
+            ui::narrate_band::live_selection(),
+            None,
+            "a click clears the selection"
+        );
         common::widget(&window, "take-add").emit_by_name::<()>("clicked", &[]);
         settle();
-        assert!(ui::read_state().takes.is_empty(), "with no selection the press writes nothing");
-        wait_until("the drag-first sentence", || status_text(&window).contains("drag across the wave"));
+        assert!(
+            ui::read_state().takes.is_empty(),
+            "with no selection the press writes nothing"
+        );
+        wait_until("the drag-first sentence", || {
+            status_text(&window).contains("drag across the wave")
+        });
         assert!(
             status_text(&window).contains("drag across the wave"),
             "and it names the gesture instead: {:?}",
@@ -366,6 +416,12 @@ fn sec_07_narrate_1_screen_s10_drag_then_the_real_take_add_button_makes_a_labell
     // `run` returns when the last window closes and both blocks close their own; never `quit()` from
     // inside `activate` — that fires before the loop starts and later `run()`s return without running.
     app.run_with_args::<&str>(&[]);
-    assert!(RAN_WIRE.load(Ordering::SeqCst), "the drag-and-＋ block never ran");
-    assert!(RAN_REFUSALS.load(Ordering::SeqCst), "the refusal block never ran");
+    assert!(
+        RAN_WIRE.load(Ordering::SeqCst),
+        "the drag-and-＋ block never ran"
+    );
+    assert!(
+        RAN_REFUSALS.load(Ordering::SeqCst),
+        "the refusal block never ran"
+    );
 }

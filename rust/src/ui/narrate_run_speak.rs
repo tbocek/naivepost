@@ -16,8 +16,8 @@
 
 use crate::layout::Tree;
 use crate::narrate_run::{self, Speak};
-use crate::narration::{self, Entry};
 use crate::narrate_tts;
+use crate::narration::{self, Entry};
 
 /// What a speaking pass ended as: every line's verdict, the two counts the run logs, and whether ⏹ cut
 /// the pass short — which is what makes §S7's `<stage> stopped` reachable from the speaking half.
@@ -53,11 +53,7 @@ pub enum Line {
 ///
 /// A refusal does not stop the run: §Failure-is-specific wants the bad line named where it failed
 /// and the rest spoken anyway, so the caller logs each sentence and the tally still closes the job.
-pub fn speak_lines<F>(
-    entries: &[Entry],
-    cached: impl Fn(&Entry) -> bool,
-    mut speak: F,
-) -> SpeakRun
+pub fn speak_lines<F>(entries: &[Entry], cached: impl Fn(&Entry) -> bool, mut speak: F) -> SpeakRun
 where
     F: FnMut(&Entry) -> Result<std::path::PathBuf, String>,
 {
@@ -86,14 +82,24 @@ where
         .filter(|line| matches!(line, Line::Spoken(_)))
         .count();
     let cached_count = lines.iter().filter(|line| **line == Line::Cached).count();
-    SpeakRun { lines, spoken, cached: cached_count, stopped }
+    SpeakRun {
+        lines,
+        spoken,
+        cached: cached_count,
+        stopped,
+    }
 }
 
 /// The live leg for one line: the whole of F4.4 over the real wire, with the key, the seed and the
 /// project's language derived from the entry exactly as the row's ▶ derives them
 /// (`narrate_page::press_line_speak`), so a run and a single-row audition cannot disagree about
 /// which take a line owns. Answers the take's path, or the refusal's sentence.
-pub fn dial_line(tree: &Tree, voice: &str, language: &str, entry: &Entry) -> Result<std::path::PathBuf, String> {
+pub fn dial_line(
+    tree: &Tree,
+    voice: &str,
+    language: &str,
+    entry: &Entry,
+) -> Result<std::path::PathBuf, String> {
     let key = narration::key_for(entry, Some(voice));
     let seed = narration::tts_seed(&key);
     match crate::speak_leg::speak(tree, &entry.text, &entry.emotion, seed, &key, language) {

@@ -89,7 +89,12 @@ fn p_policy_keepswearing_s5_catalogued_once_spelled_true() {
         .chain(params::effects())
         .filter(|row| row.id == "P.policy.keepSwearing")
         .collect::<Vec<_>>();
-    assert_eq!(found.len(), 1, "P.policy.keepSwearing catalogued {} times", found.len());
+    assert_eq!(
+        found.len(),
+        1,
+        "P.policy.keepSwearing catalogued {} times",
+        found.len()
+    );
     let row = found.pop().unwrap();
     // Spelled as §10 spells its booleans, read from the project's own default rather than retyped.
     assert_eq!(row.spelled, "true");

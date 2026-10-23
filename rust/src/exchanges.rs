@@ -220,7 +220,10 @@ pub fn log_lines(call: &Call) -> Vec<String> {
     lines.push(came_back(call));
 
     if call.reply.trim().is_empty() {
-        lines.push(format!(">>> {}: the model answered nothing at all", call.step));
+        lines.push(format!(
+            ">>> {}: the model answered nothing at all",
+            call.step
+        ));
     } else {
         lines.push(format!(">>>   the reply begins: {}", preview(&call.reply)));
     }
@@ -345,7 +348,10 @@ fn section_in_state(seq: usize, call: &Call, answered: bool) -> String {
     );
 
     for message in &call.messages {
-        html.push_str(&format!("<div class=\"msg\"><h2 class=\"role\">{}:</h2>", esc(&message.role)));
+        html.push_str(&format!(
+            "<div class=\"msg\"><h2 class=\"role\">{}:</h2>",
+            esc(&message.role)
+        ));
         for part in &message.parts {
             match part {
                 Part::Text(text) => html.push_str(&format!("\n<pre>{}</pre>", esc(text))),
@@ -507,7 +513,10 @@ impl Page {
         // The meta line changes with the first fragment: `reply pending` was true while nothing had arrived,
         // and a page that still says it after words landed tells the reader the opposite of what is on disk.
         let head = mark_answered(head);
-        self.sections[open] = format!("{head}{STREAM_PRE}{}{CLOSE_PRE}\n{tail}", esc_reply(&streamed));
+        self.sections[open] = format!(
+            "{head}{STREAM_PRE}{}{CLOSE_PRE}\n{tail}",
+            esc_reply(&streamed)
+        );
         self.write();
         Some(streamed)
     }
@@ -592,7 +601,10 @@ impl RunLog {
         if self.page.is_none() {
             self.page = Some(Page::start(tree, stamp, step));
         }
-        self.page.as_mut().expect("just opened above").complete(call)
+        self.page
+            .as_mut()
+            .expect("just opened above")
+            .complete(call)
     }
 
     /// Record one call, opening the run's page under `stamp`/`step` if none is open. Returns the
@@ -640,7 +652,6 @@ fn mark_answered(section: String) -> String {
 fn esc_reply(text: &str) -> String {
     esc(text)
 }
-
 
 /// The whole page in one write: a half-written file would look like an exchange
 /// that never happened.

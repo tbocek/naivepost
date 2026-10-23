@@ -14,13 +14,13 @@ use gtk4 as gtk;
 use crate::bench;
 use crate::cut::{self, Cut};
 use crate::cut_screen;
-use crate::layout;
 use crate::cut_select;
+use crate::layout;
+use crate::narration::{self, Narration};
 use crate::prepare;
+use crate::project::Project;
 use crate::run;
 use crate::runqueue;
-use crate::narration::{self, Narration};
-use crate::project::Project;
 use crate::shell::{Page, Shell};
 use crate::ui::window as ui;
 
@@ -104,12 +104,8 @@ pub(crate) fn bench_box(
         .iter()
         .map(|(_, title)| title.to_string())
         .collect();
-    let picker = gtk::DropDown::from_strings(
-        &titles
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<&str>>(),
-    );
+    let picker =
+        gtk::DropDown::from_strings(&titles.iter().map(String::as_str).collect::<Vec<&str>>());
     picker.set_widget_name("bench-picker");
     picker.set_halign(gtk::Align::Start);
     // The dropdown's own face must agree with the row the bench opened on, or the shot would read
@@ -158,15 +154,7 @@ pub(crate) fn bench_box(
     // stores text and storing must not retype the buffer out from under the cursor.
     let guard = Rc::new(std::cell::Cell::new(false));
     paint_bench(
-        &row,
-        &title,
-        &mark,
-        &picker,
-        &reset,
-        &editor,
-        &guard,
-        session,
-        &paths,
+        &row, &title, &mark, &picker, &reset, &editor, &guard, session, &paths,
     );
 
     let session_for_picker = session.clone();
@@ -222,7 +210,9 @@ pub(crate) fn bench_box(
     let guard_for_reset = guard.clone();
     reset.connect_clicked(move |_| {
         let current = *row_for_reset.borrow().row();
-        let Some(paths) = paths_for_reset.as_ref() else { return };
+        let Some(paths) = paths_for_reset.as_ref() else {
+            return;
+        };
         // User Context has no shipped wording to restore, and `bench::reset` says so with `None`.
         if let Ok(Some(_)) = bench::reset(paths, &current) {
             paint_bench(
@@ -332,7 +322,11 @@ fn paint_bench(
     let buffer = editor.buffer();
     // With no config folder there is nothing this machine could hold, so the box shows the shipped
     // wording — which is what `bench::text` answers for a row nobody has touched.
-    buffer.set_text(&bench::text(paths.as_ref().unwrap_or(&NO_SETTINGS), &session.borrow(), held.row()));
+    buffer.set_text(&bench::text(
+        paths.as_ref().unwrap_or(&NO_SETTINGS),
+        &session.borrow(),
+        held.row(),
+    ));
     guard.set(false);
 }
 
@@ -389,7 +383,10 @@ pub(crate) fn refresh_cut_readouts(window: &adw::ApplicationWindow) {
         // Only the four readings that answer from the timeline. The other four each have their own owner
         // already: Thumbnails is written by the 🖼−/🖼+ ladder, Aspect ratio by `refresh_aspect_readout`,
         // Selection by [`refresh_selection_readout`], and Playhead by the preview's own clock tick.
-        if !matches!(row.label, "Cut" | "Cut at 1\u{00d7}" | "Segments" | "Source") {
+        if !matches!(
+            row.label,
+            "Cut" | "Cut at 1\u{00d7}" | "Segments" | "Source"
+        ) {
             continue;
         }
         let name = cut_screen::readout_widget(row.label);
@@ -414,9 +411,24 @@ pub(crate) fn paint_readouts_for(window: &adw::ApplicationWindow, project: &Proj
     };
     // Same door a tab switch uses, so the opened project shows through `Shell::inputs`/`outputs`.
     let tree = layout::Tree::new(dir).ok();
-    let cut = tree.as_ref().and_then(|tree| cut::load(tree).ok()).unwrap_or_default();
-    let narr = tree.as_ref().and_then(|tree| narration::load(tree).ok()).unwrap_or_default();
-    paint_readouts(&shell.borrow(), project, tree.as_ref(), &cut, &narr, inputs.upcast_ref(), &folder, outputs.upcast_ref());
+    let cut = tree
+        .as_ref()
+        .and_then(|tree| cut::load(tree).ok())
+        .unwrap_or_default();
+    let narr = tree
+        .as_ref()
+        .and_then(|tree| narration::load(tree).ok())
+        .unwrap_or_default();
+    paint_readouts(
+        &shell.borrow(),
+        project,
+        tree.as_ref(),
+        &cut,
+        &narr,
+        inputs.upcast_ref(),
+        &folder,
+        outputs.upcast_ref(),
+    );
 }
 
 pub(crate) fn paint_tabs(switcher: &adw::ViewSwitcher, shell: &Shell, project: &Project) {
@@ -452,7 +464,9 @@ pub(crate) fn tab_buttons(root: &gtk::Widget) -> Vec<gtk::Widget> {
     let mut out = Vec::new();
     for child in root.observe_children().iter::<glib::Object>() {
         let Ok(child) = child else { continue };
-        let Ok(widget) = child.downcast::<gtk::Widget>() else { continue };
+        let Ok(widget) = child.downcast::<gtk::Widget>() else {
+            continue;
+        };
         if widget.downcast_ref::<gtk::Button>().is_some() {
             out.push(widget.clone());
         }
@@ -491,7 +505,7 @@ fn descendants(root: &gtk::Widget) -> Vec<gtk::Widget> {
 /// always traces back to a rule in `shell.rs`. The folder button is insensitive while there is no
 /// project folder to open, which is the visible proof the row knows what it is counting.
 #[allow(clippy::too_many_arguments)] // the readout row paints inputs, outputs, their folder button and
-// the log expander from one shell read
+                                     // the log expander from one shell read
 pub(crate) fn paint_readouts(
     shell: &Shell,
     project: &Project,
@@ -502,7 +516,10 @@ pub(crate) fn paint_readouts(
     outputs_folder: &gtk::Button,
     outputs_label: &gtk::Label,
 ) {
-    inputs_label.set_text(&format!("{INPUTS_PREFIX}{}", shell.inputs(tree, project, cut, narration)));
+    inputs_label.set_text(&format!(
+        "{INPUTS_PREFIX}{}",
+        shell.inputs(tree, project, cut, narration)
+    ));
     // §1 badge **6**: the Inputs row's tooltip is per-file. Prepare has one; every other page's
     // row clears it rather than keeping a stale per-source list from the tab just left.
     match shell.inputs_tip(tree, project) {

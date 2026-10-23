@@ -16,9 +16,9 @@ use std::fs;
 use std::path::Path;
 
 use crate::layout::Tree;
-use crate::services;
 use crate::prepare;
 use crate::project::{Project, Source};
+use crate::services;
 use crate::sources;
 
 /// S1: ▶ with an empty list. Short because it sits in the status line beside a page that is already
@@ -255,7 +255,11 @@ fn serves(models: &[services::AudioModel], wanted_id: &str, task: &str) -> bool 
 /// sentence on the status line instead of a failed run. The ids are the ones every audio call asks
 /// with (`services::asr_model`/`diar_model`/`sep_model`, each falling back to its shipped default), so
 /// a preflight that passes is a preflight about the models the stages will actually name.
-pub fn preflight(paths: &crate::settings::Paths, tree: &Option<Tree>, project: &Project) -> Option<String> {
+pub fn preflight(
+    paths: &crate::settings::Paths,
+    tree: &Option<Tree>,
+    project: &Project,
+) -> Option<String> {
     let conf = crate::settings::read(paths).unwrap_or_default();
     let endpoint = services::audio_endpoint(&conf, |name| std::env::var(name).ok());
     let healthy = crate::settings_probe::get(

@@ -26,9 +26,9 @@ use std::path::{Path, PathBuf};
 
 use crate::cut::Seg;
 use crate::layout::Tree;
-use crate::narration::Entry;
-use crate::narration;
 use crate::narrate_tts;
+use crate::narration;
+use crate::narration::Entry;
 use crate::project::{self, Produce};
 
 /// The stamp's own name, spelled out once so a test can pin that it sits beside the video rather than in
@@ -133,13 +133,22 @@ impl<'a> Input<'a> {
         vec![
             ("settings", hash_text(&settings_text(self.settings))),
             ("segments", hash_text(&segments_text(self.segs))),
-            ("lines", hash_text(&lines_text(self.lines, &wav, &file_facts))),
-            ("sources", hash_text(&sources_text(self.sources, &file_facts))),
+            (
+                "lines",
+                hash_text(&lines_text(self.lines, &wav, &file_facts)),
+            ),
+            (
+                "sources",
+                hash_text(&sources_text(self.sources, &file_facts)),
+            ),
             ("aspect", hash_text(self.aspect)),
             ("voice", hash_text(self.voice)),
             // The flag alone: with narration off no line is spoken, and the lines themselves must not be
             // able to hold the video up-to-date behind the tick.
-            ("narration", hash_text(if self.no_narration { "off" } else { "on" })),
+            (
+                "narration",
+                hash_text(if self.no_narration { "off" } else { "on" }),
+            ),
             // Appended after the flowchart's seven: the three things the render reads that the diagram's
             // wording folds into "the segments" — the effects drawn over them, the beds mixed under them and
             // the frame they are drawn onto. Order is fixed here, like the seven above.
@@ -148,7 +157,10 @@ impl<'a> Input<'a> {
             // Only the shape, not `cut.shift`: a row shift says which camera a segment is SHOWN on, and
             // `segments_text` already leaves `cam` out for the same reason — moving a recording between rows
             // must not force the whole video to re-encode.
-            ("frame", hash_text(&format!("{}x{}", self.shape.0, self.shape.1))),
+            (
+                "frame",
+                hash_text(&format!("{}x{}", self.shape.0, self.shape.1)),
+            ),
         ]
     }
 }
@@ -392,7 +404,10 @@ pub fn skip_encode(stored: Option<&str>, current: &str) -> bool {
 /// Which groups differ between two runs, in the flowchart's order. A run that has to encode can say why —
 /// "the lines moved" is a different sentence from "the encoder settings did" — and the answer falls out of
 /// hashing the groups separately rather than being guessed from one number.
-pub fn changed_parts<'a>(stored: &[(&'a str, String)], current: &[(&'a str, String)]) -> Vec<&'a str> {
+pub fn changed_parts<'a>(
+    stored: &[(&'a str, String)],
+    current: &[(&'a str, String)],
+) -> Vec<&'a str> {
     stored
         .iter()
         .zip(current.iter())

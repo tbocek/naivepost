@@ -100,13 +100,7 @@ impl Marks {
     ///
     /// `again` is `None` for "never picked up" (the model sends 0): always legal, because a take that
     /// was simply dropped has no replacement to be near.
-    pub fn mark_abandoned(
-        &mut self,
-        from: u32,
-        to: u32,
-        again: Option<u32>,
-        trim: Trim,
-    ) -> String {
+    pub fn mark_abandoned(&mut self, from: u32, to: u32, again: Option<u32>, trim: Trim) -> String {
         self.mark_abandoned_at(from, to, again, trim, 0.0)
     }
 
@@ -256,7 +250,10 @@ impl Marks {
             let (ms, me) = mark.removed;
             taken += overlap(ms, me, start, end);
             for piece in subtract((ms, me), (start, end)) {
-                kept.push(Mark { removed: piece, ..mark.clone() });
+                kept.push(Mark {
+                    removed: piece,
+                    ..mark.clone()
+                });
             }
         }
         self.marks = kept;
@@ -304,7 +301,8 @@ impl Marks {
     }
 
     /// The running share of the session's speech now marked.
-    fn share(&self) -> f64 {        if self.speech_seconds <= 0.0 {
+    fn share(&self) -> f64 {
+        if self.speech_seconds <= 0.0 {
             return 0.0;
         }
         let marked: f64 = self
@@ -333,7 +331,8 @@ impl Marks {
     }
 
     /// The session seconds a line number spans.
-    fn seconds(&self, n: u32) -> (f64, f64) {        match self.lines.iter().find(|line| line.n == n) {
+    fn seconds(&self, n: u32) -> (f64, f64) {
+        match self.lines.iter().find(|line| line.n == n) {
             Some(line) => (line.start, line.end),
             None => (0.0, 0.0),
         }
@@ -354,7 +353,10 @@ pub struct Trim {
 impl Trim {
     /// Nothing trimmed: the mark removes exactly the lines named.
     pub fn none() -> Trim {
-        Trim { lead: 0.0, tail: 0.0 }
+        Trim {
+            lead: 0.0,
+            tail: 0.0,
+        }
     }
 
     /// The stretch that will actually be removed. Each side is clamped so a trim cannot swallow the
@@ -379,7 +381,9 @@ fn mark_reason(again: Option<u32>, trimmed: bool, merged: bool) -> &'static str 
         return "only the words the later take repeats were taken out; the rest of the lines stand";
     }
     match again {
-        Some(_) => "every second from the first word of the abandoned take to the retake's onset is cut",
+        Some(_) => {
+            "every second from the first word of the abandoned take to the retake's onset is cut"
+        }
         None => "the whole take is treated as never picked up, so its own words are all that goes",
     }
 }
@@ -400,7 +404,10 @@ pub struct Total {
 /// `count` is the runs still standing after this one was set aside.
 pub fn run_set_aside_log(run: usize, reason: &str, count: usize) -> Vec<String> {
     vec![
-        format!("!!! retakes: run {}: {reason} -- its answer is set aside", run + 1),
+        format!(
+            "!!! retakes: run {}: {reason} -- its answer is set aside",
+            run + 1
+        ),
         format!(">>> retakes: going on with {count}"),
     ]
 }
@@ -417,7 +424,10 @@ pub fn no_retakes_log() -> &'static str {
 }
 
 /// A line with the pause before it, as `get_lines` returns them.
-#[allow(dead_code, reason = "the method below is what a caller uses; this is the same rule once")]
+#[allow(
+    dead_code,
+    reason = "the method below is what a caller uses; this is the same rule once"
+)]
 pub fn pause_before(lines: &[Line], n: u32) -> f64 {
     let Some(line) = lines.iter().find(|line| line.n == n) else {
         return 0.0;

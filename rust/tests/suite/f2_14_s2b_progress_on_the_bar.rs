@@ -6,11 +6,11 @@
 
 use adw::prelude::*;
 
-use naivepost::suggest;
 use naivepost::cut_suggest;
-use naivepost::tools;
 use naivepost::project::Origin;
 use naivepost::shell::Page;
+use naivepost::suggest;
+use naivepost::tools;
 use naivepost::ui;
 use naivepost::ui::cut_suggest_land;
 
@@ -43,8 +43,14 @@ fn s2b_the_press_paints_progress_on_the_bar(app: &adw::Application) {
     // One ask, one accepted cut: the reply's own `segments` list is what `Call::report` counts, read from the
     // real tool calls the tool loop answered with — no scripted position anywhere.
     let llm = harness::FakeLlm::start(vec![tool_turn(&[
-        ("add_segment", serde_json::json!({ "start": 3.0, "end": 19.0, "why": "the point" })),
-        ("add_segment", serde_json::json!({ "start": 24.0, "end": 40.0, "why": "the second" })),
+        (
+            "add_segment",
+            serde_json::json!({ "start": 3.0, "end": 19.0, "why": "the point" }),
+        ),
+        (
+            "add_segment",
+            serde_json::json!({ "start": 24.0, "end": 40.0, "why": "the second" }),
+        ),
         ("finish_cut", serde_json::json!({})),
     ])]);
     point_llm_at(&llm.url());
@@ -92,8 +98,8 @@ fn s2b_the_press_paints_progress_on_the_bar(app: &adw::Application) {
     // So this press pulsed — and the counted shape it did NOT have is `cut_suggest::progress`'s own spelling,
     // which is what a reply closing a segment with an `end` writes instead.
     for seen in &painted {
-        let counted =
-            seen.line.starts_with("1 moments, at ") && seen.line.ends_with(&format!(" of {}", tools::mm_ss(40.0)));
+        let counted = seen.line.starts_with("1 moments, at ")
+            && seen.line.ends_with(&format!(" of {}", tools::mm_ss(40.0)));
         assert!(
             (seen.pulsing && seen.line == cut_suggest::THINKING_STATUS) || counted,
             "a progress reading is either the pulse under the thinking sentence or `cut_suggest::progress`'s \

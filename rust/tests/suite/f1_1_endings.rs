@@ -70,7 +70,11 @@ fn f1_1_s7_a_finished_run_says_prepared_with_the_file_count() {
     );
     let drive = Drive::Done { ran: 3, skipped: 1 };
     let ending = prepare_run::ending_of(&drive, &tree);
-    assert_eq!(ending, Ending::Prepared { files: 5 }, "five files under prepare/");
+    assert_eq!(
+        ending,
+        Ending::Prepared { files: 5 },
+        "five files under prepare/"
+    );
 
     // The log: §S7's ">>> prepare wrote:" plus one line per folder. Three folders, four lines.
     let lines = prepare_run::ending_lines(&ending);
@@ -106,7 +110,10 @@ fn f1_1_s7_a_finished_run_with_nothing_on_disk_says_zero() {
     let (_root, tree) = planted("empty", &[]);
     let ending = prepare_run::ending_of(&Drive::Done { ran: 0, skipped: 0 }, &tree);
     assert_eq!(ending, Ending::Prepared { files: 0 });
-    assert_eq!(prepare_run::ending_status(&ending), "prepared \u{2014} 0 files");
+    assert_eq!(
+        prepare_run::ending_status(&ending),
+        "prepared \u{2014} 0 files"
+    );
 }
 
 /// §S7: ⏹ is neither a failure nor a success. The status says the finished work is kept, and the log
@@ -145,7 +152,9 @@ fn f1_1_s7_a_failed_run_names_the_reason_and_points_at_the_log() {
     let ending = prepare_run::ending_of(&drive, &tree);
     assert_eq!(
         ending,
-        Ending::Failed { reason: "audio.cpp went away mid-take".to_string() },
+        Ending::Failed {
+            reason: "audio.cpp went away mid-take".to_string()
+        },
         "the walk's reason, carried through untouched"
     );
     assert_eq!(
@@ -158,7 +167,9 @@ fn f1_1_s7_a_failed_run_names_the_reason_and_points_at_the_log() {
         "prepare FAILED: audio.cpp went away mid-take"
     );
     // And the reason the test insists on: a failure that names nothing still says where to look.
-    let blank = Ending::Failed { reason: "  ".to_string() };
+    let blank = Ending::Failed {
+        reason: "  ".to_string(),
+    };
     assert_eq!(
         prepare_run::ending_status(&blank),
         "prepare failed \u{2014} see log",
@@ -227,7 +238,9 @@ fn check_finished_run_on_screen(app: &adw::Application) {
         "the ending is the status row's last word"
     );
     assert_eq!(
-        naivepost::ui::progress_bar(&window).expect("the window carries a progress bar").fraction(),
+        naivepost::ui::progress_bar(&window)
+            .expect("the window carries a progress bar")
+            .fraction(),
         1.0,
         "§S7: a finished run leaves the bar at 1"
     );
@@ -235,8 +248,7 @@ fn check_finished_run_on_screen(app: &adw::Application) {
     // `Shell::outputs`' (§04 #1 badge 7), which carries §6's "N files, size" after §1's label, so what is
     // pinned here is the NUMBER and that it moved with the run — the sentence shape belongs to the shell's
     // test.
-    let readout = ui::outputs_sentence(&window)
-        .expect("the shell carries the Outputs readout");
+    let readout = ui::outputs_sentence(&window).expect("the shell carries the Outputs readout");
     let body = readout
         .trim_start_matches("Outputs: ")
         .trim_start_matches(naivepost::prepare::OUTPUTS_LABEL)
@@ -247,7 +259,10 @@ fn check_finished_run_on_screen(app: &adw::Application) {
         "3",
         "§S8: the Outputs row sees what the run wrote, not the stale count: {readout:?}"
     );
-    assert!(readout.contains("Prepare"), "and it is still Prepare's row: {readout:?}");
+    assert!(
+        readout.contains("Prepare"),
+        "and it is still Prepare's row: {readout:?}"
+    );
     // The queue is emptied by the close a real press runs; the bar's own copy still holds the sentence.
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
     assert_eq!(bar.borrow().status, "prepared \u{2014} 3 files");
@@ -277,7 +292,10 @@ fn check_stopped_run_on_screen(app: &adw::Application) {
         "§S7's stop sentence, on the row the person reads last"
     );
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
-    assert_eq!(bar.borrow().status, "stopped \u{2014} finished work is kept");
+    assert_eq!(
+        bar.borrow().status,
+        "stopped \u{2014} finished work is kept"
+    );
     window.close();
     let _ = fs::remove_dir_all(&root);
 }

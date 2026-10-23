@@ -17,12 +17,12 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use adw::prelude::*;
-use naivepost::layout::Tree;
-use naivepost::project::{MarkingPass, Project};
 use crate::common;
+use adw::prelude::*;
 use common::fake_audio_server;
 use common::footage;
+use naivepost::layout::Tree;
+use naivepost::project::{MarkingPass, Project};
 use naivepost::requests::{self, Word, WordsDoc};
 use naivepost::run;
 use naivepost::transcribe::SAMPLE_RATE;
@@ -108,8 +108,14 @@ fn f1_10_wire_pressing_play_reaches_the_joins_pass() {
     app.run_with_args::<String>(&[]);
 
     assert!(RAN_SEAM.load(Ordering::SeqCst), "the seam check never ran");
-    assert!(RAN_NO_SEAM.load(Ordering::SeqCst), "the no-seam check never ran");
-    assert!(RAN_GATE.load(Ordering::SeqCst), "the policy-gate check never ran");
+    assert!(
+        RAN_NO_SEAM.load(Ordering::SeqCst),
+        "the no-seam check never ran"
+    );
+    assert!(
+        RAN_GATE.load(Ordering::SeqCst),
+        "the policy-gate check never ran"
+    );
 }
 
 /// Two recordings means a seam, so the pass runs and says how many joins it will visit.
@@ -146,8 +152,8 @@ fn check_a_seam_reaches_the_pass_through_the_button(app: &adw::Application) {
     );
     // Eight joinable words across two recordings, one seam between them.
     assert!(
-        logs.iter()
-            .any(|line| line == ">>> text edit: briefing on 8 joinable words, 1 seam(s) of 140 words each side"),
+        logs.iter().any(|line| line
+            == ">>> text edit: briefing on 8 joinable words, 1 seam(s) of 140 words each side"),
         "F1.10's opening line landed for the clicked sources: {logs:?}"
     );
     // It came after Prepare's own opening line, i.e. down the started path.
@@ -193,7 +199,8 @@ fn check_one_recording_reports_no_seam_and_still_writes_both_files(app: &adw::Ap
     );
     assert!(
         logs.iter()
-            .any(|line| line == ">>> text edit: one recording, no seam to repair -- every word stands"),
+            .any(|line| line
+                == ">>> text edit: one recording, no seam to repair -- every word stands"),
         "S2's answer reached the log through the button: {logs:?}"
     );
     assert!(tree.final_txt().exists(), "final.txt still written");

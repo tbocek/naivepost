@@ -26,7 +26,9 @@ use naivepost::ui;
 use naivepost::ui::cut_preview_frame;
 
 use crate::common;
-use common::{cut_page_settled_first as cut_page, click, release_last_window, settle, widget, widget_in};
+use common::{
+    click, cut_page_settled_first as cut_page, release_last_window, settle, widget, widget_in,
+};
 
 static RAN_FRAME: AtomicBool = AtomicBool::new(false);
 static RAN_HELD: AtomicBool = AtomicBool::new(false);
@@ -72,19 +74,32 @@ fn name(kind: EffectKind) -> &'static str {
 }
 
 fn fx(kind: EffectKind, t: f64, dur: f64) -> Fx {
-    Fx { kind: name(kind).into(), t, dur, ..Default::default() }
+    Fx {
+        kind: name(kind).into(),
+        t,
+        dur,
+        ..Default::default()
+    }
 }
 
 /// The session filmed 0–120 as one take, declared the way the page declares it.
 fn tape() -> Vec<Recording> {
-    let tape = vec![Recording { base: "session-tape".to_string(), start: 0.0, end: 120.0 }];
+    let tape = vec![Recording {
+        base: "session-tape".to_string(),
+        start: 0.0,
+        end: 120.0,
+    }];
     ui::set_session_recordings(&tape);
     tape
 }
 
 /// A footage clip covering the whole tape: the ground a debt tail is measured against.
 fn footage() -> Vec<Seg> {
-    vec![Seg { s: 0.0, e: 120.0, ..Default::default() }]
+    vec![Seg {
+        s: 0.0,
+        e: 120.0,
+        ..Default::default()
+    }]
 }
 
 /// The panel's fitted box: the page pins itself to 240 x 135, and no ffprobe runs headless.
@@ -92,7 +107,14 @@ const FIT: (f64, f64) = (240.0, 135.0);
 
 /// A caption mid-fade at the line, so "held draws full" is an answer and not a coincidence.
 fn caption(at: f64, words: &str) -> Fx {
-    Fx { kind: "text".into(), t: at, dur: 6.0, trans: 2.0, text: words.into(), ..Default::default() }
+    Fx {
+        kind: "text".into(),
+        t: at,
+        dur: 6.0,
+        trans: 2.0,
+        text: words.into(),
+        ..Default::default()
+    }
 }
 
 // The page's own answers for one frame, read the way the page's draw func reads them: `describe` /
@@ -114,8 +136,13 @@ fn the_frame_paints_the_paused_scene(app: &adw::Application) {
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 12.0 });
     click(&window, "effect-item-text");
     let said = ui::text_drag_ended(&window, (40.0, 40.0), (40.0, 40.0));
-    assert!(said.starts_with(&naivepost::fx_text::form_title(12.0)), "{said}");
-    let view = widget(&window, "text-field-words").downcast::<gtk::TextView>().expect("the words field");
+    assert!(
+        said.starts_with(&naivepost::fx_text::form_title(12.0)),
+        "{said}"
+    );
+    let view = widget(&window, "text-field-words")
+        .downcast::<gtk::TextView>()
+        .expect("the words field");
     view.buffer().insert_at_cursor("one lecture");
     // Ask for a 2 s fade-in through the form's OWN field, the way the stepper writes it: `fx_text::apply`
     // defaults `trans` to 0.3 s, and a caption that finishes fading in 0.3 s after it starts has nothing
@@ -127,7 +154,11 @@ fn the_frame_paints_the_paused_scene(app: &adw::Application) {
     }
     settle();
     click(&window, "text-apply-button");
-    assert_eq!(ui::review_cut_of(&window).fx.len(), 1, "Apply placed the caption");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        1,
+        "Apply placed the caption"
+    );
 
     // Stand the line ONE second into a caption that fades in over two (t 12.0, trans 2.0), so its own alpha
     // is halfway up. `paused_scene` is asked at the SAME seconds the painter reads off the page (13.0), or
@@ -143,13 +174,32 @@ fn the_frame_paints_the_paused_scene(app: &adw::Application) {
     // is halfway up. `paused_scene` is asked at the SAME seconds the painter reads off the page (13.0), or the
     // two answers cannot agree -- asking it at 12.0 gives alpha 0 and at 14.0 gives 1.0, neither mid-fade.
     let expected = lane::paused_scene(&cut.fx, 13.0, None, false);
-    assert_eq!(seen.held.dim_alpha, expected.dim_alpha, "the dim is the paused scene's dim");
-    assert_eq!(seen.held.rect_stroke_px, expected.rect_stroke_px, "and its stroke");
-    assert_eq!(seen.held.overlays, expected.overlays, "the overlays, at their real alphas");
-    assert_eq!(seen.held.overlays.len(), 1, "the one caption placed is the one overlay painted");
+    assert_eq!(
+        seen.held.dim_alpha, expected.dim_alpha,
+        "the dim is the paused scene's dim"
+    );
+    assert_eq!(
+        seen.held.rect_stroke_px, expected.rect_stroke_px,
+        "and its stroke"
+    );
+    assert_eq!(
+        seen.held.overlays, expected.overlays,
+        "the overlays, at their real alphas"
+    );
+    assert_eq!(
+        seen.held.overlays.len(),
+        1,
+        "the one caption placed is the one overlay painted"
+    );
     let mid = seen.held.overlays[0].2;
-    assert!(mid > 0.0 && mid < 1.0, "mid-fade, so the alpha is the record's own: {mid}");
-    assert!(!seen.held.held_full, "nothing in hand, so nothing is drawn full");
+    assert!(
+        mid > 0.0 && mid < 1.0,
+        "mid-fade, so the alpha is the record's own: {mid}"
+    );
+    assert!(
+        !seen.held.held_full,
+        "nothing in hand, so nothing is drawn full"
+    );
     RAN_FRAME.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -170,15 +220,25 @@ fn the_held_overlay_is_full_and_outlined(app: &adw::Application) {
     // Hold the SECOND caption — the index must be the record's own position in this cut, not the first match.
     ui::set_held_effect(Some(caption(20.0, "second")));
     let held = cut_preview_frame::held_frame(&cut, None);
-    assert_eq!(held.index, Some(1), "the record in hand is addressed by its index in THIS cut");
+    assert_eq!(
+        held.index,
+        Some(1),
+        "the record in hand is addressed by its index in THIS cut"
+    );
     let seen = cut_preview_frame::observe(&cut_preview_frame::describe(&window, FIT, &held), None);
     assert!(seen.held.held_full, "the one in hand draws full (§2)");
-    assert!(seen.held.held_outline_dashed, "and only it gets the dashed outline");
+    assert!(
+        seen.held.held_outline_dashed,
+        "and only it gets the dashed outline"
+    );
     assert!(
         !seen.held.overlays.iter().any(|(index, _, _)| *index == 1),
         "paused_scene leaves the record in hand out of the plain overlay list — the view adds it back full"
     );
-    assert!(held.box_px.is_none(), "nothing is armed, so no box is under the hand");
+    assert!(
+        held.box_px.is_none(),
+        "nothing is armed, so no box is under the hand"
+    );
     // Put it down the way the app does and the full-alpha answer goes with it.
     ui::press_fx_lane(&window);
     let after = cut_preview_frame::held_frame(&ui::review_cut_of(&window), None);
@@ -198,7 +258,11 @@ fn the_box_is_dashed_only_while_armed(app: &adw::Application) {
     assert!(ui::zoom_armed(), "⊕ Zoom armed the drag");
     let cut = ui::review_cut_of(&window);
     let armed = cut_preview_frame::held_frame(&cut, Some(box_));
-    assert_eq!(armed.box_px, Some(box_), "the box under the hand reaches the frame");
+    assert_eq!(
+        armed.box_px,
+        Some(box_),
+        "the box under the hand reaches the frame"
+    );
     let seen = cut_preview_frame::observe(&cut_preview_frame::describe(&window, FIT, &armed), None);
     assert!(seen.held.box_dashed, "an unfinished box is dashed (§2)");
     // A second deliberate press disarms; the box is no longer anyone's to draw.
@@ -227,31 +291,64 @@ fn the_playing_half_is_mask_plus_titles(app: &adw::Application) {
     let window = cut_page(app, &seeded);
     tape();
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 3.0 });
-    ui::set_preview_state(&window, false, false, Transport { playing: true, started: true });
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        Transport {
+            playing: true,
+            started: true,
+        },
+    );
     let cut = ui::review_cut_of(&window);
     let held = cut_preview_frame::held_frame(&cut, None);
     let frame = cut_preview_frame::describe(&window, FIT, &held);
     assert!(frame.playing, "the transport the page holds says playing");
     let seen = cut_preview_frame::observe(&frame, Some(3.7));
     let kinds: Vec<EffectKind> = seen.titles.iter().map(|(_, kind, _)| *kind).collect();
-    assert_eq!(kinds, lane::playing_scene(&cut.fx, 3.0).iter().map(|(_, k, _)| *k).collect::<Vec<_>>());
-    assert_eq!(kinds, vec![EffectKind::Text, EffectKind::Svg], "titles only: a volume is heard, a label is a lane tag");
+    assert_eq!(
+        kinds,
+        lane::playing_scene(&cut.fx, 3.0)
+            .iter()
+            .map(|(_, k, _)| *k)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        kinds,
+        vec![EffectKind::Text, EffectKind::Svg],
+        "titles only: a volume is heard, a label is a lane tag"
+    );
     assert!(
         seen.titles.iter().all(|(_, _, alpha)| *alpha > 0.0),
         "each title keeps the alpha its fades give it"
     );
     // The camera rides the smoothed clock while playing and the line while paused.
     assert!(lane::camera_clock_is_smoothed());
-    assert_eq!(cut_preview_frame::camera_clock(true, Some(3.7), 3.0), 3.7, "playing: the live clock");
-    assert_eq!(cut_preview_frame::camera_clock(false, Some(3.7), 3.0), 3.0, "paused: the line");
+    assert_eq!(
+        cut_preview_frame::camera_clock(true, Some(3.7), 3.0),
+        3.7,
+        "playing: the live clock"
+    );
+    assert_eq!(
+        cut_preview_frame::camera_clock(false, Some(3.7), 3.0),
+        3.0,
+        "paused: the line"
+    );
     // And the mask is a zoom's alone: that is the only kind that hides anything.
-    assert_eq!(cut_preview_frame::mask_kinds_for_test(), vec![EffectKind::Zoom]);
+    assert_eq!(
+        cut_preview_frame::mask_kinds_for_test(),
+        vec![EffectKind::Zoom]
+    );
     // A settled camera hides nothing, so there is no mask to lay down.
     assert!(
         cut_preview_frame::playing_mask_px(&fx_zoom::SETTLED, FIT).is_empty(),
         "no zoom in place means nothing hidden and no bands painted"
     );
-    let zoomed = fx_zoom::Camera { cx: 0.4, cy: 0.5, hf: 0.5 };
+    let zoomed = fx_zoom::Camera {
+        cx: 0.4,
+        cy: 0.5,
+        hf: 0.5,
+    };
     assert!(
         !cut_preview_frame::playing_mask_px(&zoomed, FIT).is_empty(),
         "a framing that crops leaves bands of black around it"
@@ -286,7 +383,10 @@ fn a_stops_still_borrows_the_scene_camera(app: &adw::Application) {
     let inside = cut_preview_frame::stop_px(&effects, 6.0, FIT);
     assert_eq!(
         inside,
-        Some(cut_preview_frame::camera_rect_px(&fx_zoom::camera_at(&effects, 6.0), FIT)),
+        Some(cut_preview_frame::camera_rect_px(
+            &fx_zoom::camera_at(&effects, 6.0),
+            FIT
+        )),
         "the still is framed exactly as the frame it stands in"
     );
     assert_ne!(
@@ -301,11 +401,20 @@ fn a_stops_still_borrows_the_scene_camera(app: &adw::Application) {
     let mut not_a_stop = stop.clone();
     not_a_stop.rate = 1.0;
     let plain = vec![zoomed.clone(), not_a_stop];
-    assert!(cut_preview_frame::stop_px(&plain, 6.0, FIT).is_none(), "rate 1 is not a still");
+    assert!(
+        cut_preview_frame::stop_px(&plain, 6.0, FIT).is_none(),
+        "rate 1 is not a still"
+    );
     // The stop is 5.0 – 7.0, so this asks at a second inside it (the old `1.0` read the first second of a
     // different stop and passed for the wrong reason).
-    assert!(cut_preview_frame::stop_px(&[stop.clone()], 6.0, FIT).is_some(), "inside its seconds the still has a box");
-    assert!(cut_preview_frame::stop_px(&[stop.clone()], 1.0, FIT).is_none(), "outside its seconds, no still");
+    assert!(
+        cut_preview_frame::stop_px(&[stop.clone()], 6.0, FIT).is_some(),
+        "inside its seconds the still has a box"
+    );
+    assert!(
+        cut_preview_frame::stop_px(&[stop.clone()], 1.0, FIT).is_none(),
+        "outside its seconds, no still"
+    );
     RAN_STOP.store(true, Ordering::SeqCst);
     window_close(app);
 }
@@ -333,7 +442,14 @@ fn only_the_scene_end_sound_gets_a_tail(app: &adw::Application) {
 
     // The clip must outlive the record's last frame or the tail would point past the cut (`scene_runs_on`
     // asks exactly that), so this footage stops at 60 rather than running the whole 0-120 tape.
-    let mut cut = Cut { segs: vec![Seg { s: 0.0, e: 60.0, ..Default::default() }], ..Default::default() };
+    let mut cut = Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     cut.fx.push(scene_snd.clone());
     assert!(
         cut_preview_frame_tail(&cut, 0, 12.0, &tape()),
@@ -343,13 +459,27 @@ fn only_the_scene_end_sound_gets_a_tail(app: &adw::Application) {
         lane::debt_tail_for(&cut.fx, 0, 2.0, true),
         "and the arithmetic agrees with the page's door"
     );
-    let mut other = Cut { segs: vec![Seg { s: 0.0, e: 60.0, ..Default::default() }], ..Default::default() };
+    let mut other = Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     other.fx.push(own_snd.clone());
     assert!(
         !cut_preview_frame_tail(&other, 0, 12.0, &tape()),
         "\"1× to the effect's end\" closes its gap on its last frame — no tail (§2)"
     );
-    let mut small = Cut { segs: vec![Seg { s: 0.0, e: 60.0, ..Default::default() }], ..Default::default() };
+    let mut small = Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     small.fx.push(tiny.clone());
     assert!(
         !cut_preview_frame_tail(&small, 0, 12.0, &tape()),
@@ -357,18 +487,39 @@ fn only_the_scene_end_sound_gets_a_tail(app: &adw::Application) {
         lane::DEBT_TAIL_MIN_SECONDS
     );
     // A card films nothing: its sound is exactly as long as its picture.
-    let mut card = Cut { segs: footage(), ..Default::default() };
+    let mut card = Cut {
+        segs: footage(),
+        ..Default::default()
+    };
     card.fx.push(scene_snd.clone());
-    card.segs = vec![Seg { s: 0.0, e: 120.0, ins: "title.svg".into(), dur: 120.0, ..Default::default() }];
-    assert!(!cut_preview_frame_tail(&card, 0, 12.0, &tape()), "a card gets no tail");
+    card.segs = vec![Seg {
+        s: 0.0,
+        e: 120.0,
+        ins: "title.svg".into(),
+        dur: 120.0,
+        ..Default::default()
+    }];
+    assert!(
+        !cut_preview_frame_tail(&card, 0, 12.0, &tape()),
+        "a card gets no tail"
+    );
     // A clip on ground no recording covers: nothing filmed, nothing to read back.
     ui::set_session_recordings(&[]);
-    let flat = Cut { segs: footage(), ..Default::default() };
-    assert!(!cut_preview_frame_tail(&flat, 0, 12.0, &[]), "no film under the clip, no tail");
+    let flat = Cut {
+        segs: footage(),
+        ..Default::default()
+    };
+    assert!(
+        !cut_preview_frame_tail(&flat, 0, 12.0, &[]),
+        "no film under the clip, no tail"
+    );
     tape();
 
     // And the page paints that answer on the bar: a real window, a real scene-end record, the refresh run.
-    let mut seeded = Cut { segs: footage(), ..Default::default() };
+    let mut seeded = Cut {
+        segs: footage(),
+        ..Default::default()
+    };
     seeded.fx.push(scene_snd.clone());
     let window = cut_page(app, &seeded);
     tape();
@@ -412,7 +563,9 @@ fn the_lane_sits_under_the_panel(app: &adw::Application) {
     let window = cut_page(app, &Cut::default());
     tape();
     let lane_box = widget(&window, "effects-lane");
-    let page_box = lane_box.parent().expect("the lane is packed in the page box");
+    let page_box = lane_box
+        .parent()
+        .expect("the lane is packed in the page box");
     let mut order: Vec<String> = Vec::new();
     let mut child = page_box.first_child();
     while let Some(node) = child {
@@ -427,8 +580,15 @@ fn the_lane_sits_under_the_panel(app: &adw::Application) {
         .iter()
         .position(|n| n == "effects-lane")
         .expect("effects-lane is in the page box");
-    assert!(lane_at > panel_at, "the lane comes after the frame, got order {order:?}");
-    assert_eq!(lane_at, panel_at + 1, "and immediately after it, got order {order:?}");
+    assert!(
+        lane_at > panel_at,
+        "the lane comes after the frame, got order {order:?}"
+    );
+    assert_eq!(
+        lane_at,
+        panel_at + 1,
+        "and immediately after it, got order {order:?}"
+    );
     RAN_SEAT.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -457,32 +617,70 @@ fn the_playing_half_rides_the_pages_tick(app: &adw::Application) {
         "the surface that reads the live clock is the one on this panel"
     );
     // Paused: there is no live clock, so the camera falls back to the line.
-    assert_eq!(cut_preview_frame::live_of(&window), None, "paused, so nothing is running");
-    assert_eq!(cut_preview_frame::camera_clock(false, None, 4.0), 4.0, "paused reads the line");
+    assert_eq!(
+        cut_preview_frame::live_of(&window),
+        None,
+        "paused, so nothing is running"
+    );
+    assert_eq!(
+        cut_preview_frame::camera_clock(false, None, 4.0),
+        4.0,
+        "paused reads the line"
+    );
     // ▶ through the page's own door, then a tick's worth of playhead through the door the tick uses.
-    ui::set_preview_state(&window, false, false, Transport { playing: true, started: true });
+    ui::set_preview_state(
+        &window,
+        false,
+        false,
+        Transport {
+            playing: true,
+            started: true,
+        },
+    );
     ui::set_playhead(&window, 6.0);
     let live = cut_preview_frame::live_of(&window).expect("playing, so the clock is live");
-    assert!(live >= 6.0, "the live clock starts at the tick's playhead and runs on: {live}");
+    assert!(
+        live >= 6.0,
+        "the live clock starts at the tick's playhead and runs on: {live}"
+    );
     assert!(
         lane::camera_clock_is_smoothed(),
         "and §2's camera layer is the smoothed one, not the ticked playhead"
     );
-    assert_eq!(cut_preview_frame::camera_clock(true, Some(live), 4.0), live, "playing reads the live clock");
-    assert_eq!(cut_preview_frame::camera_clock(false, Some(live), 4.0), 4.0, "paused still reads the line");
+    assert_eq!(
+        cut_preview_frame::camera_clock(true, Some(live), 4.0),
+        live,
+        "playing reads the live clock"
+    );
+    assert_eq!(
+        cut_preview_frame::camera_clock(false, Some(live), 4.0),
+        4.0,
+        "paused still reads the line"
+    );
     // The frame the draw func builds rides the same answers: playing, and its camera is the one at the clock.
     let held = cut_preview_frame::held_frame(&ui::review_cut_of(&window), None);
     let frame = cut_preview_frame::describe(&window, FIT, &held);
     assert!(frame.playing, "the transport the page holds says playing");
-    let seen = cut_preview_frame::observe(&frame, Some(live));    assert_eq!(
-        seen.camera, fx_zoom::camera_at(&frame.cut.fx, live),
+    let seen = cut_preview_frame::observe(&frame, Some(live));
+    assert_eq!(
+        seen.camera,
+        fx_zoom::camera_at(&frame.cut.fx, live),
         "the camera layer is read at the smoothed clock"
     );
     let kinds: Vec<EffectKind> = seen.titles.iter().map(|(_, kind, _)| *kind).collect();
-    assert_eq!(kinds, vec![EffectKind::Text], "titles only: the zoom is a mask, not a title");
-    assert!(lane::mask_only_while_playing(EffectKind::Zoom), "and the mask is a zoom's alone");
+    assert_eq!(
+        kinds,
+        vec![EffectKind::Text],
+        "titles only: the zoom is a mask, not a title"
+    );
     assert!(
-        cut_preview_frame::playing_mask_px(&seen.camera, FIT).iter().all(|(_, _, _, _)| true),
+        lane::mask_only_while_playing(EffectKind::Zoom),
+        "and the mask is a zoom's alone"
+    );
+    assert!(
+        cut_preview_frame::playing_mask_px(&seen.camera, FIT)
+            .iter()
+            .all(|(_, _, _, _)| true),
         "the mask is bands, never a wash"
     );
     // A rate-0 stop still borrows the scene's camera while the clock runs — the still has no box of its own.
@@ -502,7 +700,10 @@ fn the_playing_half_rides_the_pages_tick(app: &adw::Application) {
     let borrowed = vec![zoom, stop];
     assert_eq!(
         cut_preview_frame::stop_px(&borrowed, 6.0, FIT),
-        Some(cut_preview_frame::camera_rect_px(&fx_zoom::camera_at(&borrowed, 6.0), FIT)),
+        Some(cut_preview_frame::camera_rect_px(
+            &fx_zoom::camera_at(&borrowed, 6.0),
+            FIT
+        )),
         "the borrowed box is the scene's own camera, fitted on the footage"
     );
     RAN_TICK.store(true, Ordering::SeqCst);
@@ -520,7 +721,14 @@ fn the_two_sounds_wear_different_tails(app: &adw::Application) {
     let mut own_snd = scene_snd.clone();
     own_snd.snd = "own".into();
     own_snd.t = 20.0;
-    let mut seeded = Cut { segs: vec![Seg { s: 0.0, e: 60.0, ..Default::default() }], ..Default::default() };
+    let mut seeded = Cut {
+        segs: vec![Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
     seeded.fx.push(scene_snd);
     seeded.fx.push(own_snd);
     let window = cut_page(app, &seeded);
@@ -550,15 +758,39 @@ fn the_two_sounds_wear_different_tails(app: &adw::Application) {
 }
 
 fn round(app: &adw::Application) {
-    step!("the painted-frame check", the_frame_paints_the_paused_scene(app));
+    step!(
+        "the painted-frame check",
+        the_frame_paints_the_paused_scene(app)
+    );
     step!("the seat check", the_lane_sits_under_the_panel(app));
-    step!("the live-tick check", the_playing_half_rides_the_pages_tick(app));
-    step!("the tail-pair check", the_two_sounds_wear_different_tails(app));
-    step!("the held-overlay check", the_held_overlay_is_full_and_outlined(app));
-    step!("the box-being-drawn check", the_box_is_dashed_only_while_armed(app));
-    step!("the playing-half check", the_playing_half_is_mask_plus_titles(app));
-    step!("the stop's-still check", a_stops_still_borrows_the_scene_camera(app));
-    step!("the debt-tail check", only_the_scene_end_sound_gets_a_tail(app));
+    step!(
+        "the live-tick check",
+        the_playing_half_rides_the_pages_tick(app)
+    );
+    step!(
+        "the tail-pair check",
+        the_two_sounds_wear_different_tails(app)
+    );
+    step!(
+        "the held-overlay check",
+        the_held_overlay_is_full_and_outlined(app)
+    );
+    step!(
+        "the box-being-drawn check",
+        the_box_is_dashed_only_while_armed(app)
+    );
+    step!(
+        "the playing-half check",
+        the_playing_half_is_mask_plus_titles(app)
+    );
+    step!(
+        "the stop's-still check",
+        a_stops_still_borrows_the_scene_camera(app)
+    );
+    step!(
+        "the debt-tail check",
+        only_the_scene_end_sound_gets_a_tail(app)
+    );
     // `app.run()` only returns when the application quits, and a window left open by a check that returned
     // early would keep the activation alive forever. The quit belongs to the run, not to one check.
     app.quit();
@@ -574,15 +806,39 @@ fn stopped_early() -> Option<String> {
 fn sec_06_effects_2_the_lane_and_the_preview_s10_the_page_paints_the_frame_it_describes() {
     run_once();
     assert_eq!(stopped_early(), None, "the activation stopped early");
-    assert!(RAN_FRAME.load(Ordering::SeqCst), "the painted-frame check never ran");
-    assert!(RAN_HELD.load(Ordering::SeqCst), "the held-overlay check never ran");
-    assert!(RAN_BOX.load(Ordering::SeqCst), "the box-being-drawn check never ran");
-    assert!(RAN_PLAYING.load(Ordering::SeqCst), "the playing-half check never ran");
-    assert!(RAN_STOP.load(Ordering::SeqCst), "the stop's-still check never ran");
-    assert!(RAN_TAIL.load(Ordering::SeqCst), "the debt-tail check never ran");
+    assert!(
+        RAN_FRAME.load(Ordering::SeqCst),
+        "the painted-frame check never ran"
+    );
+    assert!(
+        RAN_HELD.load(Ordering::SeqCst),
+        "the held-overlay check never ran"
+    );
+    assert!(
+        RAN_BOX.load(Ordering::SeqCst),
+        "the box-being-drawn check never ran"
+    );
+    assert!(
+        RAN_PLAYING.load(Ordering::SeqCst),
+        "the playing-half check never ran"
+    );
+    assert!(
+        RAN_STOP.load(Ordering::SeqCst),
+        "the stop's-still check never ran"
+    );
+    assert!(
+        RAN_TAIL.load(Ordering::SeqCst),
+        "the debt-tail check never ran"
+    );
     assert!(RAN_SEAT.load(Ordering::SeqCst), "the seat check never ran");
-    assert!(RAN_TICK.load(Ordering::SeqCst), "the live-tick check never ran");
-    assert!(RAN_PAIR.load(Ordering::SeqCst), "the tail-pair check never ran");
+    assert!(
+        RAN_TICK.load(Ordering::SeqCst),
+        "the live-tick check never ran"
+    );
+    assert!(
+        RAN_PAIR.load(Ordering::SeqCst),
+        "the tail-pair check never ran"
+    );
 }
 
 #[test]
@@ -598,7 +854,10 @@ fn sec_06_effects_2_the_lane_and_the_preview_s16_the_lane_sits_directly_under_th
 fn sec_06_effects_2_the_lane_and_the_preview_s17_the_playing_half_rides_the_pages_tick() {
     run_once();
     assert_eq!(stopped_early(), None, "the activation stopped early");
-    assert!(RAN_TICK.load(Ordering::SeqCst), "the live-tick check never ran");
+    assert!(
+        RAN_TICK.load(Ordering::SeqCst),
+        "the live-tick check never ran"
+    );
 }
 
 /// §2 (`Only "1× to the scene's end" draws the dashed debt tail`), through the bar widget the page drew: the
@@ -608,7 +867,10 @@ fn sec_06_effects_2_the_lane_and_the_preview_s17_the_playing_half_rides_the_page
 fn sec_06_effects_2_the_lane_and_the_preview_s18_the_two_sounds_wear_different_tails() {
     run_once();
     assert_eq!(stopped_early(), None, "the activation stopped early");
-    assert!(RAN_PAIR.load(Ordering::SeqCst), "the tail-pair check never ran");
+    assert!(
+        RAN_PAIR.load(Ordering::SeqCst),
+        "the tail-pair check never ran"
+    );
 }
 
 /// One application, one run, for every check in this binary — but ONE entry test only, for the reason the

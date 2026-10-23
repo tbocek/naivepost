@@ -18,8 +18,8 @@ use crate::cut::{self, Cut, NO_CUT_YET};
 use crate::layout::Tree;
 use crate::narration::Entry;
 use crate::produce_embed;
-use crate::produce_stamp;
 use crate::produce_render as render;
+use crate::produce_stamp;
 use crate::project::{Codec, Container, Produce, Publish};
 use crate::run::{self, Snapshot};
 
@@ -56,7 +56,8 @@ pub enum Gate {
 
 /// S2's skip line, byte for byte. The parenthetical matters: without it a person who wants the encode
 /// anyway has no idea that ↻ beside Transcode gives it to them.
-pub const SKIP_LOG: &str = ">>> the video is already what this page describes \u{2014} not encoding it again \
+pub const SKIP_LOG: &str =
+    ">>> the video is already what this page describes \u{2014} not encoding it again \
 (\u{21bb} beside Transcode encodes anyway)";
 
 /// S2's confirmation title. `<base>` is the file's name without its folder, which is what a person
@@ -68,7 +69,9 @@ pub fn overwrite_title(base: &str) -> String {
 /// S2's confirmation body: what is being replaced on one line, then a blank, then what the cost is.
 /// Two paragraphs because §S2 spells them apart and a dialog that runs them together reads as one clause.
 pub fn overwrite_detail(path: &str, size: &str, age: &str) -> String {
-    format!("{path} \u{2014} {size}, {age}\n\nThe encode takes minutes and there is no undo for it.")
+    format!(
+        "{path} \u{2014} {size}, {age}\n\nThe encode takes minutes and there is no undo for it."
+    )
 }
 
 /// S2's confirmation, both halves of it in one call: the title that goes on the status line and the
@@ -322,8 +325,6 @@ impl Default for Rendered {
         }
     }
 }
-
-
 
 // --- S5/S6: how the run ends -------------------------------------------------------------------
 

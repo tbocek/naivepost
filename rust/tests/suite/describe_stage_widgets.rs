@@ -13,13 +13,13 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::fake_audio_server;
+use common::footage;
 use naivepost::clock::frame_name;
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
-use crate::common;
-use common::fake_audio_server;
-use common::footage;
 use naivepost::run;
 use naivepost::ui;
 
@@ -61,10 +61,7 @@ fn seed_frames(tree: &Tree, lane: &str, seconds: &[f64], changes: &[f64]) {
     }
     // F1.6's marker: `<grid>|<scene threshold>`.
     std::fs::write(tree.frames_marker(lane), "0.25|1.0\n").expect("marker");
-    let rows: String = changes
-        .iter()
-        .map(|at| format!("{at}\t5.0\n"))
-        .collect();
+    let rows: String = changes.iter().map(|at| format!("{at}\t5.0\n")).collect();
     std::fs::write(tree.scenes_tsv(lane), rows).expect("scenes.tsv");
 }
 
@@ -93,8 +90,14 @@ fn f1_7_wire_pressing_play_reaches_the_describe_stage() {
     app.run_with_args::<String>(&[]);
 
     assert!(RAN_PLAN.load(Ordering::SeqCst), "the plan check never ran");
-    assert!(RAN_REFUSAL.load(Ordering::SeqCst), "the every-frame refusal check never ran");
-    assert!(RAN_NOTHING.load(Ordering::SeqCst), "the missing-frames check never ran");
+    assert!(
+        RAN_REFUSAL.load(Ordering::SeqCst),
+        "the every-frame refusal check never ran"
+    );
+    assert!(
+        RAN_NOTHING.load(Ordering::SeqCst),
+        "the missing-frames check never ran"
+    );
 }
 
 /// The stage's pick summary reaches the window log through a real click, naming the same frame count
@@ -141,7 +144,8 @@ fn check_plan_lands_through_the_button(app: &adw::Application) {
         "the run opened, so the stage ran inside it: {logs:?}"
     );
     assert!(
-        logs.iter().any(|line| line == ">>> [lecture] describe: 8 frames -> 2 requests"),
+        logs.iter()
+            .any(|line| line == ">>> [lecture] describe: 8 frames -> 2 requests"),
         "F1.7's pick summary landed in the log for the clicked source: {logs:?}"
     );
     // And it came AFTER Prepare's own opening line, i.e. the stage speaks down the started path.
@@ -153,7 +157,10 @@ fn check_plan_lands_through_the_button(app: &adw::Application) {
         .iter()
         .position(|line| line.starts_with(">>> [lecture] describe:"))
         .expect("the describe line is logged");
-    assert!(opening < stage, "the stage speaks after the run opened: {logs:?}");
+    assert!(
+        opening < stage,
+        "the stage speaks after the run opened: {logs:?}"
+    );
 }
 
 /// An every-frame folder refuses through the same click, with §F1.7's exact sentence.

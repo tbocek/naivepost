@@ -37,6 +37,9 @@ type SpawnedArgv = Rc<RefCell<Vec<Vec<String>>>>;
 /// The same record one step deeper: which walk step wrote which argv.
 type SpawnedSteps = Rc<RefCell<Vec<(String, Vec<String>)>>>;
 
+use crate::common;
+use common::produce_project as project;
+use common::session_tree_of as session;
 use naivepost::cut::Seg;
 use naivepost::layout::Tree;
 use naivepost::narration::Entry;
@@ -47,9 +50,6 @@ use naivepost::produce_flow as flow;
 use naivepost::produce_render as render;
 use naivepost::produce_subtitles as subs;
 use naivepost::project::{Codec, Container, Produce, Publish, Source, Subtitles};
-use crate::common;
-use common::produce_project as project;
-use common::session_tree_of as session;
 
 const ITEM: &str = "sec_08_produce_3_data";
 
@@ -64,11 +64,26 @@ thread_local! {
 }
 
 fn app_in_round() -> adw::Application {
-    CURRENT_APP.with(|held| held.borrow().clone()).expect("run_round published the application")
+    CURRENT_APP
+        .with(|held| held.borrow().clone())
+        .expect("run_round published the application")
 }
 
 fn two_segs() -> Vec<Seg> {
-    vec![Seg { s: 0.0, e: 9.5, cam: 0, ..Default::default() }, Seg { s: 10.0, e: 30.0, cam: 0, ..Default::default() }]
+    vec![
+        Seg {
+            s: 0.0,
+            e: 9.5,
+            cam: 0,
+            ..Default::default()
+        },
+        Seg {
+            s: 10.0,
+            e: 30.0,
+            cam: 0,
+            ..Default::default()
+        },
+    ]
 }
 
 /// A Produce window over the fixture project, the way `tests/suite/produce_tag_page.rs` builds one.
@@ -122,15 +137,31 @@ fn scripted_spawn(seen: SpawnedArgv) -> naivepost::produce_translate::SpawnSlot 
 fn check_press_writes_what_the_catalogue_lists(root: &Path) {
     let tree = session(root);
     // A cut on disk, because §08 reads the cut the Cut page saved when no live review cut stands.
-    let cut = naivepost::cut::Cut { segs: two_segs(), aspect: "16:9".to_string(), ..Default::default() };
+    let cut = naivepost::cut::Cut {
+        segs: two_segs(),
+        aspect: "16:9".to_string(),
+        ..Default::default()
+    };
     std::fs::create_dir_all(tree.cut_json().parent().unwrap()).unwrap();
     std::fs::write(tree.cut_json(), serde_json::to_string_pretty(&cut).unwrap()).unwrap();
     // Narration the render can speak without a server: `wav_of` finds these and needs no ffprobe to size them.
     naivepost::narration::save(
         &naivepost::narration::Narration {
             entries: vec![
-                Entry { s: 0.0, e: 4.0, at: 0.5, text: "one spoken line".into(), ..Default::default() },
-                Entry { s: 5.0, e: 9.0, at: 5.5, text: "a second spoken line".into(), ..Default::default() },
+                Entry {
+                    s: 0.0,
+                    e: 4.0,
+                    at: 0.5,
+                    text: "one spoken line".into(),
+                    ..Default::default()
+                },
+                Entry {
+                    s: 5.0,
+                    e: 9.0,
+                    at: 5.5,
+                    text: "a second spoken line".into(),
+                    ..Default::default()
+                },
             ],
             silent: vec![],
         },
@@ -139,9 +170,19 @@ fn check_press_writes_what_the_catalogue_lists(root: &Path) {
     .expect("two lines for the run to speak");
     // A fake take wav per line, so the render's sizing leg has a real file to weigh (no ffprobe, no server):
     // `produce_stamp::wav_of` names each take, so these are the paths the run itself would look for.
-    for (index, entry) in ["one spoken line", "a second spoken line"].iter().enumerate() {
-        let line = Entry { s: index as f64 * 5.0, e: index as f64 * 5.0 + 4.0, at: 0.5, text: (*entry).into(), ..Default::default() };
-        let take = naivepost::produce_stamp::wav_of(&tree, &line, Some("1"), 0).expect("a line has a take path");
+    for (index, entry) in ["one spoken line", "a second spoken line"]
+        .iter()
+        .enumerate()
+    {
+        let line = Entry {
+            s: index as f64 * 5.0,
+            e: index as f64 * 5.0 + 4.0,
+            at: 0.5,
+            text: (*entry).into(),
+            ..Default::default()
+        };
+        let take = naivepost::produce_stamp::wav_of(&tree, &line, Some("1"), 0)
+            .expect("a line has a take path");
         std::fs::create_dir_all(take.parent().unwrap()).unwrap();
         std::fs::write(&take, b"RIFF fake wav bytes, long enough to weigh").unwrap();
     }
@@ -156,29 +197,59 @@ fn check_press_writes_what_the_catalogue_lists(root: &Path) {
     let window = produce_window(&app_in_round());
     ui::seed_review_cut(&window, &cut);
     seed_page(&window);
-    let button = ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
+    let button =
+        ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
     button.emit_by_name::<()>("clicked", &[]);
     common::settle();
 
     let logs = ui::window::window_logs();
     assert!(
-        logs.iter().any(|l| l.starts_with(">>> transcoding ") || l.starts_with(">>> producing ")),
+        logs.iter()
+            .any(|l| l.starts_with(">>> transcoding ") || l.starts_with(">>> producing ")),
         "the press reached the encode: {:?}",
-        logs.iter().filter(|l| l.contains("produce")).collect::<Vec<&String>>()
+        logs.iter()
+            .filter(|l| l.contains("produce"))
+            .collect::<Vec<&String>>()
     );
 
     // §3's video, stamp, page and cue sheet, read back off the folder the PRESS wrote.
     let video = tree.final_video("mp4");
-    assert!(video.is_file(), "the run wrote the video at {}", video.display());
-    assert!(naivepost::produce_stamp::stamp_path(&tree).is_file(), "and the stamp beside it");
-    assert!(tree.final_srt(None).is_file(), "§3's `final.srt` for the cues it spoke");
-    assert!(tree.final_vtt(None).is_file(), "and the webvtt the <video> tag reads");
+    assert!(
+        video.is_file(),
+        "the run wrote the video at {}",
+        video.display()
+    );
+    assert!(
+        naivepost::produce_stamp::stamp_path(&tree).is_file(),
+        "and the stamp beside it"
+    );
+    assert!(
+        tree.final_srt(None).is_file(),
+        "§3's `final.srt` for the cues it spoke"
+    );
+    assert!(
+        tree.final_vtt(None).is_file(),
+        "and the webvtt the <video> tag reads"
+    );
     assert!(tree.final_html().is_file(), "and the tag page");
     // The scratch sheet lives under clips/ (§3) and the join carries the container (§6).
-    assert!(data::scratch_srt(&tree).is_file(), "{} is §3's scratch sheet", data::scratch_srt(&tree).display());
-    let join = tree.clips_dir().join(naivepost::produce_details::joined("mp4"));
-    assert_eq!(stale, join, "the planted leftover is exactly the file this container's run writes");
-    assert!(join.is_file(), "the stream-copy join §6 names: {}", join.display());
+    assert!(
+        data::scratch_srt(&tree).is_file(),
+        "{} is §3's scratch sheet",
+        data::scratch_srt(&tree).display()
+    );
+    let join = tree
+        .clips_dir()
+        .join(naivepost::produce_details::joined("mp4"));
+    assert_eq!(
+        stale, join,
+        "the planted leftover is exactly the file this container's run writes"
+    );
+    assert!(
+        join.is_file(),
+        "the stream-copy join §6 names: {}",
+        join.display()
+    );
     assert_ne!(
         std::fs::read(&join).unwrap(),
         b"an older render's join",
@@ -186,22 +257,33 @@ fn check_press_writes_what_the_catalogue_lists(root: &Path) {
     );
     let commands = seen.borrow();
     assert!(
-        commands.iter().any(|argv| argv.last().is_some_and(|out| out == join.to_str().unwrap())),
+        commands
+            .iter()
+            .any(|argv| argv.last().is_some_and(|out| out == join.to_str().unwrap())),
         "and it is a command's own output, not a hopeful path: {:#?}",
         *commands
     );
     // The catalogue's `resolve` agrees with every one of those paths — the reason §3's spelling is load-bearing.
     assert_eq!(data::resolve(&tree, "final.html"), Some(tree.final_html()));
-    assert_eq!(data::resolve(&tree, "clips/final.srt"), Some(data::scratch_srt(&tree)));
+    assert_eq!(
+        data::resolve(&tree, "clips/final.srt"),
+        Some(data::scratch_srt(&tree))
+    );
     // And §6's sweep already ran: the log line names the scratch groups it cleared.
     let groups = data::scratch_groups();
     assert!(
-        logs.iter().any(|l| l.contains("cleared") && l.contains(&format!("{groups} kinds"))),
+        logs.iter()
+            .any(|l| l.contains("cleared") && l.contains(&format!("{groups} kinds"))),
         "the S1 sweep ran before the encodes: {:?}",
-        logs.iter().filter(|l| l.contains("clips")).collect::<Vec<&String>>()
+        logs.iter()
+            .filter(|l| l.contains("clips"))
+            .collect::<Vec<&String>>()
     );
     // `publish.json` was never written by this run: §3's state entry stays absent, so §5's flag is honest.
-    assert!(!naivepost::publish::is_written(&tree), "a render does not write the upload record");
+    assert!(
+        !naivepost::publish::is_written(&tree),
+        "a render does not write the upload record"
+    );
     window.close();
     common::settle();
 }
@@ -244,7 +326,8 @@ fn run_widget_round(app: &adw::Application) {
         check_press_writes_what_the_catalogue_lists(&owned);
     }));
     if outcome.is_err() {
-        *WIDGET_FAIL.lock().unwrap() = Some("press-fills-the-folder: the press's folder did not match §3".into());
+        *WIDGET_FAIL.lock().unwrap() =
+            Some("press-fills-the-folder: the press's folder did not match §3".into());
     }
     let app = app.clone();
     glib::idle_add_local(move || {
@@ -270,11 +353,17 @@ fn sec_08_produce_3_data_s1_catalogue_is_spec_3_then_spec_6() {
     // §3's order is kept exactly: the four under clips/, the five beside the video, then the record.
     assert_eq!(&list[..data::DATA_FILES.len()], &data::DATA_FILES[..]);
     for extra in data::CLIPS_EXTRA {
-        assert!(list.contains(&extra), "{extra} is missing from the catalogue: {list:?}");
+        assert!(
+            list.contains(&extra),
+            "{extra} is missing from the catalogue: {list:?}"
+        );
     }
     // §6 puts its extras in `clips/`, which is what makes them scratch like §3's four.
     for extra in data::CLIPS_EXTRA {
-        assert!(extra.starts_with("clips/"), "{extra} does not live in the scratch folder");
+        assert!(
+            extra.starts_with("clips/"),
+            "{extra} does not live in the scratch folder"
+        );
     }
 }
 
@@ -283,10 +372,18 @@ fn sec_08_produce_3_data_s1_catalogue_is_spec_3_then_spec_6() {
 fn sec_08_produce_3_data_s2_kind_sorts_every_entry_into_its_group() {
     let list = data::catalogue();
     for entry in list.iter().filter(|e| e.starts_with("clips/")) {
-        assert_eq!(data::kind(entry), data::Kind::Scratch, "{entry} is cleared by every run");
+        assert_eq!(
+            data::kind(entry),
+            data::Kind::Scratch,
+            "{entry} is cleared by every run"
+        );
     }
     for entry in list.iter().filter(|e| e.starts_with("final.")) {
-        assert_eq!(data::Kind::Output, data::kind(entry), "{entry} stands beside the video");
+        assert_eq!(
+            data::Kind::Output,
+            data::kind(entry),
+            "{entry} stands beside the video"
+        );
     }
     assert_eq!(
         data::kind("publish/publish.json"),
@@ -305,7 +402,11 @@ fn sec_08_produce_3_data_s2_kind_sorts_every_entry_into_its_group() {
 #[test]
 fn sec_08_produce_3_data_s3_catalogue_agrees_with_details_scratch_names() {
     // Same placeholders, same folder: `details::SCRATCH_KINDS` is §6's own words without the prefix.
-    assert_eq!(details::SCRATCH_KINDS.len(), data::CLIPS_EXTRA.len() + 1, "one encode entry each");
+    assert_eq!(
+        details::SCRATCH_KINDS.len(),
+        data::CLIPS_EXTRA.len() + 1,
+        "one encode entry each"
+    );
     let spelled = [
         details::clip_cues(3, "ab12"),
         details::cue_title(3, 7),
@@ -313,7 +414,13 @@ fn sec_08_produce_3_data_s3_catalogue_agrees_with_details_scratch_names() {
         details::animation_frames("loop.svg"),
         details::joined("mp4"),
     ];
-    let expected = ["c003_ab12.srt", "c003_t07.svg", "ranks-filled.svg", "loop.frames/", "joined.mp4"];
+    let expected = [
+        "c003_ab12.srt",
+        "c003_t07.svg",
+        "ranks-filled.svg",
+        "loop.frames/",
+        "joined.mp4",
+    ];
     for (name, want) in spelled.iter().zip(expected) {
         assert_eq!(name, want, "a §6 name changed spelling: {name}");
     }
@@ -334,14 +441,29 @@ fn sec_08_produce_3_data_s3_catalogue_agrees_with_details_scratch_names() {
 /// in the join command and as the mux's input.
 #[test]
 fn sec_08_produce_3_data_s4_the_join_is_named_after_the_container_and_shared_by_both_commands() {
-    for (container, code) in [(Container::Mp4, "mp4"), (Container::Webm, "webm"), (Container::Mkv, "mkv")] {
+    for (container, code) in [
+        (Container::Mp4, "mp4"),
+        (Container::Webm, "webm"),
+        (Container::Mkv, "mkv"),
+    ] {
         let (_root, tree) = common::tree_in(&format!("join-{code}"));
-        let settings = Produce { container, ..Default::default() };
-        let (tree2, run) = run_over(&tree, vec![common::seg(0.0, 10.0)], Vec::new(), settings.clone());
+        let settings = Produce {
+            container,
+            ..Default::default()
+        };
+        let (tree2, run) = run_over(
+            &tree,
+            vec![common::seg(0.0, 10.0)],
+            Vec::new(),
+            settings.clone(),
+        );
         let plan = exec::plan(&run, &tree2, &mats(&[], exec::Cues::default()));
         let want = tree.clips_dir().join(format!("joined.{code}"));
         assert_eq!(want, tree.clips_dir().join(details::joined(code)));
-        let join = plan.join.clone().unwrap_or_else(|| panic!("{code}: a run with a clip joins"));
+        let join = plan
+            .join
+            .clone()
+            .unwrap_or_else(|| panic!("{code}: a run with a clip joins"));
         assert_eq!(
             Some(want.display().to_string()),
             join.argv.last().map(|s| s.to_string()),
@@ -350,7 +472,10 @@ fn sec_08_produce_3_data_s4_the_join_is_named_after_the_container_and_shared_by_
         );
         // The mux reads exactly that file back: one name, two commands.
         assert!(
-            plan.mux.argv.iter().any(|a| *a == want.display().to_string()),
+            plan.mux
+                .argv
+                .iter()
+                .any(|a| *a == want.display().to_string()),
             "the mux's input is the join it just wrote: {:?}",
             plan.mux.argv
         );
@@ -365,13 +490,22 @@ fn sec_08_produce_3_data_s5_no_run_leaves_a_bin_named_join_behind() {
         &tree,
         vec![common::seg(0.0, 10.0)],
         Vec::new(),
-        Produce { container: Container::Mkv, ..Default::default() },
+        Produce {
+            container: Container::Mkv,
+            ..Default::default()
+        },
     );
     let spy = Spy::new();
     spy.run(&run, &tree2, &mats(&[], exec::Cues::default()));
     let all = spy.joined();
-    assert!(!all.contains("joined.bin"), "no run writes a `.bin` join:\n{all}");
-    assert!(all.contains("joined.mkv"), "it writes the mkv-named join:\n{all}");
+    assert!(
+        !all.contains("joined.bin"),
+        "no run writes a `.bin` join:\n{all}"
+    );
+    assert!(
+        all.contains("joined.mkv"),
+        "it writes the mkv-named join:\n{all}"
+    );
 }
 
 // ---- the folder the run writes -------------------------------------------------------------------
@@ -380,22 +514,47 @@ fn sec_08_produce_3_data_s5_no_run_leaves_a_bin_named_join_behind() {
 /// are none, and the scratch sheet appears in `clips/` either way only when it has something to say.
 #[test]
 fn sec_08_produce_3_data_s6_the_cue_sheet_lands_beside_the_video_when_there_are_cues() {
-    let line = Entry { s: 0.0, e: 5.0, at: 0.0, text: "a spoken line".into(), ..Default::default() };
+    let line = Entry {
+        s: 0.0,
+        e: 5.0,
+        at: 0.0,
+        text: "a spoken line".into(),
+        ..Default::default()
+    };
     let (tree, run) = run_over(
         &common::tree_in("sheet-yes").1,
         vec![common::seg(0.0, 10.0)],
         vec![line.clone()],
-        Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
+        Produce {
+            subtitles: Subtitles::TrackInFile,
+            ..Default::default()
+        },
     );
     let spy = Spy::new();
-    let rendered = spy.run(&run, &tree, &mats(&[], exec::Cues { languages: vec![], ..Default::default() }));
-    assert!(rendered.ok, "the render half reported failure: {rendered:?}");
+    let rendered = spy.run(
+        &run,
+        &tree,
+        &mats(
+            &[],
+            exec::Cues {
+                languages: vec![],
+                ..Default::default()
+            },
+        ),
+    );
+    assert!(
+        rendered.ok,
+        "the render half reported failure: {rendered:?}"
+    );
     assert!(
         tree.final_srt(None).is_file(),
         "{} should exist after a run with cues",
         tree.final_srt(None).display()
     );
-    assert!(data::scratch_srt(&tree).is_file(), "and the scratch sheet §3 lists is there too");
+    assert!(
+        data::scratch_srt(&tree).is_file(),
+        "and the scratch sheet §3 lists is there too"
+    );
     // The catalogue's scratch entry resolves to the file the run wrote, not to a hand-typed name.
     assert_eq!(
         data::resolve(&tree, "clips/final.srt"),
@@ -409,7 +568,10 @@ fn sec_08_produce_3_data_s6_the_cue_sheet_lands_beside_the_video_when_there_are_
         &tree2,
         vec![common::seg(0.0, 10.0)],
         Vec::new(),
-        Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
+        Produce {
+            subtitles: Subtitles::TrackInFile,
+            ..Default::default()
+        },
     );
     let quiet = Spy::new();
     quiet.run(&run2, &tree3, &mats(&[], exec::Cues::default()));
@@ -419,7 +581,10 @@ fn sec_08_produce_3_data_s6_the_cue_sheet_lands_beside_the_video_when_there_are_
         tree3.final_srt(None).display()
     );
     assert!(
-        quiet.logs_vec().iter().any(|l| l.contains(render::no_subtitle_cue_log())),
+        quiet
+            .logs_vec()
+            .iter()
+            .any(|l| l.contains(render::no_subtitle_cue_log())),
         "and the absence is logged: {:?}",
         quiet.logs_vec()
     );
@@ -455,14 +620,26 @@ fn sec_08_produce_3_data_s7_the_poster_is_made_from_the_thumbnail_that_exists() 
         &*leg,
         |line| log_store.borrow_mut().push(line.to_string()),
     );
-    assert!(page.written, "the tag page is written even with no poster: {page:?}");
-    assert!(calls.borrow().is_empty(), "no poster was asked for: {:?}", calls.borrow());
     assert!(
-        logs.borrow().iter().any(|l| l.contains("no thumbnail has been drawn yet")),
+        page.written,
+        "the tag page is written even with no poster: {page:?}"
+    );
+    assert!(
+        calls.borrow().is_empty(),
+        "no poster was asked for: {:?}",
+        calls.borrow()
+    );
+    assert!(
+        logs.borrow()
+            .iter()
+            .any(|l| l.contains("no thumbnail has been drawn yet")),
         "and that is said: {:?}",
         logs.borrow()
     );
-    assert!(!tree.final_jpg().is_file(), "so §3's final.jpg is simply absent");
+    assert!(
+        !tree.final_jpg().is_file(),
+        "so §3's final.jpg is simply absent"
+    );
 
     // Now draw one (the printed picture) and run again: the poster is JPEG 90 off it, at §3's path.
     std::fs::create_dir_all(tree.publish_dir()).unwrap();
@@ -484,7 +661,11 @@ fn sec_08_produce_3_data_s7_the_poster_is_made_from_the_thumbnail_that_exists() 
         argv.iter().any(|a| a.ends_with("thumbnail.png")),
         "the source is the drawn thumbnail: {argv:?}"
     );
-    assert_eq!(Some(&tree.final_jpg().display().to_string()), argv.last(), "and the output is §3's jpg");
+    assert_eq!(
+        Some(&tree.final_jpg().display().to_string()),
+        argv.last(),
+        "and the output is §3's jpg"
+    );
     assert!(tree.final_jpg().is_file(), "which is really on disk now");
     let (quality, rung) = data::poster_quality();
     assert!(
@@ -503,7 +684,10 @@ fn sec_08_produce_3_data_s7_the_poster_is_made_from_the_thumbnail_that_exists() 
         &*leg,
         |line| log_store.borrow_mut().push(line.to_string()),
     );
-    assert!(page.poster, "the plain frame is a legitimate poster: {page:?}");
+    assert!(
+        page.poster,
+        "the plain frame is a legitimate poster: {page:?}"
+    );
     let argv = calls.borrow().last().cloned().unwrap_or_default();
     assert!(
         argv.iter().any(|a| a.ends_with("thumbnail-plain.png")),
@@ -522,7 +706,10 @@ fn sec_08_produce_3_data_s7_the_poster_is_made_from_the_thumbnail_that_exists() 
         &*leg,
         |line| log_store.borrow_mut().push(line.to_string()),
     );
-    assert!(!page.poster && page.written, "the page survives its picture's absence: {page:?}");
+    assert!(
+        !page.poster && page.written,
+        "the page survives its picture's absence: {page:?}"
+    );
     assert!(!tree.final_jpg().is_file(), "and nothing invented one");
 }
 
@@ -531,23 +718,56 @@ fn sec_08_produce_3_data_s7_the_poster_is_made_from_the_thumbnail_that_exists() 
 /// page advertises are read off the folder rather than out of the settings.
 #[test]
 fn sec_08_produce_3_data_s10_the_sidecars_and_the_track_list_agree() {
-    let line = Entry { s: 0.0, e: 5.0, at: 0.0, text: "a spoken line".into(), ..Default::default() };
+    let line = Entry {
+        s: 0.0,
+        e: 5.0,
+        at: 0.0,
+        text: "a spoken line".into(),
+        ..Default::default()
+    };
     let (_root, tree) = common::tree_in("sidecars");
     let (tree, run) = run_over(
         &tree,
         vec![common::seg(0.0, 10.0)],
         vec![line],
-        Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
+        Produce {
+            subtitles: Subtitles::TrackInFile,
+            ..Default::default()
+        },
     );
     // No language ticked: the video's own track is the bare-stem pair, and §3's `<code>` entry is the one
     // that stays empty here.
-    Spy::new().run(&run, &tree, &mats(&[], exec::Cues { languages: vec![], ..Default::default() }));
-    assert!(tree.final_srt(None).is_file(), "{} never written", tree.final_srt(None).display());
-    assert!(tree.final_vtt(None).is_file(), "{} never written", tree.final_vtt(None).display());
-    assert!(!tree.final_srt(Some("en")).is_file(), "no ticked language, no `final.en.srt`");
+    Spy::new().run(
+        &run,
+        &tree,
+        &mats(
+            &[],
+            exec::Cues {
+                languages: vec![],
+                ..Default::default()
+            },
+        ),
+    );
+    assert!(
+        tree.final_srt(None).is_file(),
+        "{} never written",
+        tree.final_srt(None).display()
+    );
+    assert!(
+        tree.final_vtt(None).is_file(),
+        "{} never written",
+        tree.final_vtt(None).display()
+    );
+    assert!(
+        !tree.final_srt(Some("en")).is_file(),
+        "no ticked language, no `final.en.srt`"
+    );
     // The catalogue resolves §3's wildcard to the pair `layout` writes, so no test hand-types a stem.
     let sidecars = data::sidecar_files("final", Some("en"));
-    assert_eq!(sidecars, ["final.en.srt".to_string(), "final.en.vtt".to_string()]);
+    assert_eq!(
+        sidecars,
+        ["final.en.srt".to_string(), "final.en.vtt".to_string()]
+    );
     assert_eq!(
         data::sidecar_files("final", None),
         ["final.srt".to_string(), "final.vtt".to_string()],
@@ -555,9 +775,18 @@ fn sec_08_produce_3_data_s10_the_sidecars_and_the_track_list_agree() {
     );
     // And the tag page reads the tracks back off that folder rather than out of the settings.
     let page = naivepost::produce_tag_page::build_and_write(
-        &tree, Container::Mp4, Codec::H264, "en", &[], &*no_poster(), |_| {},
+        &tree,
+        Container::Mp4,
+        Codec::H264,
+        "en",
+        &[],
+        &*no_poster(),
+        |_| {},
     );
-    assert_eq!(page.tracks, 1, "the one .vtt beside the video became one track: {page:?}");
+    assert_eq!(
+        page.tracks, 1,
+        "the one .vtt beside the video became one track: {page:?}"
+    );
 
     // Empty cue sheet: no sidecars, so the page has nothing to advertise either.
     let (_root2, quiet) = common::tree_in("sidecars-none");
@@ -567,14 +796,30 @@ fn sec_08_produce_3_data_s10_the_sidecars_and_the_track_list_agree() {
         &quiet,
         vec![common::seg(0.0, 10.0)],
         Vec::new(),
-        Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
+        Produce {
+            subtitles: Subtitles::TrackInFile,
+            ..Default::default()
+        },
     );
     Spy::new().run(&run2, &quiet, &mats(&[], exec::Cues::default()));
-    assert!(!quiet.final_vtt(None).is_file(), "no cue, no track: {}", quiet.final_vtt(None).display());
-    let page = naivepost::produce_tag_page::build_and_write(
-        &quiet, Container::Mp4, Codec::H264, "en", &[], &*no_poster(), |_| {},
+    assert!(
+        !quiet.final_vtt(None).is_file(),
+        "no cue, no track: {}",
+        quiet.final_vtt(None).display()
     );
-    assert_eq!(page.tracks, 0, "and the page advertises what is actually there: {page:?}");
+    let page = naivepost::produce_tag_page::build_and_write(
+        &quiet,
+        Container::Mp4,
+        Codec::H264,
+        "en",
+        &[],
+        &*no_poster(),
+        |_| {},
+    );
+    assert_eq!(
+        page.tracks, 0,
+        "and the page advertises what is actually there: {page:?}"
+    );
 }
 
 /// A poster leg that lays nothing down is a skipped poster, not a failed run: `poster=` only appears when
@@ -589,15 +834,28 @@ fn no_poster() -> Poster {
 #[test]
 fn sec_08_produce_3_data_s8_publish_json_survives_a_render() {
     let (_root, tree) = common::tree_in("publish-survives");
-    let record = Publish { title: "kept by the person".into(), own: true, ..Default::default() };
+    let record = Publish {
+        title: "kept by the person".into(),
+        own: true,
+        ..Default::default()
+    };
     naivepost::publish::save(&record, &tree).expect("the record is written");
     let before = std::fs::read(tree.publish_json()).unwrap();
-    assert!(data::written(&tree).contains(&data::DATA_FILES[10]), "and the catalogue reports it");
+    assert!(
+        data::written(&tree).contains(&data::DATA_FILES[10]),
+        "and the catalogue reports it"
+    );
 
     let (tree2, run) = run_over(
         &tree,
         vec![common::seg(0.0, 10.0)],
-        vec![Entry { s: 0.0, e: 4.0, at: 0.0, text: "a line".into(), ..Default::default() }],
+        vec![Entry {
+            s: 0.0,
+            e: 4.0,
+            at: 0.0,
+            text: "a line".into(),
+            ..Default::default()
+        }],
         Produce::default(),
     );
     let spy = Spy::new();
@@ -607,7 +865,10 @@ fn sec_08_produce_3_data_s8_publish_json_survives_a_render() {
         before,
         "the render rewrote the upload record"
     );
-    assert_eq!(naivepost::publish::load(&tree).unwrap().title, "kept by the person");
+    assert_eq!(
+        naivepost::publish::load(&tree).unwrap().title,
+        "kept by the person"
+    );
 }
 
 /// §6's "cleared at the start of every render": everything in `clips/` goes, the folder stays, and the log
@@ -617,20 +878,40 @@ fn sec_08_produce_3_data_s9_the_scratch_sweep_clears_every_clips_kind() {
     let (_root, tree) = common::tree_in("sweep");
     let scratch = tree.clips_dir();
     std::fs::create_dir_all(scratch.join("leftover.frames")).unwrap();
-    for name in ["c000_ab12.mp4", "c000_ab12.srt", "c000_t01.svg", "ranks-filled.svg", "joined.mp4"] {
+    for name in [
+        "c000_ab12.mp4",
+        "c000_ab12.srt",
+        "c000_t01.svg",
+        "ranks-filled.svg",
+        "joined.mp4",
+    ] {
         std::fs::write(scratch.join(name), b"an older render's leftovers").unwrap();
     }
-    let (tree2, run) = run_over(&tree, vec![common::seg(0.0, 10.0)], Vec::new(), Produce::default());
+    let (tree2, run) = run_over(
+        &tree,
+        vec![common::seg(0.0, 10.0)],
+        Vec::new(),
+        Produce::default(),
+    );
     let spy = Spy::new();
     spy.run(&run, &tree2, &mats(&[], exec::Cues::default()));
     // The sweep is S1, so the leftovers are judged as the run SAW them: read the log's own count and check
     // that every §6 name the test planted is gone from what this run did NOT write.
     let left: Vec<String> = std::fs::read_dir(&scratch)
-        .map(|d| d.flatten().map(|e| e.path()).filter(|p| p.is_file()).map(|p| p.display().to_string()).collect())
+        .map(|d| {
+            d.flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_file())
+                .map(|p| p.display().to_string())
+                .collect()
+        })
         .unwrap_or_default();
     for stale in ["c000_ab12.srt", "c000_t01.svg", "ranks-filled.svg"] {
         let path = scratch.join(stale);
-        assert!(!left.contains(&path.display().to_string()), "{stale} survived the sweep: {left:?}");
+        assert!(
+            !left.contains(&path.display().to_string()),
+            "{stale} survived the sweep: {left:?}"
+        );
     }
     // `joined.mp4` was planted AND written by this run (the fake spawner lays down its own output), so the
     // honest claim about it is that the sweep counted it: the planted bytes are gone, replaced by the run's.
@@ -639,15 +920,23 @@ fn sec_08_produce_3_data_s9_the_scratch_sweep_clears_every_clips_kind() {
         Some(b"a rendered file of some length".to_vec()),
         "the planted join was cleared and rewritten by this run"
     );
-    assert!(scratch.is_dir(), "the folder itself stays: the run writes into it seconds later");
+    assert!(
+        scratch.is_dir(),
+        "the folder itself stays: the run writes into it seconds later"
+    );
     let groups = data::scratch_groups();
     assert_eq!(
         groups,
-        data::catalogue().iter().filter(|e| data::kind(e) == data::Kind::Scratch).count(),
+        data::catalogue()
+            .iter()
+            .filter(|e| data::kind(e) == data::Kind::Scratch)
+            .count(),
         "the count the log quotes is the catalogue's own"
     );
     assert!(
-        spy.logs_vec().iter().any(|l| l.contains("cleared") && l.contains(&format!("{groups} kinds"))),
+        spy.logs_vec()
+            .iter()
+            .any(|l| l.contains("cleared") && l.contains(&format!("{groups} kinds"))),
         "the S1 line names the sweep it made: {:?}",
         spy.logs_vec()
     );
@@ -656,16 +945,33 @@ fn sec_08_produce_3_data_s9_the_scratch_sweep_clears_every_clips_kind() {
     let bare = tree2.clips_dir();
     std::fs::create_dir_all(&bare).unwrap();
     std::fs::write(bare.join("stray.txt"), b"left by a run that was cancelled").unwrap();
-    assert_eq!(1, data::clear_scratch(&tree2).expect("the sweep reports"), "one file went");
+    assert_eq!(
+        1,
+        data::clear_scratch(&tree2).expect("the sweep reports"),
+        "one file went"
+    );
     assert!(bare.is_dir(), "the folder itself stays");
-    assert_eq!(0, std::fs::read_dir(&bare).unwrap().count(), "and nothing is inside it");
+    assert_eq!(
+        0,
+        std::fs::read_dir(&bare).unwrap().count(),
+        "and nothing is inside it"
+    );
 }
 
 // ---- the plumbing every test above drives through --------------------------------------------------
 
-fn run_over(tree: &Tree, segs: Vec<Seg>, lines: Vec<Entry>, settings: Produce) -> (Tree, flow::Run) {
+fn run_over(
+    tree: &Tree,
+    segs: Vec<Seg>,
+    lines: Vec<Entry>,
+    settings: Produce,
+) -> (Tree, flow::Run) {
     let run = flow::snapshot(
-        Some(naivepost::cut::Cut { segs, aspect: "16:9".into(), ..Default::default() }),
+        Some(naivepost::cut::Cut {
+            segs,
+            aspect: "16:9".into(),
+            ..Default::default()
+        }),
         tree,
         lines,
         settings,
@@ -697,7 +1003,10 @@ fn sources() -> Vec<Source> {
 fn missing_is_gone(_: &str) -> bool {
     true
 }
-fn no_translate(_m: &str, n: &[usize]) -> Result<std::collections::BTreeMap<usize, String>, String> {
+fn no_translate(
+    _m: &str,
+    n: &[usize],
+) -> Result<std::collections::BTreeMap<usize, String>, String> {
     Ok(n.iter().map(|i| (*i, format!("translated {i}"))).collect())
 }
 
@@ -747,7 +1056,8 @@ impl Spy {
             |_line| Ok(()),
             |_at, _which| true,
             |command: &exec::Command| {
-                argv.borrow_mut().push((command.step.to_string(), command.argv.clone()));
+                argv.borrow_mut()
+                    .push((command.step.to_string(), command.argv.clone()));
                 if let Some(out) = command.argv.last() {
                     let path = Path::new(out);
                     if let Some(dir) = path.parent() {

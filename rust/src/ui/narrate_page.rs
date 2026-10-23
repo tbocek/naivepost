@@ -16,13 +16,13 @@ use gtk4 as gtk;
 
 use crate::cut::Seg;
 use crate::narrate_details;
+use crate::narrate_edit;
 use crate::narrate_off;
 use crate::narrate_preview_leg::{self, PreviewPage};
-use crate::narrate_edit;
 use crate::narrate_screen::{self, Audition, Fit};
+use crate::narration::Entry;
 use crate::ui::narrate_page_speak;
 use crate::ui::narrate_picker;
-use crate::narration::Entry;
 use crate::voice_ref;
 
 /// What the page shows. Published by the flows, read by every handler.
@@ -34,7 +34,8 @@ pub struct NarrateState {
     pub takes: Vec<(f64, f64)>,
     /// The chosen voice's id (`narrate_screen::CAPTIONS`, `narrator1`, or a voices-folder name).
     pub voice: String,
-    pub pitch: f64,    /// P.policy.ttsLanguage: the project's language, published by the flow that reads the project.
+    pub pitch: f64,
+    /// P.policy.ttsLanguage: the project's language, published by the flow that reads the project.
     /// Empty means the project states none, and `narrate_tts::language` then answers its fallback — it is
     /// never hard-coded here, because a model told to speak English reads Polish spelling as English.
     pub language: String,
@@ -162,7 +163,6 @@ pub(crate) const TICK_ROW_PX: i32 = 27;
 /// The gap both halves of the left column put between their rows.
 pub(crate) const COLUMN_GAP_PX: i32 = 8;
 
-
 /// Build the whole page. Called from `page_box` once per window for the Narrate tab.
 pub fn build() -> gtk::Widget {
     install_page_css_once();
@@ -240,7 +240,9 @@ pub fn build() -> gtk::Widget {
     // the picture became an invisible sliver. `Fill` makes the column take the paned's 560 px and the
     // frame fill them at its own 16:9 shape.
     preview.set_halign(gtk::Align::Fill);
-    preview.set_tooltip_text(Some("The finished frame with the narration mixed over the cut's sound"));
+    preview.set_tooltip_text(Some(
+        "The finished frame with the narration mixed over the cut's sound",
+    ));
     let picture = gtk::DrawingArea::new();
     picture.set_widget_name("narrate-picture");
     // NOT `vexpand`, and it needs a size of its own as well: an expanding child soaked up the paned's whole height
@@ -278,7 +280,11 @@ pub fn build() -> gtk::Widget {
             "back three seconds \u{2014} the reach the row's \u{25b6} auditions from",
         ),
         ("narrate-play", "\u{25b6}", "play or pause the preview"),
-        ("narrate-forward-3s", "3 s \u{21a3}", "forward three seconds"),
+        (
+            "narrate-forward-3s",
+            "3 s \u{21a3}",
+            "forward three seconds",
+        ),
     ] {
         let button = gtk::Button::with_label(label);
         button.set_widget_name(name);
@@ -421,7 +427,9 @@ pub fn build() -> gtk::Widget {
     // **22** the two readouts under the lines.
     let readouts = gtk::Box::new(gtk::Orientation::Vertical, 2);
     readouts.set_widget_name("narrate-readouts");
-    let inputs = gtk::Label::new(Some(&narrate_screen::inputs_readout(0, 0.0, 0, 0, false, false)));
+    let inputs = gtk::Label::new(Some(&narrate_screen::inputs_readout(
+        0, 0.0, 0, 0, false, false,
+    )));
     inputs.set_widget_name("narrate-inputs");
     inputs.set_xalign(0.0);
     let outputs = gtk::Label::new(Some(narrate_screen::outputs_readout()));
@@ -465,8 +473,8 @@ thread_local! {
 /// Paint the scrub bar to the clock without asking it to seek: the flag is restored on every path, including
 /// one the sync itself panics on, so a failed repaint cannot leave the bar deaf to real drags.
 fn sync_scrub(window: &adw::ApplicationWindow, s: &NarrateState) {
-    let Some(slider) = widget_in(window, "narrate-slider")
-        .and_then(|w| w.downcast::<gtk::Scale>().ok())
+    let Some(slider) =
+        widget_in(window, "narrate-slider").and_then(|w| w.downcast::<gtk::Scale>().ok())
     else {
         return;
     };
@@ -537,8 +545,8 @@ pub fn refresh(window: &adw::ApplicationWindow) {
 }
 
 fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
-    let Some(list) = widget_in(window, "narrate-lines")
-        .and_then(|w| w.downcast::<gtk::ListBox>().ok())
+    let Some(list) =
+        widget_in(window, "narrate-lines").and_then(|w| w.downcast::<gtk::ListBox>().ok())
     else {
         return;
     };
@@ -564,10 +572,7 @@ fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
     ordered.sort_by(|(_, a), (_, b)| {
         a.s.partial_cmp(&b.s)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then(
-                a.at.partial_cmp(&b.at)
-                    .unwrap_or(std::cmp::Ordering::Equal),
-            )
+            .then(a.at.partial_cmp(&b.at).unwrap_or(std::cmp::Ordering::Equal))
     });
     for (index, entry) in ordered.clone() {
         // §1's row shape lives in `narrate_row` (header line with the four buttons at its right end, the
@@ -1078,7 +1083,9 @@ pub fn press_voice(window: &adw::ApplicationWindow, id: &str) -> String {
 /// The voices folder as it should be spelled in S1's "no longer in DIR" sentence. Read per press so a
 /// Settings change shows up in the next refusal rather than naming where the last one looked.
 fn voices_dir_label() -> String {
-    crate::ui::narrate_voices::voices_folder().display().to_string()
+    crate::ui::narrate_voices::voices_folder()
+        .display()
+        .to_string()
 }
 
 /// Attach every handler. Called from `build_window` after `set_content`, like every other control on
@@ -1155,8 +1162,8 @@ pub fn wire(window: &adw::ApplicationWindow) {
             press_sample_reroll(&w);
         });
     }
-    if let Some(tick) = widget_in(&win, "narration-tick")
-        .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+    if let Some(tick) =
+        widget_in(&win, "narration-tick").and_then(|w| w.downcast::<gtk::CheckButton>().ok())
     {
         let w = win.clone();
         tick.connect_toggled(move |t| {
@@ -1164,8 +1171,8 @@ pub fn wire(window: &adw::ApplicationWindow) {
             set_narration_off(&w, !t.is_active());
         });
     }
-    if let Some(pitch) = widget_in(&win, "pitch-slider")
-        .and_then(|w| w.downcast::<gtk::Scale>().ok())
+    if let Some(pitch) =
+        widget_in(&win, "pitch-slider").and_then(|w| w.downcast::<gtk::Scale>().ok())
     {
         let w = win.clone();
         // §1: the shift applies 400 ms after the last move, so a drag across the slider costs one
@@ -1184,7 +1191,9 @@ pub fn wire(window: &adw::ApplicationWindow) {
                         // §07-narrate#3-data: once per drag rather than per pixel, written by the same
                         // call the keyboard step makes.
                         if let Some(why) = crate::ui::narrate_seed::note_pitch_for_session(pitch) {
-                            crate::ui::window::log_line(&format!("!!! could not save the pitch -- {why}"));
+                            crate::ui::window::log_line(&format!(
+                                "!!! could not save the pitch -- {why}"
+                            ));
                         }
                         let voice = read_state().voice;
                         // Badge 13: the number beside the slider follows the drag, once per drag like the write.
@@ -1210,8 +1219,8 @@ pub fn wire(window: &adw::ApplicationWindow) {
     // F4.5 S4: the scrub slider seeks, and a seek lands on the cut — the snapped second is what the
     // player was asked for, not merely what the bar shows. Same seam the transport buttons use, so a drag
     // cues the picture whether or not ▶ has ever run.
-    if let Some(slider) = widget_in(&win, "narrate-slider")
-        .and_then(|w| w.downcast::<gtk::Scale>().ok())
+    if let Some(slider) =
+        widget_in(&win, "narrate-slider").and_then(|w| w.downcast::<gtk::Scale>().ok())
     {
         let w = win.clone();
         slider.connect_value_changed(move |scale| {
@@ -1231,8 +1240,8 @@ pub fn wire(window: &adw::ApplicationWindow) {
 
     // F4.5 S5 (§A.5): selecting a row is the only place the preview jumps by itself, and it jumps to
     // the line's lead-in — three seconds ahead unless those seconds belong to the line before.
-    if let Some(list) = widget_in(&win, "narrate-lines")
-        .and_then(|w| w.downcast::<gtk::ListBox>().ok())
+    if let Some(list) =
+        widget_in(&win, "narrate-lines").and_then(|w| w.downcast::<gtk::ListBox>().ok())
     {
         list.connect_row_selected(|list, row| {
             let Some(row) = row else { return };
@@ -1284,7 +1293,9 @@ fn wire_row_buttons(window: &adw::ApplicationWindow) {
                 press_line_reroll(&w, index);
             });
         }
-        if let Some(button) = crate::ui::line_step_button(window, &format!("line-add-below-{index}")) {
+        if let Some(button) =
+            crate::ui::line_step_button(window, &format!("line-add-below-{index}"))
+        {
             let w = window.clone();
             button.connect_clicked(move |_| {
                 crate::ui::narrate_lines::press_line_add_below(&w, index);
@@ -1297,8 +1308,9 @@ fn wire_row_buttons(window: &adw::ApplicationWindow) {
             });
         }
         // Enter commits the typed second; a refusal writes the box back (§F4.7's time field).
-        if let Some(field) = crate::ui::narrate_page::widget_in(window, &format!("line-time-{index}"))
-            .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        if let Some(field) =
+            crate::ui::narrate_page::widget_in(window, &format!("line-time-{index}"))
+                .and_then(|w| w.downcast::<gtk::Entry>().ok())
         {
             let w = window.clone();
             field.connect_activate(move |field| {
@@ -1308,8 +1320,9 @@ fn wire_row_buttons(window: &adw::ApplicationWindow) {
         // §F4.7 (**Text**): every keystroke goes through `note_typing`, which parses the tag, updates the
         // entry at once, and re-arms the 400 ms autosave. `changed` (not Enter) is the signal, because a
         // person who types and walks away still gets their words on disk.
-        if let Some(field) = crate::ui::narrate_page::widget_in(window, &format!("line-text-{index}"))
-            .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        if let Some(field) =
+            crate::ui::narrate_page::widget_in(window, &format!("line-text-{index}"))
+                .and_then(|w| w.downcast::<gtk::Entry>().ok())
         {
             let w = window.clone();
             field.connect_changed(move |field| {

@@ -95,7 +95,10 @@ impl Call {
             // The model is owed the sentence in whichever round goes out next.
             self.announced = false;
             offered.retain(|tool| !crate::tools::is_web_tool(*tool));
-            return (offered, Some(cut_suggest::WEB_TOOLS_WITHDRAWN_LOG.to_string()));
+            return (
+                offered,
+                Some(cut_suggest::WEB_TOOLS_WITHDRAWN_LOG.to_string()),
+            );
         }
         (offered, None)
     }
@@ -111,10 +114,10 @@ impl Call {
             self.rejections += 1;
         }
         // The attempt number this rule is asked about is the count of attempts BEHIND it — the first, plus one
-    // per rejection since — not the raw rejection count: after ONE rejection we are on attempt 2, and
-    // `thinking_after_empty_reply` takes the attempt. Passing the bare count would ask attempt 1's question
-    // again and never switch thinking off.
-    let attempt = FIRST_ATTEMPT + self.rejections;
+        // per rejection since — not the raw rejection count: after ONE rejection we are on attempt 2, and
+        // `thinking_after_empty_reply` takes the attempt. Passing the bare count would ask attempt 1's question
+        // again and never switch thinking off.
+        let attempt = FIRST_ATTEMPT + self.rejections;
         let was = self.thinking;
         self.thinking = cut_suggest::thinking_after_empty_reply(all_reasoning, attempt);
         if self.thinking {
@@ -153,7 +156,9 @@ impl Call {
             notes.push("the web browsing tools are no longer available to you");
         }
         if self.asked_thinking_before && !self.thinking {
-            notes.push("this call has no thinking -- write the answer itself in the content of your reply");
+            notes.push(
+                "this call has no thinking -- write the answer itself in the content of your reply",
+            );
         }
         if notes.is_empty() {
             return None;
@@ -181,7 +186,11 @@ impl Call {
         };
         self.shown = cut_suggest::place_progress(at, self.shown);
         let fraction = cut_suggest::progress_fraction(closed, self.shown, total);
-        Progress { line, fraction, pulsing: cut_suggest::pulses(self.shown, closed) }
+        Progress {
+            line,
+            fraction,
+            pulsing: cut_suggest::pulses(self.shown, closed),
+        }
     }
 }
 
@@ -223,6 +232,10 @@ pub fn faults(check: &[String], past_end: Option<u32>) -> String {
     if let Some(claimed) = past_end {
         faults.push(cut_suggest::Fault::PastEnd(claimed));
     }
-    faults.extend(check.iter().map(|said| cut_suggest::Fault::Quoted(said.clone())));
+    faults.extend(
+        check
+            .iter()
+            .map(|said| cut_suggest::Fault::Quoted(said.clone())),
+    );
     cut_suggest::answer(&faults)
 }

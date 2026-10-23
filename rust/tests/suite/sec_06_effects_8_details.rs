@@ -6,7 +6,6 @@
 //! pin is the exact line, that it is said once per file, and that the record survives.
 
 use adw::prelude::*;
-use gtk4 as gtk4;
 use naivepost::cut::{Cut, EffectKind, Fx};
 use naivepost::effect_details;
 use naivepost::fx_svg::{self, Slot};
@@ -128,8 +127,7 @@ fn round(app: &adw::Application) {
     // Neither stops the effect: the record is untouched by being unshowable.
     assert_eq!(stops[0].effect_kind(), Some(EffectKind::Speed));
     assert_eq!(
-        stops[0].rate,
-        0.0,
+        stops[0].rate, 0.0,
         "a stop whose frame cannot be shown is still a stop"
     );
 }

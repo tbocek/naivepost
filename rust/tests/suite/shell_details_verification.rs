@@ -7,14 +7,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::common;
+use common::temp_dir_tagged as temp_dir;
 use naivepost::checks::TestLog;
 use naivepost::icons;
-use naivepost::{checks, probes, services};
 use naivepost::project::{self, Project};
 use naivepost::save_as;
 use naivepost::settings::{self, Conf, Paths};
-use crate::common;
-use common::temp_dir_tagged as temp_dir;
+use naivepost::{checks, probes, services};
 
 /// Config and data folders under one temp root.
 fn paths(tag: &str) -> Paths {
@@ -40,8 +40,8 @@ fn project_folder(dir: &Path, files: &[&str]) -> PathBuf {
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_save_as_logs_only_what_it_moved()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_save_as_logs_only_what_it_moved(
+) {
     // Nothing to move, so nothing logged — even though the name changed. A project
     // saved before it was ever run is the ordinary case (§8). The target must not
     // exist for a rename to be attempted at all: F0.10 refuses a name already holding
@@ -75,8 +75,8 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_save_as_l
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_failed_move_names_the_count_and_where_the_files_still_are()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_failed_move_names_the_count_and_where_the_files_still_are(
+) {
     // The count is taken from the folder that is still there.
     let root = temp_dir("save-error");
     let from = project_folder(&root.join("jan.naivepost"), &["render.mp4", "cut.json"]);
@@ -96,26 +96,38 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_failed_
     // The line §8 words: what was attempted, why it failed, how many files there are
     // and where they still are.
     assert!(
-        err.starts_with(&format!("!!! could not move the output folder to {}: ", target.display())),
+        err.starts_with(&format!(
+            "!!! could not move the output folder to {}: ",
+            target.display()
+        )),
         "{err}"
     );
     assert!(
-        err.ends_with(&format!(" -- the 4 file(s) are still in {}", from.display())),
+        err.ends_with(&format!(
+            " -- the 4 file(s) are still in {}",
+            from.display()
+        )),
         "{err}"
     );
     // The reason is the OS's own sentence, between the two.
     let why = err
-        .trim_start_matches(&format!("!!! could not move the output folder to {}: ", target.display()))
+        .trim_start_matches(&format!(
+            "!!! could not move the output folder to {}: ",
+            target.display()
+        ))
         .split_once(" -- ")
         .unwrap()
         .0;
     assert!(!why.is_empty(), "{err} names no reason");
-    assert!(from.join("render.mp4").exists(), "the files are still there");
+    assert!(
+        from.join("render.mp4").exists(),
+        "the files are still there"
+    );
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_settings_file_writes_the_five_cleared_boxes_as_defaults_and_the_rest_as_typed()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_settings_file_writes_the_five_cleared_boxes_as_defaults_and_the_rest_as_typed(
+) {
     // The five: a cleared box is not a usable value, so the shipped default goes back.
     for (key, default) in [
         ("AUDIOCPP_VOICES", "/mnt/models/audiocpp/voices"),
@@ -124,8 +136,16 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_settings_
         ("AUDIOCPP_TTS_MODEL", "index-tts2"),
         ("AUDIOCPP_SEP_MODEL", "bs-roformer"),
     ] {
-        assert_eq!(settings::written_value(key, "", "anything"), "anything", "{key}");
-        assert_eq!(settings::written_value(key, "/typed", default), "/typed", "{key}");
+        assert_eq!(
+            settings::written_value(key, "", "anything"),
+            "anything",
+            "{key}"
+        );
+        assert_eq!(
+            settings::written_value(key, "/typed", default),
+            "/typed",
+            "{key}"
+        );
     }
 
     // Everything else is written as typed, empty included: clearing ffmpeg is an answer.
@@ -156,14 +176,17 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_settings_
         assert!(body.contains(line), "{line} missing from\n{body}");
     }
     for key in ["LLM_SERVER", "FFMPEG", "LLM_API_KEY"] {
-        assert!(body.contains(&format!("{key}=\"\"")), "{key} not written empty");
+        assert!(
+            body.contains(&format!("{key}=\"\"")),
+            "{key} not written empty"
+        );
     }
     assert_eq!(settings::DEFAULTED_WHEN_CLEARED.len(), 5);
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_settings_file_keeps_its_explanatory_comments()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_settings_file_keeps_its_explanatory_comments(
+) {
     let body = settings::render(&Conf::default());
     let head: Vec<&str> = body.lines().take(2).collect();
     assert_eq!(
@@ -197,8 +220,8 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_settings_
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_legacy_settings_json_is_read_once_and_never_written()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_legacy_settings_json_is_read_once_and_never_written(
+) {
     let paths = paths("legacy-json");
     fs::create_dir_all(&paths.config_dir).unwrap();
     let legacy = paths.settings_path();
@@ -226,8 +249,8 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_legacy_se
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_legacy_keys_are_read_and_ignored()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_legacy_keys_are_read_and_ignored(
+) {
     let conf = settings::parse(
         "AUDIOCPP_MODELS=\"/srv/models\"\nPROMPT_CUT=\"be brief\"\nSD_MODEL=\"sd-v1\"\nAUDIOCPP_LANGUAGE=\"de\"\n",
     )
@@ -235,7 +258,12 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_legacy_ke
 
     // Read and ignored: they do not come back out of a rewrite.
     let body = settings::render(&conf);
-    for key in ["AUDIOCPP_MODELS", "PROMPT_CUT", "SD_MODEL", "AUDIOCPP_LANGUAGE"] {
+    for key in [
+        "AUDIOCPP_MODELS",
+        "PROMPT_CUT",
+        "SD_MODEL",
+        "AUDIOCPP_LANGUAGE",
+    ] {
         assert!(!body.contains(key), "{key} survived into\n{body}");
     }
 
@@ -262,14 +290,18 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_legacy_ke
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_settings_dialog_log_stays_collapsed_until_a_test_fails()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_settings_dialog_log_stays_collapsed_until_a_test_fails(
+) {
     let mut log = TestLog::new();
     assert!(!log.open, "collapsed before anything has been pressed");
 
     log.push("the LLM answered in 0.4s".into(), true);
     log.push("vision saw red".into(), true);
-    assert!(log.lines.len() == 2 && !log.open, "successes do not open it: {:?}", log.lines);
+    assert!(
+        log.lines.len() == 2 && !log.open,
+        "successes do not open it: {:?}",
+        log.lines
+    );
 
     log.push("no ffprobe beside ffmpeg".into(), false);
     assert!(log.open, "the first failure opens it");
@@ -289,8 +321,8 @@ fn forward(rows: &[(String, bool)], log: &Arc<Mutex<TestLog>>) {
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_icons_are_searched_beside_the_binary_then_the_app_root_then_here()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_icons_are_searched_beside_the_binary_then_the_app_root_then_here(
+) {
     let root = temp_dir("icons");
     let exe = root.join("bin");
     let app = root.join("prefix/share/naivepost");
@@ -302,11 +334,7 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_icons_are
     // The order is the answer when all three are there.
     assert_eq!(
         icons::search_paths(&exe, &app, &cwd),
-        vec![
-            exe.join("icons"),
-            app.join("icons"),
-            cwd.join("icons"),
-        ]
+        vec![exe.join("icons"), app.join("icons"), cwd.join("icons"),]
     );
 
     // The first that exists wins; a checkout has only its own.
@@ -324,16 +352,14 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_icons_are
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_the_database_paths_are_logged_once_and_the_commands_run_in_background()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_the_database_paths_are_logged_once_and_the_commands_run_in_background(
+) {
     let mut log: Vec<String> = Vec::new();
     let mut databases = icons::Databases::new();
     let dir = temp_dir("databases");
 
     // Nothing rewritten, so nothing to tell anyone.
-    assert!(databases
-        .refresh(false, false, &dir, &mut log)
-        .is_empty());
+    assert!(databases.refresh(false, false, &dir, &mut log).is_empty());
     assert!(log.is_empty(), "{log:?}");
 
     // Both files written: two commands, one line about where.
@@ -341,11 +367,20 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_the_datab
     assert_eq!(
         commands,
         vec![
-            vec!["update-mime-database".to_string(), dir.display().to_string()],
-            vec!["update-desktop-database".to_string(), dir.display().to_string()],
+            vec![
+                "update-mime-database".to_string(),
+                dir.display().to_string()
+            ],
+            vec![
+                "update-desktop-database".to_string(),
+                dir.display().to_string()
+            ],
         ]
     );
-    assert_eq!(log, vec![format!(">>> told the desktop about {}", dir.display())]);
+    assert_eq!(
+        log,
+        vec![format!(">>> told the desktop about {}", dir.display())]
+    );
 
     // A second save in the same launch runs the tools again and says nothing more.
     let again = databases.refresh(true, true, &dir, &mut log);
@@ -355,16 +390,22 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_the_datab
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_missing_model_names_the_catalogue_and_only_a_default_gets_the_install_command()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_missing_model_names_the_catalogue_and_only_a_default_gets_the_install_command(
+) {
     let model = |id: &str, task: &str| services::AudioModel {
         id: id.into(),
         family: String::new(),
         task: task.into(),
     };
-    let catalogue = vec![model("sortformer-diar", "diar"), model("nemotron-asr", "asr")];
+    let catalogue = vec![
+        model("sortformer-diar", "diar"),
+        model("nemotron-asr", "asr"),
+    ];
     let url = "http://cpp:8765";
-    let prepare = services::Need { task: "sep", step: "Prepare" };
+    let prepare = services::Need {
+        task: "sep",
+        step: "Prepare",
+    };
 
     // A shipped default: the exact command, package and all.
     let msg = services::missing_model(url, &catalogue, services::SEP_MODEL, prepare);
@@ -379,13 +420,16 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_missing
     // A hand-typed id: the same catalogue, and no invented package.
     let mine = services::missing_model(url, &catalogue, "my-separation-model", prepare);
     assert!(mine.contains("my-separation-model"), "{mine}");
-    assert!(mine.contains("sortformer-diar") && mine.contains("nemotron-asr"), "{mine}");
+    assert!(
+        mine.contains("sortformer-diar") && mine.contains("nemotron-asr"),
+        "{mine}"
+    );
     assert!(!mine.contains("model_manager_v2.py"), "{mine}");
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_model_served_for_another_task_is_refused_by_name_and_step()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_model_served_for_another_task_is_refused_by_name_and_step(
+) {
     let model = |id: &str, task: &str| services::AudioModel {
         id: id.into(),
         family: String::new(),
@@ -398,7 +442,10 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_model_s
             "http://cpp:8765",
             &catalogue,
             "whisper",
-            services::Need { task: "sep", step: "Prepare" },
+            services::Need {
+                task: "sep",
+                step: "Prepare"
+            },
         ),
         "\"whisper\" on http://cpp:8765 is declared task \"asr\", but Prepare needs \"sep\" there"
     );
@@ -408,7 +455,10 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_model_s
         checks::model_verdict(
             &catalogue,
             "whisper",
-            services::Need { task: "clon", step: "Narrate" },
+            services::Need {
+                task: "clon",
+                step: "Narrate"
+            },
         )
         .unwrap_err(),
         "\"whisper\" is declared task \"asr\", and Narrate needs \"clon\""
@@ -416,8 +466,8 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_model_s
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_server_refusing_uploads_gets_the_fix()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_server_refusing_uploads_gets_the_fix(
+) {
     let fix = services::upload_refused(403, "uploads are disabled").expect("403 is the refusal");
     assert!(fix.contains("--ui-management"), "{fix}");
     assert!(!fix.contains("mount"), "{fix}");
@@ -438,22 +488,28 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_server_
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_an_upload_answering_200_without_a_path_is_a_failure()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_an_upload_answering_200_without_a_path_is_a_failure(
+) {
     let ok = serde_json::json!({ "path": "/x/y.wav" });
     assert_eq!(services::upload_path(&ok).unwrap(), "/x/y.wav");
 
     let empty = serde_json::json!({ "path": "" });
-    assert!(services::upload_path(&empty).is_err(), "an empty path is no path");
+    assert!(
+        services::upload_path(&empty).is_err(),
+        "an empty path is no path"
+    );
 
     let lying = serde_json::json!({ "ok": true });
     let err = services::upload_path(&lying).expect_err("200 with no path is not a success");
-    assert!(err.contains(r#"{\"ok\":true}"#) || err.contains("\"ok\":true"), "{err}");
+    assert!(
+        err.contains(r#"{\"ok\":true}"#) || err.contains("\"ok\":true"),
+        "{err}"
+    );
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_duration_comes_from_the_header_or_from_decoding_once_and_is_cached_per_path_size_mtime()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_duration_comes_from_the_header_or_from_decoding_once_and_is_cached_per_path_size_mtime(
+) {
     // The header wins: decoding a 40-minute file to confirm what its header says is waste.
     assert_eq!(
         probes::duration("lecture.mkv", Some(2412.5), Some(9999.0)),
@@ -465,7 +521,10 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_duratio
         Ok((2412.5, probes::Source::Decoded))
     );
     let err = probes::duration("lecture.mkv", None, None).unwrap_err();
-    assert_eq!(err, "lecture.mkv: no duration in the header and nothing to decode it from");
+    assert_eq!(
+        err,
+        "lecture.mkv: no duration in the header and nothing to decode it from"
+    );
 
     // Cached per path + size + mtime: the same file answers once, a changed one does not.
     let first = probes::key("lecture.mkv", 512, 100);
@@ -477,19 +536,31 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_a_duratio
     assert_eq!(cache.lookup(&first), Some(2412.5));
 
     let rewritten = probes::key("lecture.mkv", 640, 100);
-    assert_eq!(cache.lookup(&rewritten), None, "a different size is a different file");
+    assert_eq!(
+        cache.lookup(&rewritten),
+        None,
+        "a different size is a different file"
+    );
     let touched = probes::key("lecture.mkv", 512, 200);
-    assert_eq!(cache.lookup(&touched), None, "a newer mtime is a different file");
+    assert_eq!(
+        cache.lookup(&touched),
+        None,
+        "a newer mtime is a different file"
+    );
 
     let other = probes::key("other.mkv", 512, 100);
     assert_eq!(cache.lookup(&other), None);
     cache.store(other.clone(), 3.0);
-    assert_eq!(cache.lookup(&first), Some(2412.5), "one file's answer is not another's");
+    assert_eq!(
+        cache.lookup(&first),
+        Some(2412.5),
+        "one file's answer is not another's"
+    );
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s1_the_launch_says_what_the_old_output_folder_was()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s1_the_launch_says_what_the_old_output_folder_was(
+) {
     // The launch used to open its project with `project::load`, which answers the project and drops
     // the report -- so a session opened at start could carry a legacy `out_dir` without ever saying
     // the old folder is untouched. `ui::launch::load_for_launch` is the door that stopped that; this
@@ -506,18 +577,27 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s1_the_la
     let (loaded, lines) = naivepost::ui::launch::load_for_launch(&dir);
     // The project still loads through the seam: the same bytes `project::load` would have read.
     assert_eq!(loaded.context, "the weekly lecture");
-    assert_eq!(loaded.aud_dir.as_deref(), Some("/old/out"), "the legacy field still migrates");
+    assert_eq!(
+        loaded.aud_dir.as_deref(),
+        Some("/old/out"),
+        "the legacy field still migrates"
+    );
     // And what it had to say came along: the exact §8 sentence, named for both folders.
     assert!(
-        lines.iter().any(|line| *line
-            == project::out_dir_note("/old/out", &dir.display().to_string())),
+        lines
+            .iter()
+            .any(|line| *line == project::out_dir_note("/old/out", &dir.display().to_string())),
         "the launch lost the out_dir line: {lines:?}"
     );
 
     // A project that wrote into itself has nothing to say -- the seam adds no line of its own.
     let same = root.join("same.naivepost");
     fs::create_dir_all(&same).unwrap();
-    fs::write(same.join(project::PROJECT_FILE), r#"{"out_dir":"same.naivepost"}"#).unwrap();
+    fs::write(
+        same.join(project::PROJECT_FILE),
+        r#"{"out_dir":"same.naivepost"}"#,
+    )
+    .unwrap();
     let (_, quiet) = naivepost::ui::launch::load_for_launch(&same);
     assert!(
         !quiet.iter().any(|line| line.contains("used to write into")),
@@ -532,8 +612,8 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s1_the_la
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s2_the_launch_searches_for_the_icon_tree()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s2_the_launch_searches_for_the_icon_tree(
+) {
     // The order §8 fixes -- beside the binary, under the app root, then the working directory -- is
     // pinned by `icons_are_searched_beside_the_binary...`; what was unpinned is that the LAUNCH asks
     // in that shape. `icons_for_launch(exe, cwd)` derives exe-dir and app-root from the executable
@@ -567,8 +647,8 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s2_the_la
 }
 
 #[test]
-fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s3_a_header_less_file_is_decoded_once_and_the_answer_is_cached()
-{
+fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s3_a_header_less_file_is_decoded_once_and_the_answer_is_cached(
+) {
     // The rule lives in `probes`; this drives the SEAM `separate_run` runs every split through, with
     // ffprobe replaced by a counter -- the seam's own leg parameter, the same shape `source_probe`
     // takes. Each part gets its own file so the process-wide duration cache cannot answer for another.
@@ -577,28 +657,29 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s3_a_head
     let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     // `RunTool` is a `'static` trait object (the program's leg has no captures), so the scripted
     // answers and the counter travel in as owned values.
-    let probe = |name: &str, header: String, decode: Option<String>| -> (Result<f64, String>, usize) {
-        let file = root.join(name);
-        fs::write(&file, "audio-bytes").unwrap();
-        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let counted = std::sync::Arc::clone(&calls);
-        let lines = std::sync::Arc::clone(&log);
-        let answer = naivepost::separate_run::probe_duration(
-            "",
-            &file,
-            &mut move |line| lines.lock().unwrap().push(line.to_string()),
-            &move |_program, args| {
-                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                // The header call asks for `format=duration`; the decode pass asks per-stream.
-                Ok(if args.contains(&"format=duration") {
-                    header.clone()
-                } else {
-                    decode.clone().unwrap_or_default()
-                })
-            },
-        );
-        (answer, calls.load(std::sync::atomic::Ordering::SeqCst))
-    };
+    let probe =
+        |name: &str, header: String, decode: Option<String>| -> (Result<f64, String>, usize) {
+            let file = root.join(name);
+            fs::write(&file, "audio-bytes").unwrap();
+            let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let counted = std::sync::Arc::clone(&calls);
+            let lines = std::sync::Arc::clone(&log);
+            let answer = naivepost::separate_run::probe_duration(
+                "",
+                &file,
+                &mut move |line| lines.lock().unwrap().push(line.to_string()),
+                &move |_program, args| {
+                    counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    // The header call asks for `format=duration`; the decode pass asks per-stream.
+                    Ok(if args.contains(&"format=duration") {
+                        header.clone()
+                    } else {
+                        decode.clone().unwrap_or_default()
+                    })
+                },
+            );
+            (answer, calls.load(std::sync::atomic::Ordering::SeqCst))
+        };
 
     // (a) the header answers: one ffprobe, its number, and no log line (nothing unusual happened).
     let (header_secs, header_calls) = probe("with-header.wav", "12.5".into(), None);
@@ -610,7 +691,10 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s3_a_head
     assert_eq!(killed_secs, Ok(8.25));
     assert_eq!(killed_calls, 2, "header miss, then the decode pass");
     assert!(
-        log.lock().unwrap().iter().any(|line| line.contains("killed.wav") && line.contains("decoding")),
+        log.lock()
+            .unwrap()
+            .iter()
+            .any(|line| line.contains("killed.wav") && line.contains("decoding")),
         "paying for a decode should be visible in the log: {:?}",
         log.lock().unwrap()
     );
@@ -625,15 +709,10 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s3_a_head
     let again = root.join("with-header.wav");
     let cached_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let counted = std::sync::Arc::clone(&cached_calls);
-    let cached = naivepost::separate_run::probe_duration(
-        "",
-        &again,
-        &mut |_| {},
-        &move |_, _| {
-            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok("99".to_string())
-        },
-    );
+    let cached = naivepost::separate_run::probe_duration("", &again, &mut |_| {}, &move |_, _| {
+        counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok("99".to_string())
+    });
     assert_eq!(cached, Ok(12.5), "the first measurement is the answer");
     assert_eq!(
         cached_calls.load(std::sync::atomic::Ordering::SeqCst),
@@ -645,15 +724,14 @@ fn sec_03_shell_8_details_confirmed_against_the_code_verification_pass_s3_a_head
     fs::write(&again, "audio-bytes-longer-this-time").unwrap();
     let rewrote_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let counted = std::sync::Arc::clone(&rewrote_calls);
-    let rewrote = naivepost::separate_run::probe_duration(
-        "",
-        &again,
-        &mut |_| {},
-        &move |_, _| {
-            counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            Ok("30.0".to_string())
-        },
-    );
+    let rewrote = naivepost::separate_run::probe_duration("", &again, &mut |_| {}, &move |_, _| {
+        counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok("30.0".to_string())
+    });
     assert_eq!(rewrote, Ok(30.0));
-    assert_eq!(rewrote_calls.load(std::sync::atomic::Ordering::SeqCst), 1, "a re-recorded file is measured again");
+    assert_eq!(
+        rewrote_calls.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "a re-recorded file is measured again"
+    );
 }

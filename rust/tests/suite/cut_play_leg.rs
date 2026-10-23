@@ -9,8 +9,16 @@ use naivepost::{cut_play, cut_play_leg, preview};
 fn two_clips_with_a_hole() -> Cut {
     Cut {
         segs: vec![
-            Seg { s: 0.0, e: 10.0, ..Default::default() },
-            Seg { s: 20.0, e: 30.0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 10.0,
+                ..Default::default()
+            },
+            Seg {
+                s: 20.0,
+                e: 30.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }
@@ -26,27 +34,48 @@ fn f2_2_s5_the_tick_skips_a_removed_stretch_and_returns_the_cuts_clock() {
 
     // Crossing into the removed stretch jumps to the next clip's first playable second...
     let jumped = cut_play_leg::tick(&cut, 9.5, 1000);
-    assert_eq!(jumped.head, 20.0, "the line jumps over the gap onto kept material");
-    assert!(!jumped.ended, "there is a clip past the gap, so playback goes on");
+    assert_eq!(
+        jumped.head, 20.0,
+        "the line jumps over the gap onto kept material"
+    );
+    assert!(
+        !jumped.ended,
+        "there is a clip past the gap, so playback goes on"
+    );
     // ...and the clock reads the CUT's own time: 10 s of finished video, not session second 20.
     assert_eq!(
         jumped.clock,
         cut_play::cut_time(&cut.segs, 20.0).unwrap(),
         "the clock comes from the cut's own arithmetic"
     );
-    assert_eq!(jumped.clock, 10.0, "two 10 s clips: the second one starts at cut time 10");
-    assert_ne!(jumped.clock, 20.0, "it is NOT the session second -- the dropped 10 s is not counted");
+    assert_eq!(
+        jumped.clock, 10.0,
+        "two 10 s clips: the second one starts at cut time 10"
+    );
+    assert_ne!(
+        jumped.clock, 20.0,
+        "it is NOT the session second -- the dropped 10 s is not counted"
+    );
 }
 
 #[test]
 fn f2_2_s5_the_tick_ends_past_the_last_clip_so_the_page_pauses() {
     let cut = two_clips_with_a_hole();
     let over = cut_play_leg::tick(&cut, 29.5, 1000);
-    assert!(over.ended, "nothing kept ahead of the last clip: S5 says pause");
-    assert_eq!(over.head, 30.0, "the line parks on the last kept end, not wherever it overshot");
+    assert!(
+        over.ended,
+        "nothing kept ahead of the last clip: S5 says pause"
+    );
+    assert_eq!(
+        over.head, 30.0,
+        "the line parks on the last kept end, not wherever it overshot"
+    );
     // The clock is asked at the session second the tick came FROM (the head that was still on material),
     // because the overshoot itself sits past the video: 19.5 s of the finished film, one tenth short.
-    assert_eq!(over.clock, 19.5, "the clock shows how far into the finished video the run got");
+    assert_eq!(
+        over.clock, 19.5,
+        "the clock shows how far into the finished video the run got"
+    );
 
     // Well past the end still ends rather than wrapping or going blank.
     assert!(cut_play_leg::tick(&cut, 60.0, 100).ended);
@@ -64,21 +93,45 @@ fn f2_2_s5_the_spare_pipeline_arms_three_seconds_before_the_jump() {
     let cut = two_clips_with_a_hole();
 
     // Inside the lead window: the jump at 20 s gets armed while the line is at 17 s.
-    assert_eq!(cut_play_leg::arm_spare(&cut, 17.0), Some(20.0), "armed at exactly the lead");
-    assert_eq!(cut_play_leg::peek_spare(), Some(20.0), "the slot holds what was just armed");
+    assert_eq!(
+        cut_play_leg::arm_spare(&cut, 17.0),
+        Some(20.0),
+        "armed at exactly the lead"
+    );
+    assert_eq!(
+        cut_play_leg::peek_spare(),
+        Some(20.0),
+        "the slot holds what was just armed"
+    );
 
     // Too far off: nothing opens, so the spare stays free for the stretch actually being played.
-    assert_eq!(cut_play_leg::arm_spare(&cut, 10.0), None, "10 s out is outside the lead");
-    assert_eq!(cut_play_leg::peek_spare(), None, "a non-arm clears the slot rather than leaving a stale one");
+    assert_eq!(
+        cut_play_leg::arm_spare(&cut, 10.0),
+        None,
+        "10 s out is outside the lead"
+    );
+    assert_eq!(
+        cut_play_leg::peek_spare(),
+        None,
+        "a non-arm clears the slot rather than leaving a stale one"
+    );
 
     // Past the last jump there is nothing to arm either.
     assert_eq!(cut_play_leg::arm_spare(&cut, 25.0), None);
-    assert_eq!(cut_play_leg::peek_spare(), None, "clearing releases the pipeline");
+    assert_eq!(
+        cut_play_leg::peek_spare(),
+        None,
+        "clearing releases the pipeline"
+    );
 }
 
 #[test]
 fn f2_2_s5_the_frame_answers_still_flat_rate_and_volume() {
-    let plain = Seg { s: 0.0, e: 10.0, ..Default::default() };
+    let plain = Seg {
+        s: 0.0,
+        e: 10.0,
+        ..Default::default()
+    };
     let flat = cut_play_leg::frame(&Cut::default(), Some(&plain), 5.0);
     assert!(!flat.still, "no stop laid over the picture: live frames");
     assert_eq!(flat.rate, cut_play::FLAT_RATE, "no rate written plays flat");
@@ -102,9 +155,17 @@ fn f2_2_s5_the_frame_answers_still_flat_rate_and_volume() {
     let before_stop = cut_play_leg::frame(&stopped, Some(&plain), 3.9);
     assert!(!before_stop.still, "before the stop: the live picture");
 
-    let sped = Seg { s: 0.0, e: 10.0, rate: 2.0, ..Default::default() };
+    let sped = Seg {
+        s: 0.0,
+        e: 10.0,
+        rate: 2.0,
+        ..Default::default()
+    };
     let fast = cut_play_leg::frame(&Cut::default(), Some(&sped), 5.0);
-    assert_eq!(fast.rate, 2.0, "its own rate, held steady -- the flat rate, no staircase");
+    assert_eq!(
+        fast.rate, 2.0,
+        "its own rate, held steady -- the flat rate, no staircase"
+    );
     assert!(fast.volume);
 }
 
@@ -123,7 +184,11 @@ fn f2_2_s2_space_a_picture_click_and_the_run_bar_refuse_an_empty_cut() {
     );
 
     let one_clip = Cut {
-        segs: vec![Seg { s: 0.0, e: 10.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     assert_eq!(
@@ -136,7 +201,11 @@ fn f2_2_s2_space_a_picture_click_and_the_run_bar_refuse_an_empty_cut() {
     // carrying an instant card is NOT refused here -- greying and refusing stay one question (§A), and
     // splitting them would let the button look live while the press said otherwise.
     let cards_only = Cut {
-        segs: vec![Seg { s: 5.0, e: 5.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 5.0,
+            e: 5.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     assert!(
@@ -160,10 +229,17 @@ fn f2_2_s6_the_leg_returns_only_removed_stretches_to_dim() {
     );
 
     let full = Cut {
-        segs: vec![Seg { s: 0.0, e: 30.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 30.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
-    assert!(cut_play_leg::dimmed(&full, &filmed).is_empty(), "nothing removed, nothing dimmed");
+    assert!(
+        cut_play_leg::dimmed(&full, &filmed).is_empty(),
+        "nothing removed, nothing dimmed"
+    );
 
     // And the paint really puts pixels down: inside the span differs from outside it.
     let mut surface = cairo::ImageSurface::create(cairo::Format::ARgb32, 120, 20)
@@ -189,7 +265,11 @@ fn f2_2_s6_the_leg_returns_only_removed_stretches_to_dim() {
     };
     let outside = pixel_at(30);
     let inside = pixel_at(90);
-    assert_eq!(outside, (255, 255, 255), "outside the span stays the white ground");
+    assert_eq!(
+        outside,
+        (255, 255, 255),
+        "outside the span stays the white ground"
+    );
     assert!(
         inside.0 < 255 && inside.1 < 255 && inside.2 < 255,
         "inside the span is dimmed toward black, got {inside:?}"

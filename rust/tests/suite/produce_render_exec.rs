@@ -33,11 +33,21 @@ use naivepost::project::{Container, Produce, Publish, Source, Subtitles};
 const ITEM: &str = "f5_2";
 
 fn entry(s: f64, e: f64, at: f64, text: &str) -> Entry {
-    Entry { s, e, at, text: text.to_string(), ..Default::default() }
+    Entry {
+        s,
+        e,
+        at,
+        text: text.to_string(),
+        ..Default::default()
+    }
 }
 
 fn cut_of(segs: Vec<Seg>) -> Cut {
-    Cut { segs, aspect: "16:9".into(), ..Default::default() }
+    Cut {
+        segs,
+        aspect: "16:9".into(),
+        ..Default::default()
+    }
 }
 
 use crate::common;
@@ -61,7 +71,9 @@ fn no_fx(_: &Seg) -> Vec<Fx> {
 
 /// Nothing synthesized yet: every non-empty line still owes a take.
 /// A take that exists and measures 2.5 s: enough for the audio chain to duck the bed under it.
-fn seconds_2_5(_entry: &Entry) -> Option<f64> { Some(2.5) }
+fn seconds_2_5(_entry: &Entry) -> Option<f64> {
+    Some(2.5)
+}
 
 fn no_wav(_: &Entry) -> Option<PathBuf> {
     None
@@ -94,7 +106,10 @@ fn answer_every_number(
     _message: &str,
     numbers: &[usize],
 ) -> Result<std::collections::BTreeMap<usize, String>, String> {
-    Ok(numbers.iter().map(|n| (*n, format!("uebersetzt {n}"))).collect::<std::collections::BTreeMap<usize, String>>())
+    Ok(numbers
+        .iter()
+        .map(|n| (*n, format!("uebersetzt {n}")))
+        .collect::<std::collections::BTreeMap<usize, String>>())
 }
 
 /// THE Materials constructor. Never build one inline in a test: one door, nothing to mangle.
@@ -175,7 +190,8 @@ impl Spy {
                 None => true,
             },
             |command: &exec::Command| {
-                argv.borrow_mut().push((command.step.to_string(), command.argv.clone()));
+                argv.borrow_mut()
+                    .push((command.step.to_string(), command.argv.clone()));
                 // The tool "writes" the file its last argument names, so size and existence are real.
                 if let Some(out) = command.argv.last() {
                     let path = Path::new(out);
@@ -190,7 +206,11 @@ impl Spy {
     }
 
     fn steps(&self) -> Vec<String> {
-        self.argv.borrow().iter().map(|(step, _)| step.clone()).collect()
+        self.argv
+            .borrow()
+            .iter()
+            .map(|(step, _)| step.clone())
+            .collect()
     }
 
     fn count_step(&self, step: &str) -> usize {
@@ -256,11 +276,26 @@ fn f5_2_s1_the_run_clears_the_scratch_folder() {
     std::fs::create_dir_all(&scratch).unwrap();
     std::fs::write(scratch.join("old-a.mp4"), b"x").unwrap();
     std::fs::write(scratch.join("old-b.mp4"), b"y").unwrap();
-    assert_eq!(exec::clear_scratch(&scratch), Ok(2), "both files are removed");
-    assert!(scratch.is_dir(), "the folder stays: the render writes into it seconds later");
-    assert_eq!(exec::clear_scratch(&scratch), Ok(0), "an empty folder has nothing to clear");
+    assert_eq!(
+        exec::clear_scratch(&scratch),
+        Ok(2),
+        "both files are removed"
+    );
+    assert!(
+        scratch.is_dir(),
+        "the folder stays: the render writes into it seconds later"
+    );
+    assert_eq!(
+        exec::clear_scratch(&scratch),
+        Ok(0),
+        "an empty folder has nothing to clear"
+    );
     let never = scratch.join("never-existed");
-    assert_eq!(exec::clear_scratch(&never), Ok(0), "a missing folder is made, not an error");
+    assert_eq!(
+        exec::clear_scratch(&never),
+        Ok(0),
+        "a missing folder is made, not an error"
+    );
     assert!(never.is_dir());
 }
 
@@ -274,12 +309,24 @@ fn f5_2_s2_captions_only_speaks_nothing_and_warns_when_no_track() {
         "s2-none",
         vec![common::seg(0.0, 10.0)],
         vec![entry(0.0, 5.0, 0.0, "a line")],
-        Produce { subtitles: Subtitles::None, ..Default::default() },
+        Produce {
+            subtitles: Subtitles::None,
+            ..Default::default()
+        },
         captions,
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
-    assert!(spy.spoken_vec().is_empty(), "captions only speaks NOTHING: {:?}", spy.spoken_vec());
+    spy.run(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        None,
+    );
+    assert!(
+        spy.spoken_vec().is_empty(),
+        "captions only speaks NOTHING: {:?}",
+        spy.spoken_vec()
+    );
     assert!(
         spy.logs_vec()
             .iter()
@@ -293,13 +340,24 @@ fn f5_2_s2_captions_only_speaks_nothing_and_warns_when_no_track() {
         "s2-track",
         vec![common::seg(0.0, 10.0)],
         vec![entry(0.0, 5.0, 0.0, "a line")],
-        Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
+        Produce {
+            subtitles: Subtitles::TrackInFile,
+            ..Default::default()
+        },
         captions,
     );
     let spy2 = Spy::new();
-    spy2.run(&run2, &tree2, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
+    spy2.run(
+        &run2,
+        &tree2,
+        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        None,
+    );
     assert!(
-        !spy2.logs_vec().iter().any(|l| l.contains("nothing in the video")),
+        !spy2
+            .logs_vec()
+            .iter()
+            .any(|l| l.contains("nothing in the video")),
         "a tracked subtitle needs no warning: {:?}",
         spy2.logs_vec()
     );
@@ -319,9 +377,18 @@ fn f5_2_s2_a_line_with_no_wav_is_spoken_and_the_job_line_counts_up() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &has_one_wav, &seconds_2_5), None);
+    spy.run(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &has_one_wav, &seconds_2_5),
+        None,
+    );
     let spoken = spy.spoken_vec();
-    assert_eq!(spoken, vec!["needs a voice".to_string()], "only the line with no wav is spoken");
+    assert_eq!(
+        spoken,
+        vec!["needs a voice".to_string()],
+        "only the line with no wav is spoken"
+    );
     // One line owed a take, so the job line reads 1 of 1 — the total is what had to be spoken, not the
     // number of rows on the page.
     assert!(
@@ -346,7 +413,12 @@ fn f5_2_s3_a_missing_insert_is_skipped_and_named() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
+    spy.run(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        None,
+    );
     assert!(
         spy.logs_vec()
             .iter()
@@ -355,7 +427,12 @@ fn f5_2_s3_a_missing_insert_is_skipped_and_named() {
         spy.logs_vec()
     );
     // Counted by step, not by extension: the mux's output is a .mp4 too.
-    assert_eq!(spy.count_step("clip"), 2, "the two live clips encode: {:?}", spy.steps());
+    assert_eq!(
+        spy.count_step("clip"),
+        2,
+        "the two live clips encode: {:?}",
+        spy.steps()
+    );
     assert!(
         !spy.joined().contains("gone"),
         "no command was asked for the file that is not there"
@@ -385,14 +462,25 @@ fn f5_2_s4_final_srt_lands_in_the_scratch_folder() {
     let stale = scratch.join(render::final_srt_name());
     std::fs::write(&stale, b"an old sheet").unwrap();
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
+    spy.run(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        None,
+    );
     let written = std::fs::read_to_string(&stale).expect("final.srt is written in produce/clips");
-    assert!(written.contains("-->"), "and it is a cue sheet, not leftovers: {written}");
+    assert!(
+        written.contains("-->"),
+        "and it is a cue sheet, not leftovers: {written}"
+    );
     assert!(
         !written.contains("an old sheet"),
         "the stale sheet was replaced, not appended to"
     );
-    assert!(foreign.exists(), "a file whose name the run does not list survives: deleted by exact name only");
+    assert!(
+        foreign.exists(),
+        "a file whose name the run does not list survives: deleted by exact name only"
+    );
 }
 
 // ---- S5 -----------------------------------------------------------------------------------------
@@ -401,13 +489,22 @@ fn f5_2_s4_final_srt_lands_in_the_scratch_folder() {
 fn f5_2_s5_every_clip_gets_its_own_encode_command_logged_before_it_runs() {
     let (tree, run) = run_over(
         "s5",
-        vec![common::seg(0.0, 10.0), common::seg(10.0, 20.0), common::seg(20.0, 30.0)],
+        vec![
+            common::seg(0.0, 10.0),
+            common::seg(10.0, 20.0),
+            common::seg(20.0, 30.0),
+        ],
         vec![],
         Default::default(),
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
+    spy.run(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        None,
+    );
     let held = spy.argv.clone();
     let guard = held.borrow();
     let encodes: Vec<&Vec<String>> = guard
@@ -415,11 +512,19 @@ fn f5_2_s5_every_clip_gets_its_own_encode_command_logged_before_it_runs() {
         .filter(|(step, _)| step == "clip")
         .map(|(_, args)| args)
         .collect();
-    assert_eq!(encodes.len(), 3, "three segments, three encode commands: {:?}", spy.steps());
+    assert_eq!(
+        encodes.len(),
+        3,
+        "three segments, three encode commands: {:?}",
+        spy.steps()
+    );
     for (index, args) in encodes.iter().enumerate() {
         let stem = format!("c{index:03}");
         let out = args.last().unwrap();
-        assert!(out.contains(&stem), "{stem} should be in the output name: {out}");
+        assert!(
+            out.contains(&stem),
+            "{stem} should be in the output name: {out}"
+        );
         let first_input = args.iter().position(|a| a == "-i");
         let ss = args.iter().position(|a| a == "-ss");
         match (ss, first_input) {
@@ -430,14 +535,21 @@ fn f5_2_s5_every_clip_gets_its_own_encode_command_logged_before_it_runs() {
                 "S5: -ss must come BEFORE -i, got {at} vs {input} in {stem}"
             ),
             (Some(_), None) => panic!("S5: a clip was encoded with no input at all: {args:?}"),
-            (None, Some(_)) => panic!("S5: clip {index} has an input but no seek where one is due: {args:?}"),
-            (None, None) => panic!("S5: clip {index} was encoded with no input file at all: {args:?}"),
+            (None, Some(_)) => {
+                panic!("S5: clip {index} has an input but no seek where one is due: {args:?}")
+            }
+            (None, None) => {
+                panic!("S5: clip {index} was encoded with no input file at all: {args:?}")
+            }
         }
     }
     let logs = spy.logs_vec();
     for args in &encodes {
         let out = args.last().unwrap();
-        assert!(logs.iter().any(|l| l.contains(out)), "each command is logged before it runs: {out}");
+        assert!(
+            logs.iter().any(|l| l.contains(out)),
+            "each command is logged before it runs: {out}"
+        );
     }
 }
 
@@ -458,7 +570,12 @@ fn f5_2_s5_the_narration_sits_at_the_game_volume() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
+    spy.run(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        None,
+    );
     assert!(
         spy.joined().contains(&format!("volume={:.2}", game_volume)),
         "the bed is turned down to P.policy.gameVolume in the audio chain: {}",
@@ -478,15 +595,31 @@ fn f5_2_s6_join_is_a_stream_copy() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
-    assert_eq!(spy.count_step(render::JOINING), 1, "one join for the whole run: {:?}", spy.steps());
+    spy.run(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        None,
+    );
+    assert_eq!(
+        spy.count_step(render::JOINING),
+        1,
+        "one join for the whole run: {:?}",
+        spy.steps()
+    );
     let join = spy.last_with("concat");
-    let pairs: Vec<String> = join.windows(2).map(|w| format!("{} {}", w[0], w[1])).collect();
+    let pairs: Vec<String> = join
+        .windows(2)
+        .map(|w| format!("{} {}", w[0], w[1]))
+        .collect();
     assert!(
         pairs.iter().any(|p| p == "-c copy"),
         "S6: the join is `-c copy`, a stream copy with no re-encode: {join:?}"
     );
-    assert!(spy.logs_vec().iter().any(|l| l.contains(render::JOINING)), "'joining' is said");
+    assert!(
+        spy.logs_vec().iter().any(|l| l.contains(render::JOINING)),
+        "'joining' is said"
+    );
 }
 
 /// §F5.2 S5's other half: the size question is asked of the ENCODED FILES, through the program's own
@@ -582,9 +715,14 @@ fn f5_2_s5_a_probed_clip_at_another_size_is_named() {
         .iter()
         .find(|l| l.contains(render::JOIN_MISMATCH))
         .expect("the mismatched clip is said with the spec's sentence");
-    assert!(named.starts_with("c001"), "and it names the CLIP, not the first one: {named}");
     assert!(
-        !logs.iter().any(|l| l.starts_with("c000") && l.contains(render::JOIN_MISMATCH)),
+        named.starts_with("c001"),
+        "and it names the CLIP, not the first one: {named}"
+    );
+    assert!(
+        !logs
+            .iter()
+            .any(|l| l.starts_with("c000") && l.contains(render::JOIN_MISMATCH)),
         "the clip at the base size says nothing: {logs:?}"
     );
     // Un-point the seam for whatever runs next in this process; each probe case points it again anyway.
@@ -619,7 +757,9 @@ fn f5_2_s5_a_clip_that_cannot_be_probed_claims_nothing() {
     spy.run(&run, &tree, &materials, None);
     std::env::set_var("NAIVEPOST_FFPROBE", "");
     assert!(
-        !spy.logs_vec().iter().any(|l| l.contains(render::JOIN_MISMATCH)),
+        !spy.logs_vec()
+            .iter()
+            .any(|l| l.contains(render::JOIN_MISMATCH)),
         "no probe, no claim: {:?}",
         spy.logs_vec()
     );
@@ -629,7 +769,10 @@ fn f5_2_s5_a_clip_that_cannot_be_probed_claims_nothing() {
 
 #[test]
 fn f5_2_s7_translation_is_asked_after_every_encode() {
-    let settings = Produce { translate: vec!["German".to_string()], ..Default::default() };
+    let settings = Produce {
+        translate: vec!["German".to_string()],
+        ..Default::default()
+    };
     let cues = common::produce_cues_for_test(vec!["German".to_string()]);
     let (tree, run) = run_over(
         "s7",
@@ -639,7 +782,12 @@ fn f5_2_s7_translation_is_asked_after_every_encode() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], cues.clone(), &no_wav, &seconds_2_5), None);
+    spy.run(
+        &run,
+        &tree,
+        &mats(&[], cues.clone(), &no_wav, &seconds_2_5),
+        None,
+    );
     let steps = spy.steps();
     let logs = spy.logs_vec();
     let last_encode = steps
@@ -650,10 +798,7 @@ fn f5_2_s7_translation_is_asked_after_every_encode() {
         .iter()
         .position(|l| l.contains("translating"))
         .expect("S7: the translation was asked for");
-    assert!(
-        last_encode < steps.len(),
-        "both halves of the order exist"
-    );
+    assert!(last_encode < steps.len(), "both halves of the order exist");
     // The translation is logged after every encode command was logged too, so the encoder never idles
     // behind the model gate.
     let last_encode_log = logs
@@ -698,13 +843,11 @@ fn zoom_fx(t: f64, dur: f64) -> Fx {
 /// The closures and the list they read are leaked to the heap, the way `tests/suite/sec_06_effects_4_render.rs`
 /// does it: a per-test local cannot outlive the borrow `Materials` holds, and this is scratch that dies
 /// with the test binary.
-fn mats_with_fx<'a>(
-    cues: exec::Cues,
-    fx: Vec<Fx>,
-) -> exec::Materials<'a> {
+fn mats_with_fx<'a>(cues: exec::Cues, fx: Vec<Fx>) -> exec::Materials<'a> {
     static LANES: &[Lane] = &[];
     let boxed: &'static Vec<Fx> = Box::leak(Box::new(fx));
-    let fx_for: &'static dyn Fn(&Seg) -> Vec<Fx> = Box::leak(Box::new(move |_seg: &Seg| boxed.clone()));
+    let fx_for: &'static dyn Fn(&Seg) -> Vec<Fx> =
+        Box::leak(Box::new(move |_seg: &Seg| boxed.clone()));
     let wav_of: &'static dyn Fn(&Entry) -> Option<PathBuf> = Box::leak(Box::new(no_wav));
     let wav_seconds: &'static dyn Fn(&Entry) -> Option<f64> = Box::leak(Box::new(seconds_2_5));
     exec::Materials {
@@ -780,7 +923,12 @@ impl Press {
         // The cut and its effects, through the same door the Cut page's save uses: §S1 reads the tree's
         // own file, so this is the only way a test hands it an effect list that came from outside.
         naivepost::cut::save(
-            &Cut { segs, fx, aspect: "16:9".into(), ..Default::default() },
+            &Cut {
+                segs,
+                fx,
+                aspect: "16:9".into(),
+                ..Default::default()
+            },
             &tree,
         )
         .expect("cut");
@@ -839,7 +987,9 @@ impl Press {
             },
             |_, _| true,
             |command: &exec::Command| {
-                spy.argv.borrow_mut().push((command.step.to_string(), command.argv.clone()));
+                spy.argv
+                    .borrow_mut()
+                    .push((command.step.to_string(), command.argv.clone()));
                 if let Some(out) = command.argv.last() {
                     let path = Path::new(out);
                     if let Some(dir) = path.parent() {
@@ -855,11 +1005,7 @@ impl Press {
     /// The folder the produced file and its sidecars stand in — derived from where the run writes, never
     /// a guess at the tree's layout.
     fn produce_dir(&self) -> PathBuf {
-        self.tree
-            .final_video("mp4")
-            .parent()
-            .unwrap()
-            .to_path_buf()
+        self.tree.final_video("mp4").parent().unwrap().to_path_buf()
     }
 }
 
@@ -878,17 +1024,33 @@ fn f5_2_gap_s1_and_s3_a_press_reads_the_tree_and_draws_its_effects() {
         vec![common::seg(2.0, 12.0), common::seg(20.0, 28.0)],
         vec![zoom_fx(3.0, 4.0)],
         vec![
-            Entry { s: 0.0, e: 10.0, at: 0.5, text: "first clip's line".into(), ..Default::default() },
-            Entry { s: 0.0, e: 8.0, at: 1.0, text: "second clip's line".into(), ..Default::default() },
+            Entry {
+                s: 0.0,
+                e: 10.0,
+                at: 0.5,
+                text: "first clip's line".into(),
+                ..Default::default()
+            },
+            Entry {
+                s: 0.0,
+                e: 8.0,
+                at: 1.0,
+                text: "second clip's line".into(),
+                ..Default::default()
+            },
         ],
-        Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
+        Produce {
+            subtitles: Subtitles::TrackInFile,
+            ..Default::default()
+        },
         vec![],
     );
     let spy = Spy::new();
     let made = press.render(&spy, &[]);
     assert!(made.ok, "the press came back clean: {made:?}");
     // The cue sheet the walk built from the tree's own narration: both lines, in their clip's order.
-    let sheet = std::fs::read_to_string(press.tree.clips_dir().join("final.srt")).expect("the run's sheet");
+    let sheet =
+        std::fs::read_to_string(press.tree.clips_dir().join("final.srt")).expect("the run's sheet");
     assert!(
         sheet.contains("first clip's line") && sheet.contains("second clip's line"),
         "the cue sheet is the tree's lines, both of them: {sheet}"
@@ -906,8 +1068,16 @@ fn f5_2_gap_s1_and_s3_a_press_reads_the_tree_and_draws_its_effects() {
         .filter(|(step, _)| step == "clip")
         .map(|(_, args)| args.join(" "))
         .collect();
-    assert_eq!(clip_cmds.len(), 2, "two kept segments, two encodes: {clip_cmds:?}");
-    assert!(clip_cmds[0].contains("zoompan"), "the FIRST clip carries the zoom: {}", clip_cmds[0]);
+    assert_eq!(
+        clip_cmds.len(),
+        2,
+        "two kept segments, two encodes: {clip_cmds:?}"
+    );
+    assert!(
+        clip_cmds[0].contains("zoompan"),
+        "the FIRST clip carries the zoom: {}",
+        clip_cmds[0]
+    );
     assert!(
         !clip_cmds[1].contains("zoompan"),
         "the second clip, which carries no effect, draws no camera: {}",
@@ -916,7 +1086,10 @@ fn f5_2_gap_s1_and_s3_a_press_reads_the_tree_and_draws_its_effects() {
     // And the sheet the tree's narration produced rode all the way into the mux, which is the only place a
     // viewer sees it: the mp4 takes the sheet as a track input and names its own text codec.
     let mux = spy.last_with("loudnorm");
-    assert!(mux.iter().any(|a| a.contains("mov_text")), "the tracked sheet was muxed in: {mux:?}");
+    assert!(
+        mux.iter().any(|a| a.contains("mov_text")),
+        "the tracked sheet was muxed in: {mux:?}"
+    );
     assert!(
         mux.iter().any(|a| a.ends_with("final.srt")),
         "and the mux reads the sheet this run wrote: {mux:?}"
@@ -940,8 +1113,17 @@ fn f5_2_gap_s7_and_s4_a_press_writes_its_sidecars_and_deletes_the_named_stale() 
         "gap-s7",
         vec![common::seg(0.0, 10.0)],
         vec![],
-        vec![Entry { s: 0.0, e: 5.0, at: 0.0, text: "what this run says".into(), ..Default::default() }],
-        Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
+        vec![Entry {
+            s: 0.0,
+            e: 5.0,
+            at: 0.0,
+            text: "what this run says".into(),
+            ..Default::default()
+        }],
+        Produce {
+            subtitles: Subtitles::TrackInFile,
+            ..Default::default()
+        },
         // German comes from `Press::new`'s own argument — one place spells what this run translates into.
         vec!["German"],
     );
@@ -971,7 +1153,10 @@ fn f5_2_gap_s7_and_s4_a_press_writes_its_sidecars_and_deletes_the_named_stale() 
         srt.contains("what this run says"),
         "the sidecar carries this run's cue text, not the old run's: {srt}"
     );
-    assert!(produce.join("final.vtt").is_file(), "the .vtt stands beside the .srt");
+    assert!(
+        produce.join("final.vtt").is_file(),
+        "the .vtt stands beside the .srt"
+    );
     // What stands in the named file is this run's TRANSLATED cue: the old English text is gone (the sweep
     // deleted it by exact name) and the sheet §S9 wrote under that name carries the model's German line,
     // not a copy of the session's track — §S9's own rule, read back off the file a player would load.
@@ -984,7 +1169,11 @@ fn f5_2_gap_s7_and_s4_a_press_writes_its_sidecars_and_deletes_the_named_stale() 
         german_now.contains("uebersetzt 1"),
         "and what stands in its place is this run's translated cue: {german_now}"
     );
-    assert!(keep.exists(), "a sheet the sweep did not name was left alone: {:?}", produce);
+    assert!(
+        keep.exists(),
+        "a sheet the sweep did not name was left alone: {:?}",
+        produce
+    );
     // And the walk reported the files it wrote, so the ending can say what landed.
     let _ = press.root;
 }
@@ -1006,10 +1195,25 @@ fn f5_2_gap_s2_a_refused_line_is_said_and_the_render_goes_on() {
         vec![common::seg(0.0, 10.0)],
         vec![],
         vec![
-            Entry { s: 0.0, e: 4.0, at: 0.0, text: "already synthesized".into(), ..Default::default() },
-            Entry { s: 0.0, e: 4.0, at: 4.0, text: "owes a take".into(), ..Default::default() },
+            Entry {
+                s: 0.0,
+                e: 4.0,
+                at: 0.0,
+                text: "already synthesized".into(),
+                ..Default::default()
+            },
+            Entry {
+                s: 0.0,
+                e: 4.0,
+                at: 4.0,
+                text: "owes a take".into(),
+                ..Default::default()
+            },
         ],
-        Produce { subtitles: Subtitles::TrackInFile, ..Default::default() },
+        Produce {
+            subtitles: Subtitles::TrackInFile,
+            ..Default::default()
+        },
         vec![],
     );
     let spy = Spy::new();
@@ -1018,16 +1222,24 @@ fn f5_2_gap_s2_a_refused_line_is_said_and_the_render_goes_on() {
     let logs = spy.logs_vec();
     // The line that had its take is not in the speak list at all — §S2 asks for the lines that owe one.
     assert!(
-        !logs.iter().any(|l| l.contains("already synthesized") && l.contains("synthesis")),
+        !logs
+            .iter()
+            .any(|l| l.contains("already synthesized") && l.contains("synthesis")),
         "a line with its take is never asked for again: {logs:?}"
     );
     // The refusal is said with its reason, naming the voice the press speaks with.
     assert!(
-        logs.iter().any(|l| l.contains("owes a take") && l.contains("Old Man")),
+        logs.iter()
+            .any(|l| l.contains("owes a take") && l.contains("Old Man")),
         "the refusal is logged with its reason and the voice: {logs:?}"
     );
     // The render half went on: both clips' work, the join and the mux all ran.
-    assert!(spy.last_with("loudnorm").iter().any(|a| a.contains("loudnorm")), "the mux ran anyway");
+    assert!(
+        spy.last_with("loudnorm")
+            .iter()
+            .any(|a| a.contains("loudnorm")),
+        "the mux ran anyway"
+    );
     // S6's verdict read off the same report: DONE, not a cancel.
     let ending = flow::finish(&flow::Halves {
         words_ok: true,
@@ -1038,7 +1250,11 @@ fn f5_2_gap_s2_a_refused_line_is_said_and_the_render_goes_on() {
         seconds: made.seconds,
         size: made.size.clone(),
     });
-    assert_eq!(ending.status, render::STAGE_DONE, "the press ends DONE: {ending:?}");
+    assert_eq!(
+        ending.status,
+        render::STAGE_DONE,
+        "the press ends DONE: {ending:?}"
+    );
     let _ = press.root;
 }
 
@@ -1046,17 +1262,40 @@ fn f5_2_gap_s2_a_refused_line_is_said_and_the_render_goes_on() {
 
 #[test]
 fn f5_2_s8_the_mux_carries_the_loudnorm_and_the_container_tracks() {
-    let tracked = Produce { subtitles: Subtitles::TrackInFile, ..Default::default() };
+    let tracked = Produce {
+        subtitles: Subtitles::TrackInFile,
+        ..Default::default()
+    };
     let cues = common::produce_cues_for_test(Vec::new());
-    let (tree, run) = run_over("s8", vec![common::seg(0.0, 10.0)], vec![entry(0.0, 8.0, 0.0, "a line")], tracked, "");
+    let (tree, run) = run_over(
+        "s8",
+        vec![common::seg(0.0, 10.0)],
+        vec![entry(0.0, 8.0, 0.0, "a line")],
+        tracked,
+        "",
+    );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], cues.clone(), &no_wav, &seconds_2_5), None);
+    spy.run(
+        &run,
+        &tree,
+        &mats(&[], cues.clone(), &no_wav, &seconds_2_5),
+        None,
+    );
     let mux = spy.last_with("loudnorm");
     let joined = mux.join(" ");
-    assert!(joined.contains(render::LOUDNORM), "the loudness filter is the spec's own string");
+    assert!(
+        joined.contains(render::LOUDNORM),
+        "the loudness filter is the spec's own string"
+    );
     assert!(joined.contains("48000"), "resampled to 48 kHz");
-    assert!(joined.contains("+faststart"), "mp4 gets the faststart flags");
-    assert!(joined.contains("mov_text"), "mp4's subtitle codec is mov_text");
+    assert!(
+        joined.contains("+faststart"),
+        "mp4 gets the faststart flags"
+    );
+    assert!(
+        joined.contains("mov_text"),
+        "mp4's subtitle codec is mov_text"
+    );
 
     // webm forces both halves of §A's rule: vp9, and no text track at all.
     let webm = Produce {
@@ -1067,9 +1306,20 @@ fn f5_2_s8_the_mux_carries_the_loudnorm_and_the_container_tracks() {
     let (codec, choice) = screen::apply_container_rules(webm.container, webm.codec, webm.subtitles);
     assert_eq!(codec, naivepost::project::Codec::Vp9, "webm forces vp9");
     assert_eq!(choice, Subtitles::None, "webm forces 'none in the video'");
-    let (tree2, run2) = run_over("s8-webm", vec![common::seg(0.0, 10.0)], vec![entry(0.0, 8.0, 0.0, "a line")], webm, "");
+    let (tree2, run2) = run_over(
+        "s8-webm",
+        vec![common::seg(0.0, 10.0)],
+        vec![entry(0.0, 8.0, 0.0, "a line")],
+        webm,
+        "",
+    );
     let spy2 = Spy::new();
-    spy2.run(&run2, &tree2, &mats(&[], cues.clone(), &no_wav, &seconds_2_5), None);
+    spy2.run(
+        &run2,
+        &tree2,
+        &mats(&[], cues.clone(), &no_wav, &seconds_2_5),
+        None,
+    );
     let mux2 = spy2.last_with("loudnorm");
     assert!(!mux2.is_empty(), "the webm mux ran");
     assert!(
@@ -1083,7 +1333,10 @@ fn f5_2_s8_the_mux_carries_the_loudnorm_and_the_container_tracks() {
 
 #[test]
 fn f5_2_s9_sidecars_exist_per_language_and_each_is_logged() {
-    let settings = Produce { translate: vec!["German".to_string()], ..Default::default() };
+    let settings = Produce {
+        translate: vec!["German".to_string()],
+        ..Default::default()
+    };
     let cues = common::produce_cues_for_test(vec!["German".to_string()]);
     let (tree, run) = run_over(
         "s9",
@@ -1093,10 +1346,21 @@ fn f5_2_s9_sidecars_exist_per_language_and_each_is_logged() {
         "",
     );
     let spy = Spy::new();
-    spy.run(&run, &tree, &mats(&[], cues.clone(), &no_wav, &seconds_2_5), None);
-    assert!(tree.final_srt(None).exists(), "the session's own .srt beside the video");
+    spy.run(
+        &run,
+        &tree,
+        &mats(&[], cues.clone(), &no_wav, &seconds_2_5),
+        None,
+    );
+    assert!(
+        tree.final_srt(None).exists(),
+        "the session's own .srt beside the video"
+    );
     assert!(tree.final_vtt(None).exists(), "…and its .vtt");
-    assert!(tree.final_srt(Some("German")).exists(), "the ticked language's .srt");
+    assert!(
+        tree.final_srt(Some("German")).exists(),
+        "the ticked language's .srt"
+    );
     assert!(tree.final_vtt(Some("German")).exists(), "…and its .vtt");
     let logs = spy.logs_vec();
     let lines: Vec<&String> = logs
@@ -1120,20 +1384,42 @@ fn f5_2_s10_a_stop_at_any_checkpoint_ends_the_run_without_the_stamp() {
     let stamp = tree.final_stamp();
     // No narration lines, so the first checkpoint the walk reaches is the one before the join.
     let spy = Spy::new();
-    let made = spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), Some(1));
+    let made = spy.run(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        Some(1),
+    );
     assert!(made.stopped, "the report says stopped");
     assert!(!made.ok, "and not ok");
-    assert_eq!(spy.count_step("clip"), 2, "the encodes had already run: {:?}", spy.steps());
+    assert_eq!(
+        spy.count_step("clip"),
+        2,
+        "the encodes had already run: {:?}",
+        spy.steps()
+    );
     assert_eq!(spy.count_step(render::JOINING), 0, "the join never started");
     assert!(!stamp.exists(), "a stopped run writes no stamp");
 
     // Stopped one checkpoint later: the join ran, the mux did not, still no stamp.
     let spy2 = Spy::new();
-    let made2 = spy2.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), Some(2));
+    let made2 = spy2.run(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        Some(2),
+    );
     assert!(made2.stopped, "stopped again, later in the run");
-    assert_eq!(spy2.count_step(render::JOINING), 1, "two encodes plus the join");
+    assert_eq!(
+        spy2.count_step(render::JOINING),
+        1,
+        "two encodes plus the join"
+    );
     assert_eq!(spy2.count_step("muxing"), 0, "no mux: {:?}", spy2.steps());
-    assert!(!stamp.exists(), "still no stamp: what stands there was never finished");
+    assert!(
+        !stamp.exists(),
+        "still no stamp: what stands there was never finished"
+    );
 }
 
 // ---- the clean ending -----------------------------------------------------------------------------
@@ -1148,13 +1434,32 @@ fn f5_2_a_clean_run_reports_its_file_seconds_and_size() {
         "",
     );
     let spy = Spy::new();
-    let made = spy.run(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), None);
+    let made = spy.run(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        None,
+    );
     assert!(made.ok, "a run whose mux finished is ok: {:?}", made);
     assert!(!made.stopped);
-    assert!(made.seconds > 0.0, "the run reports how long it took: {}", made.seconds);
-    assert_ne!(made.size, "0 B", "and what the produced file weighs: {}", made.size);
-    assert!(tree.final_video("mp4").exists(), "produce/final.mp4 is there");
-    assert!(tree.final_stamp().exists(), "and the stamp was written by the run that made it");
+    assert!(
+        made.seconds > 0.0,
+        "the run reports how long it took: {}",
+        made.seconds
+    );
+    assert_ne!(
+        made.size, "0 B",
+        "and what the produced file weighs: {}",
+        made.size
+    );
+    assert!(
+        tree.final_video("mp4").exists(),
+        "produce/final.mp4 is there"
+    );
+    assert!(
+        tree.final_stamp().exists(),
+        "and the stamp was written by the run that made it"
+    );
     // The same numbers feed the run's closing line and the bar's progress text.
     let ending = flow::ending_for(
         "produce/final.mp4",
@@ -1169,7 +1474,10 @@ fn f5_2_a_clean_run_reports_its_file_seconds_and_size() {
         },
     );
     assert_eq!(ending.status, render::STAGE_DONE);
-    assert_eq!(ending.progress, flow::progress_text("produce/final.mp4", made.seconds, &made.size));
+    assert_eq!(
+        ending.progress,
+        flow::progress_text("produce/final.mp4", made.seconds, &made.size)
+    );
 }
 
 // ---- F4.8 Narration off: the render asks the seam, not itself ------------------------------------
@@ -1202,10 +1510,18 @@ fn run_with_lines(tag: &str, lines: Vec<Entry>, no_narration: bool) -> (Tree, fl
 fn f4_8_s3_speech_plan_asks_the_narration_seam() {
     let (tree, run) = run_with_lines(
         "f48-off",
-        vec![entry(0.0, 4.0, 0.0, "first line"), entry(5.0, 9.0, 0.0, "second line")],
+        vec![
+            entry(0.0, 4.0, 0.0, "first line"),
+            entry(5.0, 9.0, 0.0, "second line"),
+        ],
         true,
     );
-    let plan = exec::speech_plan(&run, &tree, &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5), true);
+    let plan = exec::speech_plan(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        true,
+    );
     assert!(
         plan.is_empty(),
         "narration off means the render has NOTHING to speak, even with `speaking` forced on: {plan:?}"
@@ -1227,8 +1543,12 @@ fn f4_8_s3_a_blank_line_is_never_spoken() {
         ],
         false,
     );
-    let plan =
-        exec::speech_plan(&run, &tree, &mats(&[], exec::Cues::default(), &has_one_wav, &seconds_2_5), true);
+    let plan = exec::speech_plan(
+        &run,
+        &tree,
+        &mats(&[], exec::Cues::default(), &has_one_wav, &seconds_2_5),
+        true,
+    );
     let asked: Vec<&str> = plan.iter().map(|to| to.text.as_str()).collect();
     assert_eq!(
         asked,

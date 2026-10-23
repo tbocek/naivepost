@@ -125,7 +125,10 @@ impl Track {
         } else if left == 0 {
             format!("{}: task {} of {total}, none waiting", self.job, self.taken)
         } else {
-            format!("{}: task {} of {}, {} waiting", self.job, self.taken, self.queued, left)
+            format!(
+                "{}: task {} of {}, {} waiting",
+                self.job, self.taken, self.queued, left
+            )
         }
     }
 }
@@ -304,7 +307,13 @@ pub struct Started {
 /// The cancel context is a generation counter rather than a channel: a model or audio call asks
 /// [`is_cancelled`] with the epoch it started on, so a `cancelled` left by the run before it cannot
 /// abort this one.
-pub fn start_run(bar: &mut RunBar, queue: &mut Queue, log: &mut RunLog, step: Step, sources: Snapshot) -> Started {
+pub fn start_run(
+    bar: &mut RunBar,
+    queue: &mut Queue,
+    log: &mut RunLog,
+    step: Step,
+    sources: Snapshot,
+) -> Started {
     let epoch = bump_cancel_context(bar);
     bar.running = Some(Run {
         step,
@@ -422,10 +431,19 @@ mod tests {
         let mut queue = Queue::new();
         let mut log = RunLog::new();
         queue.push(TRACK_STT, 3, "stale");
-        let started = start_run(&mut bar, &mut queue, &mut log, Step::Prepare, Snapshot::default());
+        let started = start_run(
+            &mut bar,
+            &mut queue,
+            &mut log,
+            Step::Prepare,
+            Snapshot::default(),
+        );
         assert_eq!(started.epoch, 1);
         assert!(bar.running.is_some(), "startRun flips running on");
-        assert!(!bar.stop_flag && !bar.cancelled, "F0.5 S1 clears both stop and cancel");
+        assert!(
+            !bar.stop_flag && !bar.cancelled,
+            "F0.5 S1 clears both stop and cancel"
+        );
         assert!(
             bar.running.as_ref().unwrap().log_expanded,
             "startRun expands the log (F0.5 S1)"

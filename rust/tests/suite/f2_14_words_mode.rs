@@ -53,7 +53,8 @@ impl Project_ {
         let project = naivepost::project::load(&fixture_dir()).expect("fixture loads");
         // Write the project file so `open_project_dir`-style readers find a real project here.
         let json = serde_json::to_string_pretty(&project).expect("project serialises");
-        std::fs::write(dir.join(naivepost::project::PROJECT_FILE), json).expect("write naivepost.json");
+        std::fs::write(dir.join(naivepost::project::PROJECT_FILE), json)
+            .expect("write naivepost.json");
         Self {
             root,
             tree,
@@ -87,7 +88,11 @@ impl Project_ {
             })
             .collect();
         let doc = WordsDoc {
-            text: spoken.iter().map(|(w, _)| *w).collect::<Vec<&str>>().join(" "),
+            text: spoken
+                .iter()
+                .map(|(w, _)| *w)
+                .collect::<Vec<&str>>()
+                .join(" "),
             words,
         };
         requests::write_words(&self.tree, source, &doc).expect("write words.json");
@@ -119,7 +124,12 @@ impl Drop for Project_ {
 /// A cut showing one camera's footage from `s` to `e` — what `runs_of` builds its runs from.
 fn cam_cut(s: f64, e: f64) -> Cut {
     Cut {
-        segs: vec![Seg { s, e, cam: 0, ..Default::default() }],
+        segs: vec![Seg {
+            s,
+            e,
+            cam: 0,
+            ..Default::default()
+        }],
         ..Default::default()
     }
 }
@@ -128,7 +138,12 @@ fn cam_cut(s: f64, e: f64) -> Cut {
 /// the tape holds, and the slide is what puts them on the session clock.
 fn cam_cut_shifted(s: f64, e: f64, shift: f64) -> Cut {
     Cut {
-        segs: vec![Seg { s, e, cam: 0, ..Default::default() }],
+        segs: vec![Seg {
+            s,
+            e,
+            cam: 0,
+            ..Default::default()
+        }],
         shift: [("cam0".to_string(), shift)].into_iter().collect(),
         ..Default::default()
     }
@@ -138,14 +153,27 @@ fn cam_cut_shifted(s: f64, e: f64, shift: f64) -> Cut {
 fn seeded_cut() -> Cut {
     Cut {
         segs: vec![
-            Seg { s: 0.0, e: 60.0, cam: 0, ..Default::default() },
-            Seg { s: 0.0, e: 0.0, dur: 3.0, ins: "card.png".to_string(), cam: 0, ..Default::default() },
+            Seg {
+                s: 0.0,
+                e: 60.0,
+                cam: 0,
+                ..Default::default()
+            },
+            Seg {
+                s: 0.0,
+                e: 0.0,
+                dur: 3.0,
+                ins: "card.png".to_string(),
+                cam: 0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }
 }
 
-fn retake(s: f64, e: f64) -> Retake {    Retake {
+fn retake(s: f64, e: f64) -> Retake {
+    Retake {
         s,
         e,
         again: 0.0,
@@ -171,7 +199,11 @@ fn f2_14_s2a_a_run_is_trimmed_to_its_words_never_outside_the_run() {
     assert_eq!(runs[0].last_spoken, 9.0, "last word's second");
     // `words_cut` does the ±0.4 s reach and the clamp; the trimmed span is what §S2a says to build.
     let made = naivepost::suggest::words_cut(&runs, &[], &[]);
-    assert_eq!(made.segs, vec![(2.6, 9.4)], "just before the first, just after the last");
+    assert_eq!(
+        made.segs,
+        vec![(2.6, 9.4)],
+        "just before the first, just after the last"
+    );
     // And never outside the run: words whose reach crosses the run's own end stay inside it.
     let clamped = Project_::fresh("clamp").with_words("cam0", &[spoken(29.9)]);
     let clamped_runs = words_run::runs_of(&clamped.tree, &cam_cut(0.0, 30.0));
@@ -185,12 +217,19 @@ fn f2_14_s2a_a_run_is_trimmed_to_its_words_never_outside_the_run() {
     // its end rather than a reason to keep a silent minute.
     let quiet = Project_::fresh("quiet");
     let quiet_runs = words_run::runs_of(&quiet.tree, &cam_cut(0.0, 30.0));
-    assert_eq!(quiet_runs, Vec::new(), "footage with no words contributes no run");
+    assert_eq!(
+        quiet_runs,
+        Vec::new(),
+        "footage with no words contributes no run"
+    );
     // A tape's seconds are its OWN (§04 F1.9 files them that way); §B's `sessionAt` is what moves them
     // onto the session clock, and a hand slide (`cut.json shift`) rides along with them.
     let slid = Project_::fresh("slid").with_words("cam0", &[spoken(1.0), spoken(4.0)]);
     let slid_runs = words_run::runs_of(&slid.tree, &cam_cut_shifted(20.0, 30.0, 3.0));
-    assert_eq!(slid_runs[0].first_spoken, 21.0, "1 s into the tape, slid +3 s = session 21");
+    assert_eq!(
+        slid_runs[0].first_spoken, 21.0,
+        "1 s into the tape, slid +3 s = session 21"
+    );
     // ...and the run is CLAMPED to its own footage: the tape's later words (session 24) are outside the
     // scene this cut keeps, so §S2a trims to what the run actually shows.
     assert_eq!(slid_runs[0].last_spoken, 21.0);
@@ -201,13 +240,23 @@ fn f2_14_s2a_a_run_is_trimmed_to_its_words_never_outside_the_run() {
 fn f2_14_s2a_a_mark_over_gone_footage_is_not_counted() {
     common::pin_private_cwd();
     let p = Project_::fresh("marks")
-        .with_words("cam0", &[spoken(2.0), spoken(6.0), spoken(20.0), spoken(26.0)])
+        .with_words(
+            "cam0",
+            &[spoken(2.0), spoken(6.0), spoken(20.0), spoken(26.0)],
+        )
         .with_marks(&[retake(4.0, 5.0), retake(100.0, 110.0)]);
     let marks = words_run::marks_of(&p.tree);
-    assert_eq!(marks, vec![(4.0, 5.0), (100.0, 110.0)], "the file's own spans");
+    assert_eq!(
+        marks,
+        vec![(4.0, 5.0), (100.0, 110.0)],
+        "the file's own spans"
+    );
     let runs = words_run::runs_of(&p.tree, &cam_cut(0.0, 30.0));
     let made = naivepost::suggest::words_cut(&runs, &marks, &[]);
-    assert_eq!(made.marks_out, 1, "only the mark that took seconds out counts");
+    assert_eq!(
+        made.marks_out, 1,
+        "only the mark that took seconds out counts"
+    );
     assert!(made.log.contains("1 stretch(es) taken out"), "{}", made.log);
     RAN_MARKS.store(true, Ordering::SeqCst);
 }
@@ -226,13 +275,22 @@ fn f2_14_s2a_an_absent_wave_cache_contributes_no_silences() {
 fn f2_14_s2a_the_cut_lands_persists_and_keeps_hand_placed_inserts() {
     common::pin_private_cwd();
     window_round();
-    assert!(RAN_LANDED.load(Ordering::SeqCst), "the landing check never ran");
-    assert!(RAN_EMPTY.load(Ordering::SeqCst), "the empty-cut check never ran");
+    assert!(
+        RAN_LANDED.load(Ordering::SeqCst),
+        "the landing check never ran"
+    );
+    assert!(
+        RAN_EMPTY.load(Ordering::SeqCst),
+        "the empty-cut check never ran"
+    );
 }
 
 fn run_checks(app: &adw::Application) {
     let p = Project_::fresh("land")
-        .with_words("cam0", &[spoken(2.0), spoken(6.0), spoken(20.0), spoken(26.0)])
+        .with_words(
+            "cam0",
+            &[spoken(2.0), spoken(6.0), spoken(20.0), spoken(26.0)],
+        )
         .with_marks(&[retake(4.0, 5.0)]);
     let window = ui::build_window(app, &p.project, "Prepare");
     window.present();
@@ -248,7 +306,10 @@ fn run_checks(app: &adw::Application) {
     settle();
 
     let made = words_run::run_words(&window, &p.tree, &p.project);
-    assert_eq!(made.status, "cut by the words: 2 segments", "the page's own sentence");
+    assert_eq!(
+        made.status, "cut by the words: 2 segments",
+        "the page's own sentence"
+    );
     assert_eq!(
         made.log,
         ">>> cut by the words: 1 stretch(es) taken out, 00:00 of silence, 2 segments, 00:23 total",
@@ -256,7 +317,11 @@ fn run_checks(app: &adw::Application) {
     );
     assert!(made.wrote, "a real cut was written");
     let on_screen = ui::review_cut_of(&window);
-    assert_eq!(on_screen.segs.len(), 3, "two scenes plus the card that was already there");
+    assert_eq!(
+        on_screen.segs.len(),
+        3,
+        "two scenes plus the card that was already there"
+    );
     assert!(
         on_screen.segs.iter().any(|seg| seg.is_insert()),
         "a hand-placed insert survives a words cut: {:?}",
@@ -269,7 +334,10 @@ fn run_checks(app: &adw::Application) {
     ui::press_undo(&window);
     settle();
     assert!(
-        ui::review_cut_of(&window).segs.iter().any(|seg| seg.e == 60.0),
+        ui::review_cut_of(&window)
+            .segs
+            .iter()
+            .any(|seg| seg.e == 60.0),
         "one Undo undid the words cut in one step"
     );
     RAN_LANDED.store(true, Ordering::SeqCst);

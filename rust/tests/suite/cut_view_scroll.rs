@@ -7,11 +7,11 @@
 //! the − / + ladder stops — which is what the session fits into, not the constant the placeholder strip
 //! was sized with.
 
+use crate::common;
 use adw::prelude::*;
 use naivepost::timeline::{self, Recording};
 use naivepost::ui::cut_view;
 use std::sync::atomic::Ordering;
-use crate::common;
 
 /// The one app round the widget case needs: GTK will not build a window off the main thread, and tests run
 /// on their own, so exactly one `adw::Application` emission exists for the whole binary.
@@ -49,10 +49,17 @@ fn sec_05_cut_1_screen_s9_the_scrollbar_thumb_is_geared_at_forty_px_per_screenfu
             "{seconds} s at {pps} px/s: one screenful costs {thumb} px of drag, not 40"
         );
         // And the thumb is never longer than the bar nor thinner than GTK will draw.
-        let thumb = cut_view::thumb_px(total, bar);        assert!(thumb <= bar && thumb > 0.0, "thumb {thumb} longer than the bar");
+        let thumb = cut_view::thumb_px(total, bar);
+        assert!(
+            thumb <= bar && thumb > 0.0,
+            "thumb {thumb} longer than the bar"
+        );
         // The fraction handed to GTK stays a real fraction of the timeline it scrolls.
         let page = view * cut_view::thumb_geared(total, bar);
-        assert!(page <= total.max(view), "page {page} larger than the timeline {total}");
+        assert!(
+            page <= total.max(view),
+            "page {page} larger than the timeline {total}"
+        );
     }
     // The gear only bites once there IS more off screen: at the floor a whole session fits, so the bar
     // hides itself (§A) and its thumb fills the bar — which is the same rule read from the other side.
@@ -78,12 +85,18 @@ fn sec_05_cut_1_screen_s9_the_scroll_hides_itself_when_the_whole_session_fits() 
     // §A: "hidden when everything fits" — a full-width thumb claims there is more to the right.
     let view = 1200.0 - cut_view::gutter_px();
     let short = cut_view::total_px(60.0, 4.0);
-    assert!(short <= view, "a 60 s session at the open zoom does fit: {short} <= {view}");
+    assert!(
+        short <= view,
+        "a 60 s session at the open zoom does fit: {short} <= {view}"
+    );
     assert!(cut_view::fits(short, view), "so the bar hides");
 
     // The same session at the deepest zoom no longer fits, and the bar comes back.
     let deep = cut_view::total_px(60.0, naivepost::cut_screen::ZOOM_MAX);
-    assert!(!cut_view::fits(deep, view), "240 px/s over a minute is {deep} px of timeline");
+    assert!(
+        !cut_view::fits(deep, view),
+        "240 px/s over a minute is {deep} px of timeline"
+    );
 }
 
 #[test]
@@ -97,7 +110,10 @@ fn sec_05_cut_1_screen_s9_a_scroll_stays_inside_the_timeline_at_both_ends() {
     assert_eq!(cut_view::set_origin(-500.0, total, view), 0.0);
     // A pan is an eighth of the view, wherever it starts.
     assert_eq!(cut_view::pan_eighth(view), view / 8.0);
-    assert_eq!(cut_view::scroll_by(total, view, cut_view::pan_eighth(view)), view / 8.0);
+    assert_eq!(
+        cut_view::scroll_by(total, view, cut_view::pan_eighth(view)),
+        view / 8.0
+    );
     // An empty timeline has nowhere to scroll: the origin stays put at zero.
     assert_eq!(cut_view::set_origin(50.0, 100.0, view), 0.0);
 }
@@ -122,15 +138,16 @@ fn sec_05_cut_1_screen_s9_zooming_out_stops_where_the_session_fits_not_at_a_cons
         let (next, _) = cut_view::zoom_step(false, &runs, cut_view::total_px(600.0, pps), view);
         pps = next;
     }
-    assert_eq!(pps, floor, "the ladder stops at 'all of it fits' and no further");
-    // One step back in is possible from there: the floor is a stop, not a lock.
-    let (one_in, _) = cut_view::zoom_step(
-        true,
-        &runs,
-        cut_view::total_px(600.0, pps),
-        view,
+    assert_eq!(
+        pps, floor,
+        "the ladder stops at 'all of it fits' and no further"
     );
-    assert!(one_in > floor, "+ off the floor still moves: {one_in} > {floor}");
+    // One step back in is possible from there: the floor is a stop, not a lock.
+    let (one_in, _) = cut_view::zoom_step(true, &runs, cut_view::total_px(600.0, pps), view);
+    assert!(
+        one_in > floor,
+        "+ off the floor still moves: {one_in} > {floor}"
+    );
 }
 
 #[test]
@@ -188,7 +205,10 @@ fn sec_05_cut_1_screen_s9_the_view_only_slips_to_follow_a_line_that_left_it() {
         "a line inside the view does not move the view"
     );
     let slipped = cut_view::reveal_playhead(5000.0, total, view);
-    assert!(slipped > 0.0, "a line far past the right edge pulls the view along");
+    assert!(
+        slipped > 0.0,
+        "a line far past the right edge pulls the view along"
+    );
     assert!(
         slipped <= 5000.0 && slipped + view >= 5000.0,
         "and it lands so the line is inside again: {slipped}"
@@ -237,7 +257,11 @@ fn wheel_over_tracks_and_transport(app: &adw::Application) {
     let said = cut_view::apply_wheel(&window, WheelOver::Tracks, false, -1.0, 0.0, |_| {})
         .expect("a notch over the tracks is a zoom, and a zoom has something to say");
     assert!(said.contains("px a second"), "{said}");
-    assert!(cut_view::pps() > 8.0, "a notch away zoomed in: {}", cut_view::pps());
+    assert!(
+        cut_view::pps() > 8.0,
+        "a notch away zoomed in: {}",
+        cut_view::pps()
+    );
 
     // Shift over the same spot pans an eighth instead, and moves the scroll.
     let before = cut_view::origin();
@@ -257,7 +281,11 @@ fn wheel_over_tracks_and_transport(app: &adw::Application) {
         None,
         "a notch over the transport is nobody's zoom"
     );
-    assert_ne!(stepped.get(), 0, "and the caller's transport seam got the step");
+    assert_ne!(
+        stepped.get(),
+        0,
+        "and the caller's transport seam got the step"
+    );
     assert_eq!(cut_view::pps(), pps_now, "it changed no zoom");
     assert_eq!(cut_view::origin(), origin_now, "and no scroll");
     window.close();

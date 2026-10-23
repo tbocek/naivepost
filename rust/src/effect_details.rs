@@ -62,7 +62,13 @@ pub fn preview_failure_stops_the_effect() -> bool {
 /// A card or a held frame films nothing and a clip can sit on ground no recording covers ([`crate::cut_hear::hush`]
 /// answers an insert with no hearing list at all), so in both cases the sound is exactly as long as the picture and
 /// there is no debt to open for, however much the arithmetic says there is.
-pub fn read_head_open(snd: &str, debt: f64, scene_runs_on: bool, filmed: bool, insert: bool) -> bool {
+pub fn read_head_open(
+    snd: &str,
+    debt: f64,
+    scene_runs_on: bool,
+    filmed: bool,
+    insert: bool,
+) -> bool {
     fx_lane::draws_debt_tail(snd, debt, scene_runs_on) && filmed && !insert
 }
 

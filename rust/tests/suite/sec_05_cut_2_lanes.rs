@@ -31,7 +31,10 @@ static RAN_WIRE: AtomicBool = AtomicBool::new(false);
 fn check_the_lane_comes_from_the_source() {
     let taken: Vec<String> = Vec::new();
     let lane = naivepost::cut_lanes::lane_from("/videos/lecture.mp4", 12.5, 640.0, &taken);
-    assert_eq!(lane.src, "/videos/lecture.mp4", "the file is named as given");
+    assert_eq!(
+        lane.src, "/videos/lecture.mp4",
+        "the file is named as given"
+    );
     assert_eq!(lane.name, "lecture", "the row takes the file's own stem");
     assert_eq!(lane.at, 12.5, "and starts where the page said");
     assert_eq!(lane.off, 0.0, "a whole file lands at its own beginning");
@@ -40,7 +43,10 @@ fn check_the_lane_comes_from_the_source() {
     // A second row for the same file cannot share the name (§B: "name, name-2 …").
     let mut taken = vec![lane.name.clone()];
     let again = naivepost::cut_lanes::lane_from("/videos/lecture.mp4", 80.0, 300.0, &taken);
-    assert_eq!(again.name, "lecture-2", "the next row of the same file is name-2");
+    assert_eq!(
+        again.name, "lecture-2",
+        "the next row of the same file is name-2"
+    );
     taken.push(again.name.clone());
     let third = naivepost::cut_lanes::lane_from("/videos/lecture.mp4", 90.0, 60.0, &taken);
     assert_eq!(third.name, "lecture-3", "and the third is name-3");
@@ -62,8 +68,9 @@ fn check_the_probe_answers_or_refuses() {
             return;
         }
     };
-    let seconds = naivepost::cut_lanes::probe_duration("", &media, &mut |line| println!("PROBE {line}"))
-        .expect("ffprobe reads a file ffmpeg just wrote");
+    let seconds =
+        naivepost::cut_lanes::probe_duration("", &media, &mut |line| println!("PROBE {line}"))
+            .expect("ffprobe reads a file ffmpeg just wrote");
     assert!(
         (seconds - 7.0).abs() < 0.6,
         "a 7-second clip probes back as ~7 s, got {seconds}"
@@ -73,7 +80,10 @@ fn check_the_probe_answers_or_refuses() {
         .expect_err("a missing file cannot answer a duration");
     assert!(why.contains("ffprobe"), "the refusal names the tool: {why}");
     let said = naivepost::cut_lanes::no_probe_status("/no/such/file.mp4", &why);
-    assert!(said.contains("/no/such/file.mp4"), "and the sentence names the file: {said}");
+    assert!(
+        said.contains("/no/such/file.mp4"),
+        "and the sentence names the file: {said}"
+    );
     let _ = std::fs::remove_file(&media);
     RAN_PROBED.store(true, Ordering::SeqCst);
 }
@@ -91,8 +101,20 @@ fn write_seven_second_clip() -> Option<String> {
     let path = std::env::temp_dir().join(format!("lane-probe-{}.mp4", std::process::id()));
     let made = std::process::Command::new("ffmpeg")
         .args(["-v", "error", "-y"])
-        .args(["-f", "lavfi", "-i", "testsrc=size=320x240:rate=10:duration=7"])
-        .args(["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p"])
+        .args([
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=320x240:rate=10:duration=7",
+        ])
+        .args([
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+        ])
         .arg(&path)
         .status()
         .ok()?;
@@ -103,12 +125,20 @@ fn write_seven_second_clip() -> Option<String> {
 }
 
 fn tape() -> Vec<Recording> {
-    vec![Recording { base: "cam0".into(), start: 0.0, end: 120.0 }]
+    vec![Recording {
+        base: "cam0".into(),
+        start: 0.0,
+        end: 120.0,
+    }]
 }
 
 fn scenes() -> cut::Cut {
     cut::Cut {
-        segs: vec![Seg { s: 0.0, e: 60.0, ..Default::default() }],
+        segs: vec![Seg {
+            s: 0.0,
+            e: 60.0,
+            ..Default::default()
+        }],
         ..Default::default()
     }
 }
@@ -153,9 +183,13 @@ fn check_the_lane_button_places_a_probed_row(app: &adw::Application) {
     // A line to start the row at: placed the way a click on the timeline places one.
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 10.0 });
     settle();
-    assert!(ui::review_lanes(&window).is_empty(), "the page opened with no lane rows");
+    assert!(
+        ui::review_lanes(&window).is_empty(),
+        "the page opened with no lane rows"
+    );
 
-    let button = ui::line_step_button(&window, "lane-button").expect("the toolbar carries lane-button");
+    let button =
+        ui::line_step_button(&window, "lane-button").expect("the toolbar carries lane-button");
     button.emit_by_name::<()>("clicked", &[]);
     settle();
 
@@ -175,7 +209,10 @@ fn check_the_lane_button_places_a_probed_row(app: &adw::Application) {
     assert_eq!(lanes.len(), 1, "one row appeared");
     assert_eq!(lanes[0].src, media, "it windows the footage file");
     assert_eq!(lanes[0].at, 10.0, "and starts at the line");
-    assert_eq!(lanes[0].off, 0.0, "a whole file starts at its own beginning");
+    assert_eq!(
+        lanes[0].off, 0.0,
+        "a whole file starts at its own beginning"
+    );
     assert!(
         (lanes[0].dur - 7.0).abs() < 0.6,
         "its length came from the probe, not from a handed-over number: {}",
@@ -212,22 +249,34 @@ fn round() {
 }
 
 #[test]
-fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s1_a_lane_window_is_built_from_the_source_metadata() {
+fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s1_a_lane_window_is_built_from_the_source_metadata(
+) {
     common::pin_private_cwd();
     round();
-    assert!(RAN_BUILT.load(Ordering::SeqCst), "the lane-from-metadata check never ran");
+    assert!(
+        RAN_BUILT.load(Ordering::SeqCst),
+        "the lane-from-metadata check never ran"
+    );
 }
 
 #[test]
-fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s2_the_probe_answers_a_real_duration_or_refuses_loudly() {
+fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s2_the_probe_answers_a_real_duration_or_refuses_loudly(
+) {
     common::pin_private_cwd();
     round();
-    assert!(RAN_PROBED.load(Ordering::SeqCst), "the ffprobe check never ran");
+    assert!(
+        RAN_PROBED.load(Ordering::SeqCst),
+        "the ffprobe check never ran"
+    );
 }
 
 #[test]
-fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s3_the_lane_button_places_a_lane_for_a_footage_file() {
+fn sec_05_cut_2_model_summary_full_schema_in_01_project_and_filesmd_3_s3_the_lane_button_places_a_lane_for_a_footage_file(
+) {
     common::pin_private_cwd();
     round();
-    assert!(RAN_WIRE.load(Ordering::SeqCst), "the lane-button check never ran");
+    assert!(
+        RAN_WIRE.load(Ordering::SeqCst),
+        "the lane-button check never ran"
+    );
 }

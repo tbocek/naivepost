@@ -8,8 +8,8 @@
 
 use naivepost::audit_gaps::{self as gaps, AdditionKind, Defect};
 use naivepost::cut::Seg;
-use naivepost::narration::{self, Entry, Narration, Silent};
 use naivepost::narrate_pass;
+use naivepost::narration::{self, Entry, Narration, Silent};
 use naivepost::produce_details;
 use naivepost::produce_subtitles;
 use naivepost::roles::Job;
@@ -38,7 +38,11 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s1_the_added_tools_are_registered_a
     ] {
         let offered_to = all_jobs
             .iter()
-            .filter(|j| naivepost::tools::offered(**j).iter().any(|t| t.name() == name))
+            .filter(|j| {
+                naivepost::tools::offered(**j)
+                    .iter()
+                    .any(|t| t.name() == name)
+            })
             .collect::<Vec<_>>();
         assert!(
             !offered_to.is_empty(),
@@ -145,7 +149,11 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s4_write_replies_carry_more_than_ok
     assert!(cap.get("clamped").is_some());
 
     // A real narration answer: the offset as placed and the word ceiling it must stay under.
-    let seg = Seg { s: 0.0, e: 30.0, ..Default::default() };
+    let seg = Seg {
+        s: 0.0,
+        e: 30.0,
+        ..Default::default()
+    };
     let line = narrate_pass::write_line(&[seg], 1, 2.0, "one two three four five six", "calm", "");
     assert!(gaps::result_carries_more_than_ok(&line), "{line}");
     let written = body(&line);
@@ -166,20 +174,44 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s4_write_replies_carry_more_than_ok
 #[test]
 fn sec_12_decisions_5_gaps_this_audit_closed_s5_the_users_silent_list_survives_a_rewrite() {
     let silent = vec![Silent { s: 40.0, e: 65.0 }, Silent { s: 100.0, e: 120.0 }];
-    let before = vec![Entry { s: 40.0, e: 65.0, at: 1.0, text: "old words".into(), ..Default::default() }];
+    let before = vec![Entry {
+        s: 40.0,
+        e: 65.0,
+        at: 1.0,
+        text: "old words".into(),
+        ..Default::default()
+    }];
     let after = vec![
-        Entry { s: 0.0, e: 20.0, at: 0.5, text: "brand new opening".into(), ..Default::default() },
-        Entry { s: 70.0, e: 90.0, at: 2.0, text: "and a different close".into(), ..Default::default() },
+        Entry {
+            s: 0.0,
+            e: 20.0,
+            at: 0.5,
+            text: "brand new opening".into(),
+            ..Default::default()
+        },
+        Entry {
+            s: 70.0,
+            e: 90.0,
+            at: 2.0,
+            text: "and a different close".into(),
+            ..Default::default()
+        },
     ];
 
     let kept = gaps::silent_survives_entry_rewrite(&silent, &before, &after);
     assert_eq!(kept, silent, "the rewrite touched nothing the user curated");
 
     // Kept by bounds: the narration still answers true for those clips afterwards.
-    let record = Narration { entries: after.clone(), silent: kept.clone() };
+    let record = Narration {
+        entries: after.clone(),
+        silent: kept.clone(),
+    };
     assert!(record.is_silent(40.0, 65.0));
     assert!(record.is_silent(100.0, 120.0));
-    assert!(!record.is_silent(0.0, 20.0), "a clip nobody silenced is not silent");
+    assert!(
+        !record.is_silent(0.0, 20.0),
+        "a clip nobody silenced is not silent"
+    );
     // And the entries really did change underneath — survival is not because nothing happened.
     assert_ne!(record.entries, before);
 
@@ -195,11 +227,18 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s6_the_placement_tag_is_held_out_an
     // The tag exists and is the app's to place.
     assert_eq!(produce_subtitles::placement("top"), Some(r"{\an8}"));
     assert_eq!(produce_subtitles::placement("center"), Some(r"{\an5}"));
-    assert_eq!(produce_subtitles::placement("bottom"), None, "bottom needs no tag");
+    assert_eq!(
+        produce_subtitles::placement("bottom"),
+        None,
+        "bottom needs no tag"
+    );
     assert!(gaps::tag_is_app_owned("top"));
     assert!(gaps::tag_is_app_owned("bottom"));
     assert!(gaps::tag_is_app_owned(""), "empty is the default placement");
-    assert!(!gaps::tag_is_app_owned("sideways"), "an unknown word is not owned");
+    assert!(
+        !gaps::tag_is_app_owned("sideways"),
+        "an unknown word is not owned"
+    );
 
     // What goes out for translation carries no tag: the numbered request is plain words.
     let outbound = produce_subtitles::numbered(&[(1, "hello world".to_string())]);
@@ -207,10 +246,16 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s6_the_placement_tag_is_held_out_an
     assert!(outbound.contains("hello world"), "{outbound}");
 
     // What comes back composed as a cue does carry it — put back by the app, off the pos field.
-    let cue = format!("{}translated words", produce_subtitles::placement("top").unwrap());
+    let cue = format!(
+        "{}translated words",
+        produce_subtitles::placement("top").unwrap()
+    );
     assert!(cue.contains(r"{\an8}"), "{cue}");
 
-    assert!(Defect::PlacementTagTravels.must_fix(), "§5 marks this MUST fix");
+    assert!(
+        Defect::PlacementTagTravels.must_fix(),
+        "§5 marks this MUST fix"
+    );
     assert!(Defect::PlacementTagTravels.decided_in().contains("3.10"));
 }
 
@@ -219,15 +264,28 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s6_the_placement_tag_is_held_out_an
 #[test]
 fn sec_12_decisions_5_gaps_this_audit_closed_s7_title_reprints_and_at_has_one_clock() {
     // F5.6: reprint whenever the text changes, until the picture is edited by hand.
-    assert!(gaps::reprint_title_on_change("first title", "second title", false));
-    assert!(!gaps::reprint_title_on_change("same", "same", false), "nothing changed");
-    assert!(!gaps::reprint_title_on_change("first", "second", true), "the hand got there first");
+    assert!(gaps::reprint_title_on_change(
+        "first title",
+        "second title",
+        false
+    ));
+    assert!(
+        !gaps::reprint_title_on_change("same", "same", false),
+        "nothing changed"
+    );
+    assert!(
+        !gaps::reprint_title_on_change("first", "second", true),
+        "the hand got there first"
+    );
     // Cross-checked against the live predicates. `prints_words_first` is the order rule (words print
     // before a chosen frame only when the text gate is open), and `youtube_title_redraws_picture` is
     // deliberately false — a YouTube title is metadata, so fixing its typo must not reprint the
     // picture. Both are why §5's defect is about the *thumbnail's own* title changing, which is what
     // `reprint_title_on_change` above decides; neither live predicate contradicts F5.6.
-    assert!(!produce_details::youtube_title_redraws_picture(), "a metadata edit never redraws");
+    assert!(
+        !produce_details::youtube_title_redraws_picture(),
+        "a metadata edit never redraws"
+    );
     assert!(produce_details::prints_words_first(true, false));
     assert!(!produce_details::prints_words_first(false, false));
 
@@ -243,7 +301,10 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s7_title_reprints_and_at_has_one_cl
     assert!(gaps::lands_at(4.0, 2.0) < gaps::lands_at(4.0, 1.0));
     // A stop divides nothing: the line stays where its own clock puts it.
     assert_eq!(gaps::lands_at(3.0, 0.0), 3.0);
-    assert_eq!(Defect::AtThreeReadings.decided_in().contains("own clock"), true);
+    assert!(
+        Defect::AtThreeReadings.decided_in().contains("own clock"),
+        "the row says the line keeps its own clock"
+    );
 }
 
 // --- coverage and cited ids ------------------------------------------------------------------------
@@ -258,8 +319,14 @@ fn sec_12_decisions_5_gaps_this_audit_closed_tables_cover_every_claim() {
     }
     // Exactly two MUST fixes, exactly where §5 marks them.
     let fixes: Vec<Defect> = Defect::all().into_iter().filter(|d| d.must_fix()).collect();
-    assert_eq!(fixes, vec![Defect::SilentListWipe, Defect::PlacementTagTravels]);
-    assert!(!Defect::TitlePrintedOnce.must_fix(), "decided, not mandated");
+    assert_eq!(
+        fixes,
+        vec![Defect::SilentListWipe, Defect::PlacementTagTravels]
+    );
+    assert!(
+        !Defect::TitlePrintedOnce.must_fix(),
+        "decided, not mandated"
+    );
     assert!(!Defect::AtThreeReadings.must_fix(), "decided, not mandated");
     for d in Defect::all() {
         assert!(!d.decided_in().is_empty(), "{d:?}");
@@ -296,6 +363,9 @@ fn sec_12_decisions_5_gaps_this_audit_closed_cited_ids_answer_from_the_catalogue
         Tool::SetPolicy,
     ];
     for name in gaps::CITED_TOOLS {
-        assert!(known.iter().any(|t| t.name() == name), "{name} is not a known tool");
+        assert!(
+            known.iter().any(|t| t.name() == name),
+            "{name} is not a known tool"
+        );
     }
 }

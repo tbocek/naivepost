@@ -59,7 +59,9 @@ impl StoppingAudio {
                         if reader.read_line(&mut line).unwrap_or(0) == 0 {
                             return;
                         }
-                        if let Some(rest) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        if let Some(rest) =
+                            line.to_ascii_lowercase().strip_prefix("content-length:")
+                        {
                             length = rest.trim().parse().unwrap_or(0);
                         }
                         if line.trim().is_empty() {
@@ -82,10 +84,9 @@ impl StoppingAudio {
                             r#"{"data":[{"id":"index-tts2","family":"index_tts2","task":"clon"}]}"#
                                 .to_string(),
                         ),
-                        "/v1/ui/upload" => (
-                            200,
-                            r#"{"path":"/tmp/uploaded/voice_ref.wav"}"#.to_string(),
-                        ),
+                        "/v1/ui/upload" => {
+                            (200, r#"{"path":"/tmp/uploaded/voice_ref.wav"}"#.to_string())
+                        }
                         // The speech POST: raise the stop, then refuse the synthesis. The render logs the
                         // failed line and carries on to its NEXT checkpoint (§F5.2 S2 says a line that will
                         // not synthesize costs one silent sentence, not a video) — and that next checkpoint
@@ -104,7 +105,9 @@ impl StoppingAudio {
                 });
             }
         });
-        StoppingAudio { url: format!("http://127.0.0.1:{port}") }
+        StoppingAudio {
+            url: format!("http://127.0.0.1:{port}"),
+        }
     }
 
     fn url(&self) -> String {
@@ -168,8 +171,18 @@ fn published_project() -> Project {
 /// Two clips, so the opening line reads "2 clips at mp4/h264 crf 24".
 fn two_clips() -> Vec<Seg> {
     vec![
-        Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-        Seg { s: 10.0, e: 20.0, cam: 0, ..Default::default() },
+        Seg {
+            s: 0.0,
+            e: 10.0,
+            cam: 0,
+            ..Default::default()
+        },
+        Seg {
+            s: 10.0,
+            e: 20.0,
+            cam: 0,
+            ..Default::default()
+        },
     ]
 }
 
@@ -200,7 +213,8 @@ fn produce_window(app: &adw::Application, project: &Project, cut: &Cut) -> adw::
 /// `connect_response` clears the held dialog and closes the window, and a test that left it standing would
 /// find the NEXT press refused by `ask_overwrite`'s one-question guard rather than by its own gate.
 fn answer_produce_dialog(response: &str) {
-    let dialog = naivepost::ui::produce_confirm::open_dialog().expect("S2 opened the overwrite dialog");
+    let dialog =
+        naivepost::ui::produce_confirm::open_dialog().expect("S2 opened the overwrite dialog");
     dialog.response(response);
     settle();
     assert!(
@@ -240,7 +254,8 @@ fn stale_stamp(tree: &Tree) {
         lanes: &[],
         shape: (1920, 1080),
     };
-    produce_stamp::write_stamp(tree, &input.stamp_with(tree, None, 0)).expect("stale stamp written");
+    produce_stamp::write_stamp(tree, &input.stamp_with(tree, None, 0))
+        .expect("stale stamp written");
 }
 
 /// The video the overwrite question is about, on disk with known bytes so a later check can see whether it
@@ -282,7 +297,15 @@ fn run_round(app: &adw::Application) {
 
     // --- (2) a cut stands: the press reaches produce_flow -------------------------------------
     {
-        let window = produce_window(app, &base_project(), &Cut { segs: two_clips(), aspect: "16:9".into(), ..Default::default() });
+        let window = produce_window(
+            app,
+            &base_project(),
+            &Cut {
+                segs: two_clips(),
+                aspect: "16:9".into(),
+                ..Default::default()
+            },
+        );
         let logs_before = ui::window_logs().len();
         let said = click_play(&window);
         let logs = ui::window_logs();
@@ -327,7 +350,11 @@ fn run_round(app: &adw::Application) {
     // --- (3) a matching stamp: skipped, and SAID ---------------------------------------------
     {
         let tree = session_tree();
-        let cut = Cut { segs: two_clips(), aspect: "16:9".into(), ..Default::default() };
+        let cut = Cut {
+            segs: two_clips(),
+            aspect: "16:9".into(),
+            ..Default::default()
+        };
         // A video standing there, so the gate has something to be up to date about.
         let video = tree.final_video("mp4");
         if let Some(dir) = video.parent() {
@@ -392,7 +419,11 @@ fn run_round(app: &adw::Application) {
         stale_stamp(&tree);
         let video = standing_video(&tree);
         let before = std::fs::read(&video).expect("the standing video");
-        let cut = Cut { segs: two_clips(), aspect: "16:9".into(), ..Default::default() };
+        let cut = Cut {
+            segs: two_clips(),
+            aspect: "16:9".into(),
+            ..Default::default()
+        };
         // A publish record stands (§S4's `publish.json exists` shape), so the encode that follows opens with
         // the "producing … thumbnail written beside them" line rather than the "left as they are" one.
         let window = produce_window(app, &published_project(), &cut);
@@ -400,7 +431,10 @@ fn run_round(app: &adw::Application) {
         // (a) Cancel leaves the video alone and opens no encode.
         let logs_before = ui::window_logs().len();
         let said = click_play(&window);
-        assert_eq!(said, "Overwrite final.mp4?", "{ITEM} S2 on the status line: {said}");
+        assert_eq!(
+            said, "Overwrite final.mp4?",
+            "{ITEM} S2 on the status line: {said}"
+        );
         let dialog = naivepost::ui::produce_confirm::open_dialog()
             .expect("S2 opens a real dialog: the press must not stop at the question");
         assert!(
@@ -422,7 +456,11 @@ fn run_round(app: &adw::Application) {
             "and no encode opened: {:?}",
             &ui::window_logs()[logs_before..]
         );
-        assert_eq!(std::fs::read(&video).expect("still there"), before, "the video is untouched");
+        assert_eq!(
+            std::fs::read(&video).expect("still there"),
+            before,
+            "the video is untouched"
+        );
 
         // (b) Overwrite answers the same question by running the encode.
         let logs_before = ui::window_logs().len();
@@ -439,10 +477,15 @@ fn run_round(app: &adw::Application) {
             .rev()
             .find(|l| l.starts_with(">>> transcoding ") || l.starts_with(">>> producing "))
             .expect("the run's own opening line");
-        assert!(opening.contains("2 clips at mp4/h264 crf 24"), "from this cut: {opening}");
+        assert!(
+            opening.contains("2 clips at mp4/h264 crf 24"),
+            "from this cut: {opening}"
+        );
         let done = status_text(&window);
         assert!(
-            done == render::STAGE_DONE || done == render::failure_log() || done == render::stopped_log(),
+            done == render::STAGE_DONE
+                || done == render::failure_log()
+                || done == render::stopped_log(),
             "and the run ended with one of S6's three words, got {done}"
         );
         ui::stop_button(&window)
@@ -468,7 +511,12 @@ fn run_round(app: &adw::Application) {
         // A cut the render CAN plan (well over `P.eng.minClipSeconds`), so S3's "no clip could be placed"
         // failure — which comes before any checkpoint is asked — never competes with the stop.
         let cut = Cut {
-            segs: vec![Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() }],
+            segs: vec![Seg {
+                s: 0.0,
+                e: 10.0,
+                cam: 0,
+                ..Default::default()
+            }],
             aspect: "16:9".into(),
             ..Default::default()
         };
@@ -490,15 +538,21 @@ fn run_round(app: &adw::Application) {
         // refuses before reaching the wire and the server never sees a request to answer.
         let reference = tree.voice_ref_wav();
         std::fs::create_dir_all(reference.parent().expect("narrate/ has a parent")).unwrap();
-        std::fs::write(&reference, b"RIFF fake reference, forty-odd bytes long, not empty").unwrap();
+        std::fs::write(
+            &reference,
+            b"RIFF fake reference, forty-odd bytes long, not empty",
+        )
+        .unwrap();
         // The stand-in audio.cpp whose speech POST raises the stop, named by the Settings file the program
         // re-reads per call — the address is the seam, nothing about the work is scripted.
         let audio = StoppingAudio::start();
-        let paths = naivepost::settings::from_environment().expect("settings folder from the pinned env");
+        let paths =
+            naivepost::settings::from_environment().expect("settings folder from the pinned env");
         let mut conf = naivepost::settings::read(&paths).unwrap_or_default();
         conf.audio_server = audio.url();
         conf.tts_model = "index-tts2".to_string();
-        naivepost::settings::save(&paths, &conf).expect("the fake address is what the Settings now say");
+        naivepost::settings::save(&paths, &conf)
+            .expect("the fake address is what the Settings now say");
         let window = produce_window(app, &base_project(), &cut);
         // Blocks (2) and (4) end on a ⏹, so clear the switch first: `runqueue::start_run` does the same for
         // a fresh generation (`bump_cancel_context`), and this press must not inherit an earlier block's stop.
@@ -550,9 +604,18 @@ fn f5_1_s6_a_stopped_run_ends_stopped_through_the_press() {
         app.run_with_args::<&str>(&[]);
     });
 
-    assert!(RAN_NO_CUT.load(Ordering::SeqCst), "the no-cut refusal check never ran");
-    assert!(RAN_RAN_THE_FLOW.load(Ordering::SeqCst), "the run-through-the-flow check never ran");
-    assert!(RAN_SKIP.load(Ordering::SeqCst), "the up-to-date skip check never ran");
+    assert!(
+        RAN_NO_CUT.load(Ordering::SeqCst),
+        "the no-cut refusal check never ran"
+    );
+    assert!(
+        RAN_RAN_THE_FLOW.load(Ordering::SeqCst),
+        "the run-through-the-flow check never ran"
+    );
+    assert!(
+        RAN_SKIP.load(Ordering::SeqCst),
+        "the up-to-date skip check never ran"
+    );
     assert!(
         RAN_OVERWRITE.load(Ordering::SeqCst),
         "the overwrite-question-and-answer check never ran"

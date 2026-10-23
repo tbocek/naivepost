@@ -17,7 +17,9 @@ use naivepost::settings;
 use naivepost::ui;
 
 use crate::common;
-use common::{click, fixture_dir, hold_last_window, release_last_window, settle, status_text, wait_until};
+use common::{
+    click, fixture_dir, hold_last_window, release_last_window, settle, status_text, wait_until,
+};
 
 static RAN_DRAG: AtomicBool = AtomicBool::new(false);
 static RAN_BUTTONS: AtomicBool = AtomicBool::new(false);
@@ -34,9 +36,11 @@ static RAN_PITCH_ROW: AtomicBool = AtomicBool::new(false);
 
 /// A session folder of our own, so nothing this test writes lands in a real project or another test's.
 fn scratch_root(tag: &str) -> std::path::PathBuf {
-    let root = naivepost::startup::session_dir(
-        &std::env::temp_dir().join(format!("np-sec07-wire-{}-{}", tag, std::process::id())),
-    );
+    let root = naivepost::startup::session_dir(&std::env::temp_dir().join(format!(
+        "np-sec07-wire-{}-{}",
+        tag,
+        std::process::id()
+    )));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("scratch session folder");
     std::env::set_current_dir(&root).expect("cwd pinned to this root");
@@ -66,8 +70,16 @@ fn narrate_page(app: &adw::Application, state: ui::NarrateState) -> adw::Applica
 fn base_state() -> ui::NarrateState {
     ui::NarrateState {
         segs: vec![
-            naivepost::cut::Seg { s: 0.0, e: 30.0, ..Default::default() },
-            naivepost::cut::Seg { s: 30.0, e: 60.0, ..Default::default() },
+            naivepost::cut::Seg {
+                s: 0.0,
+                e: 30.0,
+                ..Default::default()
+            },
+            naivepost::cut::Seg {
+                s: 30.0,
+                e: 60.0,
+                ..Default::default()
+            },
         ],
         takes: vec![],
         voice: "narrator1".into(),
@@ -148,7 +160,11 @@ fn round(app: &adw::Application) {
         click(&window, "take-add");
         settle();
         let takes = ui::read_state().takes;
-        assert_eq!(takes.len(), 1, "\u{ff0b} committed exactly one take: {takes:?}");
+        assert_eq!(
+            takes.len(),
+            1,
+            "\u{ff0b} committed exactly one take: {takes:?}"
+        );
         assert!(
             (takes[0].0 - wanted.0).abs() < 0.01 && (takes[0].1 - wanted.1).abs() < 0.01,
             "the take is the dragged span: {:?} vs {wanted:?}",
@@ -169,8 +185,14 @@ fn round(app: &adw::Application) {
         // Under P.eng.takeMinSeconds the seam refuses and the lane keeps what it had.
         let too_short = (10.0, 10.0 + naivepost::narrate_screen::take_min() - 0.1);
         let said = ui::press_take_add(&window, too_short);
-        assert_eq!(said, narrate_screen::take_too_short(too_short.1 - too_short.0));
-        assert!(ui::read_state().takes.is_empty(), "a refused take wrote nothing");
+        assert_eq!(
+            said,
+            narrate_screen::take_too_short(too_short.1 - too_short.0)
+        );
+        assert!(
+            ui::read_state().takes.is_empty(),
+            "a refused take wrote nothing"
+        );
         // \u{25b6} names the red bar's second, which is where \u00a71 says playback starts.
         ui::narrate_band::set_red_bar(12.0);
         ui::narrate_page::press_take_play(&window);
@@ -210,7 +232,10 @@ fn round(app: &adw::Application) {
         // No reference recording exists in this scratch session, so the band owes its "reading the
         // recording…" sentence under the ruler; the top strip still carries the ruler's ink.
         let text = ink_rows(&mut surface);
-        assert!(text.iter().any(|row| *row), "the top strip carries ink (the ruler)");
+        assert!(
+            text.iter().any(|row| *row),
+            "the top strip carries ink (the ruler)"
+        );
         // The red bar is drawn THROUGH the ruler (so a pixel of it sits above the ruler line) and is
         // `BAR_PX` wide centred on its px: read both px either side of the rounded centre.
         assert!(
@@ -250,7 +275,15 @@ fn round(app: &adw::Application) {
         // A stereo source, made here with the same tool the seam will call.
         let source = root.join("my take (2).wav");
         let made = std::process::Command::new("ffmpeg")
-            .args(["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i"])
+            .args([
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+            ])
             .arg("sine=frequency=440:duration=1")
             .args(["-ac", "2", "-c:a", "pcm_s16le"])
             .arg(&source)
@@ -259,9 +292,14 @@ fn round(app: &adw::Application) {
         assert!(made.success(), "the test's own source wav was made");
         let folder = ui::narrate_voices::voices_folder();
         let before = naivepost::voices::list_wavs(&folder);
-        let said = ui::narrate_voices::add_voice_file(&window, &source).expect("the copy succeeded");
+        let said =
+            ui::narrate_voices::add_voice_file(&window, &source).expect("the copy succeeded");
         let after = naivepost::voices::list_wavs(&folder);
-        assert_eq!(after.len(), before.len() + 1, "one more wav in the folder: {after:?}");
+        assert_eq!(
+            after.len(),
+            before.len() + 1,
+            "one more wav in the folder: {after:?}"
+        );
         let landed = after.last().expect("the new wav").clone();
         assert_eq!(landed, "my-take-2.wav", "sanitised base name: {said}");
         assert!(
@@ -304,7 +342,8 @@ fn round(app: &adw::Application) {
             "the copied voice is offered as a real voice, not refused and not captions"
         );
         assert_eq!(
-            ui::read_state().voice, landed,
+            ui::read_state().voice,
+            landed,
             "the picked voice is the page's voice now"
         );
         // No file chosen copies nothing: the refusal is its own sentence.
@@ -392,14 +431,20 @@ fn pixel(surface: &mut cairo::ImageSurface, x: i32, y: i32) -> (u8, u8, u8) {
 /// The RIFF header's channel count: 1 means the copy really converted to mono PCM.
 fn mono_pcm(path: &std::path::Path) -> bool {
     let bytes = std::fs::read(path).expect("the copied wav");
-    bytes.len() > 24 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WAVE"
+    bytes.len() > 24
+        && &bytes[..4] == b"RIFF"
+        && &bytes[8..12] == b"WAVE"
         && u16::from_le_bytes([bytes[22], bytes[23]]) == 1
 }
 
 /// The strings a dropdown offers, in order.
 fn strings_of(picker: &gtk::DropDown) -> Vec<String> {
-    let Some(model) = picker.model() else { return Vec::new() };
-    let Ok(list) = model.downcast::<gtk::StringList>() else { return Vec::new() };
+    let Some(model) = picker.model() else {
+        return Vec::new();
+    };
+    let Ok(list) = model.downcast::<gtk::StringList>() else {
+        return Vec::new();
+    };
     (0..list.n_items())
         .filter_map(|i| list.item(i))
         .filter_map(|item| item.downcast::<gtk::StringObject>().ok())
@@ -419,19 +464,43 @@ fn sec_07_narrate_1_screen_widgets_the_band_and_add_file_reach_their_rules() {
     // so it returns on its own here — never call `quit()` from inside `activate`: that fires before the
     // main loop starts and makes every later `run()` return at once without running any block.
     app.run_with_args::<&str>(&[]);
-    assert!(RAN_DRAG.load(Ordering::SeqCst), "the band gesture never ran");
-    assert!(RAN_BUTTONS.load(Ordering::SeqCst), "the take buttons never ran");
+    assert!(
+        RAN_DRAG.load(Ordering::SeqCst),
+        "the band gesture never ran"
+    );
+    assert!(
+        RAN_BUTTONS.load(Ordering::SeqCst),
+        "the take buttons never ran"
+    );
     assert!(RAN_PAINT.load(Ordering::SeqCst), "the band paint never ran");
-    assert!(RAN_ADD_FILE.load(Ordering::SeqCst), "Add file\u{2026} never ran");
+    assert!(
+        RAN_ADD_FILE.load(Ordering::SeqCst),
+        "Add file\u{2026} never ran"
+    );
     // The second round runs inside THIS activate (see `round`): GTK and libadwaita bind to the first
     // thread that initialises them, and cargo runs the tests of a binary on different threads, so a
     // second `app.run()` in another `#[test]` dies with "libadwaita may only be used from the main
     // thread". One application, one main loop, every check as a stage of the same activate.
-    assert!(RAN_POINTER.load(Ordering::SeqCst), "the pointer check never ran");
-    assert!(RAN_SCROLLBAR.load(Ordering::SeqCst), "the scrollbar check never ran");
-    assert!(RAN_FRAME_STEP.load(Ordering::SeqCst), "the frame-step check never ran");
-    assert!(RAN_BAND_SHOWN.load(Ordering::SeqCst), "the band-visibility check never ran");
-    assert!(RAN_GLYPHS.load(Ordering::SeqCst), "the take row's glyph check never ran");
+    assert!(
+        RAN_POINTER.load(Ordering::SeqCst),
+        "the pointer check never ran"
+    );
+    assert!(
+        RAN_SCROLLBAR.load(Ordering::SeqCst),
+        "the scrollbar check never ran"
+    );
+    assert!(
+        RAN_FRAME_STEP.load(Ordering::SeqCst),
+        "the frame-step check never ran"
+    );
+    assert!(
+        RAN_BAND_SHOWN.load(Ordering::SeqCst),
+        "the band-visibility check never ran"
+    );
+    assert!(
+        RAN_GLYPHS.load(Ordering::SeqCst),
+        "the take row's glyph check never ran"
+    );
     assert!(
         RAN_NUMBERED_WIDGETS.load(Ordering::SeqCst),
         "the numbered-widget sweep never ran"
@@ -459,7 +528,12 @@ fn controller(widget: &gtk::Widget, name: &str) -> gtk::EventController {
                 .is_some_and(|c| c.name().is_some_and(|n| n == name))
         })
         .and_then(|item| item.downcast::<gtk::EventController>().ok())
-        .unwrap_or_else(|| panic!("{} carries no controller named {name}", widget.widget_name()))
+        .unwrap_or_else(|| {
+            panic!(
+                "{} carries no controller named {name}",
+                widget.widget_name()
+            )
+        })
 }
 
 /// Is this `(x, y)` of an RGB buffer still the plate's dark ground? Same threshold as `is_ground`.
@@ -491,7 +565,10 @@ fn second_round(app: &adw::Application) {
         quiet.voice = narrate_screen::CAPTIONS.to_string();
         let window = narrate_page(app, quiet);
         let scroller = common::widget(&window, "take-band-scroller");
-        assert!(!scroller.is_visible(), "captions-only shows no take band (§A.7)");
+        assert!(
+            !scroller.is_visible(),
+            "captions-only shows no take band (§A.7)"
+        );
         let tree = naivepost::layout::Tree::new(naivepost::startup::session_dir(
             &std::env::current_dir().unwrap(),
         ))
@@ -539,7 +616,8 @@ fn second_round(app: &adw::Application) {
             ui::narrate_band::pointer_px() >= 0.0,
             "the motion controller stored its x"
         );
-        let hovered = ui::narrate_band::painted_pixels_for_test(width, height).expect("hover paint");
+        let hovered =
+            ui::narrate_band::painted_pixels_for_test(width, height).expect("hover paint");
         let at = ((row as usize) * width as usize + column as usize) * 3;
         let got = (hovered.0[at], hovered.0[at + 1], hovered.0[at + 2]);
         let want = blended((28, 28, 29), ui::narrate_band::POINTER_COLOUR);
@@ -598,7 +676,10 @@ fn second_round(app: &adw::Application) {
             samples as f64 / rate as f64
         };
         let before = lane.width_request();
-        assert!(seconds > 30.0, "the band is drawn across the 60 s reference");
+        assert!(
+            seconds > 30.0,
+            "the band is drawn across the 60 s reference"
+        );
         // One notch past fit and no further: px/s is `fit * zoom` capped at
         // `narrate.bandMaxPps`, so a first notch always grows the content (60 s over ~560 px fits at
         // under 10 px/s), while every later one only chases the cap — and GTK then allocates the lane
@@ -608,12 +689,12 @@ fn second_round(app: &adw::Application) {
         let asked = lane.width_request();
         // The request is exactly what `fit_lane_to_view` handed the widget after that notch, computed
         // through the same door the program uses.
-        let want = naivepost::ui::narrate_band::lane_width(
-            ui::narrate_band::zoom(),
-            seconds,
-            viewport,
+        let want =
+            naivepost::ui::narrate_band::lane_width(ui::narrate_band::zoom(), seconds, viewport);
+        assert_eq!(
+            asked, want as i32,
+            "the lane asks for exactly its content width"
         );
-        assert_eq!(asked, want as i32, "the lane asks for exactly its content width");
         assert!(
             want > viewport && asked > before,
             "60 s past fit outgrows the {viewport}px strip: {before} -> {asked}, content {want}"
@@ -649,7 +730,8 @@ fn second_round(app: &adw::Application) {
         let _ = wheel.emit_by_name::<bool>("scroll", &[&0.0f64, &1.0f64]);
         settle();
         assert_eq!(
-            ui::read_state().session, after,
+            ui::read_state().session,
+            after,
             "a notch on a moving picture changes nothing"
         );
         RAN_FRAME_STEP.store(true, Ordering::SeqCst);
@@ -741,8 +823,21 @@ fn s10_widgets_round(app: &adw::Application) {
     let mut state = base_state();
     // One written line and one caption, so the row's own parts (**14**, **16**-**21**) exist to be found.
     state.entries = vec![
-        naivepost::narration::Entry { s: 0.0, e: 30.0, at: 1.0, text: "one spoken line".into(), ..Default::default() },
-        naivepost::narration::Entry { s: 30.0, e: 60.0, at: 0.0, text: "a caption".into(), pos: "top".into(), ..Default::default() },
+        naivepost::narration::Entry {
+            s: 0.0,
+            e: 30.0,
+            at: 1.0,
+            text: "one spoken line".into(),
+            ..Default::default()
+        },
+        naivepost::narration::Entry {
+            s: 30.0,
+            e: 60.0,
+            at: 0.0,
+            text: "a caption".into(),
+            pos: "top".into(),
+            ..Default::default()
+        },
     ];
     state.clips = 2;
     let window = narrate_page(app, state);
@@ -763,35 +858,38 @@ fn s10_widgets_round(app: &adw::Application) {
         "**9** Add file\u{2026} says what it does"
     );
     for name in [
-        "narration-tick",      // **1**
-        "narrate-preview",     // **2**
-        "narrate-picture",     // **2**'s frame
-        "narrate-back-3s",     // **3**
-        "narrate-play",        // **3**
-        "narrate-forward-3s",  // **3**
-        "narrate-add-line",    // **4**
-        "narrate-slider",      // **5**
-        "narrate-clock",       // **5**
-        "narrate-volume",      // **6**
-        "voice-picker",        // **7**
-        "take-add",            // **8**
-        "take-remove",         // **8**
-        "take-play",           // **8**
-        "voice-add-file",      // **9**
-        "sample-sentence",     // **11**
-        "sample-play",         // **12**
-        "sample-stop",         // **12**
-        "sample-reroll",       // **12**
-        "pitch-slider",        // **13**
-        "narrate-lines",       // the rows below
-        "narrate-inputs",      // **22**
+        "narration-tick",     // **1**
+        "narrate-preview",    // **2**
+        "narrate-picture",    // **2**'s frame
+        "narrate-back-3s",    // **3**
+        "narrate-play",       // **3**
+        "narrate-forward-3s", // **3**
+        "narrate-add-line",   // **4**
+        "narrate-slider",     // **5**
+        "narrate-clock",      // **5**
+        "narrate-volume",     // **6**
+        "voice-picker",       // **7**
+        "take-add",           // **8**
+        "take-remove",        // **8**
+        "take-play",          // **8**
+        "voice-add-file",     // **9**
+        "sample-sentence",    // **11**
+        "sample-play",        // **12**
+        "sample-stop",        // **12**
+        "sample-reroll",      // **12**
+        "pitch-slider",       // **13**
+        "narrate-lines",      // the rows below
+        "narrate-inputs",     // **22**
     ] {
         let widget = found(&window, name);
         assert!(widget.is_visible(), "`{name}` is drawn, not hidden away");
     }
     // **10** the take band: its lane is on the page but stays hidden until the voice has a recording to
     // draw across (§A.7), so it is checked by presence, not with the visible ones above.
-    assert!(found(&window, "take-band").upcast_ref::<gtk::Widget>().parent().is_some());
+    assert!(found(&window, "take-band")
+        .upcast_ref::<gtk::Widget>()
+        .parent()
+        .is_some());
     // **3** the transport's three buttons are clickable buttons, not labels.
     for name in ["narrate-back-3s", "narrate-play", "narrate-forward-3s"] {
         assert!(
@@ -810,14 +908,21 @@ fn s10_widgets_round(app: &adw::Application) {
     let pitch = found(&window, "pitch-slider")
         .downcast::<gtk::Scale>()
         .expect("`pitch-slider` is a scale");
-    assert_eq!((pitch.adjustment().lower(), pitch.adjustment().upper()), (-6.0, 6.0));
+    assert_eq!(
+        (pitch.adjustment().lower(), pitch.adjustment().upper()),
+        (-6.0, 6.0)
+    );
     assert!(
         tip_of(&found(&window, "pitch-slider")).contains("reference"),
         "**13** the pitch slider explains itself"
     );
     // **13** as spec/img/07-narrate.png draws it: `pitch: ─── 0.0` — a label, the slider and the number,
     // on ONE row. A bare slider (which is what this page had) shows neither the label nor the value.
-    assert_eq!(text_of(&found(&window, "pitch-label")), "pitch:", "**13** the control is labelled");
+    assert_eq!(
+        text_of(&found(&window, "pitch-label")),
+        "pitch:",
+        "**13** the control is labelled"
+    );
     assert_eq!(
         text_of(&found(&window, "pitch-value")),
         narrate_screen::pitch_readout(0.0),
@@ -826,7 +931,9 @@ fn s10_widgets_round(app: &adw::Application) {
     let slider_widget = found(&window, "pitch-slider");
     let label_parent = found(&window, "pitch-label").parent();
     assert_eq!(
-        label_parent.as_ref().map(|p| p.upcast_ref::<gtk::Widget>().widget_name().to_string()),
+        label_parent
+            .as_ref()
+            .map(|p| p.upcast_ref::<gtk::Widget>().widget_name().to_string()),
         Some("pitch-row".to_string()),
         "**13** the label sits on the pitch row"
     );
@@ -852,7 +959,9 @@ fn s10_widgets_round(app: &adw::Application) {
     for suffix in ["speak", "reroll", "remove"] {
         let name = format!("line-{suffix}-0");
         assert!(
-            found(&window, &name).downcast_ref::<gtk::Button>().is_some(),
+            found(&window, &name)
+                .downcast_ref::<gtk::Button>()
+                .is_some(),
             "`{name}` is a real button (**16**, **17**, **19**)"
         );
     }
@@ -936,15 +1045,20 @@ fn s11_inputs_round(app: &adw::Application) {
 fn s13_pitch_round(app: &adw::Application) {
     let window = narrate_page(app, base_state());
     assert_eq!(text_of(&found(&window, "pitch-label")), "pitch:");
-    assert_eq!(text_of(&found(&window, "pitch-value")), "0.0", "one decimal, as the picture shows it");
+    assert_eq!(
+        text_of(&found(&window, "pitch-value")),
+        "0.0",
+        "one decimal, as the picture shows it"
+    );
     // The drag path: setting a GtkScale's value emits `value-changed`, exactly as a pointer drag does.
     let scale = found(&window, "pitch-slider")
         .downcast::<gtk::Scale>()
         .expect("`pitch-slider` is a scale");
     scale.set_value(-2.5);
-    wait_until("the pitch readout to show -2.5 after the slider moved", || {
-        text_of(&found(&window, "pitch-value")) == "-2.5"
-    });
+    wait_until(
+        "the pitch readout to show -2.5 after the slider moved",
+        || text_of(&found(&window, "pitch-value")) == "-2.5",
+    );
     assert_eq!(
         ui::narrate_page::read_state().pitch,
         -2.5,
@@ -958,10 +1072,15 @@ fn s13_pitch_round(app: &adw::Application) {
     });
     // The other path: the keyboard step, which moves the same state by a delta.
     let said = ui::narrate_page::press_pitch(&window, 1.0);
-    assert_eq!(ui::narrate_page::read_state().pitch, -1.5, "the step moved the shift: {said}");
-    wait_until("the pitch readout to follow the keyboard step to -1.5", || {
-        text_of(&found(&window, "pitch-value")) == "-1.5"
-    });
+    assert_eq!(
+        ui::narrate_page::read_state().pitch,
+        -1.5,
+        "the step moved the shift: {said}"
+    );
+    wait_until(
+        "the pitch readout to follow the keyboard step to -1.5",
+        || text_of(&found(&window, "pitch-value")) == "-1.5",
+    );
     // And past the top of the slider the face reads the end it acts as, not a number nothing can do.
     ui::narrate_page::press_pitch(&window, 9.0);
     wait_until("the pitch readout to clamp at the slider's top", || {

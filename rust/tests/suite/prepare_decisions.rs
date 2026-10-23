@@ -15,6 +15,7 @@
 mod harness;
 
 use naivepost::edges::{self as edge, Edges};
+use naivepost::exchanges::ToolCall;
 use naivepost::prepare_decisions as pd;
 use naivepost::textfmt::Retake;
 use naivepost::tool_loop;
@@ -22,10 +23,9 @@ use naivepost::tools::describe::{self, Batch, MissingReason, Placement, Spoken};
 use naivepost::tools::fix::{Block, Line as FixLine};
 use naivepost::tools::retakes::{Line, Marks, Trim};
 use naivepost::tools::textedit::{self, Join, Side};
-use naivepost::exchanges::ToolCall;
 
 use crate::common;
-use common::{word};
+use common::word;
 
 const ITEM: &str = "§12-decisions#prepare";
 
@@ -64,14 +64,20 @@ fn sec_12_decisions_prepare_s1_the_mark_is_trimmed_to_a_fuzzy_matched_word_suffi
     assert_eq!(m.skipped, 3, "{m:?}");
     // ...four is not.
     let skip4 = ["so", "x", "y", "z", "w", "the", "tower", "fires", "again"];
-    assert!(pd::suffix_match(&tail, &skip4).is_none(), "TAIL_SKIP_MAX = 3");
+    assert!(
+        pd::suffix_match(&tail, &skip4).is_none(),
+        "TAIL_SKIP_MAX = 3"
+    );
 
     // One imperfectly-heard word is forgiven; two are not.
     let edit1 = ["so", "the", "towr", "fires", "again"];
     let m = pd::suffix_match(&tail, &edit1).expect("one edit allowed");
     assert_eq!(m.edits, 1, "{m:?}");
     let edit2 = ["so", "the", "towrr", "fyres", "again"];
-    assert!(pd::suffix_match(&tail, &edit2).is_none(), "TAIL_EDIT_MAX = 1");
+    assert!(
+        pd::suffix_match(&tail, &edit2).is_none(),
+        "TAIL_EDIT_MAX = 1"
+    );
 
     // Two of five is 40%, under the bar.
     assert!(pd::suffix_match(&["a", "b", "c", "d", "e"], &["a", "b", "zz", "yy", "xx"]).is_none());
@@ -83,9 +89,21 @@ fn sec_12_decisions_prepare_s1_the_mark_is_trimmed_to_a_fuzzy_matched_word_suffi
     // `removed` seconds -- the trimmed stretch -- not the line bounds that were sent.
     let mut marks = Marks::new(
         vec![
-            Line { n: 1, start: 0.0, end: 4.0 },
-            Line { n: 2, start: 4.0, end: 8.0 },
-            Line { n: 3, start: 8.0, end: 12.0 },
+            Line {
+                n: 1,
+                start: 0.0,
+                end: 4.0,
+            },
+            Line {
+                n: 2,
+                start: 4.0,
+                end: 8.0,
+            },
+            Line {
+                n: 3,
+                start: 8.0,
+                end: 12.0,
+            },
         ],
         12.0,
     );
@@ -96,14 +114,28 @@ fn sec_12_decisions_prepare_s1_the_mark_is_trimmed_to_a_fuzzy_matched_word_suffi
         replied["removed"][1].as_f64().unwrap(),
     ];
     // A trim of 1.5 s off the front moves the removal inside the marked lines.
-    let trimmed = json(&marks.mark_abandoned(3, 3, None, Trim { lead: 1.5, tail: 0.0 }));
+    let trimmed = json(&marks.mark_abandoned(
+        3,
+        3,
+        None,
+        Trim {
+            lead: 1.5,
+            tail: 0.0,
+        },
+    ));
     assert!(trimmed["trimmed"].as_bool().unwrap(), "{trimmed}");
     let second = [
         trimmed["removed"][0].as_f64().unwrap(),
         trimmed["removed"][1].as_f64().unwrap(),
     ];
-    assert!((second[0] - 9.5).abs() < 1e-9, "cut inside the line: {second:?}");
-    assert!(removed[0] < second[0], "the reported stretch is the trimmed one");
+    assert!(
+        (second[0] - 9.5).abs() < 1e-9,
+        "cut inside the line: {second:?}"
+    );
+    assert!(
+        removed[0] < second[0],
+        "the reported stretch is the trimmed one"
+    );
 }
 
 #[test]
@@ -123,7 +155,11 @@ fn sec_12_decisions_prepare_s2_both_edges_move_onto_the_envelope_and_are_seen_in
 
     assert_eq!(placed.len(), 1);
     // The mark came back moved: placement is not a copy of what was handed over.
-    assert_ne!(placed[0].s, input.s, "the left edge was re-placed: {:?}", placed[0]);
+    assert_ne!(
+        placed[0].s, input.s,
+        "the left edge was re-placed: {:?}",
+        placed[0]
+    );
     // Notes are transcript lines for a human, one per note.
     for note in &notes {
         assert!(note.starts_with(">>> "), "a walk-back note: {note}");
@@ -191,7 +227,10 @@ fn sec_12_decisions_prepare_s3_each_case_comes_back_with_one_sentence_of_reason(
     assert_eq!(pd::classify(true, true), pd::MarkCase::Resurrected);
     assert_eq!(pd::classify(false, true), pd::MarkCase::Resurrected);
     let lifted = pd::MarkCase::Resurrected.reason();
-    assert!(lifted.contains("second") && lifted.contains("lifted"), "{lifted}");
+    assert!(
+        lifted.contains("second") && lifted.contains("lifted"),
+        "{lifted}"
+    );
 
     // One sentence each: non-empty, single-line, all three different.
     let reasons = [whole, fragment, lifted];
@@ -232,9 +271,16 @@ fn sec_12_decisions_prepare_s4_over_the_ceiling_finish_tells_the_total_so_marks_
     // Push past it and finish reports the running total rather than silently discarding. Lines 4-6
     // overlap line 3's mark at a boundary, so they merge into one stretch -- which is itself reported.
     let merged = json(&marks.mark_abandoned(4, 6, None, Trim::none()));
-    assert!(merged["merged"].as_bool().unwrap(), "touching marks merge: {merged}");
+    assert!(
+        merged["merged"].as_bool().unwrap(),
+        "touching marks merge: {merged}"
+    );
     let over = marks.finish();
-    assert!(over.over, "0.6 of speech marked must exceed {}", over.ceiling);
+    assert!(
+        over.over,
+        "0.6 of speech marked must exceed {}",
+        over.ceiling
+    );
     assert!((over.ceiling - 0.4).abs() < 1e-9, "// P.machine.retakeCeil");
     assert!(over.share > over.ceiling, "{}", over.share);
     assert_eq!(over.marks, 1, "the two marks merged into one stretch");
@@ -246,7 +292,10 @@ fn sec_12_decisions_prepare_s4_over_the_ceiling_finish_tells_the_total_so_marks_
     // Taking marks back is the way out -- unmark clears the condition without losing the session.
     // The whole merged stretch goes, leaving only the first mark standing.
     let taken = json(&marks.unmark(4, 10));
-    assert!(taken["seconds_taken_back"].as_f64().unwrap() > 0.0, "{taken}");
+    assert!(
+        taken["seconds_taken_back"].as_f64().unwrap() > 0.0,
+        "{taken}"
+    );
     let back = marks.finish();
     assert!(!back.over, "the model took them back: {}", back.share);
     assert!((back.share - 0.3).abs() < 1e-9, "{}", back.share);
@@ -258,7 +307,10 @@ fn sec_12_decisions_prepare_s4_over_the_ceiling_finish_tells_the_total_so_marks_
     // A run set aside logs both halves: what happened, and what is going on instead.
     let lines = retakes_log();
     assert_eq!(lines.len(), 2, "{lines:?}");
-    assert!(lines[0].contains("run 1") && lines[0].contains("set aside"), "{lines:?}");
+    assert!(
+        lines[0].contains("run 1") && lines[0].contains("set aside"),
+        "{lines:?}"
+    );
     assert!(lines[1].contains("going on with 2"), "{lines:?}");
 
     // The audit row says the ceiling is enforced where the pass ends and the model hears it there.
@@ -298,7 +350,10 @@ fn sec_12_decisions_prepare_s5_drop_words_takes_counts_and_answers_with_the_word
     // It answers with the words themselves, so nothing can be dropped unseen.
     assert!(replied["across_the_join"].is_string());
     // Nothing asks for a restatement of the join.
-    assert!(json(&join.keep_join())["joined"].is_null(), "no `joined` field anywhere");
+    assert!(
+        json(&join.keep_join())["joined"].is_null(),
+        "no `joined` field anywhere"
+    );
 
     // Zero named words is refused rather than read as an empty stretch at the seam.
     let mut fresh = Join::new(&["a", "b", "c"], &["d", "e"]);
@@ -352,12 +407,19 @@ fn sec_12_decisions_prepare_s6_dedupejoins_is_named_in_the_log_not_asked_of_the_
     assert!(note.contains("said again straight after the cut"), "{note}");
     assert!(note.contains("the earlier one goes"), "{note}");
     // It is a log line, not a tool reply: no JSON object, nothing the model answers to.
-    assert!(!note.contains('{') && !note.contains('['), "not a tool answer: {note}");
+    assert!(
+        !note.contains('{') && !note.contains('['),
+        "not a tool answer: {note}"
+    );
 
     let row = &pd::audit()[5];
     assert!(row.what.contains("dedupeJoins"), "{}", row.what);
     assert!(row.home.contains("after finish"), "{}", row.home);
-    assert!(row.home.contains("cut"), "a rule about the cut, not the sentence: {}", row.home);
+    assert!(
+        row.home.contains("cut"),
+        "a rule about the cut, not the sentence: {}",
+        row.home
+    );
     assert!(row.lives_in.contains("dedupe_note"), "{}", row.lives_in);
 }
 
@@ -367,8 +429,20 @@ fn sec_12_decisions_prepare_s7_one_bad_row_is_one_refusal_and_a_wrong_speaker_ca
     // time, speaker or tab did not match, and re-asked twice without saying why. Here a bad row is a
     // single refusal, and a speaker the model must not touch can still be flagged.
     let mut block = Block::new(vec![
-        FixLine { n: 1, start: 0.0, end: 2.0, speaker: "SPEAKER_01".into(), text: "first line".into() },
-        FixLine { n: 2, start: 2.0, end: 4.0, speaker: "SPEAKER_02".into(), text: "second line".into() },
+        FixLine {
+            n: 1,
+            start: 0.0,
+            end: 2.0,
+            speaker: "SPEAKER_01".into(),
+            text: "first line".into(),
+        },
+        FixLine {
+            n: 2,
+            start: 2.0,
+            end: 4.0,
+            speaker: "SPEAKER_02".into(),
+            text: "second line".into(),
+        },
     ]);
 
     // A tab would split the row on the way to disk, so it is refused by name.
@@ -387,13 +461,21 @@ fn sec_12_decisions_prepare_s7_one_bad_row_is_one_refusal_and_a_wrong_speaker_ca
     assert_eq!(flagged["flagged"], serde_json::json!(true));
     assert_eq!(flagged["why"], "this speaker is wrong");
     let applied = block.apply();
-    assert_eq!(applied[0].text, "first line", "a flag changes nothing on the row");
+    assert_eq!(
+        applied[0].text, "first line",
+        "a flag changes nothing on the row"
+    );
     assert_eq!(applied[0].speaker, "SPEAKER_01", "nor the speaker");
-    assert_eq!(applied[1].text, "second line, respelled", "but the fix did land");
+    assert_eq!(
+        applied[1].text, "second line, respelled",
+        "but the fix did land"
+    );
     assert_eq!(block.flags().len(), 1);
     assert_eq!(block.fixes().len(), 1);
     // An out-of-block flag is refused too -- there is nowhere to attach the note.
-    assert!(block.flag_line(9, "nowhere to put this").contains("\"error\""));
+    assert!(block
+        .flag_line(9, "nowhere to put this")
+        .contains("\"error\""));
 
     let row = &pd::audit()[6];
     assert!(row.home.contains("per line"), "{}", row.home);
@@ -406,12 +488,19 @@ fn sec_12_decisions_prepare_s8_record_event_answers_with_the_frame_it_landed_on(
     // answers with this chunk's own event rows, which is what lets a frame be NAMED BACK in the next round
     // rather than guessed from the brief's extract.
     let rows = vec![
-        naivepost::describe::EventRow { at: 10.0, text: "the tower fires".to_string() },
-        naivepost::describe::EventRow { at: 12.0, text: "a map unrolls".to_string() },
+        naivepost::describe::EventRow {
+            at: 10.0,
+            text: "the tower fires".to_string(),
+        },
+        naivepost::describe::EventRow {
+            at: 12.0,
+            text: "a map unrolls".to_string(),
+        },
     ];
     let batch = [10.0, 11.0, 12.0];
     let args = serde_json::json!({ "from": 9.0, "to": 11.5 });
-    let dir = std::env::temp_dir().join(format!("naivepost-pd-s8-{}.naivepost", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("naivepost-pd-s8-{}.naivepost", std::process::id()));
     std::fs::create_dir_all(&dir).expect("a scratch folder");
     let tree = naivepost::layout::Tree::new(&dir).expect("a .naivepost folder is a project");
     let answered = naivepost::describe_call::read_answer_for_test(
@@ -426,8 +515,15 @@ fn sec_12_decisions_prepare_s8_record_event_answers_with_the_frame_it_landed_on(
     .expect("get_events is a read the leg answers");
     let got: serde_json::Value = serde_json::from_str(&answered).expect("a read answers JSON");
     let lines = got["events"].as_array().expect("a list of events");
-    assert_eq!(lines.len(), 1, "only the event whose span touches 9..11.5: {answered}");
-    assert!(lines[0].as_str().unwrap().contains("the tower fires"), "{answered}");
+    assert_eq!(
+        lines.len(),
+        1,
+        "only the event whose span touches 9..11.5: {answered}"
+    );
+    assert!(
+        lines[0].as_str().unwrap().contains("the tower fires"),
+        "{answered}"
+    );
 
     // tool:record_event. Drift beyond half an interval is dropped, an unparseable offset is dropped,
     // and instead of force-writing the batch's first frame the finish names it.
@@ -437,23 +533,37 @@ fn sec_12_decisions_prepare_s8_record_event_answers_with_the_frame_it_landed_on(
     // Within half an interval: that frame is what the stamp meant.
     assert_eq!(
         describe::place_offset(0.3, interval, &frames),
-        Placement::Frame { frame: 1, at: 10.0, drift: 0.3 }
+        Placement::Frame {
+            frame: 1,
+            at: 10.0,
+            drift: 0.3
+        }
     );
     // Further than half an interval from every frame: gone, not rounded. Offsets count from the
     // batch's own first frame, so on a 1 s grid [0, 2] all land somewhere -- past the last frame's
     // half-interval there is no nearest frame and the line is dropped.
-    assert_eq!(describe::place_offset(2.6, interval, &frames), Placement::TooFar(2.6));
+    assert_eq!(
+        describe::place_offset(2.6, interval, &frames),
+        Placement::TooFar(2.6)
+    );
     // Exactly half an interval still snaps -- the nearest frame is unique there.
     assert_eq!(
         describe::place_offset(0.5, interval, &frames),
-        Placement::Frame { frame: 1, at: 10.0, drift: 0.5 }
+        Placement::Frame {
+            frame: 1,
+            at: 10.0,
+            drift: 0.5
+        }
     );
 
     // An unparseable offset is dropped with that reason named. (An *unlabelled* reply is a different
     // case -- filed as the description, `UnlabeledDescription` -- so the line carries the EVENT
     // label and only the offset fails to read.)
     let dropped = describe::parse_event_line("EVENT: +xx the tower", interval, &frames);
-    assert!(format!("{dropped:?}").contains("UnparseableOffset"), "{dropped:?}");
+    assert!(
+        format!("{dropped:?}").contains("UnparseableOffset"),
+        "{dropped:?}"
+    );
 
     // record_event answers with the frame and its session second.
     let mut batch = Batch::new(10.0, interval, 3);
@@ -490,17 +600,47 @@ fn sec_12_decisions_prepare_s9_speech_around_returns_every_overlap_with_no_cap()
     // spoke" and "your window was too small" the same answer. Overlap-not-containment, capped by
     // nothing, keeps them distinguishable.
     let lines = vec![
-        Spoken { source: "mic-a".into(), start: 9.0, end: 11.0, text: "inside".into() },
-        Spoken { source: "mic-b".into(), start: 10.5, end: 12.0, text: "crossing the edge".into() },
-        Spoken { source: "mic-b".into(), start: 11.5, end: 13.0, text: "also inside".into() },
-        Spoken { source: "mic-c".into(), start: 9.5, end: 10.2, text: "a third source".into() },
-        Spoken { source: "mic-c".into(), start: 8.5, end: 9.4, text: "running into the window".into() },
+        Spoken {
+            source: "mic-a".into(),
+            start: 9.0,
+            end: 11.0,
+            text: "inside".into(),
+        },
+        Spoken {
+            source: "mic-b".into(),
+            start: 10.5,
+            end: 12.0,
+            text: "crossing the edge".into(),
+        },
+        Spoken {
+            source: "mic-b".into(),
+            start: 11.5,
+            end: 13.0,
+            text: "also inside".into(),
+        },
+        Spoken {
+            source: "mic-c".into(),
+            start: 9.5,
+            end: 10.2,
+            text: "a third source".into(),
+        },
+        Spoken {
+            source: "mic-c".into(),
+            start: 8.5,
+            end: 9.4,
+            text: "running into the window".into(),
+        },
     ];
     let batch = Batch::new(0.0, 1.0, 4);
     let around = batch.speech_around(9.0, 12.0, &lines);
     // All five overlap the window -- none of them is dropped for being the fourth or fifth line, or
     // the third source.
-    assert_eq!(around.len(), 5, "{:?}", around.iter().map(|l| l.text.as_str()).collect::<Vec<_>>());
+    assert_eq!(
+        around.len(),
+        5,
+        "{:?}",
+        around.iter().map(|l| l.text.as_str()).collect::<Vec<_>>()
+    );
     // A line merely crossing the boundary is included: overlap, not containment.
     assert!(around.iter().any(|l| l.text == "crossing the edge"));
     // Reversed bounds still ask the same question.
@@ -529,11 +669,19 @@ fn sec_12_decisions_prepare_s10_the_tool_loop_is_the_correction_not_a_quiet_repl
     assert_eq!(back, refused.result);
     assert!(back.contains("out of range"), "{back}");
     // An empty tool answer is still an answer the model sees, phrased as a refusal.
-    let empty = ToolCall { name: "x".into(), args: "{}".into(), result: String::new() };
+    let empty = ToolCall {
+        name: "x".into(),
+        args: "{}".into(),
+        result: String::new(),
+    };
     assert!(tool_loop::tool_result(&empty).contains("\"error\""));
 
     // The fallback: a server that refuses the tools field gets asked again without it, once.
-    assert!(tool_loop::retry_without_tools("HTTP 400: unknown field tools", 0, false));
+    assert!(tool_loop::retry_without_tools(
+        "HTTP 400: unknown field tools",
+        0,
+        false
+    ));
     assert!(
         !tool_loop::retry_without_tools("HTTP 400: unknown field tools", 0, true),
         "a refusal already honoured is not asked twice"
@@ -541,12 +689,23 @@ fn sec_12_decisions_prepare_s10_the_tool_loop_is_the_correction_not_a_quiet_repl
     // And the log of that says what changed -- the tools field, not a word to the model.
     let logged = tool_loop::refused_log("retake", "HTTP 400");
     assert!(logged.contains("asked again without them"), "{logged}");
-    assert!(!logged.contains("re-asked"), "the model is never told: {logged}");
+    assert!(
+        !logged.contains("re-asked"),
+        "the model is never told: {logged}"
+    );
 
     let row = &pd::audit()[9];
-    assert!(row.home.contains("tool loop is the correction"), "{}", row.home);
+    assert!(
+        row.home.contains("tool loop is the correction"),
+        "{}",
+        row.home
+    );
     assert!(row.home.contains("F6.1"), "{}", row.home);
-    assert!(row.home.contains("transport retry is silent"), "{}", row.home);
+    assert!(
+        row.home.contains("transport retry is silent"),
+        "{}",
+        row.home
+    );
 }
 
 #[test]

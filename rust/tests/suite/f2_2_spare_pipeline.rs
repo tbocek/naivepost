@@ -19,8 +19,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use naivepost::{cut, cut_play_leg, cut_screen, preview};
 use naivepost::cut_play_leg::CutPreviewPage;
+use naivepost::{cut, cut_play_leg, cut_screen, preview};
 
 use crate::common;
 
@@ -77,8 +77,16 @@ fn alive(pid: u32) -> bool {
 fn cut_with_one_hole() -> cut::Cut {
     cut::Cut {
         segs: vec![
-            cut::Seg { s: 0.0, e: 10.0, ..Default::default() },
-            cut::Seg { s: 20.0, e: 30.0, ..Default::default() },
+            cut::Seg {
+                s: 0.0,
+                e: 10.0,
+                ..Default::default()
+            },
+            cut::Seg {
+                s: 20.0,
+                e: 30.0,
+                ..Default::default()
+            },
         ],
         ..Default::default()
     }
@@ -103,8 +111,8 @@ fn s5_spare_prerolls_holds_and_swaps(_root: &Path) {
     );
 
     // Play the first clip: one process, running (not stopped).
-    let first = naivepost::cut_play_back::cue_clips(&both, 0.0, &|_| {})
-        .expect("the player starts");
+    let first =
+        naivepost::cut_play_back::cue_clips(&both, 0.0, &|_| {}).expect("the player starts");
     assert!(alive(first), "the running player is a real process");
     // A player that is playing is one `ps` reports as running/sleeping, never stopped.
     assert!(
@@ -119,24 +127,36 @@ fn s5_spare_prerolls_holds_and_swaps(_root: &Path) {
 
     // Arm the spare for the join at 20. A preroll costs a process held STOPPED, silent, on the second the
     // line is about to land on.
-    let spare = naivepost::cut_play_back::preroll(&both, 20.0, &|_| {}).expect("the spare prerolls");
-    assert_ne!(spare, first, "the spare is a SECOND process, not the running one");
+    let spare =
+        naivepost::cut_play_back::preroll(&both, 20.0, &|_| {}).expect("the spare prerolls");
+    assert_ne!(
+        spare, first,
+        "the spare is a SECOND process, not the running one"
+    );
     assert_eq!(naivepost::cut_play_back::spare_pid_for_test(), Some(spare));
     assert!(
         wait_until(|| naivepost::cut_play_back::is_stopped_for_test(spare)),
         "the spare sits at the jump's second frozen (ps shows T), which is the preroll"
     );
-    assert!(alive(first), "arming a spare leaves the playing process alone");
+    assert!(
+        alive(first),
+        "arming a spare leaves the playing process alone"
+    );
 
     // The join arrives. The spare was waiting, so the swap is a signal pair, not a pipeline build.
-    let now = naivepost::cut_play_back::swap_spare_in(&|_| {}).expect("the spare was there to swap");
+    let now =
+        naivepost::cut_play_back::swap_spare_in(&|_| {}).expect("the spare was there to swap");
     assert_eq!(now, spare, "the swapped-in process IS the spare");
     assert_eq!(
         naivepost::cut_play_back::playing_pid(),
         Some(spare),
         "the leg now calls the spare the running player"
     );
-    assert_eq!(naivepost::cut_play_back::spare_pid_for_test(), None, "swapping consumes the spare: one slot");
+    assert_eq!(
+        naivepost::cut_play_back::spare_pid_for_test(),
+        None,
+        "swapping consumes the spare: one slot"
+    );
     assert!(
         wait_until(|| !naivepost::cut_play_back::is_stopped_for_test(spare)),
         "the swapped-in process is released and running"
@@ -153,10 +173,20 @@ fn s5_spare_prerolls_holds_and_swaps(_root: &Path) {
 
     // Pausing releases BOTH: a spare kept alive after a pause is a process waiting for a jump that will
     // never come. `halt` is that pause door.
-    assert!(naivepost::cut_play_back::halt(), "a player was running to stop");
+    assert!(
+        naivepost::cut_play_back::halt(),
+        "a player was running to stop"
+    );
     assert_eq!(naivepost::cut_play_back::playing_pid(), None);
-    assert_eq!(naivepost::cut_play_back::spare_pid_for_test(), None, "and the spare went with it");
-    assert!(!naivepost::cut_play_back::halt(), "a second pause has nothing left to stop");
+    assert_eq!(
+        naivepost::cut_play_back::spare_pid_for_test(),
+        None,
+        "and the spare went with it"
+    );
+    assert!(
+        !naivepost::cut_play_back::halt(),
+        "a second pause has nothing left to stop"
+    );
 }
 
 /// The tick loop's own bookkeeping: the arm log records a preroll BEFORE the head got there, one per new
@@ -197,16 +227,24 @@ fn s5_the_tick_arms_once_per_join_and_records_it(root: &Path) {
         }
     }
     let arms = cut_play_leg::spare_arms_for_test();
-    let prerolled: Vec<Option<f64>> = arms.iter().filter(|arm| arm.prerolled).map(|arm| arm.at).collect();
+    let prerolled: Vec<Option<f64>> = arms
+        .iter()
+        .filter(|arm| arm.prerolled)
+        .map(|arm| arm.at)
+        .collect();
     assert_eq!(
         prerolled,
         vec![Some(20.0)],
         "one preroll, at the jump's second, armed before the line arrived — not one per tick"
     );
     let swapped = arms.iter().filter(|arm| arm.swapped == Some(true)).count();
-    assert_eq!(swapped, 1, "the join that landed on the spare records exactly one swap");
+    assert_eq!(
+        swapped, 1,
+        "the join that landed on the spare records exactly one swap"
+    );
     assert!(
-        arms.iter().any(|arm| arm.swapped == Some(true) && !arm.prerolled),
+        arms.iter()
+            .any(|arm| arm.swapped == Some(true) && !arm.prerolled),
         "the swap is recorded on the tick that jumped, whose own arm had nothing new to open"
     );
 }
@@ -214,7 +252,8 @@ fn s5_the_tick_arms_once_per_join_and_records_it(root: &Path) {
 /// S5 "stops show their still": a stop under the line freezes the real process; leaving it releases it.
 fn s5_a_stop_freezes_the_running_process(_root: &Path) {
     let both = files("take-a.mp4", "take-b.mp4");
-    let running = naivepost::cut_play_back::cue_clips(&both, 0.0, &|_| {}).expect("a player to freeze");
+    let running =
+        naivepost::cut_play_back::cue_clips(&both, 0.0, &|_| {}).expect("a player to freeze");
     assert!(
         wait_until(|| !naivepost::cut_play_back::is_stopped_for_test(running)),
         "a fresh player runs, so a stop has a moving picture to hold"
@@ -237,7 +276,11 @@ fn s5_a_stop_freezes_the_running_process(_root: &Path) {
 
     // And the rule itself, through the leg's one read of a frame: a stop is a speed effect at rate 0.
     let stopped_cut = cut::Cut {
-        segs: vec![cut::Seg { s: 0.0, e: 10.0, ..Default::default() }],
+        segs: vec![cut::Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        }],
         fx: vec![cut::Fx {
             kind: "speed".to_string(),
             t: 4.0,
@@ -247,7 +290,11 @@ fn s5_a_stop_freezes_the_running_process(_root: &Path) {
         }],
         ..Default::default()
     };
-    let plain = cut::Seg { s: 0.0, e: 10.0, ..Default::default() };
+    let plain = cut::Seg {
+        s: 0.0,
+        e: 10.0,
+        ..Default::default()
+    };
     assert!(
         cut_play_leg::frame(&stopped_cut, Some(&plain), 4.5).still,
         "inside the stop's seconds the frame answer is a still"
@@ -286,7 +333,11 @@ fn s5_rate_answers_honestly(_root: &Path) {
         !naivepost::cut_play_back::set_rate(&both, 2.0, 9.0, &|_| {}),
         "a non-flat rate is answered honestly: not expressible through gst-play-1.0's argv"
     );
-    assert_eq!(naivepost::cut_play_back::playing_pid(), Some(kept), "and nothing was swapped out");
+    assert_eq!(
+        naivepost::cut_play_back::playing_pid(),
+        Some(kept),
+        "and nothing was swapped out"
+    );
     naivepost::cut_play_back::halt();
 }
 
@@ -297,7 +348,11 @@ fn s5_the_routed_gain_follows_the_volume_effects() {
     // No slider touched: the preview's one volume is full, so these seconds' gain is the cut's own = 1.
     let routed = cut_play_leg::route(&plain, 5.0, naivepost::cut_hear::VOLUME_DEFAULT);
     assert!(!routed.still, "no stop here, so no still asked for");
-    assert_eq!(routed.rate, naivepost::cut_play::FLAT_RATE, "a plain clip plays at the flat rate");
+    assert_eq!(
+        routed.rate,
+        naivepost::cut_play::FLAT_RATE,
+        "a plain clip plays at the flat rate"
+    );
     assert!(
         (routed.gain - 1.0).abs() < 1e-9,
         "over footage with no volume effect the gain is exactly the slider's, and the slider is full"
@@ -325,12 +380,20 @@ fn s5_the_routed_gain_follows_the_volume_effects() {
     // A rate written on the seg the line is on is the rate handed to the player — which is what makes the
     // honest refusal in `set_rate` matter rather than look theoretical.
     let sped = cut::Cut {
-        segs: vec![cut::Seg { s: 0.0, e: 10.0, rate: 2.0, ..Default::default() }],
+        segs: vec![cut::Seg {
+            s: 0.0,
+            e: 10.0,
+            rate: 2.0,
+            ..Default::default()
+        }],
         ..Default::default()
     };
     assert_eq!(cut_play_leg::route(&sped, 5.0, 1.0).rate, 2.0);
     // The line in a REMOVED stretch has no clip of its own: flat rate, no still, so no re-cue is owed there.
-    assert_eq!(cut_play_leg::route(&plain, 15.0, 1.0).rate, naivepost::cut_play::FLAT_RATE);
+    assert_eq!(
+        cut_play_leg::route(&plain, 15.0, 1.0).rate,
+        naivepost::cut_play::FLAT_RATE
+    );
     assert!(!cut_play_leg::route(&plain, 15.0, 1.0).still);
 }
 
@@ -343,17 +406,30 @@ struct WatchPage {
 
 impl WatchPage {
     fn new(cut_: cut::Cut) -> Self {
-        WatchPage { cut_, head: Cell::new(0.0) }
+        WatchPage {
+            cut_,
+            head: Cell::new(0.0),
+        }
     }
 }
 
 impl cut_play_leg::CutPreviewPage for WatchPage {
-    fn cut_only(&self) -> bool { true }
-    fn playhead(&self) -> Option<f64> { Some(self.head.get()) }
-    fn set_playhead(&self, at: f64) { self.head.set(at); }
-    fn cut(&self) -> cut::Cut { self.cut_.clone() }
+    fn cut_only(&self) -> bool {
+        true
+    }
+    fn playhead(&self) -> Option<f64> {
+        Some(self.head.get())
+    }
+    fn set_playhead(&self, at: f64) {
+        self.head.set(at);
+    }
+    fn cut(&self) -> cut::Cut {
+        self.cut_.clone()
+    }
     fn say_clock(&self, _clock: f64, _ended: bool) {}
-    fn volume(&self) -> f64 { naivepost::cut_hear::VOLUME_DEFAULT }
+    fn volume(&self) -> f64 {
+        naivepost::cut_hear::VOLUME_DEFAULT
+    }
     // A real preroll, exactly as the window's page does it: the files are the session's, the leg owns the
     // process. `cut_screen::can_play_cut` is the S1 gate a page checks before it starts anything.
     fn arm_spare_at(&self, at: f64) -> bool {
@@ -367,9 +443,15 @@ impl cut_play_leg::CutPreviewPage for WatchPage {
         )
         .is_ok()
     }
-    fn cross_into_spare(&self) -> bool { naivepost::cut_play_back::swap_spare_in(&|_| {}).is_some() }
-    fn drop_spare(&self) { naivepost::cut_play_back::drop_spare(); }
-    fn hold_still(&self, hold: bool) -> bool { naivepost::cut_play_back::hold_still(hold) }
+    fn cross_into_spare(&self) -> bool {
+        naivepost::cut_play_back::swap_spare_in(&|_| {}).is_some()
+    }
+    fn drop_spare(&self) {
+        naivepost::cut_play_back::drop_spare();
+    }
+    fn hold_still(&self, hold: bool) -> bool {
+        naivepost::cut_play_back::hold_still(hold)
+    }
     fn play_rate(&self, rate: f64, at: f64) -> bool {
         naivepost::cut_play_back::set_rate(&["take-a.mp4".to_string()], rate, at, &|_| {})
     }
@@ -383,12 +465,20 @@ impl cut_play_leg::CutPreviewPage for WatchPage {
 fn s5_the_press_cues_a_running_process(_root: &Path) {
     let both = files("take-a.mp4", "take-b.mp4");
     naivepost::cut_play_back::halt();
-    assert_eq!(naivepost::cut_play_back::playing_pid(), None, "nothing running to start from");
+    assert_eq!(
+        naivepost::cut_play_back::playing_pid(),
+        None,
+        "nothing running to start from"
+    );
 
     // The leg half: cueing at the second the press snapped to leaves ONE process, running.
-    let first = naivepost::cut_play_back::cue_clips(&both, 20.0, &|_| {}).expect("the press's cue starts one");
+    let first = naivepost::cut_play_back::cue_clips(&both, 20.0, &|_| {})
+        .expect("the press's cue starts one");
     assert_eq!(naivepost::cut_play_back::playing_pid(), Some(first));
-    assert!(wait_until(|| !naivepost::cut_play_back::is_stopped_for_test(first)), "and it runs, unlike a spare");
+    assert!(
+        wait_until(|| !naivepost::cut_play_back::is_stopped_for_test(first)),
+        "and it runs, unlike a spare"
+    );
     assert_eq!(
         naivepost::cut_play_back::spare_pid_for_test(),
         None,
@@ -400,8 +490,12 @@ fn s5_the_press_cues_a_running_process(_root: &Path) {
     // script that was replaced actually exits on TERM is the fake player's business, not the leg's: this
     // container's `sh` does not act on a trapped TERM at all (SIGKILL does), which is why the assert below
     // about its death cannot be made here at all.
-    let again = naivepost::cut_play_back::cue_clips(&both, 5.0, &|_| {}).expect("resuming cues again");
-    assert_ne!(again, first, "the resume is a NEW process cued at the line the press snapped to");
+    let again =
+        naivepost::cut_play_back::cue_clips(&both, 5.0, &|_| {}).expect("resuming cues again");
+    assert_ne!(
+        again, first,
+        "the resume is a NEW process cued at the line the press snapped to"
+    );
     assert_eq!(
         naivepost::cut_play_back::playing_pid(),
         Some(again),

@@ -83,7 +83,8 @@ pub fn stall_seconds() -> u64 {
 /// shares one process.
 pub fn heartbeat_seconds() -> u64 {
     static MINUTE: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
-    *MINUTE.get_or_init(|| configured("NAIVEPOST_LLM_HEARTBEAT_SECONDS").unwrap_or(HEARTBEAT_SECONDS))
+    *MINUTE
+        .get_or_init(|| configured("NAIVEPOST_LLM_HEARTBEAT_SECONDS").unwrap_or(HEARTBEAT_SECONDS))
 }
 
 /// One override read from the environment: set and parseable wins, anything else means "not configured".
@@ -323,7 +324,6 @@ impl Watch {
         self.last_byte.is_some()
     }
 
-
     /// The guard's look: four times a heartbeat, and it says at most one line a minute.
     ///
     /// Order matters. A streamed call that has gone quiet for [`STALL_MINUTES`] is over — checked first, so a call
@@ -508,9 +508,10 @@ impl Gate {
             self.queue.push(step.to_string());
         }
         // Already waiting: the line is this step's to say, and only once.
-        Acquisition::Waiting { log: self.waiting_log(step) }
+        Acquisition::Waiting {
+            log: self.waiting_log(step),
+        }
     }
-
 
     /// Who is on the wire.
     pub fn holders(&self) -> Vec<String> {
@@ -571,8 +572,6 @@ impl Gate {
         }
     }
 
-
-
     /// ⏹ during a wait. Answers whether there was a wait to cancel, so a caller that stops after being `Taken`
     /// does not report cancelling something that never happened.
     pub fn cancel_waiting(&mut self, step: &str) -> bool {
@@ -611,8 +610,6 @@ impl Gate {
     fn naming_itself(&self, step: &str) -> bool {
         self.held.iter().any(|holder| holder == step)
     }
-
-
 }
 
 // ---- How many at once ---------------------------------------------------------------
@@ -661,7 +658,11 @@ pub fn shares_a_server(a: &str, b: &str) -> bool {
         }
         let with_port = match host_and_maybe_port.rsplit_once(':') {
             Some((_host, port)) if !port.is_empty() => host_and_maybe_port.to_string(),
-            _ => format!("{}:{}", host_and_maybe_port, if scheme == "https" { 443 } else { 80 }),
+            _ => format!(
+                "{}:{}",
+                host_and_maybe_port,
+                if scheme == "https" { 443 } else { 80 }
+            ),
         };
         Some(format!("{scheme}://{with_port}"))
     };

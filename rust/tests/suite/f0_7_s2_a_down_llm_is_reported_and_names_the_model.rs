@@ -38,22 +38,39 @@ fn f0_7_s2_a_down_llm_is_reported_and_names_the_model() {
         run.policy.speed_pass.origin,
         run.policy.decorations_pass.origin,
     ] {
-        assert_eq!(origin, Origin::Default, "nothing claimed to have been derived: {origin:?}");
+        assert_eq!(
+            origin,
+            Origin::Default,
+            "nothing claimed to have been derived: {origin:?}"
+        );
     }
     // And the failure is said, naming the model it could not reach -- ONCE. One dead server is one fault,
     // so the derivation asks about it once rather than re-dialling per round.
     assert_eq!(run.derived.applied.len(), 0, "{:?}", run.derived.applied);
     assert_eq!(run.derived.refusals.len(), 1, "{:?}", run.derived.refusals);
     let said = &run.derived.refusals[0];
-    assert!(said.contains("policy-model"), "the sentence names the model: {said}");
-    assert!(said.contains("not answering") || said.contains("no answer"), "and the fault: {said}");
+    assert!(
+        said.contains("policy-model"),
+        "the sentence names the model: {said}"
+    );
+    assert!(
+        said.contains("not answering") || said.contains("no answer"),
+        "and the fault: {said}"
+    );
     // The status line is what a person reads: it carries that sentence rather than a generic failure.
-    assert_eq!(run.derived.status(), *said, "the status line says who was missing");
+    assert_eq!(
+        run.derived.status(),
+        *said,
+        "the status line says who was missing"
+    );
     // Each attempt left its row: the failed dial is visible in the request log, not silently retried.
     // What the row holds is the address that refused and the OS's own words for it, so those are what is
     // checked -- not a paraphrase of the reason.
     let tsv = read(&fixture.tree.requests_tsv());
     assert!(tsv.contains("policy"), "the ask is logged: {tsv}");
-    assert!(tsv.contains("127.0.0.1:1"), "naming the address it tried: {tsv}");
+    assert!(
+        tsv.contains("127.0.0.1:1"),
+        "naming the address it tried: {tsv}"
+    );
     assert!(tsv.contains("refused"), "with the fault it met: {tsv}");
 }

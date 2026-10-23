@@ -10,20 +10,20 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk4 as gtk;
 
-use crate::project::Project;
 use crate::describe;
 use crate::exchanges;
 use crate::hand_edit;
 use crate::joins;
 use crate::layout;
-use crate::retakes;
-use crate::startup;
 use crate::prepare_run;
+use crate::project::Project;
+use crate::retakes;
 use crate::run;
 use crate::runqueue;
 use crate::shell::Shell;
-use crate::ui::window::{paint_progress, paint_run_bar};
+use crate::startup;
 use crate::ui::window as ui;
+use crate::ui::window::{paint_progress, paint_run_bar};
 
 /// The transport every run-bar paint and the ▶ press read: this window's live preview, never a
 /// default. `run::RunBar::press`'s S2 ("playback beats the page's action") can only fire from what
@@ -37,7 +37,7 @@ pub(crate) fn live_transport() -> run::Transport {
 /// which ⏹ reads the same way), then redraw and put the bar's sentence on the status line. A refusal
 /// outlives this handler: `press` leaves its status empty when a run starts, so refusals are remembered.
 #[allow(clippy::too_many_arguments)] // one ▶ press touches the whole bar: its buttons, queue, log and
-// progress widget, which belong to the window rather than to any one rule
+                                     // progress widget, which belong to the window rather than to any one rule
 pub(crate) fn wire_play(
     play: &gtk::Button,
     stop_: &gtk::Button,
@@ -67,8 +67,8 @@ pub(crate) fn wire_play(
         // §2: ▶'s paint also gates the gears, so this handler looks them up alongside the button it was
         // handed. The run bar always draws a lucky-button; `expect` names that invariant rather than
         // inventing a stand-in widget for a window that does not have one.
-        let lucky = ui::lucky_button(&ui::main_window())
-            .expect("the run bar draws its lucky-button (§2)");
+        let lucky =
+            ui::lucky_button(&ui::main_window()).expect("the run bar draws its lucky-button (§2)");
         // §F0.2 S2 belongs to the page's preview, so this press asks the player what it holds.
         let transport = ui::preview_player(&ui::main_window()).transport;
         // F1.1 S1: Prepare refuses at its own start, BEFORE the bar is opened — a run that started
@@ -105,12 +105,21 @@ pub(crate) fn wire_play(
         // second reading (`RESUMED`) unreachable). The flowchart asks "a run under way?" first, so
         // the bar owns this press; `press` says which of the two readings it is.
         if bar.borrow().running.is_some() {
-            let pressed = bar.borrow_mut().press(shell.borrow().page, transport, &live);
+            let pressed = bar
+                .borrow_mut()
+                .press(shell.borrow().page, transport, &live);
             debug_assert!(
                 matches!(pressed, run::Pressed::ToggledPause { .. }),
                 "a bar with a run under way can only toggle its pause here"
             );
-            paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport);
+            paint_run_bar(
+                play,
+                &lucky,
+                &stop_,
+                &bar.borrow(),
+                shell.borrow().page,
+                transport,
+            );
             status.set_text(&bar.borrow().status);
             return;
         }
@@ -119,9 +128,19 @@ pub(crate) fn wire_play(
                 // The face answers the transport this press LEFT, not the one it found: parking a
                 // playing preview paints ▶ (it owes a resume).
                 let held = ui::preview_player(&ui::main_window());
-                let toggled = run::Transport { playing: resume, started: true };
+                let toggled = run::Transport {
+                    playing: resume,
+                    started: true,
+                };
                 ui::set_preview_state(&ui::main_window(), held.cut_only, held.reviewing, toggled);
-                paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, toggled);
+                paint_run_bar(
+                    play,
+                    &lucky,
+                    &stop_,
+                    &bar.borrow(),
+                    shell.borrow().page,
+                    toggled,
+                );
                 return;
             }
             // "▶ refuses without a cut", and narration off before it (§2 lists both for Narrate). The
@@ -130,7 +149,14 @@ pub(crate) fn wire_play(
             crate::tab_states::Play::Refused => {
                 if let Some(reason) = tab_play.1 {
                     status.set_text(reason);
-                    paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport);
+                    paint_run_bar(
+                        play,
+                        &lucky,
+                        &stop_,
+                        &bar.borrow(),
+                        shell.borrow().page,
+                        transport,
+                    );
                     return;
                 }
             }
@@ -140,7 +166,14 @@ pub(crate) fn wire_play(
             if let Some((log, sentence)) = prepare_run::refuse(&live) {
                 ui::log_line(&log);
                 status.set_text(&sentence);
-                paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport);
+                paint_run_bar(
+                    play,
+                    &lucky,
+                    &stop_,
+                    &bar.borrow(),
+                    shell.borrow().page,
+                    transport,
+                );
                 return;
             }
         }
@@ -148,7 +181,14 @@ pub(crate) fn wire_play(
             if let Some(reason) = ui::refuse_narrate_run(&live) {
                 // S1 only: nothing was pulled, nothing was saved, no file was written or copied.
                 status.set_text(&reason);
-                paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport);
+                paint_run_bar(
+                    play,
+                    &lucky,
+                    &stop_,
+                    &bar.borrow(),
+                    shell.borrow().page,
+                    transport,
+                );
                 return;
             }
         }
@@ -158,7 +198,16 @@ pub(crate) fn wire_play(
                 bar.borrow().running.is_some(),
                 transport.started,
                 |sentence| status.set_text(sentence),
-                || paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport),
+                || {
+                    paint_run_bar(
+                        play,
+                        &lucky,
+                        &stop_,
+                        &bar.borrow(),
+                        shell.borrow().page,
+                        transport,
+                    )
+                },
             )
         {
             return;
@@ -169,23 +218,44 @@ pub(crate) fn wire_play(
             // `narration.json`, so a line typed and not yet written would be missing from what it stamps.
             crate::ui::narrate_text::flush_owed(&ui::main_window());
             let has_cut = !ui::review_cut_of(&ui::main_window()).segs.is_empty();
-            if let Some(reason) = crate::produce_flow::refuse(bar.borrow().running.is_some(), has_cut) {
+            if let Some(reason) =
+                crate::produce_flow::refuse(bar.borrow().running.is_some(), has_cut)
+            {
                 // §F5.1 S1: refused before the bar opened — no ⏸ shows for a run that never began.
                 status.set_text(reason);
-                paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport);
+                paint_run_bar(
+                    play,
+                    &lucky,
+                    &stop_,
+                    &bar.borrow(),
+                    shell.borrow().page,
+                    transport,
+                );
                 return;
             }
         }
 
-        let pressed = bar.borrow_mut().press(shell.borrow().page, transport, &project);
+        let pressed = bar
+            .borrow_mut()
+            .press(shell.borrow().page, transport, &project);
         // S2 stops here (no snapshot, no step) and gets no sentence: the button's face carries the toggle.
         if let run::Pressed::ToggledTransport { resume } = pressed {
             let held = ui::preview_player(&ui::main_window());
             // The face answers the transport this press LEFT, not the one it found: parking a playing
             // preview paints ▶ (it owes a resume), and painting from `held.transport` would leave ⏸ up.
-            let toggled = run::Transport { playing: resume, started: true };
+            let toggled = run::Transport {
+                playing: resume,
+                started: true,
+            };
             ui::set_preview_state(&ui::main_window(), held.cut_only, held.reviewing, toggled);
-            paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, toggled);
+            paint_run_bar(
+                play,
+                &lucky,
+                &stop_,
+                &bar.borrow(),
+                shell.borrow().page,
+                toggled,
+            );
             return;
         }
         let mut refusal: Option<String> = None;
@@ -233,7 +303,9 @@ pub(crate) fn wire_play(
                                 outcome
                                     .logs
                                     .last()
-                                    .map(|line| line.trim_start_matches('!').trim_start().to_string())
+                                    .map(|line| {
+                                        line.trim_start_matches('!').trim_start().to_string()
+                                    })
                                     .unwrap_or_else(|| "the edit was refused".to_string()),
                             );
                         }
@@ -348,12 +420,24 @@ pub(crate) fn wire_play(
                 }
             }
             if !started {
-                paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page, transport);
+                paint_run_bar(
+                    play,
+                    &lucky,
+                    &stop_,
+                    &bar.borrow(),
+                    shell.borrow().page,
+                    transport,
+                );
                 status.set_text(refusal.as_deref().unwrap_or(""));
                 return;
             }
             // S3 snapshots the LIVE session: a source added after `build_window` is part of this run.
-            let asked = ui::PLAY_SESSION.with(|s| s.borrow().last().map(|h| h.borrow().clone()).unwrap_or_else(|| project.clone()));
+            let asked = ui::PLAY_SESSION.with(|s| {
+                s.borrow()
+                    .last()
+                    .map(|h| h.borrow().clone())
+                    .unwrap_or_else(|| project.clone())
+            });
             let snapshot = run::snapshot_sources(&asked);
             runqueue::start_run(
                 &mut bar.borrow_mut(),
@@ -375,36 +459,66 @@ pub(crate) fn wire_play(
             // between every task; rules live in `run_stages`, this hands over the live session.
             // S3 snapshots the LIVE session: a source added after `build_window` is part of this run.
             let drive = crate::run_stages::drive_page(
-                run::step(shell.borrow().page), &asked, &queue, &bar, &procs,
+                run::step(shell.borrow().page),
+                &asked,
+                &queue,
+                &bar,
+                &procs,
             );
             crate::run_stages::say_outcome(&drive, ui::log_line); // S4: a failed stage names itself in the log
-            // §S7 + §S8: Prepare's ending — log lines, status sentence, page/gates/Cut refreshed.
+                                                                  // §S7 + §S8: Prepare's ending — log lines, status sentence, page/gates/Cut refreshed.
             if run::step(shell.borrow().page) == run::Step::Prepare {
-                super::prepare_guard::say_ending(
-                    &drive, &ui::main_window(), &asked, &bar, &queue,
-                );
+                super::prepare_guard::say_ending(&drive, &ui::main_window(), &asked, &bar, &queue);
             }
         }
-        paint_run_bar(play, &lucky, &stop_, &bar.borrow(), shell.borrow().page,
-            ui::preview_player(&ui::main_window()).transport);
+        paint_run_bar(
+            play,
+            &lucky,
+            &stop_,
+            &bar.borrow(),
+            shell.borrow().page,
+            ui::preview_player(&ui::main_window()).transport,
+        );
         status.set_text(&bar.borrow().status);
         // F0.5 S4: a single-step press closes what it opened (running off, the unload handed over,
         // the queue's line onto the status row). Narrate and Produce close theirs in their own flow.
         // §S7: the ending is the run's LAST word, so it goes back after that close — the close writes
         // the queue's line over the row, and `say_ending` already put the ending into `bar.status`.
         if matches!(pressed, run::Pressed::Started { .. }) && started {
-            crate::ui::run_close::close_step_run(&bar, &queue, &exchange_log, &status, &progress, &log, &log_view, None);
-            if run::step(shell.borrow().page) == run::Step::Prepare && !bar.borrow().status.is_empty() {
+            crate::ui::run_close::close_step_run(
+                &bar,
+                &queue,
+                &exchange_log,
+                &status,
+                &progress,
+                &log,
+                &log_view,
+                None,
+            );
+            if run::step(shell.borrow().page) == run::Step::Prepare
+                && !bar.borrow().status.is_empty()
+            {
                 let said = bar.borrow().status.clone();
                 status.set_text(&said);
             }
         }
         paint_progress(
-            &progress, &log, &log_view, &queue.borrow(),
+            &progress,
+            &log,
+            &log_view,
+            &queue.borrow(),
             // §2: while this press owns the run its track line IS the status line; a bar sentence
             // (the empty opening line, F1.12's refusal) keeps the row instead of being overwritten.
-            crate::ui::shell_beats::StatusLine { status: &status, owned: matches!(pressed, run::Pressed::Started { .. }) && refusal.is_none() && !bar.borrow().status.is_empty() },
-            bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
+            crate::ui::shell_beats::StatusLine {
+                status: &status,
+                owned: matches!(pressed, run::Pressed::Started { .. })
+                    && refusal.is_none()
+                    && !bar.borrow().status.is_empty(),
+            },
+            bar.borrow()
+                .running
+                .as_ref()
+                .is_some_and(|run| run.log_expanded),
         );
         // Last write wins on the label: F1.12's refusal is why ▶ did not do what it was pressed for,
         // so it goes on screen after the bar's own (empty) status rather than under it.
@@ -463,7 +577,8 @@ pub(crate) fn wire_stop(
         // here stops both players and hands ▶ back to the step; only when no preview is going does the press
         // mean "end the long job", which is `run::RunBar::press_stop`'s rule unchanged.
         if crate::ui::narrate_page::narrate_preview_playing() {
-            let said = crate::ui::narrate_page::press_preview_stop(&crate::ui::window::main_window());
+            let said =
+                crate::ui::narrate_page::press_preview_stop(&crate::ui::window::main_window());
             // Repaint from the page's own state now that nothing is playing: ▶ goes back to the step's face
             // and ⏹ loses its sensitivity unless a run is under way.
             paint_run_bar(
@@ -481,7 +596,12 @@ pub(crate) fn wire_stop(
         let window = crate::ui::window::main_window();
         let transport = ui::preview_player(&window).transport;
         let in_describe = crate::stop_legs::describe_stage();
-        let stopped = bar.borrow_mut().press_stop(shell.borrow().page, transport, in_describe, &mut procs.borrow_mut());
+        let stopped = bar.borrow_mut().press_stop(
+            shell.borrow().page,
+            transport,
+            in_describe,
+            &mut procs.borrow_mut(),
+        );
         // S1: stop the player itself, not only the sentence (the leg decides if this page owns one).
         if let Some(stopped) = crate::stop_legs::stop_page_preview(shell.borrow().page, transport) {
             let held = ui::preview_player(&window);
@@ -530,9 +650,18 @@ pub(crate) fn wire_stop(
             status.set_text(stopped.status());
         }
         paint_progress(
-            &progress, &log, &log_view, &queue.borrow(),
-            crate::ui::shell_beats::StatusLine { status: &status, owned: false }, // nothing repaints over "stopping…"
-            bar.borrow().running.as_ref().is_some_and(|run| run.log_expanded),
+            &progress,
+            &log,
+            &log_view,
+            &queue.borrow(),
+            crate::ui::shell_beats::StatusLine {
+                status: &status,
+                owned: false,
+            }, // nothing repaints over "stopping…"
+            bar.borrow()
+                .running
+                .as_ref()
+                .is_some_and(|run| run.log_expanded),
         );
     });
 }

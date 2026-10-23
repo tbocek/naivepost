@@ -43,9 +43,11 @@ pub type Ask<'a> = dyn Fn(&str, Option<u64>) -> Result<String, String> + 'a;
 pub fn llm_row(conf: &Conf, ask: &Ask<'_>) -> Result<String, String> {
     let model = conf.model.trim();
     if model.is_empty() {
-        return Err("no model id -- the box is empty, so there is nothing to ask. Use \"Fetch models\" \
+        return Err(
+            "no model id -- the box is empty, so there is nothing to ask. Use \"Fetch models\" \
                     to pick one this server lists"
-            .to_string());
+                .to_string(),
+        );
     }
     let probe = crate::model_list::probes()[0];
     let body = checks::llm_test_body(model).to_string();
@@ -138,7 +140,8 @@ pub fn ffmpeg_row(typed: &str) -> Result<String, String> {
     };
     let shown = program.display().to_string();
     let probe = services::ffprobe_for(&shown, "ffprobe");
-    let ffprobe_beside = std::path::Path::new(&probe).is_file() || resolve_on_path("ffprobe").is_some();
+    let ffprobe_beside =
+        std::path::Path::new(&probe).is_file() || resolve_on_path("ffprobe").is_some();
     let version = run(&shown, &["-version"]).unwrap_or_default();
     // A listing that will not come is reported as nothing checked: `ffmpeg_verdict` answers "built
     // without X" from `None`, which is the honest reading of a binary that would not print it.
@@ -166,7 +169,8 @@ pub fn firefox_row(typed: &str) -> Result<String, String> {
     let version = run(&program.display().to_string(), &["--version"])?;
     // The program's own search door: one headless launch of the engine's own DuckDuckGo page, hits
     // counted the way the pipeline counts them. No network is a failure of THIS row, said as such.
-    let search = crate::web_browser::query_for(&program.display().to_string(), search_slice())("naivepost");
+    let search =
+        crate::web_browser::query_for(&program.display().to_string(), search_slice())("naivepost");
     let hits = search.ok().map(|hits| hits.len());
     checks::firefox_verdict(typed, Some(&version), hits)
 }
@@ -219,7 +223,11 @@ fn run(program: &str, args: &[&str]) -> Result<String, String> {
             // Past the deadline the child is killed, and the row says it could not be asked.
             None if Instant::now() >= deadline => {
                 let _ = child.kill();
-                return Err(format!("{} did not answer in {} s", subprocess::shown(program, args), SUBPROCESS_WAIT.as_secs()));
+                return Err(format!(
+                    "{} did not answer in {} s",
+                    subprocess::shown(program, args),
+                    SUBPROCESS_WAIT.as_secs()
+                ));
             }
             None => std::thread::sleep(Duration::from_millis(20)),
         }
@@ -234,7 +242,8 @@ fn catalogue_ids(models: &[services::AudioModel]) -> String {
 }
 
 /// The endpoint a row dials: the TYPED address wins over the file, the key comes from the file.
-pub fn llm_endpoint(conf: &Conf, typed: &str) -> Endpoint {    Endpoint {
+pub fn llm_endpoint(conf: &Conf, typed: &str) -> Endpoint {
+    Endpoint {
         url: services::server_url(typed).unwrap_or_else(services::llm_default),
         key: conf.key.clone(),
     }

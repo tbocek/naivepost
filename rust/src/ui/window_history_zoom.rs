@@ -57,12 +57,16 @@ pub fn note_edit(window: &adw::ApplicationWindow) {
 }
 
 /// This window's history, opened on the cut it currently shows if none was opened yet.
-pub(crate) fn cut_history(_window: &adw::ApplicationWindow) -> Rc<std::cell::RefCell<cut::History>> {
+pub(crate) fn cut_history(
+    _window: &adw::ApplicationWindow,
+) -> Rc<std::cell::RefCell<cut::History>> {
     let held = CUT_HISTORIES.with(|slot| slot.borrow().last().cloned());
     if let Some(held) = held {
         return held;
     }
-    let fresh = Rc::new(std::cell::RefCell::new(cut::History::open(&ui::newest_review_cut())));
+    let fresh = Rc::new(std::cell::RefCell::new(cut::History::open(
+        &ui::newest_review_cut(),
+    )));
     CUT_HISTORIES.with(|slot| slot.borrow_mut().push(fresh.clone()));
     fresh
 }
@@ -110,7 +114,8 @@ pub fn press_undo(window: &adw::ApplicationWindow) -> String {
             said
         }
         None => {
-            let said = "nothing to undo \u{2014} you are at the state this page opened with".to_string();
+            let said =
+                "nothing to undo \u{2014} you are at the state this page opened with".to_string();
             ui::log_line(&said);
             said
         }
@@ -145,7 +150,9 @@ pub fn press_redo(window: &adw::ApplicationWindow) -> String {
 /// suggestion, or what the page opened with when there has been none.
 pub fn press_revert(window: &adw::ApplicationWindow) -> String {
     let history = cut_history(window);
-    let already_base = history.borrow().base_is_the_screen(&ui::newest_review_cut());
+    let already_base = history
+        .borrow()
+        .base_is_the_screen(&ui::newest_review_cut());
     if already_base {
         let said = cut::NOTHING_TO_REVERT.to_string();
         ui::log_line(&said);
@@ -254,6 +261,10 @@ pub(crate) fn wire_wheel_gestures(window: &adw::ApplicationWindow) {
         &[
             ("group-transport", cut_screen::WheelOver::Transport),
             ("preview-panel", cut_screen::WheelOver::Preview),
+            // §1's single stack draws its ruler and rows on `track-band`; the placeholder strip keeps its own
+            // controller so F2.8's press geometry stays reachable, and `attach_wheel` skips a widget that
+            // already carries one, so listing both cannot double-attach.
+            ("track-band", cut_screen::WheelOver::Tracks),
             ("track-strip", cut_screen::WheelOver::Tracks),
         ],
         |win, frames| {
@@ -276,7 +287,10 @@ pub(crate) fn set_preview_pps(pps: f64) {
 /// from the rule rather than remembered.
 pub(crate) fn wire_history_and_zoom(window: &adw::ApplicationWindow) {
     for (name, seam) in [
-        ("undo-button", press_undo as fn(&adw::ApplicationWindow) -> String),
+        (
+            "undo-button",
+            press_undo as fn(&adw::ApplicationWindow) -> String,
+        ),
         ("redo-button", press_redo),
         ("revert-button", press_revert),
         ("clear-cut-button", press_clear_cut),
@@ -310,12 +324,32 @@ pub(crate) fn wire_history_and_zoom(window: &adw::ApplicationWindow) {
             let win = window.clone();
             button.connect_clicked(move |_| {
                 let px = press_thumb(&win, bigger);
-                if let Some(status_line) = ui::find_status(win.upcast_ref()) {
-                    status_line.set_text(&format!("thumbnails {px} px"));
+                // The ladder's number is the readout in the FORM column (`cut-readout-thumbnails`), not a
+                // status line: the row the user reads is what moves.
+                if let Some(cell) = ui::find_widget_by_name(
+                    win.upcast_ref(),
+                    &cut_screen::readout_widget("Thumbnails"),
+                ) {
+                    if let Some(number) = ladder_number(&cell) {
+                        number.set_text(&format!("{px} px"));
+                    }
                 }
             });
         }
     }
+}
+
+/// The number label inside the Thumbnails ladder (the `cut-readout-thumbnails` box holds 🖼− number 🖼+,
+/// so the readout name is on the box and the plain label in it is the number the user reads).
+fn ladder_number(cell: &gtk::Widget) -> Option<gtk::Label> {
+    let mut child = cell.first_child();
+    while let Some(node) = child {
+        if let Some(label) = node.downcast_ref::<gtk::Label>() {
+            return Some(label.clone());
+        }
+        child = node.next_sibling();
+    }
+    None
 }
 
 thread_local! {
@@ -558,7 +592,6 @@ pub(crate) fn zoom_form_owner(window: &adw::ApplicationWindow) -> bool {
     })
 }
 
-
 pub fn press_zoom_apply(window: &adw::ApplicationWindow) -> String {
     if !zoom_form_owner(window) {
         return "no zoom form on this page \u{2014} drag a box first".to_string();
@@ -601,7 +634,9 @@ pub fn press_zoom_apply(window: &adw::ApplicationWindow) -> String {
     // §9 (`A zoom does not cross into a clip from another camera`): the band ends at the lens
     // switch rather than jumping onto the next camera's frame, and the person is told which
     // camera it was framed on. Inside THIS edit — one ↶ still takes the whole placement back.
-    if let Some((trimmed, _switched)) = crate::effect_overlap::trim_at_lens_switch(&effect, &cut_.segs) {
+    if let Some((trimmed, _switched)) =
+        crate::effect_overlap::trim_at_lens_switch(&effect, &cut_.segs)
+    {
         effect.dur = trimmed;
         let said = crate::effect_overlap::lens_switch(effect.t, effect.cam);
         ui::log_line(&said);

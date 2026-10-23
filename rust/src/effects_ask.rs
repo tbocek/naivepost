@@ -23,7 +23,6 @@
 //! to compute one.
 
 use crate::cut_effects_pass::{self, Call};
-use std::path::PathBuf;
 use crate::exchanges::{Message, Part};
 use crate::layout::Tree;
 use crate::llm_cache;
@@ -32,8 +31,9 @@ use crate::requests::{Request, Service};
 use crate::roles::Job;
 use crate::services;
 use crate::settings::{self, Conf, Paths};
-use crate::tools::Tool;
 use crate::tools::clips::Clips;
+use crate::tools::Tool;
+use std::path::PathBuf;
 
 /// The step name this job's cache entries and timed rows carry. §3.7 is one section for the three per-clip
 /// passes, but the cache must tell a decoration answer from a caption or a speed answer apart, so each gets
@@ -166,8 +166,14 @@ pub fn chat_body(model: &str, system: &str, user: &str) -> Result<String, String
 /// The two messages every decoration ask carries.
 fn two_messages(system: &str, user: &str) -> Vec<Message> {
     vec![
-        Message { role: "system".to_string(), parts: vec![Part::Text(system.to_string())] },
-        Message { role: "user".to_string(), parts: vec![Part::Text(user.to_string())] },
+        Message {
+            role: "system".to_string(),
+            parts: vec![Part::Text(system.to_string())],
+        },
+        Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text(user.to_string())],
+        },
     ]
 }
 
@@ -259,7 +265,10 @@ pub fn parse_effects(reply: &str) -> Vec<Call> {
 fn call_of(value: &serde_json::Value) -> Option<Call> {
     let clip = value
         .get("clip")
-        .and_then(|clip| clip.as_f64().or_else(|| clip.as_str().and_then(|t| t.trim().parse::<f64>().ok())))
+        .and_then(|clip| {
+            clip.as_f64()
+                .or_else(|| clip.as_str().and_then(|t| t.trim().parse::<f64>().ok()))
+        })
         .filter(|n| n.is_finite() && *n >= 1.0)? as u32;
     let kind = value
         .get("kind")
@@ -270,7 +279,10 @@ fn call_of(value: &serde_json::Value) -> Option<Call> {
     let number = |key: &str| {
         value
             .get(key)
-            .and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|t| t.trim().parse::<f64>().ok())))
+            .and_then(|v| {
+                v.as_f64()
+                    .or_else(|| v.as_str().and_then(|t| t.trim().parse::<f64>().ok()))
+            })
             .filter(|n| n.is_finite())
     };
     let start = number("start")?;
@@ -339,7 +351,9 @@ pub fn ask_named(
     if services::server_url(&conf.server).is_none() {
         return failed("no LLM address is set \u{2014} nothing was asked".to_string());
     }
-    ask_at_over(tree, &conf, context, clips, speeds, rows, lanes, attempt, cancel)
+    ask_at_over(
+        tree, &conf, context, clips, speeds, rows, lanes, attempt, cancel,
+    )
 }
 
 /// [`ask`] with the settings already read, for a caller that resolved them itself.
@@ -352,7 +366,17 @@ pub fn ask_at(
     attempt: u32,
     cancel: &dyn Fn() -> bool,
 ) -> Asked {
-    ask_at_over(tree, conf, context, clips, speeds, &[], &[], attempt, cancel)
+    ask_at_over(
+        tree,
+        conf,
+        context,
+        clips,
+        speeds,
+        &[],
+        &[],
+        attempt,
+        cancel,
+    )
 }
 
 /// [`ask_at`] with the session's camera rows and heard lanes named in the brief (§9: the
@@ -371,7 +395,11 @@ pub fn ask_at_over(
 ) -> Asked {
     if clips.clips().is_empty() {
         // Nothing to ask about is not a failure and not worth a request.
-        return Asked { calls: Vec::new(), failed: false, reason: String::new() };
+        return Asked {
+            calls: Vec::new(),
+            failed: false,
+            reason: String::new(),
+        };
     }
     let model = conf.model.clone();
     let system = effects_system(context);
@@ -383,7 +411,11 @@ pub fn ask_at_over(
         // §09 §10: the cached answer writes its own `cache` line, with no time on the wire; the row is
         // the record that this ask cost nothing, not a second count of the request that earned it.
         crate::request_timing::record_cached(tree, base_row(&model));
-        return Asked { calls: parse_effects(&cached), failed: false, reason: String::new() };
+        return Asked {
+            calls: parse_effects(&cached),
+            failed: false,
+            reason: String::new(),
+        };
     }
     let base = base_row(&model);
     let endpoint = services::llm_endpoint(conf);
@@ -411,7 +443,15 @@ pub fn ask_at_over(
         Some(&offered),
         &build,
         &|body: &str| {
-            crate::llm_retry_leg::chat(STEP, tree, &base, &endpoint, body, cancel, &crate::ui::window::log_line)
+            crate::llm_retry_leg::chat(
+                STEP,
+                tree,
+                &base,
+                &endpoint,
+                body,
+                cancel,
+                &crate::ui::window::log_line,
+            )
         },
         &crate::ui::window::log_line,
     ) {
@@ -425,7 +465,11 @@ pub fn ask_at_over(
         Err(_) => {
             // Neither JSON nor a stream: nothing to place, read as "the model proposed nothing" — the same ending
             // an empty EFFECTS document has (§F3.11 does not fail a cut over an unreadable decoration list).
-            return Asked { calls: Vec::new(), failed: false, reason: String::new() };
+            return Asked {
+                calls: Vec::new(),
+                failed: false,
+                reason: String::new(),
+            };
         }
     };
     if reply.tool_calls.is_empty() {
@@ -437,15 +481,27 @@ pub fn ask_at_over(
             if !text.trim().is_empty() {
                 llm_cache::store(tree, STEP, &parts, &text);
             }
-            return Asked { calls: parse_effects(&text), failed: false, reason: String::new() };
+            return Asked {
+                calls: parse_effects(&text),
+                failed: false,
+                reason: String::new(),
+            };
         }
         // §3's answered question on this item: the tools ARE on the wire, and a reply carrying a JSON document
         // instead of calling `add_effect` has not answered. Ask again, once, with the correction in the
         // conversation (§3's repair); a second prose answer is this pass's failure, said by name.
         let went_out = std::time::Instant::now();
         let dial = |body: &str| {
-            crate::llm_retry_leg::chat(STEP, tree, &base, &endpoint, body, cancel, &crate::ui::window::log_line)
-                .map(|sent| (sent.content_type, sent.body))
+            crate::llm_retry_leg::chat(
+                STEP,
+                tree,
+                &base,
+                &endpoint,
+                body,
+                cancel,
+                &crate::ui::window::log_line,
+            )
+            .map(|sent| (sent.content_type, sent.body))
         };
         let second = match crate::clip_rules_tools_leg::ask_again_for_calls(
             STEP,
@@ -490,7 +546,11 @@ pub fn ask_at_over(
                 &crate::clip_rules_tools_leg::answering_envelope(&second).to_string(),
             );
         }
-        return Asked { calls, failed: false, reason: String::new() };
+        return Asked {
+            calls,
+            failed: false,
+            reason: String::new(),
+        };
     }
     // §2's loop from here, over the CLIP state the tools write into: `get_frames` is answered from it (a zoom has
     // to be aimed), `add_effect` lands in it, and each call is RUN before another request goes out — the same door
@@ -516,11 +576,20 @@ pub fn ask_at_over(
     // asked again. The repair path above stores this same shape; a first reply that already called the tool must
     // too, or the cache is only half a cache and the next identical ask dials the model a second time.
     if crate::clip_rules_tools_leg::asks_for_anything(&reply) {
-        llm_cache::store(tree, STEP, &parts, &crate::clip_rules_tools_leg::answering_envelope(&reply).to_string());
+        llm_cache::store(
+            tree,
+            STEP,
+            &parts,
+            &crate::clip_rules_tools_leg::answering_envelope(&reply).to_string(),
+        );
     }
     // A call this pass can already answer ENDS the ask: the model has its result, so no second request goes out
     // (§F3.11 counts batches by rows in `requests.tsv`).
-    Asked { calls: calls_out, failed: false, reason: String::new() }
+    Asked {
+        calls: calls_out,
+        failed: false,
+        reason: String::new(),
+    }
 }
 
 /// `stored_form` is gone: since §3's answer on this item the answer IS a call list, so what a pass caches is
@@ -537,7 +606,14 @@ fn messages(context: &str, clips: &Clips, speeds: &[(u32, f64)]) -> (String, Str
 /// `cache_parts`, the ONE key recipe the pass itself stores by, so the two cannot drift apart. Named
 /// `_for_test` because only a proof names the file: the pass never asks for a path, it just stores and reads.
 /// A second hash recipe inside a test would be a rule able to disagree with the code.
-pub fn cache_file_for_test(tree: &Tree, context: &str, clips: &Clips, speeds: &[(u32, f64)], model: &str, attempt: u32) -> PathBuf {
+pub fn cache_file_for_test(
+    tree: &Tree,
+    context: &str,
+    clips: &Clips,
+    speeds: &[(u32, f64)],
+    model: &str,
+    attempt: u32,
+) -> PathBuf {
     let (system, user) = messages(context, clips, speeds);
     // A missing key is no file: `llm_cache::store` refuses to write one either (§6).
     let key = llm_cache::key(&cache_parts(&system, &user, model, attempt)).unwrap_or_default();
@@ -588,5 +664,9 @@ fn base_row(model: &str) -> Request {
 
 /// One failure answer, with the reason kept beside it for the log.
 fn failed(reason: String) -> Asked {
-    Asked { calls: Vec::new(), failed: true, reason }
+    Asked {
+        calls: Vec::new(),
+        failed: true,
+        reason,
+    }
 }

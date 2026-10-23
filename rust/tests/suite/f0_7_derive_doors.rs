@@ -13,13 +13,13 @@
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use crate::common;
 use adw::prelude::*;
+use common::{fake_audio_server, fixture_dir, settle, wait_until};
 use gtk4 as gtk;
 use naivepost::policy::{self, Proposal};
 use naivepost::project::Origin;
 use naivepost::ui;
-use crate::common;
-use common::{fake_audio_server, fixture_dir, settle, wait_until};
 
 static RAN_DEBOUNCE_LOGIC: AtomicBool = AtomicBool::new(false);
 static RAN_FORM_DOOR: AtomicBool = AtomicBool::new(false);
@@ -49,7 +49,8 @@ fn f0_7_debounce_the_wait_is_the_parameter_and_a_later_keystroke_cancels_the_fir
     // §F0.7's word is "debounced" and spec/03-shell.md names no number, so 500 ms is the app's own
     // engineering constant (`policy.rs`: long enough that typing a paragraph costs one request).
     assert_eq!(
-        policy::DEBOUNCE_MS, 500,
+        policy::DEBOUNCE_MS,
+        500,
         "§F0.7's debounce changed: update the spec text or the constant, not this test silently"
     );
     // A keystroke still inside the wait has NOT earned a request: that is what makes a burst of typing
@@ -190,10 +191,12 @@ fn check_the_next_press_derives_once(app: &adw::Application) {
     serve_audio(&fake_audio_server());
     let asked = std::rc::Rc::new(AtomicUsize::new(0));
     let counted = std::rc::Rc::clone(&asked);
-    ui::set_policy_sender_for_tests(move |req: &policy::DerivationRequest, refusals: &[String]| {
-        counted.fetch_add(1, Ordering::SeqCst);
-        one_field_answer(req, refusals)
-    });
+    ui::set_policy_sender_for_tests(
+        move |req: &policy::DerivationRequest, refusals: &[String]| {
+            counted.fetch_add(1, Ordering::SeqCst);
+            one_field_answer(req, refusals)
+        },
+    );
 
     let window = fresh_window(app);
     ui::set_session_context(&window, CONTEXT);

@@ -8,8 +8,8 @@ use gtk4 as gtk;
 
 use crate::cut_screen;
 use crate::cut_select;
-use crate::ui::window_line_step::now_ms;
 use crate::ui::window_doors::find_widget_by_name;
+use crate::ui::window_line_step::now_ms;
 use crate::ui::window_selection::{
     draw_selection, placeholder_surface_bands, press_fx_lane, pressed_surface, select_surface,
     set_pressed_surface, SELECT_GESTURES,
@@ -34,7 +34,9 @@ thread_local! {
 
 /// Attach a left-button click to this window's `select-surface` so a real press places the line.
 pub(crate) fn wire_line_click_surface(window: &adw::ApplicationWindow) {
-    let Some(area) = select_surface(window) else { return };
+    let Some(area) = select_surface(window) else {
+        return;
+    };
     let gesture = gtk::GestureClick::new();
     // Left button only: the right button belongs to trim/move (F2.8) and must not move the line.
     gesture.set_button(1);
@@ -48,7 +50,9 @@ pub(crate) fn wire_line_click_surface(window: &adw::ApplicationWindow) {
 
 /// Attach the same press to the PAINTED band, where the geometry the rule reads is.
 pub fn wire_band_line_press(window: &adw::ApplicationWindow) {
-    let Some(content) = window.content() else { return };
+    let Some(content) = window.content() else {
+        return;
+    };
     for name in ["track-band", "track-playhead"] {
         if let Some(band) = find_widget_by_name(&content, name) {
             crate::ui::cut_line_press::attach(window, &band);
@@ -84,7 +88,9 @@ pub fn band_line_gesture_for_test(window: &adw::ApplicationWindow) -> Option<gtk
 /// a drag that always started at the head of the tape could not select a stretch in the middle of a
 /// session, which is the only thing a selection is for). Scope resolution stays `cut_select::draw`'s.
 pub(crate) fn wire_select_surface(window: &adw::ApplicationWindow) {
-    let Some(area) = select_surface(window) else { return };
+    let Some(area) = select_surface(window) else {
+        return;
+    };
     let gesture = gtk::GestureDrag::new();
     let win = window.clone();
     // F2.6 S1: the press decides the scope, once. Which band the y fell in (ruler / picture row / wave

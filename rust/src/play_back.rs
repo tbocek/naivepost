@@ -61,8 +61,8 @@ pub fn command_for(files: &[String], at_secs: f64) -> Vec<String> {
 /// the caller logs it where the press's other lines go.
 pub fn cue(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u32, String> {
     halt(); // one player at a time: a second cue replaces the run nobody paused instead of doubling sound
-    // A fresh process has never heard this player's last volume ask, so the stamp starts blank; otherwise an
-    // apply that looks "already done" would be skipped and the new run would play at the old loudness.
+            // A fresh process has never heard this player's last volume ask, so the stamp starts blank; otherwise an
+            // apply that looks "already done" would be skipped and the new run would play at the old loudness.
     if let Ok(mut stamp) = applied_volume().lock() {
         *stamp = None;
     }
@@ -70,8 +70,12 @@ pub fn cue(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u32, St
     let args = command_for(files, at_secs);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     log(&crate::subprocess::log_line(&program, &refs));
-    let child = crate::subprocess::spawn_piped(&program, &refs)
-        .map_err(|err| format!("{} failed: {err}", crate::subprocess::shown(&program, &refs)))?;
+    let child = crate::subprocess::spawn_piped(&program, &refs).map_err(|err| {
+        format!(
+            "{} failed: {err}",
+            crate::subprocess::shown(&program, &refs)
+        )
+    })?;
     let pid = child.id();
     *held().lock().expect("the player slot") = Some(pid);
     // The list travels beside the pid so [`set_volume`] can re-cue THE SAME files at a new loudness; without
@@ -160,10 +164,7 @@ pub fn set_volume(gain: f64, at_secs: f64) -> bool {
 
 /// The files the live process was cued with, or `None` when nothing is running to be asked about.
 pub fn cued_files() -> Option<Vec<String>> {
-    let files = running_files()
-        .lock()
-        .expect("the file list")
-        .clone();
+    let files = running_files().lock().expect("the file list").clone();
     (!files.is_empty()).then_some(files)
 }
 

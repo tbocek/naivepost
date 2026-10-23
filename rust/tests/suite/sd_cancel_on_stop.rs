@@ -69,7 +69,13 @@ fn serve_inner(stream: &mut TcpStream) -> Option<Seen> {
             break;
         }
         if line.to_ascii_lowercase().starts_with("content-length:") {
-            length = line.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = line
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
         if line.trim().is_empty() {
             break;
@@ -79,8 +85,16 @@ fn serve_inner(stream: &mut TcpStream) -> Option<Seen> {
     if length > 0 {
         reader.read_exact(&mut payload).ok()?;
     }
-    let method = request_line.split_whitespace().next().unwrap_or_default().to_string();
-    let path = request_line.split_whitespace().nth(1).unwrap_or_default().to_string();
+    let method = request_line
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_string();
+    let path = request_line
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or_default()
+        .to_string();
     Some(Seen { method, path })
 }
 
@@ -121,9 +135,12 @@ fn fixture(tag: &str, sd_url: &str) -> Fixture {
     conf.sd_server = sd_url.to_string();
     settings::save(&paths, &conf).expect("settings written");
     let tree = naivepost::layout::Tree::new(&session).expect("a .naivepost folder is a project");
-    Fixture { root, tree, _scenario: scenario }
+    Fixture {
+        root,
+        tree,
+        _scenario: scenario,
+    }
 }
-
 
 /// Wait for the next request the fake took, failing loudly rather than hanging the suite when none comes.
 fn next(received: &Receiver<Seen>, why: &str) -> Seen {
@@ -138,12 +155,17 @@ fn next(received: &Receiver<Seen>, why: &str) -> Seen {
 fn sec_02_services_1_the_four_servers_s12_a_cancel_posts_the_job_cancel_path() {
     let (url, received) = fake_sd("200 OK", r#"{"status":"cancelled"}"#);
     let scene = fixture("cancel-ok", &url);
-    let job = DrawnJob { id: "job-42".to_string() };
+    let job = DrawnJob {
+        id: "job-42".to_string(),
+    };
 
     draw::cancel(&scene.tree, &job).expect("the fake accepted the cancel");
     let seen = next(&received, "the cancel reached the fake sd.cpp");
     assert_eq!(seen.method, "POST", "§1's table gives the cancel POST");
-    assert_eq!(seen.path, "/sdcpp/v1/jobs/job-42/cancel", "the job's own cancel path");
+    assert_eq!(
+        seen.path, "/sdcpp/v1/jobs/job-42/cancel",
+        "the job's own cancel path"
+    );
 
     let rows = std::fs::read_to_string(scene.tree.requests_tsv()).expect("requests.tsv");
     assert!(
@@ -157,7 +179,9 @@ fn sec_02_services_1_the_four_servers_s12_a_cancel_posts_the_job_cancel_path() {
 fn sec_02_services_1_the_four_servers_s12_a_refused_cancel_names_the_drawing_server() {
     let (url, received) = fake_sd("500 Internal Server Error", "{}");
     let scene = fixture("cancel-bad", &url);
-    let job = DrawnJob { id: "job-9".to_string() };
+    let job = DrawnJob {
+        id: "job-9".to_string(),
+    };
 
     let why = draw::cancel(&scene.tree, &job).expect_err("a 500 is not an acceptance");
     assert!(
@@ -174,13 +198,13 @@ fn sec_02_services_1_the_four_servers_s12_a_refused_cancel_names_the_drawing_ser
 fn sec_02_services_1_the_four_servers_s12_a_stop_during_the_poll_cancels_the_job() {
     let (url, received) = fake_sd("200 OK", r#"{"status":"queued","queue_position":3}"#);
     let scene = fixture("stop", &url);
-    let job = DrawnJob { id: "job-stop" .to_string() };
+    let job = DrawnJob {
+        id: "job-stop".to_string(),
+    };
 
     // Stop after the first ask: the loop polls once, then finds the run stopped on its next turn.
     let asks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let cancelled = || {
-        asks.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 1
-    };
+    let cancelled = || asks.fetch_add(1, std::sync::atomic::Ordering::SeqCst) > 1;
     let lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let logged = lines.clone();
 
@@ -204,10 +228,15 @@ fn sec_02_services_1_the_four_servers_s12_a_stop_during_the_poll_cancels_the_job
         .filter(|seen| seen.path.ends_with("/cancel"))
         .collect();
     assert_eq!(cancels.len(), 1, "one stop, one cancel: {paths:?}");
-    assert_eq!(cancels[0].method, "POST", "§1's table gives the cancel POST");
+    assert_eq!(
+        cancels[0].method, "POST",
+        "§1's table gives the cancel POST"
+    );
     assert_eq!(cancels[0].path, "/sdcpp/v1/jobs/job-stop/cancel");
     assert!(
-        paths.iter().any(|seen| seen.path == "/sdcpp/v1/jobs/job-stop"),
+        paths
+            .iter()
+            .any(|seen| seen.path == "/sdcpp/v1/jobs/job-stop"),
         "the loop polled the job before stopping: {paths:?}"
     );
 }

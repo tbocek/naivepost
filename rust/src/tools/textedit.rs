@@ -191,7 +191,11 @@ impl Join {
         let mut out: Vec<&str> = before_all
             .iter()
             .map(String::as_str)
-            .take(before_all.len().saturating_sub(self.dropped_count(Side::Before)))
+            .take(
+                before_all
+                    .len()
+                    .saturating_sub(self.dropped_count(Side::Before)),
+            )
             .collect();
         out.extend(
             after_all
@@ -323,8 +327,9 @@ pub fn dedupe_joins(words: &[String], times: &[(f64, f64)], kept: &mut [bool]) -
         // Longest first: the whole doubled tail is what went, and taking the longest match keeps the
         // later copy whole rather than leaving half of the earlier copy behind.
         for n in (1..=before.len().min(after.len())).rev() {
-            let same = (0..n)
-                .all(|x| prepare_decisions::same_word(&words[before[before.len() - n + x]], &words[after[x]]));
+            let same = (0..n).all(|x| {
+                prepare_decisions::same_word(&words[before[before.len() - n + x]], &words[after[x]])
+            });
             if !same {
                 continue;
             }
@@ -332,7 +337,11 @@ pub fn dedupe_joins(words: &[String], times: &[(f64, f64)], kept: &mut [bool]) -
             for &idx in go {
                 kept[idx] = false;
             }
-            let text = go.iter().map(|&idx| words[idx].as_str()).collect::<Vec<_>>().join(" ");
+            let text = go
+                .iter()
+                .map(|&idx| words[idx].as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
             // The EARLIER copy's own start second, as the prototype stamps it (`mmss(...)` of the
             // first dropped word): the note reads as the line the reader looks up by. `dedupe_note`'s
             // docstring says "the later copy begins", which disagrees; the wording of that string is

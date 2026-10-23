@@ -8,10 +8,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use naivepost::project::{self, Project};
-use naivepost::save_as::{self, SAVED};
 use crate::common;
 use common::temp_dir_created as temp_dir;
+use naivepost::project::{self, Project};
+use naivepost::save_as::{self, SAVED};
 
 /// A project folder, written so a rename has something recognisable to carry along.
 fn project_folder(dir: &Path) -> PathBuf {
@@ -56,7 +56,10 @@ fn f0_10_s3_the_same_name_writes_the_project_file_and_moves_nothing() {
     let saved = save_as::save_as(&session(), &folder, "jan").expect("the same name always saves");
     assert_eq!(saved.path, folder);
     assert!(saved.logs.is_empty(), "nothing moved: {:?}", saved.logs);
-    assert_eq!(fs::read(folder.join("render.mp4")).unwrap(), b"the whole video");
+    assert_eq!(
+        fs::read(folder.join("render.mp4")).unwrap(),
+        b"the whole video"
+    );
     assert_eq!(
         project::load(&folder).unwrap().context,
         "the old session",
@@ -81,7 +84,10 @@ fn f0_10_s3_a_different_name_renames_the_folder_rather_than_copying_it() {
     let saved = save_as::save_as(&session(), &jan, "feb").expect("a free name renames");
     assert_eq!(saved.path, feb);
     assert!(!jan.exists(), "never a copy: the old folder is gone");
-    assert_eq!(fs::read(feb.join("render.mp4")).unwrap(), b"the whole video");
+    assert_eq!(
+        fs::read(feb.join("render.mp4")).unwrap(),
+        b"the whole video"
+    );
     assert_eq!(
         fs::read(feb.join("frames/cam/frame-0001.jpg")).unwrap(),
         b"a frame"
@@ -116,13 +122,22 @@ fn f0_10_s3_renaming_onto_a_folder_that_has_work_in_it_fails_and_the_files_stay(
         err.starts_with("!!! could not move the output folder to "),
         "{err}"
     );
-    assert!(err.contains(&format!("file(s) are still in {}", jan.display())), "{err}");
+    assert!(
+        err.contains(&format!("file(s) are still in {}", jan.display())),
+        "{err}"
+    );
     // 3 = naivepost.json, render.mp4 and the frame under frames/cam.
-    assert!(err.contains("the 3 file(s)"), "the count is what it says: {err}");
+    assert!(
+        err.contains("the 3 file(s)"),
+        "the count is what it says: {err}"
+    );
 
     assert!(jan.exists() && jan.join("render.mp4").is_file());
     assert!(jan.join("frames/cam/frame-0001.jpg").is_file());
-    assert_eq!(fs::read(taken.join("somebody-elses.mp4")).unwrap(), b"not ours");
+    assert_eq!(
+        fs::read(taken.join("somebody-elses.mp4")).unwrap(),
+        b"not ours"
+    );
     assert_eq!(
         project::load(&jan).unwrap().context,
         "the old session",
@@ -142,9 +157,13 @@ fn f0_10_s3_renaming_onto_an_empty_folder_goes_through() {
     let empty = root.join("feb.naivepost");
     fs::create_dir_all(&empty).unwrap();
 
-    let saved = save_as::save_as(&session(), &jan, "feb").expect("an empty folder takes the rename");
+    let saved =
+        save_as::save_as(&session(), &jan, "feb").expect("an empty folder takes the rename");
     assert!(!jan.exists());
-    assert_eq!(fs::read(empty.join("render.mp4")).unwrap(), b"the whole video");
+    assert_eq!(
+        fs::read(empty.join("render.mp4")).unwrap(),
+        b"the whole video"
+    );
     assert_eq!(saved.path, empty);
 
     fs::remove_dir_all(&root).unwrap();
@@ -157,7 +176,8 @@ fn f0_10_s3_a_project_that_has_never_written_moves_without_a_word() {
     let root = temp_dir("never");
     let never = root.join("never.naivepost");
 
-    let saved = save_as::save_as(&session(), &never, "fresh").expect("nothing to move, so nothing fails");
+    let saved =
+        save_as::save_as(&session(), &never, "fresh").expect("nothing to move, so nothing fails");
     assert!(saved.logs.is_empty(), "{:?}", saved.logs);
     assert!(!never.exists());
     assert!(root
@@ -174,11 +194,17 @@ fn f0_10_s4_a_saved_project_says_so() {
     // the flowchart's refusal stops the flow before the status.
     let root = temp_dir("status");
     let jan = project_folder(&root.join("jan.naivepost"));
-    assert_eq!(save_as::save_as(&session(), &jan, "jan").unwrap().status, SAVED);
+    assert_eq!(
+        save_as::save_as(&session(), &jan, "jan").unwrap().status,
+        SAVED
+    );
 
     let feb = project_folder(&root.join("feb.naivepost"));
     fs::write(feb.join("render.mp4"), b"the whole video").unwrap();
-    assert_eq!(save_as::save_as(&session(), &feb, "mar").unwrap().status, SAVED);
+    assert_eq!(
+        save_as::save_as(&session(), &feb, "mar").unwrap().status,
+        SAVED
+    );
 
     let taken = root.join("taken.naivepost");
     fs::create_dir_all(&taken).unwrap();

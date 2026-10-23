@@ -48,7 +48,10 @@ pub struct Liveness {
 impl Liveness {
     /// A streamed chat call: §4's stall rule applies.
     pub fn streamed(step: &str) -> Liveness {
-        Liveness { step: step.to_string(), streamed: true }
+        Liveness {
+            step: step.to_string(),
+            streamed: true,
+        }
     }
 }
 
@@ -72,7 +75,7 @@ impl Probe {
         Arc::new(Probe::default())
     }
 
-/// Something came off the wire. Any byte counts — §4 says so outright, keep-alives included — and the caller
+    /// Something came off the wire. Any byte counts — §4 says so outright, keep-alives included — and the caller
     /// does not have to know what the bytes meant to make this call.
     ///
     /// Stamped in whole seconds: that is the unit [`Watch::quiet`] subtracts, so a millisecond stamp here would be
@@ -134,7 +137,10 @@ impl WatchClock {
     fn start() -> WatchClock {
         // One origin for the whole call: `epoch` fixes where the clock started (a shifted start included) and
         // `origin.elapsed()` is what adds to it, so an elapsed time never depends on the wall clock moving mid-call.
-        WatchClock { origin: std::time::Instant::now(), epoch: now_secs() }
+        WatchClock {
+            origin: std::time::Instant::now(),
+            epoch: now_secs(),
+        }
     }
 
     /// The current moment in the whole seconds [`Watch`] works in.
@@ -200,7 +206,10 @@ pub fn guarded<T: Send + 'static>(
         match receiver.recv_timeout(poll_wait()) {
             Ok(answer) => return answer,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(format!("{}: the call ended without an answer", liveness.step))
+                return Err(format!(
+                    "{}: the call ended without an answer",
+                    liveness.step
+                ))
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
         }
@@ -218,7 +227,10 @@ pub fn guarded<T: Send + 'static>(
                 // §7's watchdog dump: the give-up is exactly the stall a `hang-*.txt` exists to
                 // record, so it is written here rather than by a second watcher nobody wired up.
                 // Failing to write it changes nothing about the call's ending (principle 8).
-                crate::machine_store::note_hang(&liveness.step, std::time::Duration::from_secs(watch.quiet(now)));
+                crate::machine_store::note_hang(
+                    &liveness.step,
+                    std::time::Duration::from_secs(watch.quiet(now)),
+                );
                 // §4's give-up ENDS the call here and now: no wait on the worker, no wait on the server. Dropping the
                 // receiver leaves the abandoned read to finish on its own and drop its own socket.
                 return Err(blame);

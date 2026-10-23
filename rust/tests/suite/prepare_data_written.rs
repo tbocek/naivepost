@@ -53,10 +53,17 @@ fn sec_04_prepare_3_data_written_s1_a_cold_batch_writes_the_calm_line_for_its_fi
     let rows = describe::events_rows(&frames, &[], false, 3.0);
     assert_eq!(rows.len(), frames.len(), "one row per frame: {rows:?}");
     let first = rows[0].split('\t').next_back().expect("a row has its text");
-    assert_eq!(first, Batch::SAME_WITHOUT_HISTORY, "the opening row is the forced line");
+    assert_eq!(
+        first,
+        Batch::SAME_WITHOUT_HISTORY,
+        "the opening row is the forced line"
+    );
     assert_eq!(first, CALM, "and the literal §6 spells");
     for row in &rows[1..] {
-        assert!(row.ends_with("\tsame"), "every later frame still says `same`: {row:?}");
+        assert!(
+            row.ends_with("\tsame"),
+            "every later frame still says `same`: {row:?}"
+        );
     }
 
     // And they reach the file the stage appends to, in order, three lines.
@@ -65,9 +72,15 @@ fn sec_04_prepare_3_data_written_s1_a_cold_batch_writes_the_calm_line_for_its_fi
     let body = std::fs::read_to_string(tree.events_tsv(LANE)).expect("events.tsv");
     let lines: Vec<&str> = body.lines().collect();
     assert_eq!(lines.len(), 3, "one line per frame: {body:?}");
-    assert!(lines[0].ends_with(CALM), "the file OPENS on the forced line: {body:?}");
+    assert!(
+        lines[0].ends_with(CALM),
+        "the file OPENS on the forced line: {body:?}"
+    );
     let state = std::fs::read_to_string(tree.describe_state(LANE)).expect("state.txt");
-    assert_eq!(state, "nothing yet", "state.txt goes with the rows (§F1.7 S6)");
+    assert_eq!(
+        state, "nothing yet",
+        "state.txt goes with the rows (§F1.7 S6)"
+    );
 }
 
 /// s2: the visible half of the bug — read back, that opening line is a REAL event. A `same` row with
@@ -80,16 +93,33 @@ fn sec_04_prepare_3_data_written_s2_the_written_line_is_a_real_event_when_read_b
     describe::write_chunk(&tree, "cold", &cold, None).expect("cold chunk");
     assert_eq!(
         naivepost::textfmt::read_events(&tree.events_tsv("cold")).expect("the cold file parses"),
-        vec![FrameEvent { start: 0.0, end: 2.0, text: CALM.to_string() }],
+        vec![FrameEvent {
+            start: 0.0,
+            end: 2.0,
+            text: CALM.to_string()
+        }],
         "the forced line is the file's first reading, and the `same` after it extends it"
     );
 
     // The warm fold is untouched: a `same` row adds no event, it lengthens the one before it.
-    let warm = describe::events_rows(&[0.0, 1.0, 2.0], &[Event { frame: 1, text: "board up".into(), calm: false }], true, 3.0);
+    let warm = describe::events_rows(
+        &[0.0, 1.0, 2.0],
+        &[Event {
+            frame: 1,
+            text: "board up".into(),
+            calm: false,
+        }],
+        true,
+        3.0,
+    );
     describe::write_chunk(&tree, "warm", &warm, None).expect("warm chunk");
     assert_eq!(
         naivepost::textfmt::read_events(&tree.events_tsv("warm")).expect("the warm file parses"),
-        vec![FrameEvent { start: 0.0, end: 3.0, text: "board up".to_string() }],
+        vec![FrameEvent {
+            start: 0.0,
+            end: 3.0,
+            text: "board up".to_string()
+        }],
         "a `same` after a real reading extends it and adds nothing"
     );
 }
@@ -99,7 +129,11 @@ fn sec_04_prepare_3_data_written_s2_the_written_line_is_a_real_event_when_read_b
 #[test]
 fn sec_04_prepare_3_data_written_s3_a_cold_frame_answered_same_is_force_written() {
     let frames = [0.0, 1.0];
-    let said_same = [Event { frame: 1, text: "same".into(), calm: false }];
+    let said_same = [Event {
+        frame: 1,
+        text: "same".into(),
+        calm: false,
+    }];
     let cold = describe::events_rows(&frames, &said_same, false, 2.0);
     assert!(
         cold[0].ends_with(CALM),
@@ -107,7 +141,10 @@ fn sec_04_prepare_3_data_written_s3_a_cold_frame_answered_same_is_force_written(
     );
 
     let warm = describe::events_rows(&frames, &said_same, true, 2.0);
-    assert!(warm[0].ends_with("\tsame"), "with history the same answer is true: {warm:?}");
+    assert!(
+        warm[0].ends_with("\tsame"),
+        "with history the same answer is true: {warm:?}"
+    );
 
     // The two doors agree on WHICH frame this is, so the report and the file cannot drift. Frame 2 is
     // also unanswered here; the point is that frame 1 is reported for the no-history reason, not as an
@@ -173,7 +210,11 @@ impl Fake {
                 });
             }
         });
-        Fake { url: format!("http://127.0.0.1:{port}"), asks, answer: held }
+        Fake {
+            url: format!("http://127.0.0.1:{port}"),
+            asks,
+            answer: held,
+        }
     }
 
     /// Requests recorded so far. Recording happens on the connection's own thread, so a reply can
@@ -191,18 +232,28 @@ impl Fake {
 }
 
 fn serve(mut stream: TcpStream, answer: &str) -> bool {
-    let Ok(mut reader) = stream.try_clone().map(std::io::BufReader::new) else { return false };
+    let Ok(mut reader) = stream.try_clone().map(std::io::BufReader::new) else {
+        return false;
+    };
     let mut line = String::new();
     let _ = reader.read_line(&mut line);
     let mut length = 0usize;
     loop {
         let mut header = String::new();
-        let Ok(read) = reader.read_line(&mut header) else { break };
+        let Ok(read) = reader.read_line(&mut header) else {
+            break;
+        };
         if read == 0 || header.trim().is_empty() {
             break;
         }
         if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = header
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
     }
     let mut body = vec![0u8; length];
@@ -240,7 +291,17 @@ fn write_real_frame(dir: &Path, name: &str) {
     std::fs::create_dir_all(dir).expect("the frames folder");
     let out = dir.join(name);
     let status = std::process::Command::new("ffmpeg")
-        .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=1280x720:rate=1:duration=1", "-frames:v", "1"])
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=1280x720:rate=1:duration=1",
+            "-frames:v",
+            "1",
+        ])
         .arg(&out)
         .status()
         .expect("ffmpeg runs");
@@ -290,7 +351,11 @@ impl Scene {
             write_real_frame(&tree.frames_dir(LANE), &format!("{}.jpg", frame_name(at)));
         }
         settings::save(&paths, &conf_at(llm_url)).expect("the conf");
-        Scene { root, paths, server: llm_url.to_string() }
+        Scene {
+            root,
+            paths,
+            server: llm_url.to_string(),
+        }
     }
 
     fn session(&self) -> PathBuf {
@@ -322,7 +387,10 @@ impl Scene {
         if let Ok(read) = settings::read(&self.paths) {
             conf = read;
         }
-        assert_eq!(conf.server, self.server, "the leg would dial another server than this fake");
+        assert_eq!(
+            conf.server, self.server,
+            "the leg would dial another server than this fake"
+        );
         conf
     }
 }
@@ -355,13 +423,23 @@ fn sec_04_prepare_3_data_written_s4_the_live_describe_run_lands_every_row() {
         Scene::leave();
         outcome
     };
-    assert_eq!(ran.expect("a cold chunk missing only its first frame is described, not refused"), 1);
+    assert_eq!(
+        ran.expect("a cold chunk missing only its first frame is described, not refused"),
+        1
+    );
     assert_eq!(fake.waited(1), 1, "the chunk was asked about once");
 
     let body = std::fs::read_to_string(tree.events_tsv(LANE)).expect("events.tsv was written");
     let lines: Vec<&str> = body.lines().collect();
-    assert_eq!(lines.len(), seconds(frames).len(), "one row per frame asked: {body:?}");
-    assert!(lines[0].ends_with(CALM), "the live file opens on §6's forced line: {body:?}");
+    assert_eq!(
+        lines.len(),
+        seconds(frames).len(),
+        "one row per frame asked: {body:?}"
+    );
+    assert!(
+        lines[0].ends_with(CALM),
+        "the live file opens on §6's forced line: {body:?}"
+    );
     for line in &lines[1..] {
         assert!(
             line.ends_with("\tsame") || line.contains("thing "),
@@ -369,15 +447,16 @@ fn sec_04_prepare_3_data_written_s4_the_live_describe_run_lands_every_row() {
         );
     }
     let state = std::fs::read_to_string(tree.describe_state(LANE)).expect("state.txt");
-    assert_eq!(state, "board mid-write", "the state the reply set reached the file");
+    assert_eq!(
+        state, "board mid-write",
+        "the state the reply set reached the file"
+    );
 }
 
 /// A scratch project folder under the name Describe files its work in.
 fn scratch(tag: &str) -> (PathBuf, Tree) {
-    let root = std::env::temp_dir().join(format!(
-        "naivepost-test-{}-pdw-{tag}",
-        std::process::id()
-    ));
+    let root =
+        std::env::temp_dir().join(format!("naivepost-test-{}-pdw-{tag}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let dir = root.join("demo.naivepost");
     std::fs::create_dir_all(&dir).expect("the project folder");

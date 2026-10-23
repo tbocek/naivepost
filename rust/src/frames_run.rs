@@ -60,8 +60,13 @@ pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> R
     let paths = settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
     let session = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
-    let tree = Tree::new(&session).map_err(|_| format!("{}: not a project folder to frame into", session.display()))?;
-    let source = task.args.first().cloned().ok_or("the frames row names no source")?;
+    let tree = Tree::new(&session)
+        .map_err(|_| format!("{}: not a project folder to frame into", session.display()))?;
+    let source = task
+        .args
+        .first()
+        .cloned()
+        .ok_or("the frames row names no source")?;
     let index: usize = task
         .args
         .get(1)
@@ -70,7 +75,10 @@ pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> R
     let lane = crate::audio_task::source_lane(&source);
     let source_path = layout::resolve(tree.dir(), tree.dir(), &source);
     if !source_path.exists() {
-        return Err(format!("{lane}: no video to frame -- {} is not there", source_path.display()));
+        return Err(format!(
+            "{lane}: no video to frame -- {} is not there",
+            source_path.display()
+        ));
     }
     stage_pass(&tree, &paths, &lane, &source_path, index, log)?;
     Ok(())
@@ -93,14 +101,27 @@ pub fn stage_pass(
     let ffmpeg = crate::separate_media::program(&conf.ffmpeg);
     let duration = run_stages::probe_duration(&conf.ffmpeg, source_path, log)?;
     let start = clock_start(tree, index);
-    let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
 
     // S1 first, before anything is asked of ffmpeg: the marker is this stage's resume marker, and a pass
     // that matched it owes the run one sentence and no processes — not even the sweep, whose scores are
     // what `scenes.tsv` already records.
-    if frames::marker_matches(requests::read_frames_marker(tree, lane)?, frames::GRID, frames::SCENE_THRESHOLD) {
-        log(&frames::already_log(lane, frames::GRID, frames::SCENE_THRESHOLD));
-        return Ok(frames::Outcome { skipped: true, ..Default::default() });
+    if frames::marker_matches(
+        requests::read_frames_marker(tree, lane)?,
+        frames::GRID,
+        frames::SCENE_THRESHOLD,
+    ) {
+        log(&frames::already_log(
+            lane,
+            frames::GRID,
+            frames::SCENE_THRESHOLD,
+        ));
+        return Ok(frames::Outcome {
+            skipped: true,
+            ..Default::default()
+        });
     }
     // Counts the chunks as they are handed over, so the door can put `frames::progress_log`'s string in
     // front of the ffmpeg calls it stands for. The total is the number of chunks the plan makes, which is
@@ -118,14 +139,26 @@ pub fn stage_pass(
     // How many chunks the plan will make, so each one's progress line can say `i/n` like `frames::run`
     // records it — the door logs those lines itself (in front of the ffmpeg calls they stand for), so it
     // has to know the denominator the same way the rule does.
-    let changes_for_count = frames::scene_changes(&frames::parse_scores(&scores), frames::SCENE_THRESHOLD, frames::SCENE_MIN_GAP);
+    let changes_for_count = frames::scene_changes(
+        &frames::parse_scores(&scores),
+        frames::SCENE_THRESHOLD,
+        frames::SCENE_MIN_GAP,
+    );
     let planned = frames::frame_seconds(
-        &changes_for_count.iter().map(|change| change.time).collect::<Vec<_>>(),
+        &changes_for_count
+            .iter()
+            .map(|change| change.time)
+            .collect::<Vec<_>>(),
         duration,
         frames::GRID,
     );
     chunk_total.store(
-        frames::chunks(&(0..planned.len()).collect::<Vec<_>>(), frames::workers(cpus, planned.len())).len().max(1),
+        frames::chunks(
+            &(0..planned.len()).collect::<Vec<_>>(),
+            frames::workers(cpus, planned.len()),
+        )
+        .len()
+        .max(1),
         std::sync::atomic::Ordering::SeqCst,
     );
 
@@ -147,7 +180,9 @@ pub fn stage_pass(
                 next_chunk.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
                 chunk_total.load(std::sync::atomic::Ordering::SeqCst),
             );
-            extract_chunk(&ffmpeg, &input, lane, seconds, &dir, start, cpus, &step, log)
+            extract_chunk(
+                &ffmpeg, &input, lane, seconds, &dir, start, cpus, &step, log,
+            )
         },
     )?;
     for line in &outcome.logs {
@@ -204,7 +239,8 @@ fn extract_chunk(
     let plans = frames::extract_plan(input, seconds, dir, start);
     // The pass-level chunks are already `frames::workers` wide; inside one chunk the same clamp applies
     // to its own frames, so a two-frame chunk does not spawn twenty threads.
-    let threads = frames::workers(cpus, seconds.len().max(frames::TINY_JOB_FRAMES + 1)).min(plans.len());
+    let threads =
+        frames::workers(cpus, seconds.len().max(frames::TINY_JOB_FRAMES + 1)).min(plans.len());
     let mut written = 0usize;
     let mut notes: Vec<String> = Vec::new();
     // The per-chunk progress goes first: `frames::run` records it as each chunk is handed over, and this
@@ -228,8 +264,10 @@ fn extract_chunk(
         let share = pairs.chunks(pairs.len().div_ceil(threads.max(1)));
         for group in share {
             let ffmpeg = ffmpeg.to_string();
-            let group: Vec<(&Vec<String>, String)> =
-                group.iter().map(|(plan, out)| (*plan, (*out).clone())).collect();
+            let group: Vec<(&Vec<String>, String)> = group
+                .iter()
+                .map(|(plan, out)| (*plan, (*out).clone()))
+                .collect();
             handles.push(scope.spawn(move || {
                 let mut lines: Vec<String> = Vec::new();
                 let mut count = 0usize;
@@ -278,7 +316,9 @@ fn extract_chunk(
             }
             written += count;
             if let Some(at) = furthest {
-                notes.push(format!(">>> [{lane}] {count} frames extracted (ffmpeg {at:.1} s)"));
+                notes.push(format!(
+                    ">>> [{lane}] {count} frames extracted (ffmpeg {at:.1} s)"
+                ));
             }
         }
         Ok::<(), String>(())

@@ -16,9 +16,11 @@
 
 use std::path::PathBuf;
 
+use naivepost::layout::Tree;
 use naivepost::narrate_data::{self, keep_previous};
 use naivepost::narrate_details as det;
 use naivepost::narrate_pass as pass;
+use naivepost::narrate_preview as preview;
 use naivepost::narrate_reply as reply;
 use naivepost::narrate_rules as rules;
 use naivepost::narrate_run::{
@@ -26,10 +28,8 @@ use naivepost::narrate_run::{
     JOB_SPEAKING,
 };
 use naivepost::narrate_screen::{self as screen, CAPTIONS};
-use naivepost::narrate_preview as preview;
 use naivepost::narration::{self, Entry, Narration, Silent};
 use naivepost::voice_ref;
-use naivepost::layout::Tree;
 
 /// The spec item every test in this file belongs to; each one asserts it, so a renamed item fails.
 const ITEM: &str = "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass";
@@ -63,8 +63,12 @@ const CLIPS: [(f64, f64); 3] = [(0.0, 10.0), (10.0, 24.0), (24.0, 31.0)];
 // ---- s1: the previous file, the silent list, and captions-only closing the bar ------
 
 #[test]
-fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s1_previous_kept_silent_wiped_captions_closes_the_bar() {
-    assert_eq!(ITEM, "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass");
+fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s1_previous_kept_silent_wiped_captions_closes_the_bar(
+) {
+    assert_eq!(
+        ITEM,
+        "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass"
+    );
     // §6, first sentence: the log names where the overwritten narration went. FOUR leading spaces,
     // because it hangs under the step's own line rather than starting one of its own.
     assert_eq!(
@@ -91,7 +95,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s1_prev
     naivepost::narration::save(&before, &tree).expect("narration.json written");
     let old_bytes = std::fs::read(tree.narration_json()).unwrap();
     assert_eq!(keep_previous(&tree), Ok(true));
-    assert_eq!(std::fs::read(tree.narration_prev_json()).unwrap(), old_bytes);
+    assert_eq!(
+        std::fs::read(tree.narration_prev_json()).unwrap(),
+        old_bytes
+    );
     assert_eq!(
         naivepost::narrate_data::previous(&tree).expect("the previous generation parses"),
         before,
@@ -110,7 +117,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s1_prev
             emotion: String::new(),
         }],
     );
-    assert!(!replaced.is_silent(24.0, 31.0), "the silent marker goes with the replacement");
+    assert!(
+        !replaced.is_silent(24.0, 31.0),
+        "the silent marker goes with the replacement"
+    );
     assert!(replaced.has_line(24.0, 31.0));
     // A marker on bounds the rewrite did not touch survives — §F4.1 S4's rule, unchanged here.
     let elsewhere = fold_written(
@@ -123,7 +133,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s1_prev
             emotion: String::new(),
         }],
     );
-    assert!(elsewhere.is_silent(24.0, 31.0), "a rewrite of one clip leaves the others' silence");
+    assert!(
+        elsewhere.is_silent(24.0, 31.0),
+        "a rewrite of one clip leaves the others' silence"
+    );
 
     // "a captions-only voice still OPENS AND CLOSES the speaking 2/2 job so the bar finishes": the
     // job exists (§F4.1 queues it) even though nothing is spoken, and the close is the second job's
@@ -144,10 +157,14 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s1_prev
     let plan = plan_run(true, &CLIPS, &narration, CAPTIONS);
     assert!(plan.captions_only);
     let mut spoken = 0usize;
-    let outcome = run_with(&plan, |_| Ok(2), |_, _, _| {
-        spoken += 1;
-        Ok(true)
-    });
+    let outcome = run_with(
+        &plan,
+        |_| Ok(2),
+        |_, _, _| {
+            spoken += 1;
+            Ok(true)
+        },
+    );
     assert_eq!(outcome, Ok(Outcome::CaptionsOnly { written: 2 }));
     assert_eq!(spoken, 0, "captions only means NOTHING is spoken");
     assert_eq!(
@@ -159,8 +176,12 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s1_prev
 // ---- s2: the validation refusals, and several entries on one clip ------------------
 
 #[test]
-fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s2_reply_validation_wording() {
-    assert_eq!(ITEM, "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass");
+fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s2_reply_validation_wording(
+) {
+    assert_eq!(
+        ITEM,
+        "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass"
+    );
     // The halves a second of slack cannot bridge: the bounds are echoed from the request, so a reply
     // that does not echo one matches nothing.
     assert_eq!(reply::ENTRY_MATCH_TOLERANCE_SECONDS, 0.5);
@@ -168,12 +189,30 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s2_repl
     // "a skipped clip (\"clip N (a-b) got no entry\")". N is the 1-based clip number and the bounds
     // print at one decimal, which is what both seams do.
     let segs = [
-        naivepost::cut::Seg { s: 0.0, e: 10.0, ..Default::default() },
-        naivepost::cut::Seg { s: 10.0, e: 20.0, ..Default::default() },
-        naivepost::cut::Seg { s: 20.0, e: 30.0, ..Default::default() },
+        naivepost::cut::Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        },
+        naivepost::cut::Seg {
+            s: 10.0,
+            e: 20.0,
+            ..Default::default()
+        },
+        naivepost::cut::Seg {
+            s: 20.0,
+            e: 30.0,
+            ..Default::default()
+        },
     ];
-    assert_eq!(pass::missing_clip_fault(2, 10.0, 24.0), "clip 2 (10.0-24.0) got no entry");
-    assert_eq!(reply::clip_without_entry(2, &segs), "clip 3 (20.0-30.0) got no entry");
+    assert_eq!(
+        pass::missing_clip_fault(2, 10.0, 24.0),
+        "clip 2 (10.0-24.0) got no entry"
+    );
+    assert_eq!(
+        reply::clip_without_entry(2, &segs),
+        "clip 3 (20.0-30.0) got no entry"
+    );
     assert_eq!(
         reply::clip_without_entry(2, &segs),
         pass::missing_clip_fault(3, 20.0, 30.0),
@@ -181,7 +220,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s2_repl
     );
 
     // "no clip with a line (\"every clip came back with no line at all\")".
-    assert_eq!(pass::no_line_fault(), "every clip came back with no line at all");
+    assert_eq!(
+        pass::no_line_fault(),
+        "every clip came back with no line at all"
+    );
     assert_eq!(reply::all_silent_fault(), pass::no_line_fault());
 
     // "entries matched forward only (\"an entry says X-Y, which matches no clip (or is out of
@@ -212,22 +254,40 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s2_repl
         .filter(|line| line.s == 0.0)
         .map(|line| line.at)
         .collect();
-    assert_eq!(on_first, vec![1.0, 4.0], "one clip's lines come out in offset order");
+    assert_eq!(
+        on_first,
+        vec![1.0, 4.0],
+        "one clip's lines come out in offset order"
+    );
 }
 
 // ---- s3: the Inputs tooltip names its inputs ----------------------------------------
 
 #[test]
-fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s3_inputs_tooltip_names_every_input() {
-    assert_eq!(ITEM, "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass");
+fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s3_inputs_tooltip_names_every_input(
+) {
+    assert_eq!(
+        ITEM,
+        "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass"
+    );
     // The tooltip is five rows in §6's order, each one an input the write reads.
-    let tip = det::inputs_tooltip(2, 120.0, "the cut changed", 688, "a demo of the app", Some(("Mira", -1.5)));
+    let tip = det::inputs_tooltip(
+        2,
+        120.0,
+        "the cut changed",
+        688,
+        "a demo of the app",
+        Some(("Mira", -1.5)),
+    );
     let rows: Vec<&str> = tip.split("\n\n").collect();
     assert_eq!(rows.len(), 5, "{tip}");
 
     assert_eq!(rows[0], det::cut_detail(2, 120.0));
     assert!(rows[0].contains("cut/cut.json"), "{rows:?}");
-    assert_eq!(det::cut_detail(2, 120.0), "cut/cut.json \u{2014} 2 clips, 02:00 of video to write for");
+    assert_eq!(
+        det::cut_detail(2, 120.0),
+        "cut/cut.json \u{2014} 2 clips, 02:00 of video to write for"
+    );
 
     // The staleness sentence plus what fixes it, glued to the ⚠.
     assert_eq!(
@@ -235,19 +295,28 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s3_inpu
         "\u{26a0} the cut changed \u{2014} \u{25b6} writes the narration again"
     );
     // The two counts the ⚠ stands for, spelled the tooltip's way ("N clips", "N lines").
-    assert_eq!(det::stale_mark(3, 2), "3 clips unwritten, 2 lines off the cut");
+    assert_eq!(
+        det::stale_mark(3, 2),
+        "3 clips unwritten, 2 lines off the cut"
+    );
     assert_eq!(det::stale_mark(0, 0), "");
 
     // The transcript row: the file, its line count, and the ± rule quoted with its §10 id.
     assert_eq!(det::CONTEXT_WINDOW_ID, "P.machine.narrationContextSeconds");
     assert_eq!(pass::CONTEXT_SECONDS, 4.0);
-    assert!(rows[2].contains("prepare/transcript/session.tsv"), "{rows:?}");
+    assert!(
+        rows[2].contains("prepare/transcript/session.tsv"),
+        "{rows:?}"
+    );
     assert!(rows[2].contains("688 lines"), "{rows:?}");
     assert!(rows[2].contains("\u{b1}4 s"), "{rows:?}");
     assert_eq!(det::timeline_line(0), None, "no transcript is no row");
 
     // The session context verbatim, then the voice line, which names the reference file.
-    assert_eq!(rows[3], "Session context (Describe), sent with the narration:\na demo of the app");
+    assert_eq!(
+        rows[3],
+        "Session context (Describe), sent with the narration:\na demo of the app"
+    );
     assert_eq!(rows[4], det::voice_line("Mira", -1.5));
     assert_eq!(
         det::voice_line("Mira", -1.5),
@@ -266,15 +335,23 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s3_inpu
 // ---- s4: re-roll and sample refusals ------------------------------------------------
 
 #[test]
-fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s4_reroll_and_sample_refusals() {
-    assert_eq!(ITEM, "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass");
+fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s4_reroll_and_sample_refusals(
+) {
+    assert_eq!(
+        ITEM,
+        "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass"
+    );
     // "clip N has no line to re-roll" — the page's refusal carries the clip number, which is why it
     // is `narrate_screen`'s (the number is only known where a row is) and not `narrate_details`'.
     assert_eq!(
         screen::re_roll_refusal(3, false),
         Some("clip 3 has no line to re-roll".to_string())
     );
-    assert_eq!(screen::re_roll_refusal(3, true), None, "a clip with a line re-rolls");
+    assert_eq!(
+        screen::re_roll_refusal(3, true),
+        None,
+        "a clip with a line re-rolls"
+    );
     // "no audio is chosen — a caption has no take to re-roll".
     assert_eq!(
         det::re_roll_captions_refusal(),
@@ -289,8 +366,14 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s4_rero
         det::no_voice_to_sample_refusal(),
         "no audio is chosen \u{2014} there is no voice to sample"
     );
-    assert_eq!(det::empty_sample_refusal(), "type a sample sentence to hear the voice");
-    assert_eq!(det::busy_sample_status(), "still synthesizing the last sample\u{2026}");
+    assert_eq!(
+        det::empty_sample_refusal(),
+        "type a sample sentence to hear the voice"
+    );
+    assert_eq!(
+        det::busy_sample_status(),
+        "still synthesizing the last sample\u{2026}"
+    );
 
     // Its three transport states.
     assert_eq!(det::sample_playing_status(), "sample playing");
@@ -330,8 +413,12 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s4_rero
 // ---- s5: the reference build's log, and the automatic ranking ---------------------
 
 #[test]
-fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_reference_build_and_ranking() {
-    assert_eq!(ITEM, "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass");
+fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_reference_build_and_ranking(
+) {
+    assert_eq!(
+        ITEM,
+        "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass"
+    );
     // §6 writes the line as "X s, N words | N hand-picked take(s) from <base>": the two kinds of
     // reference fail differently, so exactly one half ever appears — an automatic one that sounds
     // wrong is a ranking to overrule by hand, a hand-picked one is seconds to re-pick.
@@ -386,14 +473,14 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_refe
     // Hand-picked takes outrank diarization outright — no cap, no diarization needed.
     assert_eq!(
         voice_ref::plan_reference(&[(2.0, 9.0)], &turns, &|_, _| 0, &full, 2),
-        voice_ref::ReferencePlan::HandPicked(vec![voice_ref::Piece { start: 2.0, end: 9.0 }])
+        voice_ref::ReferencePlan::HandPicked(vec![voice_ref::Piece {
+            start: 2.0,
+            end: 9.0
+        }])
     );
     // A solo stretch crowded by another speaker inside the pad is not clean, so nothing survives
     // and the plan says so with §F4.6 S2's own sentence.
-    let crowded = [
-        (0.0, 10.0, 1_u32),
-        (11.5, 21.0, 2),
-    ];
+    let crowded = [(0.0, 10.0, 1_u32), (11.5, 21.0, 2)];
     assert_eq!(
         voice_ref::plan_reference(&[], &crowded, &|_, _| 30, &full, 1),
         voice_ref::ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string())
@@ -403,17 +490,20 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_refe
     // the length. A stretch under the density floor (`refMinWordsPerSecond` × its seconds) is dropped
     // when anything denser competes — and kept when it is all the diarization offers, because §6 drops a
     // thin take "unless that leaves none" and audio beats a refusal.
-    let clean = [
-        (0.0, 10.0, 1_u32),
-        (20.0, 30.0, 2),
-    ];
+    let clean = [(0.0, 10.0, 1_u32), (20.0, 30.0, 2)];
     assert_eq!(
         voice_ref::plan_reference(&[], &clean, &|_, _| 30, &full, 1),
-        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece { start: 0.0, end: 10.0 }])
+        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece {
+            start: 0.0,
+            end: 10.0
+        }])
     );
     assert_eq!(
         voice_ref::plan_reference(&[], &clean, &|_, _| 4, &full, 1),
-        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece { start: 0.0, end: 10.0 }]),
+        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece {
+            start: 0.0,
+            end: 10.0
+        }]),
         "the only candidate is thin, so §6's exception keeps it rather than refusing"
     );
 }
@@ -429,12 +519,16 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_a_so
     let narrowed = voice_ref::plan_reference(&[], &turns, &|_, _| 40, &|_, _| Some((4.0, 14.0)), 1);
     assert_eq!(
         narrowed,
-        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece { start: 4.0, end: 14.0 }]),
+        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece {
+            start: 4.0,
+            end: 14.0
+        }]),
         "the cut follows the words, not the diarizer's padded turn"
     );
     // The floor is measured on the narrowed span too: the same turn passes at 6 spoken seconds and fails
     // when its words only fill 4 of them, even though the diarized turn was 20 s long.
-    let short_words = voice_ref::plan_reference(&[], &turns, &|_, _| 40, &|_, _| Some((4.0, 8.0)), 1);
+    let short_words =
+        voice_ref::plan_reference(&[], &turns, &|_, _| 40, &|_, _| Some((4.0, 8.0)), 1);
     assert_eq!(
         short_words,
         voice_ref::ReferencePlan::Unavailable(voice_ref::NO_CLEAN_STRETCH.to_string()),
@@ -451,7 +545,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_a_so
     let thin = voice_ref::plan_reference(&[], &turns, &|_, _| 12, &|_, _| Some((4.0, 14.0)), 1);
     assert_eq!(
         thin,
-        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece { start: 4.0, end: 14.0 }]),
+        voice_ref::ReferencePlan::Automatic(vec![voice_ref::Piece {
+            start: 4.0,
+            end: 14.0
+        }]),
         "§6's exception keeps the only candidate even at 1.2 words per second"
     );
 }
@@ -465,13 +562,22 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_a_th
     let full = |from: f64, until: f64| Some((from, until));
     // Two solo stretches: one dense, one thin. The thin one loses and is NOT offered.
     let turns = [(0.0, 10.0, 1_u32), (20.0, 30.0, 1)];
-    let mixed = voice_ref::plan_reference(&[], &turns, &|from, _| if from < 1.0 { 30 } else { 5 }, &full, 1);
+    let mixed = voice_ref::plan_reference(
+        &[],
+        &turns,
+        &|from, _| if from < 1.0 { 30 } else { 5 },
+        &full,
+        1,
+    );
     let voice_ref::ReferencePlan::Automatic(pieces) = mixed else {
         panic!("a dense stretch must produce a plan, got {mixed:?}");
     };
     assert_eq!(
         pieces,
-        vec![voice_ref::Piece { start: 0.0, end: 10.0 }],
+        vec![voice_ref::Piece {
+            start: 0.0,
+            end: 10.0
+        }],
         "the dense stretch is taken and the thin one dropped: {pieces:?}"
     );
     // Both thin: the drop would leave none, so both stand and the app gets audio instead of a refusal.
@@ -482,8 +588,14 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_a_th
     assert_eq!(
         pieces,
         vec![
-            voice_ref::Piece { start: 0.0, end: 10.0 },
-            voice_ref::Piece { start: 20.0, end: 30.0 }
+            voice_ref::Piece {
+                start: 0.0,
+                end: 10.0
+            },
+            voice_ref::Piece {
+                start: 20.0,
+                end: 30.0
+            }
         ],
         "still ranked and still capped, just not dropped: {pieces:?}"
     );
@@ -499,19 +611,30 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s5_a_th
 // ---- s6: "Add file…" — the name is the voice id, and it never overwrites -----------
 
 #[test]
-fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s6_added_file_name_is_the_voice_id() {
-    assert_eq!(ITEM, "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass");
+fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s6_added_file_name_is_the_voice_id(
+) {
+    assert_eq!(
+        ITEM,
+        "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass"
+    );
     // The sanitiser runs BEFORE the collision check, so `added_file_name` is handed the stem it
     // already produced: letters, digits, '-', '_' and '.' survive, everything else becomes '-'.
     assert_eq!(narrate_data::sanitize_voice_id("My Voice!"), "My-Voice");
-    assert_eq!(narrate_data::sanitize_voice_id("My Voice!"), det::added_file_name("My-Voice", &[]));
+    assert_eq!(
+        narrate_data::sanitize_voice_id("My Voice!"),
+        det::added_file_name("My-Voice", &[])
+    );
     assert_eq!(det::added_file_name("guest", &[]), "guest");
 
     // Only a collision adds an index, and it starts at -2 because the bare name is the first try.
     let taken = vec!["guest".to_string()];
     assert_eq!(det::added_file_name("guest", &taken), "guest-2");
     // With -2 and -3 taken the answer skips BOTH used names rather than landing on either.
-    let used = vec!["name".to_string(), "name-2".to_string(), "name-3".to_string()];
+    let used = vec![
+        "name".to_string(),
+        "name-2".to_string(),
+        "name-3".to_string(),
+    ];
     assert_eq!(det::added_file_name("name", &used), "name-4");
     // A free name is not indexed even when its neighbours are taken.
     assert_eq!(
@@ -536,8 +659,12 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s6_adde
 // ---- s7: the take band's messages, and what its takes are keyed by ----------------
 
 #[test]
-fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s7_take_band_messages_and_the_takes_key() {
-    assert_eq!(ITEM, "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass");
+fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s7_take_band_messages_and_the_takes_key(
+) {
+    assert_eq!(
+        ITEM,
+        "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass"
+    );
     // Every sentence §6 lists, verbatim. ＋ U+FF0B and － U+FF0D are the buttons' own glyphs.
     assert_eq!(
         det::take_add_hint(),
@@ -558,7 +685,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s7_take
     );
     assert_eq!(det::takes_played(), "takes played");
     assert_eq!(det::takes_stopped(), "stopped playing the takes");
-    assert_eq!(det::playing_takes(3, 27.4, 61.0), "playing 3 take(s), 27.4 s from 01:01");
+    assert_eq!(
+        det::playing_takes(3, 27.4, 61.0),
+        "playing 3 take(s), 27.4 s from 01:01"
+    );
     assert_eq!(
         det::playing_takes(0, 0.0, 5.0),
         "playing the recording from 00:05 \u{2014} nothing is picked after it"
@@ -590,11 +720,18 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s7_take
     // The round trip through the file itself: stored under the recording's stem, read back whole,
     // and an empty list DELETES the key rather than storing zero-length takes.
     let (_root, tree) = tmp_tree("takes");
-    assert_eq!(narrate_data::load_takes(&tree).unwrap().len(), 0, "no file is no takes");
+    assert_eq!(
+        narrate_data::load_takes(&tree).unwrap().len(),
+        0,
+        "no file is no takes"
+    );
     narrate_data::save_takes(
         &tree,
         &narrate_data::take_base(std::path::Path::new("/media/rec-2025-08-14.wav")),
-        &[narrate_data::Take { s: 2.0, e: 9.0 }, narrate_data::Take { s: 20.0, e: 26.0 }],
+        &[
+            narrate_data::Take { s: 2.0, e: 9.0 },
+            narrate_data::Take { s: 20.0, e: 26.0 },
+        ],
     )
     .expect("takes.json written");
     let back = narrate_data::load_takes(&tree).unwrap();
@@ -617,7 +754,9 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s7_take
     assert_eq!(both.len(), 2);
     assert!(both.contains_key("rec-2025-08-14") && both.contains_key("guest"));
     narrate_data::save_takes(&tree, "guest", &[]).expect("emptying a key is allowed");
-    assert!(!narrate_data::load_takes(&tree).unwrap().contains_key("guest"));
+    assert!(!narrate_data::load_takes(&tree)
+        .unwrap()
+        .contains_key("guest"));
 
     // "changing takes REMOVES THE BUILT REFERENCE": the invalidation the three settings share —
     // voice, pitch or takes all change the question the reference answers. It always drops the
@@ -627,10 +766,18 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s7_take
     std::fs::create_dir_all(served.parent().unwrap()).unwrap();
     std::fs::write(&served, b"served").unwrap();
     std::fs::write(&base, b"base").unwrap();
-    assert_eq!(narrate_data::drop_reference(&tree, true), 1, "a pitch change keeps its base");
+    assert_eq!(
+        narrate_data::drop_reference(&tree, true),
+        1,
+        "a pitch change keeps its base"
+    );
     assert!(!served.exists() && base.exists());
     std::fs::write(&served, b"served").unwrap();
-    assert_eq!(narrate_data::drop_reference(&tree, false), 2, "a take change makes the base wrong too");
+    assert_eq!(
+        narrate_data::drop_reference(&tree, false),
+        2,
+        "a take change makes the base wrong too"
+    );
     assert!(!served.exists() && !base.exists());
     // Dropping what was never there is not a failure — a setting change must not fail over nothing.
     assert_eq!(narrate_data::drop_reference(&tree, false), 0);
@@ -639,14 +786,29 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s7_take
 // ---- s8: the preview's hold bound, the pause past the end, a line alone -------------
 
 #[test]
-fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_preview_hold_pause_and_a_line_alone() {
-    assert_eq!(ITEM, "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass");
+fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_preview_hold_pause_and_a_line_alone(
+) {
+    assert_eq!(
+        ITEM,
+        "sec_07_narrate_6_details_confirmed_against_the_code_verification_pass"
+    );
     // Two clips with a gap the edit removed, and a line on the first that runs to its end.
     let segs = [
-        naivepost::cut::Seg { s: 0.0, e: 10.0, ..Default::default() },
-        naivepost::cut::Seg { s: 12.0, e: 20.0, ..Default::default() },
+        naivepost::cut::Seg {
+            s: 0.0,
+            e: 10.0,
+            ..Default::default()
+        },
+        naivepost::cut::Seg {
+            s: 12.0,
+            e: 20.0,
+            ..Default::default()
+        },
     ];
-    let entries = [entry(0.0, 10.0, 1.0, "first"), entry(12.0, 20.0, 0.5, "second")];
+    let entries = [
+        entry(0.0, 10.0, 1.0, "first"),
+        entry(12.0, 20.0, 0.5, "second"),
+    ];
     let taken = [preview::Take::Exists, preview::Take::Exists];
 
     // The bound is `t < line.end + narrationMaxExtend` — measured against the LINE's own audio end,
@@ -666,7 +828,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_prev
     // rounded so the pin says exactly what the caller receives.
     assert!(matches!(
         preview::tick(13.1, &segs, &entries, &taken, Some(0)),
-        preview::Tick::Speak { line: 1, offset: 0.5999999999999996 }
+        preview::Tick::Speak {
+            line: 1,
+            offset: 0.5999999999999996
+        }
     ));
     // With no line speaking there, the very same second is a plain skip: the hold is earned.
     assert!(matches!(
@@ -692,14 +857,29 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_prev
     // a take that already failed runs the clip mute instead of asking again.
     assert!(matches!(
         preview::tick(3.0, &segs, &entries, &taken, None),
-        preview::Tick::Speak { line: 0, offset: 2.0 }
+        preview::Tick::Speak {
+            line: 0,
+            offset: 2.0
+        }
     ));
     assert!(matches!(
-        preview::tick(3.0, &segs, &entries, &[preview::Take::Missing, preview::Take::Missing], None),
+        preview::tick(
+            3.0,
+            &segs,
+            &entries,
+            &[preview::Take::Missing, preview::Take::Missing],
+            None
+        ),
         preview::Tick::Synthesize { line: 0 }
     ));
     assert!(matches!(
-        preview::tick(3.0, &segs, &entries, &[preview::Take::Failed, preview::Take::Failed], None),
+        preview::tick(
+            3.0,
+            &segs,
+            &entries,
+            &[preview::Take::Failed, preview::Take::Failed],
+            None
+        ),
         preview::Tick::Mute { line: 0 }
     ));
 
@@ -713,7 +893,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_prev
     assert!(!screen::speaks_alone_off_the_tick(false));
     let (case, said) = screen::audition_without_recording(screen::Audition::Speak { from: 4.0 }, 3);
     assert!(matches!(case, screen::Audition::Speak { from: 4.0 }));
-    assert_eq!(said, None, "a spoken audition still speaks; only the wordless and caption cases change");
+    assert_eq!(
+        said, None,
+        "a spoken audition still speaks; only the wordless and caption cases change"
+    );
     // The two cases that DO change say so with the inventory's one sentence plus the tail.
     let (wordless, why) =
         screen::audition_without_recording(screen::Audition::OwnAudio { silent: false }, 2);

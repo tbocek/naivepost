@@ -68,10 +68,13 @@ pub fn trim_at_lens_switch(fx: &Fx, segs: &[Seg]) -> Option<(f64, i32)> {
         .iter()
         .find(|scene| !scene.is_insert() && scene.s <= fx.t && fx.t < scene.e)
         .map(cut_cam::scene_row)?;
-    let crossing = segs.iter().filter(|scene| !scene.is_insert()).find_map(|scene| {
-        let row = cut_cam::scene_row(scene);
-        (scene.s >= fx.t && zoom_stops_at_the_cut(fx, start_row, row)).then_some((scene.s, row))
-    })?;
+    let crossing = segs
+        .iter()
+        .filter(|scene| !scene.is_insert())
+        .find_map(|scene| {
+            let row = cut_cam::scene_row(scene);
+            (scene.s >= fx.t && zoom_stops_at_the_cut(fx, start_row, row)).then_some((scene.s, row))
+        })?;
     let trimmed = crossing.0 - fx.t;
     (trimmed >= crate::cut_clamp::MIN_SURVIVING_SECONDS).then_some((trimmed, crossing.1))
 }
@@ -199,10 +202,7 @@ pub fn preview_camera(form_open: bool, watched: Option<i32>, lens: i32) -> i32 {
 /// wins, and only when there is no footage clip at all does the playing camera's shape stand.
 ///
 /// The shape a side falls back to when it has read no frame at all is [`FALLBACK_SHAPE`].
-pub fn source_frame(
-    first_footage: Option<(i32, i32)>,
-    playing: Option<(i32, i32)>,
-) -> (i32, i32) {
+pub fn source_frame(first_footage: Option<(i32, i32)>, playing: Option<(i32, i32)>) -> (i32, i32) {
     first_footage.or(playing).unwrap_or(FALLBACK_SHAPE)
 }
 
@@ -264,7 +264,14 @@ pub fn suggested_scene_cam(named: Option<i32>, rows: &[i32]) -> i32 {
 /// `cam`, which is all the lens badge reads and writes; an insert names none, having no picture of its own) asked
 /// against the rows this session has. The one call site that asks is [`crate::ui::cut_suggest_land`]'s placement.
 pub fn suggested_scene_cam_of(scene: &Seg, rows: &[i32]) -> i32 {
-    suggested_scene_cam(if scene.is_insert() { None } else { Some(scene.cam) }, rows)
+    suggested_scene_cam(
+        if scene.is_insert() {
+            None
+        } else {
+            Some(scene.cam)
+        },
+        rows,
+    )
 }
 
 /// §9 (`suggested zooms are always centred at height 0.6`): the framing a model proposes, with no picture in front

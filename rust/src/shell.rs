@@ -99,15 +99,15 @@ pub const WINDOW_MIN_H: i32 = 900;
 /// divider opens in a snapshot, because headless nothing drags that handle (`snapshot::run` sets it).
 pub const PAGE_BAND_PX: i32 = 560;
 
-pub const CUT_LOCK: &str = "Add footage on the Prepare step first \u{2014} the cut is laid out from the recordings";
+pub const CUT_LOCK: &str =
+    "Add footage on the Prepare step first \u{2014} the cut is laid out from the recordings";
 
 /// The bottom bar's Inputs row for a Cut page with nothing to cut — `spec/inventory/cut.md` §A spells it
 /// and §1 makes that inventory normative ("Tooltips and greyed rules: inventory/cut.md §A, normative").
 /// A different sentence from [`CUT_LOCK`] on purpose: the lock answers "why can't I open this tab?" while
 /// this one answers "what is this page looking at?", and the second question is asked with the tab already
 /// open (a source loses its footage mark while the page is showing).
-pub const NOTHING_TO_CUT: &str =
-    "nothing to cut \u{2014} no source on Inputs is marked as footage";
+pub const NOTHING_TO_CUT: &str = "nothing to cut \u{2014} no source on Inputs is marked as footage";
 
 /// Why a page cannot be entered, `None` meaning it can (S2's question).
 ///
@@ -145,8 +145,13 @@ pub enum Move {
 pub enum Refresh {
     /// Prepare shows the sources; there is nothing upstream of it to re-read.
     None,
-    CutRebuild { stale: bool },
-    NarrateRefit { moved: usize, orphan: usize },
+    CutRebuild {
+        stale: bool,
+    },
+    NarrateRefit {
+        moved: usize,
+        orphan: usize,
+    },
     ProducePanels,
 }
 
@@ -379,7 +384,11 @@ impl Shell {
 
         // S5: the refresh that page needs.
         let refresh = self.refresh(to, project, tree, segs, entries);
-        Outcome::Shown { page: to, flushed, refresh }
+        Outcome::Shown {
+            page: to,
+            flushed,
+            refresh,
+        }
     }
 
     /// S5 for one page. Only three pages have anything to redo; Prepare is where the work starts, so
@@ -445,12 +454,12 @@ impl Shell {
         narration: &narration::Narration,
     ) -> String {
         match self.page {
-        // Prepare's row is spec/04-prepare.md §1 verbatim; with no folder there is
-        // nothing counted yet, and "0 frames → 0 vision" would be a claim about files.
-        Page::Prepare => match tree {
-            Some(tree) => prepare::inputs_readout(&prepare::count(tree, project)),
-            None => prepare::NO_INPUTS.to_string(),
-        },
+            // Prepare's row is spec/04-prepare.md §1 verbatim; with no folder there is
+            // nothing counted yet, and "0 frames → 0 vision" would be a claim about files.
+            Page::Prepare => match tree {
+                Some(tree) => prepare::inputs_readout(&prepare::count(tree, project)),
+                None => prepare::NO_INPUTS.to_string(),
+            },
             // With no footage there is nothing the cut could be laid out from, so the row says that rather
             // than counting an empty cut — "0 clip(s)" would read as a session someone had trimmed to nothing.
             Page::Cut if project.sources.iter().any(|source| source.footage) => {
@@ -466,11 +475,7 @@ impl Shell {
             // "N clip(s) · mm:ss[ · no narration][ · no upload text]" (§8-produce.md §1).
             Page::Produce => {
                 let spoken = !project.no_narration && !narration.entries.is_empty();
-                let mut line = format!(
-                    "{} clip(s) · {}",
-                    cut.segs.len(),
-                    mm_ss(cut_seconds(cut))
-                );
+                let mut line = format!("{} clip(s) · {}", cut.segs.len(), mm_ss(cut_seconds(cut)));
                 if !spoken {
                     line.push_str(" · no narration");
                 }

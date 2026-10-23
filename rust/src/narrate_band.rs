@@ -7,8 +7,7 @@
 //! `narrate.bandRulerPx`, `narrate.bandLanePx`, `narrate.bandMaxPps` and `narrate.clickSlopPx`);
 //! this module reads them and adds no numbers of its own.
 
-use crate::narrate_screen::{self as screen, TakePress, BAND_MAX_PPS,
-    TAKE_LABEL_MIN_PX};
+use crate::narrate_screen::{self as screen, TakePress, BAND_MAX_PPS, TAKE_LABEL_MIN_PX};
 
 /// Zoom 1 is "the whole recording fits": fit px/s × this factor. One notch of the wheel is therefore
 /// `1.25^-dy` of FIT px/s, which is what §A.7's "wheel zooms 1.25^−dy" measures against — a notch at
@@ -115,7 +114,9 @@ pub fn pointer_bar(x: f64, width: f64) -> Option<f64> {
 /// The playhead while ▶ walks the cut: its px, or `None` while nothing plays (§1: "playhead while ▶
 /// walks") — a parked preview draws no playhead over the takes.
 pub fn playhead_px(session: f64, offset: f64, pps: f64, playing: bool) -> Option<f64> {
-    playing.then_some(session * pps - offset).filter(|px| *px >= 0.0)
+    playing
+        .then_some(session * pps - offset)
+        .filter(|px| *px >= 0.0)
 }
 
 /// What the band says while its envelope is not decoded yet (§1: "reading the recording…" while the
@@ -134,13 +135,7 @@ pub fn ruler_second(x: f64, offset: f64, pps: f64) -> i64 {
 /// The peaks to paint for the visible window: the cache stores peaks at `hz` per second, so the band
 /// asks for the slice its view covers and lets the painter stretch it. Returns `(start_second,
 /// peaks)`; empty when the cache has nothing for this recording.
-pub fn visible_peaks(
-    hz: f64,
-    peaks: &[u8],
-    offset: f64,
-    pps: f64,
-    width: f64,
-) -> Vec<(f64, u8)> {
+pub fn visible_peaks(hz: f64, peaks: &[u8], offset: f64, pps: f64, width: f64) -> Vec<(f64, u8)> {
     if peaks.is_empty() || hz <= 0.0 {
         return Vec::new();
     }

@@ -5,17 +5,22 @@
 //! [`naivepost::narrate_screen`], so all of it is checked here without a window. The widgets are the page's
 //! business; they hold no rule (spec/00-principles.md §5).
 
+use crate::common;
+use common::seg as clip;
 use naivepost::narrate_screen::{self as page, Audition, BoxRole, Fit, RowStatus, TakePress};
 use naivepost::narration::{self, Entry};
 use naivepost::params;
 use naivepost::tools;
-use crate::common;
-use common::{seg as clip};
-
 
 /// A line on the clip `s..e`, starting `at` seconds into it.
 fn line(s: f64, e: f64, at: f64, words: &str) -> Entry {
-    Entry { s, e, at, text: words.to_string(), ..Default::default() }
+    Entry {
+        s,
+        e,
+        at,
+        text: words.to_string(),
+        ..Default::default()
+    }
 }
 
 // --- S1: the toolbar (§1's numbers 3–8) -------------------------------------------------------------------
@@ -25,13 +30,24 @@ fn line(s: f64, e: f64, at: f64, words: &str) -> Entry {
 #[test]
 fn sec_07_narrate_1_screen_s1_the_toolbar_groups_are_six_and_in_spec_order() {
     // The window builds one box per entry, so this list is that left-to-right order.
-    assert_eq!(page::TOOLBAR_GROUPS, ["transport", "volume", "voice", "takes", "sample", "pitch"]);
+    assert_eq!(
+        page::TOOLBAR_GROUPS,
+        ["transport", "volume", "voice", "takes", "sample", "pitch"]
+    );
 
     // §1's numbers 13–19, the row's own head: time, status, then the four buttons, with the box under them. The shot
     // draws this order on all four of its rows.
     assert_eq!(
         page::ROW_CONTROLS,
-        ["time", "status", "speak", "re-roll", "add-below", "remove", "text"]
+        [
+            "time",
+            "status",
+            "speak",
+            "re-roll",
+            "add-below",
+            "remove",
+            "text"
+        ]
     );
 
     // §1's Prototype note: the row's ＋ in the prototype is U+FF0B, which only CJK fonts carry and which draws as a
@@ -44,7 +60,10 @@ fn sec_07_narrate_1_screen_s1_the_toolbar_groups_are_six_and_in_spec_order() {
 
     // §1: `paused, wheel steps a frame` — running, the wheel has nothing to step to.
     assert!(page::wheel_steps_a_frame(false));
-    assert!(!page::wheel_steps_a_frame(true), "the picture is already moving");
+    assert!(
+        !page::wheel_steps_a_frame(true),
+        "the picture is already moving"
+    );
 }
 
 // --- S2: the two clocks and the outputs readout (§1's numbers 5, 22) ---------------------------------------
@@ -55,7 +74,15 @@ fn sec_07_narrate_1_screen_s1_the_toolbar_groups_are_six_and_in_spec_order() {
 fn sec_07_narrate_1_screen_s2_the_clock_reads_two_places_and_the_outputs_name_three_things() {
     // Session second, then position in the finished video over its length — both faces `tools::mm_ss`'s.
     let line = page::clock_line(65.0, 30.0, 300.0);
-    assert_eq!(line, format!("{} \u{b7} {}/{}", tools::mm_ss(65.0), tools::mm_ss(30.0), tools::mm_ss(300.0)));
+    assert_eq!(
+        line,
+        format!(
+            "{} \u{b7} {}/{}",
+            tools::mm_ss(65.0),
+            tools::mm_ss(30.0),
+            tools::mm_ss(300.0)
+        )
+    );
     assert_eq!(line, "01:05 \u{b7} 00:30/05:00");
 
     // Two clocks because the edit removed seconds: the same moment reads differently on each.
@@ -98,7 +125,10 @@ fn sec_07_narrate_1_screen_s4_the_box_reads_a_tag_and_never_writes_the_second_ba
     for spelling in ["top", "center", "centre", "middle", "bottom"] {
         let caption = page::parse_box(&format!("[{spelling}] words"));
         assert_eq!(caption.role, BoxRole::Caption, "{spelling}");
-        assert_eq!(caption.tag, "", "{spelling}: the placement is not an emotion");
+        assert_eq!(
+            caption.tag, "",
+            "{spelling}: the placement is not an emotion"
+        );
         assert_eq!(caption.body, "words");
     }
 
@@ -109,15 +139,32 @@ fn sec_07_narrate_1_screen_s4_the_box_reads_a_tag_and_never_writes_the_second_ba
 
     // No tag at all: the whole box is words, and nothing moves.
     let bare = page::parse_box("just words");
-    assert_eq!((bare.role, bare.at, bare.body.as_str()), (BoxRole::None, None, "just words"));
+    assert_eq!(
+        (bare.role, bare.at, bare.body.as_str()),
+        (BoxRole::None, None, "just words")
+    );
 
     // Write-only: the second is dropped on the way out even though it was read on the way in.
-    let moved = Entry { s: 0.0, e: 90.0, at: 65.0, text: "Weee".into(), emotion: "excited".into(), ..Default::default() };
+    let moved = Entry {
+        s: 0.0,
+        e: 90.0,
+        at: 65.0,
+        text: "Weee".into(),
+        emotion: "excited".into(),
+        ..Default::default()
+    };
     assert_eq!(page::write_box(&moved), "[excited] Weee");
-    assert!(!page::write_box(&moved).contains('@'), "the time field owns the number");
+    assert!(
+        !page::write_box(&moved).contains('@'),
+        "the time field owns the number"
+    );
 
     // A caption writes its placement, and a silent clip's box stays empty rather than showing a bare tag.
-    let caption = Entry { text: "words".into(), pos: "top".into(), ..Default::default() };
+    let caption = Entry {
+        text: "words".into(),
+        pos: "top".into(),
+        ..Default::default()
+    };
     assert_eq!(page::write_box(&caption), "[top] words");
     assert_eq!(page::write_box(&Entry::default()), "");
 }
@@ -152,13 +199,22 @@ fn sec_07_narrate_1_screen_s6_the_row_says_where_the_line_ends_and_whether_that_
     // speaker will use and not this page's own idea of a speaking rate.
     let spoken = line(60.0, 90.0, 4.0, "words");
     let key = narration::tts_key(&spoken, None, None);
-    assert!(!narration::tts_file(&key).is_empty(), "the take's name always exists; the file need not");
+    assert!(
+        !narration::tts_file(&key).is_empty(),
+        "the take's name always exists; the file need not"
+    );
 
     assert_eq!(page::status(&spoken, false), RowStatus::Estimated(64.0));
     // The end is a session second — the row's own time entry reads the same clock — so the estimate carries the
     // clip's head (60 s) plus the placement inside it, and never prints a bare 4 s.
-    assert_eq!(page::status_line(page::status(&spoken, false)), "\u{2013} 01:04.0 (~)");
-    assert_eq!(page::status_line(page::status(&spoken, true)), "\u{2013} 01:04.0");
+    assert_eq!(
+        page::status_line(page::status(&spoken, false)),
+        "\u{2013} 01:04.0 (~)"
+    );
+    assert_eq!(
+        page::status_line(page::status(&spoken, true)),
+        "\u{2013} 01:04.0"
+    );
 
     // A deliberate silence and a caption answer before the take question: neither will ever have one.
     let silent = line(60.0, 90.0, 0.0, "");
@@ -167,7 +223,10 @@ fn sec_07_narrate_1_screen_s6_the_row_says_where_the_line_ends_and_whether_that_
         page::status_line(RowStatus::Silent),
         "(no line \u{2014} this clip plays on its own audio)"
     );
-    let caption = Entry { pos: "top".into(), ..line(60.0, 90.0, 0.0, "words") };
+    let caption = Entry {
+        pos: "top".into(),
+        ..line(60.0, 90.0, 0.0, "words")
+    };
     assert_eq!(page::status(&caption, false), RowStatus::Caption);
     assert_eq!(
         page::status_line(RowStatus::Caption),
@@ -181,25 +240,56 @@ fn sec_07_narrate_1_screen_s6_the_row_says_where_the_line_ends_and_whether_that_
 /// lines run N s past it — the render will have them moved earlier[ and sped up]”`, `and the row marked red`.
 #[test]
 fn sec_07_narrate_1_screen_s7_both_warnings_are_said_and_both_mark_the_row_red() {
-    let before_end = page::fit_warning(Fit::Tight { speech: 6.0, before: 4.0, next_line: false }).unwrap();
-    assert_eq!(before_end, "\u{26a0} ~6 s of speech, 4 s before the clip ends");
-    let before_next = page::fit_warning(Fit::Tight { speech: 6.0, before: 4.0, next_line: true }).unwrap();
-    assert_eq!(before_next, "\u{26a0} ~6 s of speech, 4 s before the next line");
+    let before_end = page::fit_warning(Fit::Tight {
+        speech: 6.0,
+        before: 4.0,
+        next_line: false,
+    })
+    .unwrap();
+    assert_eq!(
+        before_end,
+        "\u{26a0} ~6 s of speech, 4 s before the clip ends"
+    );
+    let before_next = page::fit_warning(Fit::Tight {
+        speech: 6.0,
+        before: 4.0,
+        next_line: true,
+    })
+    .unwrap();
+    assert_eq!(
+        before_next,
+        "\u{26a0} ~6 s of speech, 4 s before the next line"
+    );
 
     // The second warning names what the render will do, and only says "sped up" when it will.
-    let moved = page::fit_warning(Fit::Overruns { past: 3.0, sped_up: false }).unwrap();
+    let moved = page::fit_warning(Fit::Overruns {
+        past: 3.0,
+        sped_up: false,
+    })
+    .unwrap();
     assert_eq!(
         moved,
         "\u{26a0} this clip's lines run 3 s past it \u{2014} the render will have them moved earlier"
     );
-    let sped = page::fit_warning(Fit::Overruns { past: 3.0, sped_up: true }).unwrap();
+    let sped = page::fit_warning(Fit::Overruns {
+        past: 3.0,
+        sped_up: true,
+    })
+    .unwrap();
     assert!(sped.ends_with("moved earlier and sped up"), "{sped}");
 
     // A line that fits says nothing and leaves the row its normal colour; either warning marks it.
     assert_eq!(page::fit_warning(Fit::Fits), None);
     assert!(!page::row_is_red(Fit::Fits));
-    assert!(page::row_is_red(Fit::Tight { speech: 6.0, before: 4.0, next_line: false }));
-    assert!(page::row_is_red(Fit::Overruns { past: 3.0, sped_up: false }));
+    assert!(page::row_is_red(Fit::Tight {
+        speech: 6.0,
+        before: 4.0,
+        next_line: false
+    }));
+    assert!(page::row_is_red(Fit::Overruns {
+        past: 3.0,
+        sped_up: false
+    }));
 }
 
 // --- S8: the row's ▶ (§1's number 16) ----------------------------------------------------------------------------
@@ -215,38 +305,69 @@ fn sec_07_narrate_1_screen_s8_the_row_button_has_six_answers_and_each_says_its_o
     // A synthesis in flight outranks the rest: the person is being told to wait.
     let (case, said) = page::audition(false, false, false, true, 3, 0.0, 20.0);
     assert_eq!(case, Audition::Busy);
-    assert_eq!(said.unwrap(), "still speaking line 3 for the first time \u{2014} \u{23f9} gives up on it");
+    assert_eq!(
+        said.unwrap(),
+        "still speaking line 3 for the first time \u{2014} \u{23f9} gives up on it"
+    );
 
     // A wordless row plays the clip's own audio.
     let (case, said) = page::audition(false, true, false, false, 7, 0.0, 20.0);
     assert_eq!(case, Audition::OwnAudio { silent: false });
-    assert_eq!(said.unwrap(), "clip 7 has no line \u{2014} playing it on its own audio");
+    assert_eq!(
+        said.unwrap(),
+        "clip 7 has no line \u{2014} playing it on its own audio"
+    );
 
     // A caption is read and never spoken; the moment is still worth watching.
     let (case, said) = page::audition(false, false, true, false, 4, 0.0, 20.0);
     assert_eq!(case, Audition::Caption { bare: false });
-    assert_eq!(said.unwrap(), "line 4 is a caption \u{2014} read, never spoken; playing its moment");
+    assert_eq!(
+        said.unwrap(),
+        "line 4 is a caption \u{2014} read, never spoken; playing its moment"
+    );
 
     // With no recording under the clip there is no game sound either, and the sentence grows.
     let (case, said) = page::audition_without_recording(Audition::OwnAudio { silent: false }, 7);
     assert_eq!(case, Audition::OwnAudio { silent: true });
-    assert!(said.unwrap().ends_with("\u{2026}and no recording covers it"));
+    assert!(said
+        .unwrap()
+        .ends_with("\u{2026}and no recording covers it"));
     let (case, said) = page::audition_without_recording(Audition::Caption { bare: false }, 4);
     assert_eq!(case, Audition::Caption { bare: true });
-    assert!(said.unwrap().ends_with("\u{2026}and no recording covers its clip"));
+    assert!(said
+        .unwrap()
+        .ends_with("\u{2026}and no recording covers its clip"));
 
     // The ordinary case: three seconds of lead-in, but never before the line above has finished.
     let (case, said) = page::audition(false, false, false, false, 1, 0.0, 20.0);
-    assert_eq!((case, said), (Audition::Speak { from: 20.0 - page::AUDITION_LEAD_SECONDS }, None));
+    assert_eq!(
+        (case, said),
+        (
+            Audition::Speak {
+                from: 20.0 - page::AUDITION_LEAD_SECONDS
+            },
+            None
+        )
+    );
     assert_eq!(page::AUDITION_LEAD_SECONDS, 3.0);
     let (case, _) = page::audition(false, false, false, false, 1, 19.0, 20.0);
-    assert_eq!(case, Audition::Speak { from: 19.0 }, "the lead-in is not its own there");
+    assert_eq!(
+        case,
+        Audition::Speak { from: 19.0 },
+        "the lead-in is not its own there"
+    );
 
     // A clip no recording covers speaks alone off the tick, and says so in §1's words.
     assert!(page::speaks_alone_off_the_tick(true));
     assert!(!page::speaks_alone_off_the_tick(false));
-    assert_eq!(page::spoken_alone(2), "entry 2 \u{2014} no recording covers this clip, so the line plays on its own");
-    assert_eq!(page::synthesis_failed(), "synthesis failed \u{2014} see log");
+    assert_eq!(
+        page::spoken_alone(2),
+        "entry 2 \u{2014} no recording covers this clip, so the line plays on its own"
+    );
+    assert_eq!(
+        page::synthesis_failed(),
+        "synthesis failed \u{2014} see log"
+    );
     assert_eq!(
         page::speaking_line(),
         "synthesizing\u{2026} (first line after a cold start also loads the model)"
@@ -262,11 +383,17 @@ fn sec_07_narrate_1_screen_s9_a_line_is_added_where_the_cut_can_carry_it() {
 
     // Between clips: the cut has nothing to narrate there.
     let between = page::add_at_playhead(35.0, &clips, &[]).unwrap_err();
-    assert_eq!(between, "the playhead is between clips \u{2014} the cut has nothing to narrate here");
+    assert_eq!(
+        between,
+        "the playhead is between clips \u{2014} the cut has nothing to narrate here"
+    );
 
     // Within a second of an existing line: not a new line, the same one, and the page jumps to it.
     let near = page::add_at_playhead(12.0, &clips, &[line(0.0, 30.0, 11.5, "words")]).unwrap_err();
-    assert!(near.starts_with("a line already starts here \u{2014}"), "{near}");
+    assert!(
+        near.starts_with("a line already starts here \u{2014}"),
+        "{near}"
+    );
     assert_eq!(page::ADD_NEAR_SECONDS, 1.0); // F4.7's "within 1 s of a line"
 
     // Inside a speaking line: it says until when, which is the second to add after. With no take yet that end is
@@ -274,24 +401,42 @@ fn sec_07_narrate_1_screen_s9_a_line_is_added_where_the_cut_can_carry_it() {
     // 15 s to 21.87 s and a press at 20 s falls inside them.
     let long = "w".repeat(100);
     let busy = page::add_at_playhead(20.0, &clips, &[line(0.0, 30.0, 15.0, &long)]).unwrap_err();
-    assert_eq!(busy, "a line is speaking here until 00:21.8 \u{2014} add after it");
+    assert_eq!(
+        busy,
+        "a line is speaking here until 00:21.8 \u{2014} add after it"
+    );
     assert_eq!(page::SPEECH_CHARS_PER_SECOND, 15.0); // \u{a7}C.2's default rate
     assert_eq!(page::SPEECH_TAIL_SECONDS, 0.2); // P.eng.narrationTailSeconds
 
     // The honest opposite: five characters are spoken by 15.5 s, so the seconds after that are free ground again and
     // \uff0b takes them. An estimate that never expired would refuse the rest of every clip.
-    assert_eq!(page::add_at_playhead(20.0, &clips, &[line(0.0, 30.0, 15.0, "words")]), Ok(20.0));
+    assert_eq!(
+        page::add_at_playhead(20.0, &clips, &[line(0.0, 30.0, 15.0, "words")]),
+        Ok(20.0)
+    );
 
     // Before a line has started speaking is free ground too: its window begins at its own second.
-    assert_eq!(page::add_at_playhead(12.0, &clips, &[line(0.0, 30.0, 15.0, &long)]), Ok(12.0));
+    assert_eq!(
+        page::add_at_playhead(12.0, &clips, &[line(0.0, 30.0, 15.0, &long)]),
+        Ok(12.0)
+    );
 
     // A line on another clip says nothing about these seconds.
-    assert_eq!(page::add_at_playhead(12.0, &clips, &[line(40.0, 60.0, 2.0, "words")]), Ok(12.0));
+    assert_eq!(
+        page::add_at_playhead(12.0, &clips, &[line(40.0, 60.0, 2.0, "words")]),
+        Ok(12.0)
+    );
 
     // §F4.7's free add is "a line HERE": the pressed second, not the clip's head — the clip only says
     // there is something to narrate at it. Past every line in the clip that second is still the playhead.
-    assert_eq!(page::add_at_playhead(25.0, &clips, &[line(0.0, 30.0, 2.0, "words")]), Ok(25.0));
-    assert_eq!(page::add_at_playhead(45.0, &clips, &[line(0.0, 30.0, 2.0, "words")]), Ok(45.0));
+    assert_eq!(
+        page::add_at_playhead(25.0, &clips, &[line(0.0, 30.0, 2.0, "words")]),
+        Ok(25.0)
+    );
+    assert_eq!(
+        page::add_at_playhead(45.0, &clips, &[line(0.0, 30.0, 2.0, "words")]),
+        Ok(45.0)
+    );
 
     // ...bounded by the clip's last second, which can never hold a line start (§F4.7's move rule): a
     // press at a clip's very end lands a second earlier rather than outside the clip.
@@ -305,7 +450,10 @@ fn sec_07_narrate_1_screen_s9_a_line_is_added_where_the_cut_can_carry_it() {
         &[line(0.0, 30.0, 15.0, &long), line(0.0, 30.0, 20.0, "more")],
     )
     .unwrap_err();
-    assert_eq!(capped, "a line is speaking here until 00:20.0 \u{2014} add after it");
+    assert_eq!(
+        capped,
+        "a line is speaking here until 00:20.0 \u{2014} add after it"
+    );
 
     // The row's ＋: half a second after the line above, refused when the clip ends first.
     assert_eq!(page::add_below(8.0, 20.0), Ok(8.5));
@@ -323,7 +471,10 @@ fn sec_07_narrate_1_screen_s9_a_line_is_added_where_the_cut_can_carry_it() {
 #[test]
 fn sec_07_narrate_1_screen_s10_re_roll_and_removal_say_what_happened_to_the_clip() {
     // §6: "clip N has no line to re-roll" — a draw needs something to draw again of.
-    assert_eq!(page::re_roll_refusal(3, false), Some("clip 3 has no line to re-roll".to_string()));
+    assert_eq!(
+        page::re_roll_refusal(3, false),
+        Some("clip 3 has no line to re-roll".to_string())
+    );
     assert_eq!(page::re_roll_refusal(3, true), None);
 
     // Bare "line removed" while the clip still speaks; the longer sentence, and the silent marker behind it, only
@@ -358,36 +509,69 @@ fn sec_07_narrate_1_screen_s11_the_take_band_keeps_takes_that_are_long_enough() 
     // A press that travelled under the slop is a click on the red bar; anything more selects seconds.
     assert_eq!(page::take_press(100.0, 102.0, 5.0), TakePress::SetBar);
     assert_eq!(page::CLICK_SLOP_PX, 3.0);
-    assert_eq!(page::take_press(100.0, 160.0, 5.0), TakePress::Select { from: 105.0, to: 165.0 });
+    assert_eq!(
+        page::take_press(100.0, 160.0, 5.0),
+        TakePress::Select {
+            from: 105.0,
+            to: 165.0
+        }
+    );
     // Left to right whichever way the pointer went.
-    assert_eq!(page::take_press(160.0, 100.0, 0.0), TakePress::Select { from: 100.0, to: 160.0 });
+    assert_eq!(
+        page::take_press(160.0, 100.0, 0.0),
+        TakePress::Select {
+            from: 100.0,
+            to: 160.0
+        }
+    );
 
     assert!(page::can_make_take((0.0, 0.4)));
     assert!(!page::can_make_take((0.0, 0.39)));
     assert!(page::take_seconds_too_short(0.2));
-    assert_eq!(page::take_too_short(0.2), "that is 0.2 s \u{2014} a take has to be at least 0.4 s");
+    assert_eq!(
+        page::take_too_short(0.2),
+        "that is 0.2 s \u{2014} a take has to be at least 0.4 s"
+    );
 
     // ＋ joins touching takes: two with no gap between them are one take.
     assert_eq!(page::add_takes(&[(0.0, 5.0)], (5.0, 9.0)), vec![(0.0, 9.0)]);
-    assert_eq!(page::add_takes(&[(8.0, 12.0)], (0.0, 4.0)), vec![(0.0, 4.0), (8.0, 12.0)]);
+    assert_eq!(
+        page::add_takes(&[(8.0, 12.0)], (0.0, 4.0)),
+        vec![(0.0, 4.0), (8.0, 12.0)]
+    );
     // A sliver shorter than the floor never joins, so ＋ cannot smuggle in what the clean-up would drop.
-    assert_eq!(page::add_takes(&[(8.0, 12.0)], (4.0, 4.2)), vec![(8.0, 12.0)]);
+    assert_eq!(
+        page::add_takes(&[(8.0, 12.0)], (4.0, 4.2)),
+        vec![(8.0, 12.0)]
+    );
 
     // − subtracts seconds, which splits a take when they fall inside it.
-    assert_eq!(page::remove_takes(&[(0.0, 10.0)], (4.0, 6.0)), vec![(0.0, 4.0), (6.0, 10.0)]);
+    assert_eq!(
+        page::remove_takes(&[(0.0, 10.0)], (4.0, 6.0)),
+        vec![(0.0, 4.0), (6.0, 10.0)]
+    );
     // A remainder under the floor is dropped rather than left as a take nobody can use.
-    assert_eq!(page::remove_takes(&[(0.0, 10.0)], (0.2, 9.9)), Vec::<(f64, f64)>::new());
+    assert_eq!(
+        page::remove_takes(&[(0.0, 10.0)], (0.2, 9.9)),
+        Vec::<(f64, f64)>::new()
+    );
 
     // The label is the duration alone, and only when it fits.
     assert_eq!(page::take_label(4.2), "4.2s");
     assert_eq!(page::TAKE_LABEL_MIN_PX, 34.0);
 
     // §1's sentence about having none; a band with takes says nothing of its own.
-    assert_eq!(page::band_status(&[]), "With no takes the seconds are chosen for you.");
+    assert_eq!(
+        page::band_status(&[]),
+        "With no takes the seconds are chosen for you."
+    );
     assert_eq!(page::band_status(&[(0.0, 5.0)]), "");
 
     // The band's geometry and the preview tick, from spec/10-parameters.md:133.
-    assert_eq!((page::BAND_RULER_PX, page::BAND_LANE_PX, page::BAND_MAX_PPS), (12.0, 56.0, 200.0));
+    assert_eq!(
+        (page::BAND_RULER_PX, page::BAND_LANE_PX, page::BAND_MAX_PPS),
+        (12.0, 56.0, 200.0)
+    );
     assert_eq!(page::TICK_MS, 100);
 }
 
@@ -399,9 +583,16 @@ fn sec_07_narrate_1_screen_s11_the_take_band_keeps_takes_that_are_long_enough() 
 fn sec_07_narrate_1_screen_s12_the_voice_picker_offers_captions_then_narrators_then_files() {
     let options = page::voice_options(2, &["aria.wav", "ben.wav"]);
     let ids: Vec<&str> = options.iter().map(|option| option.id.as_str()).collect();
-    assert_eq!(ids, ["captions", "narrator1", "narrator2", "aria.wav", "ben.wav"]);
+    assert_eq!(
+        ids,
+        ["captions", "narrator1", "narrator2", "aria.wav", "ben.wav"]
+    );
     assert_eq!(options[0].label, "No audio \u{2014} captions only");
-    assert!(options[1].label.starts_with("Narrator 1 \u{2014} "), "{}", options[1].label);
+    assert!(
+        options[1].label.starts_with("Narrator 1 \u{2014} "),
+        "{}",
+        options[1].label
+    );
 
     // Slot 1 always; the folder's files keep their names, which is how they are recognised in `voice.txt`.
     let only_captions = page::voice_options(0, &[]);
@@ -416,7 +607,10 @@ fn sec_07_narrate_1_screen_s12_the_voice_picker_offers_captions_then_narrators_t
     );
 
     // P.eng.pitchRangeSemitones — ±6 semitones in half-step marks, applied 400 ms after the last move.
-    assert_eq!((page::PITCH_MIN_SEMITONES, page::PITCH_MAX_SEMITONES), (-6.0, 6.0));
+    assert_eq!(
+        (page::PITCH_MIN_SEMITONES, page::PITCH_MAX_SEMITONES),
+        (-6.0, 6.0)
+    );
     assert_eq!(page::PITCH_STEP, 0.5);
     assert_eq!(page::PITCH_APPLY_MS, 400);
     assert_eq!(page::clamp_pitch(-9.0), -6.0);
@@ -429,11 +623,21 @@ fn sec_07_narrate_1_screen_s12_the_voice_picker_offers_captions_then_narrators_t
         page::pitch_tip(),
         "Shift the reference recording before it is cloned \u{2014} a different speaker, not the same one transposed"
     );
-    assert_eq!(page::add_file_tip(), "Copy one recording into the voices folder and use it");
-    assert!(page::sample_tip().starts_with("Who speaks the narration."), "{}", page::sample_tip());
+    assert_eq!(
+        page::add_file_tip(),
+        "Copy one recording into the voices folder and use it"
+    );
+    assert!(
+        page::sample_tip().starts_with("Who speaks the narration."),
+        "{}",
+        page::sample_tip()
+    );
 
     // The Inputs row's four spellings.
-    assert_eq!(page::inputs_readout(4, 195.0, 0, 0, true, true), "4 clip(s) \u{b7} 03:15");
+    assert_eq!(
+        page::inputs_readout(4, 195.0, 0, 0, true, true),
+        "4 clip(s) \u{b7} 03:15"
+    );
     assert_eq!(
         page::inputs_readout(4, 195.0, 1, 2, true, true),
         "4 clip(s) \u{b7} 03:15 \u{b7} \u{26a0} 1 clip(s) unwritten, 2 line(s) off the cut"
@@ -456,9 +660,24 @@ fn sec_07_narrate_1_screen_s13_the_tooltip_names_the_eight_in_order_and_the_tag(
     // The eight, in the order spec/prompts/system.md:72 gives them — the tooltip and the prompt a model reads name
     // the same deliveries in the same order. Measured after the examples: the tooltip quotes two of the eight as the
     // judge's sample ("angry", "surprised, happy") before it reaches the list, so the first mention is not ordered.
-    assert_eq!(page::EMOTIONS, ["happy", "angry", "sad", "afraid", "disgusted", "melancholic", "surprised", "calm"]);
+    assert_eq!(
+        page::EMOTIONS,
+        [
+            "happy",
+            "angry",
+            "sad",
+            "afraid",
+            "disgusted",
+            "melancholic",
+            "surprised",
+            "calm"
+        ]
+    );
     let list = &tip[tip.find("The eight it mixes: ").unwrap()..];
-    let positions: Vec<usize> = page::EMOTIONS.iter().map(|name| list.find(name).unwrap_or(usize::MAX)).collect();
+    let positions: Vec<usize> = page::EMOTIONS
+        .iter()
+        .map(|name| list.find(name).unwrap_or(usize::MAX))
+        .collect();
     let mut sorted = positions.clone();
     sorted.sort_unstable();
     assert!(positions.iter().all(|at| *at != usize::MAX), "{list}");
@@ -493,16 +712,25 @@ fn sec_07_narrate_1_screen_s14_the_numbers_the_page_draws_with_are_catalogued() 
 
     // P.eng.takeMinSeconds — the shortest hand-picked take, spelled as §10 spells it.
     assert_eq!(row("P.eng.takeMinSeconds").spelled, "0.4");
-    assert_eq!(row("P.eng.takeMinSeconds").from, "narrate_screen::TAKE_MIN_SECONDS");
+    assert_eq!(
+        row("P.eng.takeMinSeconds").from,
+        "narrate_screen::TAKE_MIN_SECONDS"
+    );
 
     // P.eng.pitchRangeSemitones: one row for the whole range, so it spells both ends and the step between them.
     let pitch = row("P.eng.pitchRangeSemitones");
     assert_eq!(pitch.spelled, "-6..+6, step 0.5");
-    assert_eq!(pitch.from, "narrate_screen::PITCH_MIN_SEMITONES + PITCH_MAX_SEMITONES + PITCH_STEP");
+    assert_eq!(
+        pitch.from,
+        "narrate_screen::PITCH_MIN_SEMITONES + PITCH_MAX_SEMITONES + PITCH_STEP"
+    );
 
     // P.eng.narrationTailSeconds — the tail that makes "speaking until mm:ss" name the end of a line.
     assert_eq!(row("P.eng.narrationTailSeconds").spelled, "0.2");
-    assert_eq!(row("P.eng.narrationTailSeconds").from, "narrate_screen::SPEECH_TAIL_SECONDS");
+    assert_eq!(
+        row("P.eng.narrationTailSeconds").from,
+        "narrate_screen::SPEECH_TAIL_SECONDS"
+    );
 
     // The band's geometry and the two debounces: §10 lists these by area, so their ids carry no `P.` prefix and each
     // names the constant it reads rather than a number of its own.
@@ -545,7 +773,10 @@ fn sec_07_narrate_1_screen_s14_the_numbers_the_page_draws_with_are_catalogued() 
         "P.eng.narrationGapSeconds",
         "P.eng.narrationMaxTempo",
     ] {
-        assert!(ids.contains(&fitted), "{fitted} is read by the render's ladder: {ids:?}");
+        assert!(
+            ids.contains(&fitted),
+            "{fitted} is read by the render's ladder: {ids:?}"
+        );
     }
     // The page's own rows are `P.eng.` or `narrate.`; the five extra ones are the narration flow's, which §10
     // puts in §1's machine table and §2's policy table rather than among the engineering constants

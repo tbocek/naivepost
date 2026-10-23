@@ -92,7 +92,8 @@ impl FakeAudio {
                 } else if line.contains("upload") {
                     b"/uploaded/voice_ref.wav".to_vec()
                 } else if line.contains("v1/models") {
-                    br#"{"data":[{"id":"index-tts2","task":"clon","family":"index_tts2"}]}"#.to_vec()
+                    br#"{"data":[{"id":"index-tts2","task":"clon","family":"index_tts2"}]}"#
+                        .to_vec()
                 } else {
                     Vec::new()
                 };
@@ -124,7 +125,10 @@ impl FakeAudio {
 }
 
 use crate::common;
-use common::{fixture_dir, hold_last_window, release_last_window, settle, status_text, widget_in, narrate_button as button};
+use common::{
+    fixture_dir, hold_last_window, narrate_button as button, release_last_window, settle,
+    status_text, widget_in,
+};
 
 static RAN_TICK: AtomicBool = AtomicBool::new(false);
 static RAN_TRANSPORT: AtomicBool = AtomicBool::new(false);
@@ -144,7 +148,6 @@ static RAN_OFF_WIRE: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
 
-
 fn label_text(window: &adw::ApplicationWindow, name: &str) -> String {
     widget_in(window, name)
         .and_then(|w| w.downcast::<gtk::Label>().ok())
@@ -155,9 +158,24 @@ fn label_text(window: &adw::ApplicationWindow, name: &str) -> String {
 /// Three kept clips of ten seconds each, so every second the page writes down is checkable by hand.
 fn three_clips() -> Vec<Seg> {
     vec![
-        Seg { s: 0.0, e: 10.0, cam: 0, ..Default::default() },
-        Seg { s: 10.0, e: 20.0, cam: 0, ..Default::default() },
-        Seg { s: 20.0, e: 30.0, cam: 0, ..Default::default() },
+        Seg {
+            s: 0.0,
+            e: 10.0,
+            cam: 0,
+            ..Default::default()
+        },
+        Seg {
+            s: 10.0,
+            e: 20.0,
+            cam: 0,
+            ..Default::default()
+        },
+        Seg {
+            s: 20.0,
+            e: 30.0,
+            cam: 0,
+            ..Default::default()
+        },
     ]
 }
 
@@ -366,7 +384,11 @@ fn narrate_round(app: &adw::Application) {
         "the playhead is between clips \u{2014} the cut has nothing to narrate here",
         "the refusal is add_at_playhead's own sentence, printed by the real click"
     );
-    assert_eq!(ui::read_state().entries.len(), 3, "a refused add adds nothing");
+    assert_eq!(
+        ui::read_state().entries.len(),
+        3,
+        "a refused add adds nothing"
+    );
     let mut state = base_state();
     state.session = 5.0;
     ui::set_state(state.clone());
@@ -390,16 +412,14 @@ fn narrate_round(app: &adw::Application) {
     settle();
     let blank_said = status_text(&window);
     assert_eq!(
-        blank_said,
-        "clip 3 has no line \u{2014} playing it on its own audio",
+        blank_said, "clip 3 has no line \u{2014} playing it on its own audio",
         "the wordless row says what it is"
     );
     button(&window, "line-speak-1").emit_by_name::<()>("clicked", &[]);
     settle();
     let caption_said = status_text(&window);
     assert_eq!(
-        caption_said,
-        "line 2 is a caption \u{2014} read, never spoken; playing its moment",
+        caption_said, "line 2 is a caption \u{2014} read, never spoken; playing its moment",
         "the caption row says what it is"
     );
     button(&window, "line-speak-0").emit_by_name::<()>("clicked", &[]);
@@ -496,7 +516,10 @@ fn narrate_round(app: &adw::Application) {
     // (the assertions below expect `takes.is_empty()`), so the take this arm added comes back off here.
     ui::press_take_remove(&window, (0.0, 2.6));
     settle();
-    assert!(ui::read_state().takes.is_empty(), "\u{ff}－ took the seconds back out");
+    assert!(
+        ui::read_state().takes.is_empty(),
+        "\u{ff}－ took the seconds back out"
+    );
     // and the − sentence carries the same 14 s mark
     ui::press_take_add(&window, (5.0, 8.0));
     settle();
@@ -545,8 +568,8 @@ fn narrate_round(app: &adw::Application) {
     voiced.voice = "narrator1".into();
     ui::set_state(voiced);
     ui::refresh(&window);
-    if let Some(entry) = widget_in(&window, "sample-sentence")
-        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+    if let Some(entry) =
+        widget_in(&window, "sample-sentence").and_then(|w| w.downcast::<gtk::Entry>().ok())
     {
         entry.set_text("");
     }
@@ -557,8 +580,8 @@ fn narrate_round(app: &adw::Application) {
         narrate_details::empty_sample_refusal(),
         "an empty box has nothing to speak"
     );
-    if let Some(entry) = widget_in(&window, "sample-sentence")
-        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+    if let Some(entry) =
+        widget_in(&window, "sample-sentence").and_then(|w| w.downcast::<gtk::Entry>().ok())
     {
         entry.set_text(narrate_screen::DEFAULT_SAMPLE);
     }
@@ -569,8 +592,8 @@ fn narrate_round(app: &adw::Application) {
     let audio = FakeAudio::start();
     audio.point();
     point_the_player_nothing();
-    if let Some(entry) = widget_in(&window, "sample-sentence")
-        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+    if let Some(entry) =
+        widget_in(&window, "sample-sentence").and_then(|w| w.downcast::<gtk::Entry>().ok())
     {
         entry.set_text(narrate_screen::DEFAULT_SAMPLE);
     }
@@ -585,7 +608,10 @@ fn narrate_round(app: &adw::Application) {
     );
     button(&window, "sample-stop").emit_by_name::<()>("clicked", &[]);
     settle();
-    assert_eq!(status_text(&window), narrate_details::sample_stopped_status());
+    assert_eq!(
+        status_text(&window),
+        narrate_details::sample_stopped_status()
+    );
     RAN_SAMPLE.store(true, Ordering::SeqCst);
     window.close();
     settle();
@@ -695,7 +721,9 @@ fn narrate_round(app: &adw::Application) {
         .and_then(|w| w.downcast::<gtk::Scale>().ok())
         .expect("the Narrate page carries the pitch slider");
     scale.set_value(narrate_screen::PITCH_MAX_SEMITONES + 4.0);
-    common::wait_until("the pitch slider's debounced write", || ui::read_state().pitch.abs() >= 1e-9);
+    common::wait_until("the pitch slider's debounced write", || {
+        ui::read_state().pitch.abs() >= 1e-9
+    });
     assert!(
         (ui::read_state().pitch - narrate_screen::PITCH_MAX_SEMITONES).abs() < 1e-9,
         "a value past the top lands clamped at +6.0 after the {} ms debounce",
@@ -807,14 +835,22 @@ fn narrate_round(app: &adw::Application) {
         .collect();
     // Each of the four entries landed on its own row, and no two of them share one.
     assert_eq!(rows.len(), 4);
-    assert_eq!(rows.iter().collect::<std::collections::HashSet<_>>().len(), 4, "{rows:?}");
+    assert_eq!(
+        rows.iter().collect::<std::collections::HashSet<_>>().len(),
+        4,
+        "{rows:?}"
+    );
     let (short, slid, sped, caption) = (rows[0], rows[1], rows[2], rows[3]);
 
     // (c) a short line: empty label, no error class.
     let quiet = label_text(&window, &format!("line-warning-{short}"));
     assert_eq!(quiet, "", "a line that fits wears no warning (row {short})");
-    let quiet_widget = widget_in(&window, &format!("line-warning-{short}")).expect("warning label exists");
-    assert!(!quiet_widget.has_css_class("error"), "a fitting row is not marked red");
+    let quiet_widget =
+        widget_in(&window, &format!("line-warning-{short}")).expect("warning label exists");
+    assert!(
+        !quiet_widget.has_css_class("error"),
+        "a fitting row is not marked red"
+    );
 
     // (a) the slide rung: 'moved earlier' and NOT 'sped up', and red because row_is_red drove it. The
     // expected sentence is rebuilt from this clip's OWN set of lines through the same page rule the wire
@@ -837,9 +873,8 @@ fn narrate_round(app: &adw::Application) {
         .map(|(index, e)| (index, e.at, speech_of(e)))
         .collect();
     let slid_warning = label_text(&window, &format!("line-warning-{slid}"));
-    let slid_expected =
-        narrate_screen::fit_warning(narrate_screen::mirror_fit(10.0, &slid_lines))
-            .expect("a run past room + extend warns");
+    let slid_expected = narrate_screen::fit_warning(narrate_screen::mirror_fit(10.0, &slid_lines))
+        .expect("a run past room + extend warns");
     assert_eq!(
         slid_warning, slid_expected,
         "the widget shows the module's own sentence, byte for byte"
@@ -858,18 +893,25 @@ fn narrate_round(app: &adw::Application) {
 
     // (b) the tempo rung: the branch the old per-line estimate could never produce.
     let sped_warning = label_text(&window, &format!("line-warning-{sped}"));
-    let sped_speech = narrate_screen::page_speech_seconds(240, narrate_screen::SPEECH_CHARS_PER_SECOND);
+    let sped_speech =
+        narrate_screen::page_speech_seconds(240, narrate_screen::SPEECH_CHARS_PER_SECOND);
     let sped_expected = narrate_screen::fit_warning(narrate_screen::mirror_fit(
         10.0,
         &[(sped, 0.3, sped_speech)],
     ))
     .expect("a run past what a slide fixes warns");
-    assert_eq!(sped_warning, sped_expected, "same sentence from widget and logic");
+    assert_eq!(
+        sped_warning, sped_expected,
+        "same sentence from widget and logic"
+    );
     assert!(
         sped_warning.contains("sped up"),
         "the tempo remedy must reach the row: {sped_warning}"
     );
-    assert!(sped_warning.contains("moved earlier and sped up"), "{sped_warning}");
+    assert!(
+        sped_warning.contains("moved earlier and sped up"),
+        "{sped_warning}"
+    );
     assert!(
         widget_in(&window, &format!("line-warning-{sped}"))
             .expect("warning label exists")
@@ -879,7 +921,10 @@ fn narrate_round(app: &adw::Application) {
 
     // (d) a caption never wears a fit warning, however long it is: the viewer reads it, it is not spoken.
     let caption_warning = label_text(&window, &format!("line-warning-{caption}"));
-    assert_eq!(caption_warning, "", "a caption wears no fit warning (row {caption})");
+    assert_eq!(
+        caption_warning, "",
+        "a caption wears no fit warning (row {caption})"
+    );
     assert!(
         !widget_in(&window, &format!("line-warning-{caption}"))
             .expect("warning label exists")
@@ -896,13 +941,13 @@ fn narrate_round(app: &adw::Application) {
     // `tests/suite/speak_tts_wire_widgets.rs`, where a fake audio.cpp on a loopback port answers the
     // same click and the take lands from bytes that really crossed a socket.
 
-
     // --- (12) F4.8 through the REAL tick widget: the toggle greys, persists, and leaves the record --
     // Everything above block (1) drove `ui::set_narration_off` directly. This one drives the widget:
     // a `toggled` emission on `narration-tick`, which is the signal `wire()` listens for, so the wire
     // itself is what is under test here rather than the seam behind it.
     let session_root = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
-    let tree = naivepost::layout::Tree::new(&session_root).expect("the session folder is a project");
+    let tree =
+        naivepost::layout::Tree::new(&session_root).expect("the session folder is a project");
     let mut off_state = base_state();
     off_state.entries = vec![naivepost::narration::Entry {
         s: 0.0,
@@ -949,7 +994,10 @@ fn narrate_round(app: &adw::Application) {
 
     // (c) the greys match `narrate_off::greyed(true)` field by field, and the tick stayed pressable.
     let greyed = narrate_off::greyed(true);
-    assert!(greyed.lines && greyed.preview && greyed.voice, "all three go grey");
+    assert!(
+        greyed.lines && greyed.preview && greyed.voice,
+        "all three go grey"
+    );
     assert!(!greyed.tick, "the tick never greys -- it is the way back");
     for name in ["narrate-lines", "narrate-preview", "voice-picker"] {
         assert!(
@@ -957,7 +1005,10 @@ fn narrate_round(app: &adw::Application) {
             "{name} is insensitive with narration off, as greyed says"
         );
     }
-    assert!(tick.is_sensitive(), "the tick stays live while everything else greys");
+    assert!(
+        tick.is_sensitive(),
+        "the tick stays live while everything else greys"
+    );
 
     // (d) the status line the wire printed is the seam's own sentence, unchanged by going through GTK.
     assert_eq!(
@@ -970,7 +1021,10 @@ fn narrate_round(app: &adw::Application) {
     );
 
     // (e) F4.8 node 2: the record was not opened. Bytes identical, and the module says so too.
-    assert!(!narrate_off::touches_the_record(), "the tick must never open the record");
+    assert!(
+        !narrate_off::touches_the_record(),
+        "the tick must never open the record"
+    );
     assert_eq!(
         std::fs::read(tree.narration_json()).expect("still readable"),
         record_before,
@@ -1028,7 +1082,10 @@ fn sec_07_narrate_1_surface_the_narrate_page_reaches_its_rules() {
     let root = std::env::temp_dir().join(format!(
         "np-narrate-{}-{}",
         std::process::id(),
-        std::thread::current().name().unwrap_or("round").replace(':', "_")
+        std::thread::current()
+            .name()
+            .unwrap_or("round")
+            .replace(':', "_")
     ));
     std::fs::remove_dir_all(&root).ok();
     std::fs::create_dir_all(&root).expect("temp root created");
@@ -1045,17 +1102,38 @@ fn sec_07_narrate_1_surface_the_narrate_page_reaches_its_rules() {
     });
 
     assert!(RAN_TICK.load(Ordering::SeqCst), "the tick block never ran");
-    assert!(RAN_TRANSPORT.load(Ordering::SeqCst), "the transport block never ran");
-    assert!(RAN_ADD_LINE.load(Ordering::SeqCst), "the add-at-playhead block never ran");
-    assert!(RAN_SPEAK.load(Ordering::SeqCst), "the row's \u{25b6} block never ran");
+    assert!(
+        RAN_TRANSPORT.load(Ordering::SeqCst),
+        "the transport block never ran"
+    );
+    assert!(
+        RAN_ADD_LINE.load(Ordering::SeqCst),
+        "the add-at-playhead block never ran"
+    );
+    assert!(
+        RAN_SPEAK.load(Ordering::SeqCst),
+        "the row's \u{25b6} block never ran"
+    );
     assert!(
         RAN_ROW_BUTTONS.load(Ordering::SeqCst),
         "the row's reroll / add-below / remove block never ran"
     );
-    assert!(RAN_TAKE_BAND.load(Ordering::SeqCst), "the take band block never ran");
-    assert!(RAN_SAMPLE.load(Ordering::SeqCst), "the sample ladder never ran");
-    assert!(RAN_PITCH.load(Ordering::SeqCst), "the pitch clamp never ran");
-    assert!(RAN_READOUTS.load(Ordering::SeqCst), "the readouts never ran");
+    assert!(
+        RAN_TAKE_BAND.load(Ordering::SeqCst),
+        "the take band block never ran"
+    );
+    assert!(
+        RAN_SAMPLE.load(Ordering::SeqCst),
+        "the sample ladder never ran"
+    );
+    assert!(
+        RAN_PITCH.load(Ordering::SeqCst),
+        "the pitch clamp never ran"
+    );
+    assert!(
+        RAN_READOUTS.load(Ordering::SeqCst),
+        "the readouts never ran"
+    );
     assert!(
         RAN_VOICE_PICKER.load(Ordering::SeqCst),
         "the voice picker block never ran"
@@ -1072,7 +1150,10 @@ fn sec_07_narrate_1_surface_the_narrate_page_reaches_its_rules() {
         RAN_PITCH_DEBOUNCE.load(Ordering::SeqCst),
         "the pitch slider's debounce path never ran"
     );
-    assert!(RAN_FIT_ROW.load(Ordering::SeqCst), "the F4.3 fit-row block never ran");
+    assert!(
+        RAN_FIT_ROW.load(Ordering::SeqCst),
+        "the F4.3 fit-row block never ran"
+    );
     assert!(
         RAN_OFF_WIRE.load(Ordering::SeqCst),
         "the F4.8 real-tick block never ran"

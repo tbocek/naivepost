@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 
-use adw::prelude::*;
 use crate::common;
+use adw::prelude::*;
 use naivepost::hand_edit;
 use naivepost::layout::Tree;
 use naivepost::project::{Project, Source};
@@ -65,10 +65,7 @@ fn window_round() {
 }
 
 fn temp_root(tag: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "naivepost-f112w-{}-{tag}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("naivepost-f112w-{}-{tag}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir
@@ -189,7 +186,9 @@ fn check_remake_through_the_widgets(app: &adw::Application) {
 
     // The marks on disk are exactly what the logic path yields for the same input.
     let words: Vec<String> = WORDS.iter().map(|w| (*w).to_string()).collect();
-    let times: Vec<(f64, f64)> = (0..WORDS.len()).map(|n| (n as f64, n as f64 + 0.9)).collect();
+    let times: Vec<(f64, f64)> = (0..WORDS.len())
+        .map(|n| (n as f64, n as f64 + 0.9))
+        .collect();
     let expected = hand_edit::remake(&final_text, &words, &times, |_| None);
     assert!(!expected.refused, "two of ten is under the ceiling");
     let on_disk = textfmt::read_retakes(&tree.retakes_tsv()).unwrap();
@@ -228,7 +227,10 @@ fn check_remake_through_the_widgets(app: &adw::Application) {
         "retakes.tsv unchanged since the remake"
     );
     assert_eq!(
-        ui::window_logs().iter().filter(|line| *line == hand_edit::EDITED_NOTE).count(),
+        ui::window_logs()
+            .iter()
+            .filter(|line| *line == hand_edit::EDITED_NOTE)
+            .count(),
         1,
         "exactly one remake note across the whole log"
     );
@@ -288,7 +290,10 @@ fn check_refusal_reaches_the_status_line(app: &adw::Application) {
 /// the edit over `P.machine.retakeCeil` (0.4) into a refusal.
 fn check_marked_text_and_never_said_word_through_the_widgets(app: &adw::Application) {
     // Same fixture as CHECK 1; only final.txt differs, replaced with the marker-and-typo spelling.
-    let (_root, tree, _) = seed("marked", &["so", "we", "take", "and", "cut", "there", "twice"]);
+    let (_root, tree, _) = seed(
+        "marked",
+        &["so", "we", "take", "and", "cut", "there", "twice"],
+    );
     fs::write(tree.final_txt(), MARKED_WITH_TYPO).unwrap();
     stamp(&tree.final_txt(), Duration::from_secs(0));
     stamp(&tree.retakes_tsv(), Duration::from_secs(60));
@@ -325,13 +330,17 @@ fn check_marked_text_and_never_said_word_through_the_widgets(app: &adw::Applicat
         // Already remade by the click above, so ask the pure function instead over the same text.
         None => {
             let words: Vec<String> = WORDS.iter().map(|w| (*w).to_string()).collect();
-            let times: Vec<(f64, f64)> =
-                (0..WORDS.len()).map(|n| (n as f64, n as f64 + 0.9)).collect();
+            let times: Vec<(f64, f64)> = (0..WORDS.len())
+                .map(|n| (n as f64, n as f64 + 0.9))
+                .collect();
             hand_edit::remake(MARKED_WITH_TYPO, &words, &times, |_| None)
         }
     };
     assert_eq!(expected.extra, 1, "one word nobody spoke");
-    assert_eq!(expected.dropped, 4, "`the clip` under the marker, plus `it` and `twice`");
+    assert_eq!(
+        expected.dropped, 4,
+        "`the clip` under the marker, plus `it` and `twice`"
+    );
     let on_disk = textfmt::read_retakes(&tree.retakes_tsv()).unwrap();
     assert_eq!(
         on_disk.len(),
@@ -340,7 +349,10 @@ fn check_marked_text_and_never_said_word_through_the_widgets(app: &adw::Applicat
     );
     for (got, want) in on_disk.iter().zip(expected.marks.iter()) {
         assert_eq!((got.s, got.e, got.to), (want.s, want.e, want.to));
-        assert!(!got.text.contains('|'), "no marker leaked into a mark: {got:?}");
+        assert!(
+            !got.text.contains('|'),
+            "no marker leaked into a mark: {got:?}"
+        );
         assert!(!got.text.contains("typo"), "{got:?}");
     }
     window.close();
@@ -349,8 +361,14 @@ fn check_marked_text_and_never_said_word_through_the_widgets(app: &adw::Applicat
 #[test]
 fn f1_12_s2_the_next_cut_press_remakes_the_marks_through_the_widgets() {
     window_round();
-    assert!(RAN_REMAKE.load(Ordering::SeqCst), "the remake check never ran");
-    assert!(RAN_REFUSED.load(Ordering::SeqCst), "the refusal check never ran");
+    assert!(
+        RAN_REMAKE.load(Ordering::SeqCst),
+        "the remake check never ran"
+    );
+    assert!(
+        RAN_REFUSED.load(Ordering::SeqCst),
+        "the refusal check never ran"
+    );
     assert!(
         RAN_MARKED.load(Ordering::SeqCst),
         "the marked-text / never-said-word check never ran"

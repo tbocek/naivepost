@@ -13,17 +13,17 @@ use crate::common;
 use common::temp_dir_created as temp_dir;
 
 use adw::prelude::*;
-use std::time::Duration;
 use gtk4 as gtk;
 use naivepost::exchange_leg;
 use naivepost::exchanges;
 use naivepost::layout::Tree;
 use naivepost::llm_retry_leg;
+use naivepost::requests::Service;
 use naivepost::requests::{Outcome, Request};
 use naivepost::services::Endpoint;
-use naivepost::requests::Service;
 use naivepost::startup;
 use naivepost::ui;
+use std::time::Duration;
 
 /// A root only this check touches.
 fn root(tag: &str) -> std::path::PathBuf {
@@ -105,7 +105,6 @@ fn sse_stream(pieces: &[&str]) -> String {
     pieces.iter().map(|piece| sse(piece)).collect::<String>()
 }
 
-
 /// One fake LLM answering from a script, on a port nothing else holds. Every request it takes is
 /// answered with the script's next reply, so a retried call is a script of two.
 struct FakeLlm {
@@ -143,7 +142,10 @@ impl FakeLlm {
                     if reader.read_line(&mut line).unwrap_or(0) == 0 || line.trim().is_empty() {
                         break;
                     }
-                    if let Some(value) = line.strip_prefix("Content-Length:").or_else(|| line.strip_prefix("content-length:")) {
+                    if let Some(value) = line
+                        .strip_prefix("Content-Length:")
+                        .or_else(|| line.strip_prefix("content-length:"))
+                    {
                         length = value.trim().parse().unwrap_or(0);
                     }
                 }
@@ -163,7 +165,10 @@ impl FakeLlm {
     }
 
     fn endpoint(&self) -> Endpoint {
-        Endpoint { url: self.url.clone(), key: String::new() }
+        Endpoint {
+            url: self.url.clone(),
+            key: String::new(),
+        }
     }
 }
 
@@ -173,7 +178,10 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_real_call_leaves_its_page_and_
     // out through the patience door must now leave both halves behind: the section on disk, and §7's
     // two lines (plus the once-per-run link) in the log.
     let tree = tree("s8-real");
-    let fake = FakeLlm::answer_with(vec![("application/json".into(), answer("a terminal window"))]);
+    let fake = FakeLlm::answer_with(vec![(
+        "application/json".into(),
+        answer("a terminal window"),
+    )]);
     let body = ask_body("what is on screen?", false);
     let log = std::cell::RefCell::new(Vec::new());
     let sent = llm_retry_leg::chat(
@@ -190,7 +198,11 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_real_call_leaves_its_page_and_
 
     let pages: Vec<String> = std::fs::read_dir(tree.llm_dir())
         .expect("the run's llm/ folder")
-        .filter_map(|entry| entry.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+        .filter_map(|entry| {
+            entry
+                .ok()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+        })
         .collect();
     assert_eq!(pages.len(), 1, "one page for the run: {pages:?}");
     // MMDD-HHMMSS-<first step>.html — six-digit groups, then the step that asked first.
@@ -200,8 +212,14 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_real_call_leaves_its_page_and_
     assert_eq!(stamp.len(), 14, "{name}");
     assert!(stamp.chars().all(|c| c.is_ascii_digit()), "{name}");
     // MMDD-HHMMSS in that order (§7 spells the name), which a year-first stamp would not satisfy.
-    let (month, day, hour, minute, second, year) =
-        (&stamp[0..2], &stamp[2..4], &stamp[4..6], &stamp[6..8], &stamp[8..10], &stamp[10..14]);
+    let (month, day, hour, minute, second, year) = (
+        &stamp[0..2],
+        &stamp[2..4],
+        &stamp[4..6],
+        &stamp[6..8],
+        &stamp[8..10],
+        &stamp[10..14],
+    );
     let month: u32 = month.parse().expect("a month");
     let day: u32 = day.parse().expect("a day");
     let hour: u32 = hour.parse().expect("an hour");
@@ -220,30 +238,60 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_real_call_leaves_its_page_and_
 
     let html = std::fs::read_to_string(tree.llm_dir().join(name)).expect("the page is readable");
     assert!(html.contains("<h1>1. Describe</h1>"), "{html}");
-    assert!(html.contains("qwen"), "the meta line names the model: {html}");
-    assert!(html.contains("execute"), "the body's thinking switch is off: {html}");
-    assert!(html.contains("a terminal window"), "the reply is on the page: {html}");
-    assert!(html.contains("You describe frames."), "the request is on the page: {html}");
+    assert!(
+        html.contains("qwen"),
+        "the meta line names the model: {html}"
+    );
+    assert!(
+        html.contains("execute"),
+        "the body's thinking switch is off: {html}"
+    );
+    assert!(
+        html.contains("a terminal window"),
+        "the reply is on the page: {html}"
+    );
+    assert!(
+        html.contains("You describe frames."),
+        "the request is on the page: {html}"
+    );
 
     let said = log.borrow();
     assert!(
-        said.iter().any(|l| l == ">>> Describe: 0.2 kB of text and 0 image(s) went to the LLM")
-            || said.iter().any(|l| l.ends_with("of text and 0 image(s) went to the LLM")),
+        said.iter()
+            .any(|l| l == ">>> Describe: 0.2 kB of text and 0 image(s) went to the LLM")
+            || said
+                .iter()
+                .any(|l| l.ends_with("of text and 0 image(s) went to the LLM")),
         "the send line: {said:?}"
     );
-    assert!(said.iter().any(|l| l.starts_with(">>>   this run's exchanges, images included: llm/")), "{said:?}");
-    assert!(said.iter().any(|l| l.starts_with(">>> Describe: ") && l.contains("came back in")), "{said:?}");
-    assert!(said.iter().any(|l| l.starts_with(">>>   the reply begins: a terminal window")), "{said:?}");
+    assert!(
+        said.iter()
+            .any(|l| l.starts_with(">>>   this run's exchanges, images included: llm/")),
+        "{said:?}"
+    );
+    assert!(
+        said.iter()
+            .any(|l| l.starts_with(">>> Describe: ") && l.contains("came back in")),
+        "{said:?}"
+    );
+    assert!(
+        said.iter()
+            .any(|l| l.starts_with(">>>   the reply begins: a terminal window")),
+        "{said:?}"
+    );
     // Once per run: one link line, however many lines were written.
     assert_eq!(
-        said.iter().filter(|l| l.contains("this run's exchanges")).count(),
+        said.iter()
+            .filter(|l| l.contains("this run's exchanges"))
+            .count(),
         1,
         "the link goes once per run: {said:?}"
     );
 }
 
 #[test]
-fn sec_03_shell_7_the_model_exchange_log_llm_s8_an_event_stream_reply_reaches_the_page_reassembled() {
+fn sec_03_shell_7_the_model_exchange_log_llm_s8_an_event_stream_reply_reaches_the_page_reassembled()
+{
     // §9 §1: only a `text/event-stream` reply is a stream, and that test is the response's own
     // content-type. The chat asks read their body to the end before anything looks at it (only
     // `speak_leg` consumes a stream as it lands), so the section is filed whole in one write and the
@@ -280,9 +328,18 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_an_event_stream_reply_reaches_th
     // The reassembled stream is the reply, and the section was written whole: no marker of a block
     // left open mid-stream, and the meta line reports an outcome rather than a wait.
     assert!(html.contains("a terminal window"), "{html}");
-    assert!(!html.contains("reply pending"), "the call is over on the page: {html}");
-    assert!(!html.contains("streamed"), "nothing is left mid-stream: {html}");
-    assert!(html.trim_end().ends_with("</html>"), "the page is a whole document: {html}");
+    assert!(
+        !html.contains("reply pending"),
+        "the call is over on the page: {html}"
+    );
+    assert!(
+        !html.contains("streamed"),
+        "nothing is left mid-stream: {html}"
+    );
+    assert!(
+        html.trim_end().ends_with("</html>"),
+        "the page is a whole document: {html}"
+    );
 }
 
 #[test]
@@ -302,33 +359,65 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_one_page_per_run_named_for_its_f
             1,
             None,
         );
-        exchange_leg::record(&tree, step, &call, &|line| log.borrow_mut().push(line.to_string()));
+        exchange_leg::record(&tree, step, &call, &|line| {
+            log.borrow_mut().push(line.to_string())
+        });
     }
     exchange_leg::note_run_ended();
     exchange_leg::reset_run_for_test();
 
     let pages: Vec<String> = std::fs::read_dir(tree.llm_dir())
         .expect("the run's llm/ folder")
-        .map(|entry| entry.expect("an entry").file_name().to_string_lossy().to_string())
+        .map(|entry| {
+            entry
+                .expect("an entry")
+                .file_name()
+                .to_string_lossy()
+                .to_string()
+        })
         .collect();
-    assert_eq!(pages.len(), 1, "one page for a run however many calls it made: {pages:?}");
+    assert_eq!(
+        pages.len(),
+        1,
+        "one page for a run however many calls it made: {pages:?}"
+    );
     assert!(pages[0].ends_with("-Describe.html"), "{pages:?}");
     let html = std::fs::read_to_string(tree.llm_dir().join(&pages[0])).expect("the page");
-    assert!(html.contains("<h1>1. Describe</h1>") && html.contains("<h1>2. Narrate</h1>"), "{html}");
+    assert!(
+        html.contains("<h1>1. Describe</h1>") && html.contains("<h1>2. Narrate</h1>"),
+        "{html}"
+    );
     assert_eq!(
-        log.borrow().iter().filter(|l| l.contains("this run's exchanges")).count(),
+        log.borrow()
+            .iter()
+            .filter(|l| l.contains("this run's exchanges"))
+            .count(),
         1,
         "the link once per run, not per call"
     );
 
     // The next run's first call opens its own page.
     exchange_leg::note_run_started();
-    let call = naivepost::exchange_leg::call_of("Fix", "qwen", &ask_body("x", false), &answer("ok"), "application/json", 1, None);
+    let call = naivepost::exchange_leg::call_of(
+        "Fix",
+        "qwen",
+        &ask_body("x", false),
+        &answer("ok"),
+        "application/json",
+        1,
+        None,
+    );
     exchange_leg::record(&tree, "Fix", &call, &|_| {});
     exchange_leg::note_run_ended();
     let pages: Vec<String> = std::fs::read_dir(tree.llm_dir())
         .expect("the run's llm/ folder")
-        .map(|entry| entry.expect("an entry").file_name().to_string_lossy().to_string())
+        .map(|entry| {
+            entry
+                .expect("an entry")
+                .file_name()
+                .to_string_lossy()
+                .to_string()
+        })
         .collect();
     assert_eq!(pages.len(), 2, "a second run, a second page: {pages:?}");
     assert!(pages.iter().any(|p| p.ends_with("-Fix.html")), "{pages:?}");
@@ -350,7 +439,9 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_failed_call_is_on_the_page_too
         Some("no answer from localhost:1".to_string()),
     );
     exchange_leg::note_run_started();
-    exchange_leg::record(&tree, "Describe", &call, &|line| log.borrow_mut().push(line.to_string()));
+    exchange_leg::record(&tree, "Describe", &call, &|line| {
+        log.borrow_mut().push(line.to_string())
+    });
     exchange_leg::note_run_ended();
     exchange_leg::reset_run_for_test();
 
@@ -363,9 +454,15 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_failed_call_is_on_the_page_too
         .to_string_lossy()
         .to_string();
     let html = std::fs::read_to_string(tree.llm_dir().join(name)).expect("the page");
-    assert!(html.contains("no answer from localhost:1"), "the reason is on the page: {html}");
+    assert!(
+        html.contains("no answer from localhost:1"),
+        "the reason is on the page: {html}"
+    );
     let said = log.borrow();
-    assert!(said.iter().any(|l| l.contains("the call failed after")), "{said:?}");
+    assert!(
+        said.iter().any(|l| l.contains("the call failed after")),
+        "{said:?}"
+    );
 }
 
 #[test]
@@ -390,26 +487,57 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_refused_body_keeps_the_server_
 }
 
 #[test]
-fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_call_outside_a_run_is_recorded_and_ends_with_itself() {
+fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_call_outside_a_run_is_recorded_and_ends_with_itself(
+) {
     // A settings probe asks the model outside any ▶. It gets a page of its own rather than going
     // unrecorded — and it must not soak up the NEXT run's calls into that page.
     let tree = tree("s8-stray");
-    let stray = naivepost::exchange_leg::call_of("Check", "qwen", &ask_body("x", false), &answer("qwen"), "application/json", 0, None);
+    let stray = naivepost::exchange_leg::call_of(
+        "Check",
+        "qwen",
+        &ask_body("x", false),
+        &answer("qwen"),
+        "application/json",
+        0,
+        None,
+    );
     exchange_leg::record(&tree, "Check", &stray, &|_| {});
-    let first = std::fs::read_dir(tree.llm_dir()).expect("the stray call left a page").next().unwrap().unwrap();
+    let first = std::fs::read_dir(tree.llm_dir())
+        .expect("the stray call left a page")
+        .next()
+        .unwrap()
+        .unwrap();
     exchange_leg::note_run_started();
-    let call = naivepost::exchange_leg::call_of("Describe", "qwen", &ask_body("x", false), &answer("ok"), "application/json", 0, None);
+    let call = naivepost::exchange_leg::call_of(
+        "Describe",
+        "qwen",
+        &ask_body("x", false),
+        &answer("ok"),
+        "application/json",
+        0,
+        None,
+    );
     exchange_leg::record(&tree, "Describe", &call, &|_| {});
     exchange_leg::note_run_ended();
     exchange_leg::reset_run_for_test();
 
     let pages: Vec<String> = std::fs::read_dir(tree.llm_dir())
         .expect("the run's llm/ folder")
-        .map(|entry| entry.expect("an entry").file_name().to_string_lossy().to_string())
+        .map(|entry| {
+            entry
+                .expect("an entry")
+                .file_name()
+                .to_string_lossy()
+                .to_string()
+        })
         .collect();
     assert_eq!(pages.len(), 2, "the stray page stands alone: {pages:?}");
-    let stray_html = std::fs::read_to_string(tree.llm_dir().join(first.file_name())).expect("the stray page");
-    assert!(stray_html.contains("<h1>1. Check</h1>") && !stray_html.contains("Describe"), "{stray_html}");
+    let stray_html =
+        std::fs::read_to_string(tree.llm_dir().join(first.file_name())).expect("the stray page");
+    assert!(
+        stray_html.contains("<h1>1. Check</h1>") && !stray_html.contains("Describe"),
+        "{stray_html}"
+    );
 }
 
 #[test]
@@ -447,10 +575,19 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_second_run_opens_its_own_page(
 
     let pages: Vec<String> = std::fs::read_dir(tree.llm_dir())
         .expect("the run's llm/ folder")
-        .map(|entry| entry.expect("an entry").file_name().to_string_lossy().to_string())
+        .map(|entry| {
+            entry
+                .expect("an entry")
+                .file_name()
+                .to_string_lossy()
+                .to_string()
+        })
         .collect();
     assert_eq!(pages.len(), 2, "one page per run: {pages:?}");
-    assert!(pages.iter().any(|p| p.ends_with("-Describe.html")), "{pages:?}");
+    assert!(
+        pages.iter().any(|p| p.ends_with("-Describe.html")),
+        "{pages:?}"
+    );
     assert!(pages.iter().any(|p| p.ends_with("-Fix.html")), "{pages:?}");
     let describe = pages
         .iter()
@@ -458,7 +595,10 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_a_second_run_opens_its_own_page(
         .expect("the first run's page");
     let html = std::fs::read_to_string(tree.llm_dir().join(describe)).expect("the page");
     assert!(html.contains("<h1>1. Describe</h1>"), "{html}");
-    assert!(!html.contains("Fix"), "the second run stayed out of it: {html}");
+    assert!(
+        !html.contains("Fix"),
+        "the second run stayed out of it: {html}"
+    );
     // Leave the recorder between runs, as a closed window leaves it: checks of one binary share it.
     exchange_leg::reset_run_for_test();
 }
@@ -521,7 +661,10 @@ impl LogView {
         let view = gtk::TextView::new();
         view.set_editable(false);
         window.set_child(Some(&view));
-        LogView { view, opened: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())) }
+        LogView {
+            view,
+            opened: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+        }
     }
 
     /// The view with §7's door installed and the opening leg recorded instead of run.
@@ -569,8 +712,12 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_names_only_the_run_page_line() {
     // path of any other kind — or §7's own wording with a non-page tail — answers `None`.
     let session = std::path::Path::new("/tmp/show.naivepost/session");
     let rel = page_name("Describe");
-    let uri = ui::log_link::target_of(&exchanges::link_line(&rel), session)
-        .unwrap_or_else(|| panic!("{} should point at the run's page", exchanges::link_line(&rel)));
+    let uri = ui::log_link::target_of(&exchanges::link_line(&rel), session).unwrap_or_else(|| {
+        panic!(
+            "{} should point at the run's page",
+            exchanges::link_line(&rel)
+        )
+    });
     assert_eq!(
         uri,
         format!("file://{}{rel}", session.display().to_string() + "/"),
@@ -579,8 +726,14 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_names_only_the_run_page_line() {
 
     for not_a_link in [
         ">>> Describe: 451.4 kB of text and 0 image(s) went to the LLM".to_string(),
-        format!("{} audio/pass.wav", exchanges::link_line("").trim_end_matches(": ")),
-        format!("{} /tmp/elsewhere/page.html", exchanges::link_line("").trim_end_matches(": ")),
+        format!(
+            "{} audio/pass.wav",
+            exchanges::link_line("").trim_end_matches(": ")
+        ),
+        format!(
+            "{} /tmp/elsewhere/page.html",
+            exchanges::link_line("").trim_end_matches(": ")
+        ),
         exchanges::link_line(&format!("{}/page.txt", exchanges::LLM_DIR)),
         exchanges::link_line("page.html"),
     ] {
@@ -622,8 +775,9 @@ impl SlowLlm {
                     if reader.read_line(&mut line).unwrap_or(0) == 0 || line.trim().is_empty() {
                         break;
                     }
-                    if let Some(value) =
-                        line.strip_prefix("Content-Length:").or_else(|| line.strip_prefix("content-length:"))
+                    if let Some(value) = line
+                        .strip_prefix("Content-Length:")
+                        .or_else(|| line.strip_prefix("content-length:"))
                     {
                         length = value.trim().parse().unwrap_or(0);
                     }
@@ -642,14 +796,22 @@ impl SlowLlm {
                 // `data:` line, so a check about WHEN words land gets exactly one word per pause. The stream's
                 // own `[DONE]` marker and its blank terminator ride along with the last piece.
                 let lines: Vec<&str> = body.lines().collect();
-                debug_assert!(lines.len() >= pieces.max(1), "one line per piece at least: {lines:?}");
+                debug_assert!(
+                    lines.len() >= pieces.max(1),
+                    "one line per piece at least: {lines:?}"
+                );
                 for (index, line) in lines.iter().enumerate() {
                     // `\r\n`, not a bare `\n`: an SSE line ends with CRLF on the wire, and a client that has
                     // to wait for the CR before it can use the LF is a client whose first read yields nothing.
                     // The stream's `[DONE]` marker and its terminator ride with the LAST word, as they do on a
                     // real server that finishes writing the moment it decides the answer is over.
-                    let block = if index + 1 == lines.len() { format!("{line}\r\ndata: [DONE]\r\n\r\n") } else { format!("{line}\r\n") };
-                    let _ = stream.write_all(format!("{:x}\r\n{}\r\n", block.len(), block).as_bytes());
+                    let block = if index + 1 == lines.len() {
+                        format!("{line}\r\ndata: [DONE]\r\n\r\n")
+                    } else {
+                        format!("{line}\r\n")
+                    };
+                    let _ =
+                        stream.write_all(format!("{:x}\r\n{}\r\n", block.len(), block).as_bytes());
                     let _ = stream.flush();
                     std::thread::sleep(every);
                 }
@@ -664,7 +826,10 @@ impl SlowLlm {
     }
 
     fn endpoint(&self) -> Endpoint {
-        Endpoint { url: self.url.clone(), key: String::new() }
+        Endpoint {
+            url: self.url.clone(),
+            key: String::new(),
+        }
     }
 
     /// Until the server has finished writing, however long it takes. Bounded so a dead server fails the check
@@ -681,7 +846,8 @@ impl SlowLlm {
 }
 
 #[test]
-fn sec_03_shell_7_the_model_exchange_log_llm_s9_the_page_grows_while_the_answer_is_still_arriving() {
+fn sec_03_shell_7_the_model_exchange_log_llm_s9_the_page_grows_while_the_answer_is_still_arriving()
+{
     // §7's live half, measured on the file itself: open the page DURING the call and the request is there,
     // `reply pending` is gone, and SOME words have landed while the reply as a whole has not. Then the call ends
     // and the same page holds the finished exchange. A recorder that only files at the end passes nothing here.
@@ -689,7 +855,11 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s9_the_page_grows_while_the_answer_
     // the sentence cannot be on the page yet — no sleep, no luck.
     let tree = tree("s9-live");
     let pieces = ["terminal", " window", " on a desk"];
-    let fake = SlowLlm::streaming(sse_stream(&pieces), pieces.len(), Duration::from_millis(120));
+    let fake = SlowLlm::streaming(
+        sse_stream(&pieces),
+        pieces.len(),
+        Duration::from_millis(120),
+    );
     let log = std::cell::RefCell::new(Vec::new());
     let thread = std::thread::spawn({
         let tree = tree.clone();
@@ -731,8 +901,14 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s9_the_page_grows_while_the_answer_
         }
         std::thread::sleep(Duration::from_millis(5));
     }
-    assert!(mid.contains("You describe frames."), "the ask is on the page before the answer: {mid}");
-    assert!(!mid.contains("reply pending"), "the reply has begun, so no pending marker: {mid}");
+    assert!(
+        mid.contains("You describe frames."),
+        "the ask is on the page before the answer: {mid}"
+    );
+    assert!(
+        !mid.contains("reply pending"),
+        "the reply has begun, so no pending marker: {mid}"
+    );
     // SOME but not ALL: one fragment landed, the sentence has not. Asserting only the first fragment would pass
     // trivially once the whole reply had arrived, which is the failure mode this check exists to catch.
     assert!(mid.contains("a"), "the first words are on the page: {mid}");
@@ -752,10 +928,19 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s9_the_page_grows_while_the_answer_
     let end = std::fs::read_to_string(&path).expect("the page is readable after");
     // The reassembled reply, not the wire: a page that still shows `data:` framing means the live fragments
     // were left in place when the finished section should have replaced them.
-    assert!(!end.contains("data:"), "the closed section holds the answer, not the stream: {end}");
-    assert!(end.contains("terminal window on a desk"), "the reply is complete: {end}");
+    assert!(
+        !end.contains("data:"),
+        "the closed section holds the answer, not the stream: {end}"
+    );
+    assert!(
+        end.contains("terminal window on a desk"),
+        "the reply is complete: {end}"
+    );
     assert!(!end.contains("reply pending"), "{end}");
-    assert!(end.trim_end().ends_with("</html>"), "a whole document: {end}");
+    assert!(
+        end.trim_end().ends_with("</html>"),
+        "a whole document: {end}"
+    );
     // One page for the call, however many times it was rewritten.
     let pages: Vec<String> = std::fs::read_dir(tree.llm_dir())
         .expect("llm/")
@@ -772,7 +957,10 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s9_a_one_shot_ask_gets_no_live_sect
     // — exactly as before this item existed — and must not leave a section sitting open or a `pending` marker
     // behind. This is the other half of the rule: the live page is conditional, the recording is not.
     let tree = tree("s9-one-shot");
-    let fake = FakeLlm::answer_with(vec![("application/json".into(), answer("nothing streamed"))]);
+    let fake = FakeLlm::answer_with(vec![(
+        "application/json".into(),
+        answer("nothing streamed"),
+    )]);
     let log = std::cell::RefCell::new(Vec::new());
     llm_retry_leg::chat(
         "Check",
@@ -795,7 +983,10 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s9_a_one_shot_ask_gets_no_live_sect
         .to_string();
     let html = std::fs::read_to_string(tree.llm_dir().join(name)).expect("the page");
     assert!(html.contains("nothing streamed"), "{html}");
-    assert!(!html.contains("reply pending"), "a one-shot call is filed whole: {html}");
+    assert!(
+        !html.contains("reply pending"),
+        "a one-shot call is filed whole: {html}"
+    );
     assert!(html.trim_end().ends_with("</html>"), "{html}");
     exchange_leg::reset_run_for_test();
 }
@@ -835,7 +1026,11 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_is_the_only_tagged_line() {
         Ok(())
     };
     let opened = ui::log_link::activate_line(&view.view, 2, &opener);
-    assert_eq!(opened.as_deref(), Some(page.as_str()), "the page line opens its page");
+    assert_eq!(
+        opened.as_deref(),
+        Some(page.as_str()),
+        "the page line opens its page"
+    );
     assert_eq!(view.opened.borrow().len(), 1, "one activation, one opening");
     for plain in [0, 1] {
         let before = view.opened.borrow().len();
@@ -857,12 +1052,19 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_is_the_only_tagged_line() {
     view.paint(&log_batch(&page_name("Narrate")));
     ui::window::clear_logs_for_test();
     let opened = ui::log_link::activate_line(&view.view, 2, &|_uri| Err("no browser".to_string()));
-    assert!(opened.is_some(), "the activation WAS the link's, even though nothing could open");
+    assert!(
+        opened.is_some(),
+        "the activation WAS the link's, even though nothing could open"
+    );
     let said: Vec<String> = ui::window::window_logs()
         .into_iter()
         .filter(|line| line.contains("could not open"))
         .collect();
-    assert_eq!(said.len(), 1, "exactly one line about the failure: {said:?}");
+    assert_eq!(
+        said.len(),
+        1,
+        "exactly one line about the failure: {said:?}"
+    );
     assert!(
         said[0].contains("Narrate-page.html") && said[0].contains("no browser"),
         "it names the page and says why: {}",
@@ -884,7 +1086,10 @@ fn sec_03_shell_7_the_model_exchange_log_llm_s8_is_the_only_tagged_line() {
     std::env::set_current_dir(&here).expect("the cwd goes back for the other checks");
     let page = opened.expect("the line is still the link after the move");
     assert!(
-        page.starts_with(&format!("file://{}", startup::session_dir(&after).display())),
+        page.starts_with(&format!(
+            "file://{}",
+            startup::session_dir(&after).display()
+        )),
         "the link followed the folder: {page}"
     );
     assert!(

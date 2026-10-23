@@ -51,7 +51,11 @@ fn f0_7_s1_an_empty_context_leaves_every_field_at_its_default() {
         defaults.speed_pass.origin,
         defaults.decorations_pass.origin,
     ] {
-        assert_eq!(origin, Origin::Default, "an undriven field reports Default, not Model");
+        assert_eq!(
+            origin,
+            Origin::Default,
+            "an undriven field reports Default, not Model"
+        );
     }
 }
 
@@ -61,7 +65,10 @@ fn f0_7_s1_whitespace_counts_as_no_context_so_the_derivation_is_skipped() {
     // invents one out of nothing.
     assert!(policy::is_empty(""));
     assert!(policy::is_empty("   \n\t "));
-    assert!(!policy::is_empty("A twelve-minute lecture on bouldering"), "real prose is not empty");
+    assert!(
+        !policy::is_empty("A twelve-minute lecture on bouldering"),
+        "real prose is not empty"
+    );
 }
 
 // ---- S2: the request shape -------------------------------------------------------------------
@@ -76,14 +83,21 @@ fn f0_7_s2_the_request_offers_only_get_context_and_set_policy_with_thinking_off(
     );
 
     // Exactly the two tools §3.11 gives this flow: the context and the fields it may set, then the setter.
-    let names: Vec<String> = request.tools.iter().map(|tool| tool.name().to_string()).collect();
+    let names: Vec<String> = request
+        .tools
+        .iter()
+        .map(|tool| tool.name().to_string())
+        .collect();
     assert_eq!(
         names,
         vec!["get_context".to_string(), "set_policy".to_string()],
         "// tool:get_context · tool:set_policy — nothing else is offered, so the model cannot reach a tool \
          this flow never sanctioned"
     );
-    assert_eq!(request.context, "The weekly blockchain lecture", "the context itself is the user turn");
+    assert_eq!(
+        request.context, "The weekly blockchain lecture",
+        "the context itself is the user turn"
+    );
 }
 
 #[test]
@@ -108,7 +122,11 @@ fn f0_7_s3_a_valid_proposal_is_stored_as_model_with_its_because() {
     let mut policy = Policy::default();
     let outcome = policy::apply(
         &mut policy,
-        &proposal("markingPass", "joins", "the footage was shot in one take per slide"),
+        &proposal(
+            "markingPass",
+            "joins",
+            "the footage was shot in one take per slide",
+        ),
     );
     assert_eq!(outcome, Applied::Set);
     assert_eq!(policy.marking_pass.value, MarkingPass::Joins); // P.policy.markingPass
@@ -131,8 +149,8 @@ fn f0_7_s3_a_switch_takes_on_or_off_and_either_json_spelling() {
     // P.policy.captionsPass / speedPass / decorationsPass accept both spellings: an unquoted JSON
     // boolean reaching the tool call is not the model's mistake.
     for (field, expected) in [
-        ("captionsPass", false), // P.policy.captionsPass
-        ("speedPass", true), // P.policy.speedPass
+        ("captionsPass", false),    // P.policy.captionsPass
+        ("speedPass", true),        // P.policy.speedPass
         ("decorationsPass", false), // P.policy.decorationsPass
     ] {
         let mut policy = Policy::default();
@@ -149,7 +167,10 @@ fn f0_7_s3_a_switch_takes_on_or_off_and_either_json_spelling() {
 
     let mut policy = Policy::default();
     assert_eq!(
-        policy::apply(&mut policy, &proposal("speedPass", "false", "no time-lapse wanted")),
+        policy::apply(
+            &mut policy,
+            &proposal("speedPass", "false", "no time-lapse wanted")
+        ),
         Applied::Set
     );
     assert!(!policy.speed_pass.value, "JSON `false` reads as off"); // P.policy.speedPass
@@ -159,15 +180,30 @@ fn f0_7_s3_a_switch_takes_on_or_off_and_either_json_spelling() {
 fn f0_7_s3_an_unknown_field_is_refused_naming_it_and_listing_the_real_ones() {
     let mut policy = Policy::default();
     let before = policy.clone();
-    let outcome = policy::apply(&mut policy, &proposal("stylePreset", "lecture", "sounds academic"));
+    let outcome = policy::apply(
+        &mut policy,
+        &proposal("stylePreset", "lecture", "sounds academic"),
+    );
     let say = match &outcome {
         Applied::Refused(say) => say.clone(),
         other => panic!("an unknown field must refuse, got {other:?}"),
     };
-    assert!(say.starts_with("stylePreset is not a policy field"), "{say}");
+    assert!(
+        say.starts_with("stylePreset is not a policy field"),
+        "{say}"
+    );
     // Listing the real ones is what lets the model correct itself instead of guessing again.
-    for field in ["markingPass", "cutMode", "captionsPass", "speedPass", "decorationsPass"] {
-        assert!(say.contains(field), "the refusal should list {field}: {say}");
+    for field in [
+        "markingPass",
+        "cutMode",
+        "captionsPass",
+        "speedPass",
+        "decorationsPass",
+    ] {
+        assert!(
+            say.contains(field),
+            "the refusal should list {field}: {say}"
+        );
     }
     assert_eq!(policy, before, "a refused proposal changes nothing at all");
 }
@@ -182,8 +218,14 @@ fn f0_7_s3_an_out_of_range_value_is_refused_naming_the_field_and_its_range() {
         other => panic!("an out-of-range value must refuse, got {other:?}"),
     };
     assert!(say.contains("out of range"), "{say}");
-    assert!(say.contains("cutMode"), "the refusal names which field: {say}");
-    assert!(say.contains("words") && say.contains("model"), "and what it takes: {say}");
+    assert!(
+        say.contains("cutMode"),
+        "the refusal names which field: {say}"
+    );
+    assert!(
+        say.contains("words") && say.contains("model"),
+        "and what it takes: {say}"
+    );
     assert_eq!(policy, before, "still untouched");
 }
 
@@ -192,7 +234,11 @@ fn f0_7_s3_one_bad_proposal_does_not_undo_the_good_ones_in_the_same_batch() {
     // Failure is specific and local: three land, one does not, and exactly three are landed afterwards.
     let mut policy = Policy::default();
     let batch = [
-        proposal("markingPass", "none", "nothing to mark, the edit is by hand"), // P.policy.markingPass
+        proposal(
+            "markingPass",
+            "none",
+            "nothing to mark, the edit is by hand",
+        ), // P.policy.markingPass
         proposal("cutMode", "words", "no model needed for a text-driven cut"), // P.policy.cutMode
         proposal("captionsPass", "off", "burnt into the slides already"), // P.policy.captionsPass
         proposal("unknownSwitch", "on", "made up"),
@@ -229,7 +275,11 @@ fn f0_7_s4_a_hand_set_field_keeps_its_old_value_against_a_later_derivation() {
         MarkingPass::Joins,
         "the OLD value survives, byte for byte"
     );
-    assert_eq!(policy.marking_pass.origin, Origin::User, "and still says who set it");
+    assert_eq!(
+        policy.marking_pass.origin,
+        Origin::User,
+        "and still says who set it"
+    );
     assert_eq!(
         policy.marking_pass.because, None,
         "the model's reason is NOT written onto a field the model did not end up setting"
@@ -245,8 +295,15 @@ fn f0_7_s4_the_rule_holds_per_field_not_for_the_whole_policy() {
         policy::apply(&mut policy, &proposal("speedPass", "off", "no ramping")),
         Applied::Set
     );
-    assert!(!policy.speed_pass.value, "the untouched switch still took the derivation"); // P.policy.speedPass
-    assert_eq!(policy.marking_pass.value, MarkingPass::Joins, "the touched one did not");
+    assert!(
+        !policy.speed_pass.value,
+        "the untouched switch still took the derivation"
+    ); // P.policy.speedPass
+    assert_eq!(
+        policy.marking_pass.value,
+        MarkingPass::Joins,
+        "the touched one did not"
+    );
 }
 
 #[test]
@@ -329,12 +386,18 @@ fn f0_7_the_pipeline_fields_decide_which_flows_run() {
     assert!(policy::pass_runs(&policy, Pass::Speeds)); // F3.10 asked
     assert!(policy::pass_runs(&policy, Pass::Decorations)); // F3.11 asked
 
-    policy::apply(&mut policy, &proposal("captionsPass", "off", "already burnt in"));
+    policy::apply(
+        &mut policy,
+        &proposal("captionsPass", "off", "already burnt in"),
+    );
     assert!(
         !policy::pass_runs(&policy, Pass::Captions),
         "off means never asked, not asked-and-ignored — the rewrite asks no job the context rules out"
     );
-    assert!(policy::pass_runs(&policy, Pass::Speeds), "and only that one");
+    assert!(
+        policy::pass_runs(&policy, Pass::Speeds),
+        "and only that one"
+    );
 
     assert_eq!(
         policy::marking_pass_of(&policy),
@@ -350,12 +413,23 @@ fn f0_7_a_changed_marking_pass_invalidates_the_marks_only_when_it_actually_chang
     // The marks are `retakes.tsv` and `final.txt` (layout::Tree::final_txt / ::retakes_tsv): they hold
     // what the previous pass decided, so a DIFFERENT pass would read them as its own output and skip its
     // work. Same value ⇒ nothing goes stale, and a re-derive that agrees must not throw away good work.
-    assert!(policy::invalidated_by_marking_change(MarkingPass::Retakes, MarkingPass::Joins));
-    assert!(policy::invalidated_by_marking_change(MarkingPass::None, MarkingPass::Retakes));
-    assert!(!policy::invalidated_by_marking_change(MarkingPass::Retakes, MarkingPass::Retakes));
-    assert!(!policy::invalidated_by_marking_change(MarkingPass::None, MarkingPass::None));
+    assert!(policy::invalidated_by_marking_change(
+        MarkingPass::Retakes,
+        MarkingPass::Joins
+    ));
+    assert!(policy::invalidated_by_marking_change(
+        MarkingPass::None,
+        MarkingPass::Retakes
+    ));
+    assert!(!policy::invalidated_by_marking_change(
+        MarkingPass::Retakes,
+        MarkingPass::Retakes
+    ));
+    assert!(!policy::invalidated_by_marking_change(
+        MarkingPass::None,
+        MarkingPass::None
+    ));
 }
-
 
 // ---- the derivation flow: S1's stop, S3's retry loop, S4's protection -------------------------
 //
@@ -394,11 +468,22 @@ impl Scripted {
 
 #[test]
 fn f0_7_s1_an_empty_context_never_calls_the_model() {
-    let mut model = Scripted::new(vec![vec![proposal("cutMode", "words", "should not be asked")]]);
+    let mut model = Scripted::new(vec![vec![proposal(
+        "cutMode",
+        "words",
+        "should not be asked",
+    )]]);
     let mut policy = Policy::default();
     let out = policy::derive(&mut policy, "   \n ", &mut |r, f| model.call(r, f));
-    assert_eq!(model.asked.get(), 0, "an empty context must not ask a model");
-    assert!(out.used_defaults, "S1 reports the defaults were used: {out:?}");
+    assert_eq!(
+        model.asked.get(),
+        0,
+        "an empty context must not ask a model"
+    );
+    assert!(
+        out.used_defaults,
+        "S1 reports the defaults were used: {out:?}"
+    );
     assert!(out.applied.is_empty() && out.refusals.is_empty(), "{out:?}");
     // What stands is the whole default set, field by field.
     assert_eq!(policy.marking_pass.value, MarkingPass::Retakes); // P.policy.markingPass
@@ -412,11 +497,21 @@ fn f0_7_s1_an_empty_context_never_calls_the_model() {
 fn f0_7_s3_a_refusal_is_handed_back_and_the_model_gets_another_round() {
     let mut model = Scripted::new(vec![
         vec![proposal("markingPass", "sideways", "as I read it")],
-        vec![proposal("markingPass", "joins", "the seams are what matter")],
+        vec![proposal(
+            "markingPass",
+            "joins",
+            "the seams are what matter",
+        )],
     ]);
     let mut policy = Policy::default();
-    let out = policy::derive(&mut policy, "one take per slide", &mut |r, f| model.call(r, f));
-    assert_eq!(model.asked.get(), 2, "the refusal bought exactly one more round");
+    let out = policy::derive(&mut policy, "one take per slide", &mut |r, f| {
+        model.call(r, f)
+    });
+    assert_eq!(
+        model.asked.get(),
+        2,
+        "the refusal bought exactly one more round"
+    );
     assert_eq!(out.refusals.len(), 1, "{:?}", out.refusals);
     assert!(
         out.refusals[0].contains("sideways") && out.refusals[0].contains("out of range"),
@@ -456,8 +551,14 @@ fn f0_7_s4_a_user_field_survives_a_derivation_that_names_it() {
         origin: Origin::User,
         because: None,
     };
-    let mut model = Scripted::new(vec![vec![proposal("cutMode", "model", "it decides better")]]);
-    let out = policy::derive(&mut policy, "let the model choose", &mut |r, f| model.call(r, f));
+    let mut model = Scripted::new(vec![vec![proposal(
+        "cutMode",
+        "model",
+        "it decides better",
+    )]]);
+    let out = policy::derive(&mut policy, "let the model choose", &mut |r, f| {
+        model.call(r, f)
+    });
     assert!(
         out.applied.contains(&("cutMode", Applied::KeptUser)),
         "S4 reports the keep: {:?}",
@@ -468,7 +569,11 @@ fn f0_7_s4_a_user_field_survives_a_derivation_that_names_it() {
         (CutMode::Words, Origin::User),
         "a hand-set field is untouched by a later derivation" // P.policy.cutMode
     );
-    assert!(out.refusals.is_empty(), "a keep is not an error: {:?}", out.refusals);
+    assert!(
+        out.refusals.is_empty(),
+        "a keep is not an error: {:?}",
+        out.refusals
+    );
 }
 
 #[test]
@@ -508,5 +613,8 @@ fn f0_7_tracker_a_never_derived_context_needs_a_derivation() {
         "an edited context — even by a trailing space — is a change"
     );
     tracker.forget();
-    assert!(tracker.needs_derive("one take per slide"), "forget resets it");
+    assert!(
+        tracker.needs_derive("one take per slide"),
+        "forget resets it"
+    );
 }

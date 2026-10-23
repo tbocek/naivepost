@@ -37,7 +37,12 @@ pub fn fit(row: &gtk::Box, controls: &gtk::Box, readout_row: &gtk::Widget) {
     // still resolved). So with a bare append all four buttons stayed in `run-controls-inner`, its natural width
     // stayed at ~800 px inside a scroller GTK allocated less than that, and badge **12** — third of ▶ / 🎲 / ⏹ —
     // was scrolled out of the viewport: absent from `shots/03-window.png` while still in the tree.
-    for name in ["policy-button", "captions-pass-button", "speeds-pass-button", "decorations-pass-button"] {
+    for name in [
+        "policy-button",
+        "captions-pass-button",
+        "speeds-pass-button",
+        "decorations-pass-button",
+    ] {
         if let Some(button) = find_in(controls.upcast_ref(), name) {
             if let Some(previous) = button.parent() {
                 previous
@@ -99,7 +104,9 @@ pub fn fit(row: &gtk::Box, controls: &gtk::Box, readout_row: &gtk::Widget) {
     if let Some(inner) = find_in(row.upcast_ref(), "run-controls-inner") {
         if let Some(scroller) = find_in(row.upcast_ref(), "run-controls") {
             if let Some(scroller) = scroller.downcast_ref::<gtk::ScrolledWindow>() {
-                scroller.set_min_content_width(inner.measure(gtk::Orientation::Horizontal, -1).0.max(0));
+                scroller.set_min_content_width(
+                    inner.measure(gtk::Orientation::Horizontal, -1).0.max(0),
+                );
             }
         }
     }
@@ -125,7 +132,6 @@ pub fn fit(row: &gtk::Box, controls: &gtk::Box, readout_row: &gtk::Widget) {
 /// see the note where the scroller is floored in [`fit`].
 pub const JOB_BOX_MIN_PX: i32 = 104;
 
-
 /// Badge **13**: the floor the progress bar keeps even when everything else in the row has been served —
 /// "the progress bar (taking the row's free width)" with no room at all would be an invisible bar. Used by
 /// [`super::window_run_scroller::share_the_free_width`].
@@ -136,8 +142,15 @@ fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     if node.widget_name() == name {
         return Some(node.clone());
     }
-    for child in node.observe_children().iter::<glib::Object>().filter_map(Result::ok) {
-        if let Some(widget) = child.downcast_ref::<gtk::Widget>().and_then(|w| find_in(w, name)) {
+    for child in node
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+    {
+        if let Some(widget) = child
+            .downcast_ref::<gtk::Widget>()
+            .and_then(|w| find_in(w, name))
+        {
             return Some(widget);
         }
     }

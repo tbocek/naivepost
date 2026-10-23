@@ -84,15 +84,13 @@ pub fn load_or_previous(tree: &Tree) -> Result<(Narration, bool), String> {
     if let Ok(record) = crate::narration::load(tree) {
         return Ok((record, false));
     }
-    previous(tree)
-        .map(|record| (record, true))
-        .ok_or_else(|| {
-            format!(
-                "{} cannot be read and neither can {}",
-                tree.narration_json().display(),
-                tree.narration_prev_json().display()
-            )
-        })
+    previous(tree).map(|record| (record, true)).ok_or_else(|| {
+        format!(
+            "{} cannot be read and neither can {}",
+            tree.narration_json().display(),
+            tree.narration_prev_json().display()
+        )
+    })
 }
 
 // --- voice.txt ----------------------------------------------------------------

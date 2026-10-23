@@ -47,7 +47,8 @@ impl Default for Player {
 }
 
 /// S1's status, §D verbatim — the sentence that tells the person the clock just changed meaning.
-pub const RECORDING_STATUS: &str = "preview is the recording again \u{2014} everything plays, cuts and all";
+pub const RECORDING_STATUS: &str =
+    "preview is the recording again \u{2014} everything plays, cuts and all";
 
 /// What one press of ▶ did, so the page can print the right thing without deciding anything itself.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -123,7 +124,9 @@ pub fn walk_fold(player: &Player, folds: &mut Vec<[f64; 2]>) -> Option<String> {
         return None;
     }
     let line = player.playhead?;
-    let index = folds.iter().position(|[start, end]| line >= *start && line < *end)?;
+    let index = folds
+        .iter()
+        .position(|[start, end]| line >= *start && line < *end)?;
     let [start, _] = folds.remove(index);
     Some(unfolded_status(start))
 }
@@ -138,7 +141,9 @@ pub fn walk_on(runs: &[(f64, f64)], t: f64) -> Option<f64> {
     if runs.iter().any(|(start, end)| t >= *start && t < *end) {
         return Some(t);
     }
-    runs.iter().find(|(start, _)| *start > t).map(|(start, _)| *start)
+    runs.iter()
+        .find(|(start, _)| *start > t)
+        .map(|(start, _)| *start)
 }
 
 // --- how far ahead the next clip is opened (P.eng.preloadLeadSeconds) ---------------------------

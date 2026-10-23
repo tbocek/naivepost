@@ -73,7 +73,10 @@ impl RefusingLlm {
                 });
             }
         });
-        RefusingLlm { url: format!("http://127.0.0.1:{port}"), seen }
+        RefusingLlm {
+            url: format!("http://127.0.0.1:{port}"),
+            seen,
+        }
     }
 
     /// Every body recorded, waiting for at least `count` to arrive.
@@ -100,7 +103,13 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<String> {
             break;
         }
         if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header.split(':').nth(1).unwrap_or("0").trim().parse().unwrap_or(0);
+            length = header
+                .split(':')
+                .nth(1)
+                .unwrap_or("0")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
     }
     let mut body = vec![0u8; length];
@@ -125,7 +134,8 @@ fn serve(mut stream: TcpStream, answer: &str) -> Option<String> {
 }
 
 fn refusal_body() -> String {
-    serde_json::json!({ "error": { "message": REFUSAL, "type": "invalid_request_error" } }).to_string()
+    serde_json::json!({ "error": { "message": REFUSAL, "type": "invalid_request_error" } })
+        .to_string()
 }
 
 fn offers_tools(body: &str) -> bool {
@@ -162,7 +172,10 @@ impl Scene {
         let _ = std::fs::remove_dir_all(&root);
         let session = root.join("session.naivepost");
         std::fs::create_dir_all(&session).expect("the session folder");
-        let paths = Paths { config_dir: root.join("cfg/naivepost"), data_dir: root.join("data/naivepost") };
+        let paths = Paths {
+            config_dir: root.join("cfg/naivepost"),
+            data_dir: root.join("data/naivepost"),
+        };
         let tree = naivepost::layout::Tree::new(&session).expect("the tree");
         let lines: Vec<naivepost::textfmt::Line> = SOURCE_ROWS
             .iter()
@@ -173,16 +186,22 @@ impl Scene {
                 text: (*text).to_string(),
             })
             .collect();
-        naivepost::textfmt::write_lines(&lines, &tree.transcript_tsv(LANE)).expect("the transcript");
+        naivepost::textfmt::write_lines(&lines, &tree.transcript_tsv(LANE))
+            .expect("the transcript");
         let mut conf = Conf::default();
         conf.server = llm_url.to_string();
         conf.model = "text-model".to_string();
         settings::save(&paths, &conf).expect("the conf");
-        Scene { root, paths, llm: llm_url.to_string() }
+        Scene {
+            root,
+            paths,
+            llm: llm_url.to_string(),
+        }
     }
 
     fn tree(&self) -> naivepost::layout::Tree {
-        naivepost::layout::Tree::new(self.root.join("session.naivepost")).expect("the session is a project")
+        naivepost::layout::Tree::new(self.root.join("session.naivepost"))
+            .expect("the session is a project")
     }
 
     fn conf(&self) -> Conf {
@@ -194,7 +213,15 @@ impl Scene {
 
     /// Fix this scene's transcript the way the Prepare stage does.
     fn fix(&self, log: &mut impl FnMut(&str)) -> Result<usize, String> {
-        naivepost::fix_call::stage_chunk(&self.tree(), &self.paths, &self.conf(), LANE, true, false, log)
+        naivepost::fix_call::stage_chunk(
+            &self.tree(),
+            &self.paths,
+            &self.conf(),
+            LANE,
+            true,
+            false,
+            log,
+        )
     }
 
     fn drop_root(&self) {
@@ -220,16 +247,38 @@ fn f6_1_s5_the_fix_step_asks_again_without_the_tools_field() {
     let scene = Scene::new("fix", &llm.url);
     naivepost::ui::window::clear_logs_for_test();
     let fixed = scene.fix(&mut |_: &str| {});
-    assert_eq!(fixed.expect("a refused tools field does not lose the fix"), 1, "one line was fixed");
+    assert_eq!(
+        fixed.expect("a refused tools field does not lose the fix"),
+        1,
+        "one line was fixed"
+    );
 
     let asked = llm.waited(2);
-    assert!(asked.len() >= 2, "the refusal and its resend both reached the server: {}", asked.len());
-    assert!(offers_tools(&asked[0]), "the first request offered the job's tools");
-    assert!(!offers_tools(&asked[1]), "the resent request carries no `tools` field");
-    assert_eq!(messages_of(&asked[0]), messages_of(&asked[1]), "S5 resends the IDENTICAL request minus the field");
+    assert!(
+        asked.len() >= 2,
+        "the refusal and its resend both reached the server: {}",
+        asked.len()
+    );
+    assert!(
+        offers_tools(&asked[0]),
+        "the first request offered the job's tools"
+    );
+    assert!(
+        !offers_tools(&asked[1]),
+        "the resent request carries no `tools` field"
+    );
+    assert_eq!(
+        messages_of(&asked[0]),
+        messages_of(&asked[1]),
+        "S5 resends the IDENTICAL request minus the field"
+    );
     let said = refusals();
     assert_eq!(said.len(), 1, "the refusal is logged once: {said:?}");
-    assert!(said[0].contains(">>> fix:"), "the line names the step: {}", said[0]);
+    assert!(
+        said[0].contains(">>> fix:"),
+        "the line names the step: {}",
+        said[0]
+    );
     scene.drop_root();
 }
 
@@ -242,14 +291,21 @@ fn f6_1_s5_a_step_that_already_heard_the_refusal_is_asked_silently() {
     naivepost::ui::window::clear_logs_for_test();
     // First call: refused, resent, remembered. Its cache entry is cleared so the second call really dials again.
     let first = scene.fix(&mut |_: &str| {});
-    assert!(first.is_ok(), "the first call survived the refusal: {first:?}");
+    assert!(
+        first.is_ok(),
+        "the first call survived the refusal: {first:?}"
+    );
     let after_first = refusals().len();
     assert_eq!(after_first, 1, "the first call said it once");
 
     clear_cache(&scene);
     let second = scene.fix(&mut |_: &str| {});
     assert!(second.is_ok(), "the second call too: {second:?}");
-    assert_eq!(refusals().len(), after_first, "the remembered refusal is silent from then on");
+    assert_eq!(
+        refusals().len(),
+        after_first,
+        "the remembered refusal is silent from then on"
+    );
 
     // And every request the second call made carried no `tools` key at all.
     let asked = llm.waited(3);
@@ -257,7 +313,10 @@ fn f6_1_s5_a_step_that_already_heard_the_refusal_is_asked_silently() {
     assert!(
         bare_after.iter().all(|body| !offers_tools(body)),
         "a remembered refusal is never re-offered: {:?}",
-        bare_after.iter().map(|b| offers_tools(b)).collect::<Vec<_>>()
+        bare_after
+            .iter()
+            .map(|b| offers_tools(b))
+            .collect::<Vec<_>>()
     );
     scene.drop_root();
 }
@@ -282,21 +341,34 @@ fn f6_1_s5_a_dead_server_is_not_a_refusal() {
     let back = Scene::at(scene.root.clone(), &llm.url);
     clear_cache(&back);
     let got = back.fix(&mut |_: &str| {});
-    assert!(got.is_ok(), "with a server answering, the block fixes: {got:?}");
+    assert!(
+        got.is_ok(),
+        "with a server answering, the block fixes: {got:?}"
+    );
     let asked = llm.waited(2);
-    assert!(offers_tools(&asked[0]), "the field is offered again to a server that never refused it");
+    assert!(
+        offers_tools(&asked[0]),
+        "the field is offered again to a server that never refused it"
+    );
     back.drop_root();
 }
 
 impl Scene {
     /// Re-point an existing scene's settings at a different address (the seam the program re-reads per request).
     fn at(root: PathBuf, llm_url: &str) -> Scene {
-        let paths = Paths { config_dir: root.join("cfg/naivepost"), data_dir: root.join("data/naivepost") };
+        let paths = Paths {
+            config_dir: root.join("cfg/naivepost"),
+            data_dir: root.join("data/naivepost"),
+        };
         let mut conf = Conf::default();
         conf.server = llm_url.to_string();
         conf.model = "text-model".to_string();
         settings::save(&paths, &conf).expect("the conf rewritten");
-        Scene { root, paths, llm: llm_url.to_string() }
+        Scene {
+            root,
+            paths,
+            llm: llm_url.to_string(),
+        }
     }
 }
 

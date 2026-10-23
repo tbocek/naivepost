@@ -25,7 +25,9 @@ fn session_frame_files() -> Vec<(f64, std::path::PathBuf)> {
     let tree = crate::ui::produce_languages::session_tree();
     let mut out: Vec<(f64, std::path::PathBuf)> = Vec::new();
     for base in frame_source_stems() {
-        out.extend(crate::produce_upload_media::listed_frames(&tree.frames_dir(&base)));
+        out.extend(crate::produce_upload_media::listed_frames(
+            &tree.frames_dir(&base),
+        ));
     }
     // One rule for "the same picture twice": two cameras showing the same instant is one image to send, and
     // the moment is what makes an instant — not the file name a second source happens to write it into.
@@ -60,7 +62,10 @@ pub fn set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> String {
     // disagree about which JPEG a row entry means.
     let tree = crate::ui::produce_languages::session_tree();
     let (wide, high) = thumb_size();
-    let record = crate::project::Publish { frames: vec![path.clone()], ..Default::default() };
+    let record = crate::project::Publish {
+        frames: vec![path.clone()],
+        ..Default::default()
+    };
     if let Err(why) = crate::produce_upload_media::write_own_picture(
         &tree,
         &record,
@@ -71,7 +76,8 @@ pub fn set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> String {
     ) {
         crate::ui::window::log_line(&format!("!!! {why}"));
     }
-    let out = crate::produce_presses::press_set_thumbnail(path, &legs(), crate::ui::window::log_line);
+    let out =
+        crate::produce_presses::press_set_thumbnail(path, &legs(), crate::ui::window::log_line);
     crate::ui::produce_languages::report(&out);
     report(window, out.status)
 }
@@ -81,7 +87,10 @@ pub fn set_thumbnail(window: &adw::ApplicationWindow, index: usize) -> String {
 /// `pub` because a test measures the crop against the SAME number rather than restating 1280x720 by hand.
 pub fn thumb_size() -> (u32, u32) {
     let tree = crate::ui::produce_languages::session_tree();
-    let (w, h) = crate::ui::produce_snapshot::first_footage_shape(&tree, &crate::ui::cut_folds::page_recordings());
+    let (w, h) = crate::ui::produce_snapshot::first_footage_shape(
+        &tree,
+        &crate::ui::cut_folds::page_recordings(),
+    );
     let aspect = produce_page::held_window()
         .map(|window| crate::ui::window::review_cut_of(&window).aspect)
         .unwrap_or_default();
@@ -200,7 +209,8 @@ pub fn transcode_again(window: &adw::ApplicationWindow) -> String {
 /// **10** ⤓ Save video: a copy out to a chosen path, so `produce/final` keeps its place as the stamped
 /// output. The path is what the host's save dialog answered.
 pub fn save_video(window: &adw::ApplicationWindow, to: &str, bytes: u64) -> String {
-    let out = crate::produce_presses::press_save_video(to, bytes, &legs(), crate::ui::window::log_line);
+    let out =
+        crate::produce_presses::press_save_video(to, bytes, &legs(), crate::ui::window::log_line);
     crate::ui::produce_languages::report(&out);
     report(window, out.status)
 }
@@ -275,7 +285,11 @@ fn produced_spans() -> Vec<(f64, f64)> {
     let mut spans = Vec::new();
     let mut at = 0.0;
     for seg in crate::ui::window::review_cut_of(&window).segs {
-        let raw = if seg.dur > 0.0 { seg.dur } else { (seg.e - seg.s).max(0.0) };
+        let raw = if seg.dur > 0.0 {
+            seg.dur
+        } else {
+            (seg.e - seg.s).max(0.0)
+        };
         let kept = crate::narration::output_seconds(raw, seg.rate);
         spans.push((at, at + kept));
         at += kept;

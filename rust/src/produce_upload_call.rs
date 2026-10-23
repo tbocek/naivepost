@@ -91,7 +91,10 @@ fn read_turn(
     let reply = llm_request::reply_from(&sent.content_type, &sent.body).inspect_err(|why| {
         dial_error.borrow_mut().get_or_insert(why.clone());
     })?;
-    let finishing = reply.tool_calls.iter().any(|call| call.name == Tool::Finish.name());
+    let finishing = reply
+        .tool_calls
+        .iter()
+        .any(|call| call.name == Tool::Finish.name());
     let turn = tool_loop::Turn {
         content: reply.answer().to_string(),
         calls: reply.tool_calls.clone(),
@@ -130,8 +133,14 @@ pub fn system(paths: Option<&Paths>) -> String {
 /// The two messages of one upload call: the assembled system prompt and the brief as the user turn.
 pub fn messages(system: &str, brief: &str) -> Vec<Message> {
     vec![
-        Message { role: "system".to_string(), parts: vec![Part::Text(system.to_string())] },
-        Message { role: "user".to_string(), parts: vec![Part::Text(brief.to_string())] },
+        Message {
+            role: "system".to_string(),
+            parts: vec![Part::Text(system.to_string())],
+        },
+        Message {
+            role: "user".to_string(),
+            parts: vec![Part::Text(brief.to_string())],
+        },
     ]
 }
 
@@ -239,13 +248,16 @@ where
         rounds += 1;
         // S5: this server has already refused the field -> ask without it and say nothing more.
         let offered = crate::llm_tools_offer::tools_for(&services::llm_endpoint(&conf).url, tools);
-        let sent_body = match llm_request::body(STEP, &model, conversation, mode, offered.as_deref(), true) {
-            Ok(sent_body) => sent_body.to_string(),
-            Err(why) => {
-                dial_error.borrow_mut().get_or_insert(format!("{STEP} call to {model}: {why}"));
-                return Err(format!("{STEP} call to {model}: {why}"));
-            }
-        };
+        let sent_body =
+            match llm_request::body(STEP, &model, conversation, mode, offered.as_deref(), true) {
+                Ok(sent_body) => sent_body.to_string(),
+                Err(why) => {
+                    dial_error
+                        .borrow_mut()
+                        .get_or_insert(format!("{STEP} call to {model}: {why}"));
+                    return Err(format!("{STEP} call to {model}: {why}"));
+                }
+            };
         let endpoint = services::llm_endpoint(&conf);
         let base = server_leg::base_row(Server::Llm, &model, "chat", "", STEP, "upload");
         // §3's patience, except for a 4xx that refuses the `tools` field: that answer is not transient and the
@@ -274,8 +286,15 @@ where
                     say_refused(&why);
                     rounds += 1;
                     return resend_without_tools(
-                        tree, conversation, &model, mode, &endpoint, &base, cancelled,
-                        &dial_error, &spoken_ref,
+                        tree,
+                        conversation,
+                        &model,
+                        mode,
+                        &endpoint,
+                        &base,
+                        cancelled,
+                        &dial_error,
+                        &spoken_ref,
                     );
                 }
                 dial_error.borrow_mut().get_or_insert(why.clone());
@@ -301,8 +320,15 @@ where
                 say_refused(&why);
                 rounds += 1;
                 return resend_without_tools(
-                    tree, conversation, &model, mode, &endpoint, &base, cancelled,
-                    &dial_error, &spoken_ref,
+                    tree,
+                    conversation,
+                    &model,
+                    mode,
+                    &endpoint,
+                    &base,
+                    cancelled,
+                    &dial_error,
+                    &spoken_ref,
                 );
             }
             dial_error.borrow_mut().get_or_insert(why.clone());
@@ -322,7 +348,13 @@ where
             answer
         }
     };
-    let run = tool_loop::run(STEP, std::mem::take(&mut conversation), &offered, &mut ask, &mut run_tool);
+    let run = tool_loop::run(
+        STEP,
+        std::mem::take(&mut conversation),
+        &offered,
+        &mut ask,
+        &mut run_tool,
+    );
     for line in run.joined().lines() {
         log(line);
     }
@@ -339,7 +371,11 @@ where
     // The prose a round spoke but no tool wrote: kept on `spoken` because a quiet round's text never enters the
     // loop's messages (see above). Only when nothing was heard at all falls back to reading the conversation.
     if state.answers.is_empty() {
-        let text = if spoken_ref.borrow().trim().is_empty() { state.content_of(&run).unwrap_or_default() } else { spoken_ref.borrow().clone() };
+        let text = if spoken_ref.borrow().trim().is_empty() {
+            state.content_of(&run).unwrap_or_default()
+        } else {
+            spoken_ref.borrow().clone()
+        };
         state.wrote |= peel_into(&mut state.publish, &text);
     }
     Ok(Collected {
@@ -420,7 +456,11 @@ impl State {
             }
             n if n == Tool::SetThumbnailInstruction.name() => {
                 let negative = string_of(&args, "negative");
-                let negative = if negative.is_empty() { None } else { Some(negative.as_str()) };
+                let negative = if negative.is_empty() {
+                    None
+                } else {
+                    Some(negative.as_str())
+                };
                 match upload::set_thumbnail_instruction(self.publish.own, &text(), negative) {
                     Ok(answer) => {
                         self.publish.prompt = text();
@@ -441,14 +481,13 @@ impl State {
                 let clip = usize_of(&args, "clip").unwrap_or(0);
                 let at = number_of(&args, "at");
                 let span = clip_span(&self.starts, clip);
-                let candidates =
-                    crate::produce_upload_frames::get_frames(
-                        &self.frames_moments,
-                        span.0,
-                        span.1,
-                        at,
-                        self.interval,
-                    );
+                let candidates = crate::produce_upload_frames::get_frames(
+                    &self.frames_moments,
+                    span.0,
+                    span.1,
+                    at,
+                    self.interval,
+                );
                 let answer = format!(
                     "{} candidate frame(s) in clip {clip}: {}",
                     candidates.len(),
@@ -471,7 +510,8 @@ impl State {
                 answer
             }
             n if n == Tool::Finish.name() => {
-                let missing = upload::finish_needs(&self.publish.thumb_title, &self.publish.description);
+                let missing =
+                    upload::finish_needs(&self.publish.thumb_title, &self.publish.description);
                 let answer = if missing.is_empty() {
                     "finished".to_string()
                 } else {

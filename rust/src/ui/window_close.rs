@@ -23,7 +23,8 @@ pub(crate) fn flush_held_narration(window: &adw::ApplicationWindow) {
     if !owed {
         return;
     }
-    let Some(dir) = crate::ui::window_line_step::SESSION_DIRS.with(|held| held.borrow().last().cloned())
+    let Some(dir) =
+        crate::ui::window_line_step::SESSION_DIRS.with(|held| held.borrow().last().cloned())
     else {
         return;
     };
@@ -56,7 +57,8 @@ pub(crate) fn flush_held_narration(window: &adw::ApplicationWindow) {
             &tree,
         );
     }
-    if let Some(shell) = crate::ui::window::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned())
+    if let Some(shell) =
+        crate::ui::window::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned())
     {
         shell.borrow_mut().narration_pending.flush();
     }

@@ -62,7 +62,11 @@ impl Fake {
                 });
             }
         });
-        Fake { url: format!("http://127.0.0.1:{port}"), asks, answer: held }
+        Fake {
+            url: format!("http://127.0.0.1:{port}"),
+            asks,
+            answer: held,
+        }
     }
 
     /// Wait until `count` asks have been recorded — recording happens on the connection's own thread.
@@ -104,14 +108,21 @@ impl Scene {
         let root = temp_dir_tagged(&format!("cache-live-{job}"));
         let session = naivepost::startup::session_dir(&root);
         std::fs::create_dir_all(&session).expect("the session folder");
-        let paths =
-            Paths { config_dir: root.join("cfg/naivepost"), data_dir: root.join("data/naivepost") };
+        let paths = Paths {
+            config_dir: root.join("cfg/naivepost"),
+            data_dir: root.join("data/naivepost"),
+        };
         let mut conf = Conf::default();
         conf.server = fake_url.to_string();
         conf.model = format!("{job}-model");
         settings::save(&paths, &conf).expect("the conf is written");
         let tree = Tree::new(session).expect("the session is a project");
-        Scene { root, paths, conf, tree }
+        Scene {
+            root,
+            paths,
+            conf,
+            tree,
+        }
     }
 
     /// Point the process at this scene exactly as the app resolves both, and take §3's patience ladder
@@ -133,7 +144,9 @@ impl Scene {
     /// The names of the files this step has filed under `cache/llm/<step>/`.
     fn cached_names(&self, step: &str) -> Vec<String> {
         let dir = self.tree.dir().join("cache/llm").join(step);
-        let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
         entries
             .flatten()
             .filter_map(|entry| entry.file_name().into_string().ok())
@@ -162,9 +175,14 @@ fn cache_rows(tree: &naivepost::layout::Tree) -> usize {
 fn assert_one_hex_slot(names: &[String], step: &str) -> String {
     assert_eq!(names.len(), 1, "{step}: one answer filed, got {names:?}");
     let name = names[0].clone();
-    assert_eq!(name.len(), 64, "{step}'s file is named by a sha256 hex digest: {name}");
+    assert_eq!(
+        name.len(),
+        64,
+        "{step}'s file is named by a sha256 hex digest: {name}"
+    );
     assert!(
-        name.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        name.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "lowercase hex, §6's shape: {name}"
     );
     name
@@ -219,8 +237,14 @@ fn sec_09_llm_and_tools_6_cache_s7_translate_files_its_answer_and_replays_it_wit
     assert_eq!(first, want, "the answer came off the wire");
     assert_eq!(fake.waited(1).len(), 1, "one request went out");
     let rows_after_first = requests::read(&scene.tree).expect("requests.tsv").len();
-    assert!(rows_after_first >= 1, "the request that earned the answer is timed and recorded");
-    let slot = assert_one_hex_slot(&scene.cached_names(naivepost::produce_translate_ask::STEP), "translate");
+    assert!(
+        rows_after_first >= 1,
+        "the request that earned the answer is timed and recorded"
+    );
+    let slot = assert_one_hex_slot(
+        &scene.cached_names(naivepost::produce_translate_ask::STEP),
+        "translate",
+    );
 
     // The identical batch again: §6 answers it from disk, BEFORE the gate and the exchange log, so the
     // fake sees nothing. §10 still files the hit: one `cache` row, no new WIRE row.
@@ -233,10 +257,29 @@ fn sec_09_llm_and_tools_6_cache_s7_translate_files_its_answer_and_replays_it_wit
     )
     .expect("the cached batch still translates");
     assert_eq!(second, want, "the replay says the same thing");
-    assert_eq!(fake.count(), 1, "the second ask opened no socket: {}", fake.count());
-    assert_eq!(wire_rows(&scene.tree), rows_after_first, "a cache hit adds no wire row");
-    assert_eq!(cache_rows(&scene.tree), 1, "a cache hit writes its own marked row");
-    assert_eq!(assert_one_hex_slot(&scene.cached_names(naivepost::produce_translate_ask::STEP), "translate"), slot);
+    assert_eq!(
+        fake.count(),
+        1,
+        "the second ask opened no socket: {}",
+        fake.count()
+    );
+    assert_eq!(
+        wire_rows(&scene.tree),
+        rows_after_first,
+        "a cache hit adds no wire row"
+    );
+    assert_eq!(
+        cache_rows(&scene.tree),
+        1,
+        "a cache hit writes its own marked row"
+    );
+    assert_eq!(
+        assert_one_hex_slot(
+            &scene.cached_names(naivepost::produce_translate_ask::STEP),
+            "translate"
+        ),
+        slot
+    );
     scene.leave();
 }
 
@@ -258,14 +301,28 @@ fn sec_09_llm_and_tools_6_cache_s7_retake_files_each_draw_and_replays_it_without
     scene.enter();
     use naivepost::tools::retakes::{Line, Marks};
     let lines: Vec<Line> = (1..=6u32)
-        .map(|n| Line { n, start: f64::from(n) - 1.0, end: f64::from(n) - 0.5 })
+        .map(|n| Line {
+            n,
+            start: f64::from(n) - 1.0,
+            end: f64::from(n) - 0.5,
+        })
         .collect();
     let speech = naivepost::retakes::speech_seconds(&lines);
     let brief = naivepost::retakes::brief(&lines, &[]);
     let mut marks = Marks::new(lines.clone(), speech);
 
-    let first = naivepost::retakes_ask::ask_run(&scene.tree, &scene.paths, &scene.conf, &brief, 0, &mut marks);
-    assert!(matches!(first, naivepost::retakes_ask::RunOutcome::Answered { .. }), "the draw answered: {first:?}");
+    let first = naivepost::retakes_ask::ask_run(
+        &scene.tree,
+        &scene.paths,
+        &scene.conf,
+        &brief,
+        0,
+        &mut marks,
+    );
+    assert!(
+        matches!(first, naivepost::retakes_ask::RunOutcome::Answered { .. }),
+        "the draw answered: {first:?}"
+    );
     assert_eq!(fake.waited(1).len(), 1, "one request went out");
     let rows_after_first = requests::read(&scene.tree).expect("requests.tsv").len();
     let slot = assert_one_hex_slot(&scene.cached_names(naivepost::retakes_ask::STEP), "retakes");
@@ -282,11 +339,34 @@ fn sec_09_llm_and_tools_6_cache_s7_retake_files_each_draw_and_replays_it_without
     .expect("a brief always keys");
     assert_eq!(named, slot, "the file is the slot the door names");
 
-    let second = naivepost::retakes_ask::ask_run(&scene.tree, &scene.paths, &scene.conf, &brief, 0, &mut marks);
-    assert!(matches!(second, naivepost::retakes_ask::RunOutcome::Cached { .. }), "the replay is a hit: {second:?}");
-    assert_eq!(fake.count(), 1, "the second draw opened no socket: {}", fake.count());
-    assert_eq!(wire_rows(&scene.tree), rows_after_first, "a cache hit adds no wire row");
-    assert_eq!(cache_rows(&scene.tree), 1, "a cache hit writes its own marked row");
+    let second = naivepost::retakes_ask::ask_run(
+        &scene.tree,
+        &scene.paths,
+        &scene.conf,
+        &brief,
+        0,
+        &mut marks,
+    );
+    assert!(
+        matches!(second, naivepost::retakes_ask::RunOutcome::Cached { .. }),
+        "the replay is a hit: {second:?}"
+    );
+    assert_eq!(
+        fake.count(),
+        1,
+        "the second draw opened no socket: {}",
+        fake.count()
+    );
+    assert_eq!(
+        wire_rows(&scene.tree),
+        rows_after_first,
+        "a cache hit adds no wire row"
+    );
+    assert_eq!(
+        cache_rows(&scene.tree),
+        1,
+        "a cache hit writes its own marked row"
+    );
     scene.leave();
 }
 
@@ -323,8 +403,22 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
     let scene = Scene::new("textedit", &fake.url);
     scene.enter();
 
-    let first = naivepost::join_ask::ask_at(&scene.tree, &scene.conf, "A lecture.", 1, 3, &before, &after, 1, &|| false);
-    assert!(!first.failed, "the ask reached the fake and was read: {:?}", first.outcome);
+    let first = naivepost::join_ask::ask_at(
+        &scene.tree,
+        &scene.conf,
+        "A lecture.",
+        1,
+        3,
+        &before,
+        &after,
+        1,
+        &|| false,
+    );
+    assert!(
+        !first.failed,
+        "the ask reached the fake and was read: {:?}",
+        first.outcome
+    );
     assert!(
         matches!(
             first.outcome,
@@ -335,7 +429,10 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
     );
     assert!(!first.from_cache, "the first ask cannot be a hit");
     let asked_first_time = fake.waited(1).len();
-    assert!(asked_first_time >= 1, "at least one request went out: {asked_first_time}");
+    assert!(
+        asked_first_time >= 1,
+        "at least one request went out: {asked_first_time}"
+    );
     let rows_after_first = requests::read(&scene.tree).expect("requests.tsv").len();
     assert_one_hex_slot(&scene.cached_names(naivepost::joins::STEP), "textedit");
     // What is filed is an ANSWER this door can read back, and for a tool flow it is the answer the
@@ -350,8 +447,22 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
         "the slot holds the join's own answer text, which is what makes the replay cost nothing: {kept}"
     );
 
-    let second = naivepost::join_ask::ask_at(&scene.tree, &scene.conf, "A lecture.", 1, 3, &before, &after, 1, &|| false);
-    assert!(second.from_cache, "the replay came from disk: {:?}", second.outcome);
+    let second = naivepost::join_ask::ask_at(
+        &scene.tree,
+        &scene.conf,
+        "A lecture.",
+        1,
+        3,
+        &before,
+        &after,
+        1,
+        &|| false,
+    );
+    assert!(
+        second.from_cache,
+        "the replay came from disk: {:?}",
+        second.outcome
+    );
     assert_eq!(
         second.outcome, first.outcome,
         "the replay decides the same join: {:?} vs {:?}",
@@ -363,8 +474,16 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
         "the second ask opened no socket at all: {} vs {asked_first_time}",
         fake.count()
     );
-    assert_eq!(wire_rows(&scene.tree), rows_after_first, "a cache hit adds no wire row");
-    assert_eq!(cache_rows(&scene.tree), 1, "a cache hit writes its own marked row");
+    assert_eq!(
+        wire_rows(&scene.tree),
+        rows_after_first,
+        "a cache hit adds no wire row"
+    );
+    assert_eq!(
+        cache_rows(&scene.tree),
+        1,
+        "a cache hit writes its own marked row"
+    );
     scene.leave();
 }
 
@@ -375,7 +494,13 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
 /// flag so the table on the Details page and the cache cannot disagree about who replays.
 #[test]
 fn sec_09_llm_and_tools_6_cache_s7_the_three_non_users_never_cache() {
-    let users = [Job::Describe, Job::CleanTranscript, Job::Joins, Job::Retakes, Job::Subtitles];
+    let users = [
+        Job::Describe,
+        Job::CleanTranscript,
+        Job::Joins,
+        Job::Retakes,
+        Job::Subtitles,
+    ];
     let every = [
         Job::Asr,
         Job::Align,
@@ -401,24 +526,44 @@ fn sec_09_llm_and_tools_6_cache_s7_the_three_non_users_never_cache() {
         );
     }
     // The Details-page flag is the same predicate, so the two spellings cannot drift apart.
-    let prepare = naivepost::model_calls::prepare(4, 25, naivepost::project::MarkingPass::Retakes, 2);
-    for (model, job) in [("describe", Job::Describe), ("fix", Job::CleanTranscript), ("retake", Job::Retakes)] {
-        let call = prepare.of(model).unwrap_or_else(|| panic!("prepare names {model}"));
-        assert_eq!(call.cached, llm_cache::uses_cache(job), "{model}'s row reads the cache's own answer");
+    let prepare =
+        naivepost::model_calls::prepare(4, 25, naivepost::project::MarkingPass::Retakes, 2);
+    for (model, job) in [
+        ("describe", Job::Describe),
+        ("fix", Job::CleanTranscript),
+        ("retake", Job::Retakes),
+    ] {
+        let call = prepare
+            .of(model)
+            .unwrap_or_else(|| panic!("prepare names {model}"));
+        assert_eq!(
+            call.cached,
+            llm_cache::uses_cache(job),
+            "{model}'s row reads the cache's own answer"
+        );
     }
     let cut = naivepost::model_calls::cut(5, naivepost::project::CutMode::Model, true, true, true);
     let model_cut = cut.of("cutMode model").or_else(|| cut.calls.first());
     if let Some(call) = model_cut {
-        assert!(!call.cached || llm_cache::uses_cache(Job::ModelCut), "the cut's row says what §6 says");
+        assert!(
+            !call.cached || llm_cache::uses_cache(Job::ModelCut),
+            "the cut's row says what §6 says"
+        );
     }
     let narrate = naivepost::model_calls::narrate(4);
     assert!(
         narrate.of("narrate").is_some_and(|call| !call.cached),
         "the narration call caches nothing: {:?}",
-        narrate.calls.iter().map(|call| (call.model, call.cached)).collect::<Vec<_>>()
+        narrate
+            .calls
+            .iter()
+            .map(|call| (call.model, call.cached))
+            .collect::<Vec<_>>()
     );
     let produce = naivepost::model_calls::produce("", false, 10, 1);
-    let upload = produce.of("youtube").expect("produce names the upload text");
+    let upload = produce
+        .of("youtube")
+        .expect("produce names the upload text");
     assert!(!upload.cached, "the upload text is never cached");
     let translate = produce.of("translate").expect("produce names translate");
     assert!(translate.cached, "and translate is one of the five");
@@ -445,8 +590,9 @@ fn sec_09_llm_and_tools_6_cache_s7_translate_files_the_numbered_text_not_the_rep
     let scene = Scene::new("numbered", &fake.url);
     scene.enter();
     let numbers = [1usize, 2, 3];
-    let part: Vec<(usize, String)> =
-        [(1, "one"), (2, "two"), (3, "three")].map(|(n, t)| (n, t.to_string())).into();
+    let part: Vec<(usize, String)> = [(1, "one"), (2, "two"), (3, "three")]
+        .map(|(n, t)| (n, t.to_string()))
+        .into();
     let message = format!(
         "{}\n{}",
         naivepost::produce_subtitles::message(3, "de"),
@@ -470,18 +616,37 @@ fn sec_09_llm_and_tools_6_cache_s7_translate_files_the_numbered_text_not_the_rep
     let rows_after_first = requests::read(&scene.tree).expect("requests.tsv").len();
 
     // One slot, and its BYTES are the numbered text rather than the envelope §3.10 answered with.
-    let slot = assert_one_hex_slot(&scene.cached_names(naivepost::produce_translate_ask::STEP), "translate");
+    let slot = assert_one_hex_slot(
+        &scene.cached_names(naivepost::produce_translate_ask::STEP),
+        "translate",
+    );
     let filed = std::fs::read_to_string(
-        scene.tree.dir().join("cache/llm").join(naivepost::produce_translate_ask::STEP).join(&slot),
+        scene
+            .tree
+            .dir()
+            .join("cache/llm")
+            .join(naivepost::produce_translate_ask::STEP)
+            .join(&slot),
     )
     .expect("the slot reads back");
-    assert_eq!(filed, "1\teins\n2\tzwei\n3\tdrei", "one numbered line per number, in the order asked");
+    assert_eq!(
+        filed, "1\teins\n2\tzwei\n3\tdrei",
+        "one numbered line per number, in the order asked"
+    );
     for folded in ["1\teins", "2\tzwei", "3\tdrei"] {
-        assert!(filed.contains(folded), "{folded} is in the filed text: {filed}");
+        assert!(
+            filed.contains(folded),
+            "{folded} is in the filed text: {filed}"
+        );
     }
-    assert!(!filed.contains("choices") && !filed.contains("tool_calls"),
-        "the reply envelope is NOT what was filed: {filed}");
-    assert!(!answer.contains(&filed), "and the filed text is not a copy of the reply either");
+    assert!(
+        !filed.contains("choices") && !filed.contains("tool_calls"),
+        "the reply envelope is NOT what was filed: {filed}"
+    );
+    assert!(
+        !answer.contains(&filed),
+        "and the filed text is not a copy of the reply either"
+    );
 
     // The numbered slot replays: same map, no socket, no new row.
     let second = naivepost::produce_translate_ask::ask_at(
@@ -493,9 +658,22 @@ fn sec_09_llm_and_tools_6_cache_s7_translate_files_the_numbered_text_not_the_rep
     )
     .expect("the cached batch still translates");
     assert_eq!(second, want, "the replay says the same thing");
-    assert_eq!(fake.count(), 1, "the second ask opened no socket: {}", fake.count());
-    assert_eq!(wire_rows(&scene.tree), rows_after_first, "a cache hit adds no wire row");
-    assert_eq!(cache_rows(&scene.tree), 1, "a cache hit writes its own marked row");
+    assert_eq!(
+        fake.count(),
+        1,
+        "the second ask opened no socket: {}",
+        fake.count()
+    );
+    assert_eq!(
+        wire_rows(&scene.tree),
+        rows_after_first,
+        "a cache hit adds no wire row"
+    );
+    assert_eq!(
+        cache_rows(&scene.tree),
+        1,
+        "a cache hit writes its own marked row"
+    );
     scene.leave();
 }
 
@@ -516,8 +694,9 @@ fn sec_09_llm_and_tools_6_cache_s7_the_gap_filling_call_is_never_filed() {
     let scene = Scene::new("gapfill", &fake.url);
     scene.enter();
     let step = naivepost::produce_translate_ask::STEP;
-    let part: Vec<(usize, String)> =
-        [(1, "one"), (2, "two"), (3, "three")].map(|(n, t)| (n, t.to_string())).into();
+    let part: Vec<(usize, String)> = [(1, "one"), (2, "two"), (3, "three")]
+        .map(|(n, t)| (n, t.to_string()))
+        .into();
     let first_message = format!(
         "{}\n{}",
         naivepost::produce_subtitles::message(3, "de"),
@@ -531,8 +710,14 @@ fn sec_09_llm_and_tools_6_cache_s7_the_gap_filling_call_is_never_filed() {
     );
     // The batch as the walk builds it: line 2 never came back, so 2 and 3 are what it asks again for.
     let mut batch = naivepost::produce_subtitles::Batch::new((0, 3));
-    batch.translate_line(1, "eins").expect("line 1 is inside this batch");
-    assert_eq!(batch.missing(), vec![2, 3], "the walk's own bookkeeping decides the re-ask");
+    batch
+        .translate_line(1, "eins")
+        .expect("line 1 is inside this batch");
+    assert_eq!(
+        batch.missing(),
+        vec![2, 3],
+        "the walk's own bookkeeping decides the re-ask"
+    );
     let repair_message = batch.ask_again_text(&part);
     assert!(
         naivepost::produce_subtitles::is_repair_request(&repair_message),
@@ -550,7 +735,11 @@ fn sec_09_llm_and_tools_6_cache_s7_the_gap_filling_call_is_never_filed() {
     )
     .expect("the batch answered what it could");
     assert_eq!(got.len(), 1, "only line 1 came back: {got:?}");
-    assert!(scene.cached_names(step).is_empty(), "a partial answer is never filed: {:?}", scene.cached_names(step));
+    assert!(
+        scene.cached_names(step).is_empty(),
+        "a partial answer is never filed: {:?}",
+        scene.cached_names(step)
+    );
 
     // The repair call: correct answer, and STILL no slot for it (§6's "never caches its gap-filling
     // second call"), even though every number it asked for comes back this time.

@@ -35,10 +35,8 @@ struct Stage {
 
 impl Stage {
     fn new(tag: &str, files: &[&str]) -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "naivepost-f25-lane-{}-{tag}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("naivepost-f25-lane-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let session = naivepost::startup::session_dir(&root);
         std::fs::create_dir_all(session.join("audio")).expect("a session audio folder");
@@ -160,7 +158,9 @@ fn f2_5_s3_a_heard_lane_gets_its_own_pipeline_at_its_own_second() {
     let stage = Stage::new("s3", &["mic.wav"]);
     // The lock is the stage's, not this one's: it releases when `stage` drops, which is after the last
     // pipeline check below. Held by name so the reason is visible here rather than inside a constructor.
-    let _serial = stage_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = stage_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mic = lane("mic.wav");
     // The resolution rule first: `project:` means the session folder, and only a real file is a pipeline.
     let found = lane_hear::lane_file(&stage.root, &mic);
@@ -173,9 +173,22 @@ fn f2_5_s3_a_heard_lane_gets_its_own_pipeline_at_its_own_second() {
 
     // `from` is the lane's own clock: the session sits at 34.5, the lane started at 30 and at offset 0, so
     // its file is at 4.5 s. That number IS the sync — no lane asks where another one is.
-    let mix = mix_of("mic.wav", LaneStart::Seek { from: 4.5, stop: 0.0 }, 0.8);
-    lane_hear::apply_for_test(&mix, std::slice::from_ref(&mic), &stage.root, 0.8, &|_| {}, stage.player());
-
+    let mix = mix_of(
+        "mic.wav",
+        LaneStart::Seek {
+            from: 4.5,
+            stop: 0.0,
+        },
+        0.8,
+    );
+    lane_hear::apply_for_test(
+        &mix,
+        std::slice::from_ref(&mic),
+        &stage.root,
+        0.8,
+        &|_| {},
+        stage.player(),
+    );
 
     assert!(
         lane_hear::lane_pid("mic.wav").is_some(),
@@ -209,7 +222,9 @@ fn f2_5_s3_a_heard_lane_gets_its_own_pipeline_at_its_own_second() {
 /// whose file is gone has nothing to hand a pipeline either.
 #[test]
 fn f2_5_s3_a_silenced_lane_is_never_started_whatever_the_gain() {
-    let _serial = stage_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = stage_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let stage = Stage::new("s3-silent", &["hush-mic.wav"]);
     let hushed = "hush-mic.wav";
     let gone = "gone-mic.wav";
@@ -220,7 +235,13 @@ fn f2_5_s3_a_silenced_lane_is_never_started_whatever_the_gain() {
         footage_muted: false,
         lane_starts: vec![
             (hushed.to_string(), LaneStart::Silenced),
-            (gone.to_string(), LaneStart::Seek { from: 1.0, stop: 0.0 }),
+            (
+                gone.to_string(),
+                LaneStart::Seek {
+                    from: 1.0,
+                    stop: 0.0,
+                },
+            ),
         ],
         gain: naivepost::cut_hear::MAX_GAIN,
         rate: 1.0,
@@ -228,7 +249,12 @@ fn f2_5_s3_a_silenced_lane_is_never_started_whatever_the_gain() {
         sound_needs_two_clocks: false,
     };
 
-    let plan = lane_hear::plan_lanes(&mix, &lanes, &BTreeMap::new(), naivepost::cut_hear::MAX_GAIN);
+    let plan = lane_hear::plan_lanes(
+        &mix,
+        &lanes,
+        &BTreeMap::new(),
+        naivepost::cut_hear::MAX_GAIN,
+    );
     assert_eq!(
         plan.as_slice(),
         &[
@@ -238,7 +264,14 @@ fn f2_5_s3_a_silenced_lane_is_never_started_whatever_the_gain() {
         "a silenced lane and a fileless lane are both HELD: nothing to start, nothing running to stop"
     );
 
-    lane_hear::apply_for_test(&mix, &lanes, &stage.root, naivepost::cut_hear::MAX_GAIN, &|_| {}, stage.player());
+    lane_hear::apply_for_test(
+        &mix,
+        &lanes,
+        &stage.root,
+        naivepost::cut_hear::MAX_GAIN,
+        &|_| {},
+        stage.player(),
+    );
     // The pid table is the PROOF: `start_lane` remembers a pid the instant `spawn` returns, so no entry
     // means no process — a synchronous claim that needs no waiting. (The old form polled the argv file for
     // 2 s and called a timeout "proof nothing happened", which fails the other way on a loaded machine.)
@@ -255,7 +288,11 @@ fn f2_5_s3_a_silenced_lane_is_never_started_whatever_the_gain() {
         "the fake player was never started -- \"never started when silenced\" means NO process at all, \
          not a quiet one"
     );
-    assert_eq!(lane_hear::lane_pid(hushed), None, "and no pid was remembered");
+    assert_eq!(
+        lane_hear::lane_pid(hushed),
+        None,
+        "and no pid was remembered"
+    );
 }
 
 /// F2.5 S4 (`a lane started under a scene boundary is seeked, with a stop at it`): the lane falls silent AT
@@ -263,12 +300,21 @@ fn f2_5_s3_a_silenced_lane_is_never_started_whatever_the_gain() {
 /// still lands on its own boundary rather than the scene's raw second.
 #[test]
 fn f2_5_s4_a_lane_started_under_a_scene_boundary_stops_at_the_boundary() {
-    let _serial = stage_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = stage_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let stage = Stage::new("s4", &["mic.wav"]);
     let mic = lane("mic.wav");
     let lanes = [mic.clone()];
     // Stop at 9.0 of the lane's own file. On the session clock that is 30 + 9 = 39 s.
-    let mix = mix_of("mic.wav", LaneStart::Seek { from: 0.0, stop: 9.0 }, 1.0);
+    let mix = mix_of(
+        "mic.wav",
+        LaneStart::Seek {
+            from: 0.0,
+            stop: 9.0,
+        },
+        1.0,
+    );
     lane_hear::start_lane_for_test(
         stage.player(),
         "mic.wav",
@@ -306,7 +352,9 @@ fn f2_5_s4_a_lane_started_under_a_scene_boundary_stops_at_the_boundary() {
 /// was already paused costs no second stop — so a stray halt cannot report a stop that did not happen.
 #[test]
 fn f2_5_s7_a_pause_leaves_no_lane_holding_sound() {
-    let _serial = stage_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = stage_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let stage = Stage::new("s7", &["pause-mic.wav", "pause-desk.wav"]);
     for name in ["pause-mic.wav", "pause-desk.wav"] {
         lane_hear::start_lane_for_test(
@@ -350,7 +398,9 @@ fn f2_5_s7_a_pause_leaves_no_lane_holding_sound() {
 fn f2_5_s2_the_footages_own_sound_moves_by_property_not_by_stopping() {
     // The volume stamp is process-wide like the lane table, and `f2_5_s1_the_tick_drives_the_mix…` clears
     // it too while holding this lock: without it two threads rewrite one stamp and either can lose.
-    let _serial = stage_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = stage_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let tape = ["lecture.mkv".to_string()];
     // The stamp is process-wide and shared with every other test in this binary, so each ask below starts
     // from a clean one: the rule under test is what a REPEAT costs, not what an earlier test left behind.
@@ -376,7 +426,10 @@ fn f2_5_s2_the_footages_own_sound_moves_by_property_not_by_stopping() {
     assert_eq!(heard.len(), muted.len(), "same shape of ask");
     for (index, (quiet, loud)) in muted.iter().zip(&heard).enumerate() {
         if index != 4 {
-            assert_eq!(quiet, loud, "argument {index} must match: {muted:?} vs {heard:?}");
+            assert_eq!(
+                quiet, loud,
+                "argument {index} must match: {muted:?} vs {heard:?}"
+            );
         }
     }
     assert_eq!(heard[4], "0.800", "and the fifth is the volume property");
@@ -401,7 +454,9 @@ fn f2_5_s2_the_footages_own_sound_moves_by_property_not_by_stopping() {
 /// `lane_hear::tick` is that sequence in one call; this pins all three of its steps on one instant.
 #[test]
 fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
-    let _serial = stage_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = stage_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     // A name no other test in this binary uses, staged under that same name: `lane_pid` answers for the
     // process-wide table, so a lane an earlier test left stopping under a shared name could satisfy the pid
     // wait below without ever having written THIS stage's argv (and an unstaged name would make `lane_file`
@@ -409,7 +464,11 @@ fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
     let name = "tick-mic-s1.wav";
     let stage = Stage::new("s1", &[name]);
     let mic = lane(name);
-    let segs = [Seg { s: 30.0, e: 40.0, ..Default::default() }];
+    let segs = [Seg {
+        s: 30.0,
+        e: 40.0,
+        ..Default::default()
+    }];
     // The scene hears the lane, so the mix for the second the line reaches (38.1) is a Seek at the lane's
     // own 8.1 s — and the same scene mutes its own picture sound, which is the footage half of the tick.
     assert!(
@@ -418,7 +477,13 @@ fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
     );
     let mix = cut_hear::Mix {
         footage_muted: true,
-        lane_starts: vec![(name.to_string(), LaneStart::Seek { from: 8.1, stop: 0.0 })],
+        lane_starts: vec![(
+            name.to_string(),
+            LaneStart::Seek {
+                from: 8.1,
+                stop: 0.0,
+            },
+        )],
         gain: 1.0,
         rate: 1.0,
         bed_silenced: false,
@@ -432,7 +497,14 @@ fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
         "with no footage process running there is nothing to mute — the ask is refused, not faked"
     );
 
-    lane_hear::tick_for_test(&mix, std::slice::from_ref(&mic), &stage.root, 38.1, &|_| {}, stage.player());
+    lane_hear::tick_for_test(
+        &mix,
+        std::slice::from_ref(&mic),
+        &stage.root,
+        38.1,
+        &|_| {},
+        stage.player(),
+    );
 
     // The pid is remembered the instant `spawn` returns, so this is not a wait for the child: it is the one tick
     // that lets a lane an earlier test in this binary left behind settle its stop (`stop_lane` signals and
@@ -444,7 +516,8 @@ fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
     // `apply_with` logs the named failure and starts nothing, which is §F2.5 S1's own contract about a lane that
     // drops out. Asking again through the same door the tick uses costs nothing when the first one worked (the pid
     // is already there, so no second ask happens) and rides out a busy machine when it did not.
-    let file = lane_hear::lane_file(&stage.root, &mic).expect("the staged recording resolves for the lane");
+    let file = lane_hear::lane_file(&stage.root, &mic)
+        .expect("the staged recording resolves for the lane");
     let text = file.display().to_string();
     common::wait_until("the tick to start the lane's player", || {
         if lane_hear::lane_pid(name).is_some() || stage.started() {
@@ -475,16 +548,29 @@ fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
 /// tick itself, not by a caller that remembered to ask.
 #[test]
 fn f2_5_s1_the_preview_tick_hands_its_mix_to_the_lane_leg() {
-    let _serial = stage_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = stage_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let stage = Stage::new("s1-step", &["step-mic.wav"]);
     let name = "step-mic.wav";
     let mic = lane(name);
-    let mix = mix_of(name, LaneStart::Seek { from: 8.1, stop: 0.0 }, 1.0);
+    let mix = mix_of(
+        name,
+        LaneStart::Seek {
+            from: 8.1,
+            stop: 0.0,
+        },
+        1.0,
+    );
     let page = TablePage {
         playing: true,
         head: std::cell::RefCell::new(Some(38.0)),
         cut: std::cell::RefCell::new(Cut {
-            segs: vec![Seg { s: 30.0, e: 40.0, ..Default::default() }],
+            segs: vec![Seg {
+                s: 30.0,
+                e: 40.0,
+                ..Default::default()
+            }],
             lanes: vec![mic.clone()],
             ..Default::default()
         }),
@@ -519,10 +605,19 @@ fn f2_5_s1_the_preview_tick_hands_its_mix_to_the_lane_leg() {
 /// table that hands a mix but no root moves the line and touches no pipeline.
 #[test]
 fn f2_5_s1_a_mix_with_no_root_starts_nothing() {
-    let _serial = stage_lock().lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = stage_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let stage = Stage::new("s1-noroot", &["noroot-mic.wav"]);
     let name = "noroot-mic.wav";
-    let mix = mix_of(name, LaneStart::Seek { from: 1.0, stop: 0.0 }, 1.0);
+    let mix = mix_of(
+        name,
+        LaneStart::Seek {
+            from: 1.0,
+            stop: 0.0,
+        },
+        1.0,
+    );
     let page = TablePage {
         playing: true,
         head: std::cell::RefCell::new(Some(31.0)),
@@ -536,7 +631,11 @@ fn f2_5_s1_a_mix_with_no_root_starts_nothing() {
     };
     cut_record_tick::step(&page, &[(0.0, 120.0)], 0.1);
     assert_eq!(page.playhead(), Some(31.1), "the line still walks");
-    assert_eq!(lane_hear::lane_pid(name), None, "and nothing was started without a root to resolve from");
+    assert_eq!(
+        lane_hear::lane_pid(name),
+        None,
+        "and nothing was started without a root to resolve from"
+    );
     let _ = stage.player();
 }
 
@@ -554,7 +653,14 @@ fn f2_5_s3_a_lane_whose_file_vanished_is_not_a_pipeline() {
     );
     let empty: BTreeMap<String, PathBuf> = BTreeMap::new();
     let plan = lane_hear::plan_lanes(
-        &mix_of("ghost-mic.wav", LaneStart::Seek { from: 0.0, stop: 0.0 }, 1.0),
+        &mix_of(
+            "ghost-mic.wav",
+            LaneStart::Seek {
+                from: 0.0,
+                stop: 0.0,
+            },
+            1.0,
+        ),
         &[ghost],
         &empty,
         1.0,

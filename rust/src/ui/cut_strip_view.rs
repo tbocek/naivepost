@@ -15,7 +15,6 @@
 //! plates before its translate, this strip's fixed furniture (the ground, the empty hint) stays put while the
 //! tape slides under it.
 
-
 thread_local! {
     /// The strip's own scroll in px. Zero until the placeholder surface scrolls with the view; see
     /// [`scroll_px`] for why the number exists before anything moves it.

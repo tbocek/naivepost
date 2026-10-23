@@ -20,10 +20,10 @@ use crate::fx_text;
 use crate::fx_zoom;
 use crate::shell::Page;
 use crate::ui::window::{
-    find_status, find_widget_by_name, preview_picture_px, refresh_selection_readout,
-    INSERT_PLACE_KNOWN, PREVIEW_PANEL_H, PREVIEW_PANEL_W, line_step_button,
-    live_form_answer_is_undo, live_form_refused, log_line, paste_line, record_edit,
-    refresh_effects_lane, review_cut_of, save_insert_cut, selection, trim_seconds, zoom_field_row,
+    find_status, find_widget_by_name, line_step_button, live_form_answer_is_undo,
+    live_form_refused, log_line, paste_line, preview_picture_px, record_edit, refresh_effects_lane,
+    refresh_selection_readout, review_cut_of, save_insert_cut, selection, trim_seconds,
+    zoom_field_row, INSERT_PLACE_KNOWN, PREVIEW_PANEL_H, PREVIEW_PANEL_W,
 };
 
 // --- F3.4 Text (caption) by hand: the arm, the form drawer ------------------------------------------------------
@@ -277,8 +277,7 @@ fn text_entry(name: &str) -> Option<gtk::Entry> {
 /// The same lookup with the window passed in, which is what the debounced commit needs: by the time the pause runs
 /// out, the closure only has the window it was given.
 fn text_entry_of(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Entry> {
-    find_widget_by_name(window.upcast_ref(), name)
-        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+    find_widget_by_name(window.upcast_ref(), name).and_then(|w| w.downcast::<gtk::Entry>().ok())
 }
 
 /// The window that last drew a caption form, if any — the owner `text_form_owner` compares against.
@@ -365,7 +364,9 @@ pub fn text_type_words(window: &adw::ApplicationWindow, words: &str) -> String {
             // one a keystroke gets; nothing is poked around the buffer behind its back.
             format!("typed {words}")
         })
-        .unwrap_or_else(|| "no caption form on this page \u{2014} press \u{275d} Text first".to_string())
+        .unwrap_or_else(|| {
+            "no caption form on this page \u{2014} press \u{275d} Text first".to_string()
+        })
 }
 
 /// Read the caption's words back out of the TextView, typed newlines intact. `buffer.bounds()` gives the whole
@@ -425,7 +426,9 @@ fn wire_text_buttons(window: &adw::ApplicationWindow) {
     // and so a field that does not parse keeps what the form held, exactly as Apply's own `read` does) and prints the
     // kept length. It deliberately does not touch the cut — see `wire_live_fields`.
     crate::ui::cut_form_buttons::wire_live_fields(window, "text", |win| {
-        let Some(stored) = text_form_open() else { return };
+        let Some(stored) = text_form_open() else {
+            return;
+        };
         let read = |name: &str, keep: f64| -> f64 {
             text_entry_of(win, name)
                 .map(|entry| entry.text().trim().to_string())
@@ -559,7 +562,8 @@ pub fn nudge_text_box(
     let moved = fx_text::move_box(form.on, delta, frame);
     form.on = moved;
     set_text_form(Some(form.clone()));
-    let said = format!(
+    let said =
+        format!(
         "caption box at {:.3}, {:.3} \u{2014} snapped to the finished frame's lines within {} px",
         moved.cx, moved.cy, fx_text::SNAP_PX
     );
@@ -589,7 +593,12 @@ fn placed_text_box(window: &adw::ApplicationWindow, index: usize) -> Option<cut:
 /// still grabs where it draws.
 fn record_box(record: &cut::Fx) -> fx_text::Box_ {
     let (cx, cy) = record.centre();
-    fx_text::Box_ { cx, cy, wf: record.wf.unwrap_or(fx_text::LOWER_THIRD.wf), hf: record.hf.unwrap_or(fx_text::LOWER_THIRD.hf) }
+    fx_text::Box_ {
+        cx,
+        cy,
+        wf: record.wf.unwrap_or(fx_text::LOWER_THIRD.wf),
+        hf: record.hf.unwrap_or(fx_text::LOWER_THIRD.hf),
+    }
 }
 
 /// Put `record` back at `index` on the page's cut and take the history step. Built from `review_cut_of` with ONE
@@ -642,12 +651,13 @@ pub fn drag_text_edge(
     set_text_form(Some(form.clone()));
     let said = format!(
         "caption box {:.3} wide by {:.3} tall \u{2014} the other axis untouched, floor {} px",
-        resized.wf, resized.hf, fx_text::MIN_BOX_PX
+        resized.wf,
+        resized.hf,
+        fx_text::MIN_BOX_PX
     );
     log_line(&said);
     said
 }
-
 
 // --- F3.2 Aspect ratio: the dropdown ------------------------------------------------------------------------
 //

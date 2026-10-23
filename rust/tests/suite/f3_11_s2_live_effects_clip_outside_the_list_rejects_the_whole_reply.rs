@@ -58,16 +58,26 @@ fn f3_11_s2_live_effects_reply_naming_a_clip_outside_the_list_loses_the_whole_re
 
     let batch = batch();
     let first = effects_ask::ask(&fixture.tree, CTX, &batch, &[], 1, &|| false);
-    assert_eq!(first.calls.len(), 2, "both calls came back: the pass, not the reader, decides");
+    assert_eq!(
+        first.calls.len(),
+        2,
+        "both calls came back: the pass, not the reader, decides"
+    );
     assert_eq!(asked(&fixture), 1, "one request for one round");
 
     // S2 (`a clip outside the list rejects the whole reply`). Nothing is placed, and the sentence is the spec's
     // own, spelled by `cut_captions::clip_outside` so all three passes phrase it alike.
     let rejected = naivepost::cut_effects_pass::place(&batch, &first.calls);
     assert!(!rejected.usable(), "clip 9 makes the whole reply unusable");
-    assert!(rejected.effects.is_empty(), "and NOTHING from it lands, not even the good zoom");
+    assert!(
+        rejected.effects.is_empty(),
+        "and NOTHING from it lands, not even the good zoom"
+    );
     let problem = rejected.fault.clone().expect("the fault is named");
-    assert_eq!(problem, "clip 9 is not one of the clips given (1 to 3)", "the spec's wording, with the range");
+    assert_eq!(
+        problem, "clip 9 is not one of the clips given (1 to 3)",
+        "the spec's wording, with the range"
+    );
     assert_eq!(
         naivepost::cut_effects_pass::rejected(&problem),
         ">>> effects rejected: clip 9 is not one of the clips given (1 to 3)",
@@ -81,11 +91,18 @@ fn f3_11_s2_live_effects_reply_naming_a_clip_outside_the_list_loses_the_whole_re
     assert_eq!(asked(&fixture), 2, "two rounds, two requests: {CTX}");
     let placed = naivepost::cut_effects_pass::place(&batch, &second.calls);
     assert!(placed.usable(), "the retried reply is usable");
-    assert_eq!(placed.effects.len(), 1, "and it places the zoom the first reply also wanted");
+    assert_eq!(
+        placed.effects.len(),
+        1,
+        "and it places the zoom the first reply also wanted"
+    );
     assert_eq!(placed.effects[0].kind, "zoom");
 
     // The give-up line exists for a reply that stays unusable after both rounds — see
     // `f3_11_s5_live_effects_two_rounds_then_the_give_up_line`; here the second round answered, so the pass
     // would report what landed rather than the failure.
-    assert_eq!(naivepost::cut_effects_pass::placed(1), ">>> effects: 1 decoration(s)");
+    assert_eq!(
+        naivepost::cut_effects_pass::placed(1),
+        ">>> effects: 1 decoration(s)"
+    );
 }

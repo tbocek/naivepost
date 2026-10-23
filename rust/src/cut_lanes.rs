@@ -42,7 +42,11 @@ pub fn lane_from(source_path: &str, at: f64, duration_seconds: f64, taken: &[Str
 ///
 /// Returns `Result` rather than `Option` so the caller can say WHY (§00-principles: failure is specific and
 /// local), and the caller decides whether the sentence is a refusal or a log line.
-pub fn probe_duration(configured_ffmpeg: &str, path: &str, log: &mut impl FnMut(&str)) -> Result<f64, String> {
+pub fn probe_duration(
+    configured_ffmpeg: &str,
+    path: &str,
+    log: &mut impl FnMut(&str),
+) -> Result<f64, String> {
     crate::run_stages::probe_duration(configured_ffmpeg, std::path::Path::new(path), log)
 }
 

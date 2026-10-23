@@ -19,7 +19,7 @@ use naivepost::produce_render as render;
 use naivepost::project::Produce;
 
 use crate::common;
-use common::{all_rows};
+use common::all_rows;
 
 /// A row by id across all five lists. `params::find` searches only `prepare()`, which cannot see a
 /// §08 row, so the lookup goes through the chained lists instead.
@@ -62,8 +62,7 @@ fn p_eng_blursigma_s1_the_value_and_its_single_home() {
 
     let row = row_for("P.eng.blurSigma");
     assert_eq!(
-        row.from,
-        "produce_render::blur_sigma",
+        row.from, "produce_render::blur_sigma",
         "a row must name the function that owns the rule, not one of the two numbers alone"
     );
     // Hard-coded from spec/10-parameters.md line 209, `0.02·height, min 4` (· is U+00B7). The row is
@@ -95,7 +94,11 @@ fn p_eng_blursigma_s2_the_fraction_scales_with_height_and_ceil_is_applied() {
     // 0.02 * 1080 = 21.6. Truncated that is 21; ceil gives 22. Asserting 22 therefore pins the
     // round-up rather than a truncation, which is what keeps the blur at least as wide as the rule asked.
     assert_eq!(render::blur_sigma(1080), 22, "21.6 -> 22, not 21");
-    assert_ne!(render::blur_sigma(1080), 21, "truncation would land here; the rule rounds up");
+    assert_ne!(
+        render::blur_sigma(1080),
+        21,
+        "truncation would land here; the rule rounds up"
+    );
     // 0.02 * 720 = 14.4 -> 15 (truncate would be 14).
     assert_eq!(render::blur_sigma(720), 15, "14.4 -> 15, not 14");
     // 0.02 * 2160 = 43.2 -> 44 (truncate would be 43).
@@ -138,7 +141,11 @@ fn p_eng_blursigma_s3_the_floor_binds_below_200px_and_stops_there() {
     }
     // ...and the floor has stopped binding by 201: 0.02 * 201 = 4.02, rounded up to 5. So 200 is the
     // last height where the answer is the floor and 201 is the first where the fraction wins.
-    assert_eq!(render::blur_sigma(201), 5, "4.02 -> 5: the fraction now exceeds the floor");
+    assert_eq!(
+        render::blur_sigma(201),
+        5,
+        "4.02 -> 5: the fraction now exceeds the floor"
+    );
     assert!(render::blur_sigma(201) > render::blur_sigma(200));
 }
 
@@ -157,12 +164,18 @@ fn p_eng_blursigma_s4_the_chain_carries_exactly_the_derived_sigma() {
     // The pieces around it, named: the picture is split so one copy stays sharp, the other is scaled to
     // COVER the frame (increase + centred crop) and smeared, then the sharp copy is laid back over the
     // middle of it. Only the background copy gets the gblur.
-    assert!(blurred.iter().any(|f| f == "split=2[bg][fg]"), "{blurred:?}");
+    assert!(
+        blurred.iter().any(|f| f == "split=2[bg][fg]"),
+        "{blurred:?}"
+    );
     let bg = blurred
         .iter()
         .find(|f| f.contains("gblur="))
         .expect("the blurred branch must push a background filter");
-    assert!(bg.starts_with("[bg]scale="), "the smeared copy is the background: {bg}");
+    assert!(
+        bg.starts_with("[bg]scale="),
+        "the smeared copy is the background: {bg}"
+    );
     assert!(bg.contains("force_original_aspect_ratio=increase"), "{bg}");
     assert!(bg.contains("crop=1920:1080"), "{bg}");
     assert!(
@@ -194,9 +207,7 @@ fn p_eng_blursigma_s4_the_chain_carries_exactly_the_derived_sigma() {
     // at every size rather than carrying a literal tuned for 1080p.
     let small_blurred = chain_for((320, 180), true);
     assert!(
-        small_blurred
-            .iter()
-            .any(|f| f.contains("gblur=sigma=4")),
+        small_blurred.iter().any(|f| f.contains("gblur=sigma=4")),
         "a 180px-high frame takes the floor of 4: {small_blurred:?}"
     );
 }
@@ -209,7 +220,8 @@ fn p_eng_blursigma_s5_a_proportion_of_height_not_another_kinds_002() {
     // must stay separate constants in separate modules.
     assert_eq!(naivepost::fx_zoom::HF_MIN, 0.02);
     assert_eq!(
-        render::BLUR_SIGMA_FRACTION, naivepost::fx_zoom::HF_MIN,
+        render::BLUR_SIGMA_FRACTION,
+        naivepost::fx_zoom::HF_MIN,
         "equal by coincidence of magnitude, not by shared meaning"
     );
     assert_ne!(
@@ -251,7 +263,10 @@ fn p_eng_blursigma_s5_a_proportion_of_height_not_another_kinds_002() {
     // from render_fx was wrong and the source comment has been corrected.
     assert_eq!(naivepost::render_fx::ZOOM_GRID_FPS, 30.0);
     assert_eq!(naivepost::render_fx::ZOOM_DEPTH_CAP, 10.0);
-    assert_ne!(naivepost::render_fx::ZOOM_GRID_FPS, render::BLUR_SIGMA_FRACTION);
+    assert_ne!(
+        naivepost::render_fx::ZOOM_GRID_FPS,
+        render::BLUR_SIGMA_FRACTION
+    );
 }
 
 /// S6: the row spells BOTH halves of the rule, each taken from the constant that owns it, so the floor is
@@ -266,7 +281,10 @@ fn p_eng_blursigma_s6_the_row_spells_the_fraction_and_the_floor_together() {
         render::BLUR_SIGMA_FRACTION,
         render::BLUR_SIGMA_MIN as i64
     );
-    assert_eq!(row.spelled, derived, "both constants land in the row's spelling");
+    assert_eq!(
+        row.spelled, derived,
+        "both constants land in the row's spelling"
+    );
     assert!(row.spelled.contains("0.02"), "{}", row.spelled);
     assert!(row.spelled.contains("min 4"), "{}", row.spelled);
     // The spelled `min 4` is the same fact the render obeys at a small frame: 0.02*10 = 0.2 would be no

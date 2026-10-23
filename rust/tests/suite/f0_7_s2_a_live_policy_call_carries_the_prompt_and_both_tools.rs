@@ -26,7 +26,8 @@ fn f0_7_s2_a_live_derivation_call_carries_the_policy_prompt_and_both_tools() {
     // The shipped `spec/prompts/policy.md` wording rode in the system message -- its own sentence, not
     // a paraphrase of it.
     assert!(
-        seen.body.contains("set the editing policy fields it speaks to"),
+        seen.body
+            .contains("set the editing policy fields it speaks to"),
         "the policy prompt went out: {}",
         clip(&seen.body)
     );
@@ -42,13 +43,23 @@ fn f0_7_s2_a_live_derivation_call_carries_the_policy_prompt_and_both_tools() {
     );
     // Both of S2's tools offered, and only those two.
     let body: Value = serde_json::from_str(&seen.body).expect("a JSON body");
-    let tools = body.get("tools").and_then(Value::as_array).cloned().unwrap_or_default();
+    let tools = body
+        .get("tools")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     let names: Vec<&str> = tools
         .iter()
         .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
         .collect();
-    assert!(names.contains(&"get_context"), "get_context offered: {names:?}");
-    assert!(names.contains(&"set_policy"), "set_policy offered: {names:?}");
+    assert!(
+        names.contains(&"get_context"),
+        "get_context offered: {names:?}"
+    );
+    assert!(
+        names.contains(&"set_policy"),
+        "set_policy offered: {names:?}"
+    );
     assert_eq!(names.len(), 2, "S2 offers exactly two tools: {names:?}");
     // Thinking OFF, in BOTH spellings: llama.cpp reads the top-level pair, other servers only what sits
     // inside chat_template_kwargs, so a request that set one thinks on half the installs.
@@ -58,7 +69,8 @@ fn f0_7_s2_a_live_derivation_call_carries_the_policy_prompt_and_both_tools() {
         "thinking off at the top level"
     );
     assert_eq!(
-        body.pointer("/chat_template_kwargs/enable_thinking").and_then(Value::as_bool),
+        body.pointer("/chat_template_kwargs/enable_thinking")
+            .and_then(Value::as_bool),
         Some(false),
         "thinking off in the template copy too"
     );

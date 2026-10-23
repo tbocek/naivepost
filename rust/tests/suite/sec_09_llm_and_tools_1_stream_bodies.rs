@@ -21,7 +21,8 @@ fn sec_09_llm_and_tools_1_request_contract_s4_every_live_chat_ask_asks_for_a_str
         ),
         (
             "upload text",
-            naivepost::produce_upload_call::body(MODEL, "system", "the brief").expect("an upload body"),
+            naivepost::produce_upload_call::body(MODEL, "system", "the brief")
+                .expect("an upload body"),
         ),
         (
             "speeds",
@@ -29,7 +30,8 @@ fn sec_09_llm_and_tools_1_request_contract_s4_every_live_chat_ask_asks_for_a_str
         ),
         (
             "translate",
-            naivepost::produce_translate_ask::body(MODEL, "system", "1. line").expect("a translate body"),
+            naivepost::produce_translate_ask::body(MODEL, "system", "1. line")
+                .expect("a translate body"),
         ),
     ];
     for (door, body) in &doors {
@@ -41,7 +43,11 @@ fn sec_09_llm_and_tools_1_request_contract_s4_every_live_chat_ask_asks_for_a_str
     }
     // The join's body door is the one the tool loop grows its conversation on.
     let joined = naivepost::join_ask::body_for_test(&["one".to_string(), "two".to_string()]);
-    assert_eq!(stream_of(&joined), serde_json::json!(true), "the join asks streamed: {joined}");
+    assert_eq!(
+        stream_of(&joined),
+        serde_json::json!(true),
+        "the join asks streamed: {joined}"
+    );
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&joined).expect("a join body")["model"],
         serde_json::json!("test-model"),
