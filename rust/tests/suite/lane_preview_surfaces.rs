@@ -74,6 +74,58 @@ fn sec_06_effects_2_the_lane_and_the_preview_s10_the_lane_layout_pairs_row_colou
     assert_eq!(lane::lane_height_px(lane::row_count(&[])), 26.0);
 }
 
+/// §06-effects#2-the-lane-and-the-preview — the floor is ONE number, so the row and the bar cannot disagree.
+///
+/// The bug this pins: `rows_for_effects` measured the floor on `(t + dur) - t` while `lane_layout` measured it
+/// on `dur`. At `t = 1.0, dur = 0.4` the subtraction answers `0.3999999999999999` — under the 0.4 s floor —
+/// so packing put the effect on row 0 and left its seconds unclaimed, while its bar still said it reserved a
+/// row and the painter inked it over whatever else shared that row.
+#[test]
+fn sec_06_effects_2_the_lane_and_the_preview_s10_the_floor_is_measured_on_one_number() {
+    let rounding = fx(EffectKind::Label, 1.0, 0.4);
+    assert!(
+        (rounding.t + rounding.dur) - rounding.t < lane::PACK_MIN_SECONDS,
+        "the reproduction itself: (1.0 + 0.4) - 1.0 = {:?}",
+        (rounding.t + rounding.dur) - rounding.t
+    );
+    // A second effect over those same seconds can only land on another row if the first one claimed them.
+    let pair = vec![rounding, fx(EffectKind::Zoom, 1.0, 5.0)];
+    let bars = lane::lane_layout(&pair);
+    assert!(
+        bars[0].reserves_a_row,
+        "t=1.0 dur=0.4 clears the floor on dur"
+    );
+    assert_eq!(
+        bars.iter().map(|b| b.row).collect::<Vec<_>>(),
+        vec![0, 1],
+        "and the row it reserves is not offered to the zoom that overlaps it"
+    );
+    assert_eq!(
+        lane::rows_for_effects(&pair),
+        bars.iter().map(|b| b.row).collect::<Vec<_>>(),
+        "the two doors answer the same rows"
+    );
+    assert_eq!(
+        lane::row_count(&pair),
+        2,
+        "so the lane really is two rows deep here"
+    );
+
+    // Still true at both edges of the floor: exactly 0.4 s claims, anything shorter is drawn but claims nothing.
+    assert!(
+        lane::lane_layout(&[fx(EffectKind::Label, 1.0, lane::PACK_MIN_SECONDS)])[0].reserves_a_row
+    );
+    let tiny = vec![
+        fx(EffectKind::Label, 1.0, 0.1),
+        fx(EffectKind::Label, 1.0, 0.1),
+    ];
+    assert!(
+        lane::lane_layout(&tiny).iter().all(|b| !b.reserves_a_row),
+        "a scatter of tiny labels claims no row at all"
+    );
+    assert_eq!(lane::row_count(&tiny), 1, "and so never grows the lane");
+}
+
 /// §06-effects#2-the-lane-and-the-preview — the staying zoom is the orange bar, and only a zoom can be staying.
 #[test]
 fn sec_06_effects_2_the_lane_and_the_preview_s11_a_staying_zoom_is_the_orange_bar_and_only_a_zoom_can_be(
