@@ -33,9 +33,9 @@ fn refuses_while_a_run_is_going(app: &adw::Application) {
     let _play = ui::play_button(&window).expect("play button");
     let gears = ui::lucky_button(&window).expect("F0.4 puts the gears in the run bar");
 
-    // The button is labelled, not an anonymous icon.
+    // The button is labelled, not an anonymous icon: §2's words sit beside the gears in its face box.
     assert_eq!(
-        gears.label().as_deref(),
+        naivepost::ui::lucky_run::words_of(&gears).as_deref(),
         Some(lucky::LUCKY_LABEL),
         "the control reads \"I'm feeling lucky\" as §03 names it"
     );
