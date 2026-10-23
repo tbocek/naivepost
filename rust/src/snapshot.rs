@@ -936,7 +936,12 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                     .map(|child| child.height().max(1))
                     .unwrap_or(1);
                 let lane_h = crate::fx_lane::lane_height_px(1) as i32;
-                crate::ui::cut_preview_panel::grow_to(&panel, panel.width().max(1) as f64, (top_h - lane_h) as f64);
+                // The panel's own real width, which the 660 px divider gave it, is passed through: `grow_to`
+                // floors the width at the panel's declared 1280 (nothing ffprobes headless, so that declaration
+                // IS its shape), and asking for its own width is what lets the picture keep the pane's width
+                // instead of being drawn 1280 wide and cropped to 660.
+                let panel_w = panel.width().max(1);
+                crate::ui::cut_preview_panel::grow_to(&panel, panel_w as f64, (top_h - lane_h) as f64);
                 crate::ui::cut_preview_frame::repaint(&window);
                 // No divider re-ask here: made before the window has §1's size it lands on the paned's clamp
                 // and undoes `rest_page_splits`, which runs after the final size request.

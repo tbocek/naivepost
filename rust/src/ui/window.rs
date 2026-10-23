@@ -106,14 +106,15 @@ pub(crate) use crate::ui::window_selection::{
 
 // The §F2.8 trim/move/copy/paste + track-strip group lives in `window_trim_strip` (window.rs is past its
 // size budget); these are the doors the rest of the page and the other ui modules call, kept at their paths.
-pub use crate::ui::window_trim_strip::{
-    copy_esc_controller, copy_hand, delete_key_controller, move_gesture, note_place, open_folds,
-    paste_line, press_band, press_copy, press_lane, press_move, press_move_at, press_paste,
-    press_position, press_row, press_scene, press_trim_border, right_press_took, set_press_band,
-    set_press_scene, set_press_x, track_strip, trim_gesture, TRACK_REC_END, TRACK_STRIP_PPS,
-};
 pub(crate) use crate::ui::window_trim_strip::{
     refresh_copy_buttons, wire_copy_esc, wire_delete_keys, wire_track_strip,
+};
+pub use crate::ui::window_trim_strip::{
+    copy_esc_controller, copy_hand, delete_key_controller, move_gesture, note_place, open_folds,
+    paste_line, press_band, press_copy, press_lane, press_move, press_move_at,
+    press_paste, press_position, press_row, press_scene, press_trim_border, right_press_took,
+    set_press_band, set_press_scene, set_press_x, track_strip, trim_gesture, TRACK_REC_END,
+    TRACK_STRIP_PPS,
 };
 
 // The §02 run-bar presses live in `window_run_press` and the three pass jobs in `cut_pass_gates`

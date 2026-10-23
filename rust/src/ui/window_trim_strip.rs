@@ -444,7 +444,7 @@ pub(crate) fn refresh_copy_buttons(window: &adw::ApplicationWindow) {
 /// from `cut_trim::ruler_ticks`, `cut_trim::clip_boxes` and `cut_trim::border_positions` at
 /// [`TRACK_STRIP_PPS`], so the border the eye sees is the same pixel the hand grabs. An empty cut draws
 /// the frame plus [`cut_trim::STRIP_EMPTY_HINT`] rather than a blank box, which would read as broken.
-pub(crate) fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
+pub fn paint_track_strip(cr: &cairo::Context, width: i32, height: i32) {
     let w = width.max(1) as f64;
     let h = height.max(1) as f64;
     let cut_ = ui::newest_review_cut();

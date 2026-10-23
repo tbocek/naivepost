@@ -113,6 +113,9 @@ pub fn install(page_box: &gtk::Box, previous: &gtk::Widget) -> gtk::Widget {
 /// measured against it), so a smaller pane still gets the old minimum and no test that reads the panel's
 /// classes or opacity sees anything but a bigger box.
 pub fn grow_to(preview: &gtk::Widget, width: f64, height: f64) {
+    // The FLOOR is the declared shape, not the ask: the panel pins itself to PREVIEW_PANEL_W/H because nothing
+    // ffprobes headless, but a pane that got LESS than that (the 660 px §A gives the preview) must not be
+    // forced to 1280 — GTK then clips the panel to the pane and the picture is cropped at its right edge.
     let wide = width.max(crate::ui::window::PREVIEW_PANEL_W);
     let tall = height
         .max(crate::ui::cut_page_layout::PREVIEW_FLOOR_H)

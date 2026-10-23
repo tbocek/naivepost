@@ -204,7 +204,7 @@ mod window_policy;
 mod window_selection;
 /// §F2.8 — trim and move on the track strip, the copy/paste hand and the lane press. Split out of
 /// `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
-mod window_trim_strip;
+pub mod window_trim_strip;
 /// §02's run bar — the ▶ ⏹ 🎲 ▶✂ presses and their wires. Split out of `window.rs`, which is past its
 /// size budget. Its doors are re-exported through `window`.
 mod window_run_press;
