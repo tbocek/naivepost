@@ -33,11 +33,11 @@ The prototype encodes hundreds of decisions as constants: a file under 2 s is si
 |---|---|---|
 | **Machine setting** | Settings dialog / settings file; about this computer | server URLs, model ids, ffmpeg path, voices folder |
 | **Project setting** | Stored in the project file; shown on a tab | frame interval, language, encoder settings |
-| **Editing policy** | Stored in the project; derived from the User Context by a model call, else defaults; editable as a form | minimum take length, dead-air threshold, review pad, words per caption row, target length |
+| **Editing policy** | Stored in the project; derived from the User Context by a model call, else defaults; changed by changing the User Context | minimum take length, dead-air threshold, review pad, words per caption row, target length |
 | **Prompt** | The twelve prompts, per machine, resettable | how a job is worded |
 | **Engineering constant** | Fixed in code: about the machine, not the edit (pixel sizes, timeouts, cache formats) | 6 px grab reach, 100 ms tick, cache magic |
 
-The **editing policy** is new: a JSON object in the project (`policy` in `naivepost.json`) holding every value that decides what the video becomes. Fields and defaults: [`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults). Filled three ways, by precedence: (1) a value the user typed into the policy form; (2) a value a model derived from the User Context via `tool:set_policy` (flow [F0.7](03-shell.md#f07-derive-the-editing-policy-new) in [`03-shell.md`](03-shell.md)); (3) the shipped default. The form shows each value's origin.
+The **editing policy** is new: a JSON object in the project (`policy` in `naivepost.json`) holding every value that decides what the video becomes. Fields and defaults: [`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults). Filled two ways: a value a model derived from the User Context via `tool:set_policy` (flow [F0.7](03-shell.md#f07-derive-the-editing-policy-new) in [`03-shell.md`](03-shell.md)), else the shipped default. There is no form: to change a value, the user says so in the User Context, and the log says what the model set and why.
 
 Rule of thumb: if changing the number could change which frames or words end up in the video, it is policy; if it only changes how the app looks, waits or caches, it is an engineering constant.
 
@@ -114,6 +114,16 @@ Prototype: the Cut page is one editor (`cutEditor`, `cut.go`, 6 874 lines) that 
 - **Line**: one narration entry over one clip (`narrate/narration.json`).
 - **Policy**: the project's editing parameters ([§3](#3-rewrite-directive-a--no-implicit-behaviour)).
 - **Run**: one press of ▶ (the visible step) or of "I'm feeling lucky" (every step): one progress bar, one log page, one cancel.
+
+## 8. The screenshots
+
+Every `.png` in `img/` is a screenshot of the prototype on a real project. The rewrite matches its arrangement, not its data (other files, other numbers, other text). Every screen's picture also shows the prototype's window frame, and the rewrite changes these parts of it, whichever screen the picture is of:
+
+- **Run bar:** the chain dropdown ("1 steps") is gone; "I'm feeling lucky" stands in its place ([`03-shell.md` §2](03-shell.md#2-the-run-bar)).
+- **Prepare's Freq row:** the frame-size dropdown ("Original") and the Style dropdown ("Lecture") are gone ([`03-shell.md` §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it), [§6](#6-generalisations) here).
+- **Sources rows:** the prototype's ✂ split-the-voice toggle is drawn as 🗣 ([`03-shell.md` §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it)).
+
+An `.svg` in `img/` is a proposed screen the prototype lacks, drawn in its style.
 
 <!-- nav -->
 ---

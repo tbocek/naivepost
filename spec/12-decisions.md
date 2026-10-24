@@ -68,7 +68,7 @@ Each entry: what the prototype does behind the model's back → where it belongs
 18. **The whole effect list is replaced, discarding hand-placed labels and zooms** → stays; the page's contract with the user (one Undo), not a model decision. Named in [`05-cut.md`](05-cut.md) [F2.14](05-cut.md#f214-suggest-a-cut) S3.
 19. **Effects are clamped to the cut as applied and dropped under a second of survivor; only a count reaches the log** → stays after `finish` (the cut moved under them), but the count becomes a line the user can act on.
 20. **Web tools are withdrawn after the first rejection, whatever it was, and thinking is switched off after an all-reasoning reply — both unannounced** → both stay the app's, but logged; a rewrite SHOULD tell the model the tools are gone rather than leave it looking.
-21. **The target length is a regex over free text with no fallback**: "half an hour" silently becomes no target, changing the prompt, both count gates and the length gate at once → `P.policy.targetLengthSeconds`, derived by [F0.7](03-shell.md#f07-derive-the-editing-policy-new)'s `set_policy`, shown in the policy form.
+21. **The target length is a regex over free text with no fallback**: "half an hour" silently becomes no target, changing the prompt, both count gates and the length gate at once → `P.policy.targetLengthSeconds`, derived by [F0.7](03-shell.md#f07-derive-the-editing-policy-new)'s `set_policy`, said in the log with its reason.
 
 ### Narrate and Produce
 
@@ -99,7 +99,7 @@ Each is mechanical, checkable and visible on screen afterwards; none is a judgem
 - **The session clock**, source placement and hand shift corrections.
 - **Edge snapping, hole closing, dead-air removal, coalescing, clamping** — the walk-back (rule 2.6). Runs after `finish` on every reply, model- or hand-made; the page shows what it did.
 - **The render's arithmetic**: fitting, ducking, loudness, frame boxes, cue wrapping.
-- **Nothing chooses the pipeline but the User Context.** Which marking pass runs, whether the cut comes from the words or from a model, and which cut-stage passes are asked at all are policy fields the policy job sets from the context ([F0.7](03-shell.md#f07-derive-the-editing-policy-new)) — decisions the model makes once, visibly, in the policy form, instead of a style dropdown.
+- **Nothing chooses the pipeline but the User Context.** Which marking pass runs, whether the cut comes from the words or from a model, and which cut-stage passes are asked at all are policy fields the policy job sets from the context ([F0.7](03-shell.md#f07-derive-the-editing-policy-new)) — decisions the model makes once, visibly in the log, instead of a style dropdown.
 
 ## 5. Gaps this audit closed
 
