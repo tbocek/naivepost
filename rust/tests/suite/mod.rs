@@ -421,6 +421,7 @@ mod sec_05_cut_8_suggest_press_wired;
 mod sec_05_cut_8_suggest_wired;
 mod sec_06_effects_1_record_columns;
 mod sec_06_effects_2_effect_menu_widgets;
+mod sec_06_effects_2_empty_lane_rows;
 mod sec_06_effects_2_lane_painted;
 mod sec_06_effects_2_lane_preview_wired;
 mod sec_06_effects_2_lane_rows_order;

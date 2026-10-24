@@ -37,6 +37,9 @@ pub const PLAYHEAD_PX: f64 = 2.0;
 /// picture row `thumbHt + 4`. The ruler's 16 vs 18 is the placeholder's number kept: `cut_trim::RULER_H`
 /// is what F2.8's press bands resolve against, and moving it would move a press.
 pub const SELECTION_BAND_PX: f64 = 22.0;
+/// The dash pattern of the effects lane's lower edge (§06-effects#2: the seam that says "the lane ends here").
+/// 4 px of ink, 3 px of gap: legible at the lane's own scale without reading as a dotted hairline.
+pub const LANE_DASH_PX: [f64; 2] = [4.0, 3.0];
 pub const PICTURE_ROW_EXTRA_PX: f64 = 4.0;
 /// The wave strip's share of a camera row (§27 Tracks: "each row's first audio track as a strip below
 /// it"). No §10 row gives this height, so the painter chooses it, exactly as `cut_trim_press::{LANE_H,
@@ -671,9 +674,20 @@ pub fn lane_rows(scene: &Scene) -> usize {
 fn draw_lane_rows(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     for (index, lane) in scene.lanes.iter().enumerate() {
         let top = rows.lane_top(scene, index);
-        fill(cr, LANE_GROUND, 0.0, top, tape, rows.row_h, 1.0);
+        // Past the gutter: §1's gutter is a rail down the whole track stack, so a lane row that fills from x = 0
+        // paints over it and its sound switch reads as sitting on the lane.
+        let left = cut_screen::GUTTER_PX;
+        fill(
+            cr,
+            LANE_GROUND,
+            left,
+            top,
+            (tape - left).max(0.0),
+            rows.row_h,
+            1.0,
+        );
         ink(cr, LANE_BORDER);
-        cr.rectangle(0.0, top, tape, 1.0);
+        cr.rectangle(left, top, (tape - left).max(0.0), 1.0);
         let _ = cr.fill();
         let (x0, width) = band_span_px(scene, lane.at, lane.at + lane.dur);
         if width > 0.0 {
@@ -696,7 +710,7 @@ fn draw_lane_rows(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
             .get(index)
             .map(String::as_str)
             .unwrap_or(lane.name.as_str());
-        text_at(cr, 2.0, top + 10.0, plate);
+        text_at(cr, left + 2.0, top + 10.0, plate);
     }
 }
 
@@ -986,6 +1000,19 @@ fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
         crate::ui::cut_lane_paint::paint_bar(cr, &view);
         let _ = cr.restore();
     }
+    // §2's lower edge: "the lane … sits between the selection band above and the picture rows below", and
+    // `spec/img/06-lane.png` draws that seam DASHED — a solid rule would read as yet another lane; the dashes say
+    // "the lane ends here". It sits on the lane's LAST pixel row (`rows.pictures - 1`), not on `rows.pictures`:
+    // that row belongs to the picture cells, and §05's decode gate samples it, so an inked line there reads as
+    // decoded frame pixels. A stroke is a box of the line width centred on its coordinates, so `- 0.5` at width 1
+    // covers exactly one pixel row; the pattern is cleared after or cairo hands it to every later stroke.
+    ink(cr, LANE_BORDER);
+    cr.set_line_width(1.0);
+    cr.set_dash(&LANE_DASH_PX, 0.0);
+    cr.move_to(cut_screen::GUTTER_PX, rows.pictures - 0.5);
+    cr.line_to(tape, rows.pictures - 0.5);
+    let _ = cr.stroke();
+    cr.set_dash(&[], 0.0);
 }
 
 /// §27 Tracks: "each row's first audio track as a strip below it". One plate per recorded row, in the
