@@ -331,17 +331,6 @@ pub fn invalidated_by_marking_change(old: MarkingPass, new: MarkingPass) -> bool
     old != new
 }
 
-/// S1/S5: put every derived field back at its §2 default, with `origin: Default` and no reason.
-///
-/// The origin is `Default`, not `User`, on purpose. A reset restores what the spec says a policy is
-/// when nobody has said anything about it, so it must stay as open to a later derivation as a fresh
-/// project is; stamping `User` would freeze the defaults against S4's never-overwritten rule and make
-/// the ⚙ reset silently dead-end every future User Context change. A value a person actually chose
-/// is what earns `User`, and that arrives through their own edit, not through "put it back".
-pub fn reset_to_defaults(policy: &mut Policy) {
-    *policy = defaults();
-}
-
 /// Whether the policy still matches the context it was derived from.
 ///
 /// This makes §03's "runs after the User Context changed" a checkable fact rather than a hope: the
@@ -507,8 +496,8 @@ pub fn read_target_length(policy: &mut Policy, context: &str) -> Derived {
     if !reading.mentioned {
         return out;
     }
-    // The seconds go through the same door a model's answer goes through, so the hand-set rule cannot be
-    // bypassed by the cheaper reader.
+    // The seconds go through the same door a model's answer goes through, so the cheaper reader cannot
+    // slip past the validation that door holds.
     let proposal = Proposal {
         field: "targetLengthSeconds".to_string(),
         value: format!("{}", reading.seconds),

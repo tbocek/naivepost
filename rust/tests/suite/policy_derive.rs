@@ -1,8 +1,8 @@
 //! F0.7 (Derive the editing policy) — the rules, with no window and no server in sight.
 //!
 //! What is pinned here is the SHAPE of what gets stored, not only which value won: a derived field has
-//! to arrive with `source: model` AND its `because`, because S5's whole point is that a proposal can be
-//! judged rather than merely read. Every assertion below therefore round-trips the real
+//! to arrive with `source: model` AND its `because`, because S4's log line is what makes a proposal
+//! judgeable rather than merely readable. Every assertion below therefore round-trips the real
 //! [`project::Policy`] through `serde_json` and reads the JSON back, so a reason dropped on the way to
 //! disk fails this test even when the in-memory value looks right.
 
@@ -541,6 +541,85 @@ fn f0_7_s4_a_derivation_replaces_whatever_the_field_held() {
         "nothing was wrong with it: {:?}",
         out.refusals
     );
+}
+
+#[test]
+fn f0_7_s4_no_hand_set_field_is_privileged_over_the_context() {
+    // §F0.7 has no form and no precedence rule: "a value changes when the User Context says otherwise",
+    // so NO field is out of the derivation's reach — including one whose project file recorded
+    // `"source": "user"`, the shape the deleted form used to write. Checked over every row of the
+    // catalogue, because a privilege left on any single field would be invisible in a two-field test.
+    for row in policy::derived_fields() {
+        let mut policy = Policy::default();
+        stamp_user(&mut policy, row.field);
+        let before = policy::stored_word(&policy, row.field);
+        // A value the row accepts that differs from what the default holds, so "it landed" cannot be
+        // satisfied by a default that happened to agree.
+        let value = pick_a_value(&row, &before);
+        let reason = format!("the context speaks to {}", row.field);
+        let mut model = Scripted::new(vec![vec![proposal(row.field, value, &reason)]]);
+        let out = policy::derive(&mut policy, "the context says otherwise", &mut |r, f| {
+            model.call(r, f)
+        });
+        assert!(
+            out.applied.contains(&(row.field, Applied::Set)),
+            "{} was refused although it is a catalogue field: {:?}",
+            row.field,
+            out.applied
+        );
+        assert!(out.refusals.is_empty(), "{:?}", out.refusals);
+        assert_eq!(
+            policy::stored_word(&policy, row.field),
+            value,
+            "the proposed value is what stands on {}",
+            row.field
+        );
+        assert_eq!(
+            because_of(&policy, row.field).as_deref(),
+            Some(reason.as_str()),
+            "and it is stored with the reason that moved it"
+        );
+        assert_ne!(
+            before,
+            policy::stored_word(&policy, row.field),
+            "the hand-set value really was replaced"
+        );
+    }
+}
+
+/// Put `Origin::User` on one field without changing its value — the shape an old `naivepost.json` holds.
+fn stamp_user(policy: &mut Policy, field: &str) {
+    match field {
+        "markingPass" => policy.marking_pass.origin = Origin::User,
+        "cutMode" => policy.cut_mode.origin = Origin::User,
+        "captionsPass" => policy.captions_pass.origin = Origin::User,
+        "speedPass" => policy.speed_pass.origin = Origin::User,
+        "decorationsPass" => policy.decorations_pass.origin = Origin::User,
+        "targetLengthSeconds" => policy.target_length_seconds.origin = Origin::User,
+        other => unreachable!("{other} is not a catalogue field"),
+    }
+}
+
+/// The `because` a policy holds for one field, read off the stored JSON through this file's `stored`.
+fn because_of(policy: &Policy, field: &str) -> Option<String> {
+    stored(policy, field)
+        .get("because")
+        .and_then(|b| b.as_str())
+        .map(str::to_string)
+}
+
+/// A value this row accepts that is not the one its field now holds, taken from the row itself so a new
+/// spelling in the catalogue needs no change here.
+fn pick_a_value(row: &policy::CatalogueRow, held: &str) -> &'static str {
+    if row.values.is_empty() {
+        // The number row: §10's "none" is 0, so fifteen minutes is a change whatever it held.
+        return "900";
+    }
+    row.values
+        .iter()
+        .copied()
+        .find(|v| *v != held)
+        .unwrap_or_else(|| panic!("{} offers nothing but its current value", row.field))
 }
 
 #[test]
