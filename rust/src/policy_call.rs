@@ -339,7 +339,7 @@ fn live_policy() -> Policy {
 }
 
 /// Say which policy the next round should answer `get_context` with. Called by the window immediately
-/// before it runs a derivation, so the form's truth and the model's view of it cannot drift.
+/// before it runs a derivation, so what the session holds and the model's view of it cannot drift.
 pub fn set_live_policy(policy: &Policy) {
     LIVE_POLICY.with(|slot| *slot.borrow_mut() = Some(policy.clone()));
 }
