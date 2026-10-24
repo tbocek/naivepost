@@ -325,6 +325,38 @@ pub fn paint(
     // its six rows in `fx_lane::MENU_ORDER`. Nothing drew it before -- the screen name existed so the toolbar
     // guard would accept it, and the shot came out byte-identical to a bare Cut page, popover never popped.
     if screen == "06-effect-menu" {
+        // §06 answer 3(b) is a picture of the PAGE with the menu over it — thumbnails, waveforms and a framed
+        // preview all visible around the popup. So this screen seeds the same page material `06-lane` stages (one
+        // recording, a kept scene, a real extracted frame where the band lists them) through the same doors;
+        // without it the shot behind the menu was a blank preview plate and an empty lane.
+        let menu_cut = crate::cut::Cut {
+            segs: vec![crate::cut::Seg {
+                s: 0.0,
+                e: 120.0,
+                cam: 0,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        ui::seed_review_cut(window, &menu_cut);
+        ui::set_session_recordings(&[crate::timeline::Recording {
+            base: "session-tape".to_string(),
+            start: 0.0,
+            end: 120.0,
+        }]);
+        ui::set_line_position(window, cut_line::LinePos { t: 5.0 });
+        crate::snapshot_face::seed_snapshot_frame(dir, "session-tape", 5.0);
+        ui::cut_picture::set_preview_camera_base("session-tape");
+        ui::cut_picture::set_snapshot_dir(dir);
+        ui::refresh_camera_rows(window);
+        // The envelope cache, so the row's wave strip has peaks to draw rather than a flat baseline (the same
+        // door `06-lane` stages through; harmless when the wave build cannot run).
+        if let Err(why) = crate::snapshot_lane::stage_envelope(dir, "session-tape") {
+            eprintln!("snapshot: 06-effect-menu wave cache | {why}");
+        }
+        ui::cut_tracks::allow_frame_decoding();
+        ui::cut_view::repaint_page(window);
+        let _ = ui::cut_picture::refresh(window);
         let rows = crate::snapshot_effect_menu::stage(window);
         let want = crate::snapshot_effect_menu::labels_in_menu_order();
         // Compare the ORDER of the labels, read off the widget tree, against the order the spec gives. The row

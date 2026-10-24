@@ -460,13 +460,32 @@ pub fn paint_laid_pieces_in(
 /// This recording's cached mono envelope, if `cache/waves` holds one that applies. Best-effort by design:
 /// a cache that cannot be read is a missing decoration, never a reason the strip draws nothing.
 fn cached_peaks(base: &str) -> Option<Vec<u8>> {
-    let root = std::env::current_dir().ok()?;
-    let tree = crate::layout::Tree::new(crate::startup::session_dir(&root)).ok()?;
-    let meta = std::fs::metadata(tree.wave(base)).ok()?;
-    let wave = crate::wave::read(&tree, base, meta.len() as i64, 0)
+    // Which folder's cache to read: the shot's own project first, then the working copy beside the launch. A
+    // headless snapshot renders a FIXTURE in another directory (`cut_picture::set_snapshot_dir`) and stages its
+    // envelope beside THAT fixture, so without this the strip asks the launch's working copy, finds nothing, and
+    // draws the flat baseline the spec's picture does not show — the same reason `install` lists the bench's
+    // frames through the same door. A project folder's inner `session.naivepost` is tried too, because that is
+    // where the staging doors (`snapshot_lane::stage_envelope`) put a session's own cache.
+    let shot = crate::ui::cut_picture::snapshot_frame_tree();
+    let from_launch = std::env::current_dir()
         .ok()
-        .flatten()?;
-    wave.chans.into_iter().next()
+        .and_then(|root| crate::layout::Tree::new(crate::startup::session_dir(&root)).ok());
+    let candidates = shot.iter().cloned().chain(from_launch).flat_map(|tree| {
+        let inner = crate::layout::Tree::new(crate::startup::session_dir(tree.dir())).ok();
+        std::iter::once(tree).chain(inner)
+    });
+    for tree in candidates {
+        let Ok(meta) = std::fs::metadata(tree.wave(base)) else {
+            continue;
+        };
+        if let Some(wave) = crate::wave::read(&tree, base, meta.len() as i64, 0)
+            .ok()
+            .flatten()
+        {
+            return wave.chans.into_iter().next();
+        }
+    }
+    None
 }
 
 // --- what the page holds between the press and the release ---------------------------------------------

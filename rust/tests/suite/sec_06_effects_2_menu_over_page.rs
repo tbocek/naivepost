@@ -35,6 +35,21 @@ static RAN_SHOT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 const MAX_PANEL_SHARE_OF_WIDTH: f64 = 1.0 / 3.0;
 const MAX_PANEL_SHARE_OF_HEIGHT: f64 = 2.0 / 3.0;
 
+/// Decode one pixel of a PNG the way a viewer would: through gdk-pixbuf, from the file on disk.
+fn pixel_at(path: &std::path::Path, x: i32, y: i32) -> (u32, u32, u32) {
+    let pixbuf = gtk4::gdk_pixbuf::Pixbuf::from_file(path)
+        .unwrap_or_else(|why| panic!("{}: {why}", path.display()));
+    let (bytes, stride) = unsafe {
+        let raw = std::slice::from_raw_parts(
+            pixbuf.pixels().as_ptr(),
+            (pixbuf.height() * pixbuf.rowstride()) as usize,
+        );
+        (raw.to_vec(), pixbuf.rowstride() as usize)
+    };
+    let at = y as usize * stride + x as usize * 3;
+    (bytes[at] as u32, bytes[at + 1] as u32, bytes[at + 2] as u32)
+}
+
 /// Paint the screen's own shot into a file and read the numbers back off the ARTIFACT.
 fn paint_the_shot(app: &adw::Application) {
     let root = temp_root("shot");
@@ -57,6 +72,23 @@ fn paint_the_shot(app: &adw::Application) {
         naivepost::shell::WINDOW_MIN_H,
     );
     window.present();
+    // The page material the spec's picture shows AROUND the menu, staged through the same doors the snapshot
+    // bench's `06-effect-menu` arm uses: a session recording for the band, and one real extracted frame where the
+    // page lists them. Without these the assert below would be checking an empty plate that no screen ships.
+    // The frames must sit in the folder the preview lists them from — `set_snapshot_dir` names a PROJECT folder,
+    // so this is the temp root's own `session.naivepost`, exactly as `sec_05_cut_1_screen_screen.rs` plants one.
+    let session = naivepost::startup::session_dir(&root);
+    std::fs::create_dir_all(&session).expect("the session folder exists");
+    ui::set_session_recordings(&[naivepost::timeline::Recording {
+        base: "session-tape".to_string(),
+        start: 0.0,
+        end: 120.0,
+    }]);
+    ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 5.0 });
+    snapshot_face::seed_structured_frame(&session, "session-tape", 5.0);
+    ui::cut_picture::set_preview_camera_base("session-tape");
+    ui::cut_picture::set_snapshot_dir(&session);
+    let _ = ui::cut_picture::refresh(&window);
     // Drive the frame clock until the layout has actually been PAINTED. A widget only gains a render node once GTK
     // has drawn it, and under X with no compositor nothing paints unless something asks for frames — which is what
     // `snapshot::run` gets from its own drain and what a bare `present()` + `settle()` does not. Without this the
@@ -85,6 +117,39 @@ fn paint_the_shot(app: &adw::Application) {
         },
     );
     let (entries, panel, at) = painted.expect("the menu paints over the page");
+    // (d) THE PAGE IS PAINTED BEHIND THE MENU, not blank: the preview shows a real frame. Measured off the
+    // ARTIFACT — inside the picture's own box the pixels are the staged frame's bands, not an empty white plate.
+    // `spec/QUESTIONS.md` answer 3(b) asks for "the toolbar and the tracks around it", and an earlier shot of this
+    // screen had a white preview and an empty lane behind a perfectly placed menu.
+    let picture = ui::find_source_widget(&window, "preview-picture")
+        .expect("the Cut page drew the preview picture");
+    let pbounds = picture
+        .compute_bounds(window.upcast_ref::<gtk4::Widget>())
+        .expect("the picture has a box");
+    let (px, py) = (
+        (pbounds.x() + pbounds.width() / 2.0).round() as i32,
+        // The staged frame's MIDDLE band: the picture is fitted into the plate and letterboxed, so a sample at
+        // the box's own centre can land in the letterbox rather than on the frame.
+        (pbounds.y() + pbounds.height() / 2.0).round() as i32,
+    );
+    let centre = pixel_at(&out, px, py);
+    // Any of the staged frame's three bands counts as "a frame is on the panel": which one lands where depends on
+    // how the plate letterboxes it, and none of them is the empty plate's near-white. Asked of the doors that wrote
+    // the frame (`snapshot_face`'s band constants), not typed here.
+    let off = |got: u32, want: f64| (got as f64 - want).abs() <= 12.0;
+    let bands = [
+        snapshot_face::BAND_SKY,
+        snapshot_face::BAND_MID,
+        snapshot_face::BAND_LOWER,
+    ];
+    let on_frame = bands.iter().any(|(r, g, b)| {
+        off(centre.0, r * 255.0) && off(centre.1, g * 255.0) && off(centre.2, b * 255.0)
+    });
+    assert!(
+        on_frame,
+        "the preview picture reads {centre:?}, which is none of the staged frame's bands {bands:?}: the page \
+         behind the menu has no frame on it"
+    );
     assert_eq!(
         entries + 1,
         rows.len(),

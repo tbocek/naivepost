@@ -20,7 +20,7 @@ use crate::ui::cut_picture_rows as picture_rows;
 /// The band's picture rows live in their own file (this one is at its size budget); `paint_at` calls them and the
 /// doors below stay re-exported so every existing caller (`params.rs`, the §05/§06 checks) keeps its path.
 pub use crate::ui::cut_picture_rows::{
-    allow_frame_decoding, batch_of, frame_step_seconds, path_x, THUMB_BATCH,
+    allow_frame_decoding, batch_of, first_second, frame_step_seconds, path_x, THUMB_BATCH,
 };
 use crate::{clock, cut, cut_fold, cut_screen, cut_trim, fx_lane, layout, timeline, tools};
 
@@ -1253,10 +1253,13 @@ fn draw_name_plates(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
     cr.set_font_size(9.0);
     ink(cr, (0.15, 0.15, 0.2));
+    // Past the gutter, not at x = 2: §1 puts the plate ON the row ("pinned name plate per row"), while the gutter's
+    // first 30 px carry the fold-all badge and the sound switches. Inked at 2 the name ran under the rail and read as
+    // clipped letters — the dark rail is painted AFTER this pass, so it ate whatever landed inside its width.
     for (index, recording) in scene.recordings.iter().enumerate() {
         let y = rows.pictures + index as f64 * rows.row_h + 10.0;
         for word in plates(scene, recording) {
-            text_at(cr, 2.0, y, &word);
+            text_at(cr, cut_screen::GUTTER_PX + 2.0, y, &word);
         }
     }
 }
