@@ -591,36 +591,20 @@ fn detach(page_box: &gtk::Box, names: &[String]) -> Vec<gtk::Widget> {
     ordered
 }
 
-/// One shot at re-asking §A's opening for the Cut page's own divider, for one window.
-///
-/// A `gtk::Paned` clamps every `set_position` into `[start minimum, total − end minimum]`, and the moment
-/// that stops clamping is the first real allocation (§1's minimum window): before it the paned answers 1 px
-/// tall and any ask lands on the clamp. The shell's divider does exactly this (`window_divider`), and GTK 4
-/// has no allocate signal to hook, so a bounded one-shot idle is the door — no sleep, no guessed wait.
-/// One shot at putting the form column back at the TOP of its readings, for one scroller. Same door as
-/// [`rest_opening_once`], same reason: §1's "the idle column starts with the readings" has to hold at the
-/// size the page is actually painted at, not only at the size it was built at.
+/// Puts the form column at the TOP of its readings once the scroller has a size: §1's "the idle column
+/// starts with the readings" has to hold at the size the page is actually painted at.
 pub fn rest_scroll_once(scroller: &gtk::ScrolledWindow) {
-    let asked = std::rc::Rc::new(std::cell::Cell::new(false));
-    let held = scroller.clone();
-    glib::idle_add_local_once(move || {
-        if held.height() <= 1 || asked.get() {
-            return;
-        }
-        asked.set(true);
-        crate::ui::cut_form_frame::scroll_to_top_of(&held);
+    crate::ui::settle::once_sized("the form column at the top of its readings", scroller, |scroller| {
+        crate::ui::cut_form_frame::scroll_to_top_of(scroller);
     });
 }
 
+/// Asks §A's opening of the Cut page's own divider once the paned has a size. A `gtk::Paned` clamps every
+/// `set_position` into `[start minimum, total − end minimum]`, and before its first real allocation it
+/// answers 1 px tall, so an ask made earlier lands on the clamp.
 pub fn rest_opening_once(divider: &gtk::Paned) {
-    let asked = std::rc::Rc::new(std::cell::Cell::new(false));
-    let held = divider.clone();
-    glib::idle_add_local_once(move || {
-        if held.height() <= 1 || asked.get() {
-            return;
-        }
-        asked.set(true);
-        held.set_position(SELF_SPLIT_TOP_PX);
+    crate::ui::settle::once_sized("the Cut page's split at its opening", divider, |divider| {
+        divider.set_position(SELF_SPLIT_TOP_PX);
     });
 }
 

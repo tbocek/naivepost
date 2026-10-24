@@ -71,7 +71,7 @@ fn screen_page(screen: &str) -> Option<&'static str> {
     }
 }
 
-pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
+pub fn run(screen: &str, dir: &Path, out: &Path, on: crate::snapshot_ready::ShotOn) -> Result<(), String> {
     let page = screen_page(screen).ok_or_else(|| format!("unknown screen {screen}"))?;
     if !dir.join(project::PROJECT_FILE).is_file() {
         return Err(format!("no {} in {}", project::PROJECT_FILE, dir.display()));
@@ -79,6 +79,11 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
     let model = project::load(dir)?;
 
     gtk::init().map_err(|err| err.to_string())?;
+    // No animations in a shot: an overlay scrollbar still easing in was the only thing moving after ready
+    // on two screens, and a picture taken mid-animation depends on when it was taken.
+    if let Some(settings) = gtk::Settings::default() {
+        settings.set_gtk_enable_animations(false);
+    }
     // Non-registering: a snapshot must not claim the app id or wait on a session bus.
     let app = gtk::Application::builder()
         .application_id(ui::APP_ID)
@@ -1110,6 +1115,13 @@ const FORM_UNDER_PX: i32 = 380;
             let want_h = window.default_height().max(crate::shell::WINDOW_MIN_H);
             window.set_size_request(want_w, want_h);
             window.set_default_size(want_w, want_h);
+            // The resize reaches the X window at a later frame: owed until the surface has the size asked.
+            crate::ui::settle::when(
+                "the window at the shot's size",
+                &window,
+                move |window| window.surface().is_some_and(|s| (s.width(), s.height()) == (want_w, want_h)),
+                |_| {},
+            );
             crate::snapshot_face::pump_context(32);
             // …and the Cut page's two dividers re-ask §A's openings now that the window has §1's real size:
             // headless a `notify::height` never fires for a widget allocated once, so both asks made during the
@@ -1132,9 +1144,31 @@ const FORM_UNDER_PX: i32 = 380;
         if let Some(said) = crate::snapshot_band::report(&window) {
             println!("snapshot: {said}");
         }
-        // One more cycle after the map: the map happens before the first frame is drawn. The paint
-        // and the quit are synchronous here, so no second mapped window is ever waited on.
-        glib::timeout_add_local_once(std::time::Duration::from_millis(300), move || {
+        // The picture is taken at `--shot-on`'s event, on a painted frame of the widget it paints
+        // (`snapshot_ready`): no guessed wait, and a screen that does not settle fails naming why.
+        let quit = app.clone();
+        let screen_for_report = screen.clone();
+        let shot = painted.clone();
+        // A menu painted over the page is staged now, in a holder of its own, so it is laid out when the
+        // ready event comes; that screen's event is the menu shown, not the page alone.
+        let staged_menu = if menu_over_page {
+            match crate::snapshot_effect_menu::stage_open_over_window(&window) {
+                Ok(menu) => Some(menu),
+                Err(err) => {
+                    eprintln!("snapshot: {err}");
+                    OUT.with(|e| *e.borrow_mut() = Some(err));
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let also: Vec<gtk::Widget> = staged_menu.iter().map(|menu| menu.holder()).collect();
+        let on = match (&on, &staged_menu) {
+            (crate::snapshot_ready::ShotOn::Ready, Some(_)) => crate::snapshot_ready::ShotOn::Open(crate::snapshot_effect_menu::SHOT_MENU_NAME.to_string()),
+            _ => on.clone(),
+        };
+        crate::snapshot_ready::shoot_when_ready(&shot, also, on, move || {
             // The settings dialog's staged ffmpeg verdict goes on now: the map has happened, so the label
             // can hold a mark, and this runs before the pixels are taken.
             crate::snapshot_settings::apply_staged_badge();
@@ -1155,7 +1189,11 @@ const FORM_UNDER_PX: i32 = 380;
                 // (`spec/QUESTIONS.md`, §06 answer 3(b)) — the `04-prompt-picker` precedent above. The popover
                 // itself lives on a separate surface and cannot come out of the window's render node, which is why
                 // the panel is blitted on rather than popped and hoped for.
-                match crate::snapshot_effect_menu::paint_open_over_window(&window, &out) {
+                let painted_menu = match &staged_menu {
+                    Some(menu) => crate::snapshot_effect_menu::paint_staged(&window, menu, &out),
+                    None => Err("the ✚ Effect menu was not staged".to_string()),
+                };
+                match painted_menu {
                     Ok((rows, panel, at)) => println!(
                         "snapshot: 06-effect-menu | {rows} rows over the page, panel {}x{} at x={},y={}",
                         panel.0, panel.1, at.0, at.1
@@ -1263,7 +1301,15 @@ const FORM_UNDER_PX: i32 = 380;
                     OUT.with(|e| *e.borrow_mut() = Some(format!("{sidecar}: {err}")));
                 }
             }
-            app.quit();
+        }, move |result| {
+            match result {
+                Ok(said) => println!("snapshot: {screen_for_report} {said}"),
+                Err(err) => {
+                    eprintln!("snapshot: {screen_for_report}: {err}");
+                    OUT.with(|e| *e.borrow_mut() = Some(err));
+                }
+            }
+            quit.quit();
         });
     });
     // The handler closes the last window, which quits the main loop. A nested

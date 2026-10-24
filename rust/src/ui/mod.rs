@@ -81,6 +81,7 @@ pub mod run_close;
 /// is open, and where the next Save goes.
 pub mod save_apply;
 pub mod settings;
+pub mod settle;
 /// §03-shell#5 -- each Settings section's ⓘ: what that section's server is expected to speak.
 pub mod settings_info;
 /// F0.1 §S2/§S4 and §2 — the narration autosave timer, the bar's idle pulse and the run line that goes
