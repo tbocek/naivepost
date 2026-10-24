@@ -92,6 +92,19 @@ fn f2_14_s2b_only_the_switched_on_passes_are_asked() {
         cut_suggest_passes::order(&policy_with(true, false, false)),
         vec![Pass::Captions]
     );
+    // §S2b's count, read off the same list: the run holds the cut PLUS one job per switched-on pass, so
+    // "up to four jobs in the run" is 4 with all three on and 1 with none — a number the policy answers,
+    // never a control that stands beside the run.
+    assert_eq!(
+        1 + cut_suggest_passes::order(&policy_with(true, true, true)).len(),
+        4,
+        "all three on: the cut plus its three passes"
+    );
+    assert_eq!(
+        1 + cut_suggest_passes::order(&policy_with(false, false, false)).len(),
+        1,
+        "none on: the run is the cut alone"
+    );
     RAN_ORDER.store(true, Ordering::SeqCst);
 }
 

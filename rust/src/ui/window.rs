@@ -1246,9 +1246,9 @@ pub const STRIP_WIDTH: i32 = 480;
 // F3.10 S1–S5, the pass itself, lives in [`crate::ui::cut_speeds_pass`]: window.rs is past its size budget,
 // and the pass needs none of this file's state — only the doors it already exports.
 
-/// F3.11's label. As with ✐ Captions and ⏩ Speeds, the spec's flowchart starts at a model call and names no
-/// control: a named button is the decision taken in its spirit, so the pass can be started and its gate seen.
-pub const DECORATIONS_PASS_LABEL: &str = "\u{2728} Decorations";
+// The three post-cut passes wear NO label of their own here: §F2.14 S2b makes them "jobs in the run, each
+// shown in the run bar's progress and none with a button of its own", so there is no control to name. The one
+// sentence that says a pass's name is `crate::cut_suggest_words::WORDS_NEEDED`, and it spells it inline.
 
 // F3.11 S1–S5, the decorations pass itself, lives in [`crate::ui::cut_effects_pass`]: window.rs is
 // past its size budget, and the pass needs none of this file's state — only the doors it exports.
@@ -1358,10 +1358,9 @@ impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
     }
 }
 
-/// F3.9's label. The spec's flowchart starts at "after the cut" and names no control, so nothing existed to
-/// wire the pass to: a named button is the decision taken in its spirit — the pass has to be startable, and its
-/// gate (P.policy.captionsPass) has to be visible rather than inferred from a silent grey bar.
-pub const CAPTIONS_PASS_LABEL: &str = "\u{2710} Captions";
+// The captions pass's name lives in its one speaker, `crate::cut_suggest_words::WORDS_NEEDED`. It is not
+// repeated here: §F2.14 S2b gives the post-cut passes no button of their own, so there is no control to name,
+// and a constant nothing reads is one more thing that can drift from the sentence it claims to spell.
 
 // The §1 widget doors live in `window_doors` (window.rs is past its size budget); these are the same names,
 // re-exported under the paths every other module and test already reaches them through.

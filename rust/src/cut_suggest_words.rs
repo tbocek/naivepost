@@ -45,9 +45,9 @@ pub enum Words {
 }
 
 /// §1's refusal sentence, printed when words are needed. `spec/05-cut.md` §1:
-/// "▶ says 'Words needed – add them with ✐ Captions first' and runs nothing". The glyph is the one
-/// the run bar's own button carries (`ui::window::CAPTIONS_PASS_LABEL`), so the sentence points at the
-/// button it names rather than a look-alike.
+/// "▶ says 'Words needed – add them with ✐ Captions first' and runs nothing". The glyph is the captions
+/// pass's own name (`ui::cut_pass_gates::SPEEDS_PASS_LABEL` is its sibling for the speeds job) — a name in a
+/// sentence, not a control: §F2.14 S2b gives the post-cut passes no button of their own.
 pub const WORDS_NEEDED: &str = "Words needed \u{2013} add them with \u{2710} Captions first";
 
 /// §5's more specific reason for the two causes that have one: no file at all is the same refusal;

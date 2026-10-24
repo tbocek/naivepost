@@ -81,13 +81,14 @@ pub fn paint(
 
     // §06-effects#3's own screen: the Cut page after all THREE post-cut passes have placed what the model was
     // answered with — ✐ Captions (F3.9), ⏩ Speeds (F3.10) and ✨ Decorations (F3.11) — so the one shot shows the
-    // run-bar row's three job buttons having each done its job, and the lane showing a caption, a fast stretch
+    // run's three pass jobs having each done its job (no buttons: §F2.14 S2b gives the passes none), and the
+    // lane showing a caption, a fast stretch
     // and a zoom together. No `spec/img/06-flows.png` exists, so this is a program-side screen like `06-speeds`
     // and `06-decorations`, driven through the page's own doors and never by poking state:
     //   1. a kept two-clip cut (the fixture keeps one clip and `fx: []`, which answers "nothing to ask about");
     //   2. the three `run_*_pass_with_reply` doors — scripted for the TELEPHONE only. Every rule after the reply
     //      (membership, the caption refusal, the app's own decoration defaults) and every write (`record_edit`,
-    //      the lane repaint, the status row) is the pass's own, called exactly as its button calls it;
+    //      the lane repaint, the status row) is the pass's own, called exactly as the run after the cut calls it;
     //   3. the count is read back off the page, not off the returned sentences, so a shot that printed nothing
     //      reaching the cut would fail rather than print a number anyway.
     if screen == "06-flows" {
