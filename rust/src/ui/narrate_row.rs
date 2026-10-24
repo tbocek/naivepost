@@ -60,6 +60,9 @@ pub fn build(
         entry, false,
     ))));
     status.set_widget_name(&format!("line-status-{index}"));
+    // The header's fixed parts (the time field and the four buttons) come first; a status that cannot fit
+    // ellipsizes rather than shoving them out of the row. §A.5 puts the end time on this line, not wrapped under it.
+    status.set_ellipsize(gtk::pango::EllipsizeMode::End);
     header.append(&status);
 
     // --- **21**: the fit warning, APPENDED to the status on the same header line ----------------------
@@ -68,6 +71,11 @@ pub fn build(
     let warning = gtk::Label::new(Some(&narrate_screen::fit_warning(fit).unwrap_or_default()));
     warning.set_widget_name(&format!("line-warning-{index}"));
     warning.set_xalign(0.0);
+    // Same rule as the status: the red fit sentence is long ("⚠ ~11 s of speech, 8 s before the clip ends", or
+    // the longer "run N s past it…" one), and at its full width it pushed ▶ ↻ ＋ 🗑 past the column's right edge.
+    // Ellipsizing keeps §1's order — the buttons stay at the header line's RIGHT END — and the whole sentence is
+    // still readable in the row's tooltip.
+    warning.set_ellipsize(gtk::pango::EllipsizeMode::End);
     if narrate_screen::row_is_red(fit) {
         warning.add_css_class("error");
         // A.5 marks THE ROW red, not the warning alone.

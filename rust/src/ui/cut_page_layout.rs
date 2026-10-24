@@ -594,9 +594,13 @@ fn detach(page_box: &gtk::Box, names: &[String]) -> Vec<gtk::Widget> {
 /// Puts the form column at the TOP of its readings once the scroller has a size: §1's "the idle column
 /// starts with the readings" has to hold at the size the page is actually painted at.
 pub fn rest_scroll_once(scroller: &gtk::ScrolledWindow) {
-    crate::ui::settle::once_sized("the form column at the top of its readings", scroller, |scroller| {
-        crate::ui::cut_form_frame::scroll_to_top_of(scroller);
-    });
+    crate::ui::settle::once_sized(
+        "the form column at the top of its readings",
+        scroller,
+        |scroller| {
+            crate::ui::cut_form_frame::scroll_to_top_of(scroller);
+        },
+    );
 }
 
 /// Asks §A's opening of the Cut page's own divider once the paned has a size. A `gtk::Paned` clamps every
