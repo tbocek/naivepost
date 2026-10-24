@@ -101,21 +101,20 @@ fn paint_the_shot(app: &adw::Application) {
     let out = root.join("06-effect-menu.png");
     // The snapshot asks for the PNG at the window's size before taking it (`snapshot::run` → `set_shot_size`).
     snapshot_face::set_shot_size(window.width().max(1), window.height().max(1));
-    // The window only yields a render node once GTK has actually drawn it, and under X with no compositor that
-    // can take more frames than one pass (the same shot succeeded on its own and failed inside the wider
-    // `sec_06_effects_2` run). Retry until the paint works, failing by name after the shared deadline rather
-    // than guessing a number of loop turns.
+    // The menu goes into a holder of its own, as the shot stages it, and is painted once GTK has drawn that
+    // holder: until then it has no render node to paint from.
+    let staged = snapshot_effect_menu::stage_open_over_window(&window).expect("the menu stages in its holder");
+    common::wait_for_stable_layout(&window);
     let mut painted = None;
-    common::wait_until(
-        "the Cut-page window produced a render node to paint the menu shot from",
-        || match snapshot_effect_menu::paint_open_over_window(&window, &out) {
+    common::wait_until("the menu's holder was drawn and the menu painted over the page", || {
+        match snapshot_effect_menu::paint_staged(&window, &staged, &out) {
             Ok(result) => {
                 painted = Some(result);
                 true
             }
             Err(_) => false,
-        },
-    );
+        }
+    });
     let (entries, panel, at) = painted.expect("the menu paints over the page");
     // (d) THE PAGE IS PAINTED BEHIND THE MENU, not blank: the preview shows a real frame. Measured off the
     // ARTIFACT — inside the picture's own box the pixels are the staged frame's bands, not an empty white plate.

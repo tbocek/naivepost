@@ -102,6 +102,25 @@ _files filter:
     fi
 
 # just snapshot 03-window -> shots/03-window.png
-snapshot screen:
-    @mkdir -p shots
-    xvfb-run -a env GSK_RENDERER=cairo GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory cargo run -- --snapshot {{screen}} --project fixtures/demo.naivepost --out shots/{{screen}}.png
+snapshot screen *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # A working directory of its own with a fresh copy of the fixture: the app keeps its session folder
+    # and its caches beside the launch, so a shot run in rust/ read what the last one had left there and
+    # wrote into the fixture, and two runs of the same code drew two different pictures.
+    # The directory is the same for every run of a screen, since the header bar shows the project's path;
+    # a lock keeps two runs of one screen apart.
+    here="$PWD"
+    mkdir -p shots /tmp/naivepost-shot
+    exec 9>"/tmp/naivepost-shot/{{screen}}.lock"
+    flock 9
+    work="/tmp/naivepost-shot/{{screen}}"
+    rm -rf "$work"
+    mkdir -p "$work"
+    trap 'rm -rf "$work"' EXIT
+    cp -r fixtures/demo.naivepost "$work/"
+    cargo build --quiet
+    cd "$work"
+    xvfb-run -a env GSK_RENDERER=cairo GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory \
+        cargo run --quiet --manifest-path "$here/Cargo.toml" -- --snapshot {{screen}} \
+        --project "$work/demo.naivepost" --out "$here/shots/{{screen}}.png" {{args}}

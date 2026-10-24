@@ -154,7 +154,7 @@ pub fn shot_sidecar_wanted() -> bool {
 /// `spec/QUESTIONS.md`, §06 answer 3(b): "06-effect-menu is the Cut page with the '+ Effect' menu open under its
 /// button, the toolbar and the tracks around it: the render shows the menu alone, stretched over the whole window…
 /// the snapshot draws the window first and the open menu on top of it, where it opens and at its own size". So the
-/// PAGE keeps `<name>.png` and [`paint_open_over_window`] hangs the menu over it — the same reversal
+/// PAGE keeps `<name>.png` and [`paint_staged`] hangs the menu over it — the same reversal
 /// `snapshot_prompt_picker::is_picker_subject` records for `04-prompt-picker`. The door stays (and stays asked) so
 /// the naming rule has one source rather than a screen name hardcoded in `snapshot::run`.
 pub fn is_menu_subject(_screen: &str) -> bool {
@@ -217,14 +217,58 @@ pub fn panel_y(button_y: f32, button_h: f32, panel_h: i32, win_h: i32) -> f32 {
 /// of the popped menu shows a page with no menu. The panel gets its own mapped top level only long enough to gain
 /// a render node, sized from its OWN measure (never the window's ask, which is what once stretched six rows over
 /// a 1343×900 frame).
-/// What [`paint_open_over_window`] reports: how many menu entries were painted, the panel's own size, and where
+/// What [`paint_staged`] reports: how many menu entries were painted, the panel's own size, and where
 /// its top-left landed in the frame. Named because the bare tuple tripped `clippy::type_complexity`.
 pub type MenuShot = (usize, (i32, i32), (i32, i32));
 
-pub fn paint_open_over_window(
-    window: &adw::ApplicationWindow,
-    out: &Path,
-) -> Result<MenuShot, String> {
+/// The menu's holder: its own top level, shown before the shot so GTK has laid it out by the time the
+/// picture is taken (`snapshot_ready` waits for it by [`SHOT_MENU_NAME`]), instead of being shown inside the
+/// shot and given a fixed number of loop turns.
+pub struct StagedMenu {
+    holder: gtk::Window,
+    copy: gtk::Box,
+    rows: usize,
+    width: i32,
+    height: i32,
+}
+
+/// The name of the staged menu's rows: what `--shot-on open:` waits for on this screen.
+pub const SHOT_MENU_NAME: &str = "effect-shot-menu";
+
+impl StagedMenu {
+    pub fn holder(&self) -> gtk::Widget {
+        self.holder.clone().upcast()
+    }
+}
+
+/// Copies the ✚ Effect menu's rows into a holder of their own and shows it, sized from the panel's OWN
+/// measure (never the window's ask, which is what once stretched six rows over a 1343×900 frame).
+pub fn stage_open_over_window(window: &adw::ApplicationWindow) -> Result<StagedMenu, String> {
+    let button = menu_button(window, "effect-button");
+    let (copy, rows) = copied_rows(&button)?;
+    install_shot_css();
+    copy.add_css_class("effect-shot-menu");
+    copy.set_widget_name(SHOT_MENU_NAME);
+    let width = panel_width();
+    // Filled before it is measured: a `gtk::Box` shrink-wraps to its labels' natural width, which is how a
+    // "measured" panel once came out the width of the whole window.
+    copy.set_halign(gtk::Align::Fill);
+    copy.set_hexpand(true);
+    let height = panel_height(copy.upcast_ref());
+    let holder = gtk::Window::new();
+    holder.set_decorated(false);
+    holder.set_default_size(width, height);
+    holder.set_child(Some(&copy));
+    holder.present();
+    // Its own top level, with its own frames: owed until GTK has given it a size.
+    crate::ui::settle::when("the menu laid out in its holder", &holder, |holder| holder.width() > 0 && holder.height() > 0, |_| {});
+    Ok(StagedMenu { holder, copy, rows, width, height })
+}
+
+/// Paints the Cut page with the staged menu OVER it, into `out`: the window first, then the menu where the
+/// popover would sit, at its own size; then closes the holder. A holder not painted yet has no render node:
+/// that is an error, and the holder stays open for another try.
+pub fn paint_staged(window: &adw::ApplicationWindow, menu: &StagedMenu, out: &Path) -> Result<MenuShot, String> {
     let button = menu_button(window, "effect-button");
     let bounds = button
         .compute_bounds(window.upcast_ref::<gtk::Widget>())
@@ -232,60 +276,25 @@ pub fn paint_open_over_window(
     let (asked_w, asked_h) = crate::snapshot_face::asked_shot_wh();
     let (w, h) = (
         if asked_w > 0 { asked_w } else { window.width() },
-        if asked_h > 0 {
-            asked_h
-        } else {
-            window.height()
-        },
+        if asked_h > 0 { asked_h } else { window.height() },
     );
-    let (copy, rows) = copied_rows(&button)?;
-    install_shot_css();
-    copy.add_css_class("effect-shot-menu");
-    let width = panel_width();
-    // Filled before it is measured: a `gtk::Box` shrink-wraps to its labels' natural width, which is how a
-    // "measured" panel once came out the width of the whole window.
-    copy.set_halign(gtk::Align::Fill);
-    copy.set_hexpand(true);
-    let height = panel_height(copy.upcast_ref());
-    crate::snapshot_face::pump_context(16);
+    let (x, y) = (
+        panel_x(bounds.x(), bounds.width(), menu.width, w).floor(),
+        panel_y(bounds.y(), bounds.height(), menu.height, h).floor(),
+    );
     let surface = crate::snapshot_face::render_surface(window.upcast_ref(), w, h)?;
     let cr = cairo::Context::new(&surface).map_err(|err| err.to_string())?;
-    let holder = gtk::Window::new();
-    holder.set_decorated(false);
-    holder.set_default_size(width, height);
-    holder.set_child(Some(&copy));
-    holder.present();
-    crate::snapshot_face::pump_context(64);
-    let painted =
-        crate::snapshot_face::render_surface(copy.upcast_ref(), width, height).and_then(|panel| {
-            cr.set_source_surface(
-                &panel,
-                panel_x(bounds.x(), bounds.width(), width, w).floor() as f64,
-                panel_y(bounds.y(), bounds.height(), height, h).floor() as f64,
-            )
-            .map_err(|err| err.to_string())?;
-            cr.paint().map_err(|err| err.to_string())
-        });
-    holder.close();
+    let painted = crate::snapshot_face::render_surface(menu.copy.upcast_ref(), menu.width, menu.height).and_then(|panel| {
+        cr.set_source_surface(&panel, x as f64, y as f64).map_err(|err| err.to_string())?;
+        cr.paint().map_err(|err| err.to_string())
+    });
     painted?;
+    menu.holder.close();
     let mut file = std::fs::File::create(out).map_err(|err| err.to_string())?;
-    surface
-        .write_to_png(&mut file)
-        .map_err(|err| err.to_string())?;
-    Ok((
-        rows,
-        (width, height),
-        (
-            panel_x(bounds.x(), bounds.width(), width, w).floor() as i32,
-            panel_y(bounds.y(), bounds.height(), height, h).floor() as i32,
-        ),
-    ))
+    surface.write_to_png(&mut file).map_err(|err| err.to_string())?;
+    Ok((menu.rows, (menu.width, menu.height), (x as i32, y as i32)))
 }
 
-/// The popover's rows as a NEW box (header first, then one button per entry, names and labels carried over),
-/// together with how many entries it holds. A COPY, not the popover's child: reparenting a widget out of a mapped
-/// window leaves it with no render node, which is what made an earlier attempt print "window produced no render
-/// node". Both painters here take this one copy, so neither can show a row the app's popover does not hold.
 fn copied_rows(button: &gtk::MenuButton) -> Result<(gtk::Box, usize), String> {
     let source = button
         .popover()
