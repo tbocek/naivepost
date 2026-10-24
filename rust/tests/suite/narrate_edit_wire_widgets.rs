@@ -63,22 +63,25 @@ fn saved_line_with(tree: &Tree, needle: &str) -> Option<Entry> {
         .find(|entry| entry.text == needle)
 }
 
-/// Type into a row's real text box. `set_text` moves the widget AND emits `changed`, which is the signal
-/// the page wired — the same path a keystroke takes.
+/// Type into a row's real text box. Writing the buffer moves the widget AND emits `changed`, which is the
+/// signal the page wired — the same path a keystroke takes.
 fn type_in_box(window: &adw::ApplicationWindow, index: usize, text: &str) {
     widget_in(window, &format!("line-text-{index}"))
-        .and_then(|w| w.downcast::<gtk::Entry>().ok())
         .unwrap_or_else(|| panic!("row {index} carries an editable text box"))
-        .set_text(text);
+        .downcast::<gtk::TextView>()
+        .map(|view| naivepost::ui::narrate_row::set_box_text(&view, text))
+        .expect("the row's box is a wrapping TextView");
 }
 
 /// The text box's face, read back off the widget.
 fn box_text(window: &adw::ApplicationWindow, index: usize) -> String {
-    widget_in(window, &format!("line-text-{index}"))
-        .and_then(|w| w.downcast::<gtk::Entry>().ok())
-        .expect("row {index} carries an editable text box")
-        .text()
-        .to_string()
+    let found = widget_in(window, &format!("line-text-{index}"))
+        .expect("row {index} carries an editable text box");
+    naivepost::ui::narrate_row::box_text(
+        found
+            .downcast_ref::<gtk::TextView>()
+            .expect("the row's box is a wrapping TextView"),
+    )
 }
 
 /// §F4.7 (**Text**) through the widgets: a typed tag reaches the line at once, reaches DISK only after

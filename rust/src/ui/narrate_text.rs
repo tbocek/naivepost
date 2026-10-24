@@ -149,11 +149,11 @@ pub fn flush_owed(window: &adw::ApplicationWindow) -> Option<String> {
     let s = narrate_page::read_state();
     for index in 0..s.entries.len() {
         let Some(found) = narrate_page::widget_in(window, &format!("line-text-{index}"))
-            .and_then(|w| w.downcast::<gtk::Entry>().ok())
+            .and_then(|w| w.downcast::<gtk::TextView>().ok())
         else {
             continue;
         };
-        apply_quietly(index, &found.text());
+        apply_quietly(index, &crate::ui::narrate_row::box_text(&found));
     }
     clear_owed();
     let tree = crate::ui::window::narrate_session_tree()?;

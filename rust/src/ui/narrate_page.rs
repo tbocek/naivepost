@@ -322,15 +322,16 @@ pub fn build() -> gtk::Widget {
     transport.append(&volume);
     upper.append(&transport);
 
-    // **7** the voice picker: unlabelled; its rows, its shown row and what a pick does all live in
-    // `narrate_picker`.
+    // **7** who speaks, **8** the take band's buttons and **9** Add file…, on ONE row: §1's "First row, left to
+    // right: unlabelled dropdown …; the take band's buttons; "Add file…"". The picker itself (its rows, its shown
+    // row and what a pick does) lives in `narrate_picker`; this box only says where it sits.
+    let voice_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    voice_row.set_widget_name("voice-row");
     let picker = narrate_picker::build();
-    lower.append(&picker);
-
-    // **8** the take band's ＋ − ▶ and **9** Add file….
-    let take_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    take_row.set_widget_name("take-row");
-    take_row.set_halign(gtk::Align::Start);
+    // The dropdown takes the row's spare width, as §1's picture draws it; the four buttons after it keep their
+    // own natural width.
+    picker.set_hexpand(true);
+    voice_row.append(&picker);
     let take_add = gtk::Button::from_icon_name(narrate_screen::ADD_LINE_ICON);
     take_add.set_widget_name("take-add");
     take_add.set_tooltip_text(Some(narrate_details::take_add_hint()));
@@ -343,14 +344,14 @@ pub fn build() -> gtk::Widget {
     let take_play = gtk::Button::with_label("\u{25b6}");
     take_play.set_widget_name("take-play");
     take_play.set_tooltip_text(Some("Play the takes from the red bar"));
-    take_row.append(&take_add);
-    take_row.append(&take_remove);
-    take_row.append(&take_play);
+    voice_row.append(&take_add);
+    voice_row.append(&take_remove);
+    voice_row.append(&take_play);
     let add_file = gtk::Button::with_label("Add file\u{2026}");
     add_file.set_widget_name("voice-add-file");
     add_file.set_tooltip_text(Some(&narrate_screen::add_file_tip()));
-    take_row.append(&add_file);
-    lower.append(&take_row);
+    voice_row.append(&add_file);
+    lower.append(&voice_row);
 
     // **10** the take band itself: the lane inside its own horizontal scroller, painted by
     // `narrate_band` (envelope, ruler, takes, red ▶-start bar, live selection, playhead).
@@ -358,21 +359,20 @@ pub fn build() -> gtk::Widget {
     band.set_tooltip_text(Some(narrate_screen::band_status(&[])));
     lower.append(&band_scroller);
 
-    // **11** the sample sentence, **12** its ▶ ⏹ ⟳, **13** the pitch slider.
+    // **11** the sample sentence, **12** its ▶ ⏹ ⟳ and **13** the pitch slider, on ONE row: §1's "Third row,
+    // left to right: Sample: an entry …, ▶ speaks it, ⏹, ⟳ new take; pitch −6..+6 semitones".
+    let sample_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    sample_row.set_widget_name("sample-row");
+    // No `halign = Start` on this row: it has to fill the column so every part keeps its place. Pinned to the
+    // start with an entry that only asked for its natural width, the row squeezed into a few pixels and the
+    // pitch part fell to the line below.
     let sample = gtk::Entry::new();
     sample.set_widget_name("sample-sentence");
     sample.set_text(narrate_screen::DEFAULT_SAMPLE);
     sample.set_tooltip_text(Some("Spoken in the selected voice"));
     // The entry takes the width of its row, so the buttons and the pitch control after it keep their own.
     sample.set_hexpand(true);
-    lower.append(&sample);
-
-    let sample_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-    sample_row.set_widget_name("sample-row");
-    // No `halign = Start` on this row: it has to fill the column so the pitch control after the buttons sits
-    // where spec/img/07-narrate.png draws it (`sentence · ▶ ⏹ ⟳ · pitch: ─── 0.0` on ONE line). Pinned to the
-    // start with an entry that only asked for its natural width, the row squeezed into a few pixels and the
-    // pitch part fell to the line below.
+    sample_row.append(&sample);
     for (name, label, tip) in [
         ("sample-play", "\u{25b6}", "speak the sample in this voice"),
         ("sample-stop", "\u{23f9}", "stop the sample"),
@@ -385,9 +385,7 @@ pub fn build() -> gtk::Widget {
     }
     // **13** pitch: the labelled row (`pitch:` · slider · the shift's number), built by
     // [`crate::ui::narrate_pitch`] on the sample line, as spec/img/07-narrate.png draws badges 11–13 together.
-    // Appended BEFORE `lower.append(&sample_row)` and before the buttons are wired by name, so the one row holds
-    // sentence · ▶ ⏹ ⟳ · pitch in the picture's order. Seeded from the state above, so control and state agree
-    // on `narrate/pitch.txt`'s shift from the first paint.
+    // Seeded from the state above, so control and state agree on `narrate/pitch.txt`'s shift from the first paint.
     sample_row.append(&crate::ui::narrate_pitch::build_row(read_state().pitch));
     lower.append(&sample_row);
 
@@ -423,35 +421,12 @@ pub fn build() -> gtk::Widget {
     lines.set_widget_name("narrate-lines");
     scroller.set_child(Some(&lines));
 
-    // **22** the two readouts under the lines.
-    let readouts = gtk::Box::new(gtk::Orientation::Vertical, 2);
-    readouts.set_widget_name("narrate-readouts");
-    let inputs = gtk::Label::new(Some(&narrate_screen::inputs_readout(
-        0, 0.0, 0, 0, false, false,
-    )));
-    inputs.set_widget_name("narrate-inputs");
-    inputs.set_xalign(0.0);
-    let outputs = gtk::Label::new(Some(narrate_screen::outputs_readout()));
-    outputs.set_widget_name("narrate-outputs");
-    outputs.set_xalign(0.0);
-    readouts.append(&inputs);
-    readouts.append(&outputs);
-    // §A.8 ("Outputs: folder button …"): the page's Outputs row gets the button §1's picture draws beside
-    // it. §1's sentence about what the folder HOLDS lives once, on the `narrate-outputs` label above, so
-    // the button's own tooltip says only what pressing it DOES — otherwise the readout reads as a
-    // duplicate of a tooltip. The shell's window-level Outputs row (`outputs-folder-button`) keeps its
-    // path-naming tooltip, painted per tab by `window_bench::paint_readouts`; this is the page's own copy.
-    let outputs_folder = gtk::Button::from_icon_name("folder-symbolic");
-    outputs_folder.set_widget_name("narrate-outputs-folder");
-    outputs_folder.set_tooltip_text(Some(narrate_screen::OUTPUTS_FOLDER_TIP));
-    outputs_folder.set_valign(gtk::Align::Center);
-    outputs_folder.set_halign(gtk::Align::Start);
-    readouts.append(&outputs_folder);
-
+    // §1 badge **22**'s Inputs/Outputs readout is NOT drawn here: §A.8 puts it on the window's BOTTOM BAR
+    // ("Bottom bar"), which `window_bench::paint_readouts` paints from `Shell::inputs` / `Shell::outputs`
+    // for every tab, so a copy in this column was a duplicate that could drift from the real one.
     let right = gtk::Box::new(gtk::Orientation::Vertical, 6);
     right.set_hexpand(true);
     right.append(&scroller);
-    right.append(&readouts);
 
     split.set_start_child(Some(&vsplit));
     split.set_end_child(Some(&right));
@@ -496,30 +471,6 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     let s = read_state();
     if let Some(clock) = label(window, "narrate-clock") {
         clock.set_text(&narrate_screen::clock_line(s.session, s.cut_at, s.length));
-    }
-    if let Some(inputs) = label(window, "narrate-inputs") {
-        inputs.set_text(&narrate_screen::inputs_readout(
-            s.clips,
-            s.length,
-            s.unwritten,
-            s.off_cut,
-            s.has_timeline,
-            s.has_cut,
-        ));
-        // §6 (`Inputs tooltip`): the row's per-file breakdown, rebuilt with the text so a refresh that
-        // moved a clip or a line moves the tooltip too. Empty means no folder is open — no files to name.
-        let tip = crate::ui::narrate_inputs::tooltip(
-            crate::ui::window::narrate_session_tree().as_ref(),
-            &s,
-        );
-        if tip.is_empty() {
-            inputs.set_tooltip_text(None::<&str>);
-        } else {
-            inputs.set_tooltip_text(Some(&tip));
-        }
-    }
-    if let Some(outputs) = label(window, "narrate-outputs") {
-        outputs.set_text(narrate_screen::outputs_readout());
     }
     if let Some(band) = widget_in(window, "take-band") {
         band.set_tooltip_text(Some(narrate_screen::band_status(&s.takes)));
@@ -1326,11 +1277,13 @@ fn wire_row_buttons(window: &adw::ApplicationWindow) {
         // person who types and walks away still gets their words on disk.
         if let Some(field) =
             crate::ui::narrate_page::widget_in(window, &format!("line-text-{index}"))
-                .and_then(|w| w.downcast::<gtk::Entry>().ok())
+                .and_then(|w| w.downcast::<gtk::TextView>().ok())
         {
             let w = window.clone();
-            field.connect_changed(move |field| {
-                crate::ui::narrate_text::note_typing(&w, index, &field.text());
+            // A `TextView` emits `changed` on its BUFFER, not on the view.
+            field.buffer().connect_changed(move |_| {
+                let text = crate::ui::narrate_row::box_text(&field);
+                crate::ui::narrate_text::note_typing(&w, index, &text);
             });
         }
     }

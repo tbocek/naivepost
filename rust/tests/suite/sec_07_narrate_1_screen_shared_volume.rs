@@ -224,7 +224,7 @@ fn round(app: &adw::Application) {
 }
 
 #[test]
-fn sec_07_narrate_1_s6_the_narrate_volume_slider_is_the_shared_one() {
+fn sec_07_narrate_1_screen_s6_the_narrate_volume_slider_is_the_shared_one() {
     let _ = gtk::init();
     let app = adw::Application::builder()
         .application_id(ui::APP_ID)
