@@ -937,6 +937,9 @@ pub fn build_window(
     });
     // §07-narrate#1-screen: the Narrate page's controls, wired after `set_content` like every other
     // control in this window, so the widgets being wired are inside the realized tree.
+    // Its volume slider needs a slot of its own before it is wired: without one, a drag on this page
+    // writes into nothing (F2.5 S6's one number has to have a holder on every page that shows it).
+    crate::ui::narrate_volume::ensure_slot(&window);
     crate::ui::narrate_page::wire(&window);
     crate::ui::produce_page::wire(&window);
     window

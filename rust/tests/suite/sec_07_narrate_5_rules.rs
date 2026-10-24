@@ -351,9 +351,9 @@ fn picker_rows(picker: &gtk::DropDown) -> Vec<String> {
 }
 
 /// §5's empty-picker clause at the WIDGET: a project that stores a voice the offer no longer holds.
-/// The picker must NOT point at captions-only for it. Dropping the list to empty would be a worse
-/// face than the truth (§05: "never empty — with no voices the picker still has its captions-only
-/// row"), so the rule pins that an unoffered voice resolves to no row at all.
+/// The picker must NOT point at captions-only for it: an unoffered voice resolves to no row at all, and
+/// the only thing a GtkDropDown can do about that is carry no rows (a model with rows always has one
+/// selected — GTK clamps the position to its rows), so its button reads the placeholder.
 fn run_picker_empty(app: &adw::Application) {
     let tree = session();
     // Published BEFORE the build: the page seeds its voice from `narrate/voice.txt` at build time.
@@ -367,17 +367,17 @@ fn run_picker_empty(app: &adw::Application) {
         1,
         "nothing was tagged, so the offer is captions-only alone and narrator3 is NOT on it"
     );
-    // §05's "never empty": the captions-only row stays visible. What §5 pins is that the unoffered
-    // voice is not on the list at all, so nothing can be shown for it and nothing maps onto row 0.
+    // §5's clause at the widget: nothing maps onto row 0 for a voice the offer does not hold. The list is
+    // empty until the stored voice is on offer again, which is also what stops a hand picking "no audio"
+    // while the page still speaks the vanished voice.
     let shown = common::widget(&window, "voice-picker");
     let picker = shown
         .downcast_ref::<gtk::DropDown>()
         .expect("`voice-picker` is a dropdown");
     let rows = picker_rows(picker);
-    assert_eq!(
-        rows,
-        offered.iter().map(|o| o.label.clone()).collect::<Vec<_>>(),
-        "the dropdown carries exactly the rows the offer holds, in its order"
+    assert!(
+        rows.is_empty(),
+        "the picker holds no row for a voice that is not on the offer: {rows:?}"
     );
     assert!(
         !rows.iter().any(|row| row.contains("Narrator 3")),
@@ -399,10 +399,10 @@ fn run_picker_empty(app: &adw::Application) {
         "clearing the row must not rewrite the voice the page holds: the refusal says which one is missing"
     );
 
-    // The same dropdown, once the voice IS on offer: the row comes back, so the empty answer is the
-    // rule's, not a picker that can never select anything. The page owns its `narrators` count, so this
-    // publish goes through `set_state` on a page whose stored voice is the one now on the list — no seam
-    // can fire on a row that already matches.
+    // The same dropdown, once the voice IS on offer: the rows come back and it lands on that voice's row,
+    // so the empty answer is the rule's, not a picker that can never select anything. The page owns its
+    // `narrators` count, so this publish goes through `set_state` on a page whose stored voice is the one
+    // now on the list — no seam can fire on a row that already matches.
     let mut offered = ui::read_state();
     offered.voice = "narrator3".into();
     offered.narrators = 3;

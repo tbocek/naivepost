@@ -23,6 +23,7 @@ use crate::narrate_screen::{self, Audition, Fit};
 use crate::narration::Entry;
 use crate::ui::narrate_page_speak;
 use crate::ui::narrate_picker;
+use crate::ui::narrate_volume;
 use crate::voice_ref;
 
 /// What the page shows. Published by the flows, read by every handler.
@@ -313,13 +314,11 @@ pub fn build() -> gtk::Widget {
     clock.set_xalign(0.0);
     transport.append(&clock);
 
-    let volume = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.01);
-    volume.set_draw_value(false);
-    volume.set_value(0.8);
-    volume.set_widget_name("narrate-volume");
-    // A width of its own: on a shared row with an expanding slider, a bare scale collapses to its handle.
-    volume.set_size_request(90, -1);
-    volume.set_tooltip_text(Some("Preview volume, shared with the Cut page"));
+    // (**6**) the shared preview volume: its own scale, wearing the number this window's slot holds
+    // (`ensure_slot` has already opened that slot by the time the page is built).
+    // (§6) the shared preview volume: its own scale, wearing the number this window's slot holds.
+    // `narrate_volume::ensure_slot` pushed that slot in `build_window`, before any page was built.
+    let volume = narrate_volume::build();
     transport.append(&volume);
     upper.append(&transport);
 
@@ -534,6 +533,10 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     // The scrub bar carries the same second (§A.4: the bar IS the cut's clock), so a seek by button, wheel or
     // program moves the thumb instead of leaving it where the last drag put it.
     sync_scrub(window, &s);
+    // The volume slider shows the same one number every other preview hears (§A.4), so a run or the Cut
+    // page moving it has to show up here too — mirrored only when it differs, since writing a scale back
+    // would read as a phantom drag.
+    narrate_volume::mirror(window);
     // Why here: a flow that changes the voice without this leaves the dropdown on another row than the
     // page speaks.
     narrate_picker::follow(window, s.narrators, &s.voice_files, &s.voice);
@@ -755,11 +758,10 @@ impl narrate_preview_leg::PreviewPage for PageDriver {
     }
 
     fn volume(&self) -> f64 {
-        // The shared preview volume slider (§A.4), read off the widget so the page holds no copy of it.
-        widget_in(&self.0, "narrate-volume")
-            .and_then(|w| w.downcast::<gtk::Scale>().ok())
-            .map(|scale| scale.value())
-            .unwrap_or(1.0)
+        // The shared preview volume slider (§A.4, F2.5 S6), read from its ONE holder rather than off
+        // this page's widget: two copies would be two answers, and an audition that sounded different
+        // from the preview it belongs to is exactly what §C.4 forbids.
+        crate::ui::preview_volume(&self.0)
     }
 
     fn say(&self, said: &str) {
@@ -1082,7 +1084,7 @@ pub fn press_voice(window: &adw::ApplicationWindow, id: &str) -> String {
 
 /// The voices folder as it should be spelled in S1's "no longer in DIR" sentence. Read per press so a
 /// Settings change shows up in the next refusal rather than naming where the last one looked.
-fn voices_dir_label() -> String {
+pub(crate) fn voices_dir_label() -> String {
     crate::ui::narrate_voices::voices_folder()
         .display()
         .to_string()
@@ -1117,6 +1119,8 @@ pub fn wire(window: &adw::ApplicationWindow) {
         });
     }
     narrate_picker::wire(&win);
+    // (**6**) the shared preview volume: a drag goes to the one property and nowhere else (F2.5 S6).
+    narrate_volume::wire(&win);
     if let Some(button) = crate::ui::line_step_button(&win, "take-add") {
         let w = win.clone();
         // ＋ acts on whatever the hand just dragged on the band; with nothing selected the rule says so.
