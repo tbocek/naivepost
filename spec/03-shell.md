@@ -14,10 +14,10 @@
 
 **1** New · **2** Open · **3** Save · **4** project name/path · **5** tab row · **6** ⓘ · **7** Settings · **8** Rescan · **9** the visible tab's page · **10** ▶ run / pause · **11** chain (prototype; replaced by "I'm feeling lucky", [§2](#2-the-run-bar)) · **12** ⏹ · **13** progress bar (draws no text) · **14** Inputs readout · **15** Outputs: folder button and count · **16** log expander · **17** status line · **18** the log
 
-- One window, title "Naivepost", default 1240×740. That is the size it opens at, not a floor: on every tab the window can be made smaller, down to at most 1024×640, and what no longer fits scrolls (the log, the prompt editor, a page's own scroller) instead of holding the window wide or tall. Header bar: New ("New project — name it, put it where you want it, and start over"), Open ("Load a project — sources, prompts and settings"), Save ("Save this project to a file"), project name/path packed after Save (as the window narrows: path + tab words → file name + tab words → file name + icons only), the tab row as the header bar's title widget, in its centre (not a row of its own under the header), then, packed from the right edge inward (reads ⓘ ⚙ ⟳ on screen): Rescan ("Rescan inputs and outputs"), Settings ("Settings — the LLM and audio.cpp endpoints"), ⓘ (tooltip = current tab's label + help text).
+- One window, title "Naivepost". Its minimum size is 1240×900: it opens at that size and cannot be made smaller, and at that size every control and lane a page names is on screen at once. No page scrolls as a whole. Above the minimum the layout grows with the window and no part has a fixed pixel size: the video preview scales to the room it is given (keeping its aspect), text boxes, lists and the log take the extra height and get their own scrollbar when their content is longer, the timeline's lanes share the height that is left, and splits keep their proportions. Every screenshot of a page is the whole window at the minimum size: header bar, page, run bar and log header, never the page alone. Header bar: New ("New project — name it, put it where you want it, and start over"), Open ("Load a project — sources, prompts and settings"), Save ("Save this project to a file"), project name/path packed after Save (as the window narrows: path + tab words → file name + tab words → file name + icons only), the tab row as the header bar's title widget, in its centre (not a row of its own under the header), then, packed from the right edge inward (reads ⓘ ⚙ ⟳ on screen): Rescan ("Rescan inputs and outputs"), Settings ("Settings — the LLM and audio.cpp endpoints"), ⓘ (tooltip = current tab's label + help text).
 - Tabs: Prepare (view-list), Cut (edit-cut), Narrate (microphone), Produce (multimedia). Locked tab: greyed, not disabled; tooltip = the reason; a click bounces and puts the reason on the status line. Cut locked until a source is marked footage ("Add footage on the Prepare step first — the cut is laid out from the recordings"). Narrate and Produce never locked; their ▶ refuses without a cut.
-- Bottom, under the page, top to bottom: one row holding the run bar ([§2](#2-the-run-bar)) and, to its right in the same row, the visible tab's "Inputs:" readout, then the Outputs folder button, then the "Outputs:" readout; under that row the log expander, its header carrying the status line at the header's right end. Log: read-only monospace; each line is the message alone. New: no `>>> `, `!!! ` or four-space prefix — the level shows by colour (failure red, detail dimmed, progress plain). Prototype: lines start `>>> `, `!!! ` or four spaces. Only one log line is a link — the per-run model exchange page, opened in a browser (GTK's file launcher, `xdg-open` fallback); no other path clickable. New: every path the log names is a link to it.
-- Page (above) and bottom bar (below) are the two halves of a draggable divider that splits the area under the header bar top and bottom, not a fixed strip; collapsing the log expander returns its height to the page.
+- Bottom, under the page, top to bottom: one row holding the run bar ([§2](#2-the-run-bar)) and, to its right in the same row, the visible tab's "Inputs:" readout, then the "Outputs:" label, the Outputs folder button and the Outputs count (`Outputs: [📁] Prepare: 5 files, 1.4 MB`); under that row the log expander, its header carrying the status line at the header's right end. Log: read-only monospace; each line is the message alone. New: no `>>> `, `!!! ` or four-space prefix — the level shows by colour (failure red, detail dimmed, progress plain). Prototype: lines start `>>> `, `!!! ` or four spaces. Only one log line is a link — the per-run model exchange page, opened in a browser (GTK's file launcher, `xdg-open` fallback); no other path clickable. New: every path the log names is a link to it.
+- Page (above) and bottom bar (below) are the two halves of a draggable divider that splits the area under the header bar top and bottom, not a fixed strip. The log starts collapsed, and while it is collapsed the bottom half is exactly as tall as the run bar row plus the log expander's header, with no empty space under them: the page takes all the rest of the height. Expanding the log moves the divider up so the log gets room of its own; collapsing it returns that height to the page.
 - A page whose prerequisites vanish while open switches silently to Prepare ([F0.1](#f01-switch-tab) S2's bounce is only for a click).
 - Closing the window flushes the narration autosave, red line, project and prompts, then closes; no prompt.
 - Watchdog: dumps every goroutine's stack after 3 s without a GUI heartbeat (engineering constant).
@@ -48,7 +48,7 @@ S1 Click a tab (or a lucky run moves to it). S2 Locked → bounce, status = lock
 
 <sub>Proposed screen, drawn in the prototype's style; the gears turn while a run computes.</sub>
 
-New: two ways to run, no step picker. The run bar is one row, left to right: ▶, I'm feeling lucky, ⏹, the progress bar (taking the row's free width), then the visible tab's Inputs readout, the Outputs folder button and the Outputs readout ([§1](#1-the-window)).
+New: two ways to run, no step picker. The run bar is one row, left to right: ▶, I'm feeling lucky, ⏹, the progress bar (taking the row's free width), then the visible tab's Inputs readout, the "Outputs:" label, the Outputs folder button and the Outputs count ([§1](#1-the-window)).
 
 - ▶ (suggested-action): "Run this step — or resume what is paused"; runs the visible tab's step alone ([F0.2](#f02-press-)). While a run or page transport is busy it shows ⏸ "Pause".
 - **I'm feeling lucky**: "Run every step, Prepare to Produce, without stopping to ask" ([F0.4](#f04-run-every-step-im-feeling-lucky)). Icon: two gears, still when idle, turning while any run computes — a single step's too — so the bar shows work is going on even when the progress bar has nothing to count. Insensitive while a run is busy (⏸ and ⏹ act on it).
@@ -174,23 +174,15 @@ flowchart TD
   S --> V{"known field, in range?"}
   V -- no --> ERR["error back to the model"]:::refuse
   ERR --> M
-  V -- yes --> U{"set by the user?"}
-  U -- yes --> KEEP["kept · source: user is never overwritten"]
-  U -- no --> ST["stored · source: model, with its because"]
-  DEF --> F["the policy form · ⚙ menu and each tab's ⓘ"]
-  KEEP --> F
-  ST --> F
+  V -- yes --> ST["stored, with its because"]
+  ST --> L["the log: field, value, because"]
   classDef refuse fill:#fde2e1,stroke:#c01c28,color:#1a1a1a
   classDef done fill:#e3f1e6,stroke:#2e7d32,color:#1a1a1a
 ```
 
-Runs after the User Context changes (debounced; on the next ▶ or on demand from the policy form). S1 Empty context → every policy field default (markingPass retakes, cutMode model, every pass on — the prototype's blank-project behaviour); stop. S2 Ask the LLM (thinking off) with `tool:get_context` and `tool:set_policy`, system prompt "policy" (new, [`prompts/`](prompts) to add): read the context, set only fields it speaks to. S3 Each `set_policy` validated (known field, in range), stored with `source: model` and its `because`. S4 Hand-set fields (`source: user`) never overwritten. S5 The policy form (a window "Editing policy", from the ⚙ menu and each tab's ⓘ) shows every field with value, source and reason: one table row per field, the columns left to right field, value, source, because; "Close" at the window's bottom right.
+Runs after the User Context changes (debounced; on the next ▶). S1 Empty context → every policy field default (markingPass retakes, cutMode model, every pass on — the prototype's blank-project behaviour); stop. S2 Ask the LLM (thinking off) with `tool:get_context` and `tool:set_policy`, system prompt "policy" (new, [`prompts/`](prompts) to add): read the context, set only fields it speaks to. S3 Each `set_policy` validated (known field, in range) and stored with its `because`. S4 Each stored value is said in the log with its field, value and `because`, so what the model decided is visible. There is no policy form: a value changes when the User Context says otherwise.
 
 The pipeline fields decide which flows run: P.policy.markingPass picks [F1.9](04-prepare.md#f19-mark-retakes), [F1.10](04-prepare.md#f110-repair-the-joins) or no marking pass in Prepare; P.policy.cutMode picks the words-derived or the model-chosen cut in [F2.14](05-cut.md#f214-suggest-a-cut); P.policy.captionsPass, speedPass and decorationsPass decide which of [F3.9](06-effects.md#f39-captions-proposed-by-the-model-after-the-cut)–[F3.11](06-effects.md#f311-decorations-proposed-by-the-model) are called at all. A changed context re-derives them before the next run; a changed markingPass invalidates the marks (`retakes.tsv`, `final.txt`), so Prepare re-runs its marking pass.
-
-![Editing policy form (proposed)](img/03-policy-form.svg)
-
-<sub>Proposed screen: not in the prototype, drawn in its visual style.</sub>
 
 ### F0.8 New project
 
