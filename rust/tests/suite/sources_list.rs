@@ -610,7 +610,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 }
 
 /// §4's badge **8** walked by hand on the real buttons. `—` and `+` beside the value are what the spec's
-/// picture shows (`Freq: [1s][—][+]`) and what the prototype had (`gui/main.go`'s `newFreqPick`); the
+/// picture shows (`Freq: [1s][—][+]`) and what the prototype had (`go/main.go`'s `newFreqPick`); the
 /// dropdown picks a stop out of hand and these move one stop at a time. Both must land on
 /// `Project::interval`, which is what `ui::session_freq` reads back — the same field the logic test below
 /// checks — and on the dropdown's face, or the page would show one interval and describe with another.

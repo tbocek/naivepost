@@ -151,7 +151,7 @@ pub fn walk_on(runs: &[(f64, f64)], t: f64) -> Option<f64> {
 /// `P.eng.preloadLeadSeconds`: how far ahead of a jump the next clip is opened. A jump the transport
 /// will make — a gap skipped, a review walking on, a recording ending — is known this many seconds
 /// early, and telling the player's spare pipeline that early makes the jump a swap rather than a reload,
-/// so the cut lands without a hitch (prototype `preloadLead`, gui/cut_preload.go).
+/// so the cut lands without a hitch (prototype `preloadLead`, go/cut_preload.go).
 pub const PRELOAD_LEAD_SECONDS: f64 = 3.0;
 
 /// The tolerance §10 names with it: which side of "now" a clip start falls on. A start inside this

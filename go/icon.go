@@ -25,8 +25,8 @@ import (
 const appID = "ch.bocek.naivepost"
 
 // iconDirs is where the hicolor tree might be, best guess first: beside the
-// binary (an installed or built copy: <somewhere>/gui/naivepost-gui with
-// <somewhere>/gui/icons next to it), then under the naivepost root, which is
+// binary (an installed or built copy: <somewhere>/go/naivepost-gui with
+// <somewhere>/go/icons next to it), then under the naivepost root, which is
 // where it is when the binary was moved but the checkout was not, and last the
 // working directory, which is what `go run .` gives us.
 func (a *App) iconDirs() []string {
@@ -34,7 +34,7 @@ func (a *App) iconDirs() []string {
 	if exe, err := os.Executable(); err == nil {
 		dirs = append(dirs, filepath.Join(filepath.Dir(exe), "icons"))
 	}
-	dirs = append(dirs, filepath.Join(a.root, "gui", "icons"))
+	dirs = append(dirs, filepath.Join(a.root, "go", "icons"))
 	if wd, err := os.Getwd(); err == nil {
 		dirs = append(dirs, filepath.Join(wd, "icons"))
 	}

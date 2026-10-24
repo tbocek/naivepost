@@ -1,4 +1,4 @@
-//! F0.5 — a run's bookkeeping (spec/03-shell.md F0.5), the port of `gui/runqueue.go`.
+//! F0.5 — a run's bookkeeping (spec/03-shell.md F0.5), the port of `go/runqueue.go`.
 //!
 //! One press of ▶ turns into work, and the bar has to say where that work is without lying. Two
 //! rules carry the whole module:
@@ -28,7 +28,7 @@ pub const CHECKPOINT_POLL: Duration = Duration::from_millis(200);
 
 /// The bar's idle pulse while a model thinks: the LLM calls hold nothing countable, so the needle
 /// pulses until something with real news — the first drawing fraction — takes it (§10's prose
-/// "progress pulse 150 ms"; prototype `pulseUntilCounted`, gui/runqueue.go:240).
+/// "progress pulse 150 ms"; prototype `pulseUntilCounted`, go/runqueue.go:240).
 pub const PROGRESS_PULSE: Duration = Duration::from_millis(150);
 
 /// Which half of the bar. The two tracks are concurrent in Prepare (speech recognition on the GPU,

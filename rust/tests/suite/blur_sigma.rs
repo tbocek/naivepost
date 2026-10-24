@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.blurSigma — the frame-edge blur ("0.02·height, min 4"; prototype `blurSigma`,
-// gui/produce.go:1310, applied at gui/produce.go:1331 as `math.Max(4, float64(b.h)*blurSigma)`).
+// go/produce.go:1310, applied at go/produce.go:1331 as `math.Max(4, float64(b.h)*blurSigma)`).
 //
 // The blur is not applied to the picture. It is applied to an oversized copy of the picture that sits
 // *behind* the frame, so a session whose aspect ratio does not match the chosen box shows a smeared

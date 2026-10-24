@@ -1,10 +1,10 @@
 # Inventory: Prepare tab and pipeline
 
 <!-- nav -->
-[← Inventory: Narrate tab (extracted from the prototype, gui/narrate*.go)](narrate.md) · [↑ Contents](../README.md) · [Inventory: Produce tab, publishing (thumbnail + upload text), subtitles, LLM client →](produce.md)
+[← Inventory: Narrate tab (extracted from the prototype, go/narrate*.go)](narrate.md) · [↑ Contents](../README.md) · [Inventory: Produce tab, publishing (thumbnail + upload text), subtitles, LLM client →](produce.md)
 <!-- /nav -->
 
-Raw material for the spec, read off gui/prep.go, prepedit.go, sources.go, transcript.go, align.go, audiocpp.go, separate.go, describe.go, retake.go, retake_edge.go, textedit.go, syscontext.go, prompts.go, subwords.go, pipeline.go.
+Raw material for the spec, read off go/prep.go, prepedit.go, sources.go, transcript.go, align.go, audiocpp.go, separate.go, describe.go, retake.go, retake_edge.go, textedit.go, syscontext.go, prompts.go, subwords.go, pipeline.go.
 
 ## A. UI
 
@@ -82,5 +82,5 @@ Shipped prompts (lengths): system 8906 chars; describe 3163; fix 2111; retake 20
 
 <!-- nav -->
 ---
-[← Inventory: Narrate tab (extracted from the prototype, gui/narrate*.go)](narrate.md) · [↑ top](#inventory-prepare-tab-and-pipeline) · [↑ Contents](../README.md) · [Inventory: Produce tab, publishing (thumbnail + upload text), subtitles, LLM client →](produce.md)
+[← Inventory: Narrate tab (extracted from the prototype, go/narrate*.go)](narrate.md) · [↑ top](#inventory-prepare-tab-and-pipeline) · [↑ Contents](../README.md) · [Inventory: Produce tab, publishing (thumbnail + upload text), subtitles, LLM client →](produce.md)
 <!-- /nav -->

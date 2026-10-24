@@ -39,7 +39,7 @@ use crate::settings::{self, Conf};
 /// tool of this app it is read from Settings rather than fixed (§02-services states that rule for the
 /// media tools the spec does name — each one "on PATH (or a configured path)" — and the picture player
 /// follows the same three-step lookup as the server addresses do). The program chosen is the
-/// GStreamer CLI: the same pipeline the prototype ran inside the toolkit (`gui/player.go`: playbin
+/// GStreamer CLI: the same pipeline the prototype ran inside the toolkit (`go/player.go`: playbin
 /// into a GTK paintable sink), reached as its OWN process because §F4.5 S6 needs two pids to kill and
 /// a paintable sink inside the window has none.
 pub const PICTURE_PLAYER: &str = "gst-play-1.0";

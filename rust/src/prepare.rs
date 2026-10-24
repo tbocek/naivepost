@@ -133,7 +133,7 @@ pub fn set_freq(project: &mut Project, secs: f64) -> bool {
 
 /// The stop `steps` places along [`FREQ_STOPS`] from `secs`, for the `—`/`+` buttons beside Freq (§4's
 /// badge **8**, §04 §1's picture). Walking off either end stays on that end stop — the prototype's
-/// stepper never left the stop list either (`gui/main.go`'s `freqPick::set` clamps to first/last), so a
+/// stepper never left the stop list either (`go/main.go`'s `freqPick::set` clamps to first/last), so a
 /// person at 5s pressing `+` gets no surprise rather than an interval nothing can describe with.
 /// A value that is not a stop steps nowhere: there is no place on the list to count from.
 pub fn freq_step(secs: f64, steps: i32) -> f64 {

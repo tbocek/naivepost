@@ -13,7 +13,7 @@ use crate::layout;
 
 /// One line of narration over one clip.
 ///
-/// Which keys the prototype omits (`gui/narrate.go:116-136`) is what this writes: §4 is
+/// Which keys the prototype omits (`go/narrate.go:116-136`) is what this writes: §4 is
 /// written against that file — it cites three of its read paths — and its example shows
 /// `"pos": "", "roll": 0` as an illustration of the keys, not as bytes. A file written by
 /// this build therefore leaves a zero `at`, an empty `pos` and a zero `roll` out, which

@@ -26,7 +26,7 @@ import (
 // transcript}, cut, narrate, produce); an older layout is moved once on open
 // (migrateFolders). Runs resume where they stopped.
 //
-//	cd naivepost && ./gui/naivepost-gui
+//	cd naivepost && ./go/naivepost-gui
 
 // steps is the pipeline in order; the tab row is this table. label is short
 // (five sit in the header bar); icon stands alone when the bar runs out of
@@ -872,7 +872,7 @@ func main() {
 	a := &App{curCmds: map[*exec.Cmd]bool{}}
 	wd, _ := os.Getwd()
 	if _, err := os.Stat(filepath.Join(wd, "input_video")); err != nil {
-		// started elsewhere: the binary lives in <root>/gui
+		// started elsewhere: the binary lives in <root>/go
 		exe, _ := os.Executable()
 		wd = filepath.Dir(filepath.Dir(exe))
 	}

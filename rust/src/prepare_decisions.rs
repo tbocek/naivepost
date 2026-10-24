@@ -24,7 +24,7 @@ pub const TAIL_MATCH_MIN: f64 = 0.7;
 /// How many words of the later take may be stepped over while looking for the next tail word.
 ///
 /// §10 files this bound as `P.eng.repeatSkip` (3, "fuzzy repeat match: words skipped"; prototype
-/// `repeatSkip`, gui/retake.go), and §12 S1 gives the same number in words ("≤ 3 words skipped").
+/// `repeatSkip`, go/retake.go), and §12 S1 gives the same number in words ("≤ 3 words skipped").
 /// `params::prepare()` rows it from this constant. It bounds the step-over in [`suffix_match`] directly.
 pub const TAIL_SKIP_MAX: usize = 3;
 

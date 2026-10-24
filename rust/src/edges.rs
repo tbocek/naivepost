@@ -16,14 +16,14 @@ use crate::wave::Wave;
 
 /// What is left of a sound at a cut when there is no envelope to ask: a hair, so the last consonant is
 /// not shaved and the first is not clipped. §10 files this bound as `P.eng.wordPadSeconds` (0.08, "room a
-/// cut leaves a word"; prototype `wordPad`, gui/retake.go), and `params::prepare()` rows it from this
+/// cut leaves a word"; prototype `wordPad`, go/retake.go), and `params::prepare()` rows it from this
 /// constant.
 pub const WORD_PAD: f64 = 0.08;
 
 /// How wide a stretch of the recording is looked at to find its room: this many seconds each side of
 /// the second being placed at. §10 files it as `P.eng.envelopeWindowSeconds` (4, "envelope searched
 /// each side of a stamp (±400 buckets)"; prototype 400 buckets at the 100 Hz envelope of
-/// gui/retake_edge.go:163), and `params::prepare()` rows it from this constant. The 20th percentile
+/// go/retake_edge.go:163), and `params::prepare()` rows it from this constant. The 20th percentile
 /// of this window is the room; a window too narrow to hold the room raises the floor and hides sound,
 /// one too wide lets a far-loud stretch pull it down.
 pub const ENVELOPE_WINDOW: f64 = 4.0;
@@ -32,7 +32,7 @@ pub const ENVELOPE_WINDOW: f64 = 4.0;
 /// a whole second away is a different sound. This is the reach of the ENVELOPE-ONLY placement — with
 /// aligned word times the words fence the edge and this bound is never consulted. §10 files it as
 /// `P.eng.edgeReachSeconds` (0.8, "envelope-only edge placement: search reach"; prototype
-/// `retake_edge`, gui/retake_edge.go), and `params::prepare()` rows it from this constant.
+/// `retake_edge`, go/retake_edge.go), and `params::prepare()` rows it from this constant.
 pub const EDGE_REACH: f64 = 0.8;
 
 /// What is left of a sound at a cut once the envelope has placed it, in seconds.
@@ -40,7 +40,7 @@ pub const EDGE_PAD: f64 = 0.05;
 
 /// How far behind its sound a stamp may run and still be that sound's — half a second was measured on a
 /// take's opening word. §10 files it as `P.eng.lateStampSeconds` (0.6, "envelope-only edge placement:
-/// how late a stamp may be"; prototype `lateStamp`, gui/retake_edge.go), and `params::prepare()` rows
+/// how late a stamp may be"; prototype `lateStamp`, go/retake_edge.go), and `params::prepare()` rows
 /// it from this constant.
 pub const LATE_STAMP: f64 = 0.6;
 
@@ -48,13 +48,13 @@ pub const LATE_STAMP: f64 = 0.6;
 /// scale the envelope is drawn in (−70…0 dBFS over 0…255) a breath sits 20 dB or more under the word it
 /// follows and a trailing consonant a few dB under; twelve tells them apart. §10 files it as
 /// `P.eng.edgeTailDB` (12, "word-fenced edge placement: tail threshold"; prototype `edgeTailDB`,
-/// gui/retake_edge.go), and `params::prepare()` rows it from this constant.
+/// go/retake_edge.go), and `params::prepare()` rows it from this constant.
 pub const EDGE_TAIL_DB: f64 = 12.0;
 
 /// How far past the aligner's edge a word's own sound is followed. The aligner is within a fiftieth on
 /// an onset and can be a touch early on a trailing `s` or `k`; a quarter second is that, and not the
 /// breath after. §10 files it as `P.eng.edgeTailMaxSeconds` (0.25, "word-fenced edge placement:
-/// longest tail"; prototype `edgeTailMax`, gui/retake_edge.go), and `params::prepare()` rows it from
+/// longest tail"; prototype `edgeTailMax`, go/retake_edge.go), and `params::prepare()` rows it from
 /// this constant. The level bound beside it is `P.eng.edgeTailDB`: twelve decibels says which sound
 /// is still the word, this says how far to keep chasing it.
 pub const EDGE_TAIL_MAX: f64 = 0.25;
@@ -62,7 +62,7 @@ pub const EDGE_TAIL_MAX: f64 = 0.25;
 /// How far into the gap the quietest moment is looked for. Past the word's own tail the gap is breath
 /// and room; the cut goes where that is lowest, and a trough further off than this is a different gap.
 /// §10 files it as `P.eng.troughReachSeconds` (0.4, "word-fenced edge placement: trough search";
-/// prototype `troughReach`, gui/retake_edge.go), and `params::prepare()` rows it from this constant.
+/// prototype `troughReach`, go/retake_edge.go), and `params::prepare()` rows it from this constant.
 /// It starts where [`EDGE_TAIL_MAX`] leaves off: the tail bound follows the word's own sound, this
 /// searches the gap behind it for the quietest place to cut.
 pub const TROUGH_REACH: f64 = 0.4;

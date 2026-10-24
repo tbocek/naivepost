@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.minAnchorOverlap — how far a slot's voice must reach into an anchor block to
-// claim it (0.5 s; prototype `minAnchorOv`, gui/pipeline.go). The rule is `diarize::match_slots`: each
+// claim it (0.5 s; prototype `minAnchorOv`, go/pipeline.go). The rule is `diarize::match_slots`: each
 // claim names the span of the ANCHOR FILE its voice overlapped, claims are settled strongest-first, and
 // a block is never two slots' winner. The bound is inclusive (`>=`), matching spec/04-prepare.md's
 // "overlap >= 0.5 s", and `match_slots` reads it twice — once to let a claim take an unclaimed block,

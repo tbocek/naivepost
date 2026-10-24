@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.refLoudness — reference levelling ("I −16, TP −1.5, LRA 7"; prototype
-// `refLoud`, gui/narrate_voice.go:208, rationale at gui/narrate_voice.go:204-207). The voice
+// `refLoud`, go/narrate_voice.go:208, rationale at go/narrate_voice.go:204-207). The voice
 // reference is levelled before the model ever hears it, because a clone is only as loud as its source:
 // a quietly spoken take, level-matched against already-loudnorm'd game audio, comes back as somebody
 // murmuring. Single-pass (dynamic) `loudnorm` is used because the takes come from different minutes of

@@ -3,7 +3,7 @@
 //! Nothing here opens a socket or runs a program: each function is handed what a request or a
 //! binary answered — a catalogue, a stdout, a hit count — and returns the verdict. That is what
 //! lets the pass/fail rule of every button be tested without a server, and it is why the wording
-//! below is shorter than the prototype's while the decisions (gui/setup.go:520-815) are the same.
+//! below is shorter than the prototype's while the decisions (go/setup.go:520-815) are the same.
 
 use std::time::Duration;
 
@@ -36,7 +36,7 @@ pub const HEALTH_SECONDS: u64 = 15;
 /// Thinking is switched off three ways because servers read the flag in three places — top level,
 /// and again inside `chat_template_kwargs` for a server that forwards only that to the template —
 /// which is the same switch the pipeline's execute mode sends (prototype `thinkSwitch`,
-/// gui/llm.go:267-276). It matters here because the test measures whether *answering at all*
+/// go/llm.go:267-276). It matters here because the test measures whether *answering at all*
 /// works: a thinking model spends its sixteen tokens on reasoning and answers nothing, and the row
 /// goes red over a server that is fine. Not streamed, unlike the pipeline: there is nothing to
 /// watch arrive.
@@ -64,7 +64,7 @@ const PROBE_SIZE: u32 = 48;
 /// A generated file is the point: nothing to lose in a packaging step, and it stays what it is
 /// even when the test runs on a machine with no image library — which is also why the encoder below
 /// is hand-written (a stored-deflate zlib stream: no compression is needed for 48×48 of one
-/// colour). The prototype does the same thing with `image/png` + `draw` (gui/setup.go:541-547).
+/// colour). The prototype does the same thing with `image/png` + `draw` (go/setup.go:541-547).
 pub fn red_square_png() -> Vec<u8> {
     let row_len = PROBE_SIZE as usize * 3;
     let mut raw = Vec::with_capacity((row_len + 1) * PROBE_SIZE as usize);
@@ -226,7 +226,7 @@ pub fn tts_endpoint_verdict(models: &[AudioModel]) -> Result<String, String> {
 ///
 /// An empty declared task passes: many servers list an id with no task at all, and refusing those
 /// would fail a working setup over a field the server left blank (prototype: `m.Task != "" &&
-/// m.Task != task`, gui/setup.go:691). A *wrong* task is the interesting failure — a catalogue
+/// m.Task != task`, go/setup.go:691). A *wrong* task is the interesting failure — a catalogue
 /// entry copied from another model with its task left as it was.
 /// The verdict for one model id against the server's own catalogue. `step` names who
 /// is asking, so the refusal says "Prepare needs \"asr\" there" rather than leaving the
@@ -522,7 +522,7 @@ impl SaveState {
 /// What a save invalidates besides the file: the cached TTS model id and the "already listening on"
 /// note, both of which belong to the server being replaced — a different server has a different
 /// catalogue, so keeping either would narrate with an id that no longer exists, or report a port as
-/// known from a run that never happened here (prototype gui/setup.go:1227-1231).
+/// known from a run that never happened here (prototype go/setup.go:1227-1231).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Draft {
     pub state: SaveState,
@@ -559,7 +559,7 @@ impl Draft {
 /// One completion is the whole test, so those two facts are the whole result. The wait is not
 /// decoration — it is what tells a cold server loading its model from one that has hung, which are
 /// fixed by waiting and by restarting respectively and look identical from a spinner (prototype
-/// `gui/setup.go:534`).
+/// `go/setup.go:534`).
 pub fn llm_verdict(model: &str, seconds: f64, reply: &str) -> String {
     format!("{model} answered in {seconds:.1} s: {reply:?}")
 }

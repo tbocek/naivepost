@@ -31,7 +31,7 @@ pub const SEAM_NOISE_WORDS: usize = 2;
 /// How many kept words either side of a join are compared for a doubled saying. A doubled word or two
 /// is a join's own stumble; a whole sentence twice is a retake, and the retake matcher (F1.9), not
 /// this pass, owns that. §10 files it as `P.eng.joinReachWords` (3; prototype `joinReach`,
-/// gui/textedit.go), and `params::prepare()` rows it from this constant.
+/// go/textedit.go), and `params::prepare()` rows it from this constant.
 pub const JOIN_REACH_WORDS: usize = 3;
 
 /// Which side of the join a stretch is on.

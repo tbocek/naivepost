@@ -2,7 +2,7 @@
 //!
 //! Three of §6's four reaches had rows in `params::cut()` (`layout.edgeGrabPx` 6, `layout.snapPx` 8,
 //! `layout.lineReachPx` 12) and no rule read a 10 px one: the tree grabbed a selection end at 6 px on every
-//! surface. The prototype distinguishes them — `gui/cut_selband.go` names `selGripPx = 6` and
+//! surface. The prototype distinguishes them — `go/cut_selband.go` names `selGripPx = 6` and
 //! `selGripPicsPx = 10` ("on the pictures the reach is wider"), which is `spec/inventory/cut.md` §I's press
 //! order line "selection ends on the pictures within 10 px". So this round implements the reach rather than
 //! merely cataloguing a number nothing reads: `cut_select::PIC_GRIP_PX` + `cut_select::grip_px(surface)` are

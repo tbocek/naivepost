@@ -4,7 +4,7 @@
 [← Inventory: Prepare tab and pipeline](prepare.md) · [↑ Contents](../README.md) · [Inventory: application shell (window, run bar, project, settings, sources, LLM log) →](shell.md)
 <!-- /nav -->
 
-Raw material for the spec, read off gui/produce.go, produce_embed.go, produce_snd.go, publish.go, publish_crop.go, publish_text.go, translate.go, sdcpp.go, websearch.go, llm.go, llmcache.go, llmstall.go, llmgate.go, llmlog.go.
+Raw material for the spec, read off go/produce.go, produce_embed.go, produce_snd.go, publish.go, publish_crop.go, publish_text.go, translate.go, sdcpp.go, websearch.go, llm.go, llmcache.go, llmstall.go, llmgate.go, llmlog.go.
 
 ## A. Produce UI
 

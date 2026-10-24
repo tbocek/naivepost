@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.alignSoundPadSeconds — sound kept around an alignment piece (0.25 s;
-// prototype `alignSoundPad`, gui/align.go:674, used at gui/align.go:591 and :653). A word fades out
+// prototype `alignSoundPad`, go/align.go:674, used at go/align.go:591 and :653). A word fades out
 // below the silence threshold before it is really over, so a piece takes 0.25 s of the quiet on either
 // side of its speech with it. The same constant answers both places that spend it: `trim()`, which pads
 // the sounding stretch of a window, and `bare_voiced()`, which pads every word before asking what is

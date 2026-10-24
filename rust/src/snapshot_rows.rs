@@ -123,7 +123,7 @@ pub const LINE_PLAYHEAD: f64 = 25.0;
 
 /// The two recordings of the figure: camera 1 for its whole 37 s, camera 2 from its shifted start for the
 /// same length of tape. Both bases are FILE STAMPS rather than `cam0`/`cam1` on purpose: a row's plate names
-/// the recording that row speaks for (prototype `gui/cut.go`'s `rowNameVid` → `v.base`), and the cut's own
+/// the recording that row speaks for (prototype `go/cut.go`'s `rowNameVid` → `v.base`), and the cut's own
 /// segments can only ever say `cam<N>`, so a seeded span survives the row list's filter only while the cut
 /// cannot account for its base — see `cut_cameras::row_spans`. Naming them `cam0`/`cam1` here would put the
 /// second row back to the unnamed `row 2` fallback badge **2** exists to replace.

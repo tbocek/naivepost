@@ -12,7 +12,7 @@
 //! this module only applies it); building the reference (F4.6); speaking a line (F4.4); or which
 //! voice a take was made with (F4.6/F4.7).
 //!
-//! Where §3 is silent the rule follows the Go prototype in `gui/` — AGENT.md names it the
+//! Where §3 is silent the rule follows the Go prototype in `go/` — AGENT.md names it the
 //! read-only source of observed behaviour — and each item cites the function it mirrors
 //! (`keepPrevNarration`, `voiceKey`/`ownVoice`, `pitchST`/`setPitchST`, `cleanTakes`,
 //! `setTakesFor`, `shiftRef`, `sampleWav`). Plain logic only: no widget, page or thread, and
@@ -96,7 +96,7 @@ pub fn load_or_previous(tree: &Tree) -> Result<(Narration, bool), String> {
 // --- voice.txt ----------------------------------------------------------------
 
 /// §07-narrate#3-data: the id `narrate/voice.txt` holds when the file is not there — the
-/// session's own narrator (prototype `ownVoice`, gui/narrate_voice.go:32).
+/// session's own narrator (prototype `ownVoice`, go/narrate_voice.go:32).
 pub const OWN_VOICE: &str = "own";
 
 /// §07-narrate#3-data: read `narrate/voice.txt`. The id is what
@@ -248,7 +248,7 @@ pub fn clean_takes(takes: &[Take]) -> Vec<Take> {
 /// ffmpeg writes `WAVE_FORMAT_EXTENSIBLE` (format tag 0xFFFE) instead of a plain PCM header —
 /// which the audio server refuses as "unsupported WAV encoding". 48 kHz keeps the header plain
 /// and is at or above the rate of anything the reference is cut from, so no sample of the take
-/// is thrown away to get there. (Prototype `refRate`, gui/narrate_voice.go:214.)
+/// is thrown away to get there. (Prototype `refRate`, go/narrate_voice.go:214.)
 pub const REF_SAMPLE_RATE: &str = "48000";
 
 /// The level the voice reference is written at, so the model hears the narrator at a sane
@@ -257,7 +257,7 @@ pub const REF_SAMPLE_RATE: &str = "48000";
 /// `loudnorm`, because the takes come from different minutes of the session, and a tight LRA
 /// because it is one person talking. §10 files this as `P.eng.refLoudness`
 /// ("I -16, TP -1.5, LRA 7"), and `params::narrate()` rows it from this constant.
-/// (Prototype `refLoud`, gui/narrate_voice.go:208.)
+/// (Prototype `refLoud`, go/narrate_voice.go:208.)
 pub const REF_LOUDNESS: &str = "loudnorm=I=-16:TP=-1.5:LRA=7";
 
 /// §07-narrate#3-data: the file the audio server is handed. One fixed path for every request,

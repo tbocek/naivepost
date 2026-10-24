@@ -2,7 +2,7 @@
 //! gears asks for, what each step's outcome does to it, and what the press says when it is over. Held as
 //! plain data so S1-S6 can be tested at all (spec/00-principles.md §5); the button only forwards here.
 //!
-//! The prototype counterpart is `gui/runchain.go` (`chainRun`:32, `chainNext`:63, `chainEnd`:134,
+//! The prototype counterpart is `go/runchain.go` (`chainRun`:32, `chainNext`:63, `chainEnd`:134,
 //! `chainTime`:52). Where the spec and that file disagree this module follows the spec, and the tests
 //! below name which side each assertion pins.
 

@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.alignBareWarnSeconds — voiced audio under no word before a warning (10 s;
-// prototype `alignBareWarn`, gui/align.go:679, applied at gui/align.go:580). A misaligned transcript
+// prototype `alignBareWarn`, go/align.go:679, applied at go/align.go:580). A misaligned transcript
 // still reads as words, so the only visible sign is voiced audio with nothing over it -- which the cut
 // then treats as footage where nothing was said and drops. The floor says when that is worth shouting
 // about; the share beside it (`align::BARE_SHARE`) says whether it is a real error or just rounding.

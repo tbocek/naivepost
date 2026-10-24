@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.edgeReachSeconds — the search reach of the envelope-only edge placement
-// (0.8 s; prototype `edgeReach` / `retake_edge`, gui/retake_edge.go). The rule already existed as
+// (0.8 s; prototype `edgeReach` / `retake_edge`, go/retake_edge.go). The rule already existed as
 // `edges::EDGE_REACH`: `Edges::end_before` and `Edges::start_at` each turn it into a bucket count
 // (`(EDGE_REACH * hz) as i64`) and hand the stamp back unchanged when their walk runs past it. It is
 // "envelope-only" in the strict sense: with aligned word times the words fence the edge (`end_after` /

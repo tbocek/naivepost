@@ -1,6 +1,6 @@
 //! §03-shell.md F0.3 Press ⏹ — the rule, without a window. What one press of ⏹ stops, in what
 //! order, and what it says while doing it, held as plain data so the precedence can be tested at all
-//! (spec/00-principles.md §5). The prototype's `stopClicked` (gui/runbar.go:114-136) is the shape
+//! (spec/00-principles.md §5). The prototype's `stopClicked` (go/runbar.go:114-136) is the shape
 //! this mirrors: stop the page's preview first, then bring the run down, and never treat a child
 //! killed by that stop as a failure.
 

@@ -247,7 +247,7 @@ impl Cut {
     /// recording silences them all — nothing was heard.
     ///
     /// The prototype refines this for a scene shown from another camera than the one
-    /// whose sound ran under it (gui/cut_hear.go:562-613 keeps such a scene hearing its
+    /// whose sound ran under it (go/cut_hear.go:562-613 keeps such a scene hearing its
     /// own picture and counts them in the note). That needs the row model of 05 F2.10 —
     /// which recording sits under which `cam` at which second — and is not this file's
     /// rule, so this function takes lane names alone.

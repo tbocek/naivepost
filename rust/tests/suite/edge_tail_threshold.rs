@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.edgeTailDB — the word-fenced edge placement's tail threshold (12 dB;
-// prototype `edgeTailDB`, gui/retake_edge.go). The rule already existed as `edges::EDGE_TAIL_DB`,
+// prototype `edgeTailDB`, go/retake_edge.go). The rule already existed as `edges::EDGE_TAIL_DB`,
 // read only by the private `Edges::tail_level`: take the peak over the word's own buckets, drop it by
 // twelve decibels, and never below the room. A breath sits twenty dB or more under the word it
 // follows; a trailing consonant a few dB under. Twelve is the line that keeps the `s` and leaves the

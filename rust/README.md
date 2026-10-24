@@ -15,7 +15,7 @@ the machine unless an endpoint points at it.
     cd rust && just build          # cargo build --release -> rust/target/release/naivepost
 
 Every tab, row and transport icon is a named `-symbolic` icon looked up in the desktop's icon
-theme — `gui/icons/` ships the app icon only. The list is spelled once as `icons::NAMED_SYMBOLIC_ICONS`
+theme — `go/icons/` ships the app icon only. The list is spelled once as `icons::NAMED_SYMBOLIC_ICONS`
 and `tests/suite/icon_theme_symbols.rs` fails if a widget asks for a name outside it, or if a tree
 cannot resolve one; the AppImage carries `adwaita-icon-theme` inside for this reason. libc follows the toolchain and
 not a flag, so do not add a `just` `os()` branch to pick one — the same recipe links musl on

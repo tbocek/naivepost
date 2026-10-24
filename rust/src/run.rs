@@ -39,7 +39,7 @@ pub const STOP_TOOLTIP: &str =
 /// loaded the moment the timeline or a line is clicked, which cues a frame to look at and is not
 /// playback — counting that as playback once made ▶ play a video on a Cut page whose cut was still
 /// empty. So a transport becomes the bar's business only once its preview has actually been started,
-/// and stays so until ⏹ ends it (prototype `pageTransport`, gui/runbar.go:28-52).
+/// and stays so until ⏹ ends it (prototype `pageTransport`, go/runbar.go:28-52).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Transport {
     pub playing: bool,
@@ -106,7 +106,7 @@ pub fn step(page: Page) -> Step {
 }
 
 /// How many narrator slots a project has. `P.policy.narratorSlots` (default 4; prototype
-/// `narratorSlots`, gui/sources.go:28), whose meaning column §10 leaves blank — the prototype's own
+/// `narratorSlots`, go/sources.go:28), whose meaning column §10 leaves blank — the prototype's own
 /// comment says what the number is for: "how many people a session can name. Four, because that is
 /// what fits on a row as a digit and what a group recording tends to hold; the rest of the voices
 /// stay untagged and are still transcribed."
@@ -141,7 +141,7 @@ pub fn slot_index(slot: u32) -> Option<usize> {
 /// works: transcripts take minutes, and a run that asked the page again half-way through would
 /// answer "what is footage" and "who holds slot 3" differently from the page that started it — the
 /// usual way a render ends up missing an angle (prototype `snapSources`/`snapItems`,
-/// gui/main.go:941-975).
+/// go/main.go:941-975).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub footage: Vec<String>,
@@ -427,7 +427,7 @@ pub fn announced_all_done(lines: &[String]) -> bool {
 ///
 /// ▶ is one button that becomes ⏸ rather than a second button beside it: the prototype had a
 /// dedicated ⏸ and it was dead on every page whose ▶ is not a run, which is why ⏸ and ⏹ sat there
-/// doing nothing while a voice sample played (gui/runbar.go:141-153). "Busy" is therefore either a
+/// doing nothing while a voice sample played (go/runbar.go:141-153). "Busy" is therefore either a
 /// run that is not paused or a preview that is actually playing — a paused run has nothing to pause.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Controls {

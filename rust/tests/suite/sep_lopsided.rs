@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.sepLopsidedDB — a stem this much quieter is dropped (10 dB; prototype
-// `sepLopsidedDB`, gui/separate.go:339, applied at gui/separate.go:329). When the separation model
+// `sepLopsidedDB`, go/separate.go:339, applied at go/separate.go:329). When the separation model
 // hears a recording as voice nearly throughout -- other players talking in game chat, say -- the half
 // named for the room comes back with next to nothing in it. This constant says how far the rest has to
 // fall under the mix before that gets said out loud.

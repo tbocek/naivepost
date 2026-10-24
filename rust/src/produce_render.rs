@@ -618,7 +618,7 @@ pub const LIMITER: &str = "alimiter=limit=0.891:level=disabled";
 
 /// §4's frame-edge blur: how far the blown-up backdrop is smeared, as a fraction of the finished
 /// frame's height. Enough that no detail survives to be read as a second picture, not so much
-/// that a bright scene turns into one flat glow. (Prototype `blurSigma`, gui/produce.go:1310.)
+/// that a bright scene turns into one flat glow. (Prototype `blurSigma`, go/produce.go:1310.)
 /// §10 files the pair as `P.eng.blurSigma` ("0.02·height, min 4").
 pub const BLUR_SIGMA_FRACTION: f64 = 0.02;
 

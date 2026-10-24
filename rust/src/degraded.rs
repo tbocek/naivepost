@@ -26,7 +26,7 @@ pub const SETTINGS_FALLBACK: &str = "/v1/models";
 /// `finish_reason` for a reply that ran into the token ceiling and was cut off mid-answer.
 pub const FINISH_LENGTH: &str = "length";
 
-/// The prototype's correction for a truncated answer (`gui/llm.go`'s `cutOff`), kept as one sentence so
+/// The prototype's correction for a truncated answer (`go/llm.go`'s `cutOff`), kept as one sentence so
 /// the model sees the same words it saw in the prototype: the first half names what happened, the second
 /// says what to do about it.
 pub const CUTOFF_RETRY: &str = "your answer stopped in the middle -- it was too long to finish. \

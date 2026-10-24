@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.soundMinPieceSeconds — under 0.05 s a piece of laid-over sound is not worth a segment
-// of its own (prototype `sndMinLn`, gui/cut.go). The rule lives in `cut_copy::MIN_SOUND_PIECE_SECONDS`, read by
+// of its own (prototype `sndMinLn`, go/cut.go). The rule lives in `cut_copy::MIN_SOUND_PIECE_SECONDS`, read by
 // `cut_copy::sound_piece_overlap`, which both the piece builder (`lay_pieces`) and the list rebuild (`lay_over`)
 // ask — so the two cannot disagree about whether a stretch earns a piece.
 //

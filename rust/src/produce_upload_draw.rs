@@ -264,7 +264,7 @@ pub fn job_id(parsed: &serde_json::Value) -> Option<String> {
 /// `success`) and counts a job that already handed back its image as done too.
 ///
 /// The bytes ride in the REPLY, not on their own endpoint: the prototype's working draw reads them off the job
-/// answer as `result.images[0].b64_json` (`gui/sdcpp.go:137-150`, `sdGenerate` at :222-230), and
+/// answer as `result.images[0].b64_json` (`go/sdcpp.go:137-150`, `sdGenerate` at :222-230), and
 /// `spec/02-services.md` §1 lists only the four sd.cpp paths — capabilities, `POST /sdcpp/v1/img_gen`,
 /// `GET /sdcpp/v1/jobs/{id}`, `POST /sdcpp/v1/jobs/{id}/cancel` — so there is no picture URL to fetch.
 pub fn state_of(parsed: &serde_json::Value) -> PollState {

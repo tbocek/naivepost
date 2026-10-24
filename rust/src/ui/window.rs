@@ -277,7 +277,7 @@ pub fn build_window(
 
     // The tab row is a click; the stack is where that click is decided. `guard` keeps the bounce's
     // own write-back from re-entering this handler, which would otherwise recurse through two more
-    // notify signals (the prototype does the same with tabGuard, gui/main.go:1209-1224).
+    // notify signals (the prototype does the same with tabGuard, go/main.go:1209-1224).
     let guard = Rc::new(std::cell::Cell::new(false));
     WINDOW_SWITCH_LATCH.with(|latch| *latch.borrow_mut() = Some(Rc::clone(&guard)));
 

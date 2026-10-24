@@ -243,7 +243,7 @@ func TestTheDesktopEntryIsWhatTheShellCanActuallyFind(t *testing.T) {
 func TestTheIconIsAnSVGOrAPNGOrAJPGInThatOrder(t *testing.T) {
 	dir := t.TempDir()
 	a := &App{root: dir}
-	tree := filepath.Join(dir, "gui", "icons")
+	tree := filepath.Join(dir, "go", "icons")
 	put := func(rel string) string {
 		p := filepath.Join(tree, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -310,11 +310,11 @@ func TestTheIconIsAnSVGOrAPNGOrAJPGInThatOrder(t *testing.T) {
 // error and refuses to start at all.
 func TestADoubleClickedProjectOpensInNaivepost(t *testing.T) {
 	ownConfig(t)
-	entry := desktopEntry("/opt/naivepost/gui/naivepost-gui", "/opt/naivepost", "")
+	entry := desktopEntry("/opt/naivepost/go/naivepost-gui", "/opt/naivepost", "")
 	for _, want := range []string{
-		"Exec=/opt/naivepost/gui/naivepost-gui %f", // where the opened file is substituted
-		"MimeType=" + mimeType + ";",               // and what this program is offered for
-		"Name=Naivepost",                           // the program has a capital N; its files do not
+		"Exec=/opt/naivepost/go/naivepost-gui %f", // where the opened file is substituted
+		"MimeType=" + mimeType + ";",              // and what this program is offered for
+		"Name=Naivepost",                          // the program has a capital N; its files do not
 	} {
 		if !strings.Contains(entry, want+"\n") {
 			t.Errorf("the entry has no %q line:\n%s", want, entry)

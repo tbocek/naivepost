@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.turnGapSeconds — the gap that ends a turn (0.5 s; prototype `diarTurnGap`,
-// gui/pipeline.go). The rule is `transcribe::glue_turns`: walking the diarizer's turns in order, two
+// go/pipeline.go). The rule is `transcribe::glue_turns`: walking the diarizer's turns in order, two
 // of the SAME speaker with no more than this much silence between them are one turn, extended to the
 // later end. Without it the diarizer's split at every breath hands one sentence to two people, and a
 // word falling between the halves gets a different name from its neighbours.

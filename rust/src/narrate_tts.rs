@@ -72,7 +72,7 @@ pub struct Blend {
     pub weights: [f64; 8],
 }
 
-/// The 21 blends, in the order the prototype lists them (gui/narrate_tts.go's `emoBlends`).
+/// The 21 blends, in the order the prototype lists them (go/narrate_tts.go's `emoBlends`).
 pub const BLENDS: [Blend; 21] = [
     Blend {
         names: &[

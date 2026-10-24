@@ -11,7 +11,7 @@
 //! Two spellings per word, deliberately: `match_word` is what every pass matches against and never moves
 //! once glued, `written` is what a human or the join model is shown and the only field dressing rewrites.
 //! "Only .raw changes — the word used for MATCHING stays the recogniser's, because every pass that reads
-//! the words reads that one" (prototype `gui/subwords.go`).
+//! the words reads that one" (prototype `go/subwords.go`).
 
 use crate::tools::mm_ss;
 

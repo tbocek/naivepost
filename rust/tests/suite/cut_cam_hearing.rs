@@ -547,7 +547,7 @@ fn f2_10_s2_the_gutter_switch_speaks_for_the_whole_cut() {
 
 /// F2.10 (Cameras and hearing) S2 — a cut with nothing in it has no scene to answer for a lane, and the page
 /// says so instead of reporting a change it did not make. The prototype's own guard is `len(ed.segs) == 0`
-/// (gui/cut_hear.go:258): a recording nobody has cut yet is exactly what "cut something first" means.
+/// (go/cut_hear.go:258): a recording nobody has cut yet is exactly what "cut something first" means.
 #[test]
 fn f2_10_s2_a_lane_in_no_scene_says_so_and_changes_nothing() {
     let mut empty = Cut::default();

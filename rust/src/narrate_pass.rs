@@ -15,7 +15,7 @@
 //! - the tool list — [`crate::tools::offered`] with [`crate::roles::Job::Narrate`] already lists
 //!   `write_line`, `leave_silent`, `list_emotions`, `describe_insert` and `finish`;
 //! - the emotion *recipes*. The eight weights a named blend mixes are the TTS side's (the prototype keeps
-//!   them in `emoBlends`, `gui/narrate_tts.go`); F4.2 only asks whether a word is in the vocabulary at all.
+//!   them in `emoBlends`, `go/narrate_tts.go`); F4.2 only asks whether a word is in the vocabulary at all.
 
 use crate::cut::{Fx, Seg};
 use crate::cut_captions;
@@ -270,7 +270,7 @@ pub fn user_message(
 // --- What the tools answer (§02-services.md §3.8) ---------------------------------------------------------
 
 /// The eight bases with the words that mean one of them, in [`crate::narrate_screen::EMOTIONS`]' order (the
-/// prototype's `emoBases`, `gui/narrate_tts.go`). The lists are deliberately generous: someone writing
+/// prototype's `emoBases`, `go/narrate_tts.go`). The lists are deliberately generous: someone writing
 /// "furious" or "deadpan" means one of these eight, and refusing them would send the line down the slower
 /// path for a spelling. What lives here is only the *vocabulary* — the eight weights a word mixes stay with
 /// the TTS side, as do the named blends' recipes.

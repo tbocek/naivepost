@@ -16,25 +16,25 @@ use crate::services::{AudioModel, ALIGN_PREFERENCE};
 use crate::transcribe::SAMPLE_RATE;
 
 /// S2: how much audio goes into one align request — the same number the ASR chunks by
-/// ([`asr::CHUNK_QWEN`]), so the pieces line up and each carries its own words (gui/align.go:656).
+/// ([`asr::CHUNK_QWEN`]), so the pieces line up and each carries its own words (go/align.go:656).
 pub const WINDOW: f64 = asr::CHUNK_QWEN;
-/// S3: below this a piece cannot be made smaller, for either reason (gui/align.go:660 `alignChunkMin`).
+/// S3: below this a piece cannot be made smaller, for either reason (go/align.go:660 `alignChunkMin`).
 pub const MIN_PIECE: f64 = 15.0;
 /// S2: how far a cut between two align windows may slide to land in a silence — much less than F1.4's
 /// chunker ([`asr::SEEK_MAX`], 20 s): a chunk cut that moves costs only a join, while an alignment cut
 /// moves the whole window a stretch of words is timed against, so the nominal edge stands unless a
 /// silence is close. Small enough to keep sliding when the window halves down to [`MIN_PIECE`] (the
-/// cutter stops at half the window) (gui/align.go:670 `alignCutSeek`, floor note gui/align.go:668).
+/// cutter stops at half the window) (go/align.go:670 `alignCutSeek`, floor note go/align.go:668).
 /// §10 files it as `P.eng.alignCutSeekSeconds` (4) and `params::prepare()` rows it from here.
 pub const CUT_SEEK: f64 = 4.0;
 /// S3: how much of the quiet either side of a window's speech goes with it — a word fades out below
-/// the silence threshold before it is over (gui/align.go:674 `alignSoundPad`). §10 files this bound as
+/// the silence threshold before it is over (go/align.go:674 `alignSoundPad`). §10 files this bound as
 /// `P.eng.alignSoundPadSeconds` (0.25, "sound kept around an alignment piece"), and
 /// `params::prepare()` rows it from this constant.
 pub const PAD: f64 = 0.25;
 /// S6: bare talking worth saying out loud, in seconds and as a share of the talking. Both, because ten
 /// bare seconds of a four-hour session is rounding and ten bare seconds of a twenty-second clip is the
-/// whole clip (gui/align.go:679-680). §10 files the seconds bound as `P.eng.alignBareWarnSeconds`
+/// whole clip (go/align.go:679-680). §10 files the seconds bound as `P.eng.alignBareWarnSeconds`
 /// (10, "voiced audio under no word before a warning"), and `params::prepare()` rows it from this
 /// constant.
 pub const BARE_WARN: f64 = 10.0;
@@ -44,7 +44,7 @@ pub const BARE_WARN: f64 = 10.0;
 /// voiced audio under no word before a warning"), and `params::prepare()` rows it from this constant.
 pub const BARE_SHARE: f64 = 0.08;
 /// S4: comfortably past the longest clip this sends ([`WINDOW`]) — a "second" beyond it did not mean
-/// seconds, it meant samples that forgot to say so (gui/align.go:230 `alignClipMax`). §10 files this
+/// seconds, it meant samples that forgot to say so (go/align.go:230 `alignClipMax`). §10 files this
 /// bound as `P.eng.alignClipMaxSeconds` (120, "sanity ceiling on a returned second"), and
 /// `params::prepare()` rows it from this constant.
 pub const PLAIN_AS_SAMPLES: f64 = 120.0;
@@ -72,7 +72,7 @@ pub fn aligners(configured: &str, url: &str, models: &[AudioModel]) -> Result<Ve
         .map(|m| m.id.clone())
         .collect();
     // The preference first, the rest by name: two aligners sorted plainly put the weaker one first
-    // because its name is shorter (gui/align.go:81-98).
+    // because its name is shorter (go/align.go:81-98).
     ids.sort_by_key(|id| (id != ALIGN_PREFERENCE, id.clone()));
     Ok(ids)
 }
@@ -238,7 +238,7 @@ pub fn voiced(silences: &[Silence], t0: f64, t1: f64) -> f64 {
 /// S3: the part of `t0..t1` that has sound in it, padded, or `None` when all of it is quiet.
 ///
 /// Built by subtracting the silences rather than by asking whether one reaches the window's edge,
-/// because it does not quite — silencedetect measures a file's end a hair short (gui/align.go:622).
+/// because it does not quite — silencedetect measures a file's end a hair short (go/align.go:622).
 pub fn trim(span: (f64, f64), silences: &[Silence]) -> Option<(f64, f64)> {
     let (t0, t1) = span;
     // The sounding stretches inside the window, in order.
@@ -274,7 +274,7 @@ pub struct Span {
 /// talking falls each side of the cut.
 ///
 /// Candidates are kept inside the middle three quarters: a cut near an edge makes one half no smaller
-/// than the whole, which is a recursion that does not end (gui/align.go:543).
+/// than the whole, which is a recursion that does not end (go/align.go:543).
 pub fn split_at(span: &Span, silences: &[Silence]) -> (Span, Span) {
     let (mid, quarter) = ((span.from + span.to) / 2.0, (span.to - span.from) / 4.0);
     let mut cut = mid;

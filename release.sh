@@ -24,7 +24,7 @@
 # arrived in 2.86 (g_get_monotonic_time_ns, g_source_dup_context, ...), and
 # Debian 13 stops at 2.84, where the build fails at compile time -- tried, not
 # guessed. So the AppImage runs on distributions from 2026 on. For older ones
-# pin an older gotk4 in gui/go.mod and set DISTRO=debian:trixie, which does
+# pin an older gotk4 in go/go.mod and set DISTRO=debian:trixie, which does
 # package the GTK4 video sink (gstreamer1.0-gtk4); Ubuntu 22.04 and 24.04 do
 # not package it at all.
 #
@@ -39,7 +39,7 @@
 #
 # The icon theme IS bundled (adwaita-icon-theme, copied into the AppDir below):
 # every tab, row and transport control asks GTK for a `-symbolic` name, and none
-# of those 39 names ship in gui/icons, which holds the app icon only. Left to the
+# of those 39 names ship in go/icons, which holds the app icon only. Left to the
 # host they resolve to nothing on a machine without an icon theme, and GTK draws
 # the broken-icon placeholder in every button. Checked by running the AppImage on
 # a Debian testing container with no icon theme installed and none reachable.
@@ -48,7 +48,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DISTRO="${DISTRO:-debian:forky}"
-GO_VERSION="${GO_VERSION:-$(sed -n 's/^go \([0-9.]*\).*/\1/p' "$ROOT/gui/go.mod")}"
+GO_VERSION="${GO_VERSION:-$(sed -n 's/^go \([0-9.]*\).*/\1/p' "$ROOT/go/go.mod")}"
 VERSION="${VERSION:-$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || echo dev)}"
 ARCH="$(uname -m)"
 OUT="$ROOT/dist"
@@ -61,15 +61,15 @@ if [ "${1:-}" = flatpak ]; then
   flatpak remote-info --user flathub org.gnome.Sdk//50 >/dev/null 2>&1 || \
     flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
   # flatpak-builder builds with the network off, so the modules come along in
-  # the tree. gui/vendor is build output, not source: it is not committed.
+  # the tree. go/vendor is build output, not source: it is not committed.
   echo ">>> vendoring go modules"
-  (cd "$ROOT/gui" && go mod vendor)
+  (cd "$ROOT/go" && go mod vendor)
   mkdir -p "$OUT"
   echo ">>> flatpak-builder"
   flatpak-builder --user --install-deps-from=flathub --force-clean \
     --repo="$OUT/repo" "$OUT/flatpak-build" "$ROOT/$APPID.yml"
   flatpak build-bundle "$OUT/repo" "$OUT/$APP-$VERSION.flatpak" "$APPID"
-  rm -rf "$ROOT/gui/vendor"
+  rm -rf "$ROOT/go/vendor"
   echo
   echo "built: $OUT/$APP-$VERSION.flatpak"
   echo "install: flatpak install --user $OUT/$APP-$VERSION.flatpak   (codecs-extra comes with it)"
@@ -140,7 +140,7 @@ curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -C /usr/
 export PATH=/usr/local/go/bin:$PATH GOFLAGS=-mod=mod GOCACHE=/tmp/gocache
 
 echo ">>> build"
-cd gui
+cd go
 # -buildvcs=false: the checkout is mounted from another user, so git inside
 # the container refuses it, and the version is passed in by hand anyway
 CGO_ENABLED=1 go build -trimpath -buildvcs=false -ldflags "-s -w" -o "/tmp/$APP" .
@@ -150,10 +150,10 @@ echo ">>> AppDir"
 D=/tmp/AppDir; rm -rf "$D"
 install -Dm755 "/tmp/$APP" "$D/usr/bin/$APP"
 # the icon tree twice: where freedesktop looks, and beside the binary, which is
-# where the app itself looks first (gui/icon.go iconDirs). usr/share must exist
+# where the app itself looks first (go/icon.go iconDirs). usr/share must exist
 # first, or cp renames the tree to usr/share instead of putting it inside.
 mkdir -p "$D/usr/share"
-cp -r gui/icons "$D/usr/share/"
+cp -r go/icons "$D/usr/share/"
 # The symbolic icons the interface asks the theme for (see the header). GTK looks
 # them up in $XDG_DATA_DIRS/icons, and the runtime hook the gtk plugin writes puts
 # "$APPDIR/usr/share" at the FRONT of that variable, so a theme copied here is what
@@ -172,13 +172,13 @@ if [ -d /usr/share/icons/hicolor ]; then
 fi
 gtk-update-icon-cache -q -t -f "$D/usr/share/icons/hicolor"
 ln -s ../share/icons "$D/usr/bin/icons"
-install -Dm644 "gui/icons/hicolor/scalable/apps/$APPID.svg" "$D/$APPID.svg"
+install -Dm644 "go/icons/hicolor/scalable/apps/$APPID.svg" "$D/$APPID.svg"
 # linuxdeploy looks the desktop file's icon up in the sized directories only,
 # so the SVG is rasterised into them; GTK on the target machine gets a PNG it
 # can always decode, too
 for px in 16 32 48 64 128 256; do
   install -d "$D/usr/share/icons/hicolor/${px}x${px}/apps"
-  rsvg-convert -w $px -h $px "gui/icons/hicolor/scalable/apps/$APPID.svg" \
+  rsvg-convert -w $px -h $px "go/icons/hicolor/scalable/apps/$APPID.svg" \
     -o "$D/usr/share/icons/hicolor/${px}x${px}/apps/$APPID.png"
 done
 mkdir -p "$D/usr/share/applications" "$D/usr/share/metainfo"

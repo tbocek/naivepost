@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.effectMinSelectionSeconds — the 0.2 s of timeline that has to be under the band before
-// ⏩ Speed treats it as a chosen stretch rather than a click that slipped (prototype `fxMinSel`, gui/cut_fx.go).
+// ⏩ Speed treats it as a chosen stretch rather than a click that slipped (prototype `fxMinSel`, go/cut_fx.go).
 //
 // The rule itself is not new: `cut_speed::MIN_MARKED_SECONDS` and its reading in `cut_speed::press` were written
 // for F3.3 S1, and 🔊 Volume borrows the same floor. What this file pins is that the §10 row points at that rule

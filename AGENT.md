@@ -6,7 +6,7 @@ proposal can be overruled. `spec/` says what to build; this file says how to wor
 
 ## Trees
 
-`rust/` is the application, built against `spec/`. `gui/` is the Go prototype the spec
+`rust/` is the application, built against `spec/`. `go/` is the Go prototype the spec
 was written from: read it for observed behaviour; new work goes in `rust/`.
 
 ## Environment

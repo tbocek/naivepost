@@ -930,7 +930,7 @@ pub(crate) fn migrate_publish(mut raw: RawPublish) -> Publish {
 
 /// The base named by a 0-based index moves to the front and the rest keeps its order,
 /// so index 2 of [f0,f1,f2] gives [f2,f0,f1] — the prototype's moveToFront
-/// (gui/publish.go). An index naming no other frame — 0, or past the end — names the
+/// (go/publish.go). An index naming no other frame — 0, or past the end — names the
 /// base already at the front, so it moves nothing.
 pub(crate) fn move_to_front(frames: Vec<String>, i: usize) -> Vec<String> {
     if i == 0 || i >= frames.len() {
