@@ -97,12 +97,26 @@ pub fn upload_legs(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -
     let tree_own = tree.clone();
     let frames = std::rc::Rc::new(frame_images(tree, run));
     let frames_own = std::rc::Rc::clone(&frames);
+    // The same rule the walk reads off `Materials.edited_by_hand`: the picture is the user's own once they
+    // hold a frame or have written an edit instruction of their own.
+    let edited_by_hand = publish.own || !publish.prompt.trim().is_empty();
+    // §1's text rewriter and F5.6 S2's words half dial the SAME leg: the real `youtube` call over HTTP.
+    // Nothing here answers for the model — a test replaces the SERVER (the settings' address pointed at a
+    // loopback fake), never this leg, so every green test goes through the request, its tools and the prose
+    // fallback exactly as a live server drives them.
+    let ask_model = upload_ask(
+        tree,
+        &publish,
+        extracted_frames(tree, run),
+        starts_of(run),
+        edited_by_hand,
+    );
     Owned {
         save_publish: Box::new({
             let tree = tree.clone();
             move |next: &crate::project::Publish| save_publish(&tree, next)
         }),
-        ask_model: Box::new(|_| Ok(String::new())),
+        ask_model,
         ask_draw: draw_leg(),
         poll: poll_leg(),
         save_picture: Box::new(save_drawn),
@@ -121,9 +135,8 @@ pub fn upload_legs(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -
             let tree = tree.clone();
             move |hash: &str| write_picture_stamp(&tree, hash)
         }),
-        // The picture is the user's own once they hold a frame or have written an edit instruction of their
-        // own; until then a title change reprints (S5).
-        edited_by_hand: publish.own || !publish.prompt.trim().is_empty(),
+        // Until the picture is the user's own, a title change reprints it (S5).
+        edited_by_hand,
         // S3/S6: the row's entries rendered as the pictures they name. The crop size travels with the leg,
         // because the size is decided once per press (S6: the video's aspect at long side 1280) and must not
         // be recomputed differently by the two doors that ask.
@@ -160,6 +173,9 @@ pub fn upload_mats<'a>(
     crate::produce_upload::Materials {
         save_publish: &legs.save_publish,
         ask_model: &legs.ask_model,
+        // `upload_half` has already dialled this brief through `legs.ask_model` and parsed the answers, so the
+        // walk must not dial it a second time for the same press.
+        model_asked: false,
         ask_draw: &legs.ask_draw,
         poll: &legs.poll,
         save_picture: &legs.save_picture,
@@ -258,24 +274,19 @@ pub fn frame_images(
 pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     let tree = session_tree();
     let brief = upload_brief_for(&tree, run);
-    // A test that loaded a script answers through it; otherwise the real `youtube` call goes out (§3.9):
-    // thinking on, its tools offered, each answered by the rule that owns it. A refusal names the model and
-    // stops `walk` before anything is written, which `finish_produce` logs as `words_failed`.
+    // The real `youtube` call goes out (§3.9): thinking on, its tools offered, each answered by the rule that
+    // owns it. A test replaces the SERVER (the settings' address), never the leg. A refusal names the model
+    // and stops before anything is written, which `finish_produce` logs as `words_failed`.
     // The publish state is the RUN's, not the file's: §S3 snapshots it at the press, and the page is what
     // holds it. Reading `publish.json` here would describe what an earlier run left — on a fresh session,
     // an empty image row, no edit instruction and no title — instead of what the person has on screen now,
     // and would then write that emptiness back over their typing.
     let publish = publish_of_run(run);
-    let ask = upload_ask(
-        &tree,
-        &publish,
-        extracted_frames(&tree, run),
-        starts_of(run),
-        publish.own || !publish.prompt.trim().is_empty(),
-    );
-    let reply = ask(&brief)?;
-    let answers = answers_from(&reply, starts_of(run), |at| nearest_frame(&tree, run, at));
+    // ONE dial per press (F5.6 S1's "one LLM call"): the legs carry the real leg, so the half asks THAT and
+    // hands `walk` the answers it produced rather than making the walk dial a second time for the same brief.
     let legs = upload_legs(&tree, run);
+    let reply = (legs.ask_model)(&brief)?;
+    let answers = answers_from(&reply, starts_of(run), |at| nearest_frame(&tree, run, at));
     let mats = upload_mats(&legs, run);
     let outcome = crate::produce_upload::walk(
         &brief,
@@ -671,7 +682,9 @@ pub fn session_tree() -> crate::layout::Tree {
 /// The page's model leg: the REAL `youtube` call, always. Nothing here consults a scripted answer — a test
 /// replaces the SERVER, not the work, by pointing the settings' address at a local fake LLM (the same seam
 /// `tests/suite/produce_upload_wire.rs` proves), so every green test goes through the request, the tools and the
-/// prose fallback a live server drives. The closure returns the reply text `upload_half` reads.
+/// prose fallback a live server drives. The closure returns the reply text `upload_half` reads, and every
+/// text-rewriting door on this page goes through it — ↻ suggest (`legs()` below) and the run's words half
+/// (`upload_legs`) alike — so both dial the same `youtube` call at the address the settings name.
 pub fn upload_ask(
     tree: &crate::layout::Tree,
     publish: &crate::project::Publish,

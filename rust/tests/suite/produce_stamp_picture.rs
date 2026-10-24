@@ -322,6 +322,7 @@ fn walk_once(tree: &Tree, instruction: &str, images: &[String], own: bool) -> Ru
     let mats = up::Materials {
         save_publish: &save_publish,
         ask_model: &ask_model,
+        model_asked: false,
         ask_draw: &ask_draw,
         poll: &poll,
         save_picture: &save_picture,

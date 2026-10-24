@@ -210,6 +210,8 @@ fn walk_with(
     let mats = up::Materials {
         save_publish: &save_publish,
         ask_model: &ask_model,
+        // This file proves the walk's ORDER, and that order starts with the model call: the walk asks.
+        model_asked: true,
         ask_draw: &ask_draw,
         poll: &poll,
         save_picture: &save_picture,
