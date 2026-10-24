@@ -214,8 +214,8 @@ mod window_line_step;
 pub(crate) mod window_outputs;
 /// §05-cut#1-screen — the selection band, the held effect and its live form, the preview's volume. Split
 /// out of `window.rs`, which is past its size budget. Its doors are re-exported through `window`.
-/// F0.7's policy doors and F0.13's gear: the ⚙/ⓘ form, its open slot, the User Context tracker and
-/// the debounced derivation. Split out of `window.rs`, which is past its size budget.
+/// F0.7's policy doors and F0.13's gear: the User Context tracker and the debounced derivation.
+/// Split out of `window.rs`, which is past its size budget.
 mod window_policy;
 /// §1's run-bar row, made to fit at the minimum size: the job buttons get a box of their own. Split out of
 /// `window.rs`, which is at its size budget.
@@ -281,11 +281,9 @@ mod cut_volume_hand;
 /// F3.6 S5: the door that hands a PAUSED second's gain to the footage leg, so a parked line inside a raised
 /// passage is heard at that loudness. No rule of its own — it asks `ui::paused_preview_gain` and `cut_hear::mix_gain`.
 pub mod cut_volume_hear;
-/// F0.7 S5 — the policy form: every field with its value, source and reason.
 mod narrate_lines;
 /// F4.7 (**Text**) — the row's text box: what a typed tag does to the line, and when it reaches disk.
 mod narrate_text;
-pub mod policy_form;
 pub mod prepare_guard;
 /// §05-cut#8 bullet 2: the mute line, the stream-volume reset, and the reason each names. Split out of
 /// `window.rs`, which is past its size budget.
@@ -358,8 +356,6 @@ pub use settings::press_test;
 pub use settings::settings_button;
 pub use settings::test_button;
 pub use shell_beats::run_bar;
-pub use window::close_policy_forms;
-/// F0.7 S5 — the policy form and the two ways into it (the run bar's ⚙ and each tab's ⓘ).
 pub use window::run_queue;
 // The shell's own seams and the beats `shell_beats` stands: a test drives these rather than reaching for a
 // private flag, which is what makes the autosave and the pulse observable from outside `ui`. The two whose
@@ -377,7 +373,6 @@ pub use window::copy_into_project;
 pub use window::derive_policy;
 pub use window::find_source_widget;
 pub use window::flush_line_on_close;
-pub use window::forget_policy_form;
 pub use window::line_key_controller;
 pub use window::line_position;
 pub use window::line_root;
@@ -393,24 +388,19 @@ pub use window::new_tooltip;
 pub use window::open_button;
 pub use window::open_folder;
 pub use window::open_from;
-pub use window::open_policy_form;
 pub use window::open_tooltip;
 pub use window::place_line_press;
 pub use window::play_button;
 pub use window::play_tooltip;
-pub use window::policy_form_open;
 pub use window::policy_is_current;
 pub use window::press_play_cut;
-pub use window::press_policy;
 pub use window::press_review_cuts;
 pub use window::progress_bar;
 pub use window::progress_tooltip;
 pub use window::project_title;
-pub use window::refresh_policy_form;
 pub use window::rescan_button;
 pub use window::rescan_tooltip;
 pub use window::reset_add_chooser_shown;
-pub use window::reset_policy_to_defaults;
 pub use window::running_step;
 pub use window::save_button;
 pub use window::save_tooltip;
@@ -433,10 +423,7 @@ pub use window::Step;
 /// §1's tab row / page stack, and the §1 badges 6/15 doors that read the ⓘ's tooltip, the Outputs
 /// folder button's tooltip, and this window's shell.
 pub use window::{switch_latch, tab_info_parts, view_stack};
-pub use window_policy::refused_log;
-pub use window_policy::session_policy_for_form;
-pub use window_policy::set_field_from_form;
-pub use window_policy::REFUSED_LENGTH;
+pub use window_policy::live_session_policy;
 // F3.12: the clamp seam, so a test can run "effects held to the cut as applied" by name and read the same
 // cut state `tests/suite/cut_clamped_to_cut.rs` checks.
 pub use cut_select_press::band_selection_gesture_for_test;

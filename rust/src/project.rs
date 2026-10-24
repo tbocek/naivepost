@@ -114,7 +114,7 @@ pub enum Origin {
     Default,
 }
 
-/// A policy value and the origin the form shows beside it. The spec says "a
+/// A policy value and the origin the log says beside it. The spec says "a
 /// `source` per field" without fixing the JSON spelling; a `{"value", "source"}`
 /// object is self-describing and carries the origin through a save (00-principles §3).
 /// A `targetLengthSeconds` field for a project file written before the field existed, or written without

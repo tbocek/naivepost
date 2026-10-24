@@ -234,7 +234,7 @@ fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s5_the_rende
 #[test]
 fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s6_the_pipeline_is_one_visible_setting(
 ) {
-    // The two fields the policy form writes, with their serde names.
+    // The two fields F0.7's `set_policy` writes, with their serde names.
     let policy = Policy::default();
     let json = serde_json::to_string(&policy).unwrap();
     assert!(json.contains("markingPass"), "{json}");
@@ -244,7 +244,7 @@ fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s6_the_pipel
     assert_eq!(marking.value, MarkingPass::Retakes);
     assert_eq!(marking.origin, Origin::Default);
 
-    // The three deciding fields named for the form.
+    // The three deciding fields named for the derivation.
     let fields = ho::pipeline_fields();
     assert_eq!(fields.len(), 3);
     assert_eq!(fields[0].field, "markingPass");
@@ -256,7 +256,7 @@ fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s6_the_pipel
     );
 
     // Hand-set sticks; derived and default do not. This is what keeps the policy home both derived
-    // and editable rather than a hidden style dropdown.
+    // and editable rather than a hidden style dropdown — §4's row, not F0.7's, which no longer consults it.
     assert!(!ho::model_may_set_pipeline(Origin::User));
     assert!(ho::model_may_set_pipeline(Origin::Model));
     assert!(ho::model_may_set_pipeline(Origin::Default));

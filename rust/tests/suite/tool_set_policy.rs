@@ -141,9 +141,9 @@ fn tool_set_policy_s4_a_number_row_refuses_a_non_number_and_accepts_seconds() {
 }
 
 #[test]
-fn tool_set_policy_s5_a_hand_set_field_is_not_an_error_and_claims_nothing_recorded() {
-    // S4's precedence inside the tool result: the person's value stands, so the model is told it was
-    // KEPT rather than that it failed (nothing was wrong with the call) or that it landed (it did not).
+fn tool_set_policy_s3_a_proposal_over_a_hand_set_field_lands_and_is_recorded() {
+    // F0.7's S3 with no precedence rule left: "a value changes when the User Context says otherwise", so
+    // a field the person set by hand is not privileged — the model's call lands and the result says so.
     let policy = Policy {
         speed_pass: Field {
             value: false,
@@ -153,17 +153,14 @@ fn tool_set_policy_s5_a_hand_set_field_is_not_an_error_and_claims_nothing_record
         ..Policy::default()
     }; // P.policy.speedPass, set by hand
     let got = answer(&policy, "speedPass", "on", "the pacing could use a lift");
-    assert!(
-        got.get("error").is_none(),
-        "a kept value is not a fault: {got}"
-    );
-    assert_eq!(got["kept"], "user", "{got}");
-    assert!(
-        got.get("recorded").is_none(),
-        "nothing was recorded, so nothing may claim it: {got}"
-    );
+    assert!(got.get("error").is_none(), "{got}");
+    assert_eq!(got["recorded"], serde_json::json!(true), "{got}");
     assert_eq!(got["field"], "speedPass", "{got}");
-    assert!(!policy.speed_pass.value, "the person's off stays off");
+    assert_eq!(got["value"], "on", "{got}");
+    assert!(
+        got.get("kept").is_none(),
+        "nothing is kept off-limits now, so the result may not claim it: {got}"
+    );
 }
 
 #[test]

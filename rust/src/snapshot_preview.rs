@@ -130,8 +130,6 @@ pub const LINE_SECONDS: f64 = 82.0;
 /// second, so the page shot and the frame image cannot show one record in two places.
 pub const SHOT_SECONDS: f64 = LINE_SECONDS;
 
-
-
 /// Paint the preview mid-zoom-and-caption onto `window`. Returns true when this module owned `screen`.
 /// `out` is the PNG this run writes; §2's own frame image goes beside it as `<name>-frame.png`.
 pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, screen: &str) -> bool {
@@ -235,8 +233,9 @@ pub(crate) fn paint(window: &adw::ApplicationWindow, dir: &Path, out: &Path, scr
         // staged colour a crop of it and all of it are the same pixels. So this screen stages the structured frame
         // (three bands + one bright block) and paints THAT; `frame_shown()` stays the fallback for when nothing
         // could be written, so the shot still lands rather than going out blank.
-        let picture = crate::snapshot_face::seed_structured_frame(dir, "session-tape", LINE_SECONDS)
-            .or_else(|| still.clone());
+        let picture =
+            crate::snapshot_face::seed_structured_frame(dir, "session-tape", LINE_SECONDS)
+                .or_else(|| still.clone());
         match crate::snapshot_preview_frame::write_png(
             &staged_with_caption(window),
             SHOT_SECONDS,

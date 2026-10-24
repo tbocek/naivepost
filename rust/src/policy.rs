@@ -2,22 +2,18 @@
 //!
 //! The User Context is a paragraph of prose; the pipeline runs on five switches. This module is the
 //! translation and nothing else: it turns a context into a [`Policy`], validates what a model proposes
-//! against that catalogue, refuses what it does not know, keeps what a person set by hand, and answers
-//! which flows the result turns on.
+//! against that catalogue, refuses what it does not know, and answers which flows the result turns on.
 //!
-//! Nothing here imports UI. [`crate::ui::window`] draws the form (§S5), forwards the presses to these
-//! functions and prints what comes back; the derivation request is built here ([`request`]) but sent by
-//! the run layer, so every rule below is testable without a server, a window or a display.
+//! Nothing here imports UI. The shell forwards its presses to these functions and prints what comes back
+//! (F0.7 S4: every stored value is said in the log); the derivation request is built here ([`request`])
+//! but sent by the run layer, so every rule below is testable without a server, a window or a display.
 //!
-//! Three rules from §00-principles hold the module together:
+//! Two rules from §00-principles hold the module together:
 //! * models propose, the machine places — the model names a field and gives a reason, this decides
 //!   whether that field exists and whether that value fits it (S3);
-//! * nothing is deleted, only marked — a hand-set value outranks a derived one forever (S4), through
-//!   [`decision_homes::overridable_by_derivation`], never a second copy of that predicate;
 //! * failure is specific and local — a refusal names the field and what was wrong with the value, and
 //!   says nothing about the fields that were accepted alongside it (S3).
 
-use crate::decision_homes;
 use crate::project::{CutMode, Field, MarkingPass, Origin, Policy};
 use crate::prompts;
 use crate::tool_loop;
@@ -27,7 +23,7 @@ use crate::tools::Tool;
 ///
 /// `policy.debounceMs` — §03 says "debounced" without a number. 500 ms is ours: long enough that a
 /// person typing a sentence causes one derivation rather than one per word, short enough that the
-/// answer is waiting by the time they look at the form. A `P.*` row would imply §10 chose it; it did
+/// answer is waiting by the time the next ▶ runs. A `P.*` row would imply §10 chose it; it did
 /// not, so this carries a bare prefix like `machine.`/`preview.` values do.
 pub const DEBOUNCE_MS: u64 = 500;
 
@@ -51,21 +47,17 @@ pub struct Proposal {
 /// What became of one proposal.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Applied {
-    /// Stored with `source: model` and its `because` (S3).
+    /// Stored with its `because` (S3).
     Set,
-    /// A person had set this field; the old value stands untouched (S4).
-    KeptUser,
     /// Not stored, with the sentence the model gets back so it can correct itself (S3).
     Refused(String),
 }
 
 impl Applied {
-    /// The line the status bar shows for this outcome. A kept-user answer is not an error and reads that
-    /// way: the field still holds what the person chose, which is the point of S4.
+    /// The line the status bar shows for this outcome.
     pub fn status(&self) -> String {
         match self {
             Self::Set => "set".to_string(),
-            Self::KeptUser => "kept yours".to_string(),
             Self::Refused(say) => say.clone(),
         }
     }
@@ -85,11 +77,11 @@ pub fn is_empty(context: &str) -> bool {
     context.trim().is_empty()
 }
 
-/// One row of the catalogue the form lists and `tool:set_policy` validates against: the field's name as
+/// One row of the catalogue `tool:set_policy` validates against: the field's name as
 /// the spec spells it, the `P.policy.*` id it answers to, and the values it accepts.
 ///
 /// A row with an empty `values` list is a NUMBER rather than a choice: `policy::apply` reads its value as
-/// seconds and the form prints the seconds instead of offering a dropdown. That is what makes
+/// seconds instead of offering a pick-one list. That is what makes
 /// `P.policy.targetLengthSeconds` a row of this catalogue without pretending to be a pick-one list.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CatalogueRow {
@@ -98,10 +90,10 @@ pub struct CatalogueRow {
     pub values: &'static [&'static str],
 }
 
-/// The six fields F0.7 derives, in the order the form shows them.
+/// The six fields F0.7 derives, in the order the log says them.
 ///
-/// This is the list S3 validates against and S5 renders, so "known field" and "shown in the form" are
-/// one fact: a field cannot be settable-but-hidden or shown-but-unsettable. `hands_off::pipeline_fields`
+/// This is the list S3 validates against, so "known field" and "a field the derivation may set" are
+/// one fact: a field cannot be settable-but-unsayable. `hands_off::pipeline_fields`
 /// describes the same three-way choice from the other side (what the model must not decide per request);
 /// this is the writable face of it, spelled per field because validation needs each field's range.
 pub fn derived_fields() -> [CatalogueRow; 6] {
@@ -136,7 +128,7 @@ pub fn derived_fields() -> [CatalogueRow; 6] {
             id: "P.policy.decorationsPass",
             values: ON_OFF,
         },
-        // P.policy.targetLengthSeconds — §12 entry 21. A number, so no `values`: the form prints the seconds
+        // P.policy.targetLengthSeconds — §12 entry 21. A number, so no `values`: the derivation writes the seconds
         // and the derivation writes what the User Context's own words say (or a model's proposal), instead of
         // the prototype's regex that silently left 0 = none.
         CatalogueRow {
@@ -160,14 +152,14 @@ fn lookup(field: &str) -> Option<CatalogueRow> {
 /// S3: validate one proposal and store it if it passes.
 ///
 /// Two refusals, both naming what was wrong so the model can fix it in its next round: an unknown field
-/// (the catalogue is closed — a field the form does not show cannot be set), and a value outside that
+/// (the catalogue is closed — a value that cannot be set cannot be proposed), and a value outside that
 /// field's own range. Neither refusal touches the policy, so a batch where three proposals land and one
 /// does not leaves exactly the three landed (failure is local).
 ///
-/// S4 is checked first: a field a person set is never overwritten, so a valid proposal for it reports
-/// `KeptUser` and changes nothing. That goes through
-/// [`decision_homes::overridable_by_derivation`] — the same predicate [`crate::hands_off`] uses — so
-/// the rule lives once.
+/// §F0.7 has no hand-set precedence any more — "There is no policy form: a value changes when the User
+/// Context says otherwise" — so a valid proposal always stores, whatever `source` the field carries. An
+/// old `naivepost.json` may still say `"source": "user"`; loading it is fine, and the next derivation
+/// overwrites that field like any other.
 pub fn apply(policy: &mut Policy, proposal: &Proposal) -> Applied {
     let Some(row) = lookup(&proposal.field) else {
         return Applied::Refused(format!(
@@ -187,9 +179,6 @@ pub fn apply(policy: &mut Policy, proposal: &Proposal) -> Applied {
             row.field,
             row.values.join(" / ")
         ));
-    }
-    if !decision_homes::overridable_by_derivation(current_origin(policy, row.field)) {
-        return Applied::KeptUser;
     }
     let because = (!proposal.because.is_empty()).then(|| proposal.because.clone());
     match row.field {
@@ -226,21 +215,6 @@ pub fn apply(policy: &mut Policy, proposal: &Proposal) -> Applied {
         _ => unreachable!("catalogue row {} has no writer", row.field),
     }
     Applied::Set
-}
-
-/// S3/S5: the origin currently on a field, read by name so the S4 check needs no match of its own.
-fn current_origin(policy: &Policy, field: &str) -> Origin {
-    match field {
-        "markingPass" => policy.marking_pass.origin,
-        "cutMode" => policy.cut_mode.origin,
-        "captionsPass" => policy.captions_pass.origin,
-        "speedPass" => policy.speed_pass.origin,
-        "decorationsPass" => policy.decorations_pass.origin,
-        // Without this arm a hand-set target length reads as `Default` here, S4 lets the derivation over it,
-        // and the person's number is silently replaced — the exact failure §12 entry 21 says must be visible.
-        "targetLengthSeconds" => policy.target_length_seconds.origin,
-        _ => Origin::Default,
-    }
 }
 
 /// The value half of S3 for the two enums. Range was already checked against the catalogue's spellings,
@@ -411,8 +385,12 @@ pub struct Derived {
     /// §12 entry 21: whether a target length was READ from the User Context's words and stored. A read that
     /// understood nothing leaves this false, so "no target" stays a said fact rather than a silent 0.
     pub target_read: bool,
-    /// Each accepted or kept proposal, by field name, with what became of it (S3 / S4).
+    /// Each accepted proposal, by field name (S3).
     pub applied: Vec<(&'static str, Applied)>,
+    /// Each proposal that LANDED, by field name, in the order they landed — index-aligned with [`applied`],
+    /// which is why refusals are left out of both. S4's log line reads the value and the `because` off these,
+    /// so a field the model corrected after a refusal is said with the reason that actually won.
+    pub proposals: Vec<Proposal>,
     /// Every refusal the loop collected, oldest first — the sentences the model was handed back.
     pub refusals: Vec<String>,
 }
@@ -445,10 +423,9 @@ pub const DERIVE_ROUNDS: u32 = 3;
 ///
 /// S1 short-circuits before anything else: an empty context means there is nothing to derive, so
 /// `answer` is never called at all (a test counts the calls). Otherwise each round runs every
-/// proposal through [`apply`], which already holds both rules that matter: validation names the field
-/// and what was wrong with the value (S3), and a field whose origin is `user` comes back `KeptUser`
-/// through `decision_homes::overridable_by_derivation` without being touched (S4). Refusals are fed
-/// back into the next round's `answer`; accepted values stay put whatever the next round says.
+/// proposal through [`apply`], which holds the rule that matters: validation names the field and what
+/// was wrong with the value (S3). Refusals are fed back into the next round's `answer`; accepted values
+/// stay put whatever the next round says.
 pub fn derive(
     policy: &mut Policy,
     context: &str,
@@ -464,7 +441,7 @@ pub fn derive(
     }
     // §12 entry 21 first, before any model is asked: a length written in plain words is arithmetic, and the
     // prototype got it wrong by reading it with a regex that had no fallback. Read here rather than in the
-    // window so every door (debounce, ▶, the form's Re-derive) derives the same number.
+    // window so every door (the debounce and the next ▶) derives the same number.
     let mut out = read_target_length(policy, context);
     let req = request(context);
     for _ in 0..DERIVE_ROUNDS {
@@ -492,10 +469,12 @@ pub fn derive(
                 Applied::Refused(say) => out.refusals.push(say),
                 other => {
                     // The field name is `'static` in the catalogue, so handing it out costs nothing
-                    // and lets a test assert per-field outcomes without re-reading the policy.
+                    // and lets a test assert per-field outcomes without re-reading the policy. Only a proposal
+                    // that landed is recorded beside it: that keeps the two lists index-aligned.
                     let name = lookup(&proposal.field)
                         .map(|row| row.field)
                         .unwrap_or("unknown");
+                    out.proposals.push(proposal.clone());
                     out.applied.push((name, other));
                 }
             }
@@ -510,10 +489,9 @@ pub fn derive(
 
 /// §12 entry 21: read `P.policy.targetLengthSeconds` out of the User Context's own words and store it.
 ///
-/// This runs through [`apply`], so S4 holds exactly as it does for a model's proposal: a length a person set
-/// by hand is kept (`KeptUser`) and nothing is written. The log line says which of the three happened —
-/// understood, already the person's, or nothing mentioned — because the whole point of the entry is that a
-/// missed reading must not be silent.
+/// This runs through [`apply`], so it passes the same validation a model's answer passes. The log line says
+/// which of the two happened — understood, or nothing mentioned — because the whole point of the entry is
+/// that a missed reading must not be silent.
 pub fn read_target_length(policy: &mut Policy, context: &str) -> Derived {
     let reading = crate::policy_length::target_length_of(context);
     let mut out = Derived::default();
@@ -533,6 +511,7 @@ pub fn read_target_length(policy: &mut Policy, context: &str) -> Derived {
     match apply(policy, &proposal) {
         Applied::Refused(say) => out.refusals.push(say),
         other => {
+            out.proposals.push(proposal.clone());
             out.applied.push(("targetLengthSeconds", other));
             out.target_read = reading.seconds > crate::tools::cutpass::NO_TARGET;
         }
@@ -540,7 +519,7 @@ pub fn read_target_length(policy: &mut Policy, context: &str) -> Derived {
     out
 }
 
-/// The log line for one target-length read: what the User Context said, in the same words the form uses.
+/// The log line for one target-length read: what the User Context said, in the words this module spells.
 pub fn target_length_log(derived: &Derived) -> Option<String> {
     let landed = derived
         .applied
@@ -548,13 +527,80 @@ pub fn target_length_log(derived: &Derived) -> Option<String> {
         .find(|(field, _)| *field == "targetLengthSeconds")
         .map(|(_, outcome)| outcome.clone())?;
     Some(match landed {
-        Applied::KeptUser => ">>> policy: target length left as you set it".to_string(),
         Applied::Refused(say) => format!("!!! policy: {say}"),
         Applied::Set => ">>> policy: target length read from the User Context".to_string(),
     })
 }
 
-/// Which marks a changed `markingPass` throws away (§03's closing paragraph): the retake marks and
+/// S4: one line per value this derivation STORED, spelling the field, the value and the `because` that
+/// came with it — "Each stored value is said in the log with its field, value and `because`, so what the
+/// model decided is visible". Those three parts are the whole requirement: no source word, no numbering,
+/// nothing else, because a person reading the log is asking what changed and why, not how it arrived.
+///
+/// Only `Applied::Set` earns a line. A refusal was already said (it is handed back to the model and
+/// reported by [`Derived::status`]), and a kept field did not change, so logging it as stored would say
+/// something false. The value printed is the one now on the policy — read back through [`stored_word`]
+/// rather than echoed from the proposal — so the line cannot claim a value the store rejected or reformatted.
+pub fn derived_log(derived: &Derived, policy: &Policy) -> Vec<String> {
+    derived
+        .applied
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, outcome))| matches!(outcome, Applied::Set))
+        .map(|(index, (field, _))| {
+            let because = derived
+                .proposals
+                .get(index)
+                .map(|proposal| proposal.because.clone())
+                .filter(|reason| !reason.is_empty())
+                .unwrap_or_else(|| "no reason given".to_string());
+            format!(
+                "policy: {field} = {} \u{2014} {because}",
+                stored_word(policy, field)
+            )
+        })
+        .collect()
+}
+
+/// The value a policy holds for one field, spelled the way §10 spells it: enums by their words, switches
+/// as on/off, a length as its seconds (`0` is §10's "none"). The log prints it (S4) and `get_context`
+/// offers the same spelling to the model, so neither depends on a screen existing.
+pub fn stored_word(policy: &Policy, field: &str) -> String {
+    match field {
+        "markingPass" => {
+            let word = match policy.marking_pass.value {
+                MarkingPass::Joins => "joins",
+                MarkingPass::Retakes => "retakes",
+                MarkingPass::None => "none",
+            };
+            word.to_string()
+        }
+        "cutMode" => {
+            let word = match policy.cut_mode.value {
+                CutMode::Words => "words",
+                CutMode::Model => "model",
+            };
+            word.to_string()
+        }
+        "captionsPass" => pass_word(policy.captions_pass.value).to_string(),
+        "speedPass" => pass_word(policy.speed_pass.value).to_string(),
+        "decorationsPass" => pass_word(policy.decorations_pass.value).to_string(),
+        "targetLengthSeconds" => format!("{}", policy.target_length_seconds.value),
+        // A name outside the catalogue has no stored shape to print; an empty value is a visible gap in the
+        // line rather than a crash, and `derived_log` can only ever be handed a catalogue field.
+        _ => String::new(),
+    }
+}
+
+fn pass_word(on: bool) -> &'static str {
+    if on {
+        "on"
+    } else {
+        "off"
+    }
+}
+
+/// Which marks a changed `markingPass` throws away (§03's closing paragraph)
 /// the marked text they were written into.
 ///
 /// Pure — this answers the question, the caller drops the files. It follows §00's resume-marker rule:

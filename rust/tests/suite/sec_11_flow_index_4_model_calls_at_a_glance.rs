@@ -416,9 +416,9 @@ fn check_prepare_press_logs_its_bill(app: &adw::Application) {
     RAN_PREPARE_WIRE.store(true, Ordering::SeqCst);
 }
 
-/// S5 through the widget: the header ⓘ press (F0.7 S5's door) dials the policy model AND logs §4's Setup row.
-/// Both halves
-/// matter — a bill naming a call that never went out would be decoration.
+/// S5 through the widget: §4's Setup row (`policy \u{d7}1`) reaches the log of a live window. The derivation
+/// itself runs from its own doors (the User Context debounce and the next ▶), so what is pinned here is the
+/// bill line — a bill naming a call that never went out would be decoration.
 fn check_info_button_logs_the_setup_row(app: &adw::Application) {
     // Same scenario root as the Prepare press above (one per binary): only the LLM address is added,
     // through `point_llm`, which leaves the audio.cpp that press needed standing.

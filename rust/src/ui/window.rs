@@ -463,7 +463,8 @@ pub fn build_window(
     controls.append(&lucky);
     controls.append(&stop_);
     // …and NOTHING else. §2's list is the row's whole content: the four controls above, then the readouts.
-    // The editing-policy form has no gear here (F0.7 S5 opens it from the header ⓘ, badge 6, wired below);
+    // No gear for an editing-policy form lives here either — F0.7 has no form at all, and badge 6's ⓘ is a
+    // tooltip and nothing more (wired below);
     // F0.7's derivation runs by itself when the User Context changes (`window_bench` → `schedule_policy_derive`),
     // and F3.9-F3.11 are jobs of the run after the cut (`cut_suggest_land` → `cut_suggest_passes::run_after_cut`),
     // filtered by the policy switches — none of them starts from a button on this bar.
@@ -563,8 +564,9 @@ pub fn build_window(
     wire_settings(&settings_, &window);
 
     // §1's badge **6**: ⓘ, once, at header position 6 — read left to right the bar ends ⓘ ⚙ ⟳, so
-    // it is packed after Settings (each `pack_end` lands left of the previous one). It opens the
-    // same policy form as the run bar's gear through [`press_policy`]; its tooltip follows
+    // it is packed after Settings (each `pack_end` lands left of the previous one). Its whole job is its
+    // tooltip: F0.7 has no policy form, so a press opens nothing and the policy is read where it is said,
+    // in the log. The tooltip follows
     // `Shell::info_tip`, which `paint_readouts` syncs on every switch and a bounce leaves on the page
     // still shown (§1: "tooltip = current tab's label + help text", F0.1 S4's "sync ⓘ"). It is the only
     // ⓘ in the window: §1 lists badge **6** once, in the header, and a per-page copy would be a control
@@ -772,7 +774,7 @@ pub fn build_window(
     }
     wire_line_keys(&window);
     // F2.4 S4: closing this window saves the line where it stands, whatever the rate limit says.
-    // `Propagation::Proceed` so the close still happens — same shape as policy_form.rs's own hook.
+    // `Propagation::Proceed` so the close still happens.
     {
         let closing = window.clone();
         window.connect_close_request(move |_| {
@@ -1071,10 +1073,8 @@ fn wire_switching(
 }
 
 pub use crate::ui::window_policy::{
-    built_window, close_policy_forms, derive_policy, forget_policy_form, main_window,
-    open_policy_form, policy_form_open, policy_is_current, press_policy, refresh_policy_form,
-    reset_policy_to_defaults, session_policy, set_policy_sender_for_tests, set_session_context,
-    set_session_policy_field,
+    built_window, derive_policy, live_session_policy, main_window, policy_is_current,
+    session_policy, set_policy_sender_for_tests, set_session_context, set_session_policy_field,
 };
 pub(crate) use crate::ui::window_policy::{
     schedule_policy_derive, user_context, wire_policy, wire_settings, POLICY_TRACKERS,

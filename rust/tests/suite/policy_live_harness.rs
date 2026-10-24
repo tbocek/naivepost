@@ -3,7 +3,7 @@
 //! F0.7 S2's live half over a socket: the harness the one-scenario-per-binary tests share.
 //!
 //! `tests/suite/policy_derive.rs` proves the rules with proposals handed in as text, and
-//! `tests/suite/cut_policy_form_widgets.rs` proves the ⚙ wire with an injected sender. This proves the
+//! `tests/suite/f0_7_derive_doors.rs` proves the ▶ door with an injected sender. This proves the
 //! middle that neither covers: the derivation dials the address the settings hold, the policy prompt
 //! and both tools ride out over HTTP, and a `set_policy` call read back off the socket is what lands on
 //! the policy. The seam is `LLM_SERVER`, the same one a person types into the Settings box, so no canned

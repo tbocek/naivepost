@@ -168,18 +168,6 @@ pub(crate) fn bench_box(
     let editor_for_picker = editor.clone();
     picker.connect_selected_notify(move |picker| {
         let index = usize::try_from(picker.selected()).unwrap_or(0);
-        // §1's REVIEW row is not a prompt: choosing "Editing policy" opens F0.7's form and leaves the
-        // bench showing the prompt it was on (there is no text to paint for a row with no wording).
-        // `press_policy` is the SAME door the run bar's ⚙ and every tab's ⓘ call, so one form, one
-        // derivation, whichever way it was opened. The face then goes back to the live prompt row,
-        // which re-enters this handler — hence the `is_policy` guard above it doing its work first.
-        if bench::is_policy(index) {
-            if let Some(window) = ui::built_window() {
-                crate::ui::press_policy(&window);
-            }
-            picker.set_selected(u32::try_from(row_for_picker.borrow().selected).unwrap_or(0));
-            return;
-        }
         if picker.selected() == gtk::INVALID_LIST_POSITION {
             return;
         }

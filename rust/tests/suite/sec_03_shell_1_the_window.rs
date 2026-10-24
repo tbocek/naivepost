@@ -1031,11 +1031,15 @@ fn s1e_the_page_names_no_extra_heading_and_shows_its_controls(app: &adw::Applica
         .expect("the header's ⓘ")
         .downcast::<gtk::Button>()
         .expect("badge 6 is a button");
+    // §F0.7 has no policy form, so the ⓘ is the badge its tooltip defines and nothing more: pressing it
+    // must not open a window of its own.
+    let windows_before = gtk::Window::list_toplevels().len();
     info.emit_clicked();
     settle();
-    assert!(
-        ui::policy_form_open(&window),
-        "F0.7 S5: the header ⓘ is a real way into the policy form"
+    assert_eq!(
+        gtk::Window::list_toplevels().len(),
+        windows_before,
+        "F0.7: the ⓘ opens no form — its whole job is its tooltip"
     );
     window.close();
 }
@@ -1163,8 +1167,8 @@ fn s15_the_outputs_row_reads_label_button_count(app: &adw::Application) {
 }
 
 /// §1 badge **6**'s tooltip: `ⓘ`'s tooltip IS `shell::info_tip(<shown page>)`, before and after a switch —
-/// §1's "tooltip = current tab's label + help text" and F0.1 S4's "sync ⓘ", and nothing else (the form the
-/// press opens is F0.7's, pinned in `cut_policy_form_widgets.rs`). `s2b_info_describes_the_shown_tab` reads
+/// §1's "tooltip = current tab's label + help text" and F0.1 S4's "sync ⓘ", and nothing else (F0.7 has no
+/// form for the press to open). `s2b_info_describes_the_shown_tab` reads
 /// the same fact through `ui::tab_info_parts`; this pins it against the function that composes the sentence.
 fn s1_the_info_button_names_the_shown_tab(app: &adw::Application) {
     let window = window(app, "Prepare");

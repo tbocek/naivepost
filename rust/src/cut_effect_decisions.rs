@@ -286,7 +286,7 @@ pub fn audit() -> [Ruled; 11] {
         },
         Ruled {
             // P.policy.targetLengthSeconds
-            what: "the target length is a derived policy number shown in the policy form, not a regex \
+            what: "the target length is a derived policy number said in the log, not a regex \
                   over free text with no fallback",
             home: "policy — F0.7's `set_policy`, seen by the model as wording it cannot mis-set",
             lives_in: "P.policy.targetLengthSeconds, catalogued by params::cut and read by \

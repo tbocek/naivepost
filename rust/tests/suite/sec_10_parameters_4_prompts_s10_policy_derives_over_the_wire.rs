@@ -1,8 +1,9 @@
 //! §10-parameters#4-prompts S10 over a socket: the new `policy` prompt is really sent.
 //!
 //! The derivation's whole point is that a person's User Context reaches a model. Everything else in
-//! `tests/suite/prompts_catalogue.rs` proves the catalogue; this presses the run bar's ⚙ on a real window,
-//! with the settings file pointing at a loopback fake, and reads what arrived: the shipped policy
+//! `tests/suite/prompts_catalogue.rs` proves the catalogue; this presses the run bar's ▶ on a real window
+//! (F0.7's door: a press derives a context nobody derived from), with the settings file pointing at a
+//! loopback fake, and reads what arrived: the shipped policy
 //! wording, thinking off as §4 says, and `set_policy` offered. The session policy changing is the
 //! proof the answer was applied rather than only sent.
 
@@ -14,7 +15,6 @@ mod harness;
 use crate::common;
 use adw::prelude::*;
 use common::{fixture_dir, settle};
-use gtk4 as gtk;
 use harness::*;
 use naivepost::{prompts, ui};
 use serde_json::json;
@@ -34,26 +34,50 @@ fn set_policy_call(field: &str, value: &str) -> String {
     .to_string()
 }
 
-fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
-    ui::line_step_button(window, name).unwrap_or_else(|| panic!("the shell carries {name}"))
+/// Point this process's audio.cpp address at a loopback fake, IN THE ALREADY PINNED settings root: ▶ needs
+/// a live server or it refuses at F1.1's preflight before the policy door runs. Only `audio_server` moves —
+/// `XDG_CONFIG_HOME` stays where `fixture(...)` put it, so `point_at` and the S11 prompt file still resolve.
+fn serve_audio() {
+    let paths =
+        naivepost::settings::from_environment().expect("the pinned settings folder resolves");
+    let mut conf = naivepost::settings::read(&paths).expect("settings read back");
+    conf.audio_server = common::fake_audio_server();
+    naivepost::settings::save(&paths, &conf).expect("the conf points at the fake server");
+}
+
+/// F0.7's "on the next ▶" door through the widget: the press queues the derivation ahead of the step body,
+/// which lands on the main loop, so the wait is for the fact (this context is now current) rather than for a
+/// guess of how many turns it takes. Then \u23f9 leaves the bar idle for the next check.
+fn press_play_and_wait(window: &adw::ApplicationWindow, context: &str) {
+    ui::play_button(window)
+        .expect("the run bar has a \u{25b6}")
+        .emit_by_name::<()>("clicked", &[]);
+    common::wait_until("the policy ask landed", || {
+        ui::policy_is_current(window, context)
+    });
+    ui::stop_button(window)
+        .expect("the run bar has a \u{23f9}")
+        .emit_by_name::<()>("clicked", &[]);
+    settle();
 }
 
 /// Every widget case runs inside ONE application's activate hook: GTK may only have its main loop
 /// started by the thread that will run it, and cargo runs `#[test]` functions on a worker.
-fn check_the_info_button_dials_the_policy_prompt(app: &adw::Application) {
+fn check_the_play_press_dials_the_policy_prompt(app: &adw::Application) {
     // The scenario root: pinning `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and the cwd is the whole point of
     // calling it, and the guard keeps the folders alive until the test's end.
     let _fixture = fixture("s10-policy-wire");
     let llm = FakeLlm::start(vec![set_policy_call("cutMode", "words")]);
     let addr = point_at(&llm.url());
+    serve_audio();
 
     let project = naivepost::project::load(&fixture_dir()).expect("the fixture loads");
     let window = ui::build_window(app, &project, "Prepare");
     window.present();
     settle();
 
-    // A context typed but never derived from: exactly what a person leaves behind, and F0.7 S5's reason
-    // for deriving on the way into the form.
+    // A context typed but never derived from: exactly what a person leaves behind, and F0.7's reason
+    // for deriving on the next ▶.
     ui::set_session_context(&window, "cut on the words, not the model");
     assert!(
         !ui::policy_is_current(&window, "cut on the words, not the model"),
@@ -61,8 +85,7 @@ fn check_the_info_button_dials_the_policy_prompt(app: &adw::Application) {
     );
     let before = ui::session_policy(&window).cut_mode.value;
 
-    button(&window, "tab-info-button").emit_by_name::<()>("clicked", &[]);
-    settle();
+    press_play_and_wait(&window, "cut on the words, not the model");
 
     let seen = llm.next_seen();
     assert_eq!(
@@ -138,14 +161,14 @@ fn check_an_edited_policy_prompt_wins_on_the_wire(app: &adw::Application) {
     // from S10's cached round.
     let llm = FakeLlm::start(vec![set_policy_call("captionsPass", "true")]);
     point_at(&llm.url());
+    serve_audio();
     let project = naivepost::project::load(&fixture_dir()).expect("the fixture loads");
     let window = ui::build_window(app, &project, "Prepare");
     window.present();
     settle();
     // A different context from S10's so the LLM cache (keyed on the exact request) cannot answer here.
     ui::set_session_context(&window, "burn in captions for the whole film");
-    button(&window, "tab-info-button").emit_by_name::<()>("clicked", &[]);
-    settle();
+    press_play_and_wait(&window, "burn in captions for the whole film");
 
     let seen = llm.next_seen();
     assert!(
@@ -179,7 +202,7 @@ static RAN_S11: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::n
 
 fn window_round() {
     common::one_app_round(|app| {
-        check_the_info_button_dials_the_policy_prompt(app);
+        check_the_play_press_dials_the_policy_prompt(app);
         RAN_S10.store(true, std::sync::atomic::Ordering::SeqCst);
         check_an_edited_policy_prompt_wins_on_the_wire(app);
         RAN_S11.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -187,8 +210,7 @@ fn window_round() {
 }
 
 #[test]
-fn sec_10_parameters_4_prompts_s10_pressing_the_info_button_sends_the_policy_prompt_over_the_wire()
-{
+fn sec_10_parameters_4_prompts_s10_pressing_play_sends_the_policy_prompt_over_the_wire() {
     window_round();
     assert!(
         RAN_S10.load(std::sync::atomic::Ordering::SeqCst),

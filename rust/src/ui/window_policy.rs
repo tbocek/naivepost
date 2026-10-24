@@ -1,7 +1,6 @@
-//! F0.7's policy doors and F0.13's gear: the ⚙/ⓘ form's open slot, the User Context tracker,
-//! the debounced derivation, the session policy's two read/write doors, and the wires into them.
-//! Split out of `window.rs`, which is past its size budget; its doors are re-exported through
-//! `window`.
+//! F0.7's policy doors and F0.13's gear: the User Context tracker, the debounced derivation, the session
+//! policy's read/write doors, and the wires into them. Split out of `window.rs`, which is past its size
+//! budget; its doors are re-exported through `window`.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -13,7 +12,6 @@ use crate::layout;
 use crate::policy;
 use crate::project::Origin;
 use crate::startup;
-use crate::ui::policy_form;
 use crate::ui::settings;
 use crate::ui::window::SESSION;
 use crate::ui::window_doors::find_widget_by_name;
@@ -27,160 +25,24 @@ pub(crate) fn wire_settings(button: &gtk::Button, window: &adw::ApplicationWindo
     });
 }
 
-/// F0.7 S5: where a press of the policy control goes — build the form off this window's live policy and
-/// show it. The button decides nothing: [`policy_form::build`] reads every row from
-/// [`policy::derived_fields`] plus the [`Project`]'s `Policy`, so what shows is the current state and
-/// not a snapshot someone remembered to refresh.
-///
-/// A form already open is raised rather than duplicated: pressing ⚙ twice should not put two copies of
-/// one screen on the desk.
-pub fn press_policy(window: &adw::ApplicationWindow) {
-    // F0.7's door into the form also closes the staleness gap: if this window has never derived from
-    // its User Context, derive now so the first thing the form paints is what the model said rather
-    // than a default nobody chose. The tracker makes this free on every later open.
-    let context = user_context(window);
-    if POLICY_TRACKERS
-        .with(|trackers| trackers.borrow().last().cloned())
-        .is_some_and(|tracker| tracker.borrow().needs_derive(&context))
-    {
-        derive_policy(window);
-    }
-    if let Some(existing) = POLICY_FORMS.with(|forms| forms.borrow().last().cloned()) {
-        // Rebuild the rows in place rather than only raising the old window: the policy may have changed
-        // since this form was opened, and a form that shows last-opened values is exactly the staleness
-        // S5 exists to avoid.
-        refresh_policy_form(&existing);
-        existing.present();
-        return;
-    }
-    let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
-        return;
-    };
-    // Read at open time, through the same handle Open/Rescan write, so the form cannot drift from the
-    // project it describes.
-    let policy = session.borrow().policy.clone();
-    let form = policy_form::build(Some(window.upcast_ref()), &policy);
-    POLICY_FORMS.with(|forms| forms.borrow_mut().push(form.clone()));
-    form.present();
-}
-
-/// Whether this window has a policy form showing.
-pub fn policy_form_open(_window: &adw::ApplicationWindow) -> bool {
-    POLICY_FORMS.with(|forms| !forms.borrow().is_empty())
-}
-
-/// The open policy form, newest first — the same handle `press_policy` raised. Published so a test can
-/// read the labels inside it without walking GTK's application window list (which needs a running
-/// `GApplication` registration this harness does not have).
-pub fn open_policy_form() -> Option<adw::Window> {
-    POLICY_FORMS.with(|forms| forms.borrow().last().cloned())
-}
-
-/// Re-read the live policy into an already-open form's labels, in place.
-///
-/// The row widgets are found by their stable names rather than kept in a struct, so a rebuild needs no
-/// bookkeeping and cannot hold a stale handle — the same reason the buttons are looked up per press.
-/// the form is showing. Public so `policy_form`'s Re-derive button repaints through exactly the same
-/// path a policy change already uses.
-pub fn refresh_policy_form(form: &adw::Window) {
-    let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
-        return;
-    };
-    let policy = session.borrow().policy.clone();
-    // Walked through `policy_form_edit::rows`, the form's own view of which fields it makes settable, so
-    // this refresh and the code that built the rows agree without either importing the catalogue.
-    for entry in crate::policy_form_edit::rows() {
-        // The value cell is an editor now, so it is re-seeded through the same door that built it.
-        if let Some(widget) =
-            find_widget_by_name(form.upcast_ref(), &format!("policy-edit-{}", entry.field))
-        {
-            crate::policy_form_edit::set_value(&widget, &policy, &entry);
-        }
-        if let Some(label) =
-            find_widget_by_name(form.upcast_ref(), &format!("policy-source-{}", entry.field))
-        {
-            if let Ok(label) = label.downcast::<gtk::Label>() {
-                label.set_text(policy_form::origin_word(policy_form::field_origin(
-                    &policy,
-                    entry.field,
-                )));
-            }
-        }
-        if let Some(label) =
-            find_widget_by_name(form.upcast_ref(), &format!("policy-reason-{}", entry.field))
-        {
-            if let Ok(label) = label.downcast::<gtk::Label>() {
-                label.set_text(&policy_form::reason_word(&policy, entry.field));
-            }
-        }
-    }
-}
-
 /// The live policy this window's session holds — the same `Rc` Open/Rescan write, read through the
-/// newest slot like [`session_sources`] does. Published so a test can set a field's origin to `User`
-/// and watch what the form then prints, rather than poking the thread-local from outside.
+/// newest slot like [`session_sources`] does. Every reader of the live policy — the pass gates,
+/// `get_context`, the tests — goes through this rather than the thread-local.
 pub fn session_policy(window: &adw::ApplicationWindow) -> crate::project::Policy {
     let _ = window;
-    session_policy_for_form()
+    live_session_policy()
 }
 
-/// The live policy without needing a window handle: the form's own controls read it through this when a
-/// repaint has to tell its own widget movement from a person's edit.
-pub fn session_policy_for_form() -> crate::project::Policy {
+/// [`session_policy`] without needing a window handle: a flow that may run with no shell open (a tool call
+/// made headless) reads the live policy through this.
+pub fn live_session_policy() -> crate::project::Policy {
     SESSION
         .with(|slots| slots.borrow().last().cloned())
         .map(|project| project.borrow().policy.clone())
         .unwrap_or_default()
 }
 
-/// Put a value on one policy field because a person chose it in the policy form (F0.7 S4, §12 §4).
-///
-/// The one door between an editor and the state: it goes through `policy::apply`, the same validation the
-/// model's `tool:set_policy` passes, and stamps `source: user` on success — which is what makes S4's
-/// "a person's field is never overwritten" reachable by a click rather than only by a test. A refusal
-/// (unknown field, out-of-range value) leaves the stored field untouched and is said in the log where the
-/// control can still be corrected; a kept-user outcome is not this door's business (the form re-reads the
-/// surviving value on refresh), so both are returned for the caller to paint.
-pub fn set_field_from_form(field: &str, value: &str) -> policy::Applied {
-    let outcome = write_policy_field(field, value, FORM_BECAUSE, Origin::User);
-    if let policy::Applied::Refused(why) = &outcome {
-        // Said BEFORE anything is repainted: the refresh below re-seeds every editor, and a paint that
-        // lands first would bury the refusal under a redraw of the box the person just typed into.
-        crate::ui::window::log_line(&refused_log(why));
-        // The row is where the person is looking, so the refusal goes there too: an entry that keeps bad
-        // text and says nothing is a silent no. The log keeps `why`, the sentence the model would be
-        // handed, because it names the field and the value; the status line gets the short version.
-        let shell = built_window().unwrap_or_else(crate::ui::main_window);
-        if let Some(status) = crate::ui::window::find_status(shell.upcast_ref()) {
-            status.set_text(REFUSED_LENGTH);
-        }
-    }
-    // Repaint every open form so the source badge reads `user` and the reason column reads `set by you`
-    // for the row that changed — in place, like the reset path, so nothing flickers shut under the hand
-    // that just moved the control.
-    POLICY_FORMS.with(|forms| {
-        for form in forms.borrow().iter() {
-            refresh_policy_form(form);
-        }
-    });
-    outcome
-}
-
-/// The `because` a hand-set field carries. A person's own choice needs no justification (§10's note on
-/// the `because` key), but the column must not go blank, so it says what happened in the person's terms.
-pub const FORM_BECAUSE: &str = "set in the policy form";
-
-/// The status row's sentence for a write the policy catalogue refused, SHORT form: what the row shows.
-/// Named so a test can pin the sentence instead of scraping the label for any text.
-pub const REFUSED_LENGTH: &str = "the value is not allowed for that field";
-
-/// The log's sentence for the same refusal: `policy::apply`'s own words, which name the field and the
-/// value it could not take — the long form is what survives in the log after the status row moved on.
-pub fn refused_log(why: &str) -> String {
-    format!("!!! policy form: {why}")
-}
-
-/// The shared half of both writers: validate through `policy::apply`, then stamp the origin on a Set.
+/// The shared half of every writer: validate through `policy::apply`, then stamp the origin on a Set.
 pub(crate) fn write_policy_field(
     field: &str,
     value: &str,
@@ -197,7 +59,7 @@ pub(crate) fn write_policy_field(
     };
     let outcome = policy::apply(&mut project.borrow_mut().policy, &proposal);
     // Only after a Set does the origin override make sense: refusing first and stamping `User` onto an
-    // untouched field would show the form something that never happened.
+    // untouched field would report something that never happened.
     if outcome == policy::Applied::Set {
         stamp_origin(&mut project.borrow_mut().policy, field, origin);
     }
@@ -206,10 +68,9 @@ pub(crate) fn write_policy_field(
 
 /// Put a value, source and reason on one policy field of this window's live session.
 ///
-/// A test seam for S4/S5: it goes through `policy::apply`, so what lands is exactly what the derivation
-/// path would have written, and the caller only overrides the origin afterwards to stand in for "a
-/// person set this by hand". The program's own version of the same thing is [`set_field_from_form`],
-/// which is what the policy form's controls call.
+/// Goes through `policy::apply`, so what lands is exactly what the derivation path would have written; the
+/// caller may override the origin afterwards. The program's own writers are the derivation and
+/// `tool:set_policy`, both of which reach the same door through [`policy::apply`].
 pub fn set_session_policy_field(
     window: &adw::ApplicationWindow,
     field: &str,
@@ -232,49 +93,6 @@ fn stamp_origin(policy: &mut crate::project::Policy, field: &str, origin: Origin
         "targetLengthSeconds" => policy.target_length_seconds.origin = origin,
         _ => {}
     }
-}
-
-/// Reset the live session's policy to the §2 defaults and repaint every open form.
-///
-/// The form asks for this; it does not decide anything. `policy::reset_to_defaults` owns the rule,
-/// this only reaches the newest session (the one Save writes) and refreshes what is showing, so a
-/// reset cannot leave a stale clone behind that overwrites the reset on the next save.
-pub fn reset_policy_to_defaults() {
-    let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
-        return;
-    };
-    policy::reset_to_defaults(&mut session.borrow_mut().policy);
-    POLICY_FORMS.with(|forms| {
-        for form in forms.borrow().iter() {
-            refresh_policy_form(form);
-        }
-    });
-}
-
-/// Drop one form from the open-forms slot, so `policy_form_open` stops reporting a window that is on
-/// its way out. Called from the form's own close path: the thread-local would otherwise keep a closed
-/// window alive and make `press_policy` raise something invisible.
-pub fn forget_policy_form(form: &adw::Window) {
-    // The index is found with the list only briefly borrowed, and removal goes through a queued idle
-    // rather than happening inside the close signal: `close()` runs the delete path synchronously and
-    // anything that reads this slot from there (a repaint, a re-entrant press) would meet a borrow held
-    // across the signal and panic "RefCell already borrowed".
-    let index = POLICY_FORMS.with(|forms| {
-        forms
-            .borrow()
-            .iter()
-            .position(|open| std::ptr::eq(open.as_ptr(), form.as_ptr()))
-    });
-    let Some(index) = index else { return };
-    glib::idle_add_local(move || {
-        POLICY_FORMS.with(|forms| {
-            let mut forms = forms.borrow_mut();
-            if index < forms.len() {
-                forms.remove(index);
-            }
-        });
-        glib::ControlFlow::Break
-    });
 }
 
 /// Who answers one derivation request, injected so a check can stub the HTTP layer (`POLICY_SENDERS`).
@@ -412,6 +230,12 @@ pub fn derive_policy(window: &adw::ApplicationWindow) -> policy::Derived {
     if let Some(line) = policy::target_length_log(&derived) {
         crate::ui::window::log_line(&line);
     }
+    // S4: every value this derivation stored is said with its field, value and `because`, so what the model
+    // decided is visible without a form to open. Printed before the run bill so the log reads "what changed"
+    // then "what it cost".
+    for line in policy::derived_log(&derived, &session.borrow().policy) {
+        crate::ui::window::log_line(&line);
+    }
     // Record even a defaults-only derivation: an empty context IS an answer, and remembering it is
     // what stops every ▶ from re-asking about a context nobody intends to fill.
     if let Some(tracker) = POLICY_TRACKERS.with(|trackers| trackers.borrow().last().cloned()) {
@@ -461,11 +285,6 @@ pub(crate) fn schedule_policy_derive(window: &adw::ApplicationWindow) {
                 {
                     status.set_text(&derived.status());
                 }
-                POLICY_FORMS.with(|forms| {
-                    for form in forms.borrow().iter() {
-                        refresh_policy_form(form);
-                    }
-                });
                 glib::ControlFlow::Break
             },
         );
@@ -473,28 +292,9 @@ pub(crate) fn schedule_policy_derive(window: &adw::ApplicationWindow) {
     });
 }
 
-/// test between rounds: the thread-local outlives a window, and a leftover form would make
-/// `press_policy`'s raise-instead-of-rebuild branch fire when the check wants a fresh build.
-pub fn close_policy_forms() {
-    // Drained BEFORE any `close()` runs: closing now fires the form's own `close-request`, which calls
-    // `forget_policy_form`, and mutating this list while it is mutably borrowed would panic.
-    let open: Vec<adw::Window> = POLICY_FORMS.with(|forms| forms.borrow_mut().drain(..).collect());
-    for form in open {
-        form.close();
-    }
-}
-
-/// F0.7: the run bar's policy gear, wired after the widgets exist. Its sibling in the header is each
-/// tab's ⓘ; both call the same [`press_policy`], so the form is reachable from the ⚙ AND from ⓘ with
-/// one implementation behind them.
+/// §F0.7's ⓘ (header badge 6): a button whose whole job is its tooltip — the shown tab's label and help
+/// text, kept in sync by `paint_readouts`. It has no window of its own to open: F0.7 ends with "There is no
+/// policy form", so the ⓘ is inert on press and the policy is read where it is said — the log.
 pub(crate) fn wire_policy(button: &gtk::Button, window: &adw::ApplicationWindow) {
-    let window = window.clone();
-    button.connect_clicked(move |_| press_policy(&window));
-}
-
-thread_local! {
-    /// The policy form this window has open (F0.7 S5), newest last. Held so a second press on ⚙ or ⓘ
-/// raises the form that is already there instead of stacking a third copy of the same screen, and so
-/// `policy_form_open` can answer whether one is showing without searching the widget tree.
-static POLICY_FORMS: std::cell::RefCell<Vec<adw::Window>> = const { std::cell::RefCell::new(Vec::new()) };
+    let _ = (button, window);
 }

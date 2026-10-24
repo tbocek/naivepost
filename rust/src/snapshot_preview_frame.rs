@@ -54,7 +54,16 @@ pub fn write_png(
     {
         let cr =
             cairo::Context::new(&surface).map_err(|why| format!("the preview context: {why}"))?;
-        draw_into(&cr, cut, t, frame, playing, &mut drawn, &mut plate_said, FRAME_W);
+        draw_into(
+            &cr,
+            cut,
+            t,
+            frame,
+            playing,
+            &mut drawn,
+            &mut plate_said,
+            FRAME_W,
+        );
     }
     let mut file = std::fs::File::create(out).map_err(|why| format!("{}: {why}", out.display()))?;
     surface
@@ -144,7 +153,7 @@ pub fn draw(
 
 /// The same paint with a second out-param for the plate's words, so `write_png` can print them.
 #[allow(clippy::too_many_arguments)] // five inputs plus two out-params and the plate's room: the plate's room cannot
-// be derived here (only the caller knows what plate it is painting), and a struct for it would be one field.
+                                     // be derived here (only the caller knows what plate it is painting), and a struct for it would be one field.
 fn draw_into(
     cr: &cairo::Context,
     cut: &Cut,

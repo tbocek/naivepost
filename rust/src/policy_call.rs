@@ -488,13 +488,6 @@ pub fn tool_answer(
             let mut scratch = policy.clone();
             match policy::apply(&mut scratch, &proposal) {
                 Applied::Refused(say) => crate::tools::error(&say),
-                // A hand-set field is not an error -- the person's value stands -- but nothing was
-                // recorded either, and saying `recorded: true` would tell the model otherwise.
-                Applied::KeptUser => crate::tools::ok(&serde_json::json!({
-                    "kept": "user",
-                    "field": proposal.field,
-                    "value": proposal.value,
-                })),
                 Applied::Set => crate::tools::ok(&serde_json::json!({
                     // Echo what was recorded, so the model can see the app read its call correctly.
                     "recorded": true,

@@ -66,8 +66,8 @@ impl Home {
     pub fn where_you_change_it(self) -> &'static str {
         match self {
             Self::Policy => {
-                "the policy form (F0.7's fields, each with its value, source and reason); the \
-                 default stands until the User Context speaks to that field"
+                "the User Context, through F0.7's derivation (each field is logged with its value, \
+                 source and reason); the default stands until the User Context speaks to that field"
             }
             Self::Prompt => {
                 "Prepare's prompt bench \u{2014} kept per machine under `prompts/<key>.txt`, and \
