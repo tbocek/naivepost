@@ -591,18 +591,24 @@ fn sec_06_effects_2_the_lane_and_the_preview_s22_the_caption_shows_inside_and_no
 
 // --- the Effect menu's rows, as the snapshot stages them ------------------------------------------------------
 
-/// §2's third picture is the popover's six rows in `fx_lane::MENU_ORDER`. `sec_06_effects_2_staging.rs` drives
-/// the same door and asserts the rows themselves; what is pinned here is the DISJOINT claim each subject makes on
-/// its own filename — the property that decides whether `shots/06-effect-menu.png` holds the menu or a page.
+/// §2's third picture is the Cut page with the popover open over it, so this screen claims no subject of its own;
+/// the two that do are the lane and the framed preview. What is pinned here is the DISJOINT claim each subject
+/// makes on its own filename — the property that decides whether a shot holds its subject or a page.
 #[test]
 fn sec_06_effects_2_the_lane_and_the_preview_s23_each_subject_holds_its_own_spec_filename() {
     use naivepost::snapshot_subjects;
-    for screen in ["06-lane", "06-preview", "06-effect-menu"] {
+    for screen in ["06-lane", "06-preview"] {
         assert!(
             snapshot_subjects::subject_takes_the_name(screen),
             "{screen}'s subject must hold the asked filename"
         );
     }
+    // The menu moved out of that group: `spec/QUESTIONS.md` §06 answer 3(b) asks for the page with the menu open
+    // over it, so the window keeps `06-effect-menu.png` and nothing displaces it.
+    assert!(
+        !snapshot_subjects::subject_takes_the_name("06-effect-menu"),
+        "the Effect-menu shot IS the page, so the page holds its asked filename"
+    );
     for ordinary in ["05-cut", "03-window", "07-narrate"] {
         assert!(
             !snapshot_subjects::subject_takes_the_name(ordinary),

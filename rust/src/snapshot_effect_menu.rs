@@ -20,6 +20,10 @@ use crate::ui;
 /// How wide the painted menu shot is. Wide enough for the longest row (`🔊 Volume`) to sit inside its button with
 /// the icon's padding, which the measure call above does not account for; the height IS measured.
 const MENU_SHOT_W: i32 = 180;
+/// The gap between the button's bottom edge and the painted menu's top edge — one row of air, as GTK leaves it.
+const PANEL_GAP_PX: f32 = 2.0;
+/// The panel's own frame padding below its rows, so the last row is not flush with the border.
+const PANEL_PAD_PX: i32 = 8;
 
 /// Pop this window's real ✚ Effect dropdown and read its rows back off the app's own popover.
 ///
@@ -145,32 +149,151 @@ pub fn shot_sidecar_wanted() -> bool {
     REQUESTED.with(|flag| flag.get())
 }
 
-/// Is this screen's SUBJECT the popover itself? §06-effects#2's picture (`spec/img/06-effect-menu.png`)
-/// shows the six labelled rows, not the page behind them, so the menu takes `<name>.png` and the page goes
-/// beside it -- the same reading `03-policy-form`'s `subject` arm already applies to a dialog it pictures.
-pub fn is_menu_subject(screen: &str) -> bool {
-    screen == "06-effect-menu"
+/// Is this screen's SUBJECT the popover itself? It no longer is.
+///
+/// `spec/QUESTIONS.md`, §06 answer 3(b): "06-effect-menu is the Cut page with the '+ Effect' menu open under its
+/// button, the toolbar and the tracks around it: the render shows the menu alone, stretched over the whole window…
+/// the snapshot draws the window first and the open menu on top of it, where it opens and at its own size". So the
+/// PAGE keeps `<name>.png` and [`paint_open_over_window`] hangs the menu over it — the same reversal
+/// `snapshot_prompt_picker::is_picker_subject` records for `04-prompt-picker`. The door stays (and stays asked) so
+/// the naming rule has one source rather than a screen name hardcoded in `snapshot::run`.
+pub fn is_menu_subject(_screen: &str) -> bool {
+    false
 }
 
 thread_local! {
     static REQUESTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Paint the dropdown's own row box into `out`, on its own mapped top level.
+/// The menu panel's width over the page: [`MENU_SHOT_W`] is what a legible row needs, and it is also what keeps
+/// the popup COMPACT — the whole-window sheet an earlier ask produced is what §2's picture does not show.
+fn panel_width() -> i32 {
+    MENU_SHOT_W
+}
+
+/// The panel's height: the header line plus every row's own measured natural height, never a guess. Measured off
+/// the rows and not off the box because a `gtk::Box` that has never been allocated answers 0 there (the same lesson
+/// `snapshot_prompt_picker::panel_height` records).
+fn panel_height(list: &gtk::Widget) -> i32 {
+    let rows: i32 = list
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+        .filter_map(|row| row.downcast::<gtk::Widget>().ok())
+        .map(|row| row.measure(gtk::Orientation::Vertical, -1).3)
+        .sum();
+    let floor = list
+        .first_child()
+        .map(|row| row.measure(gtk::Orientation::Vertical, -1).3)
+        .unwrap_or_default()
+        .max(1);
+    rows.max(floor) + PANEL_PAD_PX
+}
+
+/// Where the painted menu's left edge sits: GTK points a menu's own left edge at the button's centre, clamped
+/// so the panel stays inside the window. `spec/img/06-effect-menu.png` draws exactly that — the rows hanging
+/// under the middle of the ✚ Effect button, not flush with its left border.
+pub fn panel_x(button_x: f32, button_w: f32, panel_w: i32, win_w: i32) -> f32 {
+    (button_x + button_w / 2.0)
+        .max(0.0)
+        .min((win_w - panel_w).max(0) as f32)
+}
+
+/// Where the painted menu's top edge sits: one gap below the button, clamped inside the window.
+pub fn panel_y(button_y: f32, button_h: f32, panel_h: i32, win_h: i32) -> f32 {
+    (button_y + button_h + PANEL_GAP_PX)
+        .max(0.0)
+        .min((win_h - panel_h).max(0) as f32)
+}
+
+/// Paint the Cut page with the ✚ Effect menu open OVER it, into `out`: the window shot first, then the app's own
+/// menu rows blitted where the popover would sit, at their own size.
 ///
-/// The precedent is [`crate::snapshot_face::write_face_png`]: a widget whose real home is a separate surface (a
-/// popover, an icon in a 1334 px window) gives no legible pixels inside the whole-window shot, so it is shown
-/// where it can be read. A COPY of the box, not the popover's child — reparenting a widget out of a mapped window
-/// leaves it with no render node, which is what made an earlier attempt print "window produced no render node".
-/// The copy carries each row's own label and name because those ARE the thing this screen records.
-pub fn write_png(button: &gtk::MenuButton, out: &Path) -> Result<(), String> {
+/// This is what `spec/img/06-effect-menu.png` shows — the toolbar, ruler, green kept-scene bands and thumbnail
+/// rows around a compact popup under ✚ Effect — and `spec/QUESTIONS.md` answer 3(b) asks for it in these words:
+/// "the snapshot draws the window first and the open menu on top of it, where it opens and at its own size".
+/// The precedent is [`crate::snapshot_prompt_picker::paint_open_over_window`], for the same technical reason: a
+/// `gtk::Popover` lives on its own surface, so the window's render node cannot contain it and a whole-window shot
+/// of the popped menu shows a page with no menu. The panel gets its own mapped top level only long enough to gain
+/// a render node, sized from its OWN measure (never the window's ask, which is what once stretched six rows over
+/// a 1343×900 frame).
+/// What [`paint_open_over_window`] reports: how many menu entries were painted, the panel's own size, and where
+/// its top-left landed in the frame. Named because the bare tuple tripped `clippy::type_complexity`.
+pub type MenuShot = (usize, (i32, i32), (i32, i32));
+
+pub fn paint_open_over_window(
+    window: &adw::ApplicationWindow,
+    out: &Path,
+) -> Result<MenuShot, String> {
+    let button = menu_button(window, "effect-button");
+    let bounds = button
+        .compute_bounds(window.upcast_ref::<gtk::Widget>())
+        .ok_or("the ✚ Effect button has no box to hang the menu under")?;
+    let (asked_w, asked_h) = crate::snapshot_face::asked_shot_wh();
+    let (w, h) = (
+        if asked_w > 0 { asked_w } else { window.width() },
+        if asked_h > 0 {
+            asked_h
+        } else {
+            window.height()
+        },
+    );
+    let (copy, rows) = copied_rows(&button)?;
+    install_shot_css();
+    copy.add_css_class("effect-shot-menu");
+    let width = panel_width();
+    // Filled before it is measured: a `gtk::Box` shrink-wraps to its labels' natural width, which is how a
+    // "measured" panel once came out the width of the whole window.
+    copy.set_halign(gtk::Align::Fill);
+    copy.set_hexpand(true);
+    let height = panel_height(copy.upcast_ref());
+    crate::snapshot_face::pump_context(16);
+    let surface = crate::snapshot_face::render_surface(window.upcast_ref(), w, h)?;
+    let cr = cairo::Context::new(&surface).map_err(|err| err.to_string())?;
+    let holder = gtk::Window::new();
+    holder.set_decorated(false);
+    holder.set_default_size(width, height);
+    holder.set_child(Some(&copy));
+    holder.present();
+    crate::snapshot_face::pump_context(64);
+    let painted =
+        crate::snapshot_face::render_surface(copy.upcast_ref(), width, height).and_then(|panel| {
+            cr.set_source_surface(
+                &panel,
+                panel_x(bounds.x(), bounds.width(), width, w).floor() as f64,
+                panel_y(bounds.y(), bounds.height(), height, h).floor() as f64,
+            )
+            .map_err(|err| err.to_string())?;
+            cr.paint().map_err(|err| err.to_string())
+        });
+    holder.close();
+    painted?;
+    let mut file = std::fs::File::create(out).map_err(|err| err.to_string())?;
+    surface
+        .write_to_png(&mut file)
+        .map_err(|err| err.to_string())?;
+    Ok((
+        rows,
+        (width, height),
+        (
+            panel_x(bounds.x(), bounds.width(), width, w).floor() as i32,
+            panel_y(bounds.y(), bounds.height(), height, h).floor() as i32,
+        ),
+    ))
+}
+
+/// The popover's rows as a NEW box (header first, then one button per entry, names and labels carried over),
+/// together with how many entries it holds. A COPY, not the popover's child: reparenting a widget out of a mapped
+/// window leaves it with no render node, which is what made an earlier attempt print "window produced no render
+/// node". Both painters here take this one copy, so neither can show a row the app's popover does not hold.
+fn copied_rows(button: &gtk::MenuButton) -> Result<(gtk::Box, usize), String> {
     let source = button
         .popover()
         .and_then(|popover| popover.child())
         .and_then(|child| child.downcast::<gtk::Box>().ok())
         .ok_or("the ✚ Effect dropdown has no row box to paint")?;
-    // The popover's child is now the outer shell (header + `effect-menu` box); the copy below flattens it back
-    // into one column of rows, so find the inner box by name rather than assuming the child IS the six rows.
+    // The popover's child is the outer shell (header + `effect-menu` box); find the inner box by name rather than
+    // assuming the child IS the rows.
     let mut list: Option<gtk::Box> = None;
     let mut header: Option<String> = None;
     for child in source
@@ -189,9 +312,8 @@ pub fn write_png(button: &gtk::MenuButton, out: &Path) -> Result<(), String> {
     let copy = gtk::Box::new(gtk::Orientation::Vertical, 0);
     copy.set_widget_name("effect-menu");
     copy.set_homogeneous(false);
-    // The header first, as §2's picture draws it. Inside a popover GTK gives the label the menu row's own ink;
-    // on this bare top level nothing does, so the words are spelled in `color` from the same reason the rows
-    // below need their box background spelled — see the note on [`install`] next to them.
+    // The header first, as §2's picture draws it. Inside a popover GTK gives the label the menu row's own ink; on
+    // a bare top level nothing does, so the words are spelled in `color` by `install_shot_css`.
     if let Some(words) = header {
         let head = gtk::Label::new(Some(&words));
         head.set_widget_name("effect-menu-title");
@@ -202,6 +324,7 @@ pub fn write_png(button: &gtk::MenuButton, out: &Path) -> Result<(), String> {
         head.add_css_class("effect-shot-head");
         copy.append(&head);
     }
+    let mut entries = 0usize;
     for row in source_rows
         .observe_children()
         .iter::<glib::Object>()
@@ -211,36 +334,15 @@ pub fn write_png(button: &gtk::MenuButton, out: &Path) -> Result<(), String> {
         let held = gtk::Button::with_label(row.label().unwrap_or_default().as_str());
         held.set_widget_name(row.widget_name().as_str());
         held.set_tooltip_text(row.tooltip_text().as_deref());
-        // Left-aligned WITHIN the row, and the row itself fills the shot's width: `halign(Start)` on the button
-        // collapsed each one to its own text and centred it in the box, so the rows printed as six fragments
-        // floating in the middle instead of the menu's left-aligned rows.
+        // Left-aligned WITHIN the row, and the row itself fills the panel's width: `halign(Start)` on the button
+        // collapsed each one to its own text and centred it, so the rows printed as fragments floating mid-box.
         held.set_halign(gtk::Align::Fill);
         let words = row.label().unwrap_or_default().to_string();
-        let inner = row_label_left(&words);
-        held.set_child(Some(&inner));
+        held.set_child(Some(&row_label_left(&words)));
         copy.append(&held);
+        entries += 1;
     }
-    let holder = gtk::Window::new();
-    holder.set_decorated(false);
-    // The shot is a snapshot of this box, not of a live window (see [`crate::snapshot_face::write_png`]), so GTK's
-    // theme never paints the ground or the glyphs behind it: without these two rules the rows came out as ink on
-    // transparent and printed as grey words on black. The colours are the popover's own — the same light ground and
-    // near-black text §2's menu shows.
-    install_shot_css();
-    copy.add_css_class("effect-shot-menu");
-    // Sized from the rows' own natural height (measured, never guessed) and wide enough that the longest row's
-    // text sits fully inside its button: a `measured + 12` width is what clipped `⊕ Zoom` to `Zoom` in an earlier
-    // attempt, because the icon and its padding are not in a button's text width. `measure` answers
-    // (min_w, min_h, nat_w, nat_h).
-    let height = copy.measure(gtk::Orientation::Vertical, -1).3;
-    holder.set_default_size(MENU_SHOT_W, height + 12);
-    holder.set_child(Some(&copy));
-    holder.present();
-    // The map must happen before the frame is taken; `write_png` reads the widget's allocated size.
-    crate::snapshot_face::pump_context(64);
-    let result = crate::snapshot_face::write_png(copy.upcast_ref(), out);
-    holder.close();
-    result
+    Ok((copy, entries))
 }
 
 /// One menu row's words, pushed to the left edge of whatever box holds them — how §2's popover prints them.

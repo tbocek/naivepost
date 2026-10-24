@@ -1200,15 +1200,14 @@ const FORM_UNDER_PX: i32 = 380;
         // screen paints the ▶ itself into `<out>` and the whole window beside it as `-window.png`: the
         // strip is what gets looked at, the page is there to show the bar in place.
         let face_only = screen == "03-runbar-busy";
-        // §06-effects#2's Effect-menu shot is painted from the dropdown's own box, because a popover lives on a
-        // separate surface and is therefore absent from the window's render node. The staging step asked for
-        // this by name (`snapshot_effect_menu::note_shot_sidecar`), so no screen is hardcoded here.
-        let menu_only = crate::snapshot_effect_menu::shot_sidecar_wanted();
-        // …and when the spec's own picture IS the menu, the menu is the SUBJECT of this shot, decided through
-        // the module's door rather than a name hardcoded here. Which screens hand their asked filename to a
-        // subject of their own -- and which sidecar each subject was staged under -- is `snapshot_subjects`'s
-        // table, so this step asks two questions of one place instead of matching names itself.
-        let menu_subject = crate::snapshot_effect_menu::is_menu_subject(&screen);
+        // §06-effects#2's Effect-menu screen: staging popped the dropdown and asked for this treatment by name
+        // (`snapshot_effect_menu::note_shot_sidecar`), so no screen is hardcoded here.
+        let menu_over_page = crate::snapshot_effect_menu::shot_sidecar_wanted();
+        // …and when the spec's own picture IS a subject of its own, that subject takes the asked filename,
+        // decided through each module's door rather than a name hardcoded here. Which screens hand their asked
+        // filename to a subject of their own -- and which sidecar each subject was staged under -- is
+        // `snapshot_subjects`'s table, so this step asks two questions of one place instead of growing a third
+        // copy of the screen list.
         // Where the WINDOW shot goes: the asked name as ever, except when the screen's SUBJECT is something the
         // spec pictures on its own (a popover, the lane, the framed frame) -- then the subject holds `<name>.png`
         // and the page sits beside it as `<name>-page.png`. The sidecar is named `-page`, not `-window`, so that it
@@ -1283,16 +1282,21 @@ const FORM_UNDER_PX: i32 = 380;
                     eprintln!("snapshot: {err}");
                     OUT.with(|e| *e.borrow_mut() = Some(err));
                 }
-            } else if menu_subject {
-                // §2's picture for this screen is the popover's six rows, so THEY take `<name>.png` and the page
-                // they were staged on goes beside it as `<name>-page.png` (named to sort before the subject). A
-                // popover lives on its own surface, so it can only be painted from the dropdown's box, never out of
-                // the window's render node. The flag decides which subject this shot records, so exactly one branch
-                // of this pair ever runs.
-                let button = crate::snapshot_effect_menu::effect_button();
-                if let Err(err) = crate::snapshot_effect_menu::write_png(&button, &out) {
-                    eprintln!("snapshot: {err}");
-                    OUT.with(|e| *e.borrow_mut() = Some(err));
+            } else if menu_over_page {
+                // §2's picture for this screen is the Cut page WITH the ✚ Effect menu open over it, so the window
+                // keeps `<name>.png` and the menu is painted where its own button sits, at its own size
+                // (`spec/QUESTIONS.md`, §06 answer 3(b)) — the `04-prompt-picker` precedent above. The popover
+                // itself lives on a separate surface and cannot come out of the window's render node, which is why
+                // the panel is blitted on rather than popped and hoped for.
+                match crate::snapshot_effect_menu::paint_open_over_window(&window, &out) {
+                    Ok((rows, panel, at)) => println!(
+                        "snapshot: 06-effect-menu | {rows} rows over the page, panel {}x{} at x={},y={}",
+                        panel.0, panel.1, at.0, at.1
+                    ),
+                    Err(err) => {
+                        eprintln!("snapshot: {err}");
+                        OUT.with(|e| *e.borrow_mut() = Some(err));
+                    }
                 }
                 let page_out = out.with_extension("page.png");
                 if let Err(err) = write_png(&painted, &page_out) {
@@ -1367,11 +1371,20 @@ const FORM_UNDER_PX: i32 = 380;
                 OUT.with(|e| *e.borrow_mut() = Some(err));
             }
             // A subject staged into its own file (the lane at 1240 px, the framed preview) takes the ASKED name,
-            // because that file IS what the spec drew; the window shot above moves beside it. It is a RENAME and
-            // not a second paint: staging drew it through the program's own painter (`cut_tracks::paint_at`,
-            // `snapshot_preview_frame::write_png`) from the cut the widgets were seeded with, so painting it again
-            // here would be a second answer to one question.
+            // because that file IS what the spec drew; the window shot above moves beside it.
             if let Some(sidecar) = crate::snapshot_subjects::subject_sidecar(&screen_for_frame) {
+                // The lane's subject is cropped HERE rather than during staging: only now has the window been
+                // mapped and drawn, which is the one thing a render node needs. Every pixel in it — gutter rail,
+                // fold-all −, sound switches, thumbnails, wave strip — is ink the page itself put down.
+                if sidecar == "lane-shot" {
+                    match crate::snapshot_lane::paint_track_area(
+                        &window,
+                        &out.with_extension("lane-shot.png"),
+                    ) {
+                        Ok(said) => println!("snapshot: {said}"),
+                        Err(err) => eprintln!("snapshot: {err}"),
+                    }
+                }
                 // The rename is only this screen's business: staging wrote the sidecar for every Cut-page shot, and
                 // on those the window already holds the asked name -- renaming over it would replace the page with
                 // a strip. `page_out != out` is exactly "a subject took the asked name here".
@@ -1381,16 +1394,6 @@ const FORM_UNDER_PX: i32 = 380;
                 } else if let Err(err) = std::fs::rename(&staged, &out) {
                     eprintln!("snapshot: the {sidecar} image could not take {}: {err}", out.display());
                     OUT.with(|e| *e.borrow_mut() = Some(format!("{sidecar}: {err}")));
-                }
-            }
-            if menu_only && !menu_subject {
-                // Staged by another screen (the flag is set from staging, not by name): the six labelled rows go
-                // beside that page shot as `<name>-menu.png`, because no window shot can hold a popover.
-                let menu_out = out.with_extension("menu.png");
-                let button = crate::snapshot_effect_menu::effect_button();
-                if let Err(err) = crate::snapshot_effect_menu::write_png(&button, &menu_out) {
-                    eprintln!("snapshot: {err}");
-                    OUT.with(|e| *e.borrow_mut() = Some(err));
                 }
             }
             app.quit();
