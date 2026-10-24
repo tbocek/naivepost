@@ -10,6 +10,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use naivepost::cut::{Cut, Fx, Seg};
+use naivepost::project::Policy;
 use naivepost::suggest::{DEAD_AIR_KEEP_SECONDS, DEAD_AIR_MAX_SECONDS};
 use naivepost::{cut_clamp, cut_clamp_line, policy, suggest};
 
@@ -547,7 +548,7 @@ fn sec_12_decisions_cut_and_effects_s20_the_second_attempt_carries_the_announcem
 
 /// Entry 21: "The target length is a regex over free text with no fallback: 'half an hour' silently becomes
 /// no target, changing the prompt, both count gates and the length gate at once → `P.policy.targetLengthSeconds`,
-/// derived by F0.7's `set_policy`, shown in the policy form." The string cases: what used to be a silent 0.
+/// derived by F0.7's `set_policy`, said in the log with its reason." The string cases: what used to be a silent 0.
 #[test]
 fn sec_12_decisions_cut_and_effects_s21_target_length_is_derived_and_shown() {
     use naivepost::policy_length::{self, Reading};
@@ -598,6 +599,10 @@ fn sec_12_decisions_cut_and_effects_s21_target_length_is_derived_and_shown() {
         "the read landed: {:?}",
         derived.applied
     );
+    assert!(
+        !derived.target_gap,
+        "seconds landed, so there is no gap to report: {derived:?}"
+    );
     assert_eq!(policy.target_length_seconds.value, 2700.0);
     assert_eq!(
         policy.target_length_seconds.origin,
@@ -614,5 +619,93 @@ fn sec_12_decisions_cut_and_effects_s21_target_length_is_derived_and_shown() {
     assert_eq!(
         policy.target_length_seconds.value, 3600.0,
         "the newer context wins"
+    );
+}
+
+/// A derivation whose model proposes nothing: the target-length read is arithmetic, not a model call, so
+/// these tests see exactly what the reader put on the log and nothing a model added.
+fn derive_no_model(policy: &mut Policy, context: &str) -> policy::Derived {
+    policy::derive(policy, context, &mut |_, _| Vec::new())
+}
+
+/// Entry 21: the number is "said in the log with its reason". One line, carrying the field, the seconds it
+/// stored and the reason the reader records — and no second row about the same field, because §F0.7 has no
+/// policy form for a duplicate to be summarised into.
+#[test]
+fn sec_12_decisions_cut_and_effects_s21_the_target_length_is_said_in_the_log_with_its_reason() {
+    let mut policy = Policy::default();
+    let derived = derive_no_model(&mut policy, "keep it to 45 min");
+    assert!(derived.target_read && !derived.target_gap, "{derived:?}");
+
+    let lines = policy::derived_log(&derived, &policy);
+    let about_target: Vec<&String> = lines
+        .iter()
+        .filter(|line| line.contains("targetLengthSeconds"))
+        .collect();
+    assert_eq!(about_target.len(), 1, "one line for the target: {lines:?}");
+    assert!(
+        about_target[0].contains("2700"),
+        "the line carries the seconds that were stored: {:?}",
+        about_target[0]
+    );
+    assert!(
+        about_target[0].contains("the User Context's own words"),
+        "and the reason the read records: {:?}",
+        about_target[0]
+    );
+    // The vague row this round removed must not come back beside the honest one.
+    assert!(
+        policy::target_length_log(&derived).is_none(),
+        "a read that landed is said once, by `derived_log`"
+    );
+}
+
+/// Entry 21's real complaint is silence: a length the reader cannot spell leaves the target at none, and that
+/// has to be a line rather than a silent 0 — without pretending a reading happened.
+#[test]
+fn sec_12_decisions_cut_and_effects_s21_a_length_mentioned_but_not_understood_is_said_as_a_gap() {
+    let mut policy = Policy::default();
+    let derived = derive_no_model(&mut policy, "make it the length of a train journey");
+    assert!(!derived.target_read, "nothing was read: {derived:?}");
+    assert!(
+        derived.target_gap,
+        "but a length was mentioned: {derived:?}"
+    );
+    assert_eq!(
+        policy.target_length_seconds.value, 0.0,
+        "P.policy.targetLengthSeconds stays at §10's none"
+    );
+
+    let gap = policy::target_length_log(&derived).expect("the gap is said out loud");
+    assert!(
+        gap.contains("could not be read") && gap.contains("stays none"),
+        "the line names both halves of the fact: {gap}"
+    );
+    // No line claims the target was read, and the stored value is not reported as if it were a decision.
+    let lines = policy::derived_log(&derived, &policy);
+    assert!(
+        !lines.iter().any(|line| line.contains("read from")),
+        "nothing may claim a reading that understood nothing: {lines:?}"
+    );
+}
+
+/// The ordinary case: most contexts talk only about style, so a context that never mentions a duration says
+/// nothing about the target — reporting it would cry wolf on every project.
+#[test]
+fn sec_12_decisions_cut_and_effects_s21_a_context_that_never_mentions_a_length_says_nothing() {
+    let mut policy = Policy::default();
+    let derived = derive_no_model(&mut policy, "punchy jump cuts, no intro");
+    assert!(!derived.target_read && !derived.target_gap, "{derived:?}");
+    assert!(
+        policy::target_length_log(&derived).is_none(),
+        "no mention, no line"
+    );
+    assert_eq!(policy.target_length_seconds.value, 0.0);
+    let lines = policy::derived_log(&derived, &policy);
+    assert!(
+        !lines
+            .iter()
+            .any(|line| line.contains("targetLengthSeconds")),
+        "an untouched field is not reported: {lines:?}"
     );
 }

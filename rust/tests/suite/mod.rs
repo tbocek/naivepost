@@ -480,6 +480,7 @@ mod sec_12_decisions_4_walk_back_live_b;
 mod sec_12_decisions_5_offer;
 mod sec_12_decisions_5_results;
 mod sec_12_decisions_cut_and_effects;
+mod sec_12_decisions_cut_and_effects_log_wire;
 mod sec_12_decisions_narrate_and_produce;
 mod sep_lopsided;
 mod separate;
