@@ -90,6 +90,24 @@ pub fn write_png(cut: &Cut, dir: &Path, out: &Path) -> Result<String, String> {
     ))
 }
 
+/// The frames each recording can show, listed through the painter's own door — the same tree
+/// [`cut_tracks::band_height_for_window`] counts its rows from, so the height asked and the pictures drawn come
+/// from one source. Empty when the page has no frame tree (nothing is invented, §1's prototype note).
+fn frame_lists(scene: &Scene) -> Vec<(String, Vec<std::path::PathBuf>)> {
+    scene
+        .recordings
+        .iter()
+        .map(|recording| {
+            (
+                recording.base.clone(),
+                crate::ui::cut_picture::snapshot_frame_tree()
+                    .map(|tree| cut_tracks::frame_paths(&tree, &recording.base))
+                    .unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
 /// Paint THIS window's track area — ruler down to the bottom of the last picture row and its wave strip — into
 /// `out`, by cropping the live page rather than repainting a scene.
 ///
@@ -115,20 +133,43 @@ pub fn paint_track_area(window: &adw::ApplicationWindow, out: &Path) -> Result<S
     let tall = cut_tracks::band_height_for_window(window).max(1);
     let wide = layers.width().max(1);
     let (x, y) = crate::snapshot_face::widget_offset(window, &layers)?;
-    // The crop is taken from the window's own surface: the band sits at `y` inside it, and cairo can only blit
-    // what was drawn, so the whole window is rendered once and the file written from that region.
-    let full = crate::snapshot_face::render_surface(
-        window.upcast_ref(),
-        window.width().max(1),
-        window.height().max(1),
-    )?;
+    // The whole track stack is PAINTED at its own row geometry rather than cropped out of the window's
+    // allocation. A crop alone came out 132 px tall — it stopped inside the film row, with no waveform strip —
+    // because GTK clips a `DrawingArea` to what the page was given, and the page is not given what the band
+    // asks (`spec/QUESTIONS.md` §06 answer 3(a): the shot must "end where the track stack ends", and the
+    // stack's height is the painter's own number, `band_height_for_window`, the door `attach` fits from).
+    // Same painter the page's draw func calls, so no colour, row or caption can disagree with the page.
     let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, wide, tall)
         .map_err(|why| format!("the track-area surface: {why}"))?;
     {
         let cr = cairo::Context::new(&surface).map_err(|why| why.to_string())?;
+        let mut painted_scene = scene.clone();
+        painted_scene.thumbs = frame_lists(&scene);
+        cut_tracks::paint_at(
+            &cr,
+            &painted_scene,
+            wide as f64,
+            tall as f64,
+            cut_tracks::THUMB_DEFAULT_PX,
+        );
+    }
+    // The gutter's CONTROLS are widgets (`gutter-badges`, `gutter-switches`), so no painter can put them here:
+    // the page's own pixels for that column are blitted on top, for however much of it the page did draw. The
+    // ink underneath comes from the same painter, so the two halves cannot disagree about where a row is.
+    let inked = tall.min(layers.height()).max(0);
+    if inked > 0 {
+        let full = crate::snapshot_face::render_surface(
+            window.upcast_ref(),
+            window.width().max(1),
+            window.height().max(1),
+        )?;
+        let cr = cairo::Context::new(&surface).map_err(|why| why.to_string())?;
         cr.set_source_surface(&full, -(f64::from(x)), -(f64::from(y)))
             .map_err(|why| why.to_string())?;
-        cr.paint().map_err(|why| why.to_string())?;
+        cr.rectangle(0.0, 0.0, crate::cut_screen::GUTTER_PX, inked as f64);
+        cr.clip();
+        cr.paint()
+            .map_err(|why| format!("the gutter rail's pixels: {why}"))?;
     }
     let mut file = std::fs::File::create(out).map_err(|why| format!("{}: {why}", out.display()))?;
     surface

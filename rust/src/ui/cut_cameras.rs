@@ -383,7 +383,11 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
 
             let gutter = gtk::ToggleButton::new();
             gutter.set_widget_name(&format!("gutter-switch-{lane}"));
-            gutter.set_label("\u{25ac}");
+            // §1's gutter shows each lane's sound switch as a ROUND speaker button at its row's left edge
+            // (`spec/img/05-cut.png`, badge 29), so the rail carries the same glyph the row plate does and
+            // the CSS below gives it the round ground. The `▬` bar it used to wear read as a slider handle.
+            gutter.set_label(SPEAKER_GLYPH);
+            gutter.add_css_class("round");
             // OFF (not pressed) when the lane is silent EVERYWHERE, on while any scene still hears it —
             // the same reading `cut_hear::toggle_lane_all` acts on, so the switch never claims a state
             // the next press contradicts.

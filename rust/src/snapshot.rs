@@ -71,7 +71,12 @@ fn screen_page(screen: &str) -> Option<&'static str> {
     }
 }
 
-pub fn run(screen: &str, dir: &Path, out: &Path, on: crate::snapshot_ready::ShotOn) -> Result<(), String> {
+pub fn run(
+    screen: &str,
+    dir: &Path,
+    out: &Path,
+    on: crate::snapshot_ready::ShotOn,
+) -> Result<(), String> {
     let page = screen_page(screen).ok_or_else(|| format!("unknown screen {screen}"))?;
     if !dir.join(project::PROJECT_FILE).is_file() {
         return Err(format!("no {} in {}", project::PROJECT_FILE, dir.display()));
