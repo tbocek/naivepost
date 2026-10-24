@@ -1,4 +1,4 @@
-//! The staging door a shot plants its own frames through, and the door the band lists them from.
+//! F1.6 / §1 — the staging door a shot plants its own frames through, and the door the band lists them from.
 //!
 //! The mismatch that broke §05-cut#1-screen once: `just snapshot` staged into one folder while the band listed
 //! frames from another, so the picture row silently had nothing to draw and the shot still came out green. This

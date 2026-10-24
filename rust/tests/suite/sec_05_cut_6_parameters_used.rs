@@ -400,10 +400,13 @@ fn sec_05_cut_6_parameters_used_s8_the_catalogued_tints_are_the_ones_painted() {
     );
     // The selection's two ends are the marks themselves: the rule paints a one-pixel column of its own at
     // each end, over whatever row they cross. Those are §D's `selection.in` green and `selection.out` red.
+    // The mark lines are inked across the whole band, so they can be read anywhere in the picture row; read them
+    // BELOW the row's pinned name plate, which is inked just under the row's top edge (the plate sits past the
+    // gutter now, i.e. right where a mark can fall, and its glyph ink is not the mark's colour).
     let y_pictures = (naivepost::cut_trim::RULER_H
         + naivepost::cut_screen::SELECTION_BAND_PX
         + naivepost::fx_lane::lane_height_px(naivepost::fx_lane::row_count(&scene.fx))
-        + 4.0) as i32;
+        + 20.0) as i32;
     // The effect lane is its own band, `layout.effectRowPx` tall, between the selection band and the first
     // picture row — so it exists in the painted surface at a y of its own, which is where its wash has to be.
     let y_effects = (naivepost::cut_trim::RULER_H

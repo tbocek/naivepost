@@ -45,6 +45,10 @@ pub fn is_lane_subject(screen: &str) -> bool {
 pub fn write_png(cut: &Cut, dir: &Path, out: &Path) -> Result<String, String> {
     // The shot asks for film in its picture row; a live page never sets this (§7: no decode inside a draw).
     cut_tracks::allow_frame_decoding();
+    // Name this shot's folder as the project the painters read from, so the wave strip's own reader
+    // (`cut_trim_press::cached_peaks`) looks for `cache/waves/…` BESIDE this project rather than in the working
+    // copy beside the launch — which for a test's temp root is nowhere, and the strip came out a flat line.
+    crate::ui::cut_picture::set_snapshot_dir(dir);
     let thumb_px = cut_tracks::THUMB_DEFAULT_PX;
     let base = "session-tape";
     // Staged here rather than by each caller so every producer of this image — `just snapshot 06-lane` and the

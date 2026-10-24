@@ -50,17 +50,30 @@ pub fn frame_step_seconds(paths: &[std::path::PathBuf]) -> f64 {
 
 /// A thumbnail's x, on the folded span: frames are named by their second, so the file name is the position.
 /// An unparsable name draws at the row's start rather than nowhere.
-pub fn path_x(scene: &cut_tracks::Scene, path: &std::path::Path) -> f64 {
+///
+/// The stamp is read by `clock::read_frame` — the same parser [`frame_step_seconds`] measures the grid with — MINUS
+/// `first`, the first frame of this row's own list. A name is a wall-clock instant (§B.3
+/// `‹YYYY-MM-DD_HH-MM-SS.mmm›.jpg`) while the band's x axis is seconds OF THE SESSION, so the two only agree once
+/// the row's own zero is subtracted; a session recorded at 17:25 lays its first cell at 0 either way. Reading
+/// `11..19` as `HH:MM:SS` by hand instead (the way this function used to) looks for digits where the separators are,
+/// always fails, and every cell fell back to x = 0 — which is how the lane shot's picture row came out one flat
+/// band under the gutter.
+pub fn path_x(scene: &cut_tracks::Scene, path: &std::path::Path, first: f64) -> f64 {
     path.file_name()
         .and_then(|n| n.to_str())
-        .and_then(|n| n.get(11..19))
-        .and_then(|hhmmss| {
-            let h: f64 = hhmmss.get(0..2)?.parse().ok()?;
-            let m: f64 = hhmmss.get(3..5)?.parse().ok()?;
-            let s: f64 = hhmmss.get(6..9)?.parse().ok()?;
-            Some(h * 3600.0 + m * 60.0 + s)
-        })
-        .map(|seconds| cut_tracks::band_x(scene, seconds))
+        .and_then(clock::read_frame)
+        .map(|seconds| cut_tracks::band_x(scene, seconds - first))
+        .unwrap_or(0.0)
+}
+
+/// The first frame's own instant — the row's zero, which [`path_x`] subtracts. `0.0` when the list has nothing to
+/// measure, which leaves an unparsable name where it always landed: at the row's start.
+pub fn first_second(paths: &[std::path::PathBuf]) -> f64 {
+    paths
+        .first()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .and_then(clock::read_frame)
         .unwrap_or(0.0)
 }
 
@@ -127,6 +140,7 @@ pub fn draw_picture_rows(
         0
     };
     let width = (step * scene.pps).max(2.0);
+    let first_second = first_second(paths);
     // The cell is the FILM part of the row: the wave strip owns its bottom (`Rows::wave_top`), and drawing under
     // it would have the two painters disagree about who owns those pixels — the strip is painted next.
     let film_h = (rows.row_h - cut_tracks::ROW_WAVE_PX).max(1.0);
@@ -141,7 +155,7 @@ pub fn draw_picture_rows(
         }
         let mut past_edge = false;
         for path in batch {
-            let x = path_x(scene, path);
+            let x = path_x(scene, path, first_second);
             if x >= tape {
                 past_edge = true;
                 break;

@@ -72,6 +72,36 @@ pub fn write_png(
     if !plate_said.is_empty() {
         drawn.push_str(&format!(" | plate: {plate_said}"));
     }
+    // The frame's own size and the camera rect it paints, printed from the ARTIFACT and from the same door the
+    // painter lays the rect out by: §2's paused half is "outside the camera rect dimmed black 0.45; rect stroked
+    // white", so a shot whose crop fills the whole box (nothing outside it to dim) has to show up here rather than
+    // only in someone's eyes.
+    let (file_w, file_h) = crate::snapshot_face::png_size(out);
+    // The staged frame's pixels decide the fitted box, exactly as they do inside `draw_into`: same path, same
+    // door, so the rect printed here is the rect that was painted.
+    let source = frame
+        .and_then(|path| gtk::gdk_pixbuf::Pixbuf::from_file(path).ok())
+        .map(|pixbuf| (pixbuf.width() as f64, pixbuf.height() as f64))
+        .unwrap_or((FRAME_W, FRAME_H));
+    let fit = cut_preview_frame::fit_size(source.0, source.1, FRAME_W, FRAME_H);
+    let rect = {
+        let state = cut_preview_frame::describe_at(
+            cut,
+            t,
+            playing,
+            false,
+            fit,
+            &Held {
+                index: None,
+                box_px: None,
+            },
+        );
+        cut_preview_frame::camera_rect_px(&cut_preview_frame::observe(&state, None).camera, fit)
+    };
+    drawn.push_str(&format!(
+        " | file {file_w}x{file_h} px on disk, camera rect {:.0},{:.0} {:.0}x{:.0} of the {:.0}x{:.0} fitted picture",
+        rect.0, rect.1, rect.2, rect.3, fit.0, fit.1
+    ));
     Ok(drawn)
 }
 
