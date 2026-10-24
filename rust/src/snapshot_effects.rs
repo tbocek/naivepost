@@ -397,7 +397,18 @@ pub fn paint(
         // list (a zoom, a staying zoom, a ×0.5 scene-sound speed, a caption, a volume, a label) at the same
         // 4 px/s the spec's own lane is drawn with, so every bar is wide enough to carry its mark, its caption
         // and its grips/✕ (`fx_band::GRIP_MIN_PX` / `KILL_MIN_PX`). See `snapshot_lane::staged_cut`.
-        let lane = crate::snapshot_lane::staged_cut();
+        let mut lane = crate::snapshot_lane::staged_cut();
+        // §2's gutter holds a sound switch per cut LANE (`refresh_camera_rows` draws one per `cut.lanes`),
+        // and `spec/img/06-lane.png` shows those round 🔊 buttons at each row's left edge — so the shot needs
+        // a lane or the gutter has nothing to show. Added to this staging only, not to `staged_cut()` itself,
+        // which the lane-rule tests read.
+        lane.lanes = vec![crate::cut::Lane {
+            name: "mic-lav".to_string(),
+            src: String::new(),
+            at: 0.0,
+            off: 0.0,
+            dur: 300.0,
+        }];
         ui::seed_review_cut(window, &lane);
         ui::set_line_position(window, cut_line::LinePos { t: 140.0 });
         // Pick the first band UP through the press seam (a middle grab, 20 px of travel), so the shot shows
@@ -435,6 +446,10 @@ pub fn paint(
         // Repaint through the page's own doors, exactly as a press's refresh does, so the plate, the dimming
         // and the zoom's rect are the app's answer to the state above rather than a half-painted frame.
         ui::cut_view::repaint_page(window);
+        // §2's gutter shows a round 🔊 sound switch at each lane's left edge, and those are built by the ROW
+        // pass (`refresh_camera_rows`), which the band repaint above does not run. Asked here, in staging: the
+        // window is laid out after this returns, so the rail's switch has a box by the time the crop is taken.
+        ui::refresh_camera_rows(window);
         let painted = ui::cut_picture::refresh(window);
         println!(
             "snapshot: 06-lane | held zoom: {} | frame painted: {painted}",

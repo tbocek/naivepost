@@ -528,14 +528,21 @@ fn install_gutter_css_once() {
     static LOADED: std::sync::Once = std::sync::Once::new();
     LOADED.call_once(|| {
         let provider = gtk::CssProvider::new();
-        provider.load_from_string(
-            ".cut-gutter-col button { background: none; border: none; box-shadow: none; \
-             min-width: 26px; min-height: 18px; padding: 0 1px; margin: 0; }\n\
+        provider.load_from_string(&format!(
+            ".cut-gutter-col button {{ background: none; border: none; box-shadow: none; \
+             min-width: 26px; min-height: 18px; padding: 0 1px; margin: 0; }}\n\
              /* The rail is dark ink (`draw_gutter`), so its glyphs must arrive in light ink: left at the\
                 theme's default colour the whole-cut fold-all badge painted dark-on-dark and read as absent\
                 -- the render showed only a smudge at the top of the gutter. */\n\
-             .cut-gutter-col button { color: #f2f2f2; font-size: 15px; }",
-        );
+             .cut-gutter-col button {{ color: #f2f2f2; font-size: 15px; }}\n\
+             /* §1's gutter shows the per-lane sound switches as ROUND buttons with a ground of their own\
+                (badge 29, `spec/img/05-cut.png`), unlike the fold-all badge which is a bare glyph: only\
+                those get a plate. 22 px inside the {} px column leaves the round shape room to read as\
+                round under the cairo renderer. */\n\
+             .cut-gutter-col button.round {{ background: #6b6b6b; border-radius: 13px;\n\
+                 min-width: 22px; min-height: 22px; color: #f2f2f2; }}",
+            crate::cut_screen::GUTTER_PX as i32
+        ));
         gtk::style_context_add_provider_for_display(
             &gtk::gdk::Display::default().expect("a display to style"),
             &provider,

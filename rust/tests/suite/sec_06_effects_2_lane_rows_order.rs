@@ -273,6 +273,85 @@ fn sec_06_effects_2_the_lane_and_the_preview_s3_a_bar_at_the_floor_is_inked_on_i
     );
 }
 
+/// §2: a bar the span floor REFUSES is still drawn, and it is never painted as if it had claimed a row.
+///
+/// The completion check's finding was that the floor could be tested twice — once where the rows are packed and
+/// once where the bars are made — so a sub-floor effect reserved nothing in one answer while the painter (which
+/// iterates `lane_layout`) inked it over whatever shared its row. Both doors now read [`fx_lane::pack`], which
+/// tests the floor on `dur` alone; what no test pinned was the PAINTED consequence for a bar below the floor,
+/// so that is what is measured here: the tiny label sits on row 0 and reserves nothing, the zoom that overlaps
+/// its seconds gets the row below, and each kind's ink lands on its own row rather than both on the first.
+#[test]
+fn sec_06_effects_2_the_lane_and_the_preview_s3_a_bar_the_floor_refuses_is_never_painted_as_if_it_reserved(
+) {
+    let short = fx(EffectKind::Label, 1.0, fx_lane::PACK_MIN_SECONDS - 0.01);
+    assert!(
+        short.dur < fx_lane::PACK_MIN_SECONDS,
+        "the label is under the floor: {:?} s",
+        short.dur
+    );
+    // Its seconds belong to the zoom: the refused bar shares them and must not push the zoom off its row.
+    let pair = vec![short, fx(EffectKind::Zoom, 1.0, 5.0)];
+    // The two doors agree: `rows_for_effects` (press readers, the band) and `lane_layout` (both painters) are
+    // `pack`'s rows and its reservation flag, so neither can call this bar a row's owner.
+    let bars = fx_lane::lane_layout(&pair);
+    assert_eq!(
+        (bars[0].row, bars[0].reserves_a_row),
+        (0, false),
+        "a sub-floor bar is drawn at the lane's top and claims nothing: {bars:?}"
+    );
+    assert!(
+        bars[1].reserves_a_row,
+        "the overlapping effect owns its row"
+    );
+    // THE ONE DOOR: the row list the press readers and the band walk is `pack`'s, byte for byte, and so is
+    // each bar's reservation flag — which is what makes it impossible for a painter to treat a refused bar
+    // as the owner of the row it sits on.
+    assert_eq!(
+        bars.iter().map(|bar| bar.row).collect::<Vec<_>>(),
+        fx_lane::rows_for_effects(&pair),
+        "one door answers the row for both surfaces"
+    );
+    assert_eq!(
+        fx_lane::row_count(&pair),
+        1,
+        "a refused bar reserves nothing, so it never grows the lane"
+    );
+
+    // Now paint through the page's own door and read the rows back off the pixels.
+    let painted_scene = scene(pair.clone());
+    let bytes = painted(&painted_scene);
+    let top = lane_top();
+    let row_h = fx_lane::lane_height_px(1);
+    let row_zero_end = cut_band_rows::lane_row_top_px(top, 1) as i32;
+    let lane_end = (top + 2.0 * row_h) as i32;
+    let label_y = first_row_with(
+        &bytes,
+        fx_lane::bar_colour(EffectKind::Label, false),
+        EffectKind::Label,
+        top as i32,
+        lane_end,
+    )
+    .expect("the refused bar is still drawn");
+    let zoom_y = first_row_with(
+        &bytes,
+        fx_lane::bar_colour(EffectKind::Zoom, false),
+        EffectKind::Zoom,
+        top as i32,
+        lane_end,
+    )
+    .expect("the zoom is drawn too");
+    println!(
+        "sub-floor label ink at y={label_y}, zoom ink at y={zoom_y}; row 0 ends {row_zero_end}"
+    );
+    // The zoom OWNS row 0 and the refused bar merely shares it: the lane stays one row deep, so neither kind's
+    // ink may appear below row 0 where no row exists.
+    assert!(
+        label_y < row_zero_end && zoom_y < row_zero_end,
+        "both sit on the one row the lane has: label y={label_y}, zoom y={zoom_y}, row 0 ends {row_zero_end}"
+    );
+}
+
 /// §2: THREE effects all over one another, one of them exactly on the span floor. `s10` pins the same floor in
 /// the packing alone and the check above paints a pair; what nothing pinned was that the STACK reaches past a
 /// pair — with three rows the lane must still be laid out row 0 nearest the top, row 1 under it and row 2 under
