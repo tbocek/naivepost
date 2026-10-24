@@ -293,14 +293,19 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_renamed_lane_file_keeps_the_
 ) {
     // `snapshot::run`'s naming rule, asserted on the doors themselves so there is ONE source of truth: a screen
     // whose subject takes `<name>.png` pushes the page to `<name>-page.png`, and only a subject that staging
-    // painted into a sidecar is renamed over the asked name. The popover is deliberately NOT in the rename table:
-    // its subject is painted at the frame-taking step, from the dropdown's box.
-    for subject in ["06-lane", "06-preview", "06-effect-menu"] {
+    // painted into a sidecar is renamed over the asked name. The Effect menu is NOT in the first group any more:
+    // `spec/QUESTIONS.md` §06 answer 3(b) makes its picture the PAGE with the menu open over it, so nothing
+    // displaces that screen's window shot.
+    for subject in ["06-lane", "06-preview"] {
         assert!(
             naivepost::snapshot_subjects::subject_takes_the_name(subject),
             "{subject}'s subject must hold the asked filename"
         );
     }
+    assert!(
+        !naivepost::snapshot_subjects::subject_takes_the_name("06-effect-menu"),
+        "the menu is painted over the page now, so the page keeps its asked filename"
+    );
     assert_eq!(
         naivepost::snapshot_subjects::subject_sidecar("06-lane"),
         Some("lane-shot"),
@@ -314,7 +319,7 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_renamed_lane_file_keeps_the_
     assert_eq!(
         naivepost::snapshot_subjects::subject_sidecar("06-effect-menu"),
         None,
-        "the popover has no sidecar to rename: it is painted into the asked name directly"
+        "the menu has no sidecar to rename: it is painted onto the page shot itself"
     );
     for ordinary in ["05-cut", "03-window", "07-narrate"] {
         assert!(

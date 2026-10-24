@@ -122,6 +122,9 @@ mod cut_lane_rows;
 /// past its size budget. See the module doc.
 pub mod cut_page_layout;
 pub mod cut_picture;
+/// §05-cut#1-screen / §06-effects#2 — the band's PICTURE ROWS: which extracted frame stands where, the grid
+/// measured from the frame names, and who may decode. Split out because `cut_tracks` is at its size budget.
+pub mod cut_picture_rows;
 /// F3.4 S4 — the caption's preview draw: its box, the shared fitter's size and lines, and the white bold words
 /// with their dark dilated edge. Split out so `cut_preview_frame` stays a painter that composes no rule of its own.
 pub mod cut_preview_caption;

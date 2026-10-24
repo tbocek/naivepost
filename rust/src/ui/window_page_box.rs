@@ -554,12 +554,14 @@ pub(crate) fn page_box(
         // rule is copied here, and lists Prepare's frames for the thumbnails as the page asks for its
         // scene. The draw callbacks outlive this call, hence the clone rather than `page_box`'s borrow.
         let held = window.clone();
+        // The frames the row shows come from the folder the WINDOW works on — or, in a headless shot, from the
+        // fixture the bench named (`cut_picture::snapshot_frame_tree`), which is where its staged JPEGs are.
         previous = cut_tracks::install(
             window,
             &box_,
             &previous,
             move || crate::ui::cut_view::band_scene_for(&held),
-            session_reads().0,
+            || crate::ui::cut_picture::snapshot_frame_tree().or_else(|| session_reads().0),
         )
         .upcast();
         box_.insert_child_after(&strip, Some(&previous));

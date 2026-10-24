@@ -202,7 +202,7 @@ pub fn seed_structured_frame(
 static SHOT_SIZE: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
 
 /// Ask for the shot at `width`×`height` pixels (0×0 restores "whatever the widget was allocated").
-pub(crate) fn set_shot_size(width: i32, height: i32) {
+pub fn set_shot_size(width: i32, height: i32) {
     // One slot is enough: a snapshot run renders exactly one screen, and the two numbers are packed so a
     // single atomic carries both. The shift happens on u32: a heading row is 700 px wide, and `700 << 16`
     // overflows i32, which would pack a negative value and make every wide sidecar come out 1x1.
@@ -236,6 +236,18 @@ fn shot_size(widget: &gtk::Widget) -> (u32, u32) {
 
 /// Draw one widget into an ARGB surface at `width`x`height` (the same route `snapshot_face::write_png`
 /// takes, kept there because the two surfaces have to be composited before anything reaches disk).
+/// A widget's top-left inside its window, as whole pixels — the offset a crop of the window's render node needs.
+/// `compute_bounds` answers in the window's own coordinates, which is exactly the frame the surface is drawn in.
+pub fn widget_offset(
+    window: &adw::ApplicationWindow,
+    widget: &gtk::Widget,
+) -> Result<(i32, i32), String> {
+    let bounds = widget
+        .compute_bounds(window.upcast_ref::<gtk::Widget>())
+        .ok_or_else(|| format!("{} has no box to crop", widget.widget_name()))?;
+    Ok((bounds.x().round() as i32, bounds.y().round() as i32))
+}
+
 pub(crate) fn render_surface(
     widget: &gtk::Widget,
     width: i32,
@@ -250,6 +262,29 @@ pub(crate) fn render_surface(
     let cr = cairo::Context::new(&surface).map_err(|err| err.to_string())?;
     unsafe { gsk::ffi::gsk_render_node_draw(node.as_ref().to_glib_none().0, cr.to_raw_none()) };
     Ok(surface)
+}
+
+/// The pixel size of a PNG on disk, read from its own IHDR (bytes 16..24, big-endian width then height). §2's
+/// shot checks ask "is this file the window's shape or the menu's?" — a question about the ARTIFACT, so it is
+/// answered off the file rather than off whatever size was last asked for (`spec/00-principles` §5). One helper
+/// for every such check, so no test re-implements the header layout differently. The program calls it too:
+/// `snapshot_lane::write_png` ends its log sentence with the size the file actually has.
+pub fn png_size(path: &Path) -> (i32, i32) {
+    let bytes = std::fs::read(path).unwrap_or_else(|why| panic!("{}: {why}", path.display()));
+    assert!(
+        bytes.len() > 24 && &bytes[0..8] == b"\x89PNG\r\n\x1a\n",
+        "{} is not a PNG",
+        path.display()
+    );
+    let number =
+        |at: usize| i32::from_be_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
+    assert_eq!(
+        &bytes[12..16],
+        b"IHDR",
+        "{} has no IHDR where a PNG's must be",
+        path.display()
+    );
+    (number(16), number(20))
 }
 
 pub(crate) fn write_png(widget: &gtk::Widget, out: &Path) -> Result<(), String> {

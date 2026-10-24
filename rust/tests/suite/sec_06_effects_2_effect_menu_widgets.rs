@@ -178,15 +178,15 @@ fn menu_shows_the_rows(app: &adw::Application) {
 }
 
 #[test]
-fn sec_06_effects_2_the_lane_and_the_preview_s2_the_menu_shot_takes_the_pictures_own_name() {
-    // `spec/img/06-effect-menu.png` is a picture of the POPOVER, not of the page behind it, so this screen's
-    // `<name>.png` must be the popover too and the staged page has to go beside it (`snapshot::run`'s
-    // `menu_subject` branch). The door is asked by screen name, so the check is exactly that: the one screen whose
-    // spec picture is the menu is the one whose PNG is the menu -- every other screen keeps the page at its own
-    // name. No window needed: this is the wiring between the screen list and the frame-taking step.
+fn sec_06_effects_2_the_lane_and_the_preview_s2_the_menu_shot_is_the_page_it_opens_on() {
+    // `spec/QUESTIONS.md`, §06 answer 3(b), reversed what this check used to pin: the spec's picture is THE CUT
+    // PAGE with the menu open under its button, "the render shows the menu alone, stretched over the whole
+    // window" is named as the defect. So the page keeps `<name>.png` and the menu is painted over it — which means
+    // this screen claims NO subject of its own, while every other screen keeps its page at its own name. No
+    // window needed: this is the wiring between the screen list and the frame-taking step.
     assert!(
-        naivepost::snapshot_effect_menu::is_menu_subject("06-effect-menu"),
-        "the screen whose spec picture is the popover must paint the popover under its own name"
+        !naivepost::snapshot_effect_menu::is_menu_subject("06-effect-menu"),
+        "the menu is painted OVER the page shot now, so no subject takes this screen's name"
     );
     for other in ["06-lane", "05-cut"] {
         assert!(
@@ -194,6 +194,17 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_menu_shot_takes_the_pictures
             "{other}'s picture is a page, so its `<name>.png` must stay the page"
         );
     }
+    // The two naming doors that decide WHERE the shot lands, asserted here rather than in their own test: no
+    // subject takes this screen's asked name, and no sidecar is renamed over it.
+    assert!(
+        !naivepost::snapshot_subjects::subject_takes_the_name("06-effect-menu"),
+        "nothing may push this screen's page shot aside for a subject file"
+    );
+    assert_eq!(
+        naivepost::snapshot_subjects::subject_sidecar("06-effect-menu"),
+        None,
+        "no sidecar is renamed over this screen's asked name"
+    );
 }
 
 /// The one application this binary is allowed: `gio` refuses a second `run_with_args`, so every check here is a

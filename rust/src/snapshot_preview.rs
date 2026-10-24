@@ -27,42 +27,24 @@ use crate::snapshot_face::seed_snapshot_frame;
 /// decides whether §2's paired plate is drawn at all. The footage in a headless shot is the staged frame —
 /// [`crate::snapshot_face::STRUCTURED_FRAME_W`] x [`crate::snapshot_face::STRUCTURED_FRAME_H`], and the plate is told
 /// that shape (`note_plate_shape`) rather than left on the declared panel — so "thin bars" is a number here: a
-/// SURROUND_SHARE of the frame's own width and height outside the rect, which on a 960 px frame leaves the plate four
-/// times its minimum room while still dimming something, as §2's half-paused picture does.
+/// SURROUND_SHARE of the frame's own width and height outside the rect, which on a 960 px frame still leaves the
+/// plate its minimum room while dimming something, as §2's half-paused picture does.
 const ZOOM_CX: f64 = 0.5;
 const ZOOM_CY: f64 = 0.5;
-/// How much of the frame's width and height stays OUTSIDE the crop: one eighth, i.e. `hf` = 7/8.
-const SURROUND_SHARE: f64 = 0.125;
+/// How much of the frame's width and height stays OUTSIDE the crop: one sixteenth, i.e. `hf` = 15/16 — a ~30 px
+/// edge on a 960 px frame, which is the thin surround §2's picture actually shows rather than a wide grey frame
+/// around the content.
+const SURROUND_SHARE: f64 = 1.0 / 16.0;
 const ZOOM_HF: f64 = 1.0 - SURROUND_SHARE;
 
-/// The caption's box, as fractions of the FINISHED frame (§F3.4 stores box fractions, and the painter lays them out
-/// on the fitted footage). Width and height are NOT the §F3.4 S2 default: `fx_text::fit` fits the words into whatever
-/// box they are given, and a default 0.8 x 0.16 box at this plate's shape wraps "Ethereum in one lecture" onto two
-/// lines, the second of which falls below the crop and is dimmed with everything outside it. §2's picture shows the
-/// sentence on ONE line inside the crop, so the box is one line wide and shallow, and it is centred
-/// `CAPTION_IN_CROP` of the way DOWN THE CROP rather than down the frame — which is where the spec's words sit, wholly
-/// inside the stroked rect. A hand gives a caption its box by dragging one; this shot drags one too (see the
-/// `text_drag_ended` call in `paint`), it just drags it where §2's picture has it.
-const CAPTION_WF: f64 = 0.62;
-const CAPTION_HF: f64 = 0.09;
-/// How far down the CROP the caption's centre sits. Two things set it, and the two ends of the crop are taken:
-/// the plate §2 pairs with the stroked rect is laid at the rect's OWN middle, so a caption centred there sits under
-/// the plate's box; and §2's picture shows the words across the crop's lower third — a third of the way up from its
-/// bottom edge, which is the same 2/3 mark read from the top.
-const CAPTION_IN_CROP: f64 = 2.0 / 3.0;
-
-/// The caption's box in fractions, derived from the staged camera above rather than from a remembered pixel, so the
-/// two cannot drift: move the zoom and the caption follows it inside the new rect.
-///
-/// A `fn` and not a `const` because this file has no `fx_text` items to compare a `const` against at compile time;
-/// nothing about it depends on the window, so every caller gets the same box.
+/// The caption's box is §F3.4 S2's default lower third, verbatim (`fx_text::LOWER_THIRD`): §2's picture has the
+/// sentence across the LOWER part of the frame, and the text names that box as the one a caption gets when a hand
+/// did not drag it elsewhere — which is the case here, since the drag below exists to run the real doors, not to
+/// invent a placement. `fx_text::fit` puts "Ethereum in one lecture" on ONE line in this box at both shapes the
+/// shot paints it at (the 960x540 frame and the headless 240x135 panel), and the whole line stays inside the
+/// camera rect, so no part of it is dimmed with the surround.
 pub fn caption_box() -> fx_text::Box_ {
-    fx_text::Box_ {
-        cx: 0.5,
-        cy: (ZOOM_CY - ZOOM_HF / 2.0) + CAPTION_IN_CROP * ZOOM_HF,
-        wf: CAPTION_WF,
-        hf: CAPTION_HF,
-    }
+    fx_text::LOWER_THIRD
 }
 
 /// The cut this shot stands on, BEFORE the caption is placed: the zoom, the two speeds (one scene-end, one

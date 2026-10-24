@@ -16,6 +16,12 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
+use crate::ui::cut_picture_rows as picture_rows;
+/// The band's picture rows live in their own file (this one is at its size budget); `paint_at` calls them and the
+/// doors below stay re-exported so every existing caller (`params.rs`, the §05/§06 checks) keeps its path.
+pub use crate::ui::cut_picture_rows::{
+    allow_frame_decoding, batch_of, frame_step_seconds, path_x, THUMB_BATCH,
+};
 use crate::{clock, cut, cut_fold, cut_screen, cut_trim, fx_lane, layout, timeline, tools};
 
 /// The band's tints come from [`cut_colours`], catalogued by `params::cut()` under `cut.colour.*`: §6 lists
@@ -240,6 +246,31 @@ pub fn scene_from(
     )
 }
 
+/// The band's laid-out height for THIS window: the same sum the painter lays its rows out by, asked of the scene
+/// the page would paint — ruler + selection band + one lane row per stacked effect row + a picture row per camera
+/// and per cut lane. `cut_tracks::install` sized the surfaces once, before the page had any cut; §1's band grows
+/// with every row an edit adds, so anything that has to charge for the stack (the layout above it, and the snapshot
+/// crop that cuts the track area out of the live page) asks THIS rather than measuring a widget that may not have
+/// been re-laid-out yet.
+pub fn band_height_for_window(window: &adw::ApplicationWindow) -> i32 {
+    let mut scene = crate::ui::cut_view::band_scene_for(window);
+    // The frames come off the door the installed band uses (`window_page_box` hands `install` this same tree), so
+    // the height is asked of the scene the page will actually paint — lane rows and film rows included.
+    scene.thumbs = scene
+        .recordings
+        .iter()
+        .map(|recording| {
+            (
+                recording.base.clone(),
+                crate::ui::cut_picture::snapshot_frame_tree()
+                    .map(|tree| frame_paths(&tree, &recording.base))
+                    .unwrap_or_default(),
+            )
+        })
+        .collect();
+    band_height_for(&scene)
+}
+
 /// Badge **31**: the bar itself, named what `repaint_scrollbar` already looks it up by.
 pub fn scrollbar() -> gtk::Scrollbar {
     let bar = gtk::Scrollbar::new(
@@ -258,14 +289,14 @@ pub fn install(
     host: &gtk::Box,
     after: &gtk::Widget,
     scene: impl Fn() -> Scene + Clone + 'static,
-    tree: Option<layout::Tree>,
+    tree: impl Fn() -> Option<layout::Tree> + Clone + 'static,
 ) -> gtk::Scrollbar {
     // Moved into the draw closure, which must be `'static`: the frames are Prepare's output, listed per
     // recording when the page asks for its scene — a folder with none draws no pictures, which is §1's
     // answer rather than black.
     let thumb_for = move |base: &str| {
-        tree.as_ref()
-            .map(|tree| frame_paths(tree, base))
+        tree()
+            .map(|tree| frame_paths(&tree, base))
             .unwrap_or_default()
     };
     // The frames are Prepare's output, listed per recording when the page asks for its scene.
@@ -679,7 +710,7 @@ pub fn paint_at(cr: &cairo::Context, scene: &Scene, width: f64, height: f64, thu
     draw_dropped_gaps(cr, scene, rows, tape);
     draw_kept_bars(cr, scene, rows, tape);
     draw_effects_lane(cr, scene, rows, tape);
-    draw_picture_rows(cr, scene, rows, tape);
+    picture_rows::draw_picture_rows(cr, scene, rows, tape);
     draw_row_wave_strips(cr, scene, rows, tape);
     draw_recording_edges(cr, scene, rows, tape);
     draw_join_washes(cr, scene, rows, tape);
@@ -950,86 +981,6 @@ fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
     }
 }
 
-/// The picture rows: the filmed ground of each recorded row, then one thumbnail per row rather than one per
-/// frame. §1 says the band has a picture at every zoom, and the prototype's gap between frames is its own
-/// frame spacing, not something the band should reproduce as black; one representative frame per row is what
-/// a shot can be compared against. Row 0's frames are the ones shown, which is the row the preview watches.
-fn draw_picture_rows(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
-    for run in scene.runs() {
-        let (x0, width) = band_span_px(scene, run.0, run.1);
-        if x0 >= tape || x0 + width < 0.0 {
-            continue;
-        }
-        fill(
-            cr,
-            (0.8, 0.8, 0.82),
-            x0,
-            rows.pictures,
-            width,
-            rows.row_h * scene.row_count.max(1) as f64,
-            1.0,
-        );
-    }
-    let Some((_, paths)) = scene.thumbs.first() else {
-        return;
-    };
-    // §1: "the band has a picture at every zoom". One frame is shown, the one nearest the second at the
-    // view's left edge — `frame_near` picks it by the file name's own timestamp, and the mark sits where
-    // that second lands. Frames are not decoded here: a draw must never block on a decode (§7), and the
-    // window of names a pass asks about is ONE §D batch wide ([`batch_of`], `thumbBatch 6`), the loader's
-    // bound rather than the row's whole list.
-    let at = (scene.origin / scene.pps).max(0.0);
-    let step = frame_step_seconds(paths.len());
-    let first = if step > 0.0 {
-        (at / step).floor() as usize
-    } else {
-        0
-    };
-    let Some(near) = frame_near(batch_of(paths, first), at) else {
-        return;
-    };
-    fill(
-        cr,
-        (0.65, 0.68, 0.72),
-        path_x(scene, &near),
-        rows.pictures,
-        2.0,
-        rows.row_h,
-        1.0,
-    );
-}
-
-/// The seconds between two entries of a row's frame list: Prepare extracts one frame every 250 ms, which is
-/// what a `.jpg` name's stamp is spaced by and the only thing a frame's place in the list can be measured
-/// against. §10 lists this in its frame-extraction sentence (`intervalSeconds`, 0.25 at the default) without a
-/// `P.` id of its own for the reader's copy, so the band states it once here and says so.
-const FRAME_STEP_SECONDS: f64 = 0.25;
-
-/// One entry of a row's frame list stands for this many seconds of tape; a list of one or none stands for the
-/// whole row, which no window of the list can express, so it answers 0 and the caller takes the first batch.
-fn frame_step_seconds(count: usize) -> f64 {
-    if count < 2 {
-        return 0.0;
-    }
-    FRAME_STEP_SECONDS
-}
-
-/// How many thumbnails one pass of the band takes off the list to show: inventory §D's `thumbBatch 6`
-/// ("decoded in a worker in batches of 6 at the row height"). The prototype hands a loader six files at a time
-/// so a long row costs six decodes a round and not the row's whole list; this band shows one representative
-/// frame per row and reads no pixels at all (a draw must never block on a decode), so the number here bounds
-/// how far one pass looks into the frame list — six seconds of tape at Prepare's own 250 ms grid — which is
-/// where the prototype's batch and this page's cheap draw meet. §6 lists it, so it is a constant and a row.
-pub const THUMB_BATCH: usize = 6;
-
-/// The slice one batch covers: at most [`THUMB_BATCH`] paths starting at `start`, empty past the end. A plain
-/// function of a list and an index so the batch's shape can be tested without a window or a decode.
-pub fn batch_of(paths: &[std::path::PathBuf], start: usize) -> &[std::path::PathBuf] {
-    let from = start.min(paths.len());
-    let to = from.saturating_add(THUMB_BATCH).min(paths.len());
-    &paths[from..to]
-}
-
 /// §27 Tracks: "each row's first audio track as a strip below it". One plate per recorded row, in the
 /// lower third of that row ([`Rows::wave_top`]), inked from `cache/waves/<base>.wave` through the same
 /// painter the placeholder strip uses (`cut_trim_press::paint_row_wave`) so the two surfaces cannot show
@@ -1050,22 +1001,6 @@ fn draw_row_wave_strips(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f6
     }
 }
 
-/// A thumbnail's x, on the folded span: frames are named by their second, so the file name is the position.
-/// An unparsable name draws at the row's start rather than nowhere.
-fn path_x(scene: &Scene, path: &std::path::Path) -> f64 {
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .and_then(|n| n.get(11..19))
-        .and_then(|hhmmss| {
-            let h: f64 = hhmmss.get(0..2)?.parse().ok()?;
-            let m: f64 = hhmmss.get(3..5)?.parse().ok()?;
-            let s: f64 = hhmmss.get(6..9)?.parse().ok()?;
-            Some(h * 3600.0 + m * 60.0 + s)
-        })
-        .map(|seconds| band_x(scene, seconds))
-        .unwrap_or(0.0)
-}
-
 /// Amber striped edges where a recording starts and ends (§1).
 fn draw_recording_edges(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     let height = rows.row_h * scene.row_count.max(1) as f64;
@@ -1076,15 +1011,7 @@ fn draw_recording_edges(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f6
                 continue;
             }
             for stripe in 0..3i32 {
-                fill(
-                    cr,
-                    EDGE_AMBER,
-                    x + stripe as f64,
-                    rows.pictures,
-                    1.0,
-                    height,
-                    1.0,
-                );
+                fill(cr, EDGE_AMBER, x + stripe as f64, rows.pictures, 1.0, height, 1.0);
             }
         }
     }
@@ -1377,6 +1304,33 @@ pub fn frame_paths(tree: &layout::Tree, base: &str) -> Vec<std::path::PathBuf> {
         })
         .unwrap_or_default();
     out.sort();
+    // Two files can claim the same second — a `.jpg` and a `.png` of one stamp, or a stand-in left beside a newer
+    // staged frame. The row draws ONE cell per second it shows, so a duplicate would paint over its own neighbour.
+    // Newest file wins: that is the frame whatever wrote it last intended, and Prepare's own extractor rewrites in
+    // place rather than adding a second copy.
+    out.dedup_by(|a, b| {
+        let same_second = |p: &std::path::Path| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .and_then(clock::read_frame)
+        };
+        match (same_second(a), same_second(b)) {
+            (Some(x), Some(y)) if (x - y).abs() < f64::EPSILON => {
+                let newer = |p: &std::path::Path| {
+                    std::fs::metadata(p)
+                        .and_then(|m| m.modified())
+                        .map(|t| {
+                            t.duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0)
+                        })
+                        .unwrap_or(0)
+                };
+                newer(a) >= newer(b)
+            }
+            _ => false,
+        }
+    });
     out
 }
 
@@ -1398,7 +1352,15 @@ pub fn frame_near(paths: &[std::path::PathBuf], at: f64) -> Option<std::path::Pa
         .cloned()
 }
 
-fn fill(cr: &cairo::Context, rgb: (f64, f64, f64), x: f64, y: f64, w: f64, h: f64, alpha: f64) {
+pub(crate) fn fill(
+    cr: &cairo::Context,
+    rgb: (f64, f64, f64),
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    alpha: f64,
+) {
     if w <= 0.0 || h <= 0.0 {
         return;
     }

@@ -283,6 +283,22 @@ fn snapshot_tree() -> Option<std::path::PathBuf> {
 pub fn set_snapshot_dir(dir: &std::path::Path) {
     SNAPSHOT_DIR.with(|slot| *slot.borrow_mut() = Some(dir.to_path_buf()));
 }
+
+/// The folder whose extracted frames THIS window's band should list, if the bench has named one. Same door as
+/// [`set_snapshot_dir`]'s slot, read out: a live page lists frames from the project it opened (`session_reads`),
+/// but a headless shot renders a FIXTURE in another directory, and without this the picture row would be asked
+/// about the working copy rather than the shot's own — i.e. no thumbnails at all.
+///
+/// The folder the shot was handed IS a project folder (`.naivepost`), and its extracted frames live under its own
+/// `prepare/inputs/frames/…`, so that is tried first; a caller that handed over the inner `session.naivepost`
+/// instead still gets its frames through the fallback.
+pub fn snapshot_frame_tree() -> Option<layout::Tree> {
+    snapshot_tree().and_then(|dir| {
+        layout::Tree::new(&dir)
+            .ok()
+            .or_else(|| layout::Tree::new(crate::startup::session_dir(&dir)).ok())
+    })
+}
 /// Move THIS window's red line and repaint the frame that goes with it. `window.rs` owns where the line is
 /// stored; this is the one line its owner has to add, so a placed line always changes what the preview shows
 /// without the widget layer deciding anything about seconds.

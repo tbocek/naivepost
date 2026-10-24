@@ -43,6 +43,8 @@ pub fn is_lane_subject(screen: &str) -> bool {
 /// (`cut_tracks::frame_paths`, `cache/waves/<base>.wave`), so this image cannot show content the app would not have.
 /// Returns the log sentence.
 pub fn write_png(cut: &Cut, dir: &Path, out: &Path) -> Result<String, String> {
+    // The shot asks for film in its picture row; a live page never sets this (§7: no decode inside a draw).
+    cut_tracks::allow_frame_decoding();
     let thumb_px = cut_tracks::THUMB_DEFAULT_PX;
     let base = "session-tape";
     // Staged here rather than by each caller so every producer of this image — `just snapshot 06-lane` and the
@@ -70,11 +72,82 @@ pub fn write_png(cut: &Cut, dir: &Path, out: &Path) -> Result<String, String> {
         .write_to_png(&mut file)
         .map_err(|why| format!("writing the lane: {why}"))?;
     Ok(format!(
-        "lane painted at {} px/s: {} effect bars in {} rows, {} px tall",
+        "lane painted at {} px/s: {} effect bars in {} rows, {} px tall; file {}",
         PPS,
         cut.fx.len(),
         crate::fx_lane::row_count(&cut.fx),
-        height
+        height,
+        // Read back off the PNG's own IHDR rather than repeating what was asked for: §00-principles §5 says
+        // measure the artifact, and this is the sentence a person compares against `spec/img/06-lane.png`.
+        {
+            let (w, h) = crate::snapshot_face::png_size(out);
+            format!("{w}x{h} px on disk")
+        }
+    ))
+}
+
+/// Paint THIS window's track area — ruler down to the bottom of the last picture row and its wave strip — into
+/// `out`, by cropping the live page rather than repainting a scene.
+///
+/// §2's first picture is that stack as a user sees it, and `spec/QUESTIONS.md` answer 3(a) says where it ends:
+/// "06-lane is the track area from the ruler down to the bottom of the picture row and its waveform, with the dark
+/// gutter running the whole height at the left and the fold-all − at its top… Make the shot end where the track
+/// stack ends, not at a fixed height." A cairo surface painted by [`write_png`] cannot show the gutter's controls,
+/// because `fold-all-button` and the per-lane sound switches are WIDGETS (`gutter-badges`, `gutter-switches`,
+/// overlaid on `track-layers`), so they exist only in the page's own render node. Hence the crop: the pixels are
+/// the ones the page painted, including every widget on the rail.
+///
+/// The band's top edge and its height come off the real rects (`track-layers`) and off the same doors the painter
+/// uses for where its rows end ([`cut_tracks::band_height_for_window`]), so the frame cannot stop inside a row
+/// again. Returns the log sentence naming the box that was cut.
+pub fn paint_track_area(window: &adw::ApplicationWindow, out: &Path) -> Result<String, String> {
+    use adw::prelude::*;
+    let layers = crate::ui::find_source_widget(window, "track-layers")
+        .ok_or("the Cut page drew no track-layers overlay")?;
+    let scene = crate::ui::cut_view::band_scene_for(window);
+    // The band's own laid-out height: what the painter was asked to fit, and what §2's stack costs. Asked of the
+    // SAME door the installed band paints from (frames included) rather than measured off the widget, so a row an
+    // edit added is counted even if GTK has not caught up with the request yet.
+    let tall = cut_tracks::band_height_for_window(window).max(1);
+    let wide = layers.width().max(1);
+    let (x, y) = crate::snapshot_face::widget_offset(window, &layers)?;
+    // The crop is taken from the window's own surface: the band sits at `y` inside it, and cairo can only blit
+    // what was drawn, so the whole window is rendered once and the file written from that region.
+    let full = crate::snapshot_face::render_surface(
+        window.upcast_ref(),
+        window.width().max(1),
+        window.height().max(1),
+    )?;
+    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, wide, tall)
+        .map_err(|why| format!("the track-area surface: {why}"))?;
+    {
+        let cr = cairo::Context::new(&surface).map_err(|why| why.to_string())?;
+        cr.set_source_surface(&full, -(f64::from(x)), -(f64::from(y)))
+            .map_err(|why| why.to_string())?;
+        cr.paint().map_err(|why| why.to_string())?;
+    }
+    let mut file = std::fs::File::create(out).map_err(|why| format!("{}: {why}", out.display()))?;
+    surface
+        .write_to_png(&mut file)
+        .map_err(|why| format!("writing the track area: {why}"))?;
+    // How many frames the page's own door could list, printed with the box: a row that came out flat grey is
+    // either an empty list (wrong folder — this number is 0) or a painter that drew too few cells (this is
+    // large), and the two need different fixes. Read off the same door `install` was handed.
+    let listed = crate::ui::cut_picture::snapshot_frame_tree()
+        .map(|tree| {
+            scene
+                .recordings
+                .first()
+                .map_or(0, |r| cut_tracks::frame_paths(&tree, &r.base).len())
+        })
+        .unwrap_or(0);
+    Ok(format!(
+        "track area cropped from the live page at x={x},y={y}: {wide}x{tall} px \
+         (ruler + selection band + {} lane row(s) + {} row(s) of film with their wave strips; \
+         {} frame(s) listed by the band's door)",
+        crate::fx_lane::row_count(&scene.fx),
+        scene.row_count.max(1) + crate::ui::cut_tracks::lane_rows(&scene),
+        listed,
     ))
 }
 

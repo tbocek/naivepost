@@ -9,12 +9,13 @@ use crate::cut_line;
 use crate::ui;
 
 /// Paint one of the effect screens onto `window`. Returns true when this module owned `screen`.
-/// `out` is the PNG this run was asked to write (`shots/06-lane.png`): a screen whose subject cannot live inside
-/// a window shot puts its own file beside it there, the way `03-runbar-busy.face.png` does.
+/// `_out` is unused here: the one screen of this group whose subject cannot live inside a window shot (`06-lane`)
+/// has its file written later, at the frame-taking step in `snapshot::run`, which is the first moment the window
+/// has a render node to crop — see [`crate::snapshot_lane::paint_track_area`].
 pub fn paint(
     window: &adw::ApplicationWindow,
     dir: &std::path::Path,
-    out: &std::path::Path,
+    _out: &std::path::Path,
     screen: &str,
 ) -> bool {
     // F3.5's screen is the drawing form OPEN, so the shot must drive the same doors the widgets use
@@ -385,14 +386,19 @@ pub fn paint(
             end: 300.0,
         }]);
         ui::set_playhead(window, 5.0);
-        // The spec's OWN image for this item is the lane at 1240 x 200, not a strip in the middle of a window
-        // that clamps to ~790 px headless, so the same scene is painted beside the page shot into `<name>-lane.png`
-        // (the `snapshot_effect_menu` sidecar precedent). Painted through `cut_tracks::paint_at`, i.e. by the very
-        // painter the band widget uses, from the cut seeded above — so it cannot show ink the widgets do not draw.
-        match crate::snapshot_lane::write_png(&lane, dir, &out.with_extension("lane-shot.png")) {
-            Ok(said) => println!("snapshot: 06-lane | {said}"),
-            Err(why) => eprintln!("snapshot: 06-lane lane image | {why}"),
+        // §2's picture is the TRACK STACK as a user sees it, and its gutter controls are widgets, so the asked
+        // file is cropped from the page (`spec/QUESTIONS.md` answer 3(a)) rather than repainted on a bare cairo
+        // surface. The wave strip needs the envelope cache; the picture row already has what it needs — the frames
+        // this fixture ships under `prepare/inputs/frames/session-tape`.
+        // The CROP itself cannot happen here — the window has not been mapped yet at this point in `run`, so it has
+        // no render node; it happens at the frame-taking step, beside the `lane` subject door.
+        if let Err(why) = crate::snapshot_lane::stage_envelope(dir, "session-tape") {
+            eprintln!("snapshot: 06-lane wave cache | {why}");
         }
+        // THIS is the shot asking for film, not the live page: §7 forbids a decode inside a draw because a person
+        // would feel it, and a one-shot snapshot process has nobody waiting. Asked before the repaint below so the
+        // pass that produces this shot's pixels is the one that pays for it.
+        ui::cut_tracks::allow_frame_decoding();
         // Repaint through the page's own doors, exactly as a press's refresh does, so the plate, the dimming
         // and the zoom's rect are the app's answer to the state above rather than a half-painted frame.
         ui::cut_view::repaint_page(window);
