@@ -19,6 +19,18 @@ use crate::ui;
 /// The widgets §1 counts under the page, by the names their builders gave them.
 const BAND: [&str; 4] = ["main-divider", "run-bar", "inputs-readout", "log-expander"];
 
+/// §05-cut's track region, printed ONLY when the page has them (every other screen answers nothing).
+/// §1 draws the tracks FILLING the pane down to badge **31**, with the bar flush under the last row, so a
+/// shot that leaves a blank band has to say which of these three did not take the pane's leftover.
+const CUT_TRACKS: [&str; 6] = [
+    "page-scroll-Cut",
+    "cut-page-split",
+    "cut-bottom",
+    "track-layers",
+    "track-scrollbar",
+    "camera-rows",
+];
+
 /// THE SHELL'S DIVIDER ASKS ITS RESTING SPLIT — the door a person's drag fires, asked for a shot.
 ///
 /// The divider is the one thing a headless window never drags, and a band whose height ask moved (a shot that
@@ -93,6 +105,72 @@ pub fn report(window: &adw::ApplicationWindow) -> Option<String> {
     // …and the run-bar row's own children, since "in the tree" is not the claim §1 makes about that row.
     if let Some(row) = found("run-bar") {
         line.push_str(&row_children(&row));
+    }
+    // §05-cut's tape: where the bottom pane, the band stack and badge 31 actually landed, with the bar's own
+    // mapped state (a `set_visible(false)` bar is IN the tree with a zero box, which a name lookup cannot see).
+    for name in CUT_TRACKS {
+        let Some(widget) = found(name) else { continue };
+        match widget.compute_bounds(window) {
+            Some(b) => line.push_str(&format!(
+                ", {name} y={:.0}..{:.0} h={:.0} shown={}",
+                b.y(),
+                b.y() + b.height(),
+                b.height(),
+                widget.is_visible()
+            )),
+            None => line.push_str(&format!(", {name} unmapped shown={}", widget.is_visible())),
+        }
+        // The bottom pane's OWN children, in order: when the pane is taller than the space its children
+        // allocate, GTK draws it at its natural size and the LAST child (badge 31) lands past the window's
+        // edge — invisible in the PNG while the tree says it is there. Only this list says so.
+        if name == "cut-bottom" {
+            if let Some(parent) = widget.parent() {
+                for child in parent
+                    .observe_children()
+                    .iter::<glib::Object>()
+                    .filter_map(Result::ok)
+                    .filter_map(|c| c.downcast::<gtk::Widget>().ok())
+                {
+                    let tail = match child.compute_bounds(window) {
+                        Some(b) => format!(
+                            "\n           PAGE {} y={:.0}..{:.0} h={:.0} shown={}",
+                            child.widget_name(),
+                            b.y(),
+                            b.y() + b.height(),
+                            b.height(),
+                            child.is_visible()
+                        ),
+                        None => format!("\n           PAGE {} unmapped", child.widget_name()),
+                    };
+                    line.push_str(&tail);
+                }
+            }
+        }
+        if name == "cut-bottom" {
+            for child in widget
+                .observe_children()
+                .iter::<glib::Object>()
+                .filter_map(Result::ok)
+                .filter_map(|c| c.downcast::<gtk::Widget>().ok())
+            {
+                let tail = match child.compute_bounds(window) {
+                    Some(b) => format!(
+                        "\n           {} y={:.0}..{:.0} h={:.0} shown={}",
+                        child.widget_name(),
+                        b.y(),
+                        b.y() + b.height(),
+                        b.height(),
+                        child.is_visible()
+                    ),
+                    None => format!(
+                        "\n           {} unmapped shown={}",
+                        child.widget_name(),
+                        child.is_visible()
+                    ),
+                };
+                line.push_str(&tail);
+            }
+        }
     }
     // The divider's own position is the rule's answer: page above it, band below. Printed because a wrong
     // resting split and a page minimum that swallows the band look identical in the PNG.
