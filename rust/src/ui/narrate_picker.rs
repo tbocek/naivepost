@@ -14,6 +14,12 @@ thread_local! {
     /// from the published state, and that selection would otherwise reach the pick seam — which writes
     /// `narrate/voice.txt` and drops the built voice reference — on every repaint.
     static PICKER_SEEDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The last voice this thread's page was told about, and whether saying it was missing has already
+    /// been done. [`follow`] runs on EVERY repaint (a seek, a tick, a row select), so without this the
+    /// refusal for a voice nobody can fix by waiting would print itself again each time and drown out
+    /// whatever else just happened on the status line.
+    static LAST_SPOKEN_VOICE: std::cell::RefCell<Option<(String, bool)>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// The option list behind the picker's rows, in the order they are drawn: resolved through
@@ -45,13 +51,14 @@ pub(crate) fn build() -> gtk::DropDown {
     let picker = gtk::DropDown::from_strings(&[]);
     picker.set_widget_name("voice-picker");
     picker.set_tooltip_text(Some(&narrate_screen::sample_tip()));
-    // The row shown is the chosen voice's, spelled by `voice_options` rather than hardcoded: the spec's
-    // shot has the picker carrying `Narrator 1 — 2026-09-16 18-43-01.mkv` as its own face. A voice that is
-    // not on the list is not shown at all: the dropdown carries no row (§5's "leaves the picker empty").
-    match options(1, &[])
-        .iter()
-        .position(|option| option.id == crate::ui::narrate_page::read_state().voice)
-    {
+    // The row shown is the chosen voice's, spelled by [`crate::narrate_rules::picker_row`] rather than
+    // hardcoded: the spec's shot has the picker carrying `Narrator 1 — 2026-09-16 18-43-01.mkv` as its
+    // own face. A voice that is not on the list is not shown at all: the dropdown carries no row (§5's
+    // "leaves the picker empty"), and `follow` is what says why.
+    match crate::narrate_rules::picker_row(
+        &options(1, &[]),
+        &crate::ui::narrate_page::read_state().voice,
+    ) {
         Some(row) => seed(&picker, row as u32),
         None => picker.set_selected(gtk::INVALID_LIST_POSITION),
     }
@@ -73,36 +80,43 @@ pub(crate) fn follow(
         return;
     };
     let options = options(narrators, files);
-    let labels: Vec<String> = options.iter().map(|option| option.label.clone()).collect();
-    // Only a voice that is NOT on the list counts as "nothing chosen": row 0 of the list IS
-    // captions-only, so a page whose state carries no voice at all must leave the dropdown with
-    // nothing selected rather than showing "captions only" and speaking a different one.
-    let chosen = options.iter().position(|option| option.id == voice);
+    // The row to show comes from [`crate::narrate_rules::picker_row`], the same door the logic tests
+    // read: it is what makes a project that stores the legacy `own` land on the Narrator 1 row instead of
+    // showing nothing for a voice that IS on offer. A voice that is NOT on the list counts as "nothing
+    // chosen" — row 0 of the list IS captions-only, so a page whose state carries no voice at all must
+    // leave the dropdown empty rather than show "captions only" and speak a different one.
+    let chosen = crate::narrate_rules::picker_row(&options, voice);
+    // §5's other half at the widget: a voice that is not on offer leaves the picker EMPTY. GTK clamps any
+    // position to the model's rows, so a dropdown with rows cannot hold "nothing chosen" — the only thing
+    // that spells it is an empty list, which also means nothing can be picked while the stored voice is
+    // missing (row 0 would read "no audio" while the page still speaks the vanished voice).
+    let offered: Vec<String> = match chosen {
+        Some(_) => options.iter().map(|option| option.label.clone()).collect(),
+        None => vec![],
+    };
     // The rows are only replaced when they actually differ: `set_model` resets the dropdown's own
     // selection, and a refresh that changes nothing must not silently move the shown row.
     let same = picker.model().is_some_and(|model| {
         let Some(list) = model.downcast::<gtk::StringList>().ok() else {
             return false;
         };
-        list.n_items() as usize == labels.len()
+        list.n_items() as usize == offered.len()
             && (0..list.n_items()).all(|i| {
                 list.item(i)
                     .and_then(|item| item.downcast::<gtk::StringObject>().ok())
-                    .is_some_and(|item| item.string() == labels[i as usize])
+                    .is_some_and(|item| item.string() == offered[i as usize])
             })
     });
     if !same {
         let strings = gtk::StringList::new(&[]);
-        for label in &labels {
+        for label in &offered {
             strings.append(label);
         }
         // Swapping the model moves the dropdown's row by itself, and that emission lands after this
         // call returns — too late for a flag set around it. So the flag stays up while the model is
         // replaced and is lowered only once the shown row has been re-seeded to the published voice.
-        // Replacing the model re-selects row 0 by itself (§F4.6 S1 already had to re-seed over that,
-        // and `INVALID_LIST_POSITION` does not hold: GTK clamps the position to the new model's rows).
-        // So "no row at all" is done the only way a GtkDropDown can show it: the list is empty until the
-        // published voice really is on offer, and the button then reads the placeholder.
+        // Replacing the model re-selects row 0 by itself (§F4.6 S1 already had to re-seed over that), so an
+        // unmet voice gets no rows at all and its button reads the placeholder.
         PICKER_SEEDING.with(|seeding| seeding.set(true));
         picker.set_model(Some(&strings));
         if let Some(row) = chosen {
@@ -112,6 +126,39 @@ pub(crate) fn follow(
     } else if let Some(row) = chosen {
         seed(&picker, row as u32);
     }
+    say_why_missing(window, voice, chosen);
+}
+
+/// §F4.6 S1: when the voice this project speaks in is not on offer, the picker stays empty AND the status
+/// line says which of the two ways it happened, because they are fixed in different places — a narrator
+/// slot is tagged on Prepare, a file lives in the voices folder. The sentence is the rules module's,
+/// word for word ([`crate::narrate_rules::missing_voice`]); the wire adds nothing.
+///
+/// Once per voice, not once per repaint: `refresh` runs on every seek and tick, and a refusal nobody can
+/// clear by waiting would otherwise push every other status line off the row. A voice that IS on offer
+/// clears the memory, so coming back to a missing one later tells its reason again — which is also what
+/// keeps a page whose state carries no voice at all quiet: "" names no slot and matches no file, so it is
+/// said once and never repeated while nothing has been picked.
+fn say_why_missing(window: &adw::ApplicationWindow, voice: &str, chosen: Option<usize>) {
+    // "no voice picked yet" is not a missing voice: an empty id is what a page that has never been given a
+    // voice holds, and saying `voice "" is no longer in DIR` on every page open would shout over whatever
+    // the arrival at this step actually reported. The picker stays empty for it all the same.
+    if voice.is_empty() {
+        return;
+    }
+    if chosen.is_some() {
+        LAST_SPOKEN_VOICE.with(|told| *told.borrow_mut() = None);
+        return;
+    }
+    let told = LAST_SPOKEN_VOICE.with(|told| told.borrow().clone());
+    if told.is_some_and(|(told, _)| told == voice) {
+        return;
+    }
+    LAST_SPOKEN_VOICE.with(|told| *told.borrow_mut() = Some((voice.to_string(), true)));
+    crate::ui::narrate_page::say(
+        window,
+        &crate::narrate_rules::missing_voice(voice, &crate::ui::narrate_page::voices_dir_label()),
+    );
 }
 
 /// Attach the pick. The picker answers by row, not by id: the row is resolved through the same option

@@ -192,6 +192,9 @@ pub mod narrate_picture;
 pub mod narrate_run_speak;
 pub mod narrate_seed;
 pub mod narrate_voices;
+/// §07-narrate#1-screen (**6**): the Narrate page's half of the one shared preview volume (F2.5 S6).
+/// Split out of `narrate_page.rs`, which is at its size budget; the page calls these three doors.
+pub mod narrate_volume;
 /// §1's bench, the tab buttons and the readouts they repaint. Split out of `window.rs`, which is past its
 /// size budget. Its doors are re-exported through `window`.
 mod window_bench;
