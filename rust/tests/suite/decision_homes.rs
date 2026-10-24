@@ -100,13 +100,6 @@ fn sec_11_flow_index_5_where_each_kind_of_decision_lives_directive_a_s2_policy_i
         // …and `params` agrees with the router, so the two prefix tables cannot drift apart.
         assert_eq!(params::family(id), Family::Policy, "{id}'s family");
     }
-
-    // Editable means F0.7 S4: the derivation fills a field the person has not touched and never
-    // replaces one they have. Without that exception "derived from the User Context" would mean
-    // "not editable", which is the opposite of what §5 claims.
-    assert!(decision_homes::overridable_by_derivation(Origin::Model));
-    assert!(decision_homes::overridable_by_derivation(Origin::Default));
-    assert!(!decision_homes::overridable_by_derivation(Origin::User));
 }
 
 // ---- S3: how a job is worded → the prompts --------------------------------------------------

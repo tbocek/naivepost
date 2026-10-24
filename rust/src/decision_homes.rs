@@ -17,7 +17,6 @@
 
 use crate::{
     params::{self, Family},
-    project::Origin,
     prompts, settings,
 };
 
@@ -135,13 +134,4 @@ pub fn home_of(id: &str) -> Option<Home> {
         return None;
     }
     Some(Home::Engineering)
-}
-
-/// Whether F0.7's derivation may replace this field's value.
-///
-/// F0.7 S4: a hand-set field (`source: user`) is never overwritten. That single exception is what
-/// makes the policy home both halves of §5's sentence at once — derived from the User Context, and
-/// still editable, because a person's answer outranks the model's on the field they touched.
-pub fn overridable_by_derivation(origin: Origin) -> bool {
-    origin != Origin::User
 }
