@@ -10,7 +10,7 @@ renders the video, and writes the title, description, subtitles and thumbnail
 you upload with. Every one of those is a proposal you can overrule; none of
 them is a black box you have to accept whole.
 
-It is a GTK4 application in Go (`gui/`, ~100k lines), talking to four local
+It is a GTK4 application in Go (`go/`, ~100k lines), talking to four local
 HTTP servers over the network — nothing is compiled in, nothing calls out to a
 cloud service unless you point it at one.
 
@@ -709,7 +709,7 @@ Which step calls which server, what waits for what, and what could overlap:
 ## Build and run
 
 ```sh
-cd gui && go build && ./gui
+cd go && go build && ./naivepost
 ```
 
 Go 1.26, GTK4 via gotk4. No libadwaita.
@@ -1045,7 +1045,7 @@ Flatpak the app writes no desktop entry of its own and offers the model no web
 search.
 
 One package. The pipeline files -- transcribe, align, describe, fix, translate,
-the LLM and image clients -- touch no widget, and `gui/seam.go` says exactly
+the LLM and image clients -- touch no widget, and `go/seam.go` says exactly
 what they may take from the application: an interface `*App` satisfies, plus
 the handful of fields read directly. A test reads those files and fails on
 anything past it, so a pipeline function that reaches for a page is a red test
@@ -1157,7 +1157,7 @@ These are the decisions everything else follows from.
 ## Tests
 
 ```sh
-cd gui && go test ./...
+cd go && go test ./...
 ```
 
 About 24 seconds, no network, no GPU, no servers. Much of the suite pins

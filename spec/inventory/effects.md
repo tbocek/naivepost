@@ -1,10 +1,10 @@
 # Inventory: effects (Cut page) and their rendering
 
 <!-- nav -->
-[← Inventory: Cut tab — timeline, transport, editing, suggest, inserts, audio](cut.md) · [↑ Contents](../README.md) · [Inventory: Narrate tab (extracted from the prototype, gui/narrate*.go) →](narrate.md)
+[← Inventory: Cut tab — timeline, transport, editing, suggest, inserts, audio](cut.md) · [↑ Contents](../README.md) · [Inventory: Narrate tab (extracted from the prototype, go/narrate*.go) →](narrate.md)
 <!-- /nav -->
 
-Raw material for the spec, read off gui/cut_fx*.go, fxsvg.go, fxtext.go, svg*.go, produce_fx.go, produce_snd.go, produce_stamp.go and the effect passes of cut_suggest.go.
+Raw material for the spec, read off go/cut_fx*.go, fxsvg.go, fxtext.go, svg*.go, produce_fx.go, produce_snd.go, produce_stamp.go and the effect passes of cut_suggest.go.
 
 ## A. Effect kinds
 
@@ -123,5 +123,5 @@ One list, one owner (the cut editor); nothing reaches backwards; dur is the bar 
 
 <!-- nav -->
 ---
-[← Inventory: Cut tab — timeline, transport, editing, suggest, inserts, audio](cut.md) · [↑ top](#inventory-effects-cut-page-and-their-rendering) · [↑ Contents](../README.md) · [Inventory: Narrate tab (extracted from the prototype, gui/narrate*.go) →](narrate.md)
+[← Inventory: Cut tab — timeline, transport, editing, suggest, inserts, audio](cut.md) · [↑ top](#inventory-effects-cut-page-and-their-rendering) · [↑ Contents](../README.md) · [Inventory: Narrate tab (extracted from the prototype, go/narrate*.go) →](narrate.md)
 <!-- /nav -->

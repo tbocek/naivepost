@@ -4,7 +4,7 @@
 //! the program wrote one — every live call to [`crate::edges::place_edges`] therefore got `None` and
 //! the edges landed on aligned word times alone, which is exactly the state the spec calls a gap ("72
 //! of the 114 proposed edges sit exactly on an aligned word time"). This module is the measurement that
-//! closes it, following the prototype's `buildWave` (gui/cut_audio.go:346-410) because §F1.10/F1.11 say
+//! closes it, following the prototype's `buildWave` (go/cut_audio.go:346-410) because §F1.10/F1.11 say
 //! the placement as measured beat every alternative tried and a rewrite must keep it as it is.
 //!
 //! The samples come from `voice16k.wav`, the file §F1.3 S1 already decodes for every row, rather than

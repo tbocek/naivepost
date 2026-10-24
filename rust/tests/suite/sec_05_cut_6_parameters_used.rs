@@ -32,7 +32,7 @@ fn seg(s: f64, e: f64) -> cut::Seg {
 }
 
 /// `preview.rateSeekGapMs` — one flushing re-cue per gap, and none before it. The prototype holds its rate
-/// seeks to `rateSeekGap` (`gui/player.go`'s `SetRateNow`); this is that rule as a function of the elapsed
+/// seeks to `rateSeekGap` (`go/player.go`'s `SetRateNow`); this is that rule as a function of the elapsed
 /// time, so both sides of the boundary and the "unchanged rate asks nothing" case are checkable at once.
 #[test]
 fn sec_05_cut_6_parameters_used_s1_the_rate_door_holds_one_recue_per_gap() {

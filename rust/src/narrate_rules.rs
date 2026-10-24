@@ -63,7 +63,7 @@ pub fn speaks_anything(voice: &str, no_narration: bool) -> bool {
 /// not started and not playing → the step; playing whether or not it was started first → the transport; started
 /// and paused ([`Transport::cued`]) → still the transport, because ⏸ has to be able to resume and ⏹ to end what is
 /// parked part way through. A clip merely cued by clicking a line to look at it is not playback (prototype
-/// `pageTransport`, gui/runbar.go:28-52). Which *pages* have a transport at all is [`crate::run::transport_for`]'s.
+/// `pageTransport`, go/runbar.go:28-52). Which *pages* have a transport at all is [`crate::run::transport_for`]'s.
 pub fn bar_serves_the_preview(transport: Transport) -> bool {
     transport.started
 }

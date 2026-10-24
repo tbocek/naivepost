@@ -5,7 +5,7 @@
 //! Nothing is scripted inside the library here: the drawing server is a loopback fake the settings file names
 //! (§02-services#1), and the requests it took are what the checks assert. The shape of its answers is the
 //! prototype's: sd.cpp returns the picture inside the job answer as `result.images[0].b64_json`
-//! (`gui/sdcpp.go:137-150`, read at `sdGenerate` :222-230) — there is no separate picture URL in
+//! (`go/sdcpp.go:137-150`, read at `sdGenerate` :222-230) — there is no separate picture URL in
 //! `spec/02-services.md` §1's four sd.cpp paths.
 
 use std::io::{BufRead, BufReader, Read, Write};

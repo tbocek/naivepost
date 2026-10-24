@@ -4,7 +4,7 @@
 [← Inventory: Produce tab, publishing (thumbnail + upload text), subtitles, LLM client](produce.md) · [↑ Contents](../README.md) · <span>end →</span>
 <!-- /nav -->
 
-Raw material for the spec, read off the prototype's Go source (gui/main.go, runbar.go, runchain.go, runqueue.go, pipeline.go, project.go, project_import.go, setup.go, widgets.go, icon.go, llmlog.go, headfit.go, ffprobe.go, seam.go, sources.go).
+Raw material for the spec, read off the prototype's Go source (go/main.go, runbar.go, runchain.go, runqueue.go, pipeline.go, project.go, project_import.go, setup.go, widgets.go, icon.go, llmlog.go, headfit.go, ffprobe.go, seam.go, sources.go).
 
 ## A. Window and layout
 
@@ -90,7 +90,7 @@ Heartbeat every 200 ms on the GTK thread; a goroutine dumps every goroutine's st
 
 ### Desktop integration
 
-Icon theme dirs: exe/icons, root/gui/icons, cwd/icons. Writes `~/.local/share/applications/ch.bocek.naivepost.desktop` (Name Naivepost; Exec with %f; MimeType application/x-naivepost-project; Categories AudioVideo;Video;AudioVideoEditing) and the mime XML (glob *.naivepost), then runs update-mime-database / update-desktop-database off-thread. Skipped for go-run builds and inside Flatpak.
+Icon theme dirs: exe/icons, root/go/icons, cwd/icons. Writes `~/.local/share/applications/ch.bocek.naivepost.desktop` (Name Naivepost; Exec with %f; MimeType application/x-naivepost-project; Categories AudioVideo;Video;AudioVideoEditing) and the mime XML (glob *.naivepost), then runs update-mime-database / update-desktop-database off-thread. Skipped for go-run builds and inside Flatpak.
 
 ## B. Run bar and transport
 

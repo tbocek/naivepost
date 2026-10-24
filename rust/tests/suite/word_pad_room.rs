@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.wordPadSeconds — the room a cut leaves a word (0.08; prototype `wordPad`,
-// gui/retake.go). The rule already existed as `edges::WORD_PAD`, applied by `Edges::end_after` and
+// go/retake.go). The rule already existed as `edges::WORD_PAD`, applied by `Edges::end_after` and
 // `Edges::start_before` when there is no envelope to ask, and by the retake-mark path in `place_edges`.
 // What this file pins is that the §10 row points at that constant, that the pad opens on the CORRECT side of
 // the word in each direction, and that it is a room rather than a minimum: a fence or a limit inside the pad

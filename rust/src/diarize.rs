@@ -32,7 +32,7 @@ pub const ANCHOR_CUT_SECONDS: f64 = 0.3;
 /// let a claim take an unclaimed block, and once to let a slot that lost the contest for a block still
 /// be *named* after that voice. So a thin overlap never claims anything, while a real match that lost
 /// to a stronger claim is still recognised rather than counted as a new speaker.
-/// Prototype `minAnchorOv`, gui/pipeline.go.
+/// Prototype `minAnchorOv`, go/pipeline.go.
 pub const MIN_ANCHOR_OVERLAP: f64 = 0.5;
 
 /// The window pass 1 never shrinks below, however short the recording: a window under this holds too

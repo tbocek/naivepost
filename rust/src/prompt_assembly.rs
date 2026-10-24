@@ -82,7 +82,7 @@ pub const KNOWN_HEADS: [&str; 8] = [
 /// is a section-by-section reader: the first *is* the house rules, the second derives numbers from
 /// a description and needs all of the context around them.
 ///
-/// Cross-checked against the prototype's `sysSections` (`gui/syscontext.go`); §8's wording governs.
+/// Cross-checked against the prototype's `sysSections` (`go/syscontext.go`); §8's wording governs.
 /// Note `speed` deliberately lacks NEVER INVENT — it answers with rates, and the invention ban is
 /// about words and moments.
 pub fn sections_for(key: &str) -> Option<&'static [&'static str]> {
@@ -321,7 +321,7 @@ pub fn own_lines_in_jobs_block(block: &str, key: &str) -> Vec<String> {
 }
 
 /// The second half of the precedence rule: what a job does when the User Context talks about
-/// something another job makes. Quoted from the prototype's `ctxRule` (`gui/syscontext.go`), which
+/// something another job makes. Quoted from the prototype's `ctxRule` (`go/syscontext.go`), which
 /// ships as the wording rather than being paraphrased here.
 pub const PRECEDENCE_OTHER_JOBS: &str = "The context is written once for the whole session and every job is given the same copy, so it carries instructions for jobs that are not yours: a title, a description, a thumbnail, what the transcript should spell, how long the video should be. An instruction that names a step or a thing another job makes is that job's. Where you meet one, it is not an instruction to you and it does not change what your answer is: answer your own question, in your own shape, and leave it alone.";
 

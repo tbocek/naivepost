@@ -11,7 +11,7 @@ use crate::{project, settings};
 
 /// The working copy's name: the session nobody has named yet. A constant because S3 and S4 both
 /// spell it, and they have to spell it the same or a launch opens one and saves into another
-/// (prototype `workName`, gui/project.go:205).
+/// (prototype `workName`, go/project.go:205).
 pub const SESSION_NAME: &str = "session.naivepost";
 
 /// `<root>/session.naivepost` — the working copy that belongs to this root.

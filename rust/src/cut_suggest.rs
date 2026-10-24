@@ -77,7 +77,7 @@ pub fn place_progress(last_closed_end: f64, shown: f64) -> f64 {
 }
 
 /// `P.eng.suggestFallbackSegments`: the denominator for a reply whose segments have no readable end.
-/// Progress only — it judges nothing and rejects nothing (prototype `suggestMaxSegs`, gui/cut.go:108).
+/// Progress only — it judges nothing and rejects nothing (prototype `suggestMaxSegs`, go/cut.go:108).
 ///
 /// Twenty is roughly the shape of a normal cut list, so N moments counted against it reads as "N of the
 /// way through a plausible answer" when there is no position to place the bar on.

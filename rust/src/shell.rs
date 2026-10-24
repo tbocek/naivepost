@@ -80,7 +80,7 @@ impl Page {
 }
 
 /// S2's refusal sentence for Cut — §1's exact wording, em dash included. The prototype carries it
-/// as the tab's `wait` text (gui/main.go:77) so a click and a hover say the same thing.
+/// as the tab's `wait` text (go/main.go:77) so a click and a hover say the same thing.
 /// The window's own title (§1: "One window, title \"Naivepost\""). Capitalised the way the spec spells
 /// it, unlike the app id `ch.bocek.naivepost` and the binary name, both lower-case.
 pub const WINDOW_TITLE: &str = "Naivepost";
@@ -340,7 +340,7 @@ impl Default for Shell {
 
 impl Shell {
     /// S1-S5 in one call. `entries` is the narration as the Narrate page holds it (half-typed rows
-    /// pulled in first, which is the prototype's `pullRows`, gui/narrate.go:2473); it is refitted in
+    /// pulled in first, which is the prototype's `pullRows`, go/narrate.go:2473); it is refitted in
     /// place when the target is Narrate. `tree` is needed for the two refreshes that read disk and
     /// may be `None` for a project with no folder yet — a page then shows what it has rather than
     /// failing to open.
@@ -632,7 +632,7 @@ fn count_files(dir: &Path) -> usize {
 ///
 /// A line keeps its place against the *video*, not its offset into the clip — so `at` is re-based
 /// when the clip's start moved, which is what keeps the words over the same moment of the
-/// recording (prototype gui/narrate.go:2421-2438). A line whose clip is gone is left exactly where
+/// recording (prototype go/narrate.go:2421-2438). A line whose clip is gone is left exactly where
 /// it was and counted: deleting narration because a clip went away is worse than a line with no
 /// clip under it, and the count is what tells the user why.
 pub fn refit(segs: &[Seg], entries: &mut [Entry]) -> (usize, usize) {
@@ -664,7 +664,7 @@ const CLIP_TOLERANCE: f64 = 0.05;
 
 /// The clip a line belongs to now: the one it shares the most video with — not "the one holding its
 /// start", because a clip trimmed at the front leaves that start outside the very clip the rest of
-/// the line plainly sits in (prototype `clipFor`, gui/narrate.go:2443-2462).
+/// the line plainly sits in (prototype `clipFor`, go/narrate.go:2443-2462).
 fn clip_for(segs: &[Seg], entry: &Entry) -> Option<usize> {
     if entry.e <= entry.s {
         // A line written on a card has no span to share, so its clip is the zero-span segment still
@@ -683,7 +683,7 @@ fn clip_for(segs: &[Seg], entry: &Entry) -> Option<usize> {
     best.map(|(index, _)| index)
 }
 
-/// The status line S5 writes after a refit — the prototype's sentence (gui/narrate.go:2482-2484),
+/// The status line S5 writes after a refit — the prototype's sentence (go/narrate.go:2482-2484),
 /// because it is the one place the app explains that its work was automatic.
 pub fn refit_sentence(moved: usize, orphan: usize) -> String {
     if orphan > 0 {

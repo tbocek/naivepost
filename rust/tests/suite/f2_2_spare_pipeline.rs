@@ -11,7 +11,7 @@
 //! server URL at a loopback fake).
 //!
 //! Everything runs in ONE `#[test]` in this binary: the leg's slots are process-wide (one running player,
-//! one spare — `gui/player_spare.go`'s "one spare, not one per row") and the player seam is one env var, so
+//! one spare — `go/player_spare.go`'s "one spare, not one per row") and the player seam is one env var, so
 //! the cases must run in sequence, the arrangement `tests/suite/f2_1_recording_play_widgets.rs` uses.
 
 use std::cell::Cell;

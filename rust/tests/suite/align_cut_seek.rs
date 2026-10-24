@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.alignCutSeekSeconds — how far an alignment cut slides to a silence (4 s;
-// prototype `alignCutSeek`, gui/align.go:670, passed at gui/align.go:355). The aligner used to borrow
+// prototype `alignCutSeek`, go/align.go:670, passed at go/align.go:355). The aligner used to borrow
 // F1.4's chunker reach (`asr::SEEK_MAX`, 20 s); §10 gives it its own, and much smaller one, because a
 // chunk cut that moves costs only a join while an alignment cut moves the whole window a stretch of
 // words is timed against.

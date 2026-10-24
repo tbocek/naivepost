@@ -1,5 +1,5 @@
 //! The four tab buttons (and every other `-symbolic` control) are drawn from the desktop's icon
-//! theme: `gui/icons` ships the app icon only. On a machine whose theme cannot resolve those names
+//! theme: `go/icons` ships the app icon only. On a machine whose theme cannot resolve those names
 //! GTK draws the broken-icon picture in every button — which is what a release showed and a checkout
 //! never does, because the checkout runs where a theme is installed.
 //!
@@ -14,7 +14,7 @@ use naivepost::icons;
 
 /// The icon tree the checkout ships: the app icon and nothing else.
 fn repo_icons() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../gui/icons")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../go/icons")
 }
 
 /// One theme folder of a fake tree, with its `index.theme` and the icons named below.

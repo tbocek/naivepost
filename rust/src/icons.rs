@@ -71,7 +71,7 @@ pub fn bundled_themes(exe: &Path, cwd: &Path) -> Vec<PathBuf> {
 /// The `-symbolic` names the interface asks the theme for, spelled once so a missing
 /// one is a list a test can walk rather than a string buried in a widget builder.
 ///
-/// `gui/icons` ships the app icon only: everything else — the four tabs, the source
+/// `go/icons` ships the app icon only: everything else — the four tabs, the source
 /// row's four symbols, the transport — is looked up in the desktop's theme, so an
 /// icon set that cannot resolve this list draws the broken-icon placeholder in every
 /// button. That is the difference between a checkout on a desktop and a package on a

@@ -25,7 +25,7 @@
 #                          add one with `flatpak override --filesystem=...`.
 # What the app does differently inside: it writes no desktop entry of its own
 # (Flatpak exports the one below) and offers the model no web search, because
-# there is no host browser to launch (gui/icon.go, gui/websearch.go).
+# there is no host browser to launch (go/icon.go, go/websearch.go).
 
 app-id: ch.bocek.naivepost
 runtime: org.gnome.Platform
@@ -62,20 +62,20 @@ modules:
   - name: naivepost
     buildsystem: simple
     build-commands:
-      - cd gui && go build -ldflags "-s -w" -o /app/bin/naivepost .
+      - cd go && go build -ldflags "-s -w" -o /app/bin/naivepost .
       # the icon tree twice: where freedesktop looks, and beside the binary,
-      # which is where the app itself looks first (gui/icon.go iconDirs)
-      - mkdir -p /app/share && cp -r gui/icons /app/share/
+      # which is where the app itself looks first (go/icon.go iconDirs)
+      - mkdir -p /app/share && cp -r go/icons /app/share/
       - ln -s ../share/icons /app/bin/icons
-      - install -Dm644 gui/icons/hicolor/scalable/apps/ch.bocek.naivepost.svg
+      - install -Dm644 go/icons/hicolor/scalable/apps/ch.bocek.naivepost.svg
           /app/share/icons/hicolor/scalable/apps/ch.bocek.naivepost.svg
-      - install -Dm644 gui/icons/hicolor/symbolic/apps/ch.bocek.naivepost-symbolic.svg
+      - install -Dm644 go/icons/hicolor/symbolic/apps/ch.bocek.naivepost-symbolic.svg
           /app/share/icons/hicolor/symbolic/apps/ch.bocek.naivepost-symbolic.svg
       - install -Dm644 ch.bocek.naivepost.desktop /app/share/applications/ch.bocek.naivepost.desktop
       - install -Dm644 ch.bocek.naivepost.metainfo.xml /app/share/metainfo/ch.bocek.naivepost.metainfo.xml
       - mkdir -p /app/lib/codecs-extra
     sources:
-      # the checkout itself, with gui/vendor/ already made by release.sh
+      # the checkout itself, with go/vendor/ already made by release.sh
       - type: dir
         path: .
         skip:

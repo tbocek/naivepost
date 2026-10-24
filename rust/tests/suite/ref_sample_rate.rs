@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.refSampleRate — voice reference write rate (48000; prototype `refRate`,
-// gui/narrate_voice.go:214, explained at gui/narrate_voice.go:210-213). The reference is what the TTS
+// go/narrate_voice.go:214, explained at go/narrate_voice.go:210-213). The reference is what the TTS
 // server clones the narrator's voice from, so its file format matters as much as its content: above
 // 48 kHz ffmpeg writes `WAVE_FORMAT_EXTENSIBLE` (format tag 0xFFFE) rather than a plain PCM header,
 // and the audio server refuses the upload with "unsupported WAV encoding". `loudnorm` in the

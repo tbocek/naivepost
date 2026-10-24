@@ -1,4 +1,4 @@
-module naivepost/gui
+module naivepost
 
 go 1.26.5
 

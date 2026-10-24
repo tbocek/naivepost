@@ -58,8 +58,8 @@ pub fn no_probe_status(path: &str, reason: &str) -> String {
 
 /// §05-cut F2.5 badge **2** — the lane's name plate says WHICH CHANNELS that row is.
 ///
-/// Wording taken from the prototype the spec was written from (`gui/cut_audio.go`'s `laneName`,
-/// spelled again in `gui/cut.go`'s Inputs tooltip): a one-channel file says `mono` rather than
+/// Wording taken from the prototype the spec was written from (`go/cut_audio.go`'s `laneName`,
+/// spelled again in `go/cut.go`'s Inputs tooltip): a one-channel file says `mono` rather than
 /// `L`, which would imply a missing right; a two-channel file drawn on ONE lane says `L=R`,
 /// because it is not a mono file but a stereo file carrying one signal in both channels, and a
 /// lane calling itself `mono` would look like the page had lost a channel; a two-channel file

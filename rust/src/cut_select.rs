@@ -278,7 +278,7 @@ pub const GRIP_PX: f64 = 6.0;
 /// the band is the only thing drawn and its end is a visible edge to aim at, so 6 px is enough. On the pictures
 /// the press is over thumbnails, the green kept-scene bars and the red line — nothing there says "this is the
 /// selection's end" — so the end has to reach further to be found at all; the prototype spells the pair as
-/// `selGripPx` / `selGripPicsPx` (`gui/cut_selband.go`) for exactly this reason.
+/// `selGripPx` / `selGripPicsPx` (`go/cut_selband.go`) for exactly this reason.
 ///
 /// Deliberately NOT [`SNAP_PX`] (8 px): snapping pulls a dragged end ONTO a landmark, which is what the cut's
 /// borders and word edges are for, while a grip decides whether the hand meant THAT END in the first place. Two

@@ -14,7 +14,7 @@
 //! `context.iteration(true)`: headless has no frame clock, so it would block this process forever.
 //!
 //! It also guards the deletion made for this item: the Prepare page carried a SECOND User Context paragraph
-//! under the split (the prototype keeps one there, `gui/main.go:1569`, but §4 puts that box in the right
+//! under the split (the prototype keeps one there, `go/main.go:1569`, but §4 puts that box in the right
 //! column and nothing else). A duplicate is invisible to a name lookup — the first match wins — so the check
 //! here is geometric: nothing drawn may sit between the bottom of `prepare-split` and the top of `run-bar`.
 

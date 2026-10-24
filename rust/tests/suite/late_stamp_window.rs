@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.lateStampSeconds — how late a stamp may be behind its sound (0.6 s;
-// prototype `lateStamp`, gui/retake_edge.go:38). The rule already existed as `edges::LATE_STAMP`:
+// prototype `lateStamp`, go/retake_edge.go:38). The rule already existed as `edges::LATE_STAMP`:
 // `Edges::start_at` turns it into a bucket count (`(LATE_STAMP * hz) as i64`) and uses it ONLY when
 // the stamp lands on quiet, to walk back over that quiet to the sound run before it. Quiet longer
 // than the window is not a late stamp's tail — moving forward to the next sound would clip the very

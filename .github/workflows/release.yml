@@ -31,8 +31,8 @@ jobs:
             gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-gtk4 ffmpeg
       - uses: actions/setup-go@v7
         with:
-          go-version-file: gui/go.mod
-      - run: cd gui && go vet ./... && go test ./...
+          go-version-file: go/go.mod
+      - run: cd go && go vet ./... && go test ./...
 
   appimage:
     needs: test
@@ -58,8 +58,8 @@ jobs:
       # in as a vendor tree, exactly as release.sh flatpak does
       - uses: actions/setup-go@v7
         with:
-          go-version-file: gui/go.mod
-      - run: cd gui && go mod vendor
+          go-version-file: go/go.mod
+      - run: cd go && go mod vendor
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: ch.bocek.naivepost.yml

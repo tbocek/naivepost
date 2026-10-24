@@ -960,7 +960,7 @@ pub(crate) fn frame_controls(session: &Rc<RefCell<Project>>) -> gtk::Widget {
     row.append(&freq);
 
     // §4's badge **8** as the prototype drew it: the value with `—` and `+` beside it, one linked control
-    // (`gui/main.go`'s `newFreqPick`: entry + `list-remove-symbolic` + `list-add-symbolic`). The dropdown
+    // (`go/main.go`'s `newFreqPick`: entry + `list-remove-symbolic` + `list-add-symbolic`). The dropdown
     // picks a stop out of hand; these walk one stop at a time. Both write through `prepare::set_freq`, so
     // the face and `Project::interval` cannot disagree about which stop is chosen.
     let stepper = gtk::Box::new(gtk::Orientation::Horizontal, 0);

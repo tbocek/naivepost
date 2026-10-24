@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.edgeTailMaxSeconds — the longest a word's tail is followed (0.25 s;
-// prototype `edgeTailMax`, gui/retake_edge.go:51). The rule already existed as `edges::EDGE_TAIL_MAX`:
+// prototype `edgeTailMax`, go/retake_edge.go:51). The rule already existed as `edges::EDGE_TAIL_MAX`:
 // in `end_after` the walk over the word's own sound stops at `i1 + 50 buckets`, and in `start_before`
 // the walk back stops at `i0 - 50`. It pairs with `P.eng.edgeTailDB` — twelve decibels decides WHICH
 // sound is still the word, this decides how long to keep chasing it — and it belongs to the fenced side

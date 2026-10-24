@@ -1,7 +1,7 @@
 //! F2.2 S5's media leg: the cut preview's TWO real player processes — the one playing and the spare.
 //!
 //! [`crate::play_back`] is ▶'s leg: one process, cued at the red line. ▶✂ needs a second one. Inventory
-//! §D ("Preload") and `gui/player_spare.go` state the shape the spec's S5 requires — "next jump preloaded
+//! §D ("Preload") and `go/player_spare.go` state the shape the spec's S5 requires — "next jump preloaded
 //! three seconds ahead in a spare pipeline so the join does not freeze" — as *a pipeline taken to PAUSED at
 //! exactly the next second, decoded and prerolled, so that when the line lands there the two pipelines
 //! change places instead of building one*. In the prototype both are playbin pipelines inside one process.
@@ -14,7 +14,7 @@
 //! - **swap in** = `SIGCONT` the spare and `SIGTERM` the outgoing one. The join therefore never waits for a
 //!   pipeline: the process that plays the second clip was already sitting on it.
 //!
-//! Both slots hold one pid each, for the reason `gui/player_spare.go` gives ("One spare, not one per row:
+//! Both slots hold one pid each, for the reason `go/player_spare.go` gives ("One spare, not one per row:
 //! the line goes one place next"). Every answer here is a signal on a real process, so a test observes it
 //! through the fake player script at `NAIVEPOST_PLAYER` (see [`crate::play_back::player_program`]).
 //!
@@ -236,7 +236,7 @@ pub fn hold_still(hold: bool) -> bool {
 ///
 /// A rate change under a running preview is asked for as a re-cue, and re-cueing on every tick that asks is a
 /// stutter the ear hears: inventory §D's `rateSeekGap 250 ms` is the floor the prototype holds its flushing
-/// seeks to (`gui/player.go`'s `SetRateNow` — inside the gap the rate is put back so a later tick asks again).
+/// seeks to (`go/player.go`'s `SetRateNow` — inside the gap the rate is put back so a later tick asks again).
 /// The same floor applies to the one re-cue this player can do, so it lives here, and [`rate_seek_action`] is the
 /// rule apart from any clock so a test can ask it directly.
 pub const RATE_SEEK_GAP_MS: u64 = 250;

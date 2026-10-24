@@ -8,7 +8,7 @@
 //! # How the page is taken, and why not WebDriver BiDi
 //!
 //! §2 describes driving headless Firefox "over WebDriver BiDi" on ports from 9223 up, which is what the
-//! prototype does (`gui/websearch.go`). The rewrite launches `firefox --headless --dump-dom <url>` instead: one
+//! prototype does (`go/websearch.go`). The rewrite launches `firefox --headless --dump-dom <url>` instead: one
 //! process per call, started and reaped, printing the RENDERED document to stdout. §2's own binding rule is
 //! "one headless browser launched and killed per tool call", so a persistent BiDi session buys nothing a dump
 //! does not, while costing a second protocol to get right and a port to collide on. `--dump-dom` still renders

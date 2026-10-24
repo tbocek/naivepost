@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.troughReachSeconds — how far past the word's tail the quietest place to cut
-// is searched (0.4 s; prototype `troughReach`, gui/retake_edge.go). The rule already existed as
+// is searched (0.4 s; prototype `troughReach`, go/retake_edge.go). The rule already existed as
 // `edges::TROUGH_REACH`: after the tail walk stops, `end_after` scans `end..=end + 80 buckets` and
 // keeps the strictly lowest bucket, and `start_before` mirrors that backwards. It picks up where
 // `P.eng.edgeTailMaxSeconds` leaves off — the tail bound follows the word's own sound, this searches

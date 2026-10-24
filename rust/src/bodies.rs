@@ -45,7 +45,7 @@ impl ServerPath {
 /// swap or a container update does — and a remembered path names nothing. Re-uploading one small
 /// wav per line costs milliseconds against the seconds the synthesis takes, and it is what makes
 /// the first line after a restart work like the rest. The prototype's `serverFile`
-/// (gui/audiocpp.go:63-93) does exactly this before every request, sending the file's base name as
+/// (go/audiocpp.go:63-93) does exactly this before every request, sending the file's base name as
 /// `X-Audiocpp-Filename`.
 pub const VOICE_REF_REUPLOADED_EVERY_LINE: bool = true;
 
@@ -84,7 +84,7 @@ pub fn align_body(model: &str, audio: &ServerPath, text: &str, language: &str) -
 /// vector plus the `seed` that makes a take reproducible.
 ///
 /// `language` is P.policy.ttsLanguage: the project's language, the same one ASR and alignment send.
-/// The prototype hard-codes `"en"` here (gui/narrate_tts.go:325-329), which is the thing this
+/// The prototype hard-codes `"en"` here (go/narrate_tts.go:325-329), which is the thing this
 /// replaces — a model told to speak English reads Polish words as English spelling.
 pub fn speech_body(
     model: &str,

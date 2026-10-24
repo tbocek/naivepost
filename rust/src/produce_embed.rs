@@ -227,7 +227,7 @@ pub fn render_verdict(render_failed: bool, _tag_failed: bool) -> bool {
 }
 
 /// F5.5's first note: a container or codec no browser plays. The wording is the prototype's
-/// (`gui/produce_embed.go`), because it names the browser to blame and the format to move to rather than
+/// (`go/produce_embed.go`), because it names the browser to blame and the format to move to rather than
 /// saying "unsupported". mp4 + h264 and webm + vp9 are a page's own formats and say nothing.
 pub fn web_unplayable(container: Container, codec: Codec) -> Option<&'static str> {
     match container {

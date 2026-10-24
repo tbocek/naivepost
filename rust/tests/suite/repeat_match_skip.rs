@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.repeatSkip — how many words of the later take may be stepped over while the fuzzy repeat
-// matcher looks for the next tail word (3; prototype `repeatSkip`, gui/retake.go). The rule already existed as
+// matcher looks for the next tail word (3; prototype `repeatSkip`, go/retake.go). The rule already existed as
 // `prepare_decisions::TAIL_SKIP_MAX`, read by `run_from`'s inner loop and reached through `suffix_match`, which
 // is what trims a retake mark inside a line. What this file pins is that the §10 row points at that constant, and
 // that the bound really is a step-over limit rather than a share requirement.

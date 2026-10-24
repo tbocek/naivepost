@@ -409,7 +409,7 @@ pub struct Form {
 /// Apply below the floor should never reach here — so this sentence is ours, in the shape this tree's other
 /// refusals use: what is wrong, then the bound.
 ///
-/// The fades are then settled the way §A.1 says and the prototype's `clampFades` (gui/cut_fx.go) does it: staying
+/// The fades are then settled the way §A.1 says and the prototype's `clampFades` (go/cut_fx.go) does it: staying
 /// means no glides at all; otherwise neither fade may be negative, and when the two together overrun the length
 /// they share it in proportion rather than one of them losing everything — a move that arrives in 0.8 s out of a
 /// 1.2 s glide still arrives smoothly.

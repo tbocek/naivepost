@@ -435,7 +435,7 @@ fn f0_1_s6_narrate_refits_its_lines_to_the_cut() {
         ..Default::default()
     }];
     // A line on the clip where it was written; the clip has moved to 10..20 and the words have to
-    // stay over the same moment of the recording — `at` is re-based (gui/narrate.go:2432).
+    // stay over the same moment of the recording — `at` is re-based (go/narrate.go:2432).
     let mut entries = vec![Entry {
         s: 5.0,
         e: 15.0,

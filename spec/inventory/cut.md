@@ -4,7 +4,7 @@
 <span>← start</span> · [↑ Contents](../README.md) · [Inventory: effects (Cut page) and their rendering →](effects.md)
 <!-- /nav -->
 
-Raw material for the spec, read off gui/cut*.go (non-effects), player.go, player_spare.go.
+Raw material for the spec, read off go/cut*.go (non-effects), player.go, player_spare.go.
 
 ## A. UI layout
 

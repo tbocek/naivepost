@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.alignBareShare — share of voiced audio under no word before a warning (0.08;
-// prototype `alignBareShare`, gui/align.go:679, applied at gui/align.go:580). The seconds floor
+// prototype `alignBareShare`, go/align.go:679, applied at go/align.go:580). The seconds floor
 // beside it (`align::BARE_WARN`) says how much bare audio is worth mentioning; this constant says how
 // much of THAT SESSION's speech the bare audio has to be. Without the relative half, a four-hour
 // recording mis-transcribing a few percent would shout about rounding, and a twenty-second clip losing

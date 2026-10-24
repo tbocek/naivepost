@@ -37,7 +37,7 @@ pub fn load(tree: &layout::Tree) -> Result<project::Publish, String> {
 /// pictures it belongs to.
 ///
 /// §5's example lists every key while this record follows the prototype's `omitempty`
-/// set (gui/publish.go:100-156) — same reasoning already recorded for §3 and §4: the
+/// set (go/publish.go:100-156) — same reasoning already recorded for §3 and §4: the
 /// example illustrates the keys, and omitting what is unset keeps old files
 /// byte-identical. Only `title_box` may be absent, since a project whose title band was
 /// never dragged has one by default rather than one it stored.

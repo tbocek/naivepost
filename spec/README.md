@@ -8,7 +8,7 @@
 **Inventories:** [cut](inventory/cut.md) · [effects](inventory/effects.md) · [narrate](inventory/narrate.md) · [prepare](inventory/prepare.md) · [produce](inventory/produce.md) · [shell](inventory/shell.md)
 <!-- /nav -->
 
-Specifies Naivepost fully enough to rebuild it, same features, in another language. Written from the prototype in `gui/` (Go, GTK4, ~106k lines); to be reviewed and adapted before the rewrite starts.
+Specifies Naivepost fully enough to rebuild it, same features, in another language. Written from the prototype in `go/` (Go, GTK4, ~106k lines); to be reviewed and adapted before the rewrite starts.
 
 The spec is **UI driven**: each chapter starts from the screen, then its flows as numbered steps, then the data, rules and parameters behind them. Behaviour implicit in the prototype (a code constant, a parser heuristic) is named as a parameter with a proposed home; model calls are re-specified as tool-driven flows (see [`00-principles.md`](00-principles.md)).
 

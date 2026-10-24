@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.alignClipMaxSeconds — sanity ceiling on a returned second (120 s; prototype
-// `alignClipMax`, gui/align.go:230, applied at gui/align.go:220). Some aligners write a bare `start`
+// `alignClipMax`, go/align.go:230, applied at go/align.go:220). Some aligners write a bare `start`
 // that holds SAMPLES and never say so. Below the ceiling a bare number is seconds; past it the number
 // cannot be seconds for any clip this app sends, so it is divided by the sample rate instead. Without
 // this rule such an answer would place every word hours into the recording.

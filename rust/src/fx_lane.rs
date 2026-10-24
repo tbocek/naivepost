@@ -535,7 +535,7 @@ pub fn rejoin_dip() -> f64 {
 }
 
 /// `P.eng.effectMinSeconds` (spec/10-parameters.md §5.1: 0.1, "shortest an effect band may be dragged down
-/// to"; prototype `fxMinDur` in gui/cut_fx.go). The floor a hand dragging either end of a band runs into.
+/// to"; prototype `fxMinDur` in go/cut_fx.go). The floor a hand dragging either end of a band runs into.
 ///
 /// Why there is a floor at all is the prototype's reason, unchanged: a band of no length does nothing, cannot be
 /// grabbed again, and so silently destroys the very thing the hand was adjusting. 0.1 s is short enough that a
@@ -560,7 +560,7 @@ pub const MIN_BAND_SECONDS: f64 = 0.1;
 ///   caller's job rather than being called here because `drag_end` answers in `(t, dur)` pairs, not `Fx` records,
 ///   and folding the record in would make this the second place that knows a band's field layout.
 ///
-/// Mirrors gui/cut_fx.go `dragFx` minus its `snapFx` call: each end is clamped from the STATIONARY end, so an
+/// Mirrors go/cut_fx.go `dragFx` minus its `snapFx` call: each end is clamped from the STATIONARY end, so an
 /// end dragged past its own still stops at the floor instead of crossing over and inverting the band.
 pub fn drag_end(t: f64, dur: f64, end: bool, to: f64) -> (f64, f64) {
     if end {

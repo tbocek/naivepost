@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.joinReachWords — how many kept words either side of a cut are compared for a
-// doubled saying (3; prototype `joinReach`, gui/textedit.go). The pass is `textedit::dedupe_joins`: at
+// doubled saying (3; prototype `joinReach`, go/textedit.go). The pass is `textedit::dedupe_joins`: at
 // each run of dropped words it takes the kept words nearest the seam on both sides, capped at the reach,
 // and if the earlier copy's tail matches the later copy's head it drops the earlier one and notes it.
 // The LATER copy stays, because what was said last is what the speaker meant to keep.

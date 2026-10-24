@@ -409,7 +409,7 @@ pub struct Walk {
 }
 
 /// `P.eng.talkPadSeconds` — "how close to a word still counts as inside it" (spec/10-parameters.md's row).
-/// The prototype's `talking()` (`gui/cut.go`) widens every speech span by exactly this on both sides before it
+/// The prototype's `talking()` (`go/cut.go`) widens every speech span by exactly this on both sides before it
 /// asks whether a second falls inside it: a cut a fifth of a second from a word is a cut in that word as far as
 /// the ear is concerned. This tree asks that question in [`hole_has_speech`], the door the walk-back uses to
 /// decide whether a hole the model dropped was silence (keep it dropped) or speech (close it), so the pad

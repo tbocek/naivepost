@@ -3,7 +3,7 @@
 //! module decides whether the next runs or the press is over. Nothing here spawns a process, switches
 //! a page or reads a project, which is what lets S4-S6 be tested at all (spec/00-principles.md §5).
 //!
-//! Mirrors the prototype `gui/runchain.go`: `chainRun` (:32) starts, `chainNext` (:63) takes the
+//! Mirrors the prototype `go/runchain.go`: `chainRun` (:32) starts, `chainNext` (:63) takes the
 //! next step off the list, `chainEnd` (:134) says what the press cost, and `chainTime` (:52) is how a
 //! duration is spelled. The steps are the pages in pipeline order because that is the only order that
 //! makes sense — the cut reads what Prepare wrote, the narration is written over the cut, and the
@@ -68,7 +68,7 @@ pub fn step_line(name: &str) -> String {
 /// A stretch of a run said the way a person would: under a minute in seconds, over it in minutes and
 /// seconds with the seconds zero-padded ("2m 03s"). Not `mm:ss` — "3:04" beside a step name reads as
 /// a timestamp in the session rather than as how long the step took, and this is the one number on the
-/// page that is a duration. Mirrors prototype `chainTime`, gui/runchain.go:52.
+/// page that is a duration. Mirrors prototype `chainTime`, go/runchain.go:52.
 pub fn chain_time(seconds: u64) -> String {
     if seconds < 60 {
         return format!("{seconds}s");

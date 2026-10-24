@@ -199,7 +199,7 @@ pub fn footage_stretches(cut: &Cut, from: f64, to: f64) -> Vec<(f64, f64)> {
 }
 
 /// `P.eng.soundMinPieceSeconds` (spec/10-parameters.md §5.1: 0.05, "under this a sound-over piece is not worth
-/// a segment of its own"; prototype `sndMinLn`, gui/cut.go). The floor a piece of laid-over sound has to clear
+/// a segment of its own"; prototype `sndMinLn`, go/cut.go). The floor a piece of laid-over sound has to clear
 /// before it earns a segment: below it the sound would be a blink, and the footage either side of it would have
 /// been split for nothing.
 ///

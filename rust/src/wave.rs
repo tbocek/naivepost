@@ -11,7 +11,7 @@ use crate::layout;
 
 /// The format's name in its first four bytes. It changes when the layout does, so an old
 /// cache is simply not read rather than read as something it is not — the prototype has
-/// moved AWV2 → AWV3 → AWV4 for exactly that reason (gui/cut_audio.go:250-256).
+/// moved AWV2 → AWV3 → AWV4 for exactly that reason (go/cut_audio.go:250-256).
 pub const MAGIC: &[u8; 4] = b"AWV4";
 
 /// The header's length after the magic: `chans` u8, `hz` u16, `count` u32, `size` i64,
@@ -76,7 +76,7 @@ pub fn encode(wave: &Wave, size: i64, mtime: i64) -> Result<Vec<u8>, String> {
 ///
 /// Every rejection — wrong magic, a short header, an impossible channel count or rate, a
 /// truncated block, trailing bytes, a stale `size`/`mtime` — returns `None`. That is the
-/// prototype's rule (gui/cut_audio.go:290-318): a cache that cannot be read is measured
+/// prototype's rule (go/cut_audio.go:290-318): a cache that cannot be read is measured
 /// again, and an error would stop a page from opening over a file whose only job is to save
 /// some work.
 pub fn decode(bytes: &[u8], size: i64, mtime: i64) -> Option<Wave> {

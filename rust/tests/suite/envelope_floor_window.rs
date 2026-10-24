@@ -1,5 +1,5 @@
 // §10-parameters · P.eng.envelopeWindowSeconds — the stretch of a recording searched for its room
-// (4 s each side; prototype 400 buckets at the 100 Hz envelope, gui/retake_edge.go:163). The rule
+// (4 s each side; prototype 400 buckets at the 100 Hz envelope, go/retake_edge.go:163). The rule
 // already existed as the literal `4.0` inside `Edges::floor`: take the window, sort it, read the 20th
 // percentile as the room, raise it to `max(3×, +8)`. That floor is the threshold every envelope-only
 // placement asks against (`end_before`, `start_at`), so this window underlies all of them — and it is

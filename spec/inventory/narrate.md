@@ -1,4 +1,4 @@
-# Inventory: Narrate tab (extracted from the prototype, gui/narrate*.go)
+# Inventory: Narrate tab (extracted from the prototype, go/narrate*.go)
 
 <!-- nav -->
 [← Inventory: effects (Cut page) and their rendering](effects.md) · [↑ Contents](../README.md) · [Inventory: Prepare tab and pipeline →](prepare.md)

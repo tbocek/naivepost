@@ -216,7 +216,7 @@ impl SessionLine {
 
 /// A frame's line saying nothing changed. The prototype trims whitespace and trailing
 /// `.`/quotes and lower-cases before comparing, and accepts the older `(same)`
-/// (gui/describe.go:336-339) — a file written then still means the same thing now.
+/// (go/describe.go:336-339) — a file written then still means the same thing now.
 pub fn is_same(text: &str) -> bool {
     let t = text.trim().to_lowercase();
     let t = t.trim_matches(|c: char| ".\"'".contains(c) || c == ' ');
@@ -319,7 +319,7 @@ pub fn write_retakes(marks: &[Retake], path: &Path) -> Result<(), String> {
 }
 
 /// Read `retakes.tsv`, accepting the 3- to 6-column files §6 allows and the prototype's
-/// reader accepts (gui/retake.go:371-402). A line that is too short or whose first three
+/// reader accepts (go/retake.go:371-402). A line that is too short or whose first three
 /// columns are not numbers is skipped rather than failing the file — a mark written by
 /// hand with a typo costs that mark, not every other mark.
 ///
