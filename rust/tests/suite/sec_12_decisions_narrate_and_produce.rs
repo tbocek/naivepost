@@ -614,6 +614,7 @@ fn upload_walk(
     let mats = up::Materials {
         save_publish: &save_publish as &(dyn Fn(&Publish) -> Result<(), String> + 'static),
         ask_model: &ask_model as &(dyn Fn(&str) -> Result<String, String> + 'static),
+        model_asked: false,
         ask_draw: &ask_draw
             as &(dyn Fn(&serde_json::Value) -> Result<up::DrawnJob, String> + 'static),
         poll: &poll as &(dyn Fn(&up::DrawnJob) -> Result<up::PollState, String> + 'static),

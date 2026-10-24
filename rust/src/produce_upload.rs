@@ -462,8 +462,13 @@ pub type PrintWords = dyn Fn(&str, &[String]) -> Result<(), String>;
 pub struct Materials<'a> {
     /// publish.json + description.txt. Called BEFORE any draw (S5).
     pub save_publish: &'a dyn Fn(&Publish) -> Result<(), String>,
-    /// The `youtube` call: the brief in, the raw reply out.
+    /// The `youtube` call: the brief in, the raw reply out. Held even when [`Self::model_asked`] is false,
+    /// because a caller that dials before the walk still wants ONE spelling of the leg for what it reads back.
     pub ask_model: &'a AskModel,
+    /// Whether the walk itself must dial the model. True is the ordinary case (the walk asks, and a failure
+    /// stops it before anything is written); false says the CALLER already dialled this same brief and hands
+    /// the answers in — which is how the page's words half keeps F5.6 S1's one LLM call per press.
+    pub model_asked: bool,
     /// sd.cpp `POST /sdcpp/v1/img_gen`: the body in, the job id out.
     pub ask_draw: &'a AskDraw,
     /// One `GET /sdcpp/v1/jobs/{id}`, once per second while the job runs.
@@ -561,11 +566,17 @@ pub fn walk(
     log(brief);
     out.calls.push("brief".to_string());
 
-    // S2: the model got the brief and answered with tools or with prose; the caller has already turned that
-    // into `Answers`. A model failure stops here, before anything is written.
-    if let Err(why) = (mats.ask_model)(brief).map(|_| ()) {
-        out.error = Some(why);
-        return out;
+    // S2: the model got the brief and answered with tools or with prose. A caller that has already dialled (the
+    // page's words half dials once per press) hands the answers in and sets `model_asked` false, so one press
+    // never pays for two calls of the same brief; a caller that leaves it true is asked HERE, before anything
+    // is written — a model failure stops at this line.
+    if mats.model_asked {
+        // The leg's own reason is what a failure names (which server, and why), so the error is taken from
+        // the `Err` the leg returned rather than invented here.
+        if let Err(why) = (mats.ask_model)(brief) {
+            out.error = Some(why);
+            return out;
+        }
     }
     out.calls.push("model".to_string());
 

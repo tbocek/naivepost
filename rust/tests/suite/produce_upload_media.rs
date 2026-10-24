@@ -686,6 +686,7 @@ fn walk_with_frames(
         save_publish: &save_publish,
         // No model call in these checks: the answers are what a model would have answered, handed in.
         ask_model: &|_brief: &str| Ok(String::new()),
+        model_asked: false,
         ask_draw: &draw,
         poll: &poll,
         save_picture: &save_picture,
@@ -732,6 +733,8 @@ fn walk_through_page_legs(
     let mats = up::Materials {
         save_publish: &legs.save_publish,
         ask_model: &legs.ask_model,
+        // `upload_mats` already spells this false; spelled here too because this literal builds its own view.
+        model_asked: false,
         ask_draw: &legs.ask_draw,
         poll: &legs.poll,
         save_picture: &legs.save_picture,
