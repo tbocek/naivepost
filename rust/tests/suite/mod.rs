@@ -119,8 +119,8 @@ mod f0_4_lucky_press_widgets;
 mod f0_4_lucky_steps;
 mod f0_5_bookkeeping_live;
 mod f0_6_open_at_start_launch;
-/// F0.7's three doors (debounce, the next ▶, the policy form) — the wait as a number and the two
-/// widget paths that demand a derivation.
+/// F0.7's two doors (the debounce and the next ▶) — the wait as a number and the two widget paths that
+/// demand a derivation; what a derivation set is said in the log, since F0.7 has no form.
 mod f0_7_derive_doors;
 mod f0_7_s2_a_down_llm_is_reported_and_names_the_model;
 mod f0_7_s2_a_live_policy_call_carries_the_prompt_and_both_tools;
@@ -521,6 +521,7 @@ mod tool_protocol_f6_1_refusal;
 mod tool_protocol_f6_1_wire;
 mod tool_set_policy;
 mod tool_set_policy_s1_live_tool_result_carries_the_error;
+mod tool_set_policy_the_project_holds_what_the_model_set;
 mod transcribe;
 mod trough_search_reach;
 mod turn_gap_glue;

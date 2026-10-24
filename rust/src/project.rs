@@ -132,8 +132,8 @@ pub struct Field<T> {
     pub value: T,
     #[serde(rename = "source", default)]
     pub origin: Origin,
-    /// F0.7 S3: the reason the model gave when it set this (`tool:set_policy`'s `because`). The form
-    /// prints it beside the value so a proposal can be judged, not just read (§03-shell#f07). `None` for
+    /// F0.7 S3: the reason the model gave when it set this (`tool:set_policy`'s `because`). The log says
+    /// it beside the value so a proposal can be judged, not just read (§03-shell#f07). `None` for
     /// a default and for a hand-set field — a person's own choice needs no justification to themselves.
     /// Skipped when absent, so a project file written before F0.7 still loads unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
