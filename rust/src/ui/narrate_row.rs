@@ -1,16 +1,16 @@
 //! §07-narrate#1-screen — one line row's shape, built once.
 //!
-//! §1 spells a row as THREE stacked things, and the badge numbers say where each sits:
-//!  - a HEADER LINE, left to right: time entry (**14**), status with the end time (**15**), then AT THE
-//!    HEADER LINE'S RIGHT END ▶ speak this line (**16**), ↻ re-roll (**17**), ＋ add a line below (**18**),
-//!    🗑 remove (**19**);
-//!  - UNDER the header line, THE ROW'S FULL WIDTH: the text box (**20**), `[emotion] words`;
-//!  - under that, still full width: the fit warning (**21**), which §1 numbers after the words and which
-//!    therefore must NOT sit between the status and the buttons.
+//! §1 spells a row as TWO stacked things, and the badge numbers say where each sits:
+//!  - a HEADER LINE, left to right: time entry (**14**), status with the end time (**15**) and the fit
+//!    warning appended to it (**21**), then AT THE HEADER LINE'S RIGHT END ▶ speak this line (**16**),
+//!    ↻ re-roll (**17**), ＋ add a line below (**18**), 🗑 remove (**19**);
+//!  - UNDER the header line, THE ROW'S FULL WIDTH: the text box (**20**), `[emotion] words`.
 //!
-//! Before this module all five widgets went into ONE horizontal box, so the warning read as part of the
-//! status and the text box was squeezed onto the header line — every row ran off the page's right edge
-//! instead of wrapping under it. The row is now a vertical box: header on top, box under it, warning last.
+//! §A.5 says it the same way: "Warnings appended and the row marked red" — appended to the status, on the
+//! header line, not standing under the words as a third row of its own. Before this module all five widgets
+//! went into ONE horizontal box, so the text box was squeezed onto the header line and every row ran off the
+//! page's right edge instead of wrapping under it. The row is now a vertical box of exactly two children:
+//! header on top, wrapped text box under it.
 //!
 //! It lives in its own file because `narrate_page.rs` is past its size budget; the page keeps the call site
 //! and this file keeps the shape. Every widget name is unchanged (`line-time-*`, `line-status-*`,
@@ -22,6 +22,9 @@ use gtk4 as gtk;
 
 use crate::narrate_screen;
 use crate::narration::Entry;
+
+/// A.5's "1–3 lines tall": two lines as the resting height, the picture's rows wrap across two.
+const LINE_HEIGHT_PX: i32 = 24;
 
 /// One row of the lines column, for `entry` at sorted position `index`.
 ///
@@ -59,6 +62,19 @@ pub fn build(
     status.set_widget_name(&format!("line-status-{index}"));
     header.append(&status);
 
+    // --- **21**: the fit warning, APPENDED to the status on the same header line ----------------------
+    // §A.5: "Warnings appended and the row marked red" — appended after the end time, before the spacer that
+    // holds the buttons at the header's right end, so a long warning shoves nothing out of the row.
+    let warning = gtk::Label::new(Some(&narrate_screen::fit_warning(fit).unwrap_or_default()));
+    warning.set_widget_name(&format!("line-warning-{index}"));
+    warning.set_xalign(0.0);
+    if narrate_screen::row_is_red(fit) {
+        warning.add_css_class("error");
+        // A.5 marks THE ROW red, not the warning alone.
+        row.add_css_class("error");
+    }
+    header.append(&warning);
+
     // The gap that pushes the four buttons to the header's RIGHT END (§1's words), rather than leaving them
     // packed behind the status where a wide warning would shove them out of the row. Named so a check can
     // tell it apart from an unnamed filler and still read §1's six widgets in their own order.
@@ -89,26 +105,44 @@ pub fn build(
 
     stack.append(&header);
 
-    // --- **20**: the text box, UNDER the header line and across the row's whole width -----------------
-    let text = gtk::Entry::new();
+    // --- **20**: the text box, UNDER the header line, across the row's whole width, WRAPPING ----------
+    // A.5 calls the box "monospace, word wrap, 1–3 lines tall", which an `Entry` cannot do (one line, no
+    // wrap), so it is a `TextView`: monospace by CSS class like its `Entry` predecessor, wrapped at word
+    // boundaries, and two lines tall at rest so a long line wraps in place instead of running off the page.
+    let text = gtk::TextView::new();
     text.set_widget_name(&format!("line-text-{index}"));
-    // §A.5 calls the box monospace: an `Entry` has no such property, so the CSS class carries it.
+    text.set_wrap_mode(gtk::WrapMode::Word);
     text.add_css_class("monospace");
-    text.set_text(&narrate_screen::write_box(entry));
+    text.set_size_request(-1, 2 * LINE_HEIGHT_PX);
+    text.set_top_margin(2);
+    text.set_bottom_margin(2);
+    // A.5's box is where the words are typed, so it must take a caret and the keyboard focus — an `Entry`
+    // did that by itself, a `TextView` needs saying.
+    text.set_cursor_visible(true);
+    text.set_can_focus(true);
+    text.set_editable(true);
+    set_box_text(&text, &narrate_screen::write_box(entry));
     text.set_tooltip_text(Some(&narrate_screen::row_tooltip()));
     text.set_hexpand(true);
     text.set_halign(gtk::Align::Fill);
     stack.append(&text);
 
-    // --- **21**: the fit warning, last and full width --------------------------------------------------
-    let warning = gtk::Label::new(Some(&narrate_screen::fit_warning(fit).unwrap_or_default()));
-    warning.set_widget_name(&format!("line-warning-{index}"));
-    warning.set_xalign(0.0);
-    if narrate_screen::row_is_red(fit) {
-        warning.add_css_class("error");
-    }
-    stack.append(&warning);
-
     row.set_child(Some(&stack));
     row
+}
+
+/// The words currently in a row's text box, without the newline a `TextView`'s buffer keeps at its end.
+pub fn box_text(view: &gtk::TextView) -> String {
+    let buffer = view.buffer();
+    let (start, end) = buffer.bounds();
+    buffer.text(&start, &end, true).trim_end().to_string()
+}
+
+/// Put `text` in a row's text box — the door every writer of the box goes through, this file's own build
+/// included, so no caller has to know that a `TextView`'s words live on its buffer.
+pub fn set_box_text(view: &gtk::TextView, text: &str) {
+    // A rebuild must not leave the caret sitting past the end of shorter new words.
+    view.buffer().set_text(text);
+    let start = view.buffer().start_iter();
+    view.buffer().place_cursor(&start);
 }

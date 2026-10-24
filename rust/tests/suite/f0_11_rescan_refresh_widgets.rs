@@ -342,12 +342,11 @@ fn check_narrate_reread(app: &adw::Application) {
         let Some(box_) = common::widget_in(&window, &format!("line-text-{index}")) else {
             break;
         };
-        texts.push(
-            box_.downcast::<gtk::Entry>()
-                .expect("a line's text box is an Entry")
-                .text()
-                .to_string(),
-        );
+        texts.push(naivepost::ui::narrate_row::box_text(
+            box_.downcast::<gtk::TextView>()
+                .expect("a line's text box is a wrapped TextView")
+                .as_ref(),
+        ));
     }
     for entry in &on_disk.entries {
         assert!(

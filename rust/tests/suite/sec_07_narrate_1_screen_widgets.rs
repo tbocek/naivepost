@@ -47,9 +47,111 @@ fn scratch_root(tag: &str) -> std::path::PathBuf {
     root
 }
 
+/// Stage a session that makes `state`'s Inputs counts true, then repaint the bottom bar through the same
+/// door an Open uses (`window::paint_readouts_for`). The shell reads FOLDERS, not the page's state, so this
+/// is the only honest way to show §1's stale mark on that row: four equal clips with one unwritten and two
+/// lines sitting past them, or the timeline file absent, or no cut at all.
+fn stage_session_and_repaint(window: &adw::ApplicationWindow, state: &ui::NarrateState) {
+    let root = std::env::current_dir().expect("a cwd to hold the session");
+    let tree = naivepost::layout::Tree::new(naivepost::startup::session_dir(&root))
+        .expect("the session folder beside the cwd");
+    std::fs::create_dir_all(tree.dir()).expect("the session folder");
+    // A project file is what makes the shell count anything at all: without it there is no tree to read.
+    std::fs::write(
+        root.join(naivepost::project::PROJECT_FILE),
+        "{\"sources\": []}\n",
+    )
+    .expect("a project file");
+    let each = if state.clips > 0 {
+        state.length / state.clips as f64
+    } else {
+        0.0
+    };
+    let segs: Vec<naivepost::cut::Seg> = (0..state.clips)
+        .map(|index| naivepost::cut::Seg {
+            s: f64::from(index as u32) * each,
+            e: f64::from(index as u32 + 1) * each,
+            cam: 0,
+            ..Default::default()
+        })
+        .collect();
+    if state.has_cut {
+        std::fs::create_dir_all(tree.dir().join("cut")).expect("the cut folder exists");
+        std::fs::write(
+            tree.cut_json(),
+            serde_json::to_vec_pretty(&naivepost::cut::Cut {
+                segs: segs.clone(),
+                ..Default::default()
+            })
+            .expect("a cut"),
+        )
+        .expect("the cut is written");
+    } else {
+        let _ = std::fs::remove_file(tree.cut_json());
+    }
+    // Written clips first, then the off-cut lines: a line whose span no clip covers is exactly what
+    // "N line(s) off the cut" counts, and a clip left without one is what "unwritten" counts.
+    let mut entries: Vec<naivepost::narration::Entry> = segs
+        .iter()
+        .take(state.clips.saturating_sub(state.unwritten))
+        .map(|seg| naivepost::narration::Entry {
+            s: seg.s,
+            e: seg.e,
+            at: 0.5,
+            text: "staged".into(),
+            emotion: String::new(),
+            pos: String::new(),
+            roll: 0,
+        })
+        .collect();
+    for index in 0..state.off_cut {
+        let past = state.length + f64::from(index as u32 + 1) * 10.0;
+        entries.push(naivepost::narration::Entry {
+            s: past,
+            e: past + 5.0,
+            at: 0.5,
+            text: "off the cut".into(),
+            emotion: String::new(),
+            pos: String::new(),
+            roll: 0,
+        });
+    }
+    std::fs::create_dir_all(tree.dir().join("narrate")).expect("the narrate folder exists");
+    std::fs::write(
+        tree.narration_json(),
+        serde_json::to_vec_pretty(&naivepost::narration::Narration {
+            entries,
+            silent: Vec::new(),
+        })
+        .expect("a narration"),
+    )
+    .expect("the narration is written");
+    // §1's "no timeline" names a missing `session.tsv`, which the tally reads from the session's own
+    // `prepare/transcript/` folder — the same path `Tree::session_tsv()` answers with.
+    let timeline = tree.dir().join("prepare").join("transcript");
+    if state.has_timeline {
+        std::fs::create_dir_all(&timeline).expect("the transcript folder exists");
+        std::fs::write(timeline.join("session.tsv"), "0.0\tstaged timeline\n").expect("a timeline");
+    } else {
+        let _ = std::fs::remove_file(timeline.join("session.tsv"));
+    }
+    naivepost::ui::window::paint_readouts_for(window, &project_of(&tree), tree.dir());
+}
+
+/// The project file beside the session folder — the readouts' lock argument reads it, so it has to exist.
+fn project_of(tree: &naivepost::layout::Tree) -> naivepost::project::Project {
+    tree.dir()
+        .parent()
+        .and_then(|parent| naivepost::project::load(parent).ok())
+        .unwrap_or_default()
+}
+
 /// The page with `state` published, sized before `present()` so the paned lays out both columns.
 /// Built the way the shell builds it (fixture project, Narrate tab clicked), because the band's
 /// gesture and "Add file…" are wired by the page's own `wire`, which only runs on a real window.
+///
+/// The bottom bar is NOT repainted here: §A.8 puts that row on the bar and the shell paints it from the
+/// SESSION, so a check on it stages files and repaints through [`stage_session_and_repaint`] instead.
 fn narrate_page(app: &adw::Application, state: ui::NarrateState) -> adw::ApplicationWindow {
     release_last_window();
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
@@ -762,6 +864,9 @@ fn label_of(button: &gtk::Widget) -> String {
 }
 
 fn text_of(widget: &gtk::Widget) -> String {
+    if let Some(view) = widget.downcast_ref::<gtk::TextView>() {
+        return naivepost::ui::narrate_row::box_text(view);
+    }
     if let Some(entry) = widget.downcast_ref::<gtk::Entry>() {
         return entry.text().to_string();
     }
@@ -879,7 +984,7 @@ fn s10_widgets_round(app: &adw::Application) {
         "sample-reroll",      // **12**
         "pitch-slider",       // **13**
         "narrate-lines",      // the rows below
-        "narrate-inputs",     // **22**
+        "inputs-readout", // **22** — §A.8 puts the readouts on the window's bottom bar, not in the page
     ] {
         let widget = found(&window, name);
         assert!(widget.is_visible(), "`{name}` is drawn, not hidden away");
@@ -985,8 +1090,11 @@ fn s10_widgets_round(app: &adw::Application) {
     settle();
 }
 
-/// **s11** — the Inputs readout on the built page prints §1's sentences, both of them, from the state the
-/// shell publishes rather than from a string the test wrote.
+/// **s11** — the Inputs readout prints §1's sentences, both of them. §A.8 puts that row on the window's
+/// BOTTOM BAR ("Bottom bar") and §3 §1 draws it on every tab, so the label checked is the shell's
+/// `inputs-readout`, repainted over a session staged to make each sentence true: a cut of four clips with one
+/// left unwritten and two lines off it; the same cut with every clip written and no timeline file; no cut at
+/// all. The wording is asserted byte for byte, because §1 spells it.
 fn s11_inputs_round(app: &adw::Application) {
     let mut stale = base_state();
     stale.clips = 4;
@@ -995,10 +1103,11 @@ fn s11_inputs_round(app: &adw::Application) {
     stale.off_cut = 2;
     stale.has_cut = true;
     stale.has_timeline = true;
-    let window = narrate_page(app, stale);
+    let window = narrate_page(app, stale.clone());
+    stage_session_and_repaint(&window, &stale);
     assert_eq!(
-        text_of(&found(&window, "narrate-inputs")),
-        "4 clip(s) \u{b7} 03:15 \u{b7} \u{26a0} 1 clip(s) unwritten, 2 line(s) off the cut",
+        text_of(&found(&window, "inputs-readout")),
+        "Inputs: 4 clip(s) \u{b7} 03:15 \u{b7} \u{26a0} 1 clip(s) unwritten, 2 line(s) off the cut",
         "**22** the row spells the two counts \u{26a0} marks"
     );
     window.close();
@@ -1010,10 +1119,11 @@ fn s11_inputs_round(app: &adw::Application) {
     quiet.unwritten = 0;
     quiet.off_cut = 0;
     quiet.has_timeline = false;
-    let window = narrate_page(app, quiet);
+    let window = narrate_page(app, quiet.clone());
+    stage_session_and_repaint(&window, &quiet);
     assert_eq!(
-        text_of(&found(&window, "narrate-inputs")),
-        "4 clip(s) \u{b7} 03:15 \u{b7} no timeline",
+        text_of(&found(&window, "inputs-readout")),
+        "Inputs: 4 clip(s) \u{b7} 03:15 \u{b7} no timeline",
         "**22** a missing timeline is named on the row"
     );
     window.close();
@@ -1023,10 +1133,11 @@ fn s11_inputs_round(app: &adw::Application) {
     none.has_cut = false;
     none.clips = 0;
     none.length = 0.0;
-    let window = narrate_page(app, none);
+    let window = narrate_page(app, none.clone());
+    stage_session_and_repaint(&window, &none);
     assert_eq!(
-        text_of(&found(&window, "narrate-inputs")),
-        "no cut yet \u{2014} build one on the Cut step",
+        text_of(&found(&window, "inputs-readout")),
+        "Inputs: no cut yet \u{2014} build one on the Cut step",
         "**22** with no cut the row says where to make one"
     );
     RAN_INPUTS_READOUT.store(true, Ordering::SeqCst);

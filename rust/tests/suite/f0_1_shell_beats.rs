@@ -117,19 +117,23 @@ fn check_autosave_beat(app: &adw::Application) {
         "S3 saves 400 ms after typing, not during it"
     );
     let entry = line_entry(&window, 0);
-    assert_eq!(entry.text(), BEFORE, "the box starts from the file");
-    entry.set_text(typed);
+    assert_eq!(
+        ui::narrate_row::box_text(&entry),
+        BEFORE,
+        "the box starts from the file"
+    );
+    ui::narrate_row::set_box_text(&entry, typed);
     // The beat's moment is on this module's clock; the timer that asks about it is a real one.
     ui::shell_beats::advance_clock_for_test(NARRATION_AUTOSAVE);
-    let shown = entry.text();
+    let shown = ui::narrate_row::box_text(&entry);
     common::wait_until(
         &format!("the timer's write on the beat (the box says {shown:?})"),
         || typed_written(&tree, "half-typed"),
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
-/// The row's live box; setting its text is what makes `changed` run, as a keystroke does.
-fn line_entry(window: &adw::ApplicationWindow, index: usize) -> gtk::Entry {
+/// The row's live box; writing its buffer is what makes `changed` run, as a keystroke does.
+fn line_entry(window: &adw::ApplicationWindow, index: usize) -> gtk::TextView {
     ui::find_source_widget(window, &format!("line-text-{index}"))
         .and_then(|w| w.downcast().ok())
         .expect("that line has a text box")

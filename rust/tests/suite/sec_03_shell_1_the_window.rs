@@ -646,12 +646,12 @@ fn s9_closing_flushes_without_asking(app: &adw::Application) {
     // click on the page takes. Calling `note_typing` directly would prove only the seam, not the widget.
     let box_widget = common::widget_in(&window, "line-text-0").expect("the row's editable box");
     let entry = box_widget
-        .downcast_ref::<gtk::Entry>()
-        .expect("the row's box is an editable entry");
-    entry.set_text(typed);
+        .downcast_ref::<gtk::TextView>()
+        .expect("the row's box is an editable wrapped text view");
+    ui::narrate_row::set_box_text(entry, typed);
     settle();
     assert_eq!(
-        entry.text(),
+        ui::narrate_row::box_text(entry),
         typed,
         "the row's live box holds what was typed into it"
     );

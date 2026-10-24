@@ -617,17 +617,6 @@ use common::{hold_last_window, release_last_window, settle, widget_in};
 static RAN_HEADER_ORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_BOX_UNDER_HEADER: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
-static RAN_INPUTS_ROW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static RAN_OUTPUTS_ROW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-/// The text a label on the page carries.
-fn label_of(window: &adw::ApplicationWindow, name: &str) -> String {
-    widget_in(window, name)
-        .and_then(|w| w.downcast::<gtk::Label>().ok())
-        .unwrap_or_else(|| panic!("the page drew no {name}"))
-        .text()
-        .to_string()
-}
 
 /// Three kept clips of ten seconds each, so a row's session second is checkable by hand.
 fn three_clips() -> Vec<Seg> {
@@ -731,13 +720,26 @@ fn narrate_page_in(
     window.set_default_size(1280, 800);
     window.present();
     // Published BEFORE the page is built: the shell builds the page when the tab is opened, and its `build()`
-    // seeds itself from the project's own files — which here are the copied project's cut and no narration.
+    // seeds itself from the project's own files — which here are the copied project's cut and narration.
     ui::set_state(state);
     ui::tab_button(&window, Page::Narrate)
         .expect("the shell has a Narrate tab")
         .emit_by_name::<()>("clicked", &[]);
     settle();
     ui::refresh(&window);
+    // The bottom bar is painted by the tab switch (`window_bench::paint_readouts`), not by the page's
+    // `refresh`, so a check that reads it waits for the row to carry this tab's line rather than guessing a
+    // moment. It still shows the previous tab's sentence until that repaint lands.
+    let inputs_label =
+        widget_in(&window, "inputs-readout").expect("the shell drew its Inputs readout");
+    common::wait_until(
+        "the bottom bar showing the Narrate tab's Inputs line (still the tab just left)",
+        || {
+            inputs_label
+                .downcast_ref::<gtk::Label>()
+                .is_some_and(|label| !label.text().is_empty())
+        },
+    );
     settle();
     window
 }
@@ -768,27 +770,35 @@ fn stack_of(window: &adw::ApplicationWindow, index: usize) -> gtk::Box {
 }
 
 fn row_round(app: &adw::Application) {
-    // The page pins its session folder on the FIRST window built in this process, and §A.8's counts are
-    // counted off THAT project — so this round owns the folder: the demo fixture copied into its own scratch
-    // dir (a test never writes into the fixture), with a three-clip cut in the copy so the counts are real.
+    // The page pins its session folder on the FIRST window built in this process, and the rows it draws come
+    // off THAT project — so this round owns the folder: the demo fixture copied into its own scratch dir (a
+    // test never writes into the fixture), with a three-clip cut and three narration lines in the copy so the
+    // page has the three rows §1's header layout is read off.
     release_last_window();
     let root = scratch_dir("row");
-    common::copy_fixture(&root);
-    write_three_clip_cut(&root);
-    std::env::set_current_dir(&root).expect("cwd pinned to the copied project");
+    // The shell reads the SESSION beside the cwd (`startup::session_dir(root)` = `root/session.naivepost`),
+    // so the round stages THAT folder: the demo fixture copied into it, plus the three-clip cut and the
+    // narration whose lines sit off that cut, which is what puts a warning on a row's header line.
+    let session = naivepost::startup::session_dir(&root);
+    common::copy_fixture(&session);
+    write_three_clip_cut(&session);
+    write_staged_narration(&session);
+    std::fs::create_dir_all(&root).expect("the root exists");
+    std::env::set_current_dir(&root).expect("cwd pinned above the staged session");
     // --- **14-19**: time, status, then ▶ ↻ ＋ 🗑 at the header's right end ---------------------------
-    let window = narrate_page_in(app, &root, base_state());
+    let window = narrate_page_in(app, &session, base_state());
     for index in 0..3usize {
         let names = child_names(&header_of(&window, index));
-        // The spacer holds the gap that pushes the buttons right; the widgets themselves must be in §1's
-        // order, with the warning NOT among them (§1 numbers it after the words).
+        // The spacer holds the gap that pushes the buttons right, and §A.5 appends the fit warning to the
+        // status; both are filtered out here so this check reads only §1's six widgets, in §1's order.
         let header_name = format!("line-header-{index}");
         let gap_name = format!("line-header-gap-{index}");
+        let warning_name = format!("line-warning-{index}");
         let widgets: Vec<&str> = names
             .iter()
             .map(String::as_str)
             .filter(|name| !name.is_empty())
-            .filter(|name| *name != header_name && *name != gap_name)
+            .filter(|name| **name != header_name && **name != gap_name && **name != warning_name)
             .collect();
         assert_eq!(
             widgets,
@@ -805,7 +815,7 @@ fn row_round(app: &adw::Application) {
     }
     RAN_HEADER_ORDER.store(true, std::sync::atomic::Ordering::SeqCst);
 
-    // --- **20/21**: the text box and the warning are UNDER the header, across the row's width ---------
+    // --- **20/21**: the box wraps UNDER the header; the warning is appended INSIDE the header ---------
     for index in 0..3usize {
         let header = header_of(&window, index);
         let stack = stack_of(&window, index);
@@ -822,66 +832,52 @@ fn row_round(app: &adw::Application) {
         let text_at = position(&text_name).unwrap_or_else(|| {
             panic!("{text_name} is not a child of the row's vertical box: {stacked:?}")
         });
-        let warning_at = position(&warning_name)
-            .unwrap_or_else(|| panic!("{warning_name} is not under the header: {stacked:?}"));
+        assert_eq!(
+            stacked.len(),
+            2,
+            "the row's vertical box holds the header line and the text box only — §A.5 appends the warning \
+             to the status on the header line instead of stacking it as a third row: {stacked:?}"
+        );
         assert!(
             text_at > 0,
             "the text box sits UNDER the header line, not inline with it"
         );
+        // §A.5: "Warnings appended and the row marked red" — the warning label sits on the HEADER line,
+        // right after the status and before the spacer that pins the buttons to the header's right end.
+        let in_header = child_names(&header);
+        let at = |wanted: &str| in_header.iter().position(|name| name == wanted);
+        let warning_at = at(&warning_name)
+            .unwrap_or_else(|| panic!("{warning_name} is not on the header line: {in_header:?}"));
+        assert_eq!(
+            at(&format!("line-status-{index}")).map(|p| p + 1),
+            Some(warning_at),
+            "the fit warning is APPENDED to the status: {in_header:?}"
+        );
         assert!(
-            warning_at > text_at,
-            "§1 numbers the fit warning after the words, so it comes last"
+            at(&format!("line-header-gap-{index}"))
+                .is_some_and(|gap| gap > warning_at),
+            "the warning comes BEFORE the header's right-end spacer, so the buttons keep their place: \n             {in_header:?}"
         );
         // And the box really is no longer a child of the header line it used to share it with.
         assert!(
-            !child_names(&header).contains(&text_name),
+            !in_header.contains(&text_name),
             "the text box must not be squeezed onto the header line"
         );
-        // Full width: the box fills its row rather than asking for its content's width.
+        // A.5's box: monospace WORD WRAP, so a long line breaks under itself instead of running off the page.
         let text = widget_in(&window, &text_name).expect("the row drew its text box");
+        let view = text
+            .downcast_ref::<gtk::TextView>()
+            .unwrap_or_else(|| panic!("{text_name} is a wrapping TextView, per §A.5"));
+        assert_eq!(
+            view.wrap_mode(),
+            gtk::WrapMode::Word,
+            "{text_name} must wrap at word boundaries"
+        );
+        // Full width: the box fills its row rather than asking for its content's width.
         assert!(text.hexpands(), "{text_name} must stretch across the row");
     }
     RAN_BOX_UNDER_HEADER.store(true, std::sync::atomic::Ordering::SeqCst);
 
-    // --- **22**: the Outputs row and the folder button beside it, on this same page --------------------
-    let outputs = label_of(&window, "narrate-outputs");
-    assert_eq!(
-        outputs,
-        naivepost::narrate_screen::outputs_readout(),
-        "the Outputs row is §1's sentence, byte for byte"
-    );
-    for named in ["narration.json", "voice reference", "synthesis cache"] {
-        assert!(outputs.contains(named), "the row names {named}: {outputs}");
-    }
-    // The button that opens that folder says what it DOES, so §1's wording lives once, on the readout.
-    let folder = widget_in(&window, "narrate-outputs-folder")
-        .expect("§A.8's Outputs row has its folder button");
-    let tip = folder.tooltip_text().unwrap_or_default();
-    assert!(
-        !tip.is_empty(),
-        "the folder button says what pressing it does"
-    );
-    assert!(
-        !tip.contains("narration.json"),
-        "the button's tooltip must not repeat the readout's sentence: {tip}"
-    );
-    RAN_OUTPUTS_ROW.store(true, std::sync::atomic::Ordering::SeqCst);
-
-    // --- **22**: the Inputs row's bracketed halves, over this page's cut and narration -----------------
-    // Three clips, one line outside them, one clip with no line: §1's stale mark, on the row. The counts are
-    // the state's own — `refresh` passes them to the wording unchanged. (`has_timeline` comes out of the
-    // session, and this round's copied project has no `session.tsv` to find: it gets one in the round below.)
-    let inputs = label_of(&window, "narrate-inputs");
-    assert_eq!(
-        inputs,
-        naivepost::narrate_screen::inputs_readout(3, 30.0, 1, 1, true, true),
-        "the Inputs row prints the counts the cut and the narration make, brackets and all"
-    );
-    assert_eq!(
-        inputs, "3 clip(s) \u{b7} 00:30 \u{b7} \u{26a0} 1 clip(s) unwritten, 1 line(s) off the cut",
-        "§1's row byte for byte: count, length and the \u{26a0} mark"
-    );
-    RAN_INPUTS_ROW.store(true, std::sync::atomic::Ordering::SeqCst);
     window.close();
     settle();
 }
@@ -916,6 +912,52 @@ fn write_three_clip_cut(dir: &std::path::Path) {
     .expect("the cut is written");
 }
 
+/// `narrate/narration.json` for the lines this round's checks describe — one per clip plus one sitting past
+/// the cut, so "N line(s) off the cut" has a referent in files rather than only in the published state.
+fn write_staged_narration(dir: &std::path::Path) {
+    let narrate_dir = dir.join("narrate");
+    std::fs::create_dir_all(&narrate_dir).expect("the narrate folder exists");
+    // One line on the first clip, and two past the end of the 30 s cut: two clips unwritten, two lines off.
+    let entries = vec![
+        Entry {
+            s: 0.0,
+            e: 10.0,
+            at: 2.0,
+            text: "a spoken line".into(),
+            emotion: String::new(),
+            pos: String::new(),
+            roll: 0,
+        },
+        Entry {
+            s: 40.0,
+            e: 45.0,
+            at: 1.0,
+            text: "off the cut one".into(),
+            emotion: String::new(),
+            pos: String::new(),
+            roll: 0,
+        },
+        Entry {
+            s: 60.0,
+            e: 65.0,
+            at: 1.0,
+            text: "off the cut two".into(),
+            emotion: String::new(),
+            pos: String::new(),
+            roll: 0,
+        },
+    ];
+    std::fs::write(
+        narrate_dir.join("narration.json"),
+        serde_json::to_vec_pretty(&naivepost::narration::Narration {
+            entries,
+            silent: Vec::new(),
+        })
+        .expect("a narration"),
+    )
+    .expect("the narration is written");
+}
+
 fn run_row_round() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
@@ -939,30 +981,8 @@ fn sec_07_narrate_1_screen_row_header_orders_buttons_after_the_status() {
     );
 }
 
-/// §07-narrate#1-screen (**22**, the wire): the Narrate page's Inputs row prints both brackets §1 spells as
-/// optionals — the stale mark over the two counts, and the missing timeline.
 #[test]
-fn sec_07_narrate_1_screen_inputs_count_from_a_real_session() {
-    run_row_round();
-    assert!(
-        RAN_INPUTS_ROW.load(std::sync::atomic::Ordering::SeqCst),
-        "the Inputs-row wire check never ran"
-    );
-}
-
-/// §07-narrate#1-screen (**22**): the Outputs row prints §1's sentence — the folder and the three things in
-/// it — and the folder button beside it does NOT: its tooltip says what pressing it DOES, so §1's wording
-/// lives once, on the readout, instead of the readout reading as a duplicate of a tooltip.
-#[test]
-fn sec_07_narrate_1_screen_outputs_line_names_the_three_outputs() {
-    run_row_round();
-    assert!(
-        RAN_OUTPUTS_ROW.load(std::sync::atomic::Ordering::SeqCst),
-        "the Outputs-row check never ran"
-    );
-}
-#[test]
-fn sec_07_narrate_1_screen_text_box_sits_under_the_header_at_full_width() {
+fn sec_07_narrate_1_screen_text_box_wraps_under_the_header_and_the_warning_sits_in_it() {
     run_row_round();
     assert!(
         RAN_BOX_UNDER_HEADER.load(std::sync::atomic::Ordering::SeqCst),

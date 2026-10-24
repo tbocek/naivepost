@@ -81,9 +81,14 @@ pub(crate) use crate::ui::cut_lane_rows::{preview_widget, set_class};
 
 // The §1 bench, tabs and readouts group lives in `window_bench` (window.rs is past its size budget);
 // these are the doors the rest of the page calls, kept at the paths they had.
+/// Repaint the bottom bar for a folder: the door an Open or a Rescan goes through, and the one a test that
+/// staged a session uses to see §A.8's Inputs/Outputs row without clicking through the shell.
+/// Repaint the bottom bar for a folder: the door an Open or a Rescan goes through, and the one a test that
+/// staged a session uses to see §A.8's Inputs/Outputs row without clicking through the shell.
+pub use crate::ui::window_bench::paint_readouts_for;
 pub(crate) use crate::ui::window_bench::{
-    depth, has_label, paint_readouts, paint_readouts_for, paint_tabs, paint_tabs_for,
-    refresh_cut_readouts, tab_buttons, LOG_OPEN_PX,
+    depth, has_label, paint_readouts, paint_tabs, paint_tabs_for, refresh_cut_readouts,
+    tab_buttons, LOG_OPEN_PX,
 };
 pub use crate::ui::window_bench::{label, paint_progress, paint_run_bar, set_bench_open_row};
 

@@ -281,8 +281,6 @@ fn narrate_page(app: &adw::Application, state: ui::NarrateState) -> adw::Applica
         "sample-reroll",
         "pitch-slider",
         "narrate-lines",
-        "narrate-inputs",
-        "narrate-outputs",
     ] {
         assert!(
             widget_in(&window, name).is_some(),
@@ -733,28 +731,36 @@ fn narrate_round(app: &adw::Application) {
     window.close();
     settle();
 
-    // --- (9) the two readouts -------------------------------------------------------------------
+    // --- (9) the two readouts, on the window's BOTTOM BAR (§A.8), not in this page -----------------
+    // §A.8 heads its Inputs/Outputs block "Bottom bar", and §3 §1 puts that row on every tab, so the
+    // widgets checked here are the shell's (`inputs-readout`, `outputs-readout`), painted by
+    // `window_bench::paint_readouts` from `Shell::inputs` / `Shell::outputs`. The page draws no copy: the
+    // names it used to carry are gone, which is the second half of what this pins.
     let window = narrate_page(app, base_state());
+    for gone in [
+        "narrate-inputs",
+        "narrate-outputs",
+        "narrate-outputs-folder",
+    ] {
+        assert!(
+            widget_in(&window, gone).is_none(),
+            "badge **22** lives on the bottom bar only; the page still draws a `{gone}`"
+        );
+    }
+    let tree = naivepost::layout::Tree::new(fixture_dir()).expect("the fixture is a project");
+    let narrate_shell = naivepost::shell::Shell {
+        page: Page::Narrate,
+        ..Default::default()
+    };
     assert_eq!(
-        label_text(&window, "narrate-inputs"),
-        narrate_screen::inputs_readout(3, 30.0, 0, 0, true, true),
-        "the Inputs readout is the module's line for this cut"
-    );
-    assert_eq!(
-        label_text(&window, "narrate-outputs"),
+        label_text(&window, "outputs-readout"),
         narrate_screen::outputs_readout(),
         "Outputs names the three things the folder owns, byte for byte"
     );
-    let mut no_cut = base_state();
-    no_cut.has_cut = false;
-    no_cut.clips = 0;
-    no_cut.length = 0.0;
-    ui::set_state(no_cut);
-    ui::refresh(&window);
     assert_eq!(
-        label_text(&window, "narrate-inputs"),
-        "no cut yet \u{2014} build one on the Cut step",
-        "with no cut the page says where to make one"
+        narrate_shell.outputs(Some(&tree)),
+        narrate_screen::outputs_readout(),
+        "and it comes from `Shell::outputs`, the one read the bar is painted from"
     );
     RAN_READOUTS.store(true, Ordering::SeqCst);
     window.close();
@@ -817,9 +823,12 @@ fn narrate_round(app: &adw::Application) {
         let matches: Vec<usize> = (0..fit_state.entries.len())
             .filter(|index| {
                 widget_in(&window, &format!("line-text-{index}"))
-                    .and_then(|w| w.downcast::<gtk::Entry>().ok())
+                    .and_then(|w| w.downcast::<gtk::TextView>().ok())
                     // The field holds what `write_box` writes (`[tag] text`), not the raw entry text.
-                    .map(|field| field.text() == narrate_screen::write_box(needle))
+                    .map(|view| {
+                        naivepost::ui::narrate_row::box_text(&view)
+                            == narrate_screen::write_box(needle)
+                    })
                     .unwrap_or(false)
             })
             .collect();
@@ -849,6 +858,12 @@ fn narrate_round(app: &adw::Application) {
         widget_in(&window, &format!("line-warning-{short}")).expect("warning label exists");
     assert!(
         !quiet_widget.has_css_class("error"),
+        "a fitting row is not marked red"
+    );
+    // A.5 marks the ROW red, not only its warning: the row that fits wears no `error` class either.
+    let quiet_row = widget_in(&window, &format!("narrate-line-{short}")).expect("row exists");
+    assert!(
+        !quiet_row.has_css_class("error"),
         "a fitting row is not marked red"
     );
 
@@ -889,6 +904,13 @@ fn narrate_round(app: &adw::Application) {
             .expect("warning label exists")
             .has_css_class("error"),
         "row_is_red drives the error class on a slid row"
+    );
+    // A.5: it is THE ROW that is marked red, so the row itself carries the class its warning wears.
+    assert!(
+        widget_in(&window, &format!("narrate-line-{slid}"))
+            .expect("row exists")
+            .has_css_class("error"),
+        "a warned row is marked red, not only its warning label"
     );
 
     // (b) the tempo rung: the branch the old per-line estimate could never produce.

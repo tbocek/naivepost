@@ -249,7 +249,7 @@ fn round(app: &adw::Application) {
 }
 
 #[test]
-fn sec_07_narrate_1_s1_a_stored_voice_that_is_not_on_offer_is_said() {
+fn sec_07_narrate_1_screen_s1_a_stored_voice_that_is_not_on_offer_is_said() {
     let _ = gtk::init();
     let app = adw::Application::builder()
         .application_id(ui::APP_ID)

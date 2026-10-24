@@ -532,10 +532,10 @@ pub fn pull_half_typed(window: &adw::ApplicationWindow, existing: &Narration) ->
         else {
             continue;
         };
-        let Ok(entry_box) = found.downcast::<gtk::Entry>() else {
+        let Ok(entry_box) = found.downcast::<gtk::TextView>() else {
             continue;
         };
-        let typed = entry_box.text().to_string();
+        let typed = crate::ui::narrate_row::box_text(&entry_box);
         if typed.trim().is_empty() {
             continue;
         }

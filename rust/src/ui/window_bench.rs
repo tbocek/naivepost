@@ -387,8 +387,9 @@ pub(crate) fn refresh_cut_readouts(window: &adw::ApplicationWindow) {
 }
 
 /// Redraw the visible tab's `Inputs:`/`Outputs:` row from the folder just switched TO, whose tree, cut
-/// and narration are read here — [`session_reads`] still points at the working copy beside the root.
-pub(crate) fn paint_readouts_for(window: &adw::ApplicationWindow, project: &Project, dir: &Path) {
+/// and narration are read here — [`session_reads`] still points at the working copy beside the root. Same
+/// door a tab switch uses, so an Open, a Rescan and a staged test session all show through it.
+pub fn paint_readouts_for(window: &adw::ApplicationWindow, project: &Project, dir: &Path) {
     let (Some(shell), Some(inputs), Some(folder), Some(outputs)) = (
         ui::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned()),
         ui::inputs_readout(window),

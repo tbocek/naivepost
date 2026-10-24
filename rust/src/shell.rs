@@ -15,7 +15,6 @@ use crate::prepare;
 use crate::project::Project;
 use crate::publish;
 use crate::tools::mm_ss;
-
 /// The four tabs, in the order the pipeline runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -466,12 +465,27 @@ impl Shell {
                 format!("{} clip(s)", cut.segs.len())
             }
             Page::Cut => NOTHING_TO_CUT.to_string(),
-            Page::Narrate if project.no_narration => "no narration — captions only".to_string(),
-            Page::Narrate => format!(
-                "{} line(s) over {} clip(s)",
-                narration.entries.len(),
-                cut.segs.len()
-            ),
+            // §7 §1's FULL line, not a short summary of it: "N clip(s) · mm:ss[ · ⚠ N clip(s) unwritten,
+            // N line(s) off the cut][ · no timeline]", or its no-cut sentence. The counts come from the same
+            // files ▶ reads (`narrate_inputs_tally`), so the bottom bar and the page cannot disagree.
+            // §1 spells no narration-off variant of this row — narration off simply means nothing was written,
+            // which is what "N clip(s) unwritten" already says — so the old `no_narration` special case is
+            // gone rather than a fourth wording nobody specified.
+            Page::Narrate => {
+                let tally = crate::ui::narrate_inputs_tally::from_session(
+                    tree,
+                    &cut.segs,
+                    &narration.entries,
+                );
+                crate::narrate_screen::inputs_readout(
+                    cut.segs.len(),
+                    cut_seconds(cut),
+                    tally.unwritten,
+                    tally.off_cut,
+                    tally.has_timeline,
+                    tally.has_cut,
+                )
+            }
             // "N clip(s) · mm:ss[ · no narration][ · no upload text]" (§8-produce.md §1).
             Page::Produce => {
                 let spoken = !project.no_narration && !narration.entries.is_empty();
@@ -544,7 +558,12 @@ impl Shell {
             };
         }
         // §1 asks for a count of what the page wrote; counting the page's own output folder is the
-        // one number that cannot lie about a run that has not happened yet.
+        // one number that cannot lie about a run that has not happened yet. Narrate is the exception §7 §1
+        // writes out in words ("Outputs: narrate/ — narration.json, the voice reference and the synthesis
+        // cache"), so its row names the three things instead of counting them.
+        if self.page == Page::Narrate {
+            return crate::narrate_screen::outputs_readout().to_string();
+        }
         format!("{} file(s)", count_files(&self.output_dir(tree)))
     }
 

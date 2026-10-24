@@ -11,10 +11,11 @@ use crate::common;
 use common::temp_dir_created as temp_dir;
 use naivepost::cut::{self, Cut, Seg};
 use naivepost::layout::Tree;
+use naivepost::narrate_screen;
 use naivepost::narration::{self, Entry, Narration};
 use naivepost::project::{Project, Source};
 use naivepost::rescan::{self, Refreshed, RESCANNED};
-use naivepost::shell::{Page, Shell};
+use naivepost::shell::{self, Page, Shell};
 
 /// A project folder with the three recordings a session names, so "gone" and "there" are both real
 /// files rather than paths that merely look plausible.
@@ -284,7 +285,9 @@ fn f0_11_s2_the_refreshed_files_drive_the_tabs_readouts() {
     );
     assert_eq!(
         on(Page::Narrate).inputs(Some(&tree), &project, &cut, &narration_file),
-        "1 line(s) over 1 clip(s)"
+        // §7 §1's full line, counted off this session: one clip, its length, and the tally's own marks.
+        // Built with §1's helper rather than hand-written, so the wording lives in one place.
+        narrate_screen::inputs_readout(1, shell::cut_seconds(&cut), 0, 0, false, true)
     );
 
     fs::remove_dir_all(&root).ok();

@@ -245,13 +245,20 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
         // §1: Outputs is a count of what the page wrote. A fresh project has written nothing, and
         // an empty folder never reads blank — which would look like a broken row. Prepare spells its
         // label out ("Prepare:" + count, spec/04-prepare.md §1) and says "nothing yet" at zero;
-        // the other three pages count their own folder as "<N> file(s)".
+        // the other three pages count their own folder as "<N> file(s)" — except Narrate, whose row §7 §1
+        // writes out in words, naming the three things `narrate/` owns instead of counting them.
         let outputs = shell.outputs(Some(&tree));
         if page == Page::Prepare {
             assert_eq!(
                 outputs,
                 naivepost::prepare::NO_OUTPUTS,
                 "Prepare's empty state is its own words, not a bare zero"
+            );
+        } else if page == Page::Narrate {
+            assert_eq!(
+                outputs,
+                naivepost::narrate_screen::outputs_readout(),
+                "Narrate's Outputs row names the three outputs, byte for byte"
             );
         } else {
             assert!(outputs.ends_with("file(s)"), "{}: {outputs}", page.label());
@@ -270,7 +277,12 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
         "0 frames \u{2192} 0 vision \u{b7} 0 lines \u{2192} 0 fixer"
     );
     assert_eq!(seen_inputs[1], "1 clip(s)");
-    assert_eq!(seen_inputs[2], "1 line(s) over 1 clip(s)");
+    // Narrate's row is §7 §1's full line, not a short summary: counted off this session (one clip of 30 s,
+    // no timeline file) through §1's own helper, so the wording is not hand-copied here.
+    assert_eq!(
+        seen_inputs[2],
+        naivepost::narrate_screen::inputs_readout(1, 30.0, 0, 0, false, true)
+    );
     // Produce's row is spec/08-produce.md §1: "N clip(s) · mm:ss[ · no narration][ · no upload text]".
     let produce = &seen_inputs[3];
     assert!(produce.starts_with("1 clip(s) · "), "{produce}");
@@ -299,9 +311,11 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
         &captions,
         Some(&tree),
     );
+    // Narration off is no longer a fourth wording on this row: §1 spells one Inputs line for the page, and
+    // "nothing was written" is what its counts say. This folder has no timeline file either.
     assert_eq!(
         shell.inputs(Some(&tree), &captions, &cut, &narration),
-        "no narration — captions only"
+        naivepost::narrate_screen::inputs_readout(1, 30.0, 0, 0, false, true)
     );
     go(
         &mut shell,
