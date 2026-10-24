@@ -385,6 +385,11 @@ pub struct Derived {
     /// §12 entry 21: whether a target length was READ from the User Context's words and stored. A read that
     /// understood nothing leaves this false, so "no target" stays a said fact rather than a silent 0.
     pub target_read: bool,
+    /// §12 entry 21: a length WAS mentioned in the User Context but this build could not spell it in seconds
+    /// ("the length of a train journey"). The entry's complaint is silence, so the gap has to be a said fact;
+    /// "read" is only true when seconds actually landed, which is what keeps [`target_length_log`] from
+    /// claiming a reading that understood nothing.
+    pub target_gap: bool,
     /// Each accepted proposal, by field name (S3).
     pub applied: Vec<(&'static str, Applied)>,
     /// Each proposal that LANDED, by field name, in the order they landed — index-aligned with [`applied`],
@@ -489,9 +494,10 @@ pub fn derive(
 
 /// §12 entry 21: read `P.policy.targetLengthSeconds` out of the User Context's own words and store it.
 ///
-/// This runs through [`apply`], so it passes the same validation a model's answer passes. The log line says
-/// which of the two happened — understood, or nothing mentioned — because the whole point of the entry is
-/// that a missed reading must not be silent.
+/// This runs through [`apply`], so it passes the same validation a model's answer passes. The log says which
+/// of the three happened — read and stored (by [`derived_log`], with its reason), mentioned but unread (by
+/// [`target_length_log`]), or nothing mentioned — because the whole point of the entry is that a missed
+/// reading must not be silent.
 pub fn read_target_length(policy: &mut Policy, context: &str) -> Derived {
     let reading = crate::policy_length::target_length_of(context);
     let mut out = Derived::default();
@@ -514,21 +520,34 @@ pub fn read_target_length(policy: &mut Policy, context: &str) -> Derived {
             out.proposals.push(proposal.clone());
             out.applied.push(("targetLengthSeconds", other));
             out.target_read = reading.seconds > crate::tools::cutpass::NO_TARGET;
+            // The store took 0 = none, which is not a read: the mention stands as a gap for the log.
+            out.target_gap = !out.target_read;
         }
     }
     out
 }
 
-/// The log line for one target-length read: what the User Context said, in the words this module spells.
+/// The extra line one target-length read earns — only the cases [`derived_log`] cannot say.
+///
+/// §12 entry 21 now ends "said in the log with its reason": a length that was read and stored already has
+/// that line (`policy: targetLengthSeconds = <seconds> — <because>`), so printing a second, vaguer row about
+/// it would only risk contradicting the first. What is left to say here is the refusal, and the gap: a length
+/// the User Context mentioned that this build could not spell, which must not pass for "no target".
 pub fn target_length_log(derived: &Derived) -> Option<String> {
-    let landed = derived
+    if let Some(Applied::Refused(say)) = derived
         .applied
         .iter()
         .find(|(field, _)| *field == "targetLengthSeconds")
-        .map(|(_, outcome)| outcome.clone())?;
-    Some(match landed {
-        Applied::Refused(say) => format!("!!! policy: {say}"),
-        Applied::Set => ">>> policy: target length read from the User Context".to_string(),
+        .map(|(_, outcome)| outcome.clone())
+    {
+        return Some(format!("!!! policy: {say}"));
+    }
+    // A read that landed is said by `derived_log`, with its value and reason; only a mentioned-but-unread
+    // length still needs saying here.
+    derived.target_gap.then(|| {
+        "policy: a length was mentioned in the User Context but could not be read \
+         \u{2014} the target length stays none"
+            .to_string()
     })
 }
 

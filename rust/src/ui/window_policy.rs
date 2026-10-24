@@ -226,13 +226,15 @@ pub fn derive_policy(window: &adw::ApplicationWindow) -> policy::Derived {
         out
     };
     // §12 entry 21: the target-length read happened inside `policy::derive` (the one door every caller uses),
-    // and its outcome is said here — a length that was mentioned and not understood is a line, not a silent 0.
+    // and its outcome is said here. A length that was read is said by `derived_log` below with its value and
+    // reason; what this line adds is the gap — a length mentioned that could not be read, which must not pass
+    // for a silent "no target".
     if let Some(line) = policy::target_length_log(&derived) {
         crate::ui::window::log_line(&line);
     }
     // S4: every value this derivation stored is said with its field, value and `because`, so what the model
-    // decided is visible without a form to open. Printed before the run bill so the log reads "what changed"
-    // then "what it cost".
+    // decided is visible without a form to open — §12's policy decisions are made "visibly in the log".
+    // Printed before the run bill so the log reads "what changed" then "what it cost".
     for line in policy::derived_log(&derived, &session.borrow().policy) {
         crate::ui::window::log_line(&line);
     }
