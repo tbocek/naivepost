@@ -8,11 +8,12 @@
 //! or at `finish`, where the model hears about it and can argue back.
 //!
 //! Six bullets, six rows. Five are arithmetic the app already owns elsewhere; the sixth is the pipeline
-//! itself, which the model sets **once**, visibly, through F0.7's `set_policy`, rather than per call.
+//! itself, which the model sets **once**, through F0.7's `set_policy`, rather than per call — and since
+//! F0.7 has no form to open, the log line saying each stored field with its value and reason is the only
+//! place a person can see what was decided.
 
 use crate::decision_audit;
-use crate::decision_homes;
-use crate::project::{CutMode, MarkingPass, Origin};
+use crate::project::{CutMode, MarkingPass};
 
 /// One thing the model never decides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,8 +83,8 @@ impl HandsOff {
                  and the render does it again anyway"
             }
             Self::PipelineChoice => {
-                "not per-item at all: one setting for the project, said in the log with its \
-                 origin beside it"
+                "not per-item at all: one setting for the project, said in the log with its value \
+                 and reason"
             }
         }
     }
@@ -147,20 +148,21 @@ pub struct PipelineField {
 
 /// The three fields F0.7's `set_policy` writes from the User Context.
 ///
-/// The first two are real fields on [`crate::project::Policy`]. The third is deliberately described as
-/// a set of switches rather than one field: `P.policy.captionsPass`, `P.policy.speedPass` and
-/// `P.policy.decorationsPass` are §10 rows that [`crate::model_calls`] reads, but they have no field
-/// on `Policy` yet — recorded here as it is rather than pretending the struct carries them.
+/// All six writable fields are real fields on [`crate::project::Policy`] — the cut-stage switches are
+/// `captions_pass`, `speed_pass` and `decorations_pass` — and each carries the `P.policy.*` id
+/// [`crate::policy::derived_fields`] catalogues them under, spelled the same way here so the two tables
+/// can be checked against each other. §4 lists these three ways of choosing because they decide which
+/// flows run at all; none of them is a per-request judgement.
 pub fn pipeline_fields() -> [PipelineField; 3] {
     [
         PipelineField {
             field: "markingPass",
-            id: "project::Policy::marking_pass (no P.policy row; the field's own name)",
+            id: "P.policy.markingPass",
             decides: "which marking pass runs: joins, retakes, or none",
         },
         PipelineField {
             field: "cutMode",
-            id: "project::Policy::cut_mode (no P.policy row; the field's own name)",
+            id: "P.policy.cutMode",
             decides: "whether the cut comes from the marked words or from a model",
         },
         PipelineField {
@@ -169,16 +171,6 @@ pub fn pipeline_fields() -> [PipelineField; 3] {
             decides: "which cut-stage passes are asked at all",
         },
     ]
-}
-
-/// Whether the derivation may write this pipeline field.
-///
-/// Delegated whole to [`decision_homes::overridable_by_derivation`], so §4's pipeline row and §5's policy
-/// home answer the "whose field is this" question from ONE predicate. F0.7 no longer consults it — its S3
-/// stores whatever the context speaks to, whatever origin the field carried — but the other decisions §4
-/// lists still do, and a second copy here would let the two drift.
-pub fn model_may_set_pipeline(origin: Origin) -> bool {
-    decision_homes::overridable_by_derivation(origin)
 }
 
 /// The two ways the cut can come about, exposed so a caller can show the choice without reaching into
@@ -243,9 +235,11 @@ pub fn audit() -> [Ruled; 6] {
         Ruled {
             what: "nothing chooses the pipeline but the User Context",
             home: "policy fields the model sets once, visibly in the log (F0.7 set_policy)",
-            lives_in: "project::Policy::marking_pass and ::cut_mode via tool:set_policy; the \
-                      cut-stage switches read by model_calls; hand-set fields stick through \
-                      decision_homes::overridable_by_derivation",
+            lives_in: "project::Policy::marking_pass, ::cut_mode and the three pass switches, stored by \
+                      policy::apply — which takes whatever the User Context speaks to, since F0.7 has no \
+                      form and no hand-set precedence — and said by policy::derived_log with value and \
+                      reason; the switches are read back through policy::pass_runs and filtered for the \
+                      run by cut_suggest_passes::order",
         },
     ]
 }
