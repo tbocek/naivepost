@@ -68,7 +68,7 @@ fn sec_11_flow_index_5_where_each_kind_of_decision_lives_directive_a_s1_there_ar
     assert!(Home::Engineering
         .where_you_change_it()
         .contains("fixed in code"));
-    assert!(Home::Policy.where_you_change_it().contains("policy form"));
+    assert!(Home::Policy.where_you_change_it().contains("User Context"));
     assert!(Home::Prompt
         .where_you_change_it()
         .contains("prompts/<key>.txt"));

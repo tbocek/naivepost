@@ -44,10 +44,8 @@ fn split_round() {
         check_the_bottom_band_is_inside_the_window(&window);
         RAN_BAND.store(true, Ordering::SeqCst);
         window.close();
-        check_the_picker_lists_every_prompt_plus_policy(app);
+        check_the_picker_lists_every_prompt(app);
         RAN_POLICY_LIST.store(true, Ordering::SeqCst);
-        check_editing_policy_opens_the_form(app);
-        RAN_POLICY_OPEN.store(true, Ordering::SeqCst);
         check_the_title_names_the_open_row(app);
         RAN_TITLE.store(true, Ordering::SeqCst);
         check_the_picker_switches_rows_and_stores(app);
@@ -74,7 +72,6 @@ static RAN_LEFT: AtomicBool = AtomicBool::new(false);
 static RAN_HEADING: AtomicBool = AtomicBool::new(false);
 static RAN_READOUT: AtomicBool = AtomicBool::new(false);
 static RAN_POLICY_LIST: AtomicBool = AtomicBool::new(false);
-static RAN_POLICY_OPEN: AtomicBool = AtomicBool::new(false);
 static RAN_TITLE: AtomicBool = AtomicBool::new(false);
 static RAN_ON_SCREEN: AtomicBool = AtomicBool::new(false);
 static RAN_COLUMN_TOPS: AtomicBool = AtomicBool::new(false);
@@ -261,16 +258,16 @@ fn sec_04_prepare_1_screen_s5_each_column_starts_at_its_named_top_control() {
     );
 }
 
-/// §1's badge **3** as data: the picker lists every prompt in pipeline order and then the row §1's REVIEW
-/// line adds. The policy row is a row of the MENU, not a prompt — `bench::ROWS` (which drives every
-/// `prompts/<key>/` lookup) stays at its thirteen entries, so nothing about a prompt file changes.
-fn check_the_picker_lists_every_prompt_plus_policy(app: &adw::Application) {
+/// §1's badge **3** as data: the picker lists every prompt in pipeline order and nothing else. F0.7 has no
+/// form, so the menu has no non-prompt row: `bench::ROWS` (which drives every `prompts/<key>/` lookup) is
+/// the whole list.
+fn check_the_picker_lists_every_prompt(app: &adw::Application) {
     let _ = app;
     let rows = naivepost::bench::picker_rows();
     assert_eq!(
         rows.len(),
-        naivepost::bench::ROWS.len() + 1,
-        "{ITEM} s3: the picker is the prompts plus Editing policy"
+        naivepost::bench::ROWS.len(),
+        "{ITEM} s3: the picker is exactly the prompts"
     );
     for (index, row) in naivepost::bench::ROWS.iter().enumerate() {
         assert_eq!(
@@ -278,118 +275,15 @@ fn check_the_picker_lists_every_prompt_plus_policy(app: &adw::Application) {
             "{ITEM} s3: picker entry {index} is not the prompt in pipeline order"
         );
     }
-    assert_eq!(
-        rows.last().map(|(_, title)| title.as_str()),
-        Some(naivepost::bench::POLICY_TITLE),
-        "{ITEM} s3: the last picker row is \"Editing policy\""
-    );
-    assert!(naivepost::bench::is_policy(naivepost::bench::POLICY_ROW));
-    assert!(
-        !naivepost::bench::is_policy(0),
-        "{ITEM} s3: User Context is not the policy row"
-    );
-    for index in 0..naivepost::bench::ROWS.len() {
-        assert!(
-            !naivepost::bench::is_policy(index),
-            "{ITEM} s3: row {index} is a prompt"
-        );
-    }
 }
 
 #[test]
-fn sec_04_prepare_1_screen_s3_the_picker_lists_every_prompt_plus_editing_policy() {
+fn sec_04_prepare_1_screen_s3_the_picker_lists_every_prompt_and_nothing_else() {
     common::pin_private_cwd();
     split_round();
     assert!(
         RAN_POLICY_LIST.load(Ordering::SeqCst),
         "{ITEM} s3: the picker-contents check never ran"
-    );
-}
-
-/// The WIRE: choosing "Editing policy" in the real dropdown opens F0.7's form through the same door the
-/// run bar's ⚙ and every tab's ⓘ use, and leaves the bench on its prompt row (the menu has no text of its
-/// own to show). Asserted through `ui::policy_form_open`/`open_policy_form`, the accessors that door
-/// publishes, and back on the picker's face and the heading it reads.
-fn check_editing_policy_opens_the_form(app: &adw::Application) {
-    let window = prepare_window(app);
-    lay_out();
-    let picker = widget(&window, "bench-picker")
-        .downcast::<gtk::DropDown>()
-        .expect("the picker is a dropdown");
-    let before = picker.selected();
-    let title_before = widget(&window, "prepare-title")
-        .downcast::<gtk::Label>()
-        .expect("the heading is a label")
-        .label()
-        .to_string();
-    assert!(
-        !naivepost::bench::is_policy(usize::try_from(before).unwrap_or(0)),
-        "{ITEM} s3: the bench opens on a prompt row"
-    );
-    assert!(
-        !naivepost::ui::policy_form_open(&window),
-        "{ITEM} s3: nothing opened the policy form yet"
-    );
-
-    // The toolkit's own way in: a new selection on the dropdown, which is what a click on the menu does.
-    picker.set_selected(naivepost::bench::POLICY_ROW as u32);
-    lay_out();
-
-    assert!(
-        naivepost::ui::policy_form_open(&window),
-        "{ITEM} s3: choosing Editing policy did not open the policy form"
-    );
-    assert!(
-        naivepost::ui::open_policy_form().is_some(),
-        "{ITEM} s3: the form is not the handle press_policy published"
-    );
-    assert_eq!(
-        picker.selected(),
-        before,
-        "{ITEM} s3: after the policy row the picker went back to the prompt it was on"
-    );
-    let title_after = widget(&window, "prepare-title")
-        .downcast::<gtk::Label>()
-        .expect("the heading is a label")
-        .label()
-        .to_string();
-    assert_eq!(
-        title_after, title_before,
-        "{ITEM} s3: the bench kept its prompt heading"
-    );
-    assert_ne!(
-        title_after,
-        naivepost::bench::POLICY_TITLE,
-        "{ITEM} s3: the heading must not read the policy row's name"
-    );
-    // §1's REVIEW line says the row OPENS the form of F0.7 — it is not itself a bench row, so choosing it
-    // must not move the bench's own idea of which prompt is open.
-    assert_eq!(
-        naivepost::bench::POLICY_TITLE,
-        "Editing policy",
-        "{ITEM} s3: the picker's extra row is spelled \"Editing policy\", as §1 writes it"
-    );
-    assert!(
-        naivepost::bench::ROWS
-            .iter()
-            .all(|row| row.title != naivepost::bench::POLICY_TITLE),
-        "{ITEM} s3: the policy row is a menu entry, not a fourteenth prompt"
-    );
-    // Close it again so a later check in this round starts with no form showing.
-    if let Some(form) = naivepost::ui::open_policy_form() {
-        form.close();
-    }
-    lay_out();
-    window.close();
-}
-
-#[test]
-fn sec_04_prepare_1_screen_s3_editing_policy_opens_the_policy_form() {
-    common::pin_private_cwd();
-    split_round();
-    assert!(
-        RAN_POLICY_OPEN.load(Ordering::SeqCst),
-        "{ITEM} s3: the Editing-policy wire check never ran"
     );
 }
 
@@ -706,11 +600,7 @@ fn check_the_picked_row_is_the_one_the_shot_ticks(app: &adw::Application) {
     for (index, name) in naivepost::bench::picker_rows() {
         assert_eq!(
             name,
-            if index == naivepost::bench::POLICY_ROW {
-                naivepost::bench::POLICY_TITLE.to_string()
-            } else {
-                naivepost::bench::ROWS[index].title.to_string()
-            },
+            naivepost::bench::ROWS[index].title.to_string(),
             "{ITEM} s3: picker row {index} is {name:?}, not the plain row name the picture draws"
         );
     }

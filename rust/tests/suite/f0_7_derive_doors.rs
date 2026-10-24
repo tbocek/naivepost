@@ -1,28 +1,25 @@
-//! F0.7 — the three doors the derivation runs behind, and the debounce it waits on.
+//! F0.7 — the door the derivation runs behind on a press, and the debounce it waits on.
 //!
 //! `tests/suite/policy_derive.rs` proves the rules (S1 defaults, S2 the request's shape, S3 validation,
-//! S4 the user's own fields) and `cut_policy_form_widgets.rs` proves the form draws what the state holds.
-//! What neither pins is the header line of §F0.7: "Runs after the User Context changes (debounced; on the
-//! next ▶ or on demand from the policy form)". Two of those three doors have a widget test here — the ⚙
-//! that demands a derivation before it paints, and the ▶ that closes the staleness gap — plus the wait
-//! itself as a number, so a change to it cannot pass unnoticed.
+//! S4 what gets stored). What it cannot pin is the header line of §F0.7: "Runs after the User Context
+//! changes (debounced; on the next ▶)". The ▶ door has a widget test here — a press derives a context
+//! nobody derived from, once, and says the result in the log — plus the wait itself as a number, so a
+//! change to it cannot pass unnoticed.
 //!
 //! One application, one `connect_activate`, one `#[test]` per door: these checks mutate process-shared
-//! state (this window's live session policy, the sender slot, the open-form slot), so each runs once in
-//! sequence and reports through a flag its test asserts on — the shape `cut_policy_form_widgets.rs` uses.
+//! state (this window's live session policy and the sender slot), so each runs once in
+//! sequence and reports through a flag its test asserts on.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::common;
 use adw::prelude::*;
 use common::{fake_audio_server, fixture_dir, settle, wait_until};
-use gtk4 as gtk;
 use naivepost::policy::{self, Proposal};
 use naivepost::project::Origin;
 use naivepost::ui;
 
 static RAN_DEBOUNCE_LOGIC: AtomicBool = AtomicBool::new(false);
-static RAN_FORM_DOOR: AtomicBool = AtomicBool::new(false);
 static RAN_PRESS_DOOR: AtomicBool = AtomicBool::new(false);
 
 /// The context every check types: words the model can answer with one field, so an assertion about the
@@ -86,7 +83,6 @@ fn serve_audio(url: &str) {
 }
 
 fn fresh_window(app: &adw::Application) -> adw::ApplicationWindow {
-    ui::close_policy_forms();
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
@@ -94,41 +90,12 @@ fn fresh_window(app: &adw::Application) -> adw::ApplicationWindow {
     window
 }
 
-/// Walk every descendant of `root` for a widget name. The policy form is its OWN top level (an
-/// `adw::Window` built by `open_policy_form`), so it is not under the main window's tree.
-fn find_by_name_recursive(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-    if root.widget_name() == name {
-        return Some(root.clone());
-    }
-    let mut child = root.first_child();
-    while let Some(current) = child {
-        if let Some(found) = find_by_name_recursive(&current, name) {
-            return Some(found);
-        }
-        child = current.next_sibling();
-    }
-    None
+/// The log lines this thread's window printed since now — the fact §F0.7 S4 is about.
+fn log_lines_from(mark: usize) -> Vec<String> {
+    ui::window_logs()[mark..].to_vec()
 }
 
-fn form_widget(name: &str) -> gtk::Widget {
-    ui::open_policy_form()
-        .and_then(|form| find_by_name_recursive(form.upcast_ref(), name))
-        .unwrap_or_else(|| panic!("the policy form carries a widget named {name}"))
-}
-
-fn label_text(name: &str) -> String {
-    form_widget(name)
-        .downcast::<gtk::Label>()
-        .expect("a source/reason cell is a label")
-        .text()
-        .to_string()
-}
-
-fn edit_value(name: &str) -> String {
-    naivepost::policy_form_edit::value_of(&form_widget(name))
-}
-
-/// The one-field answer both doors are given: `cutMode` = words, with a reason worth reading on screen.
+/// The one-field answer both doors are given: `cutMode` = words, with a reason worth reading in the log.
 fn one_field_answer(_req: &policy::DerivationRequest, refusals: &[String]) -> Vec<Proposal> {
     if !refusals.is_empty() {
         return Vec::new();
@@ -141,52 +108,16 @@ fn one_field_answer(_req: &policy::DerivationRequest, refusals: &[String]) -> Ve
 }
 
 // ---------------------------------------------------------------------------
-// door 2: "on demand from the policy form" — the ⚙ derives BEFORE it paints (S5 + S3 over the wire)
+// door: "on the next ▶" — a press derives a context nobody derived from, once
 // ---------------------------------------------------------------------------
-
-/// The header ⓘ is a demand for the current answer, not a peek at whatever is cached: a context nobody has
-/// derived from is derived first, so the first thing the form draws is what the model said with its
-/// `source` and `because` (S3's stored shape), never a default nobody chose.
-fn check_the_form_demands_its_derivation(app: &adw::Application) {
-    ui::set_policy_sender_for_tests(one_field_answer);
-    let window = fresh_window(app);
-    ui::set_session_context(&window, CONTEXT);
-    assert!(
-        !ui::policy_is_current(&window, CONTEXT),
-        "a context just typed has been derived from by nothing yet"
-    );
-
-    // The real button, the way a click reaches it: §1 badge 6's header ⓘ. `press_policy` answers the press.
-    ui::line_step_button(&window, "tab-info-button")
-        .expect("the header carries the \u{24d8}")
-        .emit_by_name::<()>("clicked", &[]);
-    settle();
-
-    // S3's shape, read off the form the click opened: value, source, reason — one row's three cells.
-    assert_eq!(edit_value("policy-edit-cutMode"), "words");
-    assert_eq!(label_text("policy-source-cutMode"), "model");
-    assert_eq!(label_text("policy-reason-cutMode"), CONTEXT);
-    assert_eq!(
-        ui::session_policy(&window).cut_mode.origin,
-        Origin::Model,
-        "the stored policy says who set it, not only what it holds"
-    );
-    assert!(
-        ui::policy_is_current(&window, CONTEXT),
-        "the tracker now agrees the policy answers this context"
-    );
-    ui::close_policy_forms();
-    window.close();
-    settle();
-}
 
 // ---------------------------------------------------------------------------
 // door 3: "on the next ▶" — a press derives a context nobody derived from, once
 // ---------------------------------------------------------------------------
 
-/// ▶ must never run a step on a policy that lags what the person just typed. The door sits in front of
-/// the step body in `window_run_press`, and the tracker is what keeps it free on every later press: an
-/// unchanged context asks the model exactly once.
+/// ▶ must never run a step on a policy that lags what the person just typed, and the derivation it makes is
+/// said in the log (S4): a field, its value and the model's reason, so what was decided is visible without
+/// a form. The tracker is what keeps the door free on every later press: an unchanged context asks once.
 fn check_the_next_press_derives_once(app: &adw::Application) {
     serve_audio(&fake_audio_server());
     let asked = std::rc::Rc::new(AtomicUsize::new(0));
@@ -199,6 +130,7 @@ fn check_the_next_press_derives_once(app: &adw::Application) {
     );
 
     let window = fresh_window(app);
+    let log_mark = ui::window_logs().len();
     ui::set_session_context(&window, CONTEXT);
     assert_eq!(asked.load(Ordering::SeqCst), 0, "typing alone asks nothing");
 
@@ -218,6 +150,15 @@ fn check_the_next_press_derives_once(app: &adw::Application) {
         ui::session_policy(&window).cut_mode.origin,
         Origin::Model,
         "and what landed is the model's answer, stored with its source"
+    );
+    // §F0.7 S4: the derived value is SAID, with its field, its value and its `because` — the log is where
+    // what the model decided is visible, since there is no form to open.
+    let lines = log_lines_from(log_mark);
+    assert!(
+        lines.iter().any(|line| line.contains("cutMode")
+            && line.contains("words")
+            && line.contains(CONTEXT)),
+        "the derivation said what it set: {lines:?}"
     );
 
     // Leave the bar idle the way a person would, then press again over the SAME context: the tracker
@@ -245,27 +186,15 @@ fn check_the_next_press_derives_once(app: &adw::Application) {
 }
 
 // ---------------------------------------------------------------------------
-// the round: ONE application, so both doors run inside a single `connect_activate` and report through
-// their flags — the shape `cut_policy_form_widgets.rs::window_round` uses.
+// the round: ONE application, so the door runs inside a single `connect_activate` and reports
+// through its flag.
 // ---------------------------------------------------------------------------
 
 fn doors_round() {
     common::one_app_round(|app| {
-        check_the_form_demands_its_derivation(app);
-        RAN_FORM_DOOR.store(true, Ordering::SeqCst);
         check_the_next_press_derives_once(app);
         RAN_PRESS_DOOR.store(true, Ordering::SeqCst);
     });
-}
-
-#[test]
-fn f0_7_s5_the_policy_form_demands_a_derivation_it_has_not_had() {
-    common::pin_private_cwd();
-    doors_round();
-    assert!(
-        RAN_FORM_DOOR.load(Ordering::SeqCst),
-        "the policy-form door check never ran"
-    );
 }
 
 #[test]

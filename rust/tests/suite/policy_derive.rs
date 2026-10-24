@@ -132,7 +132,7 @@ fn f0_7_s3_a_valid_proposal_is_stored_as_model_with_its_because() {
     assert_eq!(policy.marking_pass.value, MarkingPass::Joins); // P.policy.markingPass
     assert_eq!(policy.marking_pass.origin, Origin::Model);
 
-    // The stored shape, camelCase key + value/source/because, exactly what the form reads back.
+    // The stored shape, camelCase key + value/source/because, exactly what the log reads back.
     let json = serde_json::to_string(&policy).expect("serialises");
     assert!(json.contains("\"markingPass\""), "{json}");
     let stored = stored(&policy, "markingPass");
@@ -254,71 +254,37 @@ fn f0_7_s3_one_bad_proposal_does_not_undo_the_good_ones_in_the_same_batch() {
     assert!(!policy.captions_pass.value);
 }
 
-// ---- S4: hand-set values are never overwritten -----------------------------------------------
+// ---- the catalogue: what a proposal may name ---------------------------------------------------
 
 #[test]
-fn f0_7_s4_a_hand_set_field_keeps_its_old_value_against_a_later_derivation() {
-    let mut policy = Policy::default();
-    policy.marking_pass = project_field_joins_user(); // P.policy.markingPass, set by hand
-
-    let outcome = policy::apply(
-        &mut policy,
-        &proposal("markingPass", "none", "the context says skip marking"),
-    );
+fn f0_7_s4_a_valid_proposal_stores_over_the_value_already_there() {
+    // §F0.7 now ends "There is no policy form: a value changes when the User Context says otherwise", so a
+    // valid proposal always lands — even on a field an OLD project file marked `"source": "user"`, which is
+    // still loadable but holds nothing back any more.
+    let mut policy = Policy {
+        marking_pass: project_field_joins_user(), // P.policy.markingPass, from a pre-F0.7 file
+        ..Policy::default()
+    };
     assert_eq!(
-        outcome,
-        Applied::KeptUser,
-        "S4: the answer is not Refused — nothing was wrong with the proposal, the person simply outranks it"
-    );
-    assert_eq!(
-        policy.marking_pass.value,
-        MarkingPass::Joins,
-        "the OLD value survives, byte for byte"
-    );
-    assert_eq!(
-        policy.marking_pass.origin,
-        Origin::User,
-        "and still says who set it"
-    );
-    assert_eq!(
-        policy.marking_pass.because, None,
-        "the model's reason is NOT written onto a field the model did not end up setting"
-    );
-}
-
-#[test]
-fn f0_7_s4_the_rule_holds_per_field_not_for_the_whole_policy() {
-    // One hand-set field does not freeze the others: the person touched markingPass, not the passes.
-    let mut policy = Policy::default();
-    policy.marking_pass = project_field_joins_user();
-    assert_eq!(
-        policy::apply(&mut policy, &proposal("speedPass", "off", "no ramping")),
+        policy::apply(
+            &mut policy,
+            &proposal("markingPass", "none", "the context says skip marking"),
+        ),
         Applied::Set
     );
-    assert!(
-        !policy.speed_pass.value,
-        "the untouched switch still took the derivation"
-    ); // P.policy.speedPass
     assert_eq!(
         policy.marking_pass.value,
-        MarkingPass::Joins,
-        "the touched one did not"
+        MarkingPass::None,
+        "the context decides, so the earlier value goes"
+    );
+    assert_eq!(
+        policy.marking_pass.because.as_deref(),
+        Some("the context says skip marking"),
+        "and it is stored with the reason that moved it"
     );
 }
 
-#[test]
-fn f0_7_s4_the_predicate_is_the_shared_one_not_a_second_copy() {
-    // Same predicate hands_off uses, so the rule lives once across the tree.
-    use naivepost::decision_homes;
-    use naivepost::hands_off;
-    assert!(!decision_homes::overridable_by_derivation(Origin::User));
-    assert!(decision_homes::overridable_by_derivation(Origin::Model));
-    assert!(decision_homes::overridable_by_derivation(Origin::Default));
-    assert_eq!(
-        hands_off::model_may_set_pipeline(Origin::User),
-        decision_homes::overridable_by_derivation(Origin::User)
-    );
-}
+// ---- the six fields a proposal may name ---------------------------------------
 
 /// A markingPass field set by hand, built through the real type so this file never fakes the shape.
 fn project_field_joins_user() -> naivepost::project::Field<MarkingPass> {
@@ -329,10 +295,8 @@ fn project_field_joins_user() -> naivepost::project::Field<MarkingPass> {
     }
 }
 
-// ---- S5: the form reads exactly the six settable fields ---------------------------------------
-
 #[test]
-fn f0_7_s5_the_form_reads_exactly_the_six_fields_that_can_be_set() {
+fn f0_7_the_catalogue_is_exactly_the_six_settable_fields() {
     let rows = policy::derived_fields();
     let names: Vec<&str> = rows.iter().map(|row| row.field).collect();
     assert_eq!(
@@ -346,10 +310,9 @@ fn f0_7_s5_the_form_reads_exactly_the_six_fields_that_can_be_set() {
             // §12 entry 21: a number row, settable and shown like the rest.
             "targetLengthSeconds"
         ],
-        "one list drives both validation and the form, so nothing is settable-but-hidden or shown-but-\
-         unsettable"
+        "one list drives validation and what may be set, so nothing is settable-but-unsayable"
     );
-    // Each row answers to its own P.policy id, which is what the form prints beside the field.
+    // Each row answers to its own P.policy id, which is what the log names beside the field.
     let ids: Vec<&str> = rows.iter().map(|row| row.id).collect();
     assert_eq!(
         ids,
@@ -544,13 +507,17 @@ fn f0_7_s3_refusals_stop_at_the_round_cap() {
 }
 
 #[test]
-fn f0_7_s4_a_user_field_survives_a_derivation_that_names_it() {
-    let mut policy = Policy::default();
-    policy.cut_mode = project::Field {
-        value: CutMode::Words,
-        origin: Origin::User,
-        because: None,
-    };
+fn f0_7_s4_a_derivation_replaces_whatever_the_field_held() {
+    // No hand-set precedence survives the spec change: the context is what decides, whatever the field
+    // carried before, and the replacement is what the log reports.
+    let mut policy = Policy {
+        cut_mode: project::Field {
+            value: CutMode::Words,
+            origin: Origin::User,
+            because: None,
+        },
+        ..Policy::default()
+    }; // P.policy.cutMode, from a pre-F0.7 file
     let mut model = Scripted::new(vec![vec![proposal(
         "cutMode",
         "model",
@@ -560,24 +527,24 @@ fn f0_7_s4_a_user_field_survives_a_derivation_that_names_it() {
         model.call(r, f)
     });
     assert!(
-        out.applied.contains(&("cutMode", Applied::KeptUser)),
-        "S4 reports the keep: {:?}",
+        out.applied.contains(&("cutMode", Applied::Set)),
+        "the proposal landed: {:?}",
         out.applied
     );
     assert_eq!(
-        (policy.cut_mode.value, policy.cut_mode.origin),
-        (CutMode::Words, Origin::User),
-        "a hand-set field is untouched by a later derivation" // P.policy.cutMode
+        policy.cut_mode.value,
+        CutMode::Model,
+        "the context's answer is what stands" // P.policy.cutMode
     );
     assert!(
         out.refusals.is_empty(),
-        "a keep is not an error: {:?}",
+        "nothing was wrong with it: {:?}",
         out.refusals
     );
 }
 
 #[test]
-fn f0_7_s5_a_changed_marking_pass_invalidates_the_marks() {
+fn f0_7_a_changed_marking_pass_invalidates_the_marks() {
     let before = Policy::default(); // markingPass retakes
     let mut after = Policy::default();
     assert!(

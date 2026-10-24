@@ -243,8 +243,8 @@ pub fn produce(instruction: &str, frame_named: bool, cues: usize, languages: usi
 
 /// Setup: `policy ×1` — new, run when the User Context changes.
 ///
-/// F0.7 fires on a debounce after the context is edited, on the next ▶, or on demand from the
-/// policy form, so one edit costs one call rather than one per keystroke. It is not one of
+/// F0.7 fires on a debounce after the context is edited, or on the next ▶, so one edit costs one call
+/// rather than one per keystroke. It is not one of
 /// `cache/llm`'s five jobs and gets no web tools, so both flags are stated: an unchanged context
 /// still costs the call it is asked with, and the debounce is what keeps that from costing many.
 pub fn setup() -> Summary {

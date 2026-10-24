@@ -3,7 +3,7 @@
 //! The prototype found the length with a regex over free text and had no fallback: "half an hour" matched
 //! nothing, became `targetLengthSeconds: 0`, and that single silent miss changed three things at once — the
 //! cut brief the model was sent, both segment-count gates and the length gate. §12's answer is that the
-//! number is a policy field (`P.policy.targetLengthSeconds`), derived by F0.7 and shown in the policy form,
+//! number is a policy field (`P.policy.targetLengthSeconds`), derived by F0.7 and said in the log,
 //! so a missed reading is visible instead of load-bearing.
 //!
 //! This module is that reading, and nothing else: words in, seconds out. It is deliberately not a model call

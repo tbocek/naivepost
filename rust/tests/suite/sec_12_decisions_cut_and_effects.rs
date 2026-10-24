@@ -602,17 +602,17 @@ fn sec_12_decisions_cut_and_effects_s21_target_length_is_derived_and_shown() {
     assert_eq!(
         policy.target_length_seconds.origin,
         naivepost::project::Origin::Model,
-        "it is a derivation, so a later hand-set value outranks it"
+        "it is a derivation, so it says who set it"
     );
-    // A person's own number survives the next read, exactly as S4 holds for a model's proposal.
+    // …and a second read replaces it: §F0.7 has no hand-set precedence, so the context is what decides.
     policy.target_length_seconds.origin = naivepost::project::Origin::User;
     let again = policy::read_target_length(&mut policy, "make it an hour");
     assert_eq!(
         again.applied.first().map(|(_, outcome)| outcome.clone()),
-        Some(naivepost::policy::Applied::KeptUser)
+        Some(naivepost::policy::Applied::Set)
     );
     assert_eq!(
-        policy.target_length_seconds.value, 2700.0,
-        "the person's length stands"
+        policy.target_length_seconds.value, 3600.0,
+        "the newer context wins"
     );
 }

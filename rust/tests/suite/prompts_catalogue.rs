@@ -289,9 +289,8 @@ fn sec_10_parameters_4_prompts_s6_the_bench_rows_are_the_twelve_in_order_and_pol
         "the bench lists §4's twelve in order"
     );
     // `policy` is deliberately NOT a bench row: §04-prepare#1 keeps "Editing policy" as a
-    // REVIEW note, and F0.7 opens the policy *form* (value, source and reason per field) rather
-    // than a box of wording. This assertion is what makes adding it later a deliberate change
-    // that also has to settle where the form goes.
+    // REVIEW note, and F0.7 has no form — the derived values are SAID in the log (field, value, because),
+    // not edited in a box of wording. This assertion is what makes adding it later a deliberate change.
     assert!(
         !bench::ROWS.iter().any(|row| row.key == "policy"),
         "policy has no bench row while §04 leaves it a REVIEW note"

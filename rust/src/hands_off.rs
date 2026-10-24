@@ -28,7 +28,7 @@ pub enum HandsOff {
     WalkBack,
     /// Fitting, ducking, loudness, frame boxes, cue wrapping: the render's numbers.
     RenderArithmetic,
-    /// Which passes run at all. Set once from the User Context in the policy form, not per request.
+    /// Which passes run at all. Set once from the User Context by F0.7's `set_policy`, not per request.
     PipelineChoice,
 }
 
@@ -82,7 +82,7 @@ impl HandsOff {
                  and the render does it again anyway"
             }
             Self::PipelineChoice => {
-                "not per-item at all: one setting for the project, shown in the policy form with its \
+                "not per-item at all: one setting for the project, said in the log with its \
                  origin beside it"
             }
         }
@@ -103,7 +103,9 @@ impl HandsOff {
             Self::RenderArithmetic => {
                 "the rendered picture and the fit warnings state the numbers that were used"
             }
-            Self::PipelineChoice => "the policy form lists each field with its source beside it",
+            Self::PipelineChoice => {
+                "the log says each field this derivation set, with value and reason"
+            }
         }
     }
 }
@@ -135,7 +137,7 @@ pub fn all_admitted() -> bool {
 /// One field that decides the pipeline instead of a style dropdown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PipelineField {
-    /// The field's name as the policy form shows it.
+    /// The field's name as `tool:set_policy` and the log spell it.
     pub field: &'static str,
     /// The live id it answers to (a `P.policy.*` row or the project field's serde name).
     pub id: &'static str,
@@ -153,12 +155,12 @@ pub fn pipeline_fields() -> [PipelineField; 3] {
     [
         PipelineField {
             field: "markingPass",
-            id: "project::Policy::marking_pass (no P.policy row; the form's own field name)",
+            id: "project::Policy::marking_pass (no P.policy row; the field's own name)",
             decides: "which marking pass runs: joins, retakes, or none",
         },
         PipelineField {
             field: "cutMode",
-            id: "project::Policy::cut_mode (no P.policy row; the form's own field name)",
+            id: "project::Policy::cut_mode (no P.policy row; the field's own name)",
             decides: "whether the cut comes from the marked words or from a model",
         },
         PipelineField {
@@ -171,10 +173,10 @@ pub fn pipeline_fields() -> [PipelineField; 3] {
 
 /// Whether the derivation may write this pipeline field.
 ///
-/// Delegated whole to [`decision_homes::overridable_by_derivation`]: F0.7 S4 says a hand-set field
-/// (`source: user`) is never overwritten, which is what makes the policy home derived *and* editable.
-/// The model sets the pipeline once, in the form, where a person can see and overrule it; after that
-/// the file decides, not the next request.
+/// Delegated whole to [`decision_homes::overridable_by_derivation`], so §4's pipeline row and §5's policy
+/// home answer the "whose field is this" question from ONE predicate. F0.7 no longer consults it — its S3
+/// stores whatever the context speaks to, whatever origin the field carried — but the other decisions §4
+/// lists still do, and a second copy here would let the two drift.
 pub fn model_may_set_pipeline(origin: Origin) -> bool {
     decision_homes::overridable_by_derivation(origin)
 }
@@ -240,8 +242,7 @@ pub fn audit() -> [Ruled; 6] {
         },
         Ruled {
             what: "nothing chooses the pipeline but the User Context",
-            home:
-                "policy fields the model sets once, visibly, in the policy form (F0.7 set_policy)",
+            home: "policy fields the model sets once, visibly in the log (F0.7 set_policy)",
             lives_in: "project::Policy::marking_pass and ::cut_mode via tool:set_policy; the \
                       cut-stage switches read by model_calls; hand-set fields stick through \
                       decision_homes::overridable_by_derivation",

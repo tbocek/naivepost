@@ -22,7 +22,7 @@ use crate::ui;
 /// Screen names the window can render: the spec's images, mapped onto a page.
 fn screen_page(screen: &str) -> Option<&'static str> {
     match screen {
-        "03-window" | "03-settings" | "03-sources" | "03-new-confirm" | "03-policy-form" => {
+        "03-window" | "03-settings" | "03-sources" | "03-new-confirm" => {
             Some("Prepare")
         }
         // §7's link line as the shell actually draws it, in the OPEN log. Program-side screen: there is
@@ -685,36 +685,6 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 shown.present();
                 Some(shown.upcast())
             }
-            // F0.7's screen is the policy form itself, not the window behind it: §03's image shows
-            // only the table of fields, so this paints only the table. No parent for the same reason
-            // as the confirmation above — the run ends when the last window closes.
-            "03-policy-form" => {
-                // Two rows leave `default`, because a form where every badge reads `default` shows nothing
-                // of what the four columns are for: `model` is the one a person may overrule, `user` the one
-                // this form exists to make possible. Both go through the program's own doors —
-                // `set_session_policy_field` writes what a derivation would write, `set_field_from_form`
-                // what a click on the dropdown does — so the shot cannot show a badge nothing produces.
-                ui::set_session_policy_field(
-                    &window,
-                    "targetLengthSeconds",
-                    "720",
-                    "about 12 minutes",
-                    project::Origin::Model,
-                );
-                ui::set_field_from_form("cutMode", "words");
-                let shown = ui::policy_form::build(None, &ui::session_policy(&window));
-                // Six rows now (the five switches plus §12 entry 21's target length). The height is MEASURED
-                // rather than guessed: an `adw::Window` that is not yet mapped answers its own minimum, and a
-                // fixed 420 px clipped the last row once the sixth arrived.
-                let wanted = shown.measure(gtk::Orientation::Vertical, -1).1;
-                // The width is measured too: `adw::Window` sizes itself to its content, and the caption row
-                // (`field  value  source  because`) wants more than a column of labels did now that every
-                // value cell holds a control, so the fixed ask clipped the last caption off the right edge.
-                let want_w = shown.measure(gtk::Orientation::Horizontal, -1).0;
-                shown.set_default_size(want_w.max(720), wanted.max(500));
-                shown.present();
-                Some(shown.upcast())
-            }
             // §03's image is the dialog, not the window behind it, so the dialog is the subject here
             // too. The grid, the badge column and the Fetch models row all show at once.
             //
@@ -853,7 +823,7 @@ pub fn run(screen: &str, dir: &Path, out: &Path) -> Result<(), String> {
                 let _ = std::fs::remove_dir_all(&root);
                 None
             }
-            // F3.5's screen is the form itself, not the page behind it -- same reason `03-policy-form`
+            // F3.5's screen is the form itself, not the page behind it -- same reason the confirmation
             // paints its dialog: the Cut page's own column collapses to a sliver headless (see the note on
             // the default size above), so painting the whole window would show empty grey instead of the
             // fields. The holder is resolved THROUGH the window that owns the live form.
@@ -1092,109 +1062,6 @@ const FORM_UNDER_PX: i32 = 380;
                 crate::ui::narrate_band::repaint(&window);
             }
         }
-        // A dialog sized for its content needs the same drain the Cut tape needs: `present()` only queues the
-        // map, so headless the window is still at its requested size when the shot is taken and GTK warns that
-        // the content exceeds it. `03-policy-form` grew a sixth row (§12 entry 21) and started clipping.
-        if screen == "03-policy-form" {
-            // The form is a separate top level; `subject` holds it. Ask for the height its content needs,
-            // measured after the map: an unmapped `adw::Window` answers 412 for any request, so a fixed
-            // default size silently cut off the last row when §12 entry 21's sixth arrived.
-            //
-            // GTK warns "Trying to measure AdwWindow ... for height of 448, but it needs at least 484"
-            // during this drain. It is libadwaita measuring the window's headerbar against a box that has
-            // not been allocated yet on a top level no one will look at, and every ask below already carries
-            // the 484 (the shot is 710x490 with all six rows, the footer and the three buttons on it), so
-            // the warning is left alone rather than hushed: if the shot ever does clip, it is still printed.
-            let form = subject.clone().expect("this screen paints the form itself");
-            // `form` is the form's ROOT BOX, not the top level: `set_default_size` is a gtk::Window method,
-            // and an `adw::Window`'s `root()` answers its own root box — so every ask below aimed at a
-            // GtkBox, matched nothing, and the shot kept clipping with no warning to trace back here.
-            // `form` is the form's ROOT BOX, not the top level: `set_default_size` is a gtk::Window method,
-            // and an `adw::Window`'s own root is that box — so asking the box matched nothing, every ask
-            // below landed nowhere, and the shot kept clipping with no warning to trace back here.
-            let top = subject
-                .clone()
-                .and_downcast::<gtk::Window>()
-                .expect("the policy form is its own top level");
-            // The width matters as much as the height: `adw::Window` sizes itself to its content, and the
-            // column captions row (`field  value  source  because`) wants more than the rows below it, so a
-            // narrow ask clips the last caption off the right edge. Ask for what the box actually wants.
-            let want_w = form.measure(gtk::Orientation::Horizontal, -1).0;
-            let context = glib::MainContext::default();
-            for _ in 0..64 {
-                while context.pending() {
-                    context.iteration(false);
-                }
-            }
-            let wanted = form.measure(gtk::Orientation::Vertical, -1).1;
-            top.set_default_size(want_w.max(720), wanted.max(500));
-            for _ in 0..8 {
-                while context.pending() {
-                    context.iteration(false);
-                }
-            }
-            // Measure AGAIN after the map. The value above is what an UNMAPPED window answers, and a
-            // control row (a dropdown, a switch, an entry) needs more height than the label it replaced,
-            // so asking once left GTK clipping the last row — "needs at least 484" against a 448 ask.
-            // The second reading is taken with the real layout in place, which is the only honest number.
-            let mut needed = form.measure(gtk::Orientation::Vertical, -1).1;
-            let mut needed_w = form.measure(gtk::Orientation::Horizontal, -1).0;
-            top.set_default_size(needed_w.max(720), needed.max(500));
-            for _ in 0..8 {
-                while context.pending() {
-                    context.iteration(false);
-                }
-            }
-            // A third pass, on the real numbers. `set_default_size` only moves the floor of an `adw::Window`
-            // (its own minimum wins), and each new measurement came out larger than the last — a taller box
-            // asks for more height — so one round left GTK clipping the bottom row and warning "needs at
-            // least 484" against a 448 ask. Converge: stop when an ask stops growing.
-            for _ in 0..6 {
-                let grew_v = form.measure(gtk::Orientation::Vertical, -1).1;
-                let grew_w = form.measure(gtk::Orientation::Horizontal, -1).0;
-                // The window's own height is what GTK clips against, and it answers its minimum (448) while
-                // the content measures 484 — so the clamp has to be read off BOTH and the larger one asked
-                // for. Reading only the box is how this loop kept asking for less than it needed.
-                let grew_v = grew_v.max(top.height());
-                let grew_w = grew_w.max(top.width());
-                let same = grew_v <= needed && grew_w <= needed_w;
-                needed = grew_v;
-                needed_w = grew_w;
-                top.set_default_size(needed_w.max(720), needed.max(500));
-                while context.pending() {
-                    context.iteration(false);
-                }
-                if same {
-                    break;
-                }
-            }
-            // Ask for MORE than the content wants, once, after it is mapped. An `adw::Window` clamps its
-            // size to what its content measures, and every reading above came back smaller than the
-            // window's own minimum (GTK kept saying 448 asked / 484 needed): the honest way past that is
-            // not a bigger guess but a request the clamp cannot refuse, then shrink back to the measure.
-            top.set_default_size(needed_w.max(720) + 240, needed.max(500) + 240);
-            for _ in 0..16 {
-                while context.pending() {
-                    context.iteration(false);
-                }
-            }
-            top.set_default_size(
-                form.width().max(needed_w).max(720),
-                form.height().max(needed).max(500),
-            );
-            while context.pending() {
-                context.iteration(false);
-            }
-            // The shot is the check, so print what it measured: a clipped shot and a complete one leave the
-            // same exit code behind, and "measured" larger than "asked" is what a clip looks like from here.
-            eprintln!(
-                "snapshot: policy form asked {}x{}, measured {}x{}",
-                top.default_width(),
-                top.default_height(),
-                needed_w,
-                needed
-            );
-        }
         let painted = subject.clone().unwrap_or_else(|| window.clone().upcast());
         // `03-runbar-busy` records a GLYPH, and a glyph is not legible in a 1334 px window shot, so this
         // screen paints the ▶ itself into `<out>` and the whole window beside it as `-window.png`: the
@@ -1228,7 +1095,7 @@ const FORM_UNDER_PX: i32 = 380;
         // The glyph goes beside the window shot as `<name>-face.png`; the whole page stays at `<name>.png`
         // so every snapshot keeps writing exactly one file under the name it was asked for -- except where the
         // spec pictures a SUBJECT instead of the page (a dialog, this screen's popover): then the subject takes
-        // the asked name and the page goes beside it. `03-policy-form`'s `subject` arm is that precedent.
+        // the asked name and the page goes beside it. The confirmation dialog's `subject` arm is that precedent.
         let face_out = out.with_extension("face.png");
         let out = out.clone();
         let app = app.clone();

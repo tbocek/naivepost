@@ -557,15 +557,15 @@ fn shared_lines(lines: &[Line]) -> Vec<crate::textfmt::Line> {
 /// against. Spelled as `naivepost.json` spells them; a value the hunt reads but §10 gives no field for
 /// (the reach, the floor, the ceiling) is the tool's own rule and is not offered as settable.
 pub(crate) fn marking_policy_fields() -> Vec<(&'static str, String)> {
-    let policy = crate::ui::session_policy_for_form();
+    let policy = crate::ui::live_session_policy();
     vec![
         (
             "markingPass",
-            crate::ui::policy_form::value_word(&policy, "markingPass"),
+            crate::policy::stored_word(&policy, "markingPass"),
         ),
         (
             "targetLengthSeconds",
-            crate::ui::policy_form::value_word(&policy, "targetLengthSeconds"),
+            crate::policy::stored_word(&policy, "targetLengthSeconds"),
         ),
     ]
 }

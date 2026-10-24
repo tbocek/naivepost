@@ -1011,7 +1011,15 @@ fn draw_recording_edges(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f6
                 continue;
             }
             for stripe in 0..3i32 {
-                fill(cr, EDGE_AMBER, x + stripe as f64, rows.pictures, 1.0, height, 1.0);
+                fill(
+                    cr,
+                    EDGE_AMBER,
+                    x + stripe as f64,
+                    rows.pictures,
+                    1.0,
+                    height,
+                    1.0,
+                );
             }
         }
     }

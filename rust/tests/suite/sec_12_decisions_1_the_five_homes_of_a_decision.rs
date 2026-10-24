@@ -5,7 +5,7 @@
 //! so each home is exercised here through the code that owns it —
 //! [`naivepost::tool_loop`] for the two hearing homes (a tool result per item, `finish`'s verdict on the
 //! whole), [`naivepost::suggest::walk_back_audit`] for the walk-back the model never sees, and
-//! [`naivepost::ui::policy_form`] for the fifth home, where a number or a wording lives instead of a
+//! [`naivepost::decision_homes`] for the fifth home, where a number or a wording lives instead of a
 //! judgement. Rule of thumb under all of them: *if the app changes what the model said, the model hears
 //! about it* — and the one place it does not, the walk-back, is only allowed to be invisible because the
 //! audit says it is mechanical, explainable and visible.
@@ -18,25 +18,22 @@
 
 #![allow(dead_code)]
 
-use crate::common;
-use adw::prelude::*;
-use common::{fixture_dir, pin_private_cwd, settle};
-use gtk4 as gtk;
 use naivepost::cut_effect_decisions::Candidate;
 use naivepost::decision_audit::{self, Home};
 use naivepost::decision_homes;
 use naivepost::exchanges::ToolCall;
-use naivepost::project::Origin;
-use naivepost::settings::{self, Conf};
 use naivepost::suggest;
 use naivepost::tool_loop::{self, Turn};
 use naivepost::tools::{self, cutpass, Tool};
-use naivepost::ui::{self, policy_form};
+use naivepost::ui;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
-static RAN_FORM: AtomicBool = AtomicBool::new(false);
+/// The fifth home, asked of the one table that owns it: a `P.policy.` row or a shipped prompt key routes
+/// there, anything else is somebody else's home.
+fn policy_home(id: &str) -> bool {
+    decision_homes::home_of(id).is_some_and(decision_audit::is_number_or_wording)
+}
 
 // ---- the loop harness ------------------------------------------------------------------
 
@@ -326,122 +323,33 @@ fn sec_12_decisions_1_the_five_homes_of_a_decision_s4_walk_back_is_audited_and_n
 // ---- s5: policy / prompt --------------------------------------------------------------
 
 /// Row 5: what lives here is a number or a wording, never a per-item judgement — so every field the policy
-/// form presents must route to that home, and a value that routes elsewhere must not be shown as one.
+/// catalogue offers routes to that home, and an id that routes elsewhere is not offered as one. §F0.7 has
+/// no form any more, so the fact is about the CATALOGUE and the table, not about a window: the same fields
+/// the derivation validates and `get_context` offers are the ones the home covers.
 #[test]
 fn sec_12_decisions_1_the_five_homes_of_a_decision_s5_policy_home_rows_are_policy() {
     // Not the fifth home at all: an engineering constant and a machine setting are fixed before the
     // conversation and decide how the app or the servers run, not what this video becomes.
-    assert!(!policy_form::policy_home("layout.thing"));
-    assert!(!policy_form::policy_home("preview.padSeconds"));
+    assert!(!policy_home("layout.thing"));
+    assert!(!policy_home("preview.padSeconds"));
     assert_eq!(
         decision_homes::home_of("layout.thing"),
         Some(decision_homes::Home::Engineering),
-        "a bare prefixed id is engineering, which is why the form must reject it"
+        "a bare prefixed id is engineering, which is why nothing may offer it as a policy row"
     );
     // Both halves of the fifth home: a `P.policy.` row and a shipped prompt key.
-    assert!(policy_form::policy_home("P.policy.cutMode"));
+    assert!(policy_home("P.policy.cutMode"));
     assert!(
-        policy_form::policy_home("captions"),
+        policy_home("captions"),
         "a prompt wording is the same kind of non-decision"
     );
-
-    pin_private_cwd();
-    settings::save(
-        &settings::from_environment().expect("the pinned settings folder resolves"),
-        &Conf::default(),
-    )
-    .expect("the settings file");
-    window_round();
-    assert!(
-        RAN_FORM.load(Ordering::SeqCst),
-        "the policy-form check never ran"
-    );
-}
-
-fn check_policy_form(app: &adw::Application) {
-    ui::close_policy_forms();
-    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    let window = ui::build_window(app, &model, "Prepare");
-    window.present();
-    settle();
-    // The live session's policy, through the door the form itself reads — and one field set by hand so the
-    // source column has something other than a default to show.
-    ui::set_session_policy_field(&window, "cutMode", "model", "this shot", Origin::User);
-    let policy = ui::session_policy(&window);
-    let before = ui::window_logs().len();
-    let form = policy_form::build(None, &policy);
-    form.present();
-    settle();
-
-    // Every row the catalogue lists is drawn, and each one routed to the policy home — so nothing was
-    // skipped, which is what the absence of a refusal line below proves rather than asserts.
+    // Every field the derivation may be told, and nothing else: the catalogue is the closed list §F0.7 S3
+    // validates against, so if one of its rows ever routed elsewhere, a derived value would have no home.
     for entry in naivepost::policy::derived_fields() {
         assert!(
-            policy_form::policy_home(entry.id),
+            policy_home(entry.id),
             "{} is not the policy home",
             entry.field
         );
-        let row = widget_in_window(&form, &format!("policy-row-{}", entry.field));
-        assert!(row.is_some(), "the form shows a marker for {}", entry.field);
-        let value = widget_in_window(&form, &format!("policy-edit-{}", entry.field))
-            .expect("the form shows an editor for the value");
-        // A numeric row's editor holds seconds and the prose column spells them (`none`, `30 min`), so
-        // each kind is compared against its own spelling of the same policy field.
-        let shown = match naivepost::policy_form_edit::number_of(&value) {
-            Some(seconds) => policy_form::length_word(seconds),
-            None => naivepost::policy_form_edit::value_of(&value),
-        };
-        assert_eq!(
-            shown,
-            policy_form::value_word(&policy, entry.field),
-            "the value cell states the policy's own value for {}",
-            entry.field
-        );
     }
-    let cut_mode = widget_in_window(&form, "policy-edit-cutMode").expect("cutMode's value cell");
-    assert_eq!(
-        naivepost::policy_form_edit::value_of(&cut_mode),
-        "model",
-        "the hand-set value is what the form prints"
-    );
-    let source = widget_in_window(&form, "policy-source-cutMode")
-        .and_downcast::<gtk::Label>()
-        .expect("cutMode's source cell");
-    assert_eq!(source.label(), "user", "and so is its source");
-
-    let added = &ui::window_logs()[before..];
-    assert!(
-        !added.iter().any(|line| line.starts_with("!!!")),
-        "no shipped row was rejected as outside the policy home: {added:?}"
-    );
-    form.close();
-    window.close();
-    RAN_FORM.store(true, Ordering::SeqCst);
-}
-
-/// [`common::widget_in`] walks an `ApplicationWindow`; the policy form is its own top level, so the same
-/// walk starts from a bare widget instead.
-fn widget_in_window(widget: &impl IsA<gtk::Widget>, name: &str) -> Option<gtk::Widget> {
-    fn walk(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
-        if node.widget_name() == name {
-            return Some(node.clone());
-        }
-        if let Some(child) = node.first_child() {
-            let mut cursor = Some(child);
-            while let Some(current) = cursor {
-                if let Some(found) = walk(&current, name) {
-                    return Some(found);
-                }
-                cursor = current.next_sibling();
-            }
-        }
-        None
-    }
-    walk(widget.upcast_ref(), name)
-}
-
-fn window_round() {
-    common::one_app_round(|app| {
-        check_policy_form(app);
-    });
 }
