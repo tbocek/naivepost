@@ -155,7 +155,22 @@ pub(crate) fn stage(window: &adw::ApplicationWindow, dir: &Path, screen: &str) -
         // `refresh` re-seeds the page's take list from that file on every repaint — a state-only take
         // vanishes before the pixels (that is why this lane once drew no take at all). Same door `07-take`
         // uses, so the band's own rule decides what survives.
-        if let Some(tree) = crate::ui::window::narrate_session_tree() {
+        // The window has a session to seed; which folder it is comes from `dir` below, not from this probe.
+        if crate::ui::window::narrate_session_tree().is_some() {
+            // §1's badge **10** is the take band, and its visibility rule (§A.7) is "a narrator slot WITH a
+            // recording", asked of the PROJECT. Two things kept the fixture's narrator-1 row out of reach: the
+            // seed that runs before the window is built asks `narrate_session_tree()`, which resolves the session
+            // from the process CWD — the shot's working folder, whose `session.naivepost` tags no narrator at all
+            // (probed: `sources []`, no `narrate/voice_ref_base.wav`), so §A.7 honestly answered "no recording" and
+            // the scroller stayed hidden. Take the project this shot was ASKED to render (`--project`, the folder
+            // `dir` is) as this window's session folder through the same door an Open pushes it
+            // (`push_session_tree`), then re-ask the app's own seeding door. That is `07-take`'s pattern: after its
+            // take press invalidates the reference it re-runs `seed_voice_reference` rather than inventing files.
+            crate::ui::window_line_step::push_session_tree(layout::Tree::new(dir).ok());
+            let tree =
+                layout::Tree::new(dir).expect("the asked project is a folder ending .naivepost");
+            let band = crate::snapshot::seed_voice_reference(&tree);
+            println!("snapshot: 07-narrate take band re-seeded = {band}");
             if let Some(key) = crate::ui::narrate_seed::take_recording_key(&tree) {
                 let _ = crate::narrate_data::save_takes(
                     &tree,

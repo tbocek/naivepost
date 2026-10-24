@@ -203,7 +203,12 @@ pub fn build() -> gtk::Widget {
     vsplit.set_position(PREVIEW_FRAME_H_PX + TRANSPORT_ROW_PX + TICK_ROW_PX + 2 * COLUMN_GAP_PX);
     vsplit.set_wide_handle(true);
     vsplit.set_shrink_start_child(true);
-    vsplit.set_resize_start_child(true);
+    // NOT `true`: with `resize_start_child` GTK hands every extra pixel of window height to the UPPER half, whose
+    // content is fixed-size (tick + the 16:9 frame + the transport row) — so the leftover showed up as an empty
+    // band between the transport row and the voice picker, where `spec/img/07-narrate.png` has the picker directly
+    // under the transport. The lower half takes the slack instead; the opening above still fixes where the handle
+    // starts, and a drag moves it either way because both halves can shrink.
+    vsplit.set_resize_start_child(false);
     vsplit.set_start_child(Some(&upper));
     vsplit.set_end_child(Some(&lower));
 
@@ -395,7 +400,13 @@ pub fn build() -> gtk::Widget {
     // adjustment and feeds the scrolled window through it. Nothing here does — no scrollbar widget, no
     // `vadjustment` wiring — so the list was never laid out as a scrollable area and only its first row
     // appeared however many entries were published. `Automatic` lets the window build and manage its own.
-    scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+    // HORIZONTAL `Never`, not `Automatic`: a wrapped monospace `TextView` reports a huge NATURAL width (the
+    // longest line unwrapped), and `Automatic` lets a scrolled window grow to its child's natural width — so the
+    // list took that width, the row's four header buttons landed past the window's right edge as a clipped sliver,
+    // and the words ran off the panel ("…a 51 percent"). `Never` says the content is exactly the viewport's width,
+    // which is what makes §1's "UNDER the header line, THE ROW'S FULL WIDTH" mean the column's width, and keeps
+    // the buttons at "the header line's right end" inside it. The vertical axis stays `Automatic`: the rows scroll.
+    scroller.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
     scroller.set_hexpand(true);
     scroller.set_vexpand(true);
     // Bounded content height: an unbounded ScrolledWindow reports its child's FULL natural height as its

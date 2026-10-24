@@ -145,6 +145,14 @@ fn check_untagged_narrator(app: &adw::Application) {
     state.voice = "narrator3".into();
     state.narrators = 2;
     let (window, mark) = narrate_page(app, state);
+    // BOTH halves of §1's rule at the widget: the sentence on the row AND no row to pick. The status line
+    // alone would pass with a dropdown still offering voices, and an empty dropdown alone would pass with
+    // the page silent, so this check is the two of them together.
+    assert_eq!(
+        labels_of(&picker(&window)),
+        Vec::<String>::new(),
+        "a voice that is not on offer leaves the picker with NO row (§1: \"leaves the picker empty\")"
+    );
     assert_eq!(
         status_text(&window),
         narrate_rules::missing_voice("narrator3", &voices_dir()),
@@ -164,6 +172,11 @@ fn check_vanished_voice_file(app: &adw::Application) {
     state.voice = "aria".into();
     state.voice_files = vec![];
     let (window, _) = narrate_page(app, state);
+    assert_eq!(
+        labels_of(&picker(&window)),
+        Vec::<String>::new(),
+        "a file that left the voices folder leaves the picker with NO row (§1: \"leaves the picker empty\")"
+    );
     let said = status_text(&window);
     assert!(
         said.contains("is no longer in") && said.contains(&voices_dir()),

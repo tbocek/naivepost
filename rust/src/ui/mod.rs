@@ -81,9 +81,9 @@ pub mod run_close;
 /// is open, and where the next Save goes.
 pub mod save_apply;
 pub mod settings;
-pub mod settle;
 /// §03-shell#5 -- each Settings section's ⓘ: what that section's server is expected to speak.
 pub mod settings_info;
+pub mod settle;
 /// F0.1 §S2/§S4 and §2 — the narration autosave timer, the bar's idle pulse and the run line that goes
 /// to the status row. Split out of `window.rs`, which is at its size budget.
 pub mod shell_beats;
@@ -213,7 +213,7 @@ mod window_insert;
 /// §F2.4 — the red line and its frame stepping: where the line stands, what a step or an arrow does
 /// to it, the four step buttons and their key controller. Split out of `window.rs`, which is past its
 /// size budget; its doors are re-exported through `window`.
-mod window_line_step;
+pub(crate) mod window_line_step;
 /// §1 badge **15** — the Outputs folder button's own rules (window.rs is past its size budget).
 pub(crate) mod window_outputs;
 /// §05-cut#1-screen — the selection band, the held effect and its live form, the preview's volume. Split

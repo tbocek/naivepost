@@ -47,7 +47,11 @@ pub fn owe(what: &'static str, widget: &impl IsA<gtk::Widget>) -> Owed {
         id
     });
     OWED.with(|owed| {
-        owed.borrow_mut().push(Step { id, what, widget: widget.upcast_ref::<gtk::Widget>().downgrade() })
+        owed.borrow_mut().push(Step {
+            id,
+            what,
+            widget: widget.upcast_ref::<gtk::Widget>().downgrade(),
+        })
     });
     Owed(id)
 }
@@ -57,7 +61,11 @@ pub fn owed_shown() -> Vec<&'static str> {
     OWED.with(|owed| {
         owed.borrow()
             .iter()
-            .filter(|step| step.widget.upgrade().is_some_and(|widget| widget.is_mapped()))
+            .filter(|step| {
+                step.widget
+                    .upgrade()
+                    .is_some_and(|widget| widget.is_mapped())
+            })
             .map(|step| step.what)
             .collect()
     })
@@ -92,6 +100,10 @@ pub fn when<W: IsA<gtk::Widget>>(
 /// Runs `step` once, at the first frame where `widget` has a height. The event-driven form of "once its
 /// size is known": a one-shot idle that found the widget unsized gave up for good, and the form column
 /// stayed wherever it had been scrolled, in the app and in its shots.
-pub fn once_sized<W: IsA<gtk::Widget>>(what: &'static str, widget: &W, step: impl FnOnce(&W) + 'static) {
+pub fn once_sized<W: IsA<gtk::Widget>>(
+    what: &'static str,
+    widget: &W,
+    step: impl FnOnce(&W) + 'static,
+) {
     when(what, widget, |widget| widget.height() > 1, step);
 }
