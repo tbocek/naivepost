@@ -14,12 +14,13 @@ use naivepost::cut::{Cut, Fx};
 use naivepost::cut_clamp;
 use naivepost::cut_effect_decisions as ced;
 use naivepost::cut_speed_pass;
+use naivepost::cut_suggest_passes;
 use naivepost::cut_trim;
-use naivepost::decision_homes;
 use naivepost::edges::{AlignedWord, Edges};
 use naivepost::hands_off::{self as ho, HandsOff};
 use naivepost::narrate_pass;
 use naivepost::narrate_preview;
+use naivepost::policy::{self, Proposal};
 use naivepost::produce_render;
 use naivepost::produce_subtitles;
 use naivepost::project::{CutMode, Field, MarkingPass, Origin, Policy};
@@ -243,6 +244,20 @@ fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s6_the_pipel
     let marking: Field<MarkingPass> = policy.marking_pass.clone();
     assert_eq!(marking.value, MarkingPass::Retakes);
     assert_eq!(marking.origin, Origin::Default);
+    // Each switch is a `Field<bool>` too, so the derivation can say who set it.
+    for (name, field) in [
+        ("captionsPass", policy.captions_pass.clone()),
+        ("speedPass", policy.speed_pass.clone()),
+        ("decorationsPass", policy.decorations_pass.clone()),
+    ] {
+        let switched: Field<bool> = field;
+        assert!(
+            switched.value,
+            "{name} defaults on: no context means the full set"
+        );
+        assert_eq!(switched.origin, Origin::Default, "{name}'s origin");
+        assert!(json.contains(name), "{name} is not serialised: {json}");
+    }
 
     // The three deciding fields named for the derivation.
     let fields = ho::pipeline_fields();
@@ -255,22 +270,93 @@ fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s6_the_pipel
         fields[2].decides
     );
 
-    // Hand-set sticks; derived and default do not. This is what keeps the policy home both derived
-    // and editable rather than a hidden style dropdown — §4's row, not F0.7's, which no longer consults it.
-    assert!(!ho::model_may_set_pipeline(Origin::User));
-    assert!(ho::model_may_set_pipeline(Origin::Model));
-    assert!(ho::model_may_set_pipeline(Origin::Default));
-    // Same predicate decision_homes gives the whole policy home.
-    assert_eq!(
-        ho::model_may_set_pipeline(Origin::User),
-        decision_homes::overridable_by_derivation(Origin::User)
-    );
+    // The hand-set rule is gone: §F0.7 has no policy form, so a value changes when the User Context says
+    // otherwise, whatever origin the field carried — see `f0_7_s4_a_valid_proposal_stores_over_the_value_
+    // already_there`. What §4's row needs is that the three ways of choosing are ONE visible setting rather
+    // than a hidden style dropdown, and that the two tables name it identically.
+    let catalogue = policy::derived_fields();
+    for named in ho::pipeline_fields() {
+        match named.field {
+            "cut-stage passes" => {
+                // The third row names the three switches together; each must be a catalogue field.
+                for switch in ["captionsPass", "speedPass", "decorationsPass"] {
+                    assert!(
+                        catalogue.iter().any(|row| row.field == switch),
+                        "{switch} is not derivable"
+                    );
+                    assert!(
+                        named.id.contains(&format!("P.policy.{switch}")),
+                        "the audit row spells {switch}'s id differently: {}",
+                        named.id
+                    );
+                }
+            }
+            field => {
+                let row = catalogue
+                    .iter()
+                    .find(|row| row.field == field)
+                    .unwrap_or_else(|| panic!("{field} is not a derivable field"));
+                assert_eq!(
+                    row.id, named.id,
+                    "{field}: the audit and the catalogue spell its id differently"
+                );
+            }
+        }
+    }
 
     // Both cut modes exist: words or a model, chosen once and shown.
     assert_eq!(ho::cut_modes(), [CutMode::Words, CutMode::Model]);
     assert_eq!(
         ho::marking_passes(),
         [MarkingPass::Joins, MarkingPass::Retakes, MarkingPass::None]
+    );
+}
+
+// --- bullet 6: the context is the only thing that changes it ------------------------------------
+
+/// "Nothing chooses the pipeline but the User Context": a field changes when the context says otherwise,
+/// whatever origin it carried (no form, so nothing to overrule), and the switches have an effect — the pass
+/// that went off is not asked at all.
+#[test]
+fn sec_12_decisions_4_what_stays_out_of_the_models_hands_on_purpose_s6_a_field_changes_when_the_context_speaks_to_it(
+) {
+    // A field an OLD project file marked hand-set: loadable, and holds nothing back any more.
+    let mut policy = Policy {
+        marking_pass: Field {
+            value: MarkingPass::Retakes,
+            origin: Origin::User,
+            because: None,
+        },
+        ..Policy::default()
+    };
+    let landed = policy::apply(
+        &mut policy,
+        &Proposal {
+            field: "markingPass".into(),
+            value: "joins".into(),
+            because: "the user context says so".into(),
+        },
+    );
+    assert_eq!(landed, policy::Applied::Set, "{landed:?}");
+    assert_eq!(
+        policy.marking_pass.value,
+        MarkingPass::Joins,
+        "the newer context wins over a hand-set field"
+    );
+    // And the switch half of the row: turning a pass off takes it out of the run, not just out of favour.
+    assert!(cut_suggest_passes::order(&policy).contains(&policy::Pass::Captions));
+    policy::apply(
+        &mut policy,
+        &Proposal {
+            field: "captionsPass".into(),
+            value: "off".into(),
+            because: "already burnt in".into(),
+        },
+    );
+    assert!(
+        !cut_suggest_passes::order(&policy).contains(&policy::Pass::Captions),
+        "off means never called: {:?}",
+        cut_suggest_passes::order(&policy)
     );
 }
 
