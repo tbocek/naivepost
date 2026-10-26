@@ -87,7 +87,11 @@ pub fn install(
     // with the log CLOSED — 10× the height §1 counts. The open log's 220 px comes from the handle instead, which
     // `rest_split` moves to `total − band_px(…)`; the paned clamps that to this minimum, so the ask has to be the
     // small one or the clamp can never come down.
-    bottom.set_size_request(-1, super::window_shot::height_ask(run_row, &log));
+    // The ask is the box's own height: its margins (§1's 8 px above, 12 px below) come on top of a request.
+    bottom.set_size_request(
+        -1,
+        super::window_shot::height_ask(run_row, &log) - crate::ui::margins::BAR_MARGINS_PX,
+    );
     let log = log
         .downcast_ref::<gtk::Expander>()
         .expect("the log is an expander")
@@ -276,8 +280,14 @@ fn connect_band_rest(divider: &gtk::Paned, run_row: &gtk::Widget, log: &gtk::Exp
 
 /// The bottom half: the run bar's row (which already carries the readouts) and under it the log expander.
 fn bottom_of(run_row: &gtk::Widget, log: &gtk::Widget) -> gtk::Box {
-    let bottom = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    // 03-shell §1: 8 px between the run row and the log header, 8 px under the divider, and 12 px from the
+    // window's left, right and bottom edges. `window_shot::height_px` adds the same spacing to the two rows.
+    let bottom = gtk::Box::new(gtk::Orientation::Vertical, crate::ui::margins::BAR_GAP_PX);
     bottom.set_widget_name("bottom-bar");
+    bottom.set_margin_top(crate::ui::margins::BAR_TOP_PX);
+    bottom.set_margin_bottom(crate::ui::margins::BAR_EDGE_PX);
+    bottom.set_margin_start(crate::ui::margins::BAR_EDGE_PX);
+    bottom.set_margin_end(crate::ui::margins::BAR_EDGE_PX);
     bottom.append(run_row);
     bottom.append(log);
     bottom

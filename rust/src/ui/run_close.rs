@@ -1,15 +1,11 @@
 //! F0.5 S4 — the one door a run closes through, for every way a run ends.
 //!
-//! §S4 gives `endRun` four jobs: running off, controls refreshed, **a lucky run moves to its next
-//! step**, and the audio models unloaded off-thread. §2 adds where the queue's words go: the bar draws
+//! §S4 gives `endRun` three jobs: running off, controls refreshed, and the audio models unloaded
+//! off-thread. §2 adds where the queue's words go: the bar draws
 //! none of its own, so the tracks' joined line lands on the status row, overwriting whatever was last
 //! there. Before this module existed, three of those four were only ever done by ⏹ or by a test:
 //! a single-step ▶ opened a bookkeeping run that nothing ever closed (so the bar held a finished run,
-//! no unload was handed over, and the joined line was dropped), and `end_run`'s "next step" argument
-//! was `None` at every program call site, which made `EndRun::chain_moves_on` a test-only fact.
-//!
-//! Order is the spec's: the chain moves on *before* the unload is handed over, because the next step
-//! usually wants the same models back and unloading first would make it load them again.
+//! no unload was handed over, and the joined line was dropped).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -20,7 +16,6 @@ use gtk4::prelude::*;
 use crate::exchanges;
 use crate::run::{self, RunBar};
 use crate::runqueue::{self, Queue};
-use crate::shell::Page;
 use crate::ui::{shell_beats, window};
 
 // The open run of this window, copied at each point the shell opens or hands one over. `end_run`
@@ -67,26 +62,6 @@ pub fn clear_log_for_test() {
     window::clear_logs_for_test();
 }
 
-/// The record the chain's closings leave in [`SHARED_LOG`]: each line carries §10's request summary for the run
-/// that just ended, prefixed so a reader can tell it from the unload report that shares the buffer.
-pub const CLOSE_PREFIX: &str = ">>> run closed: ";
-
-/// What the chain's closings wrote, for a test: every line `close_chain_end` / `close_chain_step` put in
-/// [`SHARED_LOG`] when a chain ended, in order.
-///
-/// It exists because a chain has no log pane of its own and §S6 gives the WINDOW log's last word to the press's
-/// end line, so a chain's request summary goes to this record instead of to the user's log (see
-/// [`CLOSE_PREFIX`]). Nothing here re-words the sentence: it is §10's line, kept verbatim.
-pub fn chain_close_lines_for_test() -> Vec<String> {
-    SHARED_LOG
-        .lock()
-        .unwrap()
-        .iter()
-        .filter(|line| line.starts_with(CLOSE_PREFIX))
-        .map(|line| line.trim_start_matches(CLOSE_PREFIX).to_string())
-        .collect()
-}
-
 /// The record a run's audio housekeeping leaves. `settings_probe::fire_unload`'s thread is its only
 /// author, so a line here means the unload went out and reported back.
 pub const UNLOAD_PREFIX: &str = ">>> audio housekeeping: ";
@@ -95,7 +70,7 @@ pub const UNLOAD_PREFIX: &str = ">>> audio housekeeping: ";
 /// the audio unload answers on its OWN thread — a thread-local there would collect that report where
 /// nobody reads it -- so that one writer funnels here instead of into the user's log: §2 gives the log's
 /// last word to the RUN, and a sentence written by a thread after the close returned would land after it.
-/// The person still hears from it, through the status row ([`report_unload`]).
+/// The person reads it in the housekeeping record ([`unload_line_for_test`] is its test reader).
 static SHARED_LOG: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 /// Add one line to the off-thread record. Only `window::note_unload` calls it: every other log door runs
@@ -104,35 +79,105 @@ pub(crate) fn log(line: &str) {
     SHARED_LOG.lock().unwrap().push(line.to_string());
 }
 
-// Where the running chain's status row is right now, so the unload thread can tell the person what it
-// did without disturbing the sentence the chain itself is putting there (§2 gives the row to the run).
-thread_local! {
-    static CHAIN_ROW: std::cell::RefCell<Option<gtk::Label>> = const { std::cell::RefCell::new(None) };
-}
-
-/// Say what the end-of-run housekeeping did, on the row the chain is using if a chain is running. The
-/// thread that dials the unload answers after the run that asked it has already been painted, so the
-/// shell cannot route it itself; `lucky_run::press` marks the row for the length of the chain and hands
-/// it back to the chain's own sentences when it ends.
-pub fn report_unload(said: &str) {
-    window::note_unload(said);
-    CHAIN_ROW.with(|held| {
-        if let Some(row) = held.borrow().as_ref() {
-            row.set_text(said);
-        }
-    });
-}
-
-/// Hand the running chain's status row to [`report_unload`], or take it away again (`None` at the
-/// chain's end, when the chain's own end sentence owns the row again).
-pub fn mark_chain_row(row: Option<&gtk::Label>) {
-    CHAIN_ROW.with(|held| *held.borrow_mut() = row.cloned());
-}
-
 /// Close the narrate run that ran to its end inside one press, finding this window's widgets here so
 /// the shell's handler stays a call. Same fallback as before: with no queue or status row to write to,
 /// the bookkeeping still ends.
 pub fn close_last_narrate_run() {
+    close_window_run();
+}
+
+/// Close the run this window's bar holds, wherever its press left it: Narrate's and Produce's runs end on
+/// their own worker's answer (§03-shell §1), long after the ▶ handler returned, and close through here.
+/// Paint the run as it stands now: the bar's fraction and tooltip, the status line from the queue while a run is
+/// open, and the log on screen when it is open. The worker poll ([`crate::ui::background`]) calls it whenever a
+/// worker's lines or notes land, so a run walking on a worker is seen as it goes (§03-shell §1). The first
+/// worker version painted only when the press ended: the log stayed empty and the bar still for the whole walk.
+pub fn paint_live() {
+    let Some(main) = window::built_window() else {
+        return;
+    };
+    let (Some(bar), Some(queue), Some((status, progress, log, view))) = (
+        window::WINDOW_BAR.with(|bars| bars.borrow().last().cloned()),
+        window::WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned()),
+        live_widgets(&main),
+    ) else {
+        return;
+    };
+    let running = bar.borrow().running.is_some();
+    crate::ui::window_bench::paint_progress(
+        &progress,
+        &log,
+        &view,
+        &queue.borrow(),
+        crate::ui::shell_beats::StatusLine {
+            status: &status,
+            owned: running,
+        },
+        log.is_expanded(),
+    );
+}
+
+/// The four widgets a live paint draws on, for this window. Searched for once per window and kept: the paint
+/// runs at every worker note, and walking the whole window for the same four widgets each time held the window
+/// thread for over 3 s on a real project's Cut page (hang dump, 2026-10-26).
+type LiveWidgets = (gtk::Label, gtk::ProgressBar, gtk::Expander, gtk::TextView);
+
+thread_local! {
+    static LIVE: RefCell<Option<(glib::WeakRef<adw::ApplicationWindow>, LiveWidgets)>> =
+        const { RefCell::new(None) };
+    /// How many times the four were searched for, for the test that pins "once per window".
+    static LIVE_SEARCHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many times [`paint_live`] has searched the window for its widgets.
+pub fn live_searches_for_test() -> usize {
+    LIVE_SEARCHES.with(std::cell::Cell::get)
+}
+
+fn live_widgets(main: &adw::ApplicationWindow) -> Option<LiveWidgets> {
+    let held = LIVE.with(|slot| {
+        slot.borrow().as_ref().and_then(|(window, widgets)| {
+            // Still this window's: a page that rebuilds the bottom band leaves the kept widgets detached, and a
+            // paint on them would change nothing anyone sees. The log's text view is not asked: a folded expander
+            // takes its body out of the window, and it is the expander's own child either way.
+            let rooted = |widget: &gtk::Widget| {
+                widget
+                    .root()
+                    .and_then(|root| root.downcast::<adw::ApplicationWindow>().ok())
+                    .as_ref()
+                    == Some(main)
+            };
+            (window.upgrade().as_ref() == Some(main)
+                && rooted(widgets.0.upcast_ref())
+                && rooted(widgets.1.upcast_ref())
+                && rooted(widgets.2.upcast_ref()))
+            .then(|| widgets.clone())
+        })
+    });
+    if held.is_some() {
+        return held;
+    }
+    LIVE_SEARCHES.with(|count| count.set(count.get() + 1));
+    let found = (
+        window::find_status(main.upcast_ref())?,
+        window::progress_bar(main)?,
+        window::log_expander(main)?,
+        window::find_widget_by_name(main.upcast_ref(), "log-view")?
+            .downcast::<gtk::TextView>()
+            .ok()?,
+    );
+    LIVE.with(|slot| *slot.borrow_mut() = Some((main.downgrade(), found.clone())));
+    Some(found)
+}
+
+/// Whether the window holds an open run right now.
+pub fn run_open() -> bool {
+    window::WINDOW_BAR
+        .with(|bars| bars.borrow().last().cloned())
+        .is_some_and(|bar| bar.borrow().running.is_some())
+}
+
+pub fn close_window_run() {
     let Some(bar) = window::WINDOW_BAR.with(|bars| bars.borrow().last().cloned()) else {
         return;
     };
@@ -141,7 +186,7 @@ pub fn close_last_narrate_run() {
         window::WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned()),
         window::find_status(main.upcast_ref()),
     ) else {
-        runqueue::end_run(&mut bar.borrow_mut(), None);
+        runqueue::end_run(&mut bar.borrow_mut());
         return;
     };
     let (Some(progress), Some(log), Some(view)) = (
@@ -150,6 +195,9 @@ pub fn close_last_narrate_run() {
         window::find_widget_by_name(main.upcast_ref(), "log-view")
             .and_then(|widget| widget.downcast::<gtk::TextView>().ok()),
     ) else {
+        // No log widgets to repaint (a window built without them): the run still ends, or the bar would stay
+        // open on a run nothing is doing.
+        runqueue::end_run(&mut bar.borrow_mut());
         return;
     };
     close_step_run(
@@ -160,13 +208,10 @@ pub fn close_last_narrate_run() {
         &progress,
         &log,
         &view,
-        None,
     );
 }
 
-/// Close the bookkeeping of the run this window's ▶ opened (§S4). `next` is `None` for a single-step
-/// press: a lone step has nowhere to move on to, which is exactly why the chain's boundaries pass
-/// `Some(page)` and this passes nothing.
+/// Close the bookkeeping of the run this window's ▶ opened (§S4).
 ///
 /// The queue's joined line is read BEFORE the reset, because `reset()` empties the very tracks whose
 /// sentence §2 wants on the status row.
@@ -178,7 +223,6 @@ pub fn close_step_run(
     progress: &gtk::ProgressBar,
     log: &gtk::Expander,
     log_view: &gtk::TextView,
-    next: Option<Page>,
 ) {
     // The widgets a close repaints are the same handles the shell already holds together; a struct
     // would be a second `Handles` for one call.
@@ -187,15 +231,7 @@ pub fn close_step_run(
     // §10: the run says what it sent outside, in one line per service, as its last word in the log.
     // Said BEFORE anything is unwound so the sentence belongs to this run and not the next one.
     crate::request_run::log_closing_line();
-    // A single-step press has nowhere to move on to, so its run ends here. A lucky step's boundary
-    // keeps the press's one open run going (see [`close_chain_step`]), because §2 wants ⏸/⏹ acting for
-    // the whole chain and F0.4 S1 refuses a second press over an open run.
-    let ended = runqueue::end_run(&mut bar.borrow_mut(), next);
-    if next.is_some() {
-        // A lucky boundary does not end the press's run: put back what this step had open so ⏸/⏹ keep
-        // acting for the chain (§2), while the move itself is still recorded by `end_run` above.
-        bar.borrow_mut().running = LAST_RUN.with(|held| held.borrow().clone());
-    }
+    let ended = runqueue::end_run(&mut bar.borrow_mut());
     // §1/§S4: every run ends with `unload_all_models`, quietly and off-thread, even one that used no
     // audio — weights left loaded are memory nothing is waiting on any more.
     hand_over_unload(ended.audio_unload);
@@ -222,108 +258,10 @@ pub fn close_step_run(
 /// Hand the audio unload over -- the one door through which every run's housekeeping goes.
 ///
 /// Fire-and-forget on the leg's own thread: §S4 makes the call best-effort, so the press never waits on a
-/// server for it. Its report goes to [`SHARED_LOG`] and to the status row via [`report_unload`], never
+/// server for it. Its report goes to [`SHARED_LOG`] through `window::note_unload`, never
 /// into the log, which keeps §2's rule that the run has the log's last word.
 pub(crate) fn hand_over_unload(kind: crate::services::Kind) {
     crate::settings_probe::fire_unload(kind);
-}
-
-/// Paint the chain's widgets with the run still standing -- S1's "log expanded" for a chain, which
-/// means the log is open ACROSS the hand-overs, not only in the moment before the first step runs.
-/// `paint_closed`'s mirror: every run's own lines reach the expander before anything folds it.
-pub(crate) fn paint_chain_step(handles: &super::lucky_run::Handles) {
-    let main = window::main_window();
-    if let (Some(play), Some(lucky), Some(stop_)) = (
-        window::play_button(&main),
-        window::lucky_button(&main),
-        window::stop_button(&main),
-    ) {
-        window::paint_run_bar(
-            &play,
-            &lucky,
-            &stop_,
-            &handles.bar.borrow(),
-            window::state(&main).page,
-            window::preview_player(&main).transport,
-        );
-    }
-    window::paint_progress(
-        &handles.progress,
-        &handles.log,
-        &handles.log_view,
-        &handles.queue.borrow(),
-        shell_beats::StatusLine {
-            status: &handles.status,
-            owned: true,
-        },
-        handles
-            .bar
-            .borrow()
-            .running
-            .as_ref()
-            .is_some_and(|run| run.log_expanded),
-    );
-}
-
-/// The chain's own ending: close the press's single run and repaint what a closed run leaves.
-pub(crate) fn close_chain_end(handles: &super::lucky_run::Handles) {
-    let said = handles.queue.borrow().text();
-    // §10's closing line, on the same rule as `close_step_run`: the run ends with what it sent outside.
-    // It goes through `log` -- the shared buffer the chain's own threads write to -- and NOT through
-    // `request_run::log_closing_line`, because a chain runs inside the gears' press: that door writes the
-    // window's log, where the sentence would land BETWEEN §S6's end line ("all done in T …") and whatever the
-    // close still puts after it, and F0.4 S6 gives that end line the log's last word. The chain's record keeps
-    // it instead, where the press's reader looks (§2: the run's housekeeping answers after its last word).
-    let line = crate::request_run::closing_line().unwrap_or_default();
-    log(&format!("{CLOSE_PREFIX}{line}"));
-    runqueue::end_run(&mut handles.bar.borrow_mut(), None);
-    hand_over_unload(crate::services::Kind::UnloadAll);
-    shell_beats::stop_pulse();
-    if !said.is_empty() {
-        handles.status.set_text(&said);
-    }
-    handles.queue.borrow_mut().reset();
-    paint_closed(
-        &handles.bar,
-        &handles.queue,
-        &handles.status,
-        &handles.progress,
-        &handles.log,
-        &handles.log_view,
-    );
-}
-
-/// Close the bookkeeping of one lucky step as the chain moves on (§S4's "a lucky run moves to its next
-/// step", which is the only place `end_run`'s `next` argument is ever `Some` in the program). Takes the
-/// queue's line before the reset for the same reason [`close_step_run`] does.
-///
-/// The bar is NOT left closed: §2 makes ⏸ and ⏹ act while any step of the chain is going, and F0.4 S1
-/// refuses a second press over an open run, so the chain keeps ONE run open across its steps and this
-/// records the move (the unload, the line, the pulse) rather than ending it. [`close_run`] in
-/// [`crate::ui::lucky_run`] closes it once, when the chain ends.
-pub fn close_chain_step(handles: &super::lucky_run::Handles, next: Option<Page>) {
-    let said = handles.queue.borrow().text();
-    crate::ui::run_close::note_started_run(&handles.bar);
-    if next.is_none() {
-        // §10: the chain's ending says what the run sent outside, exactly as a single-step close does — into
-        // the chain's own record rather than the window's log, for the same reason `close_chain_end` has
-        // (F0.4 S6 keeps the log's last word), and spelled identically once, never twice.
-        let line = crate::request_run::closing_line().unwrap_or_default();
-        log(&format!("{CLOSE_PREFIX}{line}"));
-        runqueue::end_run(&mut handles.bar.borrow_mut(), None);
-    } else {
-        // §S4's "a lucky run moves on": the same predicate `end_run` answers with, asked of the step
-        // that just finished before its work is handed off. It makes `chain_moves_on` a fact of the
-        // program rather than of a test; the press's own run stays open (see above).
-        debug_assert!(runqueue::end_run(&mut RunBar::default(), next).chain_moves_on);
-    }
-    hand_over_unload(crate::services::Kind::UnloadAll);
-    shell_beats::stop_pulse();
-    if !said.is_empty() {
-        handles.status.set_text(&said);
-    }
-    handles.queue.borrow_mut().reset();
-    paint_chain_step(handles);
 }
 
 /// Repaint the bar's widgets from a run that has just closed: ▶ back to its step face, ⏹ greyed with
@@ -343,11 +281,7 @@ fn paint_closed(
     // audio housekeeping line above all -- are shown rather than dropped by a repaint of an empty buffer.
     let kept = log.is_expanded();
     let main = window::main_window();
-    let (Some(play), Some(lucky), Some(stop_)) = (
-        window::play_button(&main),
-        window::lucky_button(&main),
-        window::stop_button(&main),
-    ) else {
+    let (Some(play), Some(stop_)) = (window::play_button(&main), window::stop_button(&main)) else {
         return;
     };
     // A closed run leaves `run::controls` to pick the idle face and grey ⏹ -- one rule, so this cannot
@@ -356,19 +290,14 @@ fn paint_closed(
     let transport = window::preview_player(&main).transport;
     window::paint_run_bar(
         &play,
-        &lucky,
         &stop_,
         &bar.borrow(),
         window::state(&main).page,
         transport,
     );
     if kept {
-        let buffer = log_view.buffer();
-        buffer.set_text("");
-        super::log_link::paint_lines(&buffer, &window::window_logs());
-        // The newest line is what a person opens the log for; the same scroll `paint_progress` does.
-        let mut end = buffer.end_iter();
-        log_view.scroll_to_iter(&mut end, 0.0, false, 0.0, 1.0);
+        // The person's place kept: the newest line while they follow it, where they were otherwise.
+        super::log_paint::repaint_lines(log_view, &window::window_logs());
     }
     window::paint_progress(
         progress,
@@ -379,9 +308,11 @@ fn paint_closed(
             status,
             owned: false,
         },
+        // The openness kept above: the run is closed here, and reading "is the run's log open" off a closed
+        // run said no and folded the log at every run's end, against this function's own rule.
         bar.borrow()
             .running
             .as_ref()
-            .is_some_and(|run| run.log_expanded),
+            .map_or(kept, |run| run.log_expanded),
     );
 }

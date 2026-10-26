@@ -9,6 +9,7 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 pub mod fit_geometry;
+pub mod real_input;
 use naivepost::{
     cut::{Cut, Fx, Seg},
     edges::AlignedWord,
@@ -142,6 +143,12 @@ pub fn hang_dumps(paths: &naivepost::settings::Paths) -> Vec<std::path::PathBuf>
 /// instead of a fixed 64 turns — converting those would change how many turns run, not just where the
 /// code lives.
 pub fn settle() {
+    // A Settings Test runs on a thread of its own and lands its verdict through the loop: a settle after a
+    // press waits for it, so "pressed, then settled" still means "answered". Nothing in flight returns at once.
+    assert!(
+        naivepost::ui::settings::wait_for_tests(WAIT_LIMIT),
+        "a Settings Test did not answer within {WAIT_LIMIT:?}"
+    );
     let context = glib::MainContext::default();
     for _ in 0..64 {
         if !context.iteration(false) {
@@ -1050,4 +1057,124 @@ pub fn call(name: &str, args: &str) -> naivepost::exchanges::ToolCall {
         args: args.to_string(),
         result: String::new(),
     }
+}
+
+/// The Firefox this machine has, found the way the program finds it with an empty box. The web checks are
+/// about the real browser, so a machine without one fails here rather than passing on a stand-in.
+pub fn firefox() -> std::path::PathBuf {
+    naivepost::web_browser::firefox_path("")
+        .expect("a firefox to drive (firefox-esr in the build container)")
+}
+
+/// A local web server for the browser checks: pages by path (changeable while it runs), `/slow` answering
+/// nothing for 30 s, anything else 404. Each connection is served on its own thread, so a browser's parallel
+/// requests never queue behind each other.
+pub struct Site {
+    base: String,
+    pages: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
+}
+
+impl Site {
+    pub fn start() -> Site {
+        use std::io::{BufRead, BufReader, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a local port");
+        let base = format!("http://{}", listener.local_addr().expect("its address"));
+        let pages: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> = Default::default();
+        let served = std::sync::Arc::clone(&pages);
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let pages = std::sync::Arc::clone(&served);
+                std::thread::spawn(move || {
+                    let Ok(clone) = stream.try_clone() else {
+                        return;
+                    };
+                    let mut reader = BufReader::new(clone);
+                    let mut request = String::new();
+                    if reader.read_line(&mut request).is_err() {
+                        return;
+                    }
+                    let path = request.split_whitespace().nth(1).unwrap_or("/").to_string();
+                    loop {
+                        let mut line = String::new();
+                        if reader.read_line(&mut line).map(|n| n == 0).unwrap_or(true)
+                            || line == "\r\n"
+                        {
+                            break;
+                        }
+                    }
+                    if path == "/slow" {
+                        std::thread::sleep(std::time::Duration::from_secs(30));
+                        return;
+                    }
+                    let route = path.split('?').next().unwrap_or("/").to_string();
+                    let found = pages
+                        .lock()
+                        .expect("the page table")
+                        .iter()
+                        .find(|(at, _)| *at == route)
+                        .map(|(_, body)| body.clone());
+                    let (status, body) = match found {
+                        Some(body) => ("200 OK", body),
+                        None => ("404 Not Found", String::new()),
+                    };
+                    let mut stream = stream;
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                });
+            }
+        });
+        Site { base, pages }
+    }
+
+    /// Serve `body` at `path` from now on.
+    pub fn set(&self, path: &str, body: impl Into<String>) {
+        let mut pages = self.pages.lock().expect("the page table");
+        pages.retain(|(at, _)| at != path);
+        pages.push((path.to_string(), body.into()));
+    }
+
+    /// The address of `path` on this server.
+    pub fn url(&self, path: &str) -> String {
+        format!("{}{path}", self.base)
+    }
+}
+
+/// `stop_legs`' describe flags (in the stage, a restart armed) are process-wide, so the tests that arm, take
+/// or read them take turns on this lock instead of racing each other inside one test binary.
+pub fn describe_flags_turn() -> std::sync::MutexGuard<'static, ()> {
+    static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    TURN.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Let every worker the window handed work to land (§03-shell §1: readouts, probes, copies run off the window
+/// thread), so what a test reads next is the landed answer.
+pub fn settle_workers() {
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+        "the window's workers did not land within a minute"
+    );
+}
+
+/// A real, silent mono 16 kHz wav of `seconds`: what a stub ffmpeg "decodes" to, and what a test plants as a
+/// recording's `voice16k.wav`, because §F1.11's envelope reader parses the file for real.
+pub fn silent_wav_bytes(seconds: f64) -> Vec<u8> {
+    let data = vec![0u8; (seconds * 16_000.0) as usize * 2];
+    let mut out: Vec<u8> = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&((36 + data.len()) as u32).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&1u16.to_le_bytes()); // one channel
+    out.extend_from_slice(&16_000u32.to_le_bytes());
+    out.extend_from_slice(&32_000u32.to_le_bytes()); // bytes per second
+    out.extend_from_slice(&2u16.to_le_bytes()); // block align
+    out.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    out.extend_from_slice(&data);
+    out
 }

@@ -14,7 +14,6 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -32,6 +31,8 @@ struct Seen {
     path: String,
     headers: Vec<(String, String)>,
     body: String,
+    /// The body exactly as it arrived, for a request whose bytes are not text (the upload's WAV).
+    raw: Vec<u8>,
 }
 
 impl Seen {
@@ -140,6 +141,7 @@ fn serve_request(stream: TcpStream, status: u16, body: &str, delay: Duration) ->
         path,
         headers,
         body: String::from_utf8_lossy(&raw).to_string(),
+        raw,
     };
 
     std::thread::sleep(delay);
@@ -317,7 +319,10 @@ fn sec_02_services_1_the_four_servers_s16_a_down_server_gives_an_error_and_still
     );
 }
 
-/// S17: the upload leg sends a raw body with `X-Audiocpp-Filename`, not a multipart envelope.
+/// S17: the upload leg sends a raw body with `X-Audiocpp-Filename`, not a multipart envelope, and the body is the
+/// file's own bytes: a real WAV, whose header holds bytes no UTF-8 text can carry. The first rewrite sent a lossy
+/// text copy, and audio.cpp answered 500 "invalid WAV RIFF header" to a chunk 1.9 times its size; this test
+/// had uploaded ASCII and never saw it.
 #[test]
 fn sec_02_services_1_the_four_servers_s17_the_upload_leg_sends_the_filename_header() {
     crate::common::pin_private_cwd();
@@ -331,7 +336,11 @@ fn sec_02_services_1_the_four_servers_s17_the_upload_leg_sends_the_filename_head
     let endpoint = endpoint_at(&server.url(), "");
     let base = server_leg::base_row(Server::Audio, "reference", "upload", "", "settings", "");
 
-    let payload = "RIFF....WAVEfmt data-bytes";
+    let payload = crate::common::silent_wav_bytes(0.1);
+    assert!(
+        std::str::from_utf8(&payload).is_err(),
+        "the payload has to be one no text can stand in for"
+    );
     let (row, result) = server_leg::call_dialed(
         &tree,
         &base,
@@ -340,7 +349,7 @@ fn sec_02_services_1_the_four_servers_s17_the_upload_leg_sends_the_filename_head
             endpoint: &endpoint,
             kind: Kind::Upload,
             job: None,
-            body: Some(payload),
+            body: Some(&payload),
             filename: Some("voice-ref.wav"),
             cancelled: &never,
             liveness: None,
@@ -361,12 +370,58 @@ fn sec_02_services_1_the_four_servers_s17_the_upload_leg_sends_the_filename_head
         Some("voice-ref.wav"),
         "the file names itself in the header the spec names"
     );
-    assert_eq!(seen.body, payload, "the body is the file's own bytes, raw");
+    assert_eq!(seen.raw, payload, "the body is the file's own bytes, raw");
     let content_type = seen.header("Content-Type").unwrap_or_default();
     assert!(
         !content_type.contains("multipart"),
         "no multipart envelope: Content-Type was {content_type:?}"
     );
+}
+
+/// S28: a JSON body says it is JSON. A FastAPI proxy in front of a model answered 400 "Input should be a valid
+/// dictionary" to a chat body sent with no content type, which the llama.cpp router had read without complaint.
+#[test]
+fn sec_02_services_1_the_four_servers_s28_a_json_body_is_sent_as_application_json() {
+    crate::common::pin_private_cwd();
+    let server = FakeServer::start(
+        "json",
+        200,
+        r#"{"choices":[{"message":{"content":"ok"}}]}"#.to_string(),
+        Duration::ZERO,
+    );
+    let tree = Tree::new(project_dir("s28")).expect("a project folder");
+    let endpoint = endpoint_at(&server.url(), "");
+    let base = server_leg::base_row(Server::Llm, "settings", "chat", "", "settings", "");
+
+    for kind in [Kind::Chat, Kind::RunTask, Kind::SubmitImage] {
+        let body = r#"{"model":"m","messages":[]}"#;
+        let (_, result) = server_leg::call_dialed(
+            &tree,
+            &base,
+            &server_leg::Dial {
+                server: Server::Llm,
+                endpoint: &endpoint,
+                kind,
+                job: None,
+                body: Some(body.as_bytes()),
+                filename: None,
+                cancelled: &never,
+                liveness: None,
+                waited_ms: 0,
+                delta: None,
+                budget: None,
+                attempt: 1,
+            },
+        );
+        result.expect("the request reached the fake server");
+        let seen = server.next_seen();
+        assert_eq!(seen.body, body);
+        assert_eq!(
+            seen.header("Content-Type").as_deref(),
+            Some("application/json"),
+            "{kind:?}: a JSON body is labelled as JSON"
+        );
+    }
 }
 
 /// S18: housekeeping is bounded at twenty seconds; the work kinds are not bounded at all.
@@ -472,7 +527,7 @@ fn sec_02_services_1_the_four_servers_s19_a_sdcpp_job_submit_poll_and_cancel_are
             &endpoint,
             kind,
             Some("job-42"),
-            body,
+            body.map(str::as_bytes),
             None,
             &never,
         );
@@ -508,7 +563,7 @@ fn sec_02_services_1_the_four_servers_s19_a_sdcpp_job_submit_poll_and_cancel_are
 #[test]
 fn sec_02_services_1_the_four_servers_s24_a_live_provider_delegates_the_rows_it_does_not_dial() {
     crate::common::pin_private_cwd();
-    let canned: Provider = Rc::new(|key, typed| Ok(format!("canned {key}={typed}")));
+    let canned: Provider = std::sync::Arc::new(|key, typed| Ok(format!("canned {key}={typed}")));
     let provider = settings_probe::live_over(canned);
 
     // A dialled key answers from the wire or not at all, never from the injected provider. The address is

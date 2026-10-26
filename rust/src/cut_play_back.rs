@@ -5,8 +5,9 @@
 //! three seconds ahead in a spare pipeline so the join does not freeze" — as *a pipeline taken to PAUSED at
 //! exactly the next second, decoded and prerolled, so that when the line lands there the two pipelines
 //! change places instead of building one*. In the prototype both are playbin pipelines inside one process.
-//! Here the media leg is a subprocess (`play_back`, because no GStreamer library is linked), so the same
-//! two states are two processes:
+//! The built-in player ([`crate::play_built_in`]) is one such pipeline, and under it a jump is a seek and no
+//! spare is held. This module is the NAMED player's half (`NAIVEPOST_PLAYER`, a subprocess), where the same two
+//! states are two processes:
 //!
 //! - **preroll** = spawn the player with `-s` already at the jump's second, then `SIGSTOP` it at once. A
 //!   stopped process builds its pipeline and reads its first frames and then freezes: decoded, prerolled,

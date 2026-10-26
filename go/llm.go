@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -98,6 +99,77 @@ const (
 	thinkTokens = 65536
 	plainTokens = 8192
 )
+
+// publishTokens is the upload text's own ceiling, reasoning included: a title,
+// a thumbnail line and a paragraph. Over a 68-minute video its thinking had
+// run 600 tokens when the context ran out under it, so this is room to spare,
+// and every token the ceiling does not hold back is room for the brief
+// (publishBrief). The other thinking jobs keep thinkTokens: a cut reasons far
+// longer than this.
+const publishTokens = 16384
+
+// llmContext is how many tokens the writing server holds for one request,
+// prompt and answer together: n_ctx from /props. Asked with the model's id,
+// which a llama.cpp router needs (its bare /props says 0: it runs no model
+// itself) and a single server ignores. The model's name is no guide to it: a
+// router alias saying "145k ctx" came out as 140032.
+func (a *App) llmContext() (int, error) {
+	c := a.readConf()
+	req, err := http.NewRequest("GET", llmServer(c)+"/props?model="+url.QueryEscape(c.Model), nil)
+	if err != nil {
+		return 0, err
+	}
+	bearer(req, c.Key)
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	var p struct {
+		Gen struct {
+			NCtx int `json:"n_ctx"`
+		} `json:"default_generation_settings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&p); err != nil {
+		return 0, fmt.Errorf("/props (%s): %w", resp.Status, err)
+	}
+	if p.Gen.NCtx <= 0 {
+		return 0, fmt.Errorf("/props (%s) names no context size", resp.Status)
+	}
+	return p.Gen.NCtx, nil
+}
+
+// llmTokens is how many tokens text is to the writing server, counted by its
+// own tokenizer (/tokenize): German runs about 3.5 bytes a token there, and a
+// guess at the ratio is the margin a full context does not have.
+func (a *App) llmTokens(text string) (int, error) {
+	c := a.readConf()
+	buf, err := json.Marshal(map[string]any{"model": c.Model, "content": text})
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequest("POST", llmServer(c)+"/tokenize", bytes.NewReader(buf))
+	if err != nil {
+		return 0, err
+	}
+	bearer(req, c.Key)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	var t struct {
+		Tokens []json.RawMessage `json:"tokens"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&t); err != nil {
+		return 0, fmt.Errorf("/tokenize (%s): %w", resp.Status, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("/tokenize: %s", resp.Status)
+	}
+	return len(t.Tokens), nil
+}
 
 // chatReply is what one round returns: words, or calls, or both.
 type chatReply struct {
@@ -296,6 +368,9 @@ func (a *App) llmChatPost(step string, msgs []map[string]any, thinking bool,
 	if thinking {
 		body["temperature"] = 1.0
 		body["max_tokens"] = thinkTokens
+		if step == "publish" {
+			body["max_tokens"] = publishTokens
+		}
 	} else {
 		body["temperature"] = 0.6
 		body["max_tokens"] = plainTokens

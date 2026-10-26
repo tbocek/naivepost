@@ -114,6 +114,8 @@ fn run_round(app: &adw::Application) {
         ..Default::default()
     };
     naivepost::project::save(&project, fixture.tree.dir()).expect("project written");
+    // F4.6's reference, so the line the preview reaches can be spoken over the socket.
+    harness::write_reference(&fixture, b"RIFF fake voice reference");
     let entries = vec![
         Entry {
             s: 0.0,
@@ -175,9 +177,8 @@ fn run_round(app: &adw::Application) {
         playing: false,
         started: false,
         busy: false,
-        narration_off: true,
         covered_spans: vec![],
-        language: "en".into(),
+        language: "en".to_string(),
     });
     ui::refresh(&window);
     settle();
@@ -201,6 +202,23 @@ fn run_round(app: &adw::Application) {
     );
     RAN_PLAY.store(true, Ordering::SeqCst);
 
+    // S2's "no wav, synthesize" branch asks for the line's take when the preview's tick reaches it, on a worker
+    // (there is no narration switch to keep the lines quiet, §07 §1). Turn the main loop, so the tick runs,
+    // until the fake has been asked to speak, or 20 s pass.
+    let mut seen = Vec::new();
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while std::time::Instant::now() < until
+        && !seen
+            .iter()
+            .any(|asked: &harness::Seen| asked.path == "/v1/audio/speech")
+    {
+        for _ in 0..50 {
+            glib::MainContext::default().iteration(false);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        seen.extend(fake.drain());
+    }
+
     // S6: the page's OWN stop seam, the same function the transport's ⏹ calls. Same reason as above:
     // the seam's answer is the observation point, pinned to the const that says whose ▶ it is now.
     let stopped_said = ui::narrate_page::press_preview_stop(&window);
@@ -212,17 +230,17 @@ fn run_round(app: &adw::Application) {
     );
     RAN_STOP.store(true, Ordering::SeqCst);
 
-    // What the fake saw over the socket. With narration OFF the page's own `press_preview_picture`
-    // never reaches the S2 "no wav, synthesize" branch (there is nothing to speak), so the legs
-    // never dial the fake server on this pass. `drain`'s 900 ms-then-return is the right tool:
-    // an empty Vec is the correct answer here, and S6's stop seam still runs through the real
-    // `stop_running` regardless of whether a preview actually started.
-    let seen = fake.drain();
-    let paths: Vec<&str> = seen.iter().map(|s| s.path.as_str()).collect();
+    // What the fake saw over the socket: the health probe and the speech POST the legs made for the line
+    // the preview had no take for.
+    seen.extend(fake.drain());
+    let paths: Vec<&str> = seen.iter().map(|asked| asked.path.as_str()).collect();
     assert!(
-        paths.is_empty(),
-        "with narration off the preview asked the fake server for nothing: {:?}",
-        paths
+        paths.iter().any(|path| path.ends_with("/health")),
+        "the preview probed the server's health: {paths:?}"
+    );
+    assert!(
+        paths.iter().any(|path| path.ends_with("/v1/audio/speech")),
+        "and asked it to speak the missing line: {paths:?}"
     );
     RAN_SAW_REQUESTS.store(true, Ordering::SeqCst);
     window.close();

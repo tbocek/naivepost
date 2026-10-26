@@ -142,8 +142,9 @@ fn drag_on_band(window: &adw::ApplicationWindow, from_px: f64, to_px: f64) -> Op
     let gesture =
         ui::narrate_band::band_gesture_for_test(window).expect("the page wired the band's gesture");
     gesture.emit_by_name::<()>("drag-begin", &[&from_px, &20.0f64]);
-    gesture.emit_by_name::<()>("drag-update", &[&to_px, &20.0f64]);
-    gesture.emit_by_name::<()>("drag-end", &[&to_px, &20.0f64]);
+    // GTK's drag signals carry the OFFSET from the press after `drag-begin`.
+    gesture.emit_by_name::<()>("drag-update", &[&(to_px - from_px), &0.0f64]);
+    gesture.emit_by_name::<()>("drag-end", &[&(to_px - from_px), &0.0f64]);
     settle();
     ui::narrate_band::live_selection()
 }

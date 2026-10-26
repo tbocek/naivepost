@@ -127,16 +127,16 @@ fn f0_12_s0_adding_is_refused_while_a_run_is_on() {
 /// skips the non-media file and the duplicate, moves F0.5's bar, and says what it did. The seam is
 /// `ui::add_files` — the same body the chooser's response calls.
 fn check_a_pick_lands_rows(app: &adw::Application) {
-    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    let window = ui::build_window(app, &model, "Prepare");
-    window.present();
-    // Built before the cwd moves: `add_files` takes the project as `startup::session_dir(cwd)`, and
-    // pointing cwd at a throwaway root keeps the copies out of `rust/`.
+    // The window is built ON a throwaway project folder: `add_files` copies into the folder the window has
+    // open (`startup::open_dir`), so the copies stay out of `rust/`.
     let root = std::env::temp_dir().join(format!("naivepost-f012w-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     let card = root.join("card");
     fs::create_dir_all(&card).unwrap();
     let dir = naivepost::startup::session_dir(&root);
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::window::build_window_at(app, &model, "Prepare", &dir);
+    window.present();
     let cam = card.join("cam.mkv");
     let wav = card.join("mic.wav");
     let txt = card.join("notes.txt");
@@ -146,7 +146,6 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
     fs::write(&wav, vec![b'x'; 3]).unwrap();
     fs::write(&txt, vec![b'x'; 3]).unwrap();
     fs::write(&dup, vec![b'x'; 5]).unwrap();
-    std::env::set_current_dir(&root).unwrap();
 
     // S2's default is the copy, read off the live tick rather than assumed.
     assert!(
@@ -161,6 +160,11 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
             &[cam.clone(), wav.clone(), txt.clone(), dup.clone()]
         ),
         "two rows should go in"
+    );
+    // The copy runs on a worker (§03-shell §1): its rows and sentence land on the window thread's poll.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+        "the copy landed"
     );
 
     let rows = ui::session_sources(&window);
@@ -237,8 +241,13 @@ fn check_a_pick_lands_rows(app: &adw::Application) {
     // S5 again with nothing new: refused as a no-op, session untouched.
     let before = ui::session_sources(&window);
     assert!(
-        !ui::add_files(&window, &[cam.clone(), wav.clone()]),
-        "nothing new to add"
+        ui::add_files(&window, &[cam.clone(), wav.clone()]),
+        "the copy starts; that nothing was new is its landing's sentence"
+    );
+    // The copy runs on a worker (§03-shell §1): its rows and sentence land on the window thread's poll.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+        "the copy landed"
     );
     assert_eq!(
         ui::state(&window).status,

@@ -97,7 +97,7 @@ pub fn read_wav_samples(path: &Path) -> Result<Vec<i16>, String> {
 /// A recording's own size and mtime, the two stamps [`crate::wave::read`] checks a cache against. They
 /// come from the recording and never from the cache file, because a staleness test that reads its own
 /// subject cannot fail (see [`crate::edges::load`]'s note).
-fn stamp(recording: &Path) -> Result<(i64, i64), String> {
+pub(crate) fn stamp(recording: &Path) -> Result<(i64, i64), String> {
     let meta =
         std::fs::metadata(recording).map_err(|err| format!("{}: {err}", recording.display()))?;
     let mtime = meta

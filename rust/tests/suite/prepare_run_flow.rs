@@ -516,6 +516,7 @@ fn f1_1_s7_failure_carries_its_reason_or_points_at_the_log() {
 /// unfinished description leaves), the armed run clears it.
 #[test]
 fn f0_3_s5_a_stop_inside_describe_arms_the_next_prepare_run() {
+    let _turn = crate::common::describe_flags_turn();
     let (_keep, tree) = scratch("f03arm");
     fs::create_dir_all(tree.describe_dir("lecture")).unwrap();
     fs::write(tree.describe_state("lecture"), b"halfway\n").unwrap();
@@ -595,13 +596,13 @@ fn f1_1_s6_the_press_puts_the_bar_in_prepare_slices() {
         // Read through the same fraction the progress bar paints from.
         let shown = queue.borrow().fraction();
         let (ingest_base, _) = prepare_run::share(Phase::Ingest, false);
-        let (understand_base, understand_share) = prepare_run::share(Phase::Understand, false);
+        let (understand_base, understand_top) = prepare_run::share(Phase::Understand, false);
         assert!(
             ingest_base > 0.0 && understand_base > 0.0,
             "§S6's numbers are non-zero bases, which is what makes a scaled bar distinguishable"
         );
         assert!(
-            shown <= understand_base + understand_share,
+            shown <= understand_top,
             "the bar sits inside Prepare's slices, not past understand's top: {shown}"
         );
         assert!(

@@ -95,6 +95,21 @@ Voice.
 - The voice of someone who was there and is telling a friend about it, not a press release. Contractions are fine.
 - No emoji walls, no "smash that like button", no promises about upload schedules, no links to things you were not told exist.`
 
+// youtubePartSystem reads one part of a video too long to be read at once
+// (publishBrief); the upload text is then written from the notes of every part.
+const youtubePartSystem = `You read one part of a finished video, so that its upload text can be written afterwards from the notes on every part. Write the notes, not the upload text.
+
+You are given the part's clips -- what was seen and said in each -- and the narration written over them. The clip numbers and the times are the whole video's: keep them as they are.
+
+The notes, in this order, in the language that is spoken in the video.
+
+- What this part is about: two to four sentences, specific to this part.
+- Its beats: one line per distinct beat, "m:ss what happens", at the time the clip list gives for the clip it starts in ("at 1:23 in the video"), never a session time. Only beats that are really there.
+- Pictures it contains that could be a thumbnail, up to five: "clip <n> +<seconds>: what is on screen", the clip whose block describes it and the offset stamped on that EVENT line, both copied off the brief, neither worked out. Slides, title cards and anything the user context asks for come first.
+- Names, terms and numbers that matter, written as they appear on screen or are said.
+
+Only what this part contains. No title, no hashtags, no thumbnail instruction, nothing about the parts you were not given.`
+
 // ---- what the project keeps -----------------------------------------------------
 
 // pubSettings is the Publish page as the project stores it: decisions the user
@@ -961,24 +976,140 @@ func pickShots(shots []pubShot, segs []cutSeg, n int) []string {
 // briefing the narration was written from (clipBriefs), plus the narration
 // itself -- which is the tightest description of the finished video that
 // exists, because it was written to be spoken over exactly these clips.
-func (a *App) publishBrief(segs []cutSeg, entries []narrEntry) string {
+//
+// A long video is read in parts. A 68-minute video's brief was 137k tokens
+// into a 140k context, and the model's thinking ran into the end of it after
+// seven minutes of reading, with no answer. So the clips are cut into parts
+// of 45 minutes, or 30 where a 45-minute part does not fit what the server
+// leaves the brief (publishRoom); each part is read whole on a call of its
+// own (youtubePartSystem) into notes, and the upload text is written from the
+// notes of every part. A video of one part is its own brief. A server that
+// will not say its size or count tokens gets 45-minute parts unchecked, and
+// the log says so.
+func (a *App) publishBrief(track int, segs []cutSeg, entries []narrEntry) (string, error) {
 	rows := a.sessionRows()
-	total := 0.0
-	for _, s := range segs {
-		total += s.length()
+	room, err := a.publishRoom()
+	if err != nil {
+		a.logfIdle("    publish: parts of %.0f minutes, their size unchecked (%v)", publishParts[0], err)
 	}
+	var spans [][2]int
+	var briefs []string
+	var mins float64
+	for _, mins = range publishParts {
+		spans, briefs = publishSpans(segs, mins), nil
+		big := 0 // a part's tokens, when it is more than the room
+		for _, sp := range spans {
+			b := a.publishBriefOf(segs, entries, rows, sp[0], sp[1])
+			briefs = append(briefs, b)
+			if room > 0 && big == 0 {
+				n, err := a.llmTokens(b)
+				if err != nil {
+					return "", err
+				}
+				if n > room {
+					big = n
+				}
+			}
+		}
+		if big == 0 {
+			break
+		}
+		if mins == publishParts[len(publishParts)-1] {
+			return "", fmt.Errorf("a part of %.0f minutes is %d tokens, and the server leaves the brief %d", mins, big, room)
+		}
+	}
+	if len(spans) == 1 {
+		return briefs[0], nil
+	}
+	a.logfIdle("    publish: the video is read in %d parts of up to %.0f minutes", len(spans), mins)
 	var b strings.Builder
-	fmt.Fprintf(&b, "THE FINISHED VIDEO: %d clips, %d:%02d long.\n",
-		len(segs), int(total)/60, int(total)%60)
+	fmt.Fprintf(&b, "THE FINISHED VIDEO: %d clips, %s long.\n\n", len(segs), mmss(publishAt(segs, len(segs))))
+	fmt.Fprintf(&b, "It was too long to read at once, so it was read in %d parts, in order, and what follows are the notes on each. The clip numbers and the times in them are the whole video's, and every \"clip <n> +<seconds>\" in them is copied off the EVENT line that describes that picture.\n", len(spans))
+	for i, sp := range spans {
+		a.prog(track, float64(i)/float64(len(spans)+1), "reading part %d of %d", i+1, len(spans))
+		notes, err := a.llmChatRetry("publish-part", []map[string]any{
+			msg("system", a.sysPrompt("youtube-part")),
+			msg("user", a.ctxBlockFor("youtube")+briefs[i]),
+		}, false)
+		if err != nil {
+			return "", fmt.Errorf("part %d of %d: %w", i+1, len(spans), err)
+		}
+		fmt.Fprintf(&b, "\nPART %d: clips %d–%d, %s–%s in the video\n%s\n", i+1, sp[0]+1, sp[1],
+			mmss(publishAt(segs, sp[0])), mmss(publishAt(segs, sp[1])), strings.TrimSpace(notes))
+	}
+	return b.String(), nil
+}
+
+// publishParts are the part lengths, in minutes of the finished video, a
+// long video is read in: the first whose every part fits.
+var publishParts = []float64{45, 30}
+
+// publishSpans cuts the clips into parts of mins minutes of the finished
+// video, each as [first, end), the last one what is left: a part ends before
+// the clip that would take it past mins, and a clip longer than that is a
+// part of its own.
+func publishSpans(segs []cutSeg, mins float64) [][2]int {
+	var out [][2]int
+	from, run := 0, 0.0
+	for i, s := range segs {
+		if i > from && run+s.length() > mins*60 {
+			out = append(out, [2]int{from, i})
+			from, run = i, 0
+		}
+		run += s.length()
+	}
+	return append(out, [2]int{from, len(segs)})
+}
+
+// publishAt is where clip i starts in the finished video, in seconds.
+func publishAt(segs []cutSeg, i int) float64 {
+	at := 0.0
+	for _, s := range segs[:i] {
+		at += s.length()
+	}
+	return at
+}
+
+// publishRoom is how many tokens a brief may take: the server's context less
+// everything else the upload call holds -- its answer's ceiling, the system
+// prompt, the user context, the web tools and the room their answers may
+// fill: up to toolRounds rounds of a page each, at three characters a token,
+// which is fewer than any language here runs. A part's call holds less, so
+// what fits the one fits the other.
+func (a *App) publishRoom() (int, error) {
+	ctx, err := a.llmContext()
+	if err != nil {
+		return 0, err
+	}
+	tools, err := json.Marshal(webTools())
+	if err != nil {
+		return 0, err
+	}
+	n, err := a.llmTokens(a.sysPrompt("youtube") + a.ctxBlockFor("youtube") + string(tools))
+	if err != nil {
+		return 0, err
+	}
+	return ctx - publishTokens - toolRounds*searchPageChars/3 - n, nil
+}
+
+// publishBriefOf is the brief of clips [from, to), numbered and timed as in
+// the whole video, with the narration spoken over them.
+func (a *App) publishBriefOf(segs []cutSeg, entries []narrEntry, rows []tsvRow, from, to int) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "THE FINISHED VIDEO: %d clips, %s long.\n", len(segs), mmss(publishAt(segs, len(segs))))
+	if from > 0 || to < len(segs) {
+		fmt.Fprintf(&b, "THIS PART OF IT: clips %d–%d, %s–%s in the video.\n", from+1, to,
+			mmss(publishAt(segs, from)), mmss(publishAt(segs, to)))
+	}
 	// each clip headed by where it starts in the FINISHED video: the chapter
 	// list is written on that clock, and it is arithmetic the model would
 	// otherwise have to do from the clip lengths -- which a small one does not,
 	// and writes session times instead
 	b.WriteString("\nWHAT IS IN EACH CLIP:\n")
-	pos := 0.0
-	b.WriteString(clipBriefsWith(segs, rows, nil, a.narratorMic(), func(i int, s cutSeg) string {
-		h := fmt.Sprintf("CLIP %d (at %d:%02d in the video, %.0f s): session %.1f–%.1f",
-			i+1, int(pos)/60, int(pos)%60, s.length(), s.S, s.E)
+	pos := publishAt(segs, from)
+	b.WriteString(clipBriefsWith(segs[from:to], rows, nil, a.narratorMic(), func(i int, s cutSeg) string {
+		h := fmt.Sprintf("CLIP %d (at %s in the video, %.0f s): session %.1f–%.1f",
+			from+i+1, mmss(pos), s.length(), s.S, s.E)
 		pos += s.length()
 		return h
 	}))
@@ -990,11 +1121,10 @@ func (a *App) publishBrief(segs []cutSeg, entries []narrEntry) string {
 	at := 0.0
 	for i, s := range segs {
 		for _, e := range entries {
-			if e.S != s.S || e.E != s.E || strings.TrimSpace(e.Text) == "" {
+			if i < from || i >= to || e.S != s.S || e.E != s.E || strings.TrimSpace(e.Text) == "" {
 				continue
 			}
-			fmt.Fprintf(&n, "  [%d:%02d] (clip %d) %s\n",
-				int(at+e.At)/60, int(at+e.At)%60, i+1, e.Text)
+			fmt.Fprintf(&n, "  [%s] (clip %d) %s\n", mmss(at+e.At), i+1, e.Text)
 			said++
 		}
 		at += s.length()
@@ -1366,7 +1496,10 @@ func (a *App) publishStage(track int, st pubSettings, aspect string, segs []cutS
 		needText = true
 	}
 	if needText {
-		brief := a.publishBrief(segs, entries)
+		brief, err := a.publishBrief(track, segs, entries)
+		if err != nil {
+			return err
+		}
 		a.logCtx("publish")
 		a.prog(track, 0, "writing the title, the instruction and the description")
 		title, instr, at, desc, err := a.writeUploadAt(brief, segs)

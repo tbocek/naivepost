@@ -32,7 +32,6 @@ use crate::cut_select;
 use crate::cut_verbs;
 use crate::exchanges;
 use crate::layout;
-use crate::lucky;
 use crate::narration::{self, Narration};
 use crate::policy;
 use crate::project::Project;
@@ -81,16 +80,16 @@ pub(crate) use crate::ui::cut_lane_rows::{preview_widget, set_class};
 
 // The §1 bench, tabs and readouts group lives in `window_bench` (window.rs is past its size budget);
 // these are the doors the rest of the page calls, kept at the paths they had.
-/// Repaint the bottom bar for a folder: the door an Open or a Rescan goes through, and the one a test that
-/// staged a session uses to see §A.8's Inputs/Outputs row without clicking through the shell.
-/// Repaint the bottom bar for a folder: the door an Open or a Rescan goes through, and the one a test that
-/// staged a session uses to see §A.8's Inputs/Outputs row without clicking through the shell.
-pub use crate::ui::window_bench::paint_readouts_for;
 pub(crate) use crate::ui::window_bench::{
     depth, has_label, paint_readouts, paint_tabs, paint_tabs_for, refresh_cut_readouts,
     tab_buttons, LOG_OPEN_PX,
 };
 pub use crate::ui::window_bench::{label, paint_progress, paint_run_bar, set_bench_open_row};
+/// Repaint the bottom bar for a folder: the door an Open or a Rescan goes through, and the one a test that
+/// staged a session uses to see §A.8's Inputs/Outputs row without clicking through the shell.
+/// Repaint the bottom bar for a folder: the door an Open or a Rescan goes through, and the one a test that
+/// staged a session uses to see §A.8's Inputs/Outputs row without clicking through the shell.
+pub use crate::ui::window_bench::{paint_readouts_for, readouts_read_here_for_test};
 
 // The shell's project/session reads live in `window_session` (window.rs is past its size budget); these
 // stay reachable at their old paths, including `window::session_reads()` for `rescan_apply`.
@@ -127,12 +126,12 @@ pub(crate) use crate::ui::window_trim_strip::{
 // doors the rest of the page and the run call, kept at their paths. No control starts them: they are jobs of
 // the run after the cut (`cut_suggest_passes::run_after_cut`).
 pub use crate::ui::cut_pass_gates::{
-    run_captions_pass, run_captions_pass_with_reply, set_captions_pass_for_test,
-    set_decorations_pass_for_test, set_speeds_pass_for_test, CaptionBatch,
+    land_pass, pass_inputs, run_captions_pass, run_captions_pass_with_reply,
+    set_captions_pass_for_test, set_decorations_pass_for_test, set_speeds_pass_for_test,
+    walk_captions, CaptionBatch, PassInputs, PassOut,
 };
 pub(crate) use crate::ui::window_run_press::{
-    live_transport, wire_lucky, wire_play, wire_play_cut, wire_play_recording, wire_preview_volume,
-    wire_stop,
+    live_transport, wire_play, wire_play_cut, wire_play_recording, wire_preview_volume, wire_stop,
 };
 
 /// The window's switching state and what it decided on arrival. `help_page` is read from the shell
@@ -148,12 +147,33 @@ pub struct UiState {
     pub progress: f64,
 }
 
-/// Build the window showing `project`. `page` selects the visible tab.
+/// Build the window showing `project`. `page` selects the visible tab. The project is taken to live in the
+/// working copy beside the working directory; [`build_window_at`] names its folder.
 pub fn build_window(
     app: &impl IsA<gtk::Application>,
     project: &Project,
     page: &str,
 ) -> adw::ApplicationWindow {
+    build_window_at(
+        app,
+        project,
+        page,
+        &startup::session_dir(&std::env::current_dir().unwrap_or_default()),
+    )
+}
+
+/// Build the window showing `project`, which lives in `dir`: the folder every step, save and read of this
+/// window works on ([`startup::open_dir`]). The launch hands the folder it decided on (F0.6), so a
+/// remembered project is the one written to, not the working copy beside the launch folder.
+pub fn build_window_at(
+    app: &impl IsA<gtk::Application>,
+    project: &Project,
+    page: &str,
+    dir: &std::path::Path,
+) -> adw::ApplicationWindow {
+    // FIRST: everything below that reads the project's files (the held narration, the cut, the pages)
+    // asks `startup::open_dir`, and before this line it still names the previous window's folder.
+    save_apply::set_open_dir(dir);
     let window = adw::ApplicationWindow::new(app);
     // spec/03-shell.md §1: "Its minimum size is 1240×900: it opens at that size and cannot be made
     // smaller." The default is that size, and the size REQUEST is what makes it a floor: GTK 4 refuses to
@@ -208,19 +228,13 @@ pub fn build_window(
     // the session here rather than into `project_autosave::session_dir()`, which asks the process cwd at
     // close time — wrong once a flow has moved the session (F0.10's Save as, F0.11's Rescan) or a test has
     // pinned its cwd, and a close must never create or rewrite somebody else's folder.
-    let session_folder = startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let session_folder = dir.to_path_buf();
     SESSION_DIRS.with(|held| held.borrow_mut().push(session_folder.clone()));
     crate::project_autosave::install(Rc::clone(&session), session_folder.clone());
     crate::project_autosave::start();
     // §1's watchdog: the GTK thread's own heartbeat, armed for as long as a window lives. The watcher
     // that reads it was started by the launch (`ui::launch::open_at_start`).
     crate::watchdog::arm();
-    // The folder this window has open: the working copy beside its launch root. A rename or an Open
-    // moves it afterwards -- that is what `save_target` answers -- but a fresh window always starts on
-    // its own root's session, whatever an earlier window in this process left behind.
-    save_apply::set_open_dir(&startup::session_dir(
-        &std::env::current_dir().unwrap_or_default(),
-    ));
     // The Cut page's ▶ resolves its session through `cut_suggest_land`'s own slot (§12 §4's walk-back
     // reads the words from there), so a fresh window installs its root's session rather than inheriting
     // whatever an earlier window in this process left behind.
@@ -336,7 +350,7 @@ pub fn build_window(
         &status,
         &shell,
         &guard,
-        project,
+        &session,
         &inputs_readout,
         &outputs_folder,
         &outputs_readout,
@@ -368,7 +382,7 @@ pub fn build_window(
     WINDOW_QUEUE.with(|slots| slots.borrow_mut().push(Rc::clone(&queue)));
     let exchange_log = Rc::new(RefCell::new(exchanges::RunLog::new()));
 
-    // The progress bar sits between ⏹ and the status line: §2's bar reads play, stop, gears, then
+    // The progress bar sits between ⏹ and the status line: §2's bar reads play, stop, then
     // the run's fraction and its words. Idle is 0 rather than hidden — a bar that vanishes makes the
     // row jump when a run starts.
     let progress = gtk::ProgressBar::new();
@@ -384,6 +398,7 @@ pub fn build_window(
     // status label itself filling the rest. `state()` still reads the label by name, so every existing
     // assertion on `state().status` keeps working unchanged — only its parent moved.
     let log_view = gtk::TextView::new();
+    crate::ui::margins::text_box(&log_view);
     log_view.set_widget_name("log-view");
     // §1: the run's exchange page is the log's one clickable line; everything else stays plain text.
     super::log_link::install(&log_view);
@@ -407,6 +422,8 @@ pub fn build_window(
     log_scroller.set_widget_name("log-scroller");
     log_scroller.set_min_content_height(LOG_OPEN_PX);
     log_scroller.set_child(Some(&log_view));
+    // §1: the log keeps its newest line in view while the person is at its end.
+    super::log_paint::follow_end(&log_scroller, &log_view);
 
     let log_header = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     log_header.set_widget_name("log-header");
@@ -422,9 +439,17 @@ pub fn build_window(
     log.set_expanded(false);
     // A collapsed expander must claim nothing, or the band it belongs to is charged a body that is never drawn.
     super::window_log::hide_body_while_collapsed(&log, log_scroller.upcast_ref());
+    log.connect_expanded_notify({
+        let view = log_view.clone();
+        move |log| {
+            if log.is_expanded() {
+                super::log_paint::open_at_end(&view, &window_logs());
+            }
+        }
+    });
 
-    // §2's run bar: ▶ at the left of the row above the log, ⏹ next to it (F0.3), then the "I'm
-    // feeling lucky" gears (F0.4), then the progress bar F0.5 adds.
+    // §2's run bar: ▶ at the left of the row above the log, ⏹ next to it (F0.3), then the progress bar
+    // F0.5 adds.
     let play = gtk::Button::from_icon_name(run::PLAY_ICON);
     play.set_widget_name("play-button");
     play.add_css_class("suggested-action");
@@ -432,54 +457,35 @@ pub fn build_window(
     let stop_ = gtk::Button::from_icon_name(run::STOP_ICON);
     stop_.set_widget_name("stop-button");
     stop_.set_tooltip_text(Some(run::STOP_TOOLTIP));
-    // The gears after ▶: labelled rather than icon-only, because §03 names the control by its words and
-    // the spec's run-bar image shows the phrase on the button. §2's order is ▶ , lucky , ⏹ .
-    // §2's icon: the two gears beside the words, as spec/img/03-runbar.svg draws them. GTK 4's Button has
-    // no image property (only `from_icon_name` / `label`), so the button is built empty and carries a box:
-    // the gears first, then the phrase. `gears_of` finds the image back for [`lucky_run::set_turning`],
-    // which animates that node alone so the words never rotate.
-    let lucky = gtk::Button::new();
-    lucky.set_widget_name("lucky-button");
-    let gears = gtk::Image::from_icon_name(lucky::GEARS_ICON);
-    gears.set_widget_name("lucky-gears");
-    let lucky_words = gtk::Label::new(Some(lucky::LUCKY_LABEL));
-    lucky_words.set_widget_name("lucky-words");
-    let lucky_face = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    lucky_face.set_widget_name("lucky-face");
-    lucky_face.append(&gears);
-    lucky_face.append(&lucky_words);
-    lucky.set_child(Some(&lucky_face));
-    lucky.set_tooltip_text(Some(lucky::LUCKY_TOOLTIP));
     paint_run_bar(
         &play,
-        &lucky,
         &stop_,
         &bar.borrow(),
         shell.borrow().page,
         live_transport(),
     );
 
-    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    // 03-shell §1: 8 px between the run bar's controls.
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     // §1: this box is what scrolls. The scroller around it (`window_run_scroller`) carries the name
     // `run-controls`, and the box inside it carries `run-controls-inner`, so a door or a test that wants
-    // ▶ / 🎲 / ⏹ finds the buttons' own row without guessing which of the two wrappers it walked into.
+    // ▶ / ⏹ finds the buttons' own row without guessing which of the two wrappers it walked into.
     controls.set_widget_name("run-controls-inner");
     controls.append(&play);
-    controls.append(&lucky);
     controls.append(&stop_);
-    // …and NOTHING else. §2's list is the row's whole content: the four controls above, then the readouts.
+    // …and NOTHING else. §2's list is the row's whole content: the controls above, then the readouts.
     // No gear for an editing-policy form lives here either — F0.7 has no form at all, and badge 6's ⓘ is a
     // tooltip and nothing more (wired below);
     // F0.7's derivation runs by itself when the User Context changes (`window_bench` → `schedule_policy_derive`),
     // and F3.9-F3.11 are jobs of the run after the cut (`cut_suggest_land` → `cut_suggest_passes::run_after_cut`),
     // filtered by the policy switches — none of them starts from a button on this bar.
-    // §2's bar reads ▶ , I'm feeling lucky , ⏹ , then the progress bar taking the row's free width --
+    // §2's bar reads ▶ , ⏹ , then the progress bar taking the row's free width --
     // it stays in the OUTER row, beside the readouts, so shrinking squeezes the buttons and not the bar.
     // §1: the run bar's controls live in a box of their own (`run-controls-inner`), which
     // `window_divider::install` puts inside a scroller named `run-controls` so a narrow window scrolls them
     // sideways instead of holding the shell wide. The row keeps its name and its children; only their
     // parent moved.
-    let run_row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    let run_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     run_row.set_widget_name("run-bar");
     run_row.append(
         &super::window_run_scroller::wrap_controls(controls.clone().upcast::<gtk::Widget>())
@@ -503,21 +509,6 @@ pub fn build_window(
     );
     wire_stop(
         &stop_, &play, &bar, &shell, &status, &progress, &log, &log_view, &queue, &procs,
-    );
-    wire_lucky(
-        &lucky,
-        &bar,
-        &shell,
-        &stack,
-        &guard,
-        &status,
-        &progress,
-        &log,
-        &log_view,
-        &queue,
-        &exchange_log,
-        &procs,
-        project.clone(),
     );
 
     let box_ = gtk::Box::new(gtk::Orientation::Vertical, 0);
@@ -568,6 +559,20 @@ pub fn build_window(
     header.pack_end(&settings_);
     wire_settings(&settings_, &window);
 
+    // F0.14's Profiles button, between Settings and ⓘ.
+    // The desktop's own "template" sign (a page with a dashed edge): a profile is a template for a kind of video.
+    let profiles_ = gtk::Button::from_icon_name("folder-templates-symbolic");
+    profiles_.set_widget_name("profiles-button");
+    profiles_.set_tooltip_text(Some(
+        "Profiles \u{2014} templates for a kind of video: the User Context with fields, every step's prompt and \
+the Produce settings",
+    ));
+    header.pack_end(&profiles_);
+    let parent = window.clone();
+    profiles_.connect_clicked(move |_| {
+        crate::ui::profiles_dialog::open_edit(Some(parent.upcast_ref()), None);
+    });
+
     // §1's badge **6**: ⓘ, once, at header position 6 — read left to right the bar ends ⓘ ⚙ ⟳, so
     // it is packed after Settings (each `pack_end` lands left of the previous one). Its whole job is its
     // tooltip: F0.7 has no policy form, so a press opens nothing and the policy is read where it is said,
@@ -603,6 +608,8 @@ pub fn build_window(
     // which is what the shot showed; the labels keep their whole word and badge 4, which already
     // ellipsizes (§1: path → file name → icons only), gives way first.
     super::window_tabs::keep_labels_whole(&switcher);
+    // …drawn as one joined group, the shown tab shaded (§1 badge 5's look).
+    super::window_tabs::style_as_joined(&switcher);
     // libadwaita's own default is LOOSE, which slides the title toward whichever side has room: with
     // badge 4 (the project path) packed after Save and expanding, that slide moved the tab row ~80 px
     // right of the bar's centre. STRICT keeps it centred and lets the start group give way instead —
@@ -622,6 +629,8 @@ pub fn build_window(
     // …and the row is made to fit, in the one order that works (`window_run_fit`).
     super::window_run_fit::fit_into_row(&run_row, &controls, readout_row.upcast_ref());
 
+    // 03-shell §1's margins, for every part a page builds, now or later.
+    super::margins::install_once();
     window.set_content(Some(&box_));
 
     // F2.1: this window's preview is registered only now that the content tree exists. A `Rc` clone of
@@ -704,10 +713,7 @@ pub fn build_window(
     // keeps it only while some filmed span still covers it (the spans come from this same opened cut
     // through `timeline::kept_footage_recordings` + `filmed_runs`, so nothing new is invented).
     // One-shot per project open: it happens at build, never on re-entering the tab.
-    let project_tree = layout::Tree::new(startup::session_dir(
-        &std::env::current_dir().unwrap_or_default(),
-    ))
-    .ok();
+    let project_tree = layout::Tree::new(crate::startup::open_dir()).ok();
     let opened_cut = project_tree
         .as_ref()
         .and_then(|tree| cut::load(tree).ok())
@@ -843,7 +849,11 @@ pub fn build_window(
             press_copy as fn(&adw::ApplicationWindow) -> String,
         ),
         ("paste-button", press_paste),
-        ("lane-button", press_lane),
+        // ⇲ with nothing in hand probes the footage file on a worker (§03-shell §1).
+        (
+            "lane-button",
+            crate::ui::window_trim_strip::press_lane_from_button,
+        ),
     ] {
         if let Some(button) = line_step_button(&window, name) {
             let win = window.clone();
@@ -883,6 +893,8 @@ pub fn build_window(
     // F3.5: Esc releases the drawing arm / drops an open drawing form. Wired here (after `set_content`) like
     // every other control on this page.
     wire_svg_esc(&window);
+    // Esc's last layer: the clip or edge in hand, then the selection. Wired after every other Esc controller.
+    crate::ui::window_trim_strip::wire_hand_esc(&window);
     // F3.2: the Aspect ratio dropdown, wired by name after `set_content` for the same reason — the widget
     // the lookup finds must be the one in the realized tree.
     wire_aspect_choice(&window);
@@ -892,6 +904,7 @@ pub fn build_window(
     wire_history_keys(&window);
     // F2.8: the trim and move gestures on `track-strip`, wired after `set_content` for the same reason.
     wire_track_strip(&window);
+    crate::ui::cut_band_trim::wire(&window);
     // F2.10: fill `camera-rows` now that the page is inside the tree, so the search for it succeeds
     // and the plates, badges and switches a test fires by name are actually there.
     refresh_camera_rows(&window);
@@ -947,6 +960,21 @@ pub fn build_window(
     crate::ui::narrate_volume::ensure_slot(&window);
     crate::ui::narrate_page::wire(&window);
     crate::ui::produce_page::wire(&window);
+    // The Cut page opens on the cut this project already holds: its readings (Cut, Segments, Source) and the
+    // frame at the line restored above. Both were painted only after an edit or a line move, so a project
+    // opened with a cut showed `Segments: 0`, `Cut: 00:00` and an empty picture until something was touched.
+    refresh_cut_readouts(&window);
+    // The red line restored above went into the preview slot that was newest THEN; the Narrate page has
+    // registered its own since, and that is the one ▶ and the band read. Seat the line there too, or ▶ plays
+    // from 0:00 and the band paints the line at the start while the picture shows the restored second.
+    // Inventory §D: one of ▶, ▶✂, ▶✂✂ is lit from the first frame, the recording until a press says otherwise.
+    crate::ui::cut_record_play::light_lit(&window);
+    match restored {
+        Some(pos) => set_playhead(&window, pos.t),
+        None => {
+            crate::ui::cut_picture::refresh(&window);
+        }
+    }
     window
 }
 
@@ -988,7 +1016,7 @@ fn wire_switching(
     status: &gtk::Label,
     shell: &Rc<RefCell<Shell>>,
     guard: &Rc<std::cell::Cell<bool>>,
-    project: &Project,
+    session: &Rc<RefCell<Project>>,
     inputs_readout: &gtk::Label,
     outputs_folder: &gtk::Button,
     outputs_readout: &gtk::Label,
@@ -999,7 +1027,7 @@ fn wire_switching(
     let status = status.clone();
     let shell = shell.clone();
     let guard = guard.clone();
-    let project = project.clone();
+    let session = Rc::clone(session);
     let inputs_readout = inputs_readout.clone();
     let outputs_folder = outputs_folder.clone();
     let outputs_readout = outputs_readout.clone();
@@ -1012,6 +1040,9 @@ fn wire_switching(
         let Some(target) = Page::all().into_iter().find(|page| page.label() == shown) else {
             return;
         };
+        // The LIVE session, read at the click: the copy the window was built with knew nothing of the
+        // sources added since, so a Cut click after Prepare was judged against the empty list it began with.
+        let project = session.borrow().clone();
         // S1-S5, all of it in shell.rs. The folder is read here rather than remembered: which
         // project is open is the window's business, and `session_dir` is the same stand-in Rescan
         // uses. A folder that is not a project leaves `tree` None — §1 wants the page to show what
@@ -1037,7 +1068,11 @@ fn wire_switching(
         // writes, so a switch over an untouched narration costs no file.
         if owed {
             if let Some(tree) = tree.as_ref() {
-                let _ = narration::save(&held.borrow(), tree);
+                if let Err(why) = narration::save(&held.borrow(), tree) {
+                    crate::ui::window_logs::say_failure(&format!(
+                        "!!! could not save the narration -- {why}"
+                    ));
+                }
             }
         }
         // §F4.7 (Refit): entering Narrate refitted the held lines against the cut and said so — work the
@@ -1051,7 +1086,11 @@ fn wire_switching(
         {
             if moved + orphan > 0 {
                 if let Some(tree) = tree.as_ref() {
-                    let _ = narration::save(&held.borrow(), tree);
+                    if let Err(why) = narration::save(&held.borrow(), tree) {
+                        crate::ui::window_logs::say_failure(&format!(
+                            "!!! could not save the narration -- {why}"
+                        ));
+                    }
                     // The rows are drawn from the page's own state, which is a separate copy: publish the
                     // refitted lines there too, or a later text flush writes the un-refit ones back.
                     crate::ui::narrate_page::publish_lines(held.borrow().entries.clone());
@@ -1325,6 +1364,12 @@ impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
     fn cut_only(&self) -> bool {
         preview_player(&self.0).cut_only
     }
+    fn player_second(&self) -> Option<f64> {
+        crate::ui::cut_record_play::playing_second()
+    }
+    fn playing(&self) -> bool {
+        preview_player(&self.0).transport.playing
+    }
     fn playhead(&self) -> Option<f64> {
         preview_player(&self.0).playhead
     }
@@ -1373,13 +1418,13 @@ impl cut_play_leg::CutPreviewPage for CutPreviewSlot {
 // The §1 widget doors live in `window_doors` (window.rs is past its size budget); these are the same names,
 // re-exported under the paths every other module and test already reaches them through.
 pub use crate::ui::window_doors::{
-    add_sources_button, bench_language, copy_into_project, find_source_widget, find_status,
-    inputs_readout, log_expander, lucky_button, mark_narration_owed, marking_pass, new_button,
-    new_tooltip, open_button, open_tooltip, outputs_folder_button, outputs_label, outputs_readout,
-    outputs_sentence, paint_project_title, play_button, play_tooltip, progress_bar,
-    progress_tooltip, project_title, rescan_button, rescan_tooltip, run_queue, running_step,
-    save_button, save_tooltip, session_freq, session_handle, session_sources, set_marking_pass,
-    state, stop_button, tab_button, tab_dimmed, tab_info_button, tab_info_parts, tab_tooltip,
+    add_sources_button, copy_into_project, find_source_widget, find_status, inputs_readout,
+    log_expander, mark_narration_owed, marking_pass, new_button, new_tooltip, open_button,
+    open_tooltip, outputs_folder_button, outputs_label, outputs_readout, outputs_sentence,
+    paint_project_title, play_button, play_tooltip, progress_bar, progress_tooltip, project_title,
+    rescan_button, rescan_tooltip, run_queue, running_step, save_button, save_tooltip,
+    session_handle, session_sources, set_marking_pass, state, stop_button, tab_button, tab_dimmed,
+    tab_info_button, tab_info_parts, tab_tooltip,
 };
 pub(crate) use crate::ui::window_doors::{find_switcher, find_widget_by_name};
 // `view_stack` and `switch_latch` are the same doors, reached by `rescan_apply` as `window::view_stack`
@@ -1392,6 +1437,7 @@ pub use crate::ui::window_doors::{switch_latch, view_stack};
 pub use crate::ui::window_project::{
     add_chooser_shown_count, add_files, last_ask, last_open_ask_for_test, name_chosen,
     new_project_confirm, new_project_dialog, open_folder, open_from, reset_add_chooser_shown,
+    OPEN_STOP_FIRST,
 };
 pub(crate) use crate::ui::window_project::{
     remember_opened, wire_add, wire_new, wire_open, wire_rescan, NEW_TIP, OPEN_TIP, RESCAN_TIP,

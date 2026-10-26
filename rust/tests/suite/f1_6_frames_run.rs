@@ -207,8 +207,8 @@ fn walk(scene: &Scene) -> (run_stages::Drive, Vec<String>) {
     outcome
 }
 
-/// The seconds the source starts at on the session clock — the offset the door names frames by. Computed
-/// the same way the door computes it: the placement over the WHOLE session's base names.
+/// The instant the source starts at — the session's zero plus its offset, which the door names frames by.
+/// Computed the same way the door computes it: the clock over the WHOLE session's base names.
 fn clock_start(scene: &Scene) -> f64 {
     let project = naivepost::project::load(&naivepost::startup::session_dir(&scene.root))
         .expect("the project");
@@ -217,15 +217,14 @@ fn clock_start(scene: &Scene) -> f64 {
         .iter()
         .map(|source| source.path.rsplit('/').next().unwrap_or(&source.path))
         .collect();
-    naivepost::fix_transcripts::placement(&names)
-        .into_iter()
-        .next()
-        .unwrap_or(0.0)
+    let clock = clock::clock(&names);
+    clock.zero + clock.offset(0)
 }
 
 /// ffmpeg's `metadata=print` output for a short clip, copied from `tests/suite/frames.rs`: four frames a
 /// second, one animated slide change around 1.0 s (over `P.machine.sceneThreshold` on several frames
-/// running, so they merge), a score exactly ON the threshold at 2.0 s, and a second change at 5.0 s.
+/// running, so they merge), a score exactly ON the threshold at 2.0 s, a second change at 5.0 s, and the take's
+/// last picture at 19.75 s (F1.6 S3: the grid ends at the picture's end).
 fn scene_log() -> String {
     [
         "frame:0    pts:0       pts_time:0",
@@ -245,6 +244,9 @@ fn scene_log() -> String {
         "tag:lavfi.scd.score=0.090",
         "frame:20   pts:8000    pts_time:5.0",
         "tag:lavfi.scd.score=77.400",
+        // The sweep scores every picture to the end of the take, and the grid runs to its last one.
+        "frame:79   pts:31600   pts_time:19.75",
+        "tag:lavfi.scd.score=0.050",
     ]
     .join("\n")
 }
@@ -501,14 +503,13 @@ fn f1_6_s4_every_frame_is_named_by_its_second_on_the_files_clock() {
         matches!(drive, run_stages::Drive::Done { .. }),
         "{drive:?} / {log:?}"
     );
-    let start = clock_start(&scene);
+    // The recording's own instant, the one its name claims: the first rewrite named frames by the session
+    // offset instead (0 for the only source), so every name read `1970-01-01_…`.
+    let start = clock::name_stamp(&recording())
+        .expect("the row's name has to carry a stamp for this to mean anything");
     assert!(
-        start.abs() < 1e-9,
-        "the only source is its own zero: {start}"
-    );
-    assert!(
-        clock::name_stamp(&recording()).is_some(),
-        "the row's name has to carry a stamp for this to mean anything"
+        start >= clock::SESSION_NAMED_BEFORE,
+        "a real instant, not a session second: {start}"
     );
     assert_eq!(
         STAMP.split(' ').next().unwrap(),
@@ -550,6 +551,10 @@ fn f1_6_s4_every_frame_is_named_by_its_second_on_the_files_clock() {
         on_disk[0],
         format!("{}.jpg", clock::frame_name(start)),
         "the first picture: {on_disk:?}"
+    );
+    assert_eq!(
+        on_disk[0], "2026-05-01_10-00-00.000.jpg",
+        "its real date and time"
     );
 }
 
@@ -702,4 +707,53 @@ impl Scene {
 /// walk.
 pub fn conf_of(paths: &Paths) -> Conf {
     settings::read(paths).unwrap_or_default()
+}
+
+/// §F1.6 S4 for a folder the first rewrite extracted: its frames carry session seconds printed as 1970 dates.
+/// The resumed pass renames them in place to the recording's own date and time, the scaled copies with them,
+/// without asking ffmpeg again, and says how many it renamed.
+#[test]
+fn f1_6_s4_a_1970_named_folder_is_renamed_to_the_recordings_date_on_resume() {
+    let scene = Scene::new("20.0");
+    let (drive, _) = walk(&scene);
+    assert!(matches!(drive, run_stages::Drive::Done { .. }), "{drive:?}");
+    let real = scene.frames_on_disk();
+    // Put the folder back the way the first rewrite named it: session seconds (0 for the only source).
+    let start = clock_start(&scene);
+    let dir = scene.tree.frames_dir(LANE);
+    let llm = scene.tree.llm_frames_dir(LANE);
+    std::fs::create_dir_all(&llm).unwrap();
+    for name in &real {
+        let at = clock::read_frame(name.trim_end_matches(".jpg")).unwrap() - start;
+        let old = format!("{}.jpg", clock::frame_name(at));
+        assert!(old.starts_with("1970-01-01_"), "{old}");
+        std::fs::rename(dir.join(name), dir.join(&old)).unwrap();
+        std::fs::write(llm.join(&old), b"scaled").unwrap();
+    }
+    let calls_before = scene.calls().len();
+
+    let (drive, log) = walk(&scene);
+    assert!(matches!(drive, run_stages::Drive::Done { .. }), "{drive:?}");
+    assert_eq!(
+        scene.frames_on_disk(),
+        real,
+        "every frame has its real name back"
+    );
+    let mut copies: Vec<String> = std::fs::read_dir(&llm)
+        .unwrap()
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    copies.sort();
+    assert_eq!(copies, real, "the scaled copies carry the same names");
+    assert_eq!(
+        scene.calls().len(),
+        calls_before,
+        "renamed, not extracted again"
+    );
+    assert!(
+        log.iter()
+            .any(|line| line.contains(&format!("{} frame(s) renamed", real.len() * 2))),
+        "the rename is said: {log:?}"
+    );
 }

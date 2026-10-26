@@ -339,6 +339,11 @@ fn volume_round(app: &adw::Application) {
         let fx = &cut_.fx[0];
         assert_eq!(fx.kind, "volume");
         assert_close("500 % is five times", fx.gain, 5.0);
+        // The curve dropdown is read at Apply: its one choice, Linear, writes no `ease` key (§06#1).
+        assert_eq!(
+            fx.ease, "",
+            "the curve the dropdown held (Linear) went into the record as no ease"
+        );
         assert_close("over the band's own seconds", fx.t, 10.0);
         assert_close("...of its own length", fx.dur, 15.0);
         // §A.6 "No box, no drag": there is no field for a drag to have written.

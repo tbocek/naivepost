@@ -647,7 +647,7 @@ pub fn session_words(tree: &Tree, project: &Project) -> Vec<SessionWord> {
         let lanes: Vec<String> = project
             .sources
             .iter()
-            .filter(|source| source.narrator == 0)
+            .filter(|source| !crate::sources::is_narrator_mic(source))
             .map(|source| lane_of(source.path.rsplit('/').next().unwrap_or(&source.path)))
             .collect();
         let words: Vec<SessionWord> = list
@@ -671,7 +671,7 @@ fn session_words_from_asr(tree: &Tree, project: &Project) -> Vec<SessionWord> {
     let hz = crate::transcribe::SAMPLE_RATE as f64;
     let mut out = Vec::new();
     for source in &project.sources {
-        if source.narrator != 0 {
+        if crate::sources::is_narrator_mic(source) {
             continue;
         }
         let lane = lane_of(source.path.rsplit('/').next().unwrap_or(&source.path));

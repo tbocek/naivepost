@@ -19,7 +19,6 @@ use crate::cut_hear;
 use crate::cut_screen;
 use crate::cut_select;
 use crate::cut_trim;
-use crate::prepare;
 use crate::ui::cut_form_frame;
 use crate::ui::cut_tracks;
 
@@ -35,7 +34,7 @@ pub(crate) const PAGE_MIN_H: i32 = 360;
 pub(crate) const PREPARE_HALF_PX: i32 = 596;
 
 /// The shortest band the sources list may be squeezed into before its own scrollbar appears (§1:
-/// the list scrolls while the add row above and the Freq row below stay put).
+/// the list scrolls while the add row above stays put).
 pub(crate) const SOURCES_MIN_H: i32 = 120;
 
 /// The prompt bench's ceiling lives in `window_bench` (the scroller's own builder sets it); this file no
@@ -46,7 +45,7 @@ use crate::sources;
 use crate::ui::cut_lane_rows::cut_form_column;
 use crate::ui::source_rows;
 use crate::ui::window::{press_effect_item, session_reads, STRIP_HEIGHT, STRIP_WIDTH};
-use crate::ui::window_bench::{bench_box, bench_paths, label};
+use crate::ui::window_bench::{bench_box, bench_paths};
 use crate::ui::window_doors::find_widget_by_name;
 use crate::ui::window_policy::main_window;
 use crate::ui::window_project::{ADD_LABEL, COPY_LABEL};
@@ -111,13 +110,18 @@ pub(crate) fn page_box(
     page_scroller.set_child(Some(&box_));
     box_.set_margin_start(24);
     box_.set_margin_end(24);
-    box_.set_margin_top(24);
+    // 03-shell §1: "12 px from the header bar above it (no more: a deeper band reads as an empty border)".
+    // 24 here plus the empty row below and the box's 12 px spacing after it read as a 36 px band.
+    box_.set_margin_top(12);
     box_.set_margin_bottom(24);
 
     // §1 badge **9** is the page's own first control, not a heading above it, so nothing is DRAWN here —
     // but this empty row stays as `cut_page_layout::arrange`'s insertion anchor (it seats the vertical
-    // paned after its first child), and badge **6**'s ⓘ is the header's, built in `window.rs`.
+    // paned after its first child), and badge **6**'s ⓘ is the header's, built in `window.rs`. Hidden, so the
+    // box gives it no row spacing: a visible empty row still costs the 12 px gap under it.
     let title_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    title_row.set_widget_name("page-anchor");
+    title_row.set_visible(false);
     box_.append(&title_row);
 
     // §1's badge **9** is the visible tab's own page, so the way in belongs to Prepare and to no
@@ -156,7 +160,7 @@ pub(crate) fn page_box(
         // status line.
         //
         // §1 gives the list its OWN scroller: "it scrolls, the rows above and below it stay". Without
-        // it a long list pushed the Freq/Language row out of the column, and the column's minimum
+        // it a long list pushed the row under it out of the column, and the column's minimum
         // height would be the whole list (`tests/suite/window_shrinks.rs`).
         let list = sources_list(session, status);
         let frame = gtk::Frame::new(None);
@@ -176,13 +180,10 @@ pub(crate) fn page_box(
         scroll.set_child(Some(&frame));
         left.append(&scroll);
 
-        // §1's badge **8**: Freq and Language under the list, in the same left column. Both are
-        // choices from a list rather than free text — an interval off the stops would be sent to the
-        // model as a claim about frames that were never picked.
-        left.append(&frame_controls(session));
+        // No Freq row under the list any more: the text gate (F1.6 S6) decides which frames describe sees.
         // §1's minimum window height has to hold the whole page. THE LEFT COLUMN HAS NO STRETCHING
         // FILLER: an expanding spacer here made GTK hand the leftover height of the paned half to nothing,
-        // so the list sat at its own minimum and a grey band opened under the Freq row while the right
+        // so the list sat at its own minimum and a grey band opened under the last row while the right
         // column's bench ran on down the page — §4's picture has both columns ending together, just above
         // the run bar. The scroller is what takes the extra height instead: it already scrolls its rows.
         scroll.set_vexpand_set(true);
@@ -273,7 +274,9 @@ pub(crate) fn page_box(
         // row no longer pins the window's width; measured with `tests/suite/window_shrinks.rs`, an
         // unscaled row of these groups asked for 2709 px and
         // made the shell impossible to shrink.
-        let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        // 6 px between the groups, the prototype's bar (`go/cut.go` `gtk.NewBox(Horizontal, 6)`): inside a group
+        // the buttons are linked, so this gap is what tells one group from the next.
+        let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, cut_screen::TOOLBAR_GAP_PX);
         toolbar.set_widget_name("cut-toolbar");
         // §A's ONE row of six groups is ~484 px wider than the bar at §1's 1240 px floor (the six groups'
         // natural widths sum to 1646 px against a 1182 px bar), and the padding is the only width there
@@ -334,11 +337,13 @@ pub(crate) fn page_box(
         // snapshot, which is why an earlier round left the slider standing alone). It goes AFTER the word
         // label and BEFORE the slider: `cut_hear_mix_widgets` pins the row's first child as the word.
         // Value text off: the number means nothing to a person where the tooltip says what the control does.
-        let volume_icon = gtk::Label::new(Some(crate::ui::cut_cameras::SPEAKER_GLYPH));
+        // Inventory §A group 2: "icon + 0..100, 120 px, shared tooltip" -- the theme's speaker, as the prototype
+        // draws it (`audio-volume-high-symbolic`), not an emoji glyph and no word beside it.
+        let volume_icon = gtk::Image::from_icon_name(cut_screen::VOLUME_ICON);
         volume_icon.set_widget_name("preview-volume-icon");
         volume_icon.set_tooltip_text(Some(cut_hear::VOLUME_TIP));
-        let volume_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        volume_row.append(&gtk::Label::new(Some(cut_hear::VOLUME_LABEL)));
+        let volume_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        volume_row.set_valign(gtk::Align::Center);
         volume_row.append(&volume_icon);
         volume_row.append(&volume);
         volume_row.set_halign(gtk::Align::Start);
@@ -352,6 +357,12 @@ pub(crate) fn page_box(
         // SIGABRT rather than reporting a test failure.
         volume_group.append(&volume_row);
         put_group(volume_group);
+        // Inventory §A item 3: a separator between the transport side and the verbs.
+        let rule = gtk::Separator::new(gtk::Orientation::Vertical);
+        rule.set_widget_name("toolbar-rule");
+        rule.set_margin_top(2);
+        rule.set_margin_bottom(2);
+        toolbar.append(&rule);
         // The handlers go on in `build_window`, after `set_content`: a click handler attached to a
         // widget that is not yet inside the realized tree never fires (see the F2.1 note there).
 
@@ -692,8 +703,15 @@ pub(crate) fn cut_tool_group(
     // and the buttons keep their own names inside it.
     let row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     row.set_widget_name(&format!("group-{name}-row"));
+    // Inventory §A: every group is `linked(...)`, one joined control, and the bar's gap sits between groups.
+    row.add_css_class("linked");
     for tool in tools {
         let button = gtk::Button::with_label(tool.label);
+        // The prototype's symbolic icon where it draws one; the buttons whose face a refresh rewrites (▶ ⏸,
+        // Insert/Edit) and the frame steps keep their words.
+        if let Some(icon) = cut_screen::tool_icon(tool.name) {
+            button.set_icon_name(icon);
+        }
         button.set_widget_name(tool.name);
         button.set_tooltip_text(Some(tool.tip));
         button.set_sensitive(!rests_insensitive);
@@ -831,7 +849,15 @@ pub(crate) fn cut_effect_menu(window: &adw::ApplicationWindow) -> gtk::Popover {
         // one function and prints the sentence it returns. Nothing else.
         let owner = window.clone();
         let kind_id = item.tip.to_string();
-        row.connect_clicked(move |_| {
+        row.connect_clicked(move |row| {
+            // The menu closes on a pick, as a menu does: left open, the popover is modal and the next press
+            // anywhere (the drag a picked ⊕ Zoom or ❝ Text is waiting for) only closed it.
+            if let Some(popover) = row
+                .ancestor(gtk::Popover::static_type())
+                .and_then(|w| w.downcast::<gtk::Popover>().ok())
+            {
+                popover.popdown();
+            }
             let Some(kind) = cut::Fx::parse_kind(&kind_id) else {
                 return;
             };
@@ -887,114 +913,4 @@ fn editor_scroller(scroller: &gtk::ScrolledWindow) -> gtk::Widget {
     scroller.set_hexpand(true);
     scroller.set_hexpand_set(true);
     scroller.clone().upcast::<gtk::Widget>()
-}
-
-/// One of Freq's two stepper buttons (§4's badge **8`). `steps` is its direction along
-/// [`prepare::FREQ_STOPS`]: `-1` for `—`, `+1` for `+`. It reads the stop the dropdown is showing (falling
-/// back to the session's own interval before any choice exists), moves it through `prepare::freq_step`, and
-/// writes it back through BOTH doors — `prepare::set_freq` for the field and `set_selected` for the face —
-/// because a value that moved only one of them would show one interval and describe with another.
-fn freq_step_button(
-    name: &str,
-    icon: &str,
-    steps: i32,
-    session: &Rc<RefCell<Project>>,
-    freq: &gtk::DropDown,
-) -> gtk::Button {
-    let button = gtk::Button::from_icon_name(icon);
-    button.set_widget_name(name);
-    let held = session.clone();
-    let face = freq.clone();
-    button.connect_clicked(move |_| {
-        let shown = usize::try_from(face.selected())
-            .ok()
-            .and_then(|index| prepare::FREQ_STOPS.get(index).copied())
-            .unwrap_or(held.borrow().interval);
-        let next = prepare::freq_step(shown, steps);
-        if !prepare::set_freq(&mut held.borrow_mut(), next) {
-            return;
-        }
-        if let Some(index) = prepare::FREQ_STOPS.iter().position(|stop| *stop == next) {
-            face.set_selected(index as u32);
-        }
-    });
-    button
-}
-
-/// §1's badge **8**: the two frame controls under the list. Freq is a dropdown of the stops
-/// ([`prepare::FREQ_STOPS`]) and Language an entry with the warning as its tooltip; both write
-/// through to the session, so the page holds no rule of its own.
-pub(crate) fn frame_controls(session: &Rc<RefCell<Project>>) -> gtk::Widget {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-    row.set_widget_name("frame-controls");
-
-    row.append(&label("Freq"));
-    let freq = gtk::DropDown::from_strings(
-        &prepare::FREQ_STOPS
-            .iter()
-            .map(|secs| prepare::freq_label(*secs))
-            .collect::<Vec<_>>()
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-    );
-    freq.set_widget_name("freq-control");
-    freq.set_selected(
-        prepare::FREQ_STOPS
-            .iter()
-            .position(|stop| *stop == session.borrow().interval)
-            .map(|index| index as u32)
-            .unwrap_or(gtk::INVALID_LIST_POSITION),
-    );
-    let held = session.clone();
-    freq.connect_selected_notify(move |picker| {
-        // `INVALID_LIST_POSITION` is the empty selection GTK gives before a choice exists; anything
-        // off the stops is `set_freq`'s refusal to make, not this handler's decision.
-        let index = picker.selected();
-        if index == gtk::INVALID_LIST_POSITION {
-            return;
-        }
-        let secs = prepare::FREQ_STOPS[usize::try_from(index).unwrap_or(0)];
-        prepare::set_freq(&mut held.borrow_mut(), secs);
-    });
-    row.append(&freq);
-
-    // §4's badge **8** as the prototype drew it: the value with `—` and `+` beside it, one linked control
-    // (`go/main.go`'s `newFreqPick`: entry + `list-remove-symbolic` + `list-add-symbolic`). The dropdown
-    // picks a stop out of hand; these walk one stop at a time. Both write through `prepare::set_freq`, so
-    // the face and `Project::interval` cannot disagree about which stop is chosen.
-    let stepper = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    stepper.add_css_class("linked");
-    stepper.set_widget_name("freq-stepper");
-    row.remove(&freq);
-    stepper.append(&freq);
-    stepper.append(&freq_step_button(
-        "freq-down",
-        "list-remove-symbolic",
-        -1,
-        session,
-        &freq,
-    ));
-    stepper.append(&freq_step_button(
-        "freq-up",
-        "list-add-symbolic",
-        1,
-        session,
-        &freq,
-    ));
-    row.append(&stepper);
-
-    row.append(&label("Language"));
-    let language = gtk::Entry::new();
-    language.set_widget_name("language-entry");
-    language.set_tooltip_text(Some(prepare::LANGUAGE_TIP));
-    // The code as it will be used, so an empty box shows the "en" it means rather than a blank.
-    language.set_text(&prepare::language_label(&session.borrow().language));
-    let held = session.clone();
-    language.connect_changed(move |entry| {
-        held.borrow_mut().language = entry.text().to_string();
-    });
-    row.append(&language);
-
-    row.upcast()
 }

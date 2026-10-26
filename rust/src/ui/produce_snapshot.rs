@@ -47,6 +47,9 @@ pub struct Snapshot {
     pub publish: Option<Publish>,
     /// The page's own thumbnail rows, merged into the held publish state by [`publish_of`].
     pub publish_written: bool,
+    /// The session's language as the press found it (§1's "own language never translated"): read here, on the
+    /// window thread, because the render walks on a worker that holds no window session (§03-shell §1).
+    pub session_language: String,
 }
 
 impl Snapshot {
@@ -115,6 +118,7 @@ pub fn gather(
         // S4's three shapes turn on whether anything was ever written for this video; the page's rows answer
         // that directly (an image row, a title or an edit instruction means something has been described).
         publish_written: written,
+        session_language: project.policy.language.value.clone(),
     }
 }
 
@@ -218,7 +222,7 @@ pub fn render_half(
                 languages: run.settings.translate.clone(),
                 // §1's "own language never translated" needs the name to be knowable here: the page has hidden
                 // its tick, so only the render can catch a setting that still carries it.
-                session_language: crate::ui::window::live_project().language,
+                session_language: snap.session_language.clone(),
                 ..Default::default()
             },
             // S1 (§F5.4): the clip's own speech, off the session word list gathered at the press; the
@@ -323,10 +327,11 @@ pub fn first_footage_shape(tree: &Tree, recordings: &[crate::timeline::Recording
         .first()
         .cloned();
     let Some(path) = path else { return NO_TAPE };
-    let Ok(pixbuf) = gtk4::gdk_pixbuf::Pixbuf::from_file(&path) else {
+    // The header alone: the shape is all this asks, and the press asks it on the window thread, which never
+    // decodes a whole frame to learn two numbers (§03-shell §1).
+    let Some((_, w, h)) = gtk4::gdk_pixbuf::Pixbuf::file_info(&path) else {
         return NO_TAPE;
     };
-    let (w, h) = (pixbuf.width(), pixbuf.height());
     // A zero edge is not a frame: a stub or truncated jpg decodes to something with no size, and handing
     // the encoder a 0x0 shape would fail in the filter graph rather than here.
     if w > 0 && h > 0 {

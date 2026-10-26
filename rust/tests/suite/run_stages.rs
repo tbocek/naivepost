@@ -240,12 +240,20 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
         tracks: vec![],
     });
     let stages = run_stages::plan(run::Step::Prepare, &project);
-    // §04 S6's order: ingest first (frames on one half of the bar, speech on the other), then the two
-    // understanding stages that read what those wrote — describe over the footage row, fix over both.
+    // §04 S6's order: ingest first (frames on one half of the bar, speech on the other), then the
+    // understanding stages that read what those wrote: the text gate and describe over the footage row
+    // (the gate always planned, judged by the main model when no decision model is set), fix over both.
     assert_eq!(
         stages.len(),
-        4,
-        "frames, speech, describe, fix: one stage each"
+        5,
+        "frames, speech, textgate, describe, fix: one stage each"
+    );
+    let names: Vec<&str> = stages.iter().map(|stage| stage.name).collect();
+    assert_eq!(names[2..4], ["textgate", "describe"], "{names:?}");
+    assert_eq!(
+        stages[2].tasks[0].program,
+        naivepost::text_gate::TEXT_GATE_TASK,
+        "the gate is planned without a decision model"
     );
     assert_eq!(
         stages[0].track, TRACK_FRAMES,
@@ -273,10 +281,20 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
         run_stages::AUDIO_TASK,
         "speech is a dial of audio.cpp, not a spawned cut"
     );
+    let heard: Vec<&str> = stages[1]
+        .tasks
+        .iter()
+        .map(|task| task.args[0].as_str())
+        .collect();
+    assert_eq!(
+        heard,
+        ["sources/recording.mkv", "sources/talk.wav"],
+        "F1.3 S0: the video is heard as well as the microphone"
+    );
     // The fix stage rides after describe. Its rows are the same kind of work -- a chat request -- except
     // for §F1.8's two session rows that bracket them: S1's placement first (offsets before any block
     // goes out) and S5-S7's merge last, both dials of `fix_session` rather than spawns.
-    let fix_programs: Vec<&str> = stages[3]
+    let fix_programs: Vec<&str> = stages[4]
         .tasks
         .iter()
         .map(|task| task.program.as_str())
@@ -300,8 +318,11 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
     // Where each chunk is cut is the door's own plan (§F1.3), pinned in `tests/suite/audio_task_dial.rs`'s
     // `..._s1_asr_is_asked_per_chunk_with_its_own_cut`.
     assert_eq!(
-        stages[1].tasks[0].args,
-        vec!["sources/talk.wav".to_string(), project.language.clone()],
+        stages[1].tasks[1].args,
+        vec![
+            "sources/talk.wav".to_string(),
+            project.policy.language.value.clone()
+        ],
         "the speech row names its source and the session language"
     );
     // Narrate and Produce drive their own queues, so they ask for nothing here rather than being
@@ -310,10 +331,11 @@ fn f0_5_s2_the_plan_comes_from_the_project_through_the_real_argv_builders() {
     assert!(run_stages::plan(run::Step::Produce, &project).is_empty());
 }
 
-/// `drive_page` is the window's entry point: with a session that has work it walks the plan, and the
-/// run's own flags are what stops it — read off the bar at each checkpoint, not captured at start.
+/// `drive_worker` is the walk Prepare's worker runs: with a session that has work it walks the plan, and the
+/// run's own flags are what stops it, mirrored off the bar (`mirror_switches`) and read at each checkpoint,
+/// not captured at start.
 #[test]
-fn f0_5_s3_drive_page_reads_the_run_flags_at_each_checkpoint() {
+fn f0_5_s3_drive_worker_reads_the_run_flags_at_each_checkpoint() {
     let mut project = Project::default();
     project.sources.push(naivepost::project::Source {
         path: "sources/talk.wav".to_string(),
@@ -322,13 +344,22 @@ fn f0_5_s3_drive_page_reads_the_run_flags_at_each_checkpoint() {
         sepvoice: false,
         tracks: vec![],
     });
-    let queue = std::rc::Rc::new(std::cell::RefCell::new(Queue::new()));
-    let bar = std::rc::Rc::new(std::cell::RefCell::new(RunBar::default()));
-    let procs = std::rc::Rc::new(std::cell::RefCell::new(Subprocesses::default()));
+    let mut bar = RunBar::default();
+    run_stages::mirror_switches(&bar);
     // No stop up: the walk runs and fails at the first row it cannot do — speech is a dial now, and with
     // no decoded audio in the session there is nothing to ask audio.cpp about. Naming that reason is the
     // honest answer, exactly as naming an absent ffmpeg was while this row spawned a cut.
-    let drive = run_stages::drive_page(run::Step::Prepare, &project, &queue, &bar, &procs);
+    let mut stages_seen: Vec<String> = Vec::new();
+    let drive = run_stages::drive_worker(
+        run::Step::Prepare,
+        &project,
+        Queue::new(),
+        &mut |_, stage| stages_seen.push(stage.to_string()),
+    );
+    assert!(
+        !stages_seen.is_empty(),
+        "the walk shows the window its queue and stage as it goes"
+    );
     match drive {
         run_stages::Drive::Failed { stage, error } => {
             assert!(
@@ -343,12 +374,41 @@ fn f0_5_s3_drive_page_reads_the_run_flags_at_each_checkpoint() {
         other => panic!("with nothing to transcribe the walk must report that, got {other:?}"),
     }
     // With the stop flag already up, the very first checkpoint ends the walk: nothing ran.
-    bar.borrow_mut().stop_flag = true;
-    let stopped = run_stages::drive_page(run::Step::Prepare, &project, &queue, &bar, &procs);
+    bar.stop_flag = true;
+    run_stages::mirror_switches(&bar);
+    let stopped =
+        run_stages::drive_worker(run::Step::Prepare, &project, Queue::new(), &mut |_, _| {});
+    bar.stop_flag = false;
+    run_stages::mirror_switches(&bar);
     match stopped {
         run_stages::Drive::Stopped { ran, .. } => {
             assert_eq!(ran, 0, "a stopped run starts nothing")
         }
         other => panic!("⏹ up must stop the walk, got {other:?}"),
     }
+}
+
+/// F1.3 S0: a project of videos alone is transcribed, one speech row per video. The first rewrite heard only
+/// the rows that were not footage, so 07-news (19 videos) got no transcript and its fix wrote empty files.
+#[test]
+fn f1_3_s0_every_source_is_heard_a_videos_own_sound_too() {
+    let mut project = Project::default();
+    for name in ["a.mkv", "b.mkv"] {
+        project.sources.push(naivepost::project::Source {
+            path: format!("sources/{name}"),
+            footage: true,
+            ..Default::default()
+        });
+    }
+    let stages = run_stages::plan(run::Step::Prepare, &project);
+    let speech = stages
+        .iter()
+        .find(|stage| stage.name == "speech")
+        .expect("a speech stage for a project of videos");
+    let heard: Vec<&str> = speech
+        .tasks
+        .iter()
+        .map(|task| task.args[0].as_str())
+        .collect();
+    assert_eq!(heard, ["sources/a.mkv", "sources/b.mkv"]);
 }

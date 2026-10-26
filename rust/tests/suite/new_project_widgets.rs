@@ -461,6 +461,8 @@ fn refused_name_is_not_applied(app: &adw::Application) {
     let session = ui::session_handle(&window);
     ui::window::clear_logs_for_test();
     ui::window::name_chosen(&root, Some(&taken), &status, &session);
+    // F0.8 S6 builds the window again on the new folder (a refusal keeps it): read the one that is up.
+    let window = ui::window::main_window();
 
     assert_eq!(
         ui::state(&window).status,
@@ -506,6 +508,8 @@ fn typed_name_is_applied(app: &adw::Application) {
     // Typed as `fresh`, standing in `elsewhere`: the suffix is the rule's, not the sheet's.
     let typed = root.join("elsewhere/fresh");
     ui::window::name_chosen(&root, Some(&typed), &status, &session);
+    // F0.8 S6 builds the window again on the new folder (a refusal keeps it): read the one that is up.
+    let window = ui::window::main_window();
 
     let written = root.join("elsewhere/fresh.naivepost");
     assert!(
@@ -577,6 +581,8 @@ fn choosers_follow_a_project_outside_the_root(app: &adw::Application) {
         .clone()
         .expect("outside the root names a folder");
     naivepost::ui::new_apply::apply(&created, &session, &status);
+    // F0.8 S6 builds the window again on the new folder (a refusal keeps it): read the one that is up.
+    let window = ui::window::main_window();
     assert_eq!(
         naivepost::ui::new_apply::chooser_dir().as_deref(),
         Some(chosen.as_path())
@@ -642,6 +648,8 @@ fn applied_new_project_moves_the_window(app: &adw::Application) {
     let session = ui::session_handle(&window);
     ui::window::clear_logs_for_test();
     naivepost::ui::new_apply::apply(&created, &session, &status);
+    // F0.8 S6 builds the window again on the new folder (a refusal keeps it): read the one that is up.
+    let window = ui::window::main_window();
 
     // The swap: the pages read this same handle, so an empty list here IS the refreshed page.
     assert!(
@@ -652,6 +660,12 @@ fn applied_new_project_moves_the_window(app: &adw::Application) {
         ui::state(&window).status,
         format!("new project \u{2014} {}", created.base),
         "S6's status sentence"
+    );
+    // And it is THE project folder now: every step reads and writes it, not the folder open before.
+    assert_eq!(
+        naivepost::startup::open_dir(),
+        created.path,
+        "S6: the new folder is the open project folder"
     );
     assert!(
         ui::window_logs().iter().any(|line| line == &created.log),
@@ -727,6 +741,8 @@ fn already_there_is_not_applied(app: &adw::Application) {
     // writing the status by hand: the status says it, and the session is untouched.
     let status = ui::find_status(window.upcast_ref()).expect("the window has a status line");
     ui::window::name_chosen(&root, Some(&taken), &status, &ui::session_handle(&window));
+    // F0.8 S6 builds the window again on the new folder (a refusal keeps it): read the one that is up.
+    let window = ui::window::main_window();
     assert_eq!(ui::state(&window).status, refused);
     assert_eq!(ui::session_sources(&window), before, "nothing half-applied");
     std::fs::remove_dir_all(&root).ok();

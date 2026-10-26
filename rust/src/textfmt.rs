@@ -108,6 +108,21 @@ pub(crate) fn write_rows(path: &Path, text: &str) -> Result<(), String> {
     }
 }
 
+/// [`write_rows`] for a file that only exists when it says something (§6): with nothing to say no file is
+/// written, and one left by an earlier run is removed, so the folder never holds a 0-byte transcript or
+/// timeline that looks like finished work. A reader takes the missing file as "nothing here", which is
+/// what an empty one meant.
+pub(crate) fn write_rows_or_none(path: &Path, text: &str) -> Result<(), String> {
+    if !text.trim().is_empty() {
+        return write_rows(path, text);
+    }
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!("{}: {err}", path.display())),
+    }
+}
+
 /// One row per line of a TSV, blank lines skipped.
 fn rows(text: &str) -> impl Iterator<Item = &str> {
     text.lines().filter(|line| !line.trim().is_empty())
@@ -128,7 +143,7 @@ pub fn write_lines(lines: &[Line], path: &Path) -> Result<(), String> {
             line.text
         ));
     }
-    write_rows(path, &out)
+    write_rows_or_none(path, &out)
 }
 
 /// Read `transcript.tsv`. A row with fewer than the four columns is corruption rather
@@ -175,7 +190,7 @@ pub fn write_session(lines: &[SessionLine], path: &Path) -> Result<(), String> {
             line.text
         ));
     }
-    write_rows(path, &out)
+    write_rows_or_none(path, &out)
 }
 
 /// Read `session.tsv`. A row with fewer than the five columns is an error naming the

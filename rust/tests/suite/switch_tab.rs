@@ -60,7 +60,7 @@ fn go(shell: &mut Shell, to: Page, why: Move, project: &Project, tree: Option<&T
 
 #[test]
 fn f0_1_s1_a_click_moves_to_the_page() {
-    // S1: a tab click moves; so does a lucky run moving to the page it is about to run.
+    // S1: a tab click moves.
     let project = with_footage();
     for page in Page::all() {
         let mut shell = Shell::default();
@@ -71,16 +71,6 @@ fn f0_1_s1_a_click_moves_to_the_page() {
         assert!(
             matches!(outcome, Outcome::Shown { page: shown, .. } if shown == page),
             "a click on {} must show it: {outcome:?}",
-            page.label()
-        );
-        assert_eq!(shell.page, page);
-
-        let mut shell = Shell::default();
-        go(&mut shell, Page::Prepare, Move::Click, &project, None);
-        let run = shell.switch(page, Move::Run, &project, None, &[], &mut Vec::new());
-        assert!(
-            matches!(run, Outcome::Shown { .. }),
-            "a run must reach {}",
             page.label()
         );
         assert_eq!(shell.page, page);
@@ -230,6 +220,9 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
         }],
         ..Default::default()
     };
+    // On disk too: Produce's row counts the narration the session holds (there is no narration switch,
+    // §07 §1, so a video is narrated exactly when this file has a line with words).
+    narration::save(&narration, &tree).expect("narration written");
 
     let mut shell = Shell::default();
     let mut seen_inputs = Vec::new();
@@ -245,8 +238,8 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
         // §1: Outputs is a count of what the page wrote. A fresh project has written nothing, and
         // an empty folder never reads blank — which would look like a broken row. Prepare spells its
         // label out ("Prepare:" + count, spec/04-prepare.md §1) and says "nothing yet" at zero;
-        // the other three pages count their own folder as "<N> file(s)" — except Narrate, whose row §7 §1
-        // writes out in words, naming the three things `narrate/` owns instead of counting them.
+        // Cut counts its own folder as "<N> file(s)", Produce as "<N> files, <size>" (§8 §1), and Narrate's
+        // row §7 §1 writes out in words, naming the three things `narrate/` owns instead of counting them.
         let outputs = shell.outputs(Some(&tree));
         if page == Page::Prepare {
             assert_eq!(
@@ -259,6 +252,13 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
                 outputs,
                 naivepost::narrate_screen::outputs_readout(),
                 "Narrate's Outputs row names the three outputs, byte for byte"
+            );
+        } else if page == Page::Produce {
+            // §08-produce §1: "Outputs: count only (\"61 files, 220 MB\")".
+            assert_eq!(
+                outputs,
+                naivepost::produce_screen::outputs_summary(0, 0),
+                "Produce's Outputs row is its count and size"
             );
         } else {
             assert!(outputs.ends_with("file(s)"), "{}: {outputs}", page.label());
@@ -299,34 +299,23 @@ fn f0_1_s4_the_page_its_readouts_and_the_info_button_move_together() {
         "there is a line to speak: {produce}"
     );
 
-    // Narration off is what says so, and it is the row that changes.
-    let captions = Project {
-        no_narration: true,
-        ..with_footage()
-    };
-    go(
-        &mut shell,
-        Page::Narrate,
-        Move::Click,
-        &captions,
-        Some(&tree),
-    );
-    // Narration off is no longer a fourth wording on this row: §1 spells one Inputs line for the page, and
-    // "nothing was written" is what its counts say. This folder has no timeline file either.
-    assert_eq!(
-        shell.inputs(Some(&tree), &captions, &cut, &narration),
-        naivepost::narrate_screen::inputs_readout(1, 30.0, 0, 0, false, true)
-    );
+    // A narration with no words is what says so, and it is the row that changes.
+    narration::save(&narration::Narration::default(), &tree).expect("an empty narration");
     go(
         &mut shell,
         Page::Produce,
         Move::Click,
-        &captions,
+        &project,
         Some(&tree),
     );
     assert!(
         shell
-            .inputs(Some(&tree), &captions, &cut, &narration)
+            .inputs(
+                Some(&tree),
+                &project,
+                &cut,
+                &narration::Narration::default()
+            )
             .contains("no narration"),
         "the tail appears with nothing to speak"
     );
@@ -683,26 +672,6 @@ fn f0_1_s8_a_page_that_loses_its_prerequisites_goes_back_silently() {
     go(&mut clicked, Page::Cut, Move::Click, &lost, None);
     assert_eq!(clicked.page, Page::Prepare, "and did not move");
     assert_eq!(clicked.status, shell::CUT_LOCK);
-
-    // A run is not a click either: it moves where the pipeline says, and its own ▶ says why it
-    // cannot proceed.
-    let mut running = Shell::default();
-    let outcome = go(&mut running, Page::Cut, Move::Run, &lost, None);
-    assert!(
-        matches!(
-            outcome,
-            Outcome::Shown {
-                page: Page::Cut,
-                ..
-            }
-        ),
-        "{outcome:?}"
-    );
-    assert_eq!(running.page, Page::Cut);
-    assert_eq!(
-        running.status, "",
-        "a run that merely moved has nothing to report"
-    );
 
     // Vanished while unlocked is no move at all — the page keeps its place.
     let mut staying = Shell::default();

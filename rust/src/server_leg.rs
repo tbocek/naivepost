@@ -44,7 +44,7 @@ pub struct Sent {
     /// Bytes of the request body that went out; `None` for a GET, which sends none.
     pub sent_bytes: Option<i64>,
     pub received_bytes: i64,
-    /// Milliseconds waiting for a slot before going out. 0 for a leg that never queued.
+    /// Milliseconds waiting its turn before going out. 0 for a leg that never queued.
     pub wait_ms: i64,
     pub first_byte_ms: Option<i64>,
     pub on_wire_ms: Option<i64>,
@@ -126,7 +126,15 @@ pub fn send(
     body: Option<&str>,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Sent, String> {
-    send_named(server, endpoint, kind, job, body, None, cancelled)
+    send_named(
+        server,
+        endpoint,
+        kind,
+        job,
+        body.map(str::as_bytes),
+        None,
+        cancelled,
+    )
 }
 
 /// [`send`] with a whole-call ceiling of this caller's own.
@@ -147,7 +155,16 @@ pub fn send_budget(
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Sent, String> {
     send_pinged(
-        server, endpoint, kind, job, body, None, cancelled, None, None, budget,
+        server,
+        endpoint,
+        kind,
+        job,
+        body.map(str::as_bytes),
+        None,
+        cancelled,
+        None,
+        None,
+        budget,
     )
 }
 
@@ -158,7 +175,7 @@ pub fn send_named(
     endpoint: &Endpoint,
     kind: Kind,
     job: Option<&str>,
-    body: Option<&str>,
+    body: Option<&[u8]>,
     filename: Option<&str>,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Sent, String> {
@@ -174,7 +191,7 @@ fn send_pinged(
     endpoint: &Endpoint,
     kind: Kind,
     job: Option<&str>,
-    body: Option<&str>,
+    body: Option<&[u8]>,
     filename: Option<&str>,
     cancelled: &dyn Fn() -> bool,
     probe: Option<&crate::llm_watch_leg::Probe>,
@@ -228,6 +245,12 @@ fn send_pinged(
     // extension of `body`: every other kind passes `None` and sends no such header.
     if let Some(name) = filename {
         builder = builder.header("X-Audiocpp-Filename", name);
+    }
+    // Every other body is JSON and says so (§1). ureq sends a string body with no content type at all; the
+    // llama.cpp router reads it anyway, but a FastAPI proxy in front of a model answers 400 "body: Input should
+    // be a valid dictionary or object" to the very same bytes.
+    if body.is_some() && filename.is_none() {
+        builder = builder.header("Content-Type", "application/json");
     }
 
     let response = match body {
@@ -365,7 +388,7 @@ pub fn call(
             endpoint,
             kind,
             job,
-            body,
+            body: body.map(str::as_bytes),
             filename: None,
             cancelled,
             liveness: None,
@@ -403,7 +426,7 @@ pub fn call_budget(
             endpoint,
             kind,
             job,
-            body,
+            body: body.map(str::as_bytes),
             filename: None,
             cancelled,
             liveness: None,
@@ -421,7 +444,10 @@ pub struct Dial<'a> {
     pub kind: Kind,
     /// The sd.cpp job id the two job kinds act on; every other kind ignores it.
     pub job: Option<&'a str>,
-    pub body: Option<&'a str>,
+    /// The request's bytes as they go on the wire: JSON for every kind but the upload, whose body is the
+    /// file itself. Bytes, not text: a WAV pushed through a lossy UTF-8 string arrives with every invalid
+    /// byte replaced (audio.cpp answered 500 "invalid WAV RIFF header" to a chunk 1.9 times its size).
+    pub body: Option<&'a [u8]>,
     /// audio.cpp's `X-Audiocpp-Filename`; only the upload kind sets it.
     pub filename: Option<&'a str>,
     /// The run's cancel context.
@@ -429,7 +455,7 @@ pub struct Dial<'a> {
     /// §4's watch for this call: `Some` puts the request under the stall rule and the heartbeat. Only a chat ask
     /// sets it — an audio or image job has no silence bound of its own (§1 bounds those by kind).
     pub liveness: Option<crate::llm_watch_leg::Liveness>,
-    /// Milliseconds this request spent waiting for a slot before the caller got here, 0 when it never queued.
+    /// Milliseconds this request spent waiting its turn before the caller got here, 0 when it never queued.
     /// The socket cannot report that wait — it happens outside the trip — so the holder passes it through here and
     /// [`call_dialed`] writes it into the row's `wait_s` column (§10's slot-count evidence).
     pub waited_ms: i64,
@@ -483,7 +509,7 @@ pub fn call_dialed(
             let endpoint = dial.endpoint.clone();
             let kind = dial.kind;
             let job = dial.job.map(str::to_owned);
-            let body = dial.body.map(str::to_owned);
+            let body = dial.body.map(<[u8]>::to_vec);
             let filename = dial.filename.map(str::to_owned);
             // A watched send runs detached, so the live-reply sink crosses into it by clone, exactly as the
             // two owned strings above do; an unwatched send borrows the caller's `Dial` and needs no copy.
@@ -584,11 +610,11 @@ pub fn call_dialed(
 /// caller that filled either column itself (a test, an upload leg that knows its payload size) is
 /// left alone; a body with no pictures leaves `images` empty rather than writing a zero, because
 /// §10's reader must be able to tell "no images" from "not recorded".
-pub fn fill_sizes(mut row: Request, body: Option<&str>) -> Request {
+pub fn fill_sizes(mut row: Request, body: Option<&[u8]>) -> Request {
     let Some(text) = body else { return row };
     if row.sent_bytes.is_none() {
         let asked: serde_json::Value =
-            serde_json::from_str(text).unwrap_or(serde_json::Value::Null);
+            serde_json::from_slice(text).unwrap_or(serde_json::Value::Null);
         let bytes = asked
             .get("messages")
             .and_then(|messages| messages.as_array())
@@ -619,7 +645,7 @@ pub fn fill_sizes(mut row: Request, body: Option<&str>) -> Request {
     if row.images.is_none() {
         // One picture is spelled `"image_url"` TWICE in the JSON the wire carried — as the part's
         // `type` and again as its key — so the parts are counted, not the string.
-        let images = serde_json::from_str::<serde_json::Value>(text)
+        let images = serde_json::from_slice::<serde_json::Value>(text)
             .ok()
             .and_then(|asked| {
                 Some(
@@ -641,7 +667,12 @@ pub fn fill_sizes(mut row: Request, body: Option<&str>) -> Request {
                         .count(),
                 )
             })
-            .unwrap_or_else(|| text.matches("\"image_url\"").count() / 2);
+            .unwrap_or_else(|| {
+                String::from_utf8_lossy(text)
+                    .matches("\"image_url\"")
+                    .count()
+                    / 2
+            });
         if images > 0 {
             row.images = u32::try_from(images).ok();
         }

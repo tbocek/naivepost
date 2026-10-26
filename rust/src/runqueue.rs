@@ -18,7 +18,6 @@ use std::time::Duration;
 use crate::exchanges::RunLog;
 use crate::run::{Run, RunBar, Snapshot, Step};
 use crate::services::{Kind, UNLOAD_IS_BEST_EFFORT, UNLOAD_TIMEOUT};
-use crate::shell::Page;
 
 /// S3: how often a paused run re-asks whether it may go on, between subprocesses. §10 lists this
 /// only inside its prose line (`spec/10-parameters.md`: "… hang watchdog 200 ms / 3 s; … progress
@@ -380,18 +379,12 @@ pub struct EndRun {
     /// Always present — every run ends with it, even one that used no audio, because leaving weights
     /// loaded is memory nothing is waiting on any more.
     pub audio_unload: Kind,
-    /// Whether the lucky chain has another step to move to.
-    pub chain_moves_on: bool,
 }
 
-/// S4: `endRun` — running off, controls refreshed, a lucky run moves to its next step, and the
-/// audio models unloaded off-thread.
-///
-/// The chain moves *before* the unload is handed over: the next step usually wants the same models
-/// back, so firing the unload first would make it load them again. Both are recorded rather than
-/// performed here — the runner sends the request off-thread and the window comes back to life now,
-/// not when the server answers.
-pub fn end_run(bar: &mut RunBar, next: Option<Page>) -> EndRun {
+/// S4: `endRun` — running off, controls refreshed, and the audio models unloaded off-thread. The unload
+/// is recorded rather than performed here — the runner sends the request off-thread and the window comes
+/// back to life now, not when the server answers.
+pub fn end_run(bar: &mut RunBar) -> EndRun {
     bar.running = None;
     bar.status.clear();
     // F0.3 S4: the run has unwound, so its stop is spent — clearing the shared switch here is what
@@ -402,7 +395,6 @@ pub fn end_run(bar: &mut RunBar, next: Option<Page>) -> EndRun {
     crate::exchange_leg::note_run_ended();
     EndRun {
         audio_unload: Kind::UnloadAll,
-        chain_moves_on: next.is_some(),
     }
 }
 
@@ -478,8 +470,8 @@ mod tests {
     #[test]
     fn f0_5_s4_end_run_unloads_audio_best_effort() {
         let mut bar = RunBar::default();
-        let end = end_run(&mut bar, Some(Page::Cut));
-        assert!(end.chain_moves_on);
+        let end = end_run(&mut bar);
+        assert_eq!(end.audio_unload, Kind::UnloadAll);
         assert!(bar.running.is_none());
         let (dur, best) = audio_unload_is_bounded();
         assert_eq!(dur.as_secs(), 20);

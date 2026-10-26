@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::common;
 use adw::prelude::*;
-use common::settle;
 use common::source_row as row;
 use gtk4 as gtk;
 use naivepost::project::Project;
@@ -146,68 +145,54 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     );
 }
 
-/// §4's 🎤 button cycles free slots 1..N then none, and nobody is moved to make room.
+/// §4's 🎤 button walks the voices 1..N then none. Voices are shared (one person is usually every recording),
+/// so a press never skips a number another row has and never moves that row.
 #[test]
-fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_the_narrator_button_walks_the_free_slots(
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_the_narrator_button_walks_the_voices(
 ) {
     common::pin_private_cwd();
     let mut project = session();
+    let start = project.sources[1].narrator;
     let mut seen = vec![];
     for _ in 0..5 {
         seen.push(sources::cycle_narrator(&mut project, 1));
     }
-    // Slot 1 is re-offered on the second press because a cycle that vacates it hands it over again —
-    // see the next check for who gets it.
-    assert_eq!(
-        seen,
-        vec![2, 0, 2, 0, 2],
-        "{ITEM}: free slots then none, never somebody else's slot"
-    );
+    let expected: Vec<u32> = (0..5)
+        .scan(start, |at, _| {
+            *at = if *at >= 4 { 1 } else { *at + 1 };
+            Some(*at)
+        })
+        .collect();
+    assert_eq!(seen, expected, "{ITEM}: 1..4 and back to 1, never none");
     assert_eq!(
         project.sources[0].narrator, 1,
-        "{ITEM}: the camera keeps slot 1"
+        "{ITEM}: the camera keeps voice 1"
     );
 
-    // With every slot taken there is nowhere to go, so the press lands on none.
+    // Every voice taken elsewhere changes nothing: the press still goes to the next number.
     let mut held = Project {
         sources: (1..=4)
             .map(|slot| row(&format!("v{slot}.wav"), false, slot))
             .collect::<Vec<_>>(),
         ..Default::default()
     };
-    assert_eq!(sources::cycle_narrator(&mut held, 0), 0);
+    assert_eq!(sources::cycle_narrator(&mut held, 0), 2);
+    assert_eq!(held.sources[1].narrator, 2, "{ITEM}: shared, nobody moved");
 }
 
-/// Slot 1 is the voice the narration is spoken in (F2.14), so §4 hands it to the first untagged row
-/// whenever nothing holds it — recordings before footage.
+/// A click is the person's own choice and stands: a row walked past 4 comes back to voice 1 (there is no
+/// none), and no other row is handed anything.
 #[test]
-fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_slot_one_is_never_left_unheld(
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_a_click_moves_only_its_own_row(
 ) {
     common::pin_private_cwd();
-    let mut project = session();
-    assert_eq!(sources::slot_holder(&project, 1), Some(0));
-    // The camera's press vacates slot 1; the mic is next and it is a recording.
-    sources::cycle_narrator(&mut project, 0);
-    assert_eq!(
-        sources::slot_holder(&project, 1),
-        Some(1),
-        "{ITEM}: the mic took the vacated slot"
-    );
-    assert_eq!(sources::narrator_of(&project, 1), Some("card/mic.wav"));
-
-    // A row that already has a voice is never demoted to fill it, and the vacating press leaves slot 1
-    // with whoever else can hold it — here, the row that still does.
     let mut held = Project {
-        sources: vec![row("cam.mkv", true, 1), row("mic.wav", false, 2)],
+        sources: vec![row("cam.mkv", true, 4), row("mic.wav", false, 2)],
         ..Default::default()
     };
-    sources::cycle_narrator(&mut held, 0);
-    assert_eq!(
-        sources::slot_holder(&held, 1),
-        Some(0),
-        "{ITEM}: slot 1 went back to the camera"
-    );
-    assert_eq!(held.sources[1].narrator, 2, "{ITEM}: the mic keeps slot 2");
+    assert_eq!(sources::cycle_narrator(&mut held, 0), 1);
+    assert_eq!(held.sources[0].narrator, 1, "{ITEM}: the click stands");
+    assert_eq!(held.sources[1].narrator, 2, "{ITEM}: the mic keeps voice 2");
 }
 
 /// §4's 🗑 takes the row off the list; rows below move up, an index off the end takes nothing, and the
@@ -225,11 +210,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
         project.sources[0].path, "card/mic.wav",
         "{ITEM}: the rows below moved up"
     );
-    assert_eq!(
-        sources::slot_holder(&project, 1),
-        Some(0),
-        "{ITEM}: its holder went, so slot 1 moved on"
-    );
+    // Voices are shared, so removing a row hands nothing on: the rows below keep the numbers they had.
     assert!(
         sources::remove(&mut project, 9).is_none(),
         "{ITEM}: no such row"
@@ -405,30 +386,30 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 
     assert_eq!(
         report,
-        [
-            "b.wav: slot 2 is taken -- untagged",
-            "mic.wav: an audio file has no frames -- not footage"
-        ],
-        "{ITEM}: each clearing is reported"
+        ["mic.wav: an audio file has no frames -- not footage"],
+        "{ITEM}: each clearing is reported, and a shared voice is no clearing"
     );
-    assert_eq!(project.sources[1].narrator, 0);
+    assert_eq!(
+        project.sources[1].narrator, 2,
+        "{ITEM}: two rows may share voice 2"
+    );
     assert!(!project.sources[2].footage);
     // The rows that meant something are untouched.
     assert_eq!(project.sources[0].narrator, 2);
     assert_eq!(project.sources[3].narrator, 1);
 
-    // A slot outside the range the narrator button can reach is stripped, and stripping one is what
-    // lets §4's auto-fill seat a narrator (§4: "a load that stripped a bad tag").
+    // A voice past the last one is voice 1, there being no "no voice".
     let mut wild = Project {
         sources: vec![row("z.wav", false, 9)],
         ..Default::default()
     };
     let mut lines = Vec::new();
     sources::clean_on_load(&mut wild, &mut lines);
-    assert_eq!(lines, ["z.wav: slot 9 is taken -- untagged"]);
-    assert_eq!(sources::slot_holder(&wild, 1), Some(0));
+    assert_eq!(lines, ["z.wav: voice 9 is past the last one -- voice 1"]);
+    assert_eq!(wild.sources[0].narrator, 1);
 
-    // A clean list is not talked to, and its empty slot 1 stays empty.
+    // A clean list is not talked to, and an older file's 0 is voice 1 without a word: the person made no
+    // mistake there.
     let mut quiet = session();
     quiet.sources[0].narrator = 0;
     let mut silence = Vec::new();
@@ -437,11 +418,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
         silence.is_empty(),
         "{ITEM}: a good list gets no report: {silence:?}"
     );
-    assert_eq!(
-        sources::slot_holder(&quiet, 1),
-        None,
-        "{ITEM}: the user emptied slot 1"
-    );
+    assert_eq!(quiet.sources[0].narrator, 1, "{ITEM}: a 0 reads as voice 1");
 }
 
 /// §4's strings in the words the spec gives them (spec/03-shell.md §4).
@@ -481,12 +458,9 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     assert!(!sources::WARN_TIP.contains("The symbols on every row"));
 
     let slot = |n| sources::slot_tip(n);
-    assert_eq!(slot(0), "no narrator \u{2014} click to make this voice 1");
-    assert!(slot(1).starts_with("the narration is spoken by this voice (1)"));
-    assert_eq!(
-        slot(3),
-        "narrator slot 3 \u{2014} click back to no narrator"
-    );
+    assert!(slot(1).starts_with("voice 1: the narration is spoken in this voice"));
+    assert_eq!(slot(3), "voice 3 \u{2014} click for voice 4");
+    assert_eq!(slot(4), "voice 4 \u{2014} click for voice 1");
 }
 
 /// One running GTK application for this binary: GTK's main loop may only be started by the thread that
@@ -501,7 +475,7 @@ fn window_round() {
         RAN_PLACEMENT.store(true, Ordering::SeqCst);
         check_the_tooltips_are_on_the_widgets(app);
         RAN_TIPS.store(true, Ordering::SeqCst);
-        check_the_freq_steppers(app);
+        check_the_dropped_controls(app);
         RAN_FREQ.store(true, Ordering::SeqCst);
         staged_shot_draws_every_row(app);
         RAN_SHOT.store(true, Ordering::SeqCst);
@@ -571,9 +545,34 @@ fn staged_shot_draws_every_row(app: &adw::Application) {
         naivepost::ui::source_rows::NARRATOR_ICON,
         "{ITEM}: the narrator button shows a 🎤 beside its slot"
     );
+    // Voice 1 is drawn like every other number: it is where every recording starts, so a highlight would
+    // mark nothing (the first rewrite drew it bold in the accent colour).
     assert!(
-        narrator.has_css_class("narrator-one"),
-        "{ITEM}: §4 draws slot 1 highlighted — the slot-1 button carries its emphasis class"
+        !narrator.has_css_class("narrator-one") && !narrator.has_css_class("suggested-action"),
+        "{ITEM}: voice 1 wears no emphasis"
+    );
+    // A click keeps the face: the number changes, the microphone stays. The first port set the button's label
+    // on a click, which replaced the microphone and its number with a bare number.
+    narrator.emit_clicked();
+    let after = narrator
+        .child()
+        .and_then(|child| child.downcast::<gtk::Box>().ok())
+        .and_then(|face| {
+            face.observe_children()
+                .iter::<glib::Object>()
+                .filter_map(Result::ok)
+                .find_map(|kid| kid.downcast::<gtk::Image>().ok())
+        });
+    assert!(
+        after.is_some_and(
+            |mic| mic.icon_name().as_deref() == Some(naivepost::ui::source_rows::NARRATOR_ICON)
+        ),
+        "{ITEM}: the microphone is still on the button after a click"
+    );
+    assert_eq!(
+        narrator_slot_face(&window, 0).as_deref(),
+        Some("2"),
+        "{ITEM}: the click took voice 1 to 2, and the face says so"
     );
 
     // The ⚠ badge, which comes from the FILE's name: one staged name carries no timestamp.
@@ -609,51 +608,22 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     );
 }
 
-/// §4's badge **8** walked by hand on the real buttons. `—` and `+` beside the value are what the spec's
-/// picture shows (`Freq: [1s][—][+]`) and what the prototype had (`go/main.go`'s `newFreqPick`); the
-/// dropdown picks a stop out of hand and these move one stop at a time. Both must land on
-/// `Project::interval`, which is what `ui::session_freq` reads back — the same field the logic test below
-/// checks — and on the dropdown's face, or the page would show one interval and describe with another.
-fn check_the_freq_steppers(app: &adw::Application) {
+/// The controls §4 drops in the rewrite stay dropped. Badge **8**'s Freq (the dropdown and its `—`/`+`) went
+/// with the text gate (F1.6 S6), which decides which frames describe sees.
+fn check_the_dropped_controls(app: &adw::Application) {
     let window = ui::build_window(app, &fixture(), "Prepare");
     window.present();
-    let up: gtk::Button = widget(&window, "freq-up").expect("Freq has its + button");
-    let down: gtk::Button = widget(&window, "freq-down").expect("Freq has its \u{2014} button");
-    let face: gtk::DropDown = widget(&window, "freq-control").expect("Freq is still the dropdown");
-    assert_eq!(
-        ui::session_freq(&window),
-        1.0,
-        "{ITEM}: the fixture opens at 1 s"
-    );
-
-    up.emit_clicked();
-    settle();
-    assert_eq!(
-        ui::session_freq(&window),
-        naivepost::prepare::FREQ_STOPS[3],
-        "{ITEM}: + moved Freq one stop along the list"
-    );
-    assert_eq!(face.selected(), 3, "{ITEM}: the face moved with the field");
-
-    down.emit_clicked();
-    down.emit_clicked();
-    settle();
-    assert_eq!(
-        ui::session_freq(&window),
-        naivepost::prepare::FREQ_STOPS[1],
-        "{ITEM}: two \u{2014} presses walked two stops back"
-    );
-    assert_eq!(
-        face.selected(),
-        1,
-        "{ITEM}: and the face followed there too"
-    );
-
     // The two controls §4 drops in the rewrite stay dropped: badge **9** frame size ("frames are stored
     // at the video's own size and scaled for the model") and badge **11** Style ("the policy sets it from
     // the User Context"). The picture still shows both because it is a screenshot of the prototype; the
     // text says gone, so their absence is asserted here rather than left to be read off an image.
-    for dropped in ["frame-size-control", "style-control"] {
+    for dropped in [
+        "freq-control",
+        "freq-up",
+        "freq-down",
+        "frame-size-control",
+        "style-control",
+    ] {
         assert!(
             widget::<gtk::Widget>(&window, dropped).is_none(),
             "{ITEM}: {dropped} is gone in the rewrite and must not be drawn"
@@ -663,50 +633,13 @@ fn check_the_freq_steppers(app: &adw::Application) {
 }
 
 #[test]
-fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_s8_freq_steppers_answer_the_real_buttons(
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_s8_dropped_controls_are_not_drawn(
 ) {
     common::pin_private_cwd();
     window_round();
     assert!(
         RAN_FREQ.load(Ordering::SeqCst),
-        "{ITEM}: the Freq stepper wire check never ran"
-    );
-}
-
-/// The rule behind those buttons: a step walks [`prepare::FREQ_STOPS`] and clamps at both ends, so the
-/// person at either end of the list gets no movement rather than an interval nothing describes with.
-#[test]
-fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_s8_freq_steppers_walk_the_stop_list(
-) {
-    common::pin_private_cwd();
-    use naivepost::prepare::{freq_step, FREQ_STOPS};
-    assert_eq!(freq_step(1.0, 1), 2.0, "{ITEM}: + is the next stop");
-    assert_eq!(
-        freq_step(1.0, -1),
-        0.5,
-        "{ITEM}: \u{2014} is the previous stop"
-    );
-    assert_eq!(freq_step(1.0, 2), 3.0, "{ITEM}: two steps are two stops");
-    assert_eq!(
-        freq_step(FREQ_STOPS[0], -1),
-        FREQ_STOPS[0],
-        "{ITEM}: stepping below the first stop stays on it"
-    );
-    let last = FREQ_STOPS[FREQ_STOPS.len() - 1];
-    assert_eq!(
-        freq_step(last, 1),
-        last,
-        "{ITEM}: stepping past the last stop stays on it"
-    );
-    assert_eq!(
-        freq_step(last, 4),
-        last,
-        "{ITEM}: and any number of steps past the end stays there too"
-    );
-    assert_eq!(
-        freq_step(1.7, 1),
-        1.7,
-        "{ITEM}: a value off the list has nowhere to step from, so it does not move"
+        "{ITEM}: the dropped-controls check never ran"
     );
 }
 

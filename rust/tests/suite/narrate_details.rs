@@ -68,14 +68,10 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s1_prev
     assert!(record.has_line(0.0, 10.0));
 
     // §6 [F4.1]: a captions-only voice still opens and closes the speaking job so the bar finishes — it
-    // speaks nothing (rules::speaks_anything is false) yet the bar is driven by narrate_pass::progress,
+    // speaks nothing (rules::voice_is_captions is true) yet the bar is driven by narrate_pass::progress,
     // which counts clips, not lines. progress(2,2) is the close.
     assert!(rules::voice_is_captions(
         naivepost::narrate_screen::CAPTIONS
-    ));
-    assert!(!rules::speaks_anything(
-        naivepost::narrate_screen::CAPTIONS,
-        false
     ));
     assert_eq!(pass::progress(2, 2), "writing 2/2 clips");
 }

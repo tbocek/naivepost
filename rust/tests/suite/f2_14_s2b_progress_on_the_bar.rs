@@ -75,6 +75,11 @@ fn s2b_the_press_paints_progress_on_the_bar(app: &adw::Application) {
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_by_name::<()>("clicked", &[]);
+    // Suggest asks on a worker (§03-shell §1, F2.14 "Where it runs"): the press lands when it answers.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+        "the suggest workers answered"
+    );
     settle();
 
     // The count landed, which is what proves the progress came from THIS press's own reply.
@@ -160,6 +165,11 @@ fn s2b_the_bar_pulses_while_nothing_has_closed(app: &adw::Application) {
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_by_name::<()>("clicked", &[]);
+    // Suggest asks on a worker (§03-shell §1, F2.14 "Where it runs"): the press lands when it answers.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+        "the suggest workers answered"
+    );
     settle();
 
     let painted = ui::cut_suggest_progress::painted_for_test();

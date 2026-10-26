@@ -165,11 +165,29 @@ fn f1_1_s6_a_planned_run_gets_one_slice_per_stage_in_order() {
         prepare_run::separation_asked(&with_split),
         "a footage row with \u{1f5e3} asks for separation"
     );
-    for (stage, slice) in stages.iter().zip(&slices) {
-        match run_stages::phase_of_stage(stage.name) {
-            Some(phase) => assert_eq!(*slice, prepare_run::share(phase, true), "{}", stage.name),
-            None => panic!("{} mapped to no phase", stage.name),
+    // Each phase's stages tile its slice in plan order: the first starts where the phase starts, each next one
+    // where the one before ends, and the last ends where the phase ends.
+    for phase in [Phase::Separate, Phase::Ingest, Phase::Understand] {
+        let (start, end) = prepare_run::share(phase, true);
+        let mut at = start;
+        for (stage, slice) in stages.iter().zip(&slices) {
+            match run_stages::phase_of_stage(stage.name) {
+                Some(found) if found == phase => {
+                    assert!(
+                        (slice.0 - at).abs() < 1e-9,
+                        "{} starts where the one before ended: {slices:?}",
+                        stage.name
+                    );
+                    at = slice.0 + slice.1;
+                }
+                Some(_) => {}
+                None => panic!("{} mapped to no phase", stage.name),
+            }
         }
+        assert!(
+            (at - end).abs() < 1e-9,
+            "{phase:?} is filled to its end: {slices:?}"
+        );
     }
     // Without the tick the same plan starts at ingest's slice, because there is no separation stage.
     let plain = project(vec![source("project:sources/lecture.mkv", true, false)]);
@@ -212,8 +230,8 @@ fn f1_1_s6_the_walk_puts_each_stage_in_its_slice() {
     );
     // The last stage walked was frames, whose slice re-seeded the queue at ingest's base; its own half
     // finished inside that slice, so the bar reads as ingest done — partway up the run, not a full bar.
-    let (ingest_base, ingest_share) = prepare_run::share(Phase::Ingest, true);
-    let expected = ingest_base + ingest_share;
+    // Ingest's END, 30 %: the first rewrite read the pair as base and width, and this read 40 %.
+    let (_, expected) = prepare_run::share(Phase::Ingest, true);
     assert!(
         (queue.fraction() - expected).abs() < 1e-9,
         "the frames stage finished inside ingest's slice: {} vs {expected}",
@@ -222,6 +240,61 @@ fn f1_1_s6_the_walk_puts_each_stage_in_its_slice() {
     assert!(
         queue.fraction() > 0.0 && queue.fraction() < 1.0,
         "a run still inside ingest does not read as finished: {}",
+        queue.fraction()
+    );
+}
+
+/// A whole Prepare-shaped walk, several rows per stage: the bar only ever moves forward, stays short of full
+/// until the last row of the last stage is done, and ends at exactly full. The first rewrite treated each
+/// phase's END as its width (understand ran 30 % to 130 %, so the bar stood full once a stage was 70 % through)
+/// and gave every stage the whole phase (the bar fell back to 30 % at each one).
+#[test]
+fn f1_1_s6_the_bar_moves_forward_and_is_full_only_at_the_end() {
+    let rows = |name: &'static str, track: usize, n: usize| Stage {
+        track,
+        name,
+        phase: 1,
+        of: 2,
+        kind: "row",
+        tasks: (0..n).map(|i| noop_task(&format!("{name} {i}"))).collect(),
+    };
+    let stages = vec![
+        rows("frames", TRACK_FRAMES, 3),
+        rows("speech", TRACK_STT, 3),
+        rows("textgate", TRACK_STT, 3),
+        rows("describe", TRACK_STT, 3),
+        rows("fix", TRACK_FRAMES, 22),
+    ];
+    let slices = run_stages::phase_slices(&stages, false);
+    let mut queue = Queue::new();
+    let mut seen: Vec<(String, f64)> = Vec::new();
+    let drive = run_stages::drive_walk_watched_for_test(
+        &stages,
+        &mut queue,
+        |_| {},
+        &slices,
+        &mut |queue, _| seen.push((queue.text_and_tip().0, queue.fraction())),
+    );
+    assert!(
+        matches!(drive, run_stages::Drive::Done { ran: 34, .. }),
+        "{drive:?}"
+    );
+    let fractions: Vec<f64> = seen.iter().map(|(_, f)| *f).collect();
+    assert!(
+        fractions.windows(2).all(|pair| pair[1] + 1e-9 >= pair[0]),
+        "the bar never goes back: {seen:?}"
+    );
+    let last_row = seen
+        .iter()
+        .find(|(line, _)| line.ends_with("fix 21"))
+        .expect("the last fix row was named");
+    assert!(
+        last_row.1 < 0.99,
+        "while the last row of the last stage runs the bar is not full: {last_row:?}"
+    );
+    assert!(
+        (queue.fraction() - 1.0).abs() < 1e-9,
+        "the end of the walk is a full bar: {}",
         queue.fraction()
     );
 }

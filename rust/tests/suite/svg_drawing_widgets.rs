@@ -40,6 +40,7 @@ static RAN_NOT_PLACED: AtomicBool = AtomicBool::new(false);
 static RAN_FLOOR: AtomicBool = AtomicBool::new(false);
 static RAN_APPLY_UNDO: AtomicBool = AtomicBool::new(false);
 static RAN_RASTER: AtomicBool = AtomicBool::new(false);
+static RAN_BUTTONS_ONCE: AtomicBool = AtomicBool::new(false);
 
 /// This window's drawing-form holder, and whether it is showing.
 fn form_holder(window: &adw::ApplicationWindow) -> gtk::Box {
@@ -116,6 +117,47 @@ fn round(app: &adw::Application) {
     f3_5_s4_a_length_under_the_floor_is_refused_naming_it(app);
     f3_5_s4_apply_places_one_drawing_and_one_undo_takes_it_back(app);
     f3_5_s5_the_raster_is_512_px_transparent_and_one_per_file(app);
+    f3_5_s4_the_form_buttons_answer_once_through_the_widgets(app);
+}
+
+/// §F3.5 S4 through the real buttons of a form a drag landed: ⋯ Choose raises ONE chooser, ▸ Apply places ONE
+/// drawing (one ↶ takes it back), Cancel places nothing. The first rewrite wired these buttons twice on the drag
+/// path, so one press applied twice and opened two choosers.
+fn f3_5_s4_the_form_buttons_answer_once_through_the_widgets(app: &adw::Application) {
+    let window = land_click_form(app, 30.0);
+    let asks = ui::svg_chooser_asks_for_test();
+    click(&window, "svg-choose-button");
+    assert_eq!(
+        ui::svg_chooser_asks_for_test() - asks,
+        1,
+        "one ⋯ Choose, one chooser"
+    );
+    click(&window, "svg-apply-button");
+    let cut_ = ui::review_cut_of(&window);
+    assert_eq!(cut_.fx.len(), 1, "one ▸ Apply, one drawing");
+    assert_eq!(
+        common::status_text(&window),
+        fx_record::recorded_status(naivepost::cut::EffectKind::Svg),
+        "the status is Apply's own sentence, not a second press's refusal over it"
+    );
+    click(&window, "undo-button");
+    assert!(
+        ui::review_cut_of(&window).fx.is_empty(),
+        "and one ↶ takes it back: one record step"
+    );
+    window.close();
+    settle();
+
+    let window = land_click_form(app, 40.0);
+    click(&window, "svg-cancel-button");
+    assert!(
+        ui::review_cut_of(&window).fx.is_empty(),
+        "Cancel places nothing"
+    );
+    assert!(!form_visible(&window), "and closes the form");
+    RAN_BUTTONS_ONCE.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
 }
 
 /// §F3.5 S1: with no line ever placed, the press refuses in its OWN words before any chooser is built.
@@ -672,5 +714,9 @@ fn f3_5_the_drawing_flow_is_wired_through_the_real_widgets() {
     assert!(
         RAN_RASTER.load(Ordering::SeqCst),
         "the S5 raster check never ran"
+    );
+    assert!(
+        RAN_BUTTONS_ONCE.load(Ordering::SeqCst),
+        "the buttons-once check never ran"
     );
 }

@@ -132,9 +132,10 @@ fn f1_3_s2_a_short_take_is_written_up_as_silence_without_asking_anything() {
     // No asrchunks.json: it would claim an ASR request that never happened.
     assert!(!tree.asrchunks_json(SOURCE).exists());
 
-    // And the two transcripts exist anyway — empty, because there is nothing to read.
-    assert!(tree.transcript_tsv(SOURCE).exists());
-    assert!(tree.transcript_srt(SOURCE).exists());
+    // And no 0-byte transcript (04-prepare §3): the markers above carry the silence, and a reader takes the
+    // missing transcript as nothing to read.
+    assert!(!tree.transcript_tsv(SOURCE).exists());
+    assert!(!tree.transcript_srt(SOURCE).exists());
     assert_eq!(
         textfmt::read_lines(&tree.transcript_tsv(SOURCE)).unwrap(),
         vec![]

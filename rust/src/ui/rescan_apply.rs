@@ -74,8 +74,8 @@ pub(crate) fn apply(
             &mut narration.entries,
         );
         // The stack shows the page, so the shell's answer has to reach it or the window keeps drawing the
-        // page that just lost its base. `lucky_run` moves the stack the same way when a run hands over:
-        // the guard is GTK's own re-entrancy latch, the one `wire_switching` uses for a bounce.
+        // page that just lost its base. The guard is GTK's own re-entrancy latch, the one `wire_switching`
+        // uses for a bounce.
         // The shell's own switch door is already on the stack when a rescan moves it: `set_visible_child_name`
         // fires `notify::visible-child`, and that handler reads the shell. Going through the same latch
         // `wire_switching` uses for its bounce keeps that handler from re-entering while `apply` holds the

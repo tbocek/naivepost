@@ -2,8 +2,9 @@
 //!
 //! "Nothing decodes inside a draw" is §5's rule for this page's tracks, so the check lives under that item's name.
 //!
-//! `cut_picture_rows::paint_frame_cell` fills every cell with the slate placeholder and returns there unless THIS
-//! process has asked for decoding (`allow_frame_decoding`, called only by the snapshot path). Nothing here needs a
+//! `cut_picture_rows::paint_frame_cell` fills every cell with the slate placeholder; on the live page it then paints
+//! a frame only once the worker has decoded it, and asks the worker otherwise, so a pass with nothing decoded yet
+//! draws placeholders and nothing else. Only a snapshot (`allow_frame_decoding`) decodes inside the draw. Nothing here needs a
 //! display: cairo paints to an `ImageSurface` and the bytes are read back off the surface itself, so this is a
 //! plain `#[test]` file like the other non-widget ones.
 
@@ -34,6 +35,8 @@ fn probe_scene(width: i32) -> Scene {
             start: 0.0,
             end: 400.0,
         }],
+        recording_rows: Vec::new(),
+        marks: Default::default(),
         folds: Vec::new(),
         selection: None,
         watched_row: None,
@@ -124,57 +127,37 @@ fn sec_05_cut_1_screen_a_pass_that_did_not_ask_decodes_no_frames() {
         };
         // Right of the gutter (the rail and the row's name plate are other painters' ink) and short of the far
         // edge (the recording's amber end stripes are §1's own marks). Two grounds are legitimate here: a column a
-        // cell covers shows that cell's slate placeholder (`paint_frame_cell` fills it BEFORE the decode gate, so a
-        // page that asked for no decoding still shows where the frames are), and a column no cell covers shows the
-        // empty row. What may NEVER appear is a decoded frame's own pixels — hence the two accepted grounds and no
-        // third. Both bounds are asked of the same doors the painter uses, not typed.
-        let step = cut_tracks::frame_step_seconds(&paths);
-        let cell_w = (step * snapshot_lane::PPS).max(2.0);
-        let first = cut_tracks::first_second(&paths);
-        let cell_here = |x: i32| {
-            paths.iter().any(|path| {
-                let cell = cut_tracks::path_x(&scene, path, first);
-                (cell..cell + cell_w).contains(&(f64::from(x)))
-            })
+        // cell covers shows that cell's slate placeholder (`paint_frame_cell` fills it first, and with nothing
+        // decoded yet that is all a pass draws: the decode happens in the worker, never in the draw), and a column
+        // no cell covers shows the empty row. What may NEVER appear is a decoded frame's own pixels.
+        // The slate under the kept scene's green tint, which covers this whole fixture (one scene, edge to edge).
+        let slate = {
+            use naivepost::ui::cut_colours::{KEPT_TINT, KEPT_TINT_ALPHA, SLATE};
+            let mix = |c: f64, g: f64| {
+                ((c * KEPT_TINT_ALPHA + g * (1.0 - KEPT_TINT_ALPHA)) * 255.0).round() as u32
+            };
+            (
+                mix(KEPT_TINT.0, SLATE.0),
+                mix(KEPT_TINT.1, SLATE.1),
+                mix(KEPT_TINT.2, SLATE.2),
+            )
         };
-        let slate = (166u32, 173u32, 184u32);
-        let flat: Vec<i32> = (60..540)
-            .step_by(7)
-            .filter(|x| {
-                if paths.is_empty() {
-                    return !near(at(*x), bare_at(*x), 1);
-                }
-                if cell_here(*x) {
-                    // Placeholder ink or the bare ground -- never a frame's own pixels.
-                    !(near(at(*x), slate, 2) || near(at(*x), bare_at(*x), 2))
-                } else {
-                    !near(at(*x), bare_at(*x), 1)
-                }
-            })
+        let samples: Vec<i32> = (60..540).step_by(7).collect();
+        let flat: Vec<i32> = samples
+            .iter()
+            .copied()
+            .filter(|x| !(near(at(*x), slate, 2) || near(at(*x), bare_at(*x), 2)))
             .collect();
+        if !paths.is_empty() {
+            assert!(
+                samples.iter().any(|x| near(at(*x), slate, 2)),
+                "{tag}: listed frames show their placeholder cells"
+            );
+        }
         assert!(
             flat.is_empty(),
             "{tag}: a page that asked for no decoding left {flat:?} samples that are neither the cell placeholder \
-             nor the empty row -- i.e. decoded frame pixels, or a cell placed off its own second"
+             nor the empty row -- i.e. decoded frame pixels"
         );
-        // And every listed frame marks its own cell: where a cell covers a sampled column, that column IS the
-        // placeholder. Counted against the covered columns rather than "somewhere", because a frame at the row's
-        // very start sits under the gutter and is legitimately invisible to a sample taken right of it.
-        if !paths.is_empty() {
-            let covered: Vec<i32> = (60..540).step_by(7).filter(|x| cell_here(*x)).collect();
-            let bare = covered
-                .iter()
-                .filter(|x| !near(at(**x), slate, 2))
-                .copied()
-                .collect::<Vec<_>>();
-            assert!(
-                bare.is_empty(),
-                "{tag}: {} listed frame(s) cover {}/{} sampled columns but left ink the placeholder does not have, \
-                 at {bare:?}",
-                paths.len(),
-                covered.len(),
-                69
-            );
-        }
     }
 }

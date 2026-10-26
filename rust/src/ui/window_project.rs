@@ -64,7 +64,7 @@ pub(crate) fn wire_new(
     let session = session.clone();
     new_.connect_clicked(move |_| {
         let root = std::env::current_dir().unwrap_or_default();
-        let open = startup::session_dir(&root);
+        let open = startup::open_dir();
         let empty = session.borrow().sources.is_empty();
         match new_project::press(bar.borrow().running.is_some(), empty, &open) {
             new_project::Gate::Refused { reason } => status.set_text(reason),
@@ -215,7 +215,7 @@ pub(crate) fn wire_rescan(
     let project = session.clone();
     let shell = shell.clone();
     button.connect_clicked(move |_| {
-        let dir = startup::session_dir(&root);
+        let dir = startup::open_dir();
         let tree = layout::Tree::new(&dir).ok();
         let found = rescan::rescan(&mut project.borrow_mut(), &root, &dir, tree.as_ref());
         // Every step the window takes with that answer -- the drop lines, the write-back, the vanished
@@ -375,8 +375,13 @@ pub fn open_from(window: &adw::ApplicationWindow, picked: &Path) -> bool {
 /// bytes actually copied rather than to the number of rows added — a slow card is what the bar is
 /// waiting on, and `add_sources::Progress` already carries those bytes.
 ///
-/// Returns whether anything was added. Refused while another run is on (S0): the session is not
-/// touched, so a refused press cannot half-apply.
+/// The copy itself runs on a worker (§03-shell §1, the window thread never waits; the first rewrite copied
+/// gigabytes inside the chooser's callback): each file's bytes go down there, and each file's row is added and
+/// drawn here as that file lands, so the list fills while the bar counts. ⏹ ends the copy between two files;
+/// what landed by then stays.
+///
+/// Returns whether the copy started. Refused while another run is on (S0): the session is not touched, so a
+/// refused press cannot half-apply.
 pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) -> bool {
     let (Some(bar), Some(status), Some(session), Some(queue), Some(progress)) = (
         WINDOW_BAR.with(|slots| slots.borrow().last().cloned()),
@@ -389,96 +394,125 @@ pub fn add_files(window: &adw::ApplicationWindow, files: &[std::path::PathBuf]) 
     };
     let copy = copy_into_project(window).is_some_and(|tick| tick.is_active());
     let root = std::env::current_dir().unwrap_or_default();
-    let dir = startup::session_dir(&root);
+    let dir = startup::open_dir();
     // S0 first, again at the seam: pressed while a run is on, it says the sentence and stops before
     // any byte moves. Nothing here clears a ▶ run's flag — ⏹ owns that.
     if let Err(reason) = add_sources::press(bar.borrow().running.is_some()) {
         status.set_text(reason);
         return false;
     }
+    // The folder a copy lands in has to exist before the first `.part` is renamed into it (F0.12 S2).
+    if copy && std::fs::create_dir_all(dir.join("sources")).is_err() {
+        status.set_text(add_sources::NO_SOURCES_DIR);
+        log_line(add_sources::NO_SOURCES_DIR);
+        return false;
+    }
     // Ours alone: the import marks itself as *the* run so a ▶ press during a copy is refused the
-    // other way round, and only this call may take that flag away.
+    // other way round, and only this flow may take that flag away.
     bar.borrow_mut().running = Some(run::Run {
         step: run::Step::Prepare,
         paused: false,
         log_expanded: true,
         sources: run::snapshot_sources(&session.borrow()),
     });
-    let added = add_copy(
-        &mut session.borrow_mut(),
-        &queue,
-        &progress,
-        &root,
-        &dir,
-        files,
-        copy,
-    );
-    // End it through F0.5's own path, whatever the copy did: the import is over either way. The log
-    // expander's state is put back by hand rather than left to `end_run`'s clear — that clears the
-    // status line, which this flow needs for S5's sentence.
-    bar.borrow_mut().running = None;
-
-    match added {
-        Ok(answer) => {
-            status.set_text(&answer.status);
-            // The added rows are drawn by the same door the build used, so an added row carries every
-            // control §4 gives a row (the track menu included) rather than a shorter version of one.
-            let total_rows = session.borrow().sources.len();
-            if let Some(list) = find_widget_by_name(window.upcast_ref(), "sources-list")
-                .and_then(|widget| widget.downcast::<gtk::ListBox>().ok())
-            {
-                // GTK's `ListBox` exposes its rows through the widget tree, so they are counted with
-                // the same iterator the rest of this module walks widgets with: that count is where
-                // the build-time drawing stopped, so everything past it is new.
-                let drawn = list
-                    .observe_children()
-                    .iter::<glib::Object>()
-                    .filter_map(|child| child.ok())
-                    .filter(|child| child.downcast_ref::<gtk::ListBoxRow>().is_some())
-                    .count();
-                for index in drawn..total_rows {
-                    list.append(&source_rows::row_at(
-                        &source_rows::Rows {
-                            session: Rc::clone(&session),
-                            status: status.clone(),
-                            list: list.clone(),
-                        },
-                        index,
-                    ));
-                }
-            }
-            answer.added > 0
-        }
-        // S0's abandonment: the log keeps the reason, the status line the sentence.
-        Err(err) => {
-            status.set_text(add_sources::NO_SOURCES_DIR);
-            log_line(&err);
-            false
-        }
-    }
-}
-
-/// The copy half of a press, with the bar fed from the bytes as they land. Split out so the seam
-/// above stays about finding widgets and this stays about the run of its own.
-fn add_copy(
-    session: &mut Project,
-    queue: &std::cell::RefCell<runqueue::Queue>,
-    progress: &gtk::ProgressBar,
-    root: &Path,
-    dir: &Path,
-    files: &[std::path::PathBuf],
-    copy: bool,
-) -> Result<add_sources::Added, String> {
     // One job on the first track; every file asked for is one task of it, so the tooltip counts the
     // pick rather than what survived (`added N of M` is the status line's job, not the bar's).
     queue.borrow_mut().job(TRACK_IMPORT, IMPORT_JOB, 0, 0);
     queue.borrow_mut().push(TRACK_IMPORT, files.len(), "file");
-    // The folder a copy lands in has to exist before the first `.part` is renamed into it. `add`
-    // makes the same folder afterwards, but the byte-by-byte report runs first (F0.12 S2).
-    if copy {
-        std::fs::create_dir_all(dir.join("sources"))
-            .map_err(|_| add_sources::NO_SOURCES_DIR.to_string())?;
-    }
+    let counted = Rc::new(std::cell::Cell::new((0usize, 0usize)));
+    let on_landed = {
+        let window = window.clone();
+        let session = session.clone();
+        let status = status.clone();
+        let queue = queue.clone();
+        let progress = progress.clone();
+        let counted = counted.clone();
+        let root = root.clone();
+        let dir = dir.clone();
+        move |landed: Landed| {
+            queue.borrow_mut().take(TRACK_IMPORT);
+            queue.borrow_mut().prog(
+                TRACK_IMPORT,
+                landed.fraction,
+                &format!("copying {}", landed.name),
+            );
+            paint_import(&progress, &queue);
+            // The row: `add_sources`' own rule, whose copy finds this file already on disk at its size and
+            // only stats it.
+            let added = add_sources::add(
+                &mut session.borrow_mut(),
+                &root,
+                &dir,
+                std::slice::from_ref(&landed.file),
+                copy,
+            );
+            match added {
+                Ok(answer) => {
+                    let (went_in, already) = counted.get();
+                    counted.set((
+                        went_in + answer.added,
+                        already + answer.asked - answer.added,
+                    ));
+                    draw_new_rows(&window, &session, &status);
+                }
+                Err(err) => log_line(&err),
+            }
+        }
+    };
+    let finish = {
+        let bar = bar.clone();
+        let status = status.clone();
+        let queue = queue.clone();
+        let counted = counted.clone();
+        move |copied: Result<bool, String>| {
+            queue.borrow_mut().done(TRACK_IMPORT, 1.0);
+            // The import is over either way. The status line is set by hand rather than through `end_run`,
+            // which clears it, and this flow needs it for S5's sentence.
+            bar.borrow_mut().running = None;
+            bar.borrow_mut().stop_flag = false;
+            crate::cancel_leg::clear();
+            match copied {
+                Ok(stopped) => {
+                    let (went_in, already) = counted.get();
+                    status.set_text(&add_sources::status(went_in, already));
+                    if stopped {
+                        log_line(">>> add sources: stopped -- the files copied so far are in");
+                    }
+                }
+                // S0's abandonment: the log keeps the reason, the status line the sentence.
+                Err(err) => {
+                    status.set_text(add_sources::NO_SOURCES_DIR);
+                    log_line(&err);
+                }
+            }
+        }
+    };
+    let files = files.to_vec();
+    super::background::run_with_notes(
+        "add sources",
+        move |note| copy_files(&files, &dir, copy, note),
+        on_landed,
+        finish,
+    );
+    true
+}
+
+/// One file of the pick, on disk where the row will name it: the file, its name for the bar, and the byte
+/// fraction of the whole pick landed so far.
+struct Landed {
+    file: std::path::PathBuf,
+    name: String,
+    fraction: f64,
+}
+
+/// The copy half of a press, on the worker: each file's bytes, then a [`Landed`] note. `Ok(true)` when ⏹
+/// ended it between two files.
+fn copy_files(
+    files: &[std::path::PathBuf],
+    dir: &Path,
+    copy: bool,
+    note: &dyn Fn(Landed),
+) -> Result<bool, String> {
     // The total is taken before the first byte moves, so the fraction never chases a growing sum.
     let total: u64 = files
         .iter()
@@ -486,8 +520,10 @@ fn add_copy(
         .sum();
     let mut done_bytes = 0u64;
     for file in files {
+        if crate::cancel_leg::cancelled() {
+            return Ok(true);
+        }
         let size = file.metadata().map(|meta| meta.len()).unwrap_or(0);
-        queue.borrow_mut().take(TRACK_IMPORT);
         if copy {
             // `add_sources`' own copy rule — `.part` then rename, same name + same size skipped, a
             // file already inside the project left where it is. Not reimplemented here.
@@ -501,17 +537,49 @@ fn add_copy(
         } else {
             done_bytes as f64 / total as f64
         };
-        let name = file
-            .file_name()
-            .map(|name| name.to_string_lossy().to_string())
-            .unwrap_or_default();
-        queue
-            .borrow_mut()
-            .prog(TRACK_IMPORT, fraction, &format!("copying {name}"));
-        paint_import(progress, queue);
+        note(Landed {
+            file: file.clone(),
+            name: file
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            fraction,
+        });
     }
-    queue.borrow_mut().done(TRACK_IMPORT, 1.0);
-    add_sources::add(session, root, dir, files, copy)
+    Ok(false)
+}
+
+/// Draw every row the list does not show yet, by the same door the build used, so an added row carries every
+/// control §4 gives a row (the track menu included) rather than a shorter version of one.
+fn draw_new_rows(
+    window: &adw::ApplicationWindow,
+    session: &Rc<std::cell::RefCell<Project>>,
+    status: &gtk::Label,
+) {
+    let total_rows = session.borrow().sources.len();
+    let Some(list) = find_widget_by_name(window.upcast_ref(), "sources-list")
+        .and_then(|widget| widget.downcast::<gtk::ListBox>().ok())
+    else {
+        return;
+    };
+    // GTK's `ListBox` exposes its rows through the widget tree, so they are counted with the same iterator
+    // the rest of this module walks widgets with: that count is where the drawing stopped.
+    let drawn = list
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(|child| child.ok())
+        .filter(|child| child.downcast_ref::<gtk::ListBoxRow>().is_some())
+        .count();
+    for index in drawn..total_rows {
+        list.append(&source_rows::row_at(
+            &source_rows::Rows {
+                session: Rc::clone(session),
+                status: status.clone(),
+                list: list.clone(),
+            },
+            index,
+        ));
+    }
 }
 
 /// Draw the import on F0.5's bar. The fraction and the tooltip come from the queue exactly as
@@ -589,15 +657,31 @@ fn ask_open_project(
     );
 }
 
+/// F0.9's refusal during a run, in the shape New's and Save's take: an Open replaces the window the run
+/// reports into and the folder it writes into.
+pub const OPEN_STOP_FIRST: &str =
+    "stop the run first \u{2014} opening another project would leave it writing into this one";
+
 /// S1 → S4 for one picked path, with no chooser in the way. This is the body the chooser's callback
 /// calls, and the seam a widget test drives so the assertions land on real state rather than on a
 /// dialog nobody answers.
+///
+/// S4's "refresh every page" is done by building the window again on the opened folder, through the
+/// same `build_window_at` the launch uses. A window seeds a great deal from its project when it is built
+/// (Prepare's rows and boxes, the tab switch, the cut and its history, the line, the close hook's folder);
+/// repainting some of it left the first port showing the old project's sources and context under the new
+/// one's name, with the Cut tab asking the old project whether it was unlocked. The old window is closed
+/// FIRST, so its close hook flushes into its own folder, never into the one being opened.
 pub fn open_folder(
     bar: &Rc<RefCell<run::RunBar>>,
     status: &gtk::Label,
-    session: &Rc<RefCell<Project>>,
+    _session: &Rc<RefCell<Project>>,
     picked: &Path,
 ) -> bool {
+    if bar.borrow().running.is_some() {
+        status.set_text(OPEN_STOP_FIRST);
+        return false;
+    }
     match open_project::open(picked, |path| path.is_file(), |path| path.exists()) {
         Err(failure) => {
             log_line(&failure.log);
@@ -607,27 +691,43 @@ pub fn open_folder(
         Ok(applied) => {
             // S3: paths settled before the read; migration first, it reads what the swap consumes.
             let migration = open_project::finish(&applied);
-            let lines = applied.lines.clone();
             let opened_project = applied.project.clone();
-            *session.borrow_mut() = opened_project.clone();
-            for line in &lines {
+            let window = reopen_window_on(&opened_project, &applied.root);
+            for line in &applied.lines {
                 log_line(line);
             }
             // S4: old folder names move, and each move is logged.
-            for line in &migration.lines {
+            for line in migration.lines.iter().chain(&migration.failures) {
                 log_line(line);
             }
-            for line in &migration.failures {
-                log_line(line);
-            }
-            // S4's last three steps live in `ui::open_apply`, which owns their order and wording.
-            crate::ui::open_apply::finish(&applied, &opened_project, status);
-            // A run reading the old project would now be reading files that are not its own, so the
-            // stop flag is raised rather than letting it carry on over swapped sources.
-            let _ = bar.borrow();
+            // S4's last steps (remember, status) live in `ui::open_apply`, which owns their order and
+            // wording, and speak through the NEW window's status line.
+            let status = find_status(window.upcast_ref()).unwrap_or_else(|| status.clone());
+            crate::ui::open_apply::finish(&applied, &opened_project, &status);
             true
         }
     }
+}
+
+/// Close the window and build it again on `dir`, at the same size, keeping the application alive across
+/// the moment it has no window.
+pub(crate) fn reopen_window_on(project: &Project, dir: &Path) -> adw::ApplicationWindow {
+    let old = crate::ui::window::main_window();
+    let app = old
+        .application()
+        .expect("a shell window belongs to the application that built it");
+    let _alive = app.hold();
+    let (width, height, maximized) = (old.width(), old.height(), old.is_maximized());
+    old.close();
+    let window = crate::ui::window::build_window_at(&app, project, "", dir);
+    if width > 0 && height > 0 {
+        window.set_default_size(width, height);
+    }
+    if maximized {
+        window.maximize();
+    }
+    window.present();
+    window
 }
 
 thread_local! {

@@ -102,11 +102,11 @@ fn check_live_session_is_what_gets_saved(app: &adw::Application) {
     let (window, open) = window_at(app, &root);
     assert_eq!(open, folder);
 
-    // An edit made in the window, through the handle every page reads: the narration flag is the
-    // simplest thing a person can change after the window opened, and the build-time clone used to lose
-    // it however many times Save was pressed.
+    // An edit made in the window, through the handle every page reads: the User Context is the simplest
+    // thing a person can change after the window opened, and the build-time clone used to lose it however
+    // many times Save was pressed.
     let session = ui::session_handle(&window);
-    session.borrow_mut().no_narration = true;
+    session.borrow_mut().context = "edited after the window opened".to_string();
 
     // The save renames the working copy to `jan.naivepost` -- the planted folder has only its project
     // file in it, so nothing is logged as moved -- and what it writes there is the session as the
@@ -118,8 +118,8 @@ fn check_live_session_is_what_gets_saved(app: &adw::Application) {
     assert_eq!(saved.path, root.join("jan.naivepost"));
 
     let on_disk = project::load(&saved.path).expect("the saved file reads back");
-    assert!(
-        on_disk.no_narration,
+    assert_eq!(
+        on_disk.context, "edited after the window opened",
         "the file holds what the window holds, not what the launch handed over"
     );
 
@@ -152,6 +152,17 @@ fn check_rename_moves_the_window_too(app: &adw::Application) {
         ui::save_apply::open_dir().as_deref(),
         Some(feb.as_path()),
         "the window now believes the renamed folder is the one it has open"
+    );
+    // So do the window's own folders: the red line's root, and the session the pages and the close flush use.
+    assert_eq!(
+        ui::line_root(&window).as_deref(),
+        Some(feb.as_path()),
+        "the red line is saved under the renamed folder"
+    );
+    assert_eq!(
+        ui::window::narrate_session_tree().map(|tree| tree.dir().to_path_buf()),
+        Some(feb.clone()),
+        "and the pages' session is the renamed folder"
     );
     assert!(
         ui::window_logs()

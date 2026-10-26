@@ -85,7 +85,6 @@ pub const NAMED_SYMBOLIC_ICONS: &[&str] = &[
     "edit-cut-symbolic",
     "audio-input-microphone-symbolic",
     "audio-speakers-symbolic",
-    "media-record-symbolic",
     "applications-multimedia-symbolic",
     "camera-video-symbolic",
     "dialog-warning-symbolic",
@@ -101,7 +100,19 @@ pub const NAMED_SYMBOLIC_ICONS: &[&str] = &[
     "media-playback-start-symbolic",
     "media-playback-stop-symbolic",
     "user-trash-symbolic",
+    "folder-templates-symbolic",
     "view-refresh-symbolic",
+    // The Cut toolbar's own (`cut_screen::tool_icon`, `cut_screen::VOLUME_ICON`), the prototype's choices.
+    "audio-volume-high-symbolic",
+    "edit-copy-symbolic",
+    "edit-paste-symbolic",
+    "go-down-symbolic",
+    "edit-undo-symbolic",
+    "edit-redo-symbolic",
+    "document-revert-symbolic",
+    "edit-clear-all-symbolic",
+    "zoom-out-symbolic",
+    "zoom-in-symbolic",
 ];
 
 /// Which of [`NAMED_SYMBOLIC_ICONS`] the themes in `icons_dir` cannot resolve, in list order.

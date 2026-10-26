@@ -285,8 +285,8 @@ fn stored_values_seed_the_page(
     let rows = naivepost::narrate_screen::voice_options(1, &[]);
     let want = rows
         .iter()
-        .position(|option| option.id == "narrator1")
-        .expect("narrator1 is a row of the picker");
+        .position(|option| option.id == "own")
+        .expect("narrator 1 (`own`) is a row of the picker");
     assert_eq!(
         picker.selected() as usize,
         want,
@@ -493,8 +493,8 @@ fn keep_sits_between_reply_and_save() -> bool {
     )
     .expect("the run's own source is readable from a test");
     let at = |needle: &str| src.find(needle).expect("the run still contains: {needle}");
-    at("Ok(lines) => lines") < at("narrate_data::keep_previous(&tree)")
-        && at("narrate_data::keep_previous(&tree)") < at("narration::save(&record, &tree)")
+    at("Ok(lines) => lines") < at("narrate_data::keep_previous(tree)")
+        && at("narrate_data::keep_previous(tree)") < at("narration::save(&record, tree)")
 }
 
 /// sec_07_narrate_3_data_previous_reads_back_the_generation — what [`narrate_data::previous`] is for: a

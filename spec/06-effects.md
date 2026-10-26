@@ -29,7 +29,7 @@ Legacy: `view` → zoom; `mute` → `snd: "mute"`. `ease` stores "" for linear, 
 
 ![The effects lane with a zoom, a text, a speed, a volume and a label](img/06-lane.png)
 
-<sub>Screenshot of the prototype on the ETH lecture project.</sub> Effects placed by hand for the shot: zoom and text at 1:21, speed ×0.5 at 2:23 (the rose wash on the pictures), volume at 3:55, label at 4:32.
+<sub>Screenshot of the prototype on the ETH lecture project.</sub> Effects placed by hand for the shot: zoom and text at 1:21, speed ×0.5 at 2:23 (the rose wash on the pictures), volume at 3:55, label at 4:32. The picture shows the lane in its place among the tracks, and what surrounds it is the Cut page's, specified there and not here: the gutter with its fold-all badge and its lane and row sound switches, the selection band and the picture rows with their sound strips in [05 §1](05-cut.md#1-screen), and the 🔈 speaker badges on the rows in [05 F2.10](05-cut.md#f210-cameras-and-hearing).
 
 ![The preview during the zoom and the caption](img/06-preview.png)
 
@@ -41,7 +41,7 @@ Legacy: `view` → zoom; `mute` → `snd: "mute"`. `ease` stores "" for linear, 
 
 Colours: zoom (0.25,0.72,0.82), staying zoom (0.95,0.62,0.15), speed/stop (0.92,0.42,0.6), text (0.6,0.55,0.95), svg (0.4,0.8,0.5), volume (0.95,0.85,0.2), label grey-white. Rows (stacked top to bottom inside the lane, which sits between the selection band above and the picture rows below): first-fit by seconds (span floor 0.4 s), an effect going on the topmost row where it fits; lane one row deep even when empty.
 
-Preview (paused): outside the camera rect dimmed black 0.45; rect stroked white with a plate; visible overlays at real alpha, the held one full with a dashed violet outline; a box being drawn dashed. Playing: only the black mask over what the finished frame hides, plus titles; camera layer on the smoothed live clock. A stop's still: rendered from the scene's own camera, fitted on the footage's transform.
+Preview (paused): outside the camera rect dimmed black 0.45; rect stroked white with a plate (measured on the picture as the panel shows it: contained and centred, so on a panel wider or taller than the footage the rect and every mark are drawn on the centred picture, not from the panel's corner); visible overlays at real alpha, the held one full with a dashed violet outline; a box being drawn dashed. Playing: only the black mask over what the finished frame hides, plus titles; camera layer on the smoothed live clock. A stop's still: rendered from the scene's own camera, fitted on the footage's transform.
 
 Preview vs render, deliberately different: preview runs speed at one flat rate (a rate change is a flushing seek); render follows ramps and averages overlaps; the two 1× sound answers cannot be previewed. Only "1× to the scene's end" draws the dashed debt tail ("1× to the effect's end" closes its gap on the effect's last frame); tail suppressed under 0.05 s of debt; "sound X s behind|ahead" plate once wider than 60 px.
 
@@ -71,7 +71,7 @@ flowchart TD
 ```
 
 S1 ✚ Effect ▾ → ⊕ Zoom arms a drag (no line → "click a track first — the effect needs a moment to happen at"; same entry again disarms). Status/panel text: "Drag a box on the video: the picture zooms there and comes back out on its own, or stays on it — the form that opens is where that is said. The box keeps the cut's shape; let go near the full width or height to snap to it. It starts at the red line and runs 3 s…" (or "It covers the marked stretch — a – b, X s"). Camera layer goes down; whole source visible. S2 Drag a box on the preview (< 12 px ignored; smallest output-shaped window containing it is taken). The gesture is a free rectangle, and the words say so: "Drag a box on the video" promises no shape and no snap (prototype: the armed-drag text promised the box keeps the cut's shape and snaps near full width/height, and every drawing drag — zoom, text, svg — took the free-rectangle path where neither happens). S3 Defaults: glide 1 s in and out, length 3 s (or the marked stretch); `stay` when an aspect is set and no staying zoom exists yet (then no glides). S4 Form "Zoom at m:ss": Length (s); At the end: Pull back / Stay on it; Fade in (s); Fade out (s) (greyed when staying: "A camera that stays has no way back, so no fade out."); Curve (Linear). Live; length ≥ 0.4. S5 Status "<label> — ↶ Undo takes it back" (or "… — the video shows this region from here on…").
-Nothing armed or held, paused preview, camera settled: a drag takes the zoom in force; a press clear of every box draws it a new rectangle: "<label> re-framed — ↶ Undo takes it back".
+Nothing armed or held: a click on the preview picture (press and release without passing GTK's drag threshold) only plays and pauses, whatever is placed under it ([05 F2.1](05-cut.md#f21-play-the-recording-) S2). Framing needs travel. On a paused preview a drag that starts inside a zoom's box takes that zoom (moves or sizes it, [F3.8](#f38-hold-move-resize-edit-remove) S3; under 12 px it only takes it in hand: "<label> re-framed — ↶ Undo takes it back"); a drag clear of every box draws a new rectangle and opens its form "Zoom at m:ss", whatever zoom stands there: "<label> — ↶ Undo takes it back". First rewrite: one click ran both, the toggle and the framing press, so a click over a placed zoom started play and took the zoom, a click where no zoom stood opened a zoom form instead of playing, and a drag clear of every box under a placed zoom was refused.
 Camera path: from the centred full-fill slice; each zoom glides from the camera's position at its start to its rect, holds, and (unless staying) glides back; a staying zoom becomes the new settled frame; nothing reaches backwards; fade-in wins overlaps. Rect clamp hf ∈ [0.02, 12], centre ∈ [−2, 3].
 
 ### F3.2 Aspect ratio
@@ -164,7 +164,7 @@ flowchart TD
   classDef ask fill:#e8eefc,stroke:#3a63c8,color:#1a1a1a
 ```
 
-▨ SVG asks for the file first ("Choose a drawing to lay over the video", from `assets/`), then arms ("Drag the box <file> goes in — … the drawing keeps its own shape inside it. A click puts one across the middle."). Default box: middle {0.5, 0.5, 0.6, 0.6}. Form "SVG at m:ss": file + Choose…, Length, fades, Curve. Preview raster via ffmpeg, 512 px, transparent, cached per file. No file → not placed.
+▨ SVG asks for the file first ("Choose a drawing to lay over the video", from `assets/`), then arms ("Drag the box <file> goes in — … the drawing keeps its own shape inside it. A click puts one across the middle."). Default box: middle {0.5, 0.5, 0.6, 0.6}. Form "SVG at m:ss": file + Choose…, Length, fades, Curve. Preview raster via ffmpeg, 512 px, transparent, cached per file; made on a worker (new, [03 §1](03-shell.md#1-the-window)): the form says "being made" and gets its picture when the raster lands. No file → not placed.
 
 ### F3.6 Volume by hand
 

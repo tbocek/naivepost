@@ -107,7 +107,11 @@ fn sec_05_cut_1_screen_s7_cut_and_cut_at_1x_disagree_by_the_speed_effects() {
         "9:16",
         "what the cut stores is what the row reads"
     );
-    assert_eq!(value("Playhead"), "01:15");
+    assert_eq!(
+        value("Playhead"),
+        "01:15.0",
+        "the preview's clock face, mm:ss.d"
+    );
     assert_eq!(
         value("Source"),
         "60:00",
@@ -165,7 +169,7 @@ fn sec_05_cut_1_screen_s9_the_picture_band_counts_the_seconds_between_two_pictur
     // The grid's own rule, held as the number it is: one frame per 250 ms of footage, restarted at
     // every scene change, and finer than the Freq spacing the prototype drew its band from.
     assert_eq!(naivepost::prepare::EXTRACTION_GRID, 0.25); // P.eng.frameGridSeconds
-    assert!(naivepost::prepare::EXTRACTION_GRID < naivepost::prepare::FREQ_DEFAULT);
+    assert!(naivepost::prepare::EXTRACTION_GRID < naivepost::prepare::MODEL_FRAME_STEP);
 
     // Smaller rows and portrait shapes need the finest grid least, so they are the ones that clear it.
     assert!(slot(cut_screen::THUMB_MIN, "9:16") < slot(cut_screen::THUMB_AT_OPEN, "16:9"));

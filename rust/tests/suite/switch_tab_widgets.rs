@@ -85,11 +85,14 @@ fn narration_with(s: f64, e: f64) -> narration::Narration {
 fn window_round() {
     common::one_app_round(|app| {
         check_switch(app);
+        check_the_lock_is_asked_of_the_live_session(app);
+        RAN_LIVE.store(true, Ordering::SeqCst);
         RAN.store(true, Ordering::SeqCst);
     });
 }
 
 static RAN: AtomicBool = AtomicBool::new(false);
+static RAN_LIVE: AtomicBool = AtomicBool::new(false);
 static OK: AtomicBool = AtomicBool::new(false);
 
 /// Click a tab the way the toolkit does, and say which one if it is not there.
@@ -100,6 +103,7 @@ fn click_tab(window: &adw::ApplicationWindow, page: Page) {
 }
 
 fn inputs_text(window: &adw::ApplicationWindow) -> String {
+    crate::common::settle_workers();
     ui::inputs_readout(window)
         .expect("the window carries inputs-readout")
         .text()
@@ -107,6 +111,7 @@ fn inputs_text(window: &adw::ApplicationWindow) -> String {
 }
 
 fn outputs_text(window: &adw::ApplicationWindow) -> String {
+    crate::common::settle_workers();
     ui::outputs_sentence(window).expect("the window carries outputs-readout")
 }
 
@@ -330,9 +335,6 @@ fn f0_1_s2_locked_cut_bounces_the_click(app: &adw::Application, dir: &Path) {
     );
 }
 
-// S1's other door — a lucky run moving to a page — is F0.4's round; `Move::Run` is covered at the
-// shell level in tests/suite/switch_tab.rs, so this file does not invent a seam for it.
-
 // S3's write-back is asserted through this window too, in `f0_1_s5_narrate_refits_its_lines`: the
 // window holds its narration (`HELD_NARRATION` in src/ui/window.rs), so the refit S5 makes on
 // arrival survives to the switch that leaves, and the owed flush writes it to disk. What still comes
@@ -344,4 +346,41 @@ fn f0_1_switch_tab_through_the_widgets() {
     window_round();
     assert!(RAN.load(Ordering::SeqCst), "the application never ran");
     assert!(OK.load(Ordering::SeqCst), "the check never finished");
+}
+
+/// S1/S2 against the session as it is NOW: a window built on a project with no footage, then given a
+/// footage source the way "Add source files…" gives one (into the live session), lets Cut open. The
+/// handler used to ask the copy the window was built with, which still had no footage, so Cut bounced
+/// with its lock reason for as long as the window lived.
+fn check_the_lock_is_asked_of_the_live_session(app: &adw::Application) {
+    let window = ui::build_window(app, &Project::default(), "Prepare");
+    window.present();
+    ui::session_handle(&window)
+        .borrow_mut()
+        .sources
+        .push(Source {
+            path: "project:sources/added.mkv".to_string(),
+            footage: true,
+            narrator: 0,
+            sepvoice: false,
+            tracks: vec![0],
+        });
+    click_tab(&window, Page::Cut);
+    assert_eq!(
+        ui::state(&window).page,
+        Page::Cut,
+        "S1: a source added since the window was built unlocks Cut (status said {:?})",
+        ui::state(&window).status
+    );
+    window.close();
+}
+
+#[test]
+fn f0_1_s2_the_lock_is_asked_of_the_live_session() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_LIVE.load(Ordering::SeqCst),
+        "the live-session check never ran"
+    );
 }

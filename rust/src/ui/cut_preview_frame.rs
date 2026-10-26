@@ -78,11 +78,16 @@ pub fn install_draw(window: &adw::ApplicationWindow) {
     let held = window.clone();
     if let Some(frame) = frame_of(&held) {
         frame.set_draw_func(move |_, cr, width, height| {
-            let fit = fit_size_of(&held, width as f64, height as f64);
+            let panel = (width as f64, height as f64);
+            let fit = fit_size_of(&held, panel.0, panel.1);
             let cut = crate::ui::review_cut_of(&held);
-            let frame = describe(&held, fit, &held_frame(&cut, drawn_box()));
+            // The box under the hand arrives in the panel's px; the frame draws in the picture's, which starts
+            // after the bars around the centred picture.
+            let (ox, oy) = picture_offset(panel, fit);
+            let drawn = drawn_box().map(|(x, y, w, h)| (x - ox, y - oy, w, h));
+            let frame = describe(&held, fit, &held_frame(&cut, drawn));
             let seen = observe(&frame, live_of(&held));
-            paint(cr, &frame, &seen);
+            paint_in_panel(cr, &frame, &seen, panel);
         });
     }
 }
@@ -385,6 +390,26 @@ pub fn playing_mask_px(camera: &Camera, fit: (f64, f64)) -> Vec<(f64, f64, f64, 
 /// Paused (§2's order): dim outside the camera rect, the rect stroked white, every overlay at its real
 /// alpha, the held one full with the dashed violet outline, a box under the hand dashed. Playing: only the
 /// black mask over what the finished frame hides, plus the titles.
+/// Where the fitted picture starts in a panel of `panel` px: the picture is contained and centred (the panel's
+/// `GtkPicture`), so the bars on either side, or above and below, are what the frame's drawing is shifted by.
+pub fn picture_offset(panel: (f64, f64), fit: (f64, f64)) -> (f64, f64) {
+    (
+        ((panel.0 - fit.0) / 2.0).max(0.0),
+        ((panel.1 - fit.1) / 2.0).max(0.0),
+    )
+}
+
+/// [`paint`] onto a panel of `panel` px: every rect, dim band and overlay is measured in the FITTED picture's px
+/// (`frame.fit`), so the drawing is shifted onto the centred picture first. Painted from the panel's corner, the
+/// camera rect's right edge stood inside a picture narrower than its panel, as a white bar across the frame.
+pub fn paint_in_panel(cr: &cairo::Context, frame: &Frame, seen: &Observed, panel: (f64, f64)) {
+    let (ox, oy) = picture_offset(panel, frame.fit);
+    let _ = cr.save();
+    cr.translate(ox, oy);
+    paint(cr, frame, seen);
+    let _ = cr.restore();
+}
+
 pub fn paint(cr: &cairo::Context, frame: &Frame, seen: &Observed) {
     if frame.camera_down {
         // ⊕ Zoom armed: the camera layer is DOWN so a box is drawn against the whole source (§2/F3.1 S1).
@@ -471,10 +496,7 @@ pub fn paint_still(
         return;
     }
     let Some(path) = frame_path else { return };
-    let Ok(pixbuf) = gtk::gdk_pixbuf::Pixbuf::from_file(path) else {
-        return;
-    };
-    let Some(surface) = raster_surface(&pixbuf) else {
+    let Some(surface) = still_surface(path) else {
         return;
     };
     // Same scaling trick the svg overlay uses: translate/scale so the surface lands exactly on the borrowed box.
@@ -535,9 +557,80 @@ fn svg_box_px(effect: &cut::Fx, fit: (f64, f64)) -> (f64, f64, f64, f64) {
     .to_px(fit.0, fit.1)
 }
 
+thread_local! {
+    /// The stop's still as the preview paints it: the frame file, its change time, and its surface. A paint (ten a
+    /// second while playing) draws from here and never decodes (§03-shell §1, the window thread never waits).
+    static STILL: std::cell::RefCell<Option<(std::path::PathBuf, Option<std::time::SystemTime>, Option<cairo::ImageSurface>)>> =
+        const { std::cell::RefCell::new(None) };
+    /// The still a worker is decoding now.
+    static STILL_ASKED: std::cell::RefCell<Option<(std::path::PathBuf, Option<std::time::SystemTime>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The still's surface when it has been decoded for this version of the file; otherwise a worker is asked to
+/// decode it, the paint goes without it, and the window repaints when it lands. A snapshot, which takes its
+/// picture from one paint, decodes on the spot as the band's thumbnails do.
+fn still_surface(path: &std::path::Path) -> Option<cairo::ImageSurface> {
+    if crate::ui::cut_picture_rows::frame_decoding_allowed() {
+        let pixbuf = gtk::gdk_pixbuf::Pixbuf::from_file(path).ok()?;
+        return raster_surface(&pixbuf);
+    }
+    let stamp = std::fs::metadata(path)
+        .ok()
+        .and_then(|meta| meta.modified().ok());
+    let held = STILL.with(|still| {
+        still
+            .borrow()
+            .as_ref()
+            .filter(|(file, at, _)| file == path && *at == stamp)
+            .map(|(_, _, surface)| surface.clone())
+    });
+    if let Some(surface) = held {
+        return surface;
+    }
+    let key = (path.to_path_buf(), stamp);
+    if STILL_ASKED.with(|asked| asked.borrow().as_ref() == Some(&key)) {
+        return None;
+    }
+    STILL_ASKED.with(|asked| *asked.borrow_mut() = Some(key.clone()));
+    let file = path.to_path_buf();
+    crate::ui::background::run(
+        "still",
+        move || {
+            gtk::gdk_pixbuf::Pixbuf::from_file(&file)
+                .ok()
+                .and_then(|pixbuf| raster_pixels(&pixbuf))
+        },
+        move |pixels| {
+            let surface = pixels.and_then(|(bytes, w, h, stride)| {
+                cairo::ImageSurface::create_for_data(bytes, cairo::Format::ARgb32, w, h, stride)
+                    .ok()
+            });
+            STILL.with(|still| *still.borrow_mut() = Some((key.0.clone(), key.1, surface)));
+            STILL_ASKED.with(|asked| {
+                let mut asked = asked.borrow_mut();
+                if asked.as_ref() == Some(&key) {
+                    *asked = None;
+                }
+            });
+            if let Some(window) = crate::ui::window::built_window() {
+                gtk::prelude::WidgetExt::queue_draw(&window);
+            }
+        },
+    );
+    None
+}
+
 /// This pixbuf as a cairo surface, alpha premultiplied on the way in (see the caller). `None` if either step
 /// refuses — a png that will not decode is a missing raster, and the caller treats it as one.
 fn raster_surface(pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Option<cairo::ImageSurface> {
+    let (pixels, w, h, stride) = raster_pixels(pixbuf)?;
+    cairo::ImageSurface::create_for_data(pixels, cairo::Format::ARgb32, w, h, stride).ok()
+}
+
+/// The pixels behind [`raster_surface`]: cairo's premultiplied ARgb32 bytes, their width, height and stride.
+/// Plain bytes, so a worker can make them and the window thread wrap them.
+fn raster_pixels(pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Option<(Vec<u8>, i32, i32, i32)> {
     let (w, h) = (pixbuf.width(), pixbuf.height());
     if w <= 0 || h <= 0 {
         return None;
@@ -566,8 +659,7 @@ fn raster_surface(pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Option<cairo::ImageSurfac
             pixels[at..at + 4].copy_from_slice(&word.to_le_bytes());
         }
     }
-    cairo::ImageSurface::create_for_data(pixels, cairo::Format::ARgb32, w, h, out_stride as i32)
-        .ok()
+    Some((pixels, w, h, out_stride as i32))
 }
 
 /// One overlay: the caption's words or a drawing's file, wherever the record says, at `alpha`.

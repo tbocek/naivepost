@@ -139,9 +139,7 @@ pub fn paint_project_title() {
     let Some(title) = project_title_of() else {
         return;
     };
-    let dir = crate::ui::save_apply::open_dir().unwrap_or_else(|| {
-        crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
-    });
+    let dir = crate::ui::save_apply::open_dir().unwrap_or_else(|| crate::startup::open_dir());
     let tab = ui::WINDOW_SHELLS
         .with(|shells| shells.borrow().last().cloned())
         .map(|shell| shell.borrow().page.label().to_string())
@@ -308,27 +306,6 @@ pub fn copy_into_project(window: &adw::ApplicationWindow) -> Option<gtk::CheckBu
         .downcast()
         .ok()
 }
-/// The ASR code the page's Language box holds (§1's badge **10**) — how a test sees that typing
-/// reached [`Project::language`] rather than stopping at the widget.
-pub fn bench_language(window: &adw::ApplicationWindow) -> Option<String> {
-    let entry = find_widget_by_name(window.upcast_ref(), "language-entry")?
-        .downcast::<gtk::Entry>()
-        .ok()?;
-    Some(entry.text().to_string())
-}
-/// Freq as the live session holds it, read off `Project::interval` rather than off the dropdown's
-/// selected index. A widget test needs the SAME field `prepare::set_freq` writes, otherwise it
-/// would only prove the dropdown remembers its own selection.
-pub fn session_freq(window: &adw::ApplicationWindow) -> f64 {
-    let _ = window;
-    ui::SESSION.with(|slots| {
-        slots
-            .borrow()
-            .last()
-            .map(|project| project.borrow().interval)
-            .unwrap_or(naivepost_interval_default())
-    })
-}
 /// The step the run bar is holding, if any — read off `RunBar::running` rather than off a button's
 /// face. A widget test needs the same field `runqueue::start_run` writes and F1.1's refusal skips,
 /// otherwise it would only prove that ⏹ looked sensitive.
@@ -339,11 +316,6 @@ pub fn running_step(window: &adw::ApplicationWindow) -> Option<crate::run::Step>
             .last()
             .and_then(|bar| bar.borrow().running.as_ref().map(|run| run.step))
     })
-}
-/// What a project with no opinion carries, reached through the type rather than retyped here so the
-/// two cannot drift apart.
-fn naivepost_interval_default() -> f64 {
-    crate::project::Project::default().interval
 }
 /// The marking pass the LIVE session runs under — the same field `▶` reads when it decides whether
 /// F1.9's retake pass or F1.10's joins pass speaks. Read from `ui::PLAY_SESSION`, not from a window
@@ -389,12 +361,6 @@ pub fn play_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
 /// The ⏹ button (F0.3), found the same way as [`play_button`].
 pub fn stop_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
     find_widget_by_name(window.upcast_ref(), "stop-button")?
-        .downcast()
-        .ok()
-}
-/// The "I'm feeling lucky" button (F0.4), found the same way as [`play_button`].
-pub fn lucky_button(window: &adw::ApplicationWindow) -> Option<gtk::Button> {
-    find_widget_by_name(window.upcast_ref(), "lucky-button")?
         .downcast()
         .ok()
 }

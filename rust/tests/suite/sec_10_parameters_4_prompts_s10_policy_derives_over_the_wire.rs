@@ -142,18 +142,18 @@ fn check_the_play_press_dials_the_policy_prompt(app: &adw::Application) {
     );
 }
 
-/// S11: the per-machine wording wins over the shipped file on the same live dial, and Reset still has
-/// something to go back to. The edit is written where §04 says a prompt edit lives —
-/// `<config>/naivepost/prompts/policy.txt` — and read back through `settings::prompt_text`, the door
-/// `policy_call::wording` uses, so this proves the live path reads the override rather than the tree.
+/// S11: the open project's profile section for `policy` (§03-shell §5b) rides on the same live dial, after the
+/// shipped wording, read through `settings::prompt_text`, the door `policy_call::wording` uses.
 fn check_an_edited_policy_prompt_wins_on_the_wire(app: &adw::Application) {
-    let marker = "EDITED-ON-THIS-MACHINE: keep every cut on a word edge.";
+    let marker = "FROM-THE-PROFILE: keep every cut on a word edge.";
     let paths =
         naivepost::settings::from_environment().expect("the pinned settings folder resolves");
-    let shipped = prompts::shipped_text("policy").expect("the policy prompt ships");
-    std::fs::create_dir_all(paths.prompts_dir()).expect("the prompts folder");
-    std::fs::write(paths.prompt_file("policy"), format!("{marker}\n{shipped}"))
-        .expect("edit written");
+    naivepost::profile::save(
+        &paths,
+        "Policy probe",
+        &format!("A lecture.\n## policy\n{marker}\n"),
+    )
+    .expect("the profile is on this machine");
 
     // A second scenario root would re-point the process-wide env under S10's window, so this case
     // reuses the one pinned above and only moves two things: the address (still a loopback fake) and
@@ -166,6 +166,15 @@ fn check_an_edited_policy_prompt_wins_on_the_wire(app: &adw::Application) {
     let window = ui::build_window(app, &project, "Prepare");
     window.present();
     settle();
+    // The open project uses the profile, on disk and in the window's session alike.
+    let dir = naivepost::startup::open_dir();
+    let mut on_disk = naivepost::project::load(&dir).unwrap_or_default();
+    on_disk.profile = Some(naivepost::project::ProfileUse {
+        name: "Policy probe".into(),
+        values: Default::default(),
+    });
+    naivepost::project::save(&on_disk, &dir).expect("the project names its profile");
+    ui::session_handle(&window).borrow_mut().profile = on_disk.profile.clone();
     // A different context from S10's so the LLM cache (keyed on the exact request) cannot answer here.
     ui::set_session_context(&window, "burn in captions for the whole film");
     press_play_and_wait(&window, "burn in captions for the whole film");
@@ -173,18 +182,19 @@ fn check_an_edited_policy_prompt_wins_on_the_wire(app: &adw::Application) {
     let seen = llm.next_seen();
     assert!(
         seen.body.contains(marker),
-        "this machine's edited policy wording is what went out"
+        "the profile's policy section went out with the request"
     );
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&seen.body).expect("JSON")["enable_thinking"],
         json!(false),
         "an edited wording does not change §4's thinking flag"
     );
-    // Reset's target survives the edit: the shipped file is still what the catalogue hands back.
-    assert_eq!(
-        prompts::shipped_text("policy").as_deref(),
-        Some(shipped.as_str()),
-        "Reset still has the built-in wording to put back"
+    // The section IS the step's prompt for this project: the shipped wording is not sent beside it.
+    let shipped = prompts::shipped_text("policy").expect("the policy prompt ships");
+    let first_line = shipped.lines().next().expect("a first line");
+    assert!(
+        !seen.body.contains(&first_line.replace('"', "\\\"")),
+        "the profile's section replaced the shipped policy wording"
     );
     // S1's own default is `true`, so "landed" here is proven by the ORIGIN the proposal wrote, not by a
     // value flip: a model-sourced field is what a derivation looks like in the state.

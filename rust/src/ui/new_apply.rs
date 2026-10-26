@@ -19,30 +19,33 @@ use gtk4 as gtk;
 use crate::new_project::Created;
 use crate::project::Project;
 
-/// Make the new project this window's session and say so.
+/// Make the new project this window's project and say so.
 ///
-/// `session` is the window's own live handle — the same `Rc` every page reads — so replacing its
-/// contents IS the refresh: Prepare's rows show the empty session without being rebuilt here, exactly
-/// as [`crate::ui::window::open_folder`] relies on for Open.
-pub fn apply(created: &Created, session: &Rc<RefCell<Project>>, status: &gtk::Label) {
+/// S6's "apply the blank project via the load's apply list" is Open's S4: the window is built again on the
+/// new folder ([`crate::ui::window_project::reopen_window_on`]), so every page, the tab locks and every
+/// step's folder belong to the new project. Swapping the session alone (the first port) left the steps
+/// writing into the folder that was open before and the pages showing what they had drawn from it.
+pub fn apply(created: &Created, _session: &Rc<RefCell<Project>>, status: &gtk::Label) {
+    let window = crate::ui::window_project::reopen_window_on(&created.project, &created.path);
+    let status = crate::ui::window::find_status(gtk::prelude::Cast::upcast_ref(&window))
+        .unwrap_or_else(|| status.clone());
     // S6's log line, verbatim from `Created`: "the session is empty; outputs on disk are untouched"
-    // is the promise that nothing was deleted, and it has to be in the log, not only implied.
+    // is the promise that nothing was deleted, and it has to be in the log, not only implied. Logged
+    // into the NEW window, which is the one a person reads.
     crate::ui::window::log_line(&created.log);
-
-    // S6's "apply the blank project": the swap, before the status, so a reader who looks at the page
-    // after reading the status finds the empty session already there rather than one still to come.
-    *session.borrow_mut() = created.project.clone();
 
     // S6 remembers the project for this root through the SAME door Open uses, so both paths write the
     // `PROJECT_<n>` pair the settings' writer owns. A conf that cannot be read costs the memory, never
     // the new project — the session is already switched, and saying so is the whole remedy.
+    // "This root" is the folder the app was launched from (F0.6 S2's key), as for Open.
     let file = crate::open_project::project_file_in(&created.path);
+    let launch_root = std::env::current_dir().unwrap_or_default();
     REMEMBERED.with(|list| {
         match crate::settings::from_environment().map(|paths| {
             crate::machine_store::persist_project(
                 &paths,
                 &mut list.borrow_mut(),
-                &created.path,
+                &launch_root,
                 &file,
             )
         }) {

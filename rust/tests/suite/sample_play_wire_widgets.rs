@@ -72,7 +72,7 @@ fn run_round(app: &adw::Application) {
 
     let tree = session_tree();
     let mut project = Project::default();
-    project.language = "en".to_string();
+    project.policy.language.value = "en".to_string();
     project.sources.push(Source {
         path: "/media/lecture.mkv".into(),
         footage: true,
@@ -132,9 +132,8 @@ fn run_round(app: &adw::Application) {
         playing: false,
         started: false,
         busy: false,
-        narration_off: false,
         covered_spans: vec![],
-        language: "en".into(),
+        language: "en".to_string(),
     };
     ui::set_state(state.clone());
     ui::refresh(&window);
@@ -156,13 +155,11 @@ fn run_round(app: &adw::Application) {
 
     // ---- press 1: the leg runs, the take lands, and it is heard ------------------------------
     button(&window, "sample-play").emit_by_name::<()>("clicked", &[]);
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
-    for _ in 0..40 {
-        if sample.is_file() {
-            break;
-        }
-        settle();
-    }
     assert!(
         sample.is_file(),
         "the take was filed under S5's own name at {}",
@@ -226,6 +223,25 @@ fn run_round(app: &adw::Application) {
         status_text(&window),
         naivepost::narrate_details::sample_playing_status(),
         "the cached take is heard, not refused"
+    );
+
+    // ---- ⟳: a NEW take of the same words, through its own button: the cache is not asked, one call goes out
+    button(&window, "sample-reroll").emit_by_name::<()>("clicked", &[]);
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the reroll's worker answered"
+    );
+    settle();
+    let rerolled = audio.drain();
+    assert_eq!(
+        speech_calls(&rerolled),
+        1,
+        "⟳ dials again for a fresh take, cached words or not; saw {:?}",
+        rerolled.iter().map(|s| s.path.clone()).collect::<Vec<_>>()
+    );
+    assert!(
+        ui::window_logs().iter().any(|line| line.contains("take 2")),
+        "and the log says it is the second take"
     );
 
     // ---- press 3: busy is refused before anything is dialed ---------------------------------

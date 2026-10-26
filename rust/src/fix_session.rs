@@ -80,6 +80,7 @@ pub fn run_placement(
 pub fn run_session(
     _task: &crate::run_stages::Task,
     log: &mut impl FnMut(&str),
+    reached: &mut dyn FnMut(f64, &str),
 ) -> Result<(), String> {
     let tree = session_tree()?;
     let project = crate::project::load(tree.dir()).unwrap_or_default();
@@ -92,9 +93,9 @@ pub fn run_session(
         .iter()
         .any(|source| fix_transcripts::owes_the_fixer(&tree, source))
     {
-        session_fix(&tree, &project, log)?;
+        session_fix(&tree, &project, log, reached)?;
     }
-    merge_mark_write(&tree, &project, log)
+    merge_mark_write(&tree, &project, log, reached)
 }
 
 /// §F1.8 S1–S4 for the whole session in one walk: place, block by block over EVERY recording, write the
@@ -105,6 +106,7 @@ pub fn session_fix(
     tree: &Tree,
     project: &Project,
     log: &mut impl FnMut(&str),
+    reached: &mut dyn FnMut(f64, &str),
 ) -> Result<(), String> {
     let Some(paths) = crate::settings::from_environment() else {
         // No settings folder means nothing to dial. The merge still owes a timeline from whatever
@@ -119,7 +121,7 @@ pub fn session_fix(
         &narrator_of(project),
         pass,
         |message| crate::fix_call::ask_block(tree, &paths, &conf, message),
-        || run_marking_pass(tree, project, pass, log),
+        || run_marking_pass(tree, project, pass, log, reached),
     )?;
     for line in &outcome.logs {
         log(line);
@@ -129,7 +131,7 @@ pub fn session_fix(
 
 /// Resolve the session folder the way every other dial does (§1's re-read-per-request seams).
 fn session_tree() -> Result<Tree, String> {
-    let session = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let session = crate::startup::open_dir();
     Tree::new(&session)
         .map_err(|_| format!("{}: not a project folder to fix into", session.display()))
 }
@@ -139,6 +141,25 @@ fn session_tree() -> Result<Tree, String> {
 /// `is_video` follows `footage` and `is_commentary` follows `narrator == 1`, exactly as
 /// [`crate::fix_call::stage`] spells both onto its rows, so the two halves of the stage cannot disagree
 /// about whether a source owes `subtitles.srt` or `commentary.fixed.tsv`.
+/// The project's rows in session-clock order: by the start the timestamp in each file name places it at
+/// ([`placed_sources`]), stable, so rows with no timestamp keep the order they were added in. The rows' own
+/// order is how they were added, which for 07-news was newest first: the session word list followed it, so
+/// every join asked about the wrong side of the wrong pair.
+pub fn in_clock_order(project: &Project) -> Vec<&crate::project::Source> {
+    let placed = placed_sources(project);
+    let mut order: Vec<usize> = (0..project.sources.len()).collect();
+    order.sort_by(|a, b| {
+        let at = |index: usize| placed.get(index).map_or(0.0, |source| source.start);
+        at(*a)
+            .partial_cmp(&at(*b))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    order
+        .into_iter()
+        .map(|index| &project.sources[index])
+        .collect()
+}
+
 pub fn placed_sources(project: &Project) -> Vec<fix_transcripts::Source> {
     let names: Vec<&str> = project
         .sources
@@ -158,7 +179,7 @@ pub fn placed_sources(project: &Project) -> Vec<fix_transcripts::Source> {
                 start: starts.get(index).copied().unwrap_or(0.0),
                 duration: 0.0,
                 is_video: source.footage,
-                is_commentary: source.narrator == 1,
+                is_commentary: crate::sources::is_narrator_mic(source) && source.narrator == 1,
             }
         })
         .collect()
@@ -196,6 +217,7 @@ pub fn merge_mark_write(
     tree: &Tree,
     project: &Project,
     log: &mut impl FnMut(&str),
+    reached: &mut dyn FnMut(f64, &str),
 ) -> Result<(), String> {
     // S1 again, cheaply: the merge places rows on the session clock, and a run that reached this row
     // without the placement row (a resumed run, a hand-made plan) still gets the same seconds.
@@ -236,14 +258,15 @@ pub fn merge_mark_write(
     // S6: the pass P.policy.markingPass names. Its failure is a sentence, not this row's end: the
     // timeline on disk is usable, and losing the fixes to a marking refusal would be the worse error.
     let pass = crate::policy::marking_pass_of(&project.policy);
-    let marks =
-        match fix_transcripts::marks_for(pass, || run_marking_pass(tree, project, pass, log)) {
-            Ok(marks) => marks,
-            Err(err) => {
-                log(&fix_transcripts::marking_log(&err, pass));
-                Vec::new()
-            }
-        };
+    let marks = match fix_transcripts::marks_for(pass, || {
+        run_marking_pass(tree, project, pass, log, reached)
+    }) {
+        Ok(marks) => marks,
+        Err(err) => {
+            log(&fix_transcripts::marking_log(&err, pass));
+            Vec::new()
+        }
+    };
 
     // S7: the text the cut model reads, which is also the text the person opens.
     let narrator = narrator_of(project);
@@ -278,7 +301,7 @@ pub fn narrator_of(project: &Project) -> String {
     project
         .sources
         .iter()
-        .find(|source| source.narrator == 1)
+        .find(|source| crate::sources::is_narrator_mic(source) && source.narrator == 1)
         .map(lane_of)
         .unwrap_or_default()
 }
@@ -291,10 +314,14 @@ pub fn run_marking_pass(
     project: &Project,
     pass: MarkingPass,
     log: &mut impl FnMut(&str),
+    reached: &mut dyn FnMut(f64, &str),
 ) -> Result<Vec<fix_transcripts::Mark>, String> {
     let lines = match pass {
-        MarkingPass::Retakes => retakes::press_marking(tree, project, pass),
-        MarkingPass::Joins => joins::press_joins(tree, project, pass),
+        MarkingPass::Retakes => {
+            reached(0.0, "marking retakes");
+            retakes::press_marking(tree, project, pass)
+        }
+        MarkingPass::Joins => joins::press_joins(tree, project, pass, reached),
         MarkingPass::None => Vec::new(),
     };
     for line in &lines {

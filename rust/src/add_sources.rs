@@ -148,6 +148,9 @@ pub fn add(
         project.sources.push(Source {
             path: written.clone(),
             footage: is_video(file),
+            // Every recording starts as voice 1: a session is usually one person, and a row on 0 among 1s
+            // said nothing true about it.
+            narrator: 1,
             ..Default::default()
         });
         paths.push(written);
@@ -168,14 +171,6 @@ pub fn add(
         }
     }
 
-    // S3's other half: somebody has to be the narrator, but only when nobody holds slot 1 — a list
-    // whose slot 1 is empty is one the user emptied, and it comes back as they left it. Asked whether
-    // or not a row arrived: adding files can leave slot 1 held by nothing (F0.11 S1 drops a source),
-    // and that gap is filled by the same rule at the same moment.
-    if !project.sources.iter().any(|row| row.narrator == 1) {
-        crate::rescan::fill_slot_1(project);
-    }
-
     let added = paths.len();
     let asked = files.len();
     let status = status(added, already);
@@ -192,7 +187,7 @@ pub fn add(
 /// S5's status. `already` is what was asked for and found already in the session — a duplicate or a
 /// file that cannot be a source at all. N counts what went in, so an import where nothing new
 /// arrived says so rather than "added 0 source(s)".
-fn status(added: usize, already: usize) -> String {
+pub fn status(added: usize, already: usize) -> String {
     let asked = added + already;
     match (added, already) {
         (0, _) => "already in the session \u{2014} nothing added".to_string(),

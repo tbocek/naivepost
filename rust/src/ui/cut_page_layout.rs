@@ -37,6 +37,9 @@ const BELOW_PANED: [&str; 5] = [
     "fold-all-holder",
 ];
 
+/// The rows below the tape whose controls the band now draws and answers itself: kept in the tree, not shown.
+const HELD_UNSEEN: [&str; 3] = ["selection-row", "camera-rows", "fold-all-holder"];
+
 /// Two halves of the page ask for their own width and must not be stretched across the band: §A's form
 /// column is seated by the left/right divider, and §1 puts the selection row's drag surface, ✕ and
 /// readout together as one small surface under the bar, not as a page-wide strip.
@@ -338,6 +341,10 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
         // (`insert-form`, `zoom-form-Cut`, …) were left as direct children of the page box, where their
         // owner's door found them but their width went to the PAGE instead of the column. They move under
         // the readings now; hidden ones paint nothing, so an idle page shows exactly its eight rows.
+        // They go INSIDE the scroller: appended to the column under it, an open zoom form made the column
+        // 554 px tall in a 380 px pane, and the paned kept the column's bottom edge, so the pinned heading
+        // and its ✕ were painted above the window.
+        let body = find_named_box(&readings, crate::ui::cut_form_frame::BODY_NAME);
         for name in &forms {
             if let Some(holder) = detached.iter().find(|w| &w.widget_name() == name) {
                 holder.set_hexpand(false);
@@ -346,8 +353,8 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
                 // children in its own private layout and `gtk_widget_get_first_child` then answers None,
                 // which is why `insert-form` vanished from every lookup (`insert_form_box` -> None). It
                 // goes into the frame -- the column §A means -- where a walk still finds it.
-                if let Some(column) = readings.downcast_ref::<gtk::Box>() {
-                    column.append(holder);
+                if let Some(body) = &body {
+                    body.append(holder);
                 }
             }
         }
@@ -498,6 +505,10 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
             // paints from `cut_view::view_px(...)` at draw time, so filling costs nothing it relied on.
             widget.set_hexpand(TOOLBAR_SPANS_PAGE || !NO_FILL.contains(&name));
             widget.set_halign(gtk::Align::Fill);
+            // §1's bottom half is "the toolbar, the tracks, the scrollbar" and nothing else: the selection's ✕, the
+            // camera rows' plates, crosses, speakers and lenses, and the fold-all badge are marks the band draws and
+            // answers (`cut_band_marks`). Their old widgets stay in the tree, unseen, for the doors that find them.
+            widget.set_visible(!HELD_UNSEEN.contains(&name));
             bottom.append(&widget);
         }
     }
@@ -551,6 +562,18 @@ fn idle_rows_height(frame: &gtk::Widget) -> i32 {
     find_grid(frame)
         .map(|grid| grid.measure(gtk::Orientation::Vertical, -1).0)
         .unwrap_or(0)
+}
+
+/// Depth-first search for a named box under `node`.
+fn find_named_box(node: &gtk::Widget, name: &str) -> Option<gtk::Box> {
+    if node.widget_name() == name {
+        return node.downcast_ref::<gtk::Box>().cloned();
+    }
+    node.observe_children()
+        .iter::<glib::Object>()
+        .flatten()
+        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+        .find_map(|child| find_named_box(&child, name))
 }
 
 /// Depth-first search for the readings grid, the same walk `cut_form_frame` uses to find its own parts.

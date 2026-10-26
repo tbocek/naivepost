@@ -3,15 +3,15 @@
 //!
 //! [`tests/suite/four_servers_wire.rs`] proves that sentence for the three HTTP servers by dialing a loopback
 //! fake. Nothing in it can prove the web half, because a search and a read launch a browser process rather
-//! than opening a socket, so no leg in `server_leg` ever sees them. These tests take the same seam the
-//! program offers — the Settings `firefox` box pointed at a stub executable — and go through
+//! than opening a socket, so no leg in `server_leg` ever sees them. These tests drive the real Firefox over
+//! BiDi against pages served from 127.0.0.1 (the search through `NAIVEPOST_SEARCH_URL`), and go through
 //! [`naivepost::web_browser::dispatch`], the one door both live web callers reach (`narrate_live`,
 //! `produce_upload_call`). What lands in `requests.tsv` therefore came from the real ladder, with the real
 //! timings, filed by the real recorder.
 //!
 //! # Why one scenario at a time
 //!
-//! Pointing the settings at a stub re-points PROCESS-WIDE state (`cwd`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`),
+//! The scenario re-points PROCESS-WIDE state (`cwd`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`),
 //! and the session folder the row is filed under is read off `cwd` — so two checks may not be inside their
 //! scenarios at once. Same guard as `tests/suite/web_tools_f6_1_browser.rs`.
 
@@ -71,24 +71,13 @@ fn fixture(tag: &str) -> Scenario {
     }
 }
 
-/// The stub browser: prints whatever DOM the scenario asked for and ignores the URL, which is the point —
-/// the leg must not care what it was pointed at.
-fn write_stub(dir: &Path, dom: &str) -> PathBuf {
-    std::fs::create_dir_all(dir).expect("stub folder");
-    let path = dir.join("fake-firefox.sh");
-    // The DOM goes in its own file: quoting HTML through a shell string breaks on an apostrophe rather
-    // than on the thing being checked.
-    let dom_path = dir.join("dom.html");
-    std::fs::write(&dom_path, dom).expect("dom written");
-    let script = format!("#!/bin/sh\ncat \"{}\"\nexit 0\n", dom_path.display());
-    common::write_script(&path, script).expect("stub written");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("stub executable");
-    }
-    path
+/// A local site serving `path` with `dom`, the engine's search address pointed at its `/search` page: the
+/// browser and the reading are the real ones, only the page is this test's.
+fn site_with(path: &str, dom: &str) -> common::Site {
+    let site = common::Site::start();
+    site.set(path, dom);
+    unsafe { std::env::set_var("NAIVEPOST_SEARCH_URL", site.url("/search")) };
+    site
 }
 
 /// Point the settings' `firefox` box at `browser`, exactly as the Settings dialog writes it.
@@ -99,14 +88,14 @@ fn point_at(browser: &Path) {
     settings::save(&paths, &conf).expect("settings written");
 }
 
-/// The old DuckDuckGo result-page shape, wide enough that hits are extracted from it.
+/// A DuckDuckGo-shaped result page, in the markup the engine serves today.
 fn ddg_page(urls: &[&str]) -> String {
     let articles = urls
         .iter()
         .enumerate()
         .map(|(i, url)| {
             format!(
-                "<article><h2><a href=\"{url}\">Result number {}</a></h2><div>The snippet for result {}, which says something useful.</div></article>",
+                "<article data-testid=\"result\"><h2><a data-testid=\"result-title-a\" href=\"{url}\">Result number {}</a></h2><div data-result=\"snippet\">The snippet for result {}, which says something useful.</div></article>",
                 i + 1,
                 i + 1
             )
@@ -138,16 +127,17 @@ const NO_RESULTS_PAGE: &str =
 /// S1: a `web_search` goes out through the browser leg and leaves its timed row behind.
 #[test]
 fn sec_02_services_1_the_four_servers_s25_a_web_search_lands_in_requests_tsv() {
-    let root = fixture("search-row");
-    let stub = write_stub(
-        &root,
+    let _root = fixture("search-row");
+    let site = site_with(
+        "/search",
         &ddg_page(&["https://one.example/a", "https://two.example/b"]),
     );
-    point_at(&stub);
+    let browser = common::firefox().to_string_lossy().to_string();
+    point_at(std::path::Path::new(&browser));
 
     let answer = web_browser::dispatch(
         "narrate",
-        &stub.to_string_lossy(),
+        &browser,
         &common::call(
             "web_search",
             r#"{"broad":"tower height","medium":"ez tower","narrow":"634 m"}"#,
@@ -221,13 +211,13 @@ fn sec_02_services_1_the_four_servers_s25_a_web_search_lands_in_requests_tsv() {
     // A ladder that found nothing on any rung still went out three times and costs time, so its row says so:
     // §09 §10 wants every request in the file, and "no results" is an outcome a reader can act on rather
     // than a hole where a request should have been.
-    // Same scenario, different page: the stub prints whatever `dom.html` holds, so rewriting it is a
-    // second ladder inside this one scenario. A second `fixture()` here would re-lock the process-wide
-    // scenario mutex this test already holds, and a non-reentrant mutex waits on its holder forever.
-    std::fs::write(root.join("dom.html"), NO_RESULTS_PAGE).expect("empty dom written");
+    // Same scenario, different page: a second ladder inside this one scenario. A second `fixture()` here would
+    // re-lock the process-wide scenario mutex this test already holds. A page with no results is asked for its
+    // full render wait on each rung (§2's 15 s, as the prototype does), so this ladder takes its 45 s.
+    site.set("/search", NO_RESULTS_PAGE);
     let none = web_browser::dispatch(
         "narrate",
-        &stub.to_string_lossy(),
+        &browser,
         &common::call("web_search", r#"{"broad":"a","medium":"b","narrow":"c"}"#),
     )
     .expect("an empty ladder is still answered");
@@ -252,14 +242,18 @@ fn sec_02_services_1_the_four_servers_s25_a_web_search_lands_in_requests_tsv() {
 /// S1: a page read leaves a row too — and a refused page still leaves one, naming why.
 #[test]
 fn sec_02_services_1_the_four_servers_s26_a_page_read_lands_in_requests_tsv() {
-    let root = fixture("read-row");
-    let stub = write_stub(&root, &long_page("The tower is 634 metres tall."));
-    point_at(&stub);
+    let _root = fixture("read-row");
+    let site = site_with("/height", &long_page("The tower is 634 metres tall."));
+    let browser = common::firefox().to_string_lossy().to_string();
+    point_at(std::path::Path::new(&browser));
 
     let answer = web_browser::dispatch(
         "publish",
-        &stub.to_string_lossy(),
-        &common::call("web_read", r#"{"url":"https://tower.example/height"}"#),
+        &browser,
+        &common::call(
+            "web_read",
+            &format!(r#"{{"url":"{}"}}"#, site.url("/height")),
+        ),
     )
     .expect("web_read is answered by the browser leg");
     assert!(
@@ -283,11 +277,14 @@ fn sec_02_services_1_the_four_servers_s26_a_page_read_lands_in_requests_tsv() {
 
     // The second branch: a bot wall. §09 §10 wants the failed request in the file as much as the good one.
     // Same scenario, different page — see s25's note on why one test gets exactly one `fixture()`.
-    std::fs::write(root.join("dom.html"), "<html><body><p>Just a moment, please wait while we verify you are human.</p></body></html>").expect("walled dom written");
+    site.set("/walled", "<html><body><p>Just a moment, please wait while we verify you are human.</p></body></html>");
     let refused = web_browser::dispatch(
         "publish",
-        &stub.to_string_lossy(),
-        &common::call("web_read", r#"{"url":"https://walled.example/page"}"#),
+        &browser,
+        &common::call(
+            "web_read",
+            &format!(r#"{{"url":"{}"}}"#, site.url("/walled")),
+        ),
     )
     .expect("a walled page is still answered — as an error the model can act on");
     assert!(refused.starts_with("web_read failed:"), "{refused}");
@@ -314,21 +311,21 @@ fn sec_02_services_1_the_four_servers_s26_a_page_read_lands_in_requests_tsv() {
 /// S1: the web rows join the per-service tally, which is what the run's closing "web 3 in 12s" line reads.
 #[test]
 fn sec_02_services_1_the_four_servers_s27_web_rows_join_the_service_tally() {
-    let root = fixture("tally");
-    let stub = write_stub(&root, &ddg_page(&["https://one.example/a"]));
-    point_at(&stub);
+    let _root = fixture("tally");
+    let site = site_with("/search", &ddg_page(&["https://one.example/a"]));
+    site.set("/span", long_page("The bridge spans 1600 metres."));
+    let browser = common::firefox().to_string_lossy().to_string();
+    point_at(std::path::Path::new(&browser));
     web_browser::dispatch(
         "narrate",
-        &stub.to_string_lossy(),
+        &browser,
         &common::call("web_search", r#"{"broad":"a","medium":"b","narrow":"c"}"#),
     )
     .expect("search answered");
-    let page_stub = write_stub(&root, &long_page("The bridge spans 1600 metres."));
-    point_at(&page_stub);
     web_browser::dispatch(
         "narrate",
-        &page_stub.to_string_lossy(),
-        &common::call("web_read", r#"{"url":"https://bridge.example/span"}"#),
+        &browser,
+        &common::call("web_read", &format!(r#"{{"url":"{}"}}"#, site.url("/span"))),
     )
     .expect("read answered");
 

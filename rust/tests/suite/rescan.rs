@@ -96,10 +96,9 @@ fn f0_11_s1_a_scan_that_finds_everything_there_drops_and_says_nothing() {
 }
 
 #[test]
-fn f0_11_s1_slot_1_goes_to_the_first_surviving_recording() {
-    // S1's other half. A recording is the better guess at the narrator than a screen capture, which
-    // holds everyone at once; and a row that already holds a slot is never moved off it — so the
-    // second microphone wins even though the camera comes to slot 2 in another session.
+fn f0_11_s1_a_dropped_row_hands_its_voice_to_nobody() {
+    // Voices are shared, not slots: a recording dropped by the rescan frees nothing, so nobody else is
+    // moved onto its number and every survivor keeps the voice it had.
     let (root, tree) = project_folder("s1-slot1");
     let mut project = Project {
         sources: vec![
@@ -113,33 +112,12 @@ fn f0_11_s1_slot_1_goes_to_the_first_surviving_recording() {
 
     let found = run(&root, Some(&tree), &mut project);
 
-    assert_eq!(
-        found.reassigned.as_deref(),
-        Some("project:sources/second.wav")
+    assert_eq!(found.reassigned, None);
+    assert!(
+        project.sources.iter().all(|s| s.narrator == 0),
+        "{:?}",
+        project.sources
     );
-    let narrator = |path: &str| {
-        project
-            .sources
-            .iter()
-            .find(|s| s.path == path)
-            .map(|s| s.narrator)
-    };
-    assert_eq!(narrator("project:sources/second.wav"), Some(1));
-    assert_eq!(narrator("project:sources/cam.mp4"), Some(0));
-
-    fs::remove_dir_all(&root).ok();
-}
-
-#[test]
-fn f0_11_s1_slot_1_falls_through_to_footage_when_no_recording_survives() {
-    let (root, tree) = project_folder("s1-slot1-footage");
-    let mut project = session();
-    fs::remove_file(tree.dir().join("sources/mic.wav")).unwrap();
-
-    let found = run(&root, Some(&tree), &mut project);
-
-    assert_eq!(found.reassigned.as_deref(), Some("project:sources/cam.mp4"));
-    assert_eq!(project.sources[0].narrator, 1);
 
     fs::remove_dir_all(&root).ok();
 }

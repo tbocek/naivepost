@@ -128,6 +128,41 @@ fn sec_05_cut_1_screen_the_gutter_is_the_first_30_px_of_timeline_space() {
 }
 
 #[test]
+fn sec_05_cut_1_screen_the_tape_and_the_red_line_start_after_the_gutter() {
+    common::pin_private_cwd();
+    // §A: the gutter is "the first 30 px of timeline space", so second 0 is painted at x = 30 and a press there
+    // (`cut_line_press`: `(x - gutter - origin) / pps`) reads second 0 back. The red line is painted through the
+    // same door, so it stands on the frame it names whatever the scroll.
+    let mut scene = scene();
+    assert_eq!(
+        tracks::band_x(&scene, 0.0),
+        cut_screen::GUTTER_PX,
+        "second 0 is painted at the gutter's edge"
+    );
+    assert_eq!(
+        tracks::band_x(&scene, 10.0),
+        cut_screen::GUTTER_PX + 10.0 * PPS,
+        "and every second after it at the zoom"
+    );
+    scene.line = 10.0;
+    scene.origin = 6.0;
+    assert_eq!(
+        tracks::playhead_x(&scene),
+        tracks::band_x(&scene, 10.0) - 6.0,
+        "the red line stands where its second is painted, less the scroll"
+    );
+    // And the ruler's 0:00 tick is inked there: the column at x = 30 differs from the one just left of it.
+    scene.origin = 0.0;
+    let painted = painted(&scene);
+    let tick = rgb(&painted.0, painted.1, cut_screen::GUTTER_PX as i32, 4);
+    let before = rgb(&painted.0, painted.1, cut_screen::GUTTER_PX as i32 - 3, 4);
+    assert_ne!(
+        tick, before,
+        "the ruler's first tick is at the gutter's edge"
+    );
+}
+
+#[test]
 fn sec_05_cut_1_screen_the_picture_band_asks_for_frames_at_its_own_zoom_and_position() {
     common::pin_private_cwd();
     // §1's Pictures paragraph ("the band has a picture at every zoom") only holds if the band can NAME the
@@ -138,7 +173,7 @@ fn sec_05_cut_1_screen_the_picture_band_asks_for_frames_at_its_own_zoom_and_posi
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("temp frame folder");
     // Four frames a second apart, named the only way the page names an extracted frame: `clock::frame_name`
-    // stamps it with the second it came from, and `frame_near` is a byte compare against that stamp. The
+    // stamps it with the second it came from, and `frame_near` reads that stamp back as an instant. The
     // names are made by asking the clock what IT calls second 0/1/2/3 — no epoch constant to get wrong.
     let want = |second: f64| format!("{}.jpg", naivepost::clock::frame_name(second));
     let paths: Vec<std::path::PathBuf> = (0..4)
@@ -150,8 +185,7 @@ fn sec_05_cut_1_screen_the_picture_band_asks_for_frames_at_its_own_zoom_and_posi
         })
         .collect();
     assert_eq!(paths.len(), 4, "four distinct stamps: {:?}", paths);
-    // The clock names second 0 `1970-01-01_00-00-00.000`, and a `.jpg` suffix makes the file name one
-    // character longer than the stamp it was built from — the rule `frame_near` compares on.
+    // The clock names second 0 `1970-01-01_00-00-00.000`; the file carries `.jpg` after that stamp.
     let stamp = |second: f64| {
         let name = want(second);
         assert_eq!(name.len(), naivepost::clock::frame_name(0.0).len() + 4);
@@ -159,9 +193,8 @@ fn sec_05_cut_1_screen_the_picture_band_asks_for_frames_at_its_own_zoom_and_posi
     };
 
     // The newest frame at or before the second asked for, which is the only safe direction to look: a row
-    // may show a frame that already happened, never one that has not. The compare is the FILE NAME against
-    // the wanted stamp, and a file name carries a four-character `.jpg`, so every frame sorts one past its
-    // own second and is the answer for a whole second longer than it was extracted for.
+    // may show a frame that already happened, never one that has not. Compared as INSTANTS: the first port compared
+    // file names, whose `.jpg` sorted every frame one second late, so second 1.6 showed second 0's frame.
     assert_eq!(tracks::frame_near(&paths, 0.0), Some(stamp(0.0)));
     assert_eq!(
         tracks::frame_near(&paths, 0.999),
@@ -170,17 +203,17 @@ fn sec_05_cut_1_screen_the_picture_band_asks_for_frames_at_its_own_zoom_and_posi
     );
     assert_eq!(
         tracks::frame_near(&paths, 1.0),
-        Some(stamp(0.0)),
-        "the suffix's one second of slack"
+        Some(stamp(1.0)),
+        "a frame is the answer from its own second on"
     );
-    assert_eq!(tracks::frame_near(&paths, 1.6), Some(stamp(0.0)));
-    assert_eq!(tracks::frame_near(&paths, 1.999), Some(stamp(0.0)));
+    assert_eq!(tracks::frame_near(&paths, 1.6), Some(stamp(1.0)));
+    assert_eq!(tracks::frame_near(&paths, 1.999), Some(stamp(1.0)));
     assert_eq!(
         tracks::frame_near(&paths, 2.0),
-        Some(stamp(1.0)),
+        Some(stamp(2.0)),
         "one frame per second of the tape"
     );
-    assert_eq!(tracks::frame_near(&paths, 3.0), Some(stamp(2.0)));
+    assert_eq!(tracks::frame_near(&paths, 3.0), Some(stamp(3.0)));
     // Earlier than every frame there is nothing older to show, so the first one stands in rather than the
     // row going empty — which is what a band scrolled back before the first extracted picture does.
     assert_eq!(tracks::frame_near(&paths, -5.0), Some(stamp(0.0)));
@@ -217,6 +250,8 @@ fn scene() -> Scene {
             start: 0.0,
             end: 50.0,
         }],
+        recording_rows: Vec::new(),
+        marks: Default::default(),
         folds: Vec::new(),
         selection: None,
         watched_row: None,
@@ -514,17 +549,15 @@ fn sec_05_cut_1_screen_the_page_hangs_the_band_and_the_red_line_on_two_layers() 
 
 /// §1's badge 31 as a number: one screenful is always 40 px of drag, however far the zoom has gone.
 fn scrollbar_gears_one_screenful_at_40_px(_app: &adw::Application) {
-    // The gear is a fraction of the BAR, so the number a caller reads out is 40 px however long the bar is.
+    // A long session zoomed in: on any bar length the geared drag crosses one screenful in 40 px.
+    let view = 1000.0;
     for bar_px in [200.0, 700.0, 1400.0] {
-        let geared = naivepost::ui::cut_view::thumb_geared(999_999.0, bar_px);
+        let per_px = naivepost::ui::cut_view::drag_gear(999_999.0, view, bar_px)
+            .unwrap_or_else(|| panic!("a {bar_px} px bar over 999999 px of tape is geared"));
         assert!(
-            (naivepost::ui::cut_view::thumb_px(999_999.0, bar_px) - 40.0).abs() < 0.5,
+            (view / per_px - naivepost::ui::cut_view::DRAG_PER_SCREENFUL_PX).abs() < 0.5,
             "one screenful is 40 px of drag on a {bar_px} px bar, got {}",
-            naivepost::ui::cut_view::thumb_px(999_999.0, bar_px)
-        );
-        assert!(
-            (geared * bar_px - naivepost::ui::cut_view::DRAG_PER_SCREENFUL_PX).abs() < 0.5,
-            "the fraction and the constant agree at {bar_px} px"
+            view / per_px
         );
     }
     // And a bar long enough to hold everything shows no bar at all.
@@ -672,7 +705,7 @@ fn sec_05_cut_1_screen_band_lays_ruler_selection_effects_and_rows_in_order() {
 }
 
 #[test]
-fn sec_05_cut_1_screen_a_folded_gap_is_greyer_than_the_kept_bar_beside_it() {
+fn sec_05_cut_1_screen_a_dropped_gap_shows_the_band_ground_beside_the_kept_bar() {
     common::pin_private_cwd();
     let mut scene = scene();
     // Keep 0..10 and 20..50: 10..20 is dropped inside filmed material, so it must show as a gap.
@@ -696,9 +729,10 @@ fn sec_05_cut_1_screen_a_folded_gap_is_greyer_than_the_kept_bar_beside_it() {
     let (kept_x, kept_w) = tracks::band_span_px(&scene, 20.0, 50.0);
     let kept_mid = (kept_x + kept_w / 2.0).round() as i32;
     let (gap_x, gap_w) = tracks::band_span_px(&scene, 10.0, 20.0);
-    // The dropped stretch's own span ENDS where the kept scene begins (`x + w`), so the last pixel of ink
-    // still belongs to the gap; its midpoint sits under the kept bar's left border.
-    let gap_edge = (gap_x + gap_w - 2.0).round() as i32;
+    // Inside the gap, clear of the kept bars' 3 px grips at either end and of the fold badge plated mid-gap.
+    let gap_edge = (gap_x + 4.0).round() as i32;
+    // The kept bar's own green, clear of the ✕ plated at its middle.
+    let kept_mid = kept_mid + 15;
     println!("FOLD kept x={kept_x:.0}+{kept_w:.0} -> {kept_mid}, gap x={gap_x:.0}+{gap_w:.0} -> {gap_edge}");
     let kept = rgb(&painted.0, painted.1, kept_mid, band);
     let gap = rgb(&painted.0, painted.1, gap_edge, band);
@@ -715,10 +749,17 @@ fn sec_05_cut_1_screen_a_folded_gap_is_greyer_than_the_kept_bar_beside_it() {
         kept.1 > kept.0 && kept.1 > kept.2,
         "kept footage is the green bar, got {kept:?}"
     );
+    // The dropped stretch is the selection band's own ground (`cut_colours::BAND_GROUND`): a neutral dark grey
+    // with no green in it, the prototype's `bandGround`.
+    let ground = |part: f64| (part * 255.0).round() as i32;
+    let want = cut_colours::BAND_GROUND;
     assert!(
-        gap.0 == gap.1 && gap.1 == gap.2 && gap.0 > 200,
-        "a dropped stretch inside filmed material is a grey gap, got {gap:?}"
+        (gap.0 as i32 - ground(want.0)).abs() <= 2
+            && (gap.1 as i32 - ground(want.1)).abs() <= 2
+            && (gap.2 as i32 - ground(want.2)).abs() <= 2,
+        "a dropped stretch inside filmed material shows the band's ground, got {gap:?}"
     );
+    assert!(gap.1 < kept.1, "and is no kept green: {gap:?} vs {kept:?}");
 }
 
 #[test]
@@ -761,8 +802,8 @@ fn sec_05_cut_1_screen_a_wide_kept_bar_wears_a_cross() {
     // in how wide the kept bar is drawn, sampled at that bar's centre: the wide one shows white ink, the
     // narrow one shows its own green with no glyph on it.
     let centre_y = naivepost::cut_trim::RULER_H + SELECTION_BAND_PX / 2.0;
-    // The kept green is laid at alpha 1.0 over the ground (`draw_kept_bars`), so a bar's own colour is known
-    // and "no glyph here" can be pinned to it rather than to "not white".
+    // The kept green is laid translucent over the band's ground (`draw_kept_bars`), so a bar's own colour is
+    // still clearly green and "no glyph here" can be pinned to it rather than to "not white".
     let kept_green = |c: (u8, u8, u8)| c.1 > c.0 + 40 && c.1 > c.2 + 40;
     let near_white = |c: (u8, u8, u8)| c.0 >= 200 && c.1 >= 200 && c.2 >= 200;
     let mut wide = scene();
@@ -786,8 +827,13 @@ fn sec_05_cut_1_screen_a_wide_kept_bar_wears_a_cross() {
         centre_y.round() as i32,
     );
     let mut narrow = scene();
-    // The gutter is inked over the band's first 30 px (§B), so the narrow bar has to sit clear of it or the
-    // sample would read the rail instead of the bar.
+    // A recording the narrow bar nearly fills: the 5 s before it is a dropped head under §B's 20 px fold-badge
+    // floor, so no fold badge is plated inside the bar either and its middle is the bar's own green.
+    narrow.recordings = vec![Recording {
+        base: "take-a".into(),
+        start: 35.0,
+        end: 55.0,
+    }];
     narrow.segs = vec![Seg {
         s: 40.0,
         e: 55.0,
@@ -831,12 +877,13 @@ fn sec_05_cut_1_screen_a_selection_is_blue_and_only_where_it_is() {
     scene.selection = Some((20.0, 60.0));
     let painted = painted(&scene);
     let band = head_px(&scene) / 2;
-    let inside = rgb(&painted.0, painted.1, 60, band);
+    let x_at = |t: f64| tracks::band_x(&scene, t).round() as i32;
+    let inside = rgb(&painted.0, painted.1, x_at(30.0), band);
     assert!(
         inside.2 > inside.0 + 20,
         "the selection is blue, got {inside:?}"
     );
-    let outside = rgb(&painted.0, painted.1, 10, band);
+    let outside = rgb(&painted.0, painted.1, x_at(10.0), band);
     assert!(
         outside.2 < inside.2,
         "the blue stops where the selection stops: {outside:?} vs {inside:?}"
@@ -856,7 +903,12 @@ fn sec_05_cut_1_screen_an_insert_bands_violet_across_the_picture_rows() {
     });
     let painted = painted(&scene);
     let row_y = head_px(&scene) + 10;
-    let card = rgb(&painted.0, painted.1, 125, row_y);
+    let card = rgb(
+        &painted.0,
+        painted.1,
+        tracks::band_x(&scene, 60.0).round() as i32 + 1,
+        row_y,
+    );
     assert!(
         card.2 > card.1 && card.0 > card.1,
         "an insert is a violet band over the rows, got {card:?}"
@@ -871,8 +923,18 @@ fn sec_05_cut_1_screen_the_in_and_out_marks_are_green_then_red() {
     let painted = painted(&scene);
     // The marks run the whole band's height, so sample below the selection band, inside the picture rows.
     let y = head_px(&scene) + 30;
-    let left = rgb(&painted.0, painted.1, 40, y);
-    let right = rgb(&painted.0, painted.1, 120, y);
+    let left = rgb(
+        &painted.0,
+        painted.1,
+        tracks::band_x(&scene, 20.0).round() as i32 + 1,
+        y,
+    );
+    let right = rgb(
+        &painted.0,
+        painted.1,
+        tracks::band_x(&scene, 60.0).round() as i32 + 1,
+        y,
+    );
     assert!(
         left.1 > left.0 && left.1 > left.2,
         "the in mark is green, got {left:?}"
@@ -899,9 +961,10 @@ fn sec_05_cut_1_screen_a_speed_effect_washes_the_picture_rose() {
     plain.fx.clear();
     let bare = painted(&plain);
     let y = head_px(&scene) + 20;
+    let x = tracks::band_x(&scene, 14.0).round() as i32;
     assert_ne!(
-        rgb(&with_wash.0, with_wash.1, 30, y),
-        rgb(&bare.0, bare.1, 30, y),
+        rgb(&with_wash.0, with_wash.1, x, y),
+        rgb(&bare.0, bare.1, x, y),
         "a rose wash must cover the seconds a speed effect runs over"
     );
 }
@@ -933,7 +996,7 @@ fn sec_05_cut_1_screen_the_playhead_is_a_two_px_red_line_on_its_own_layer() {
         let cr = cairo::Context::new(&surface).expect("a context");
         cr.set_source_rgb(1.0, 1.0, 1.0);
         cr.paint().expect("white ground");
-        tracks::paint_playhead(&cr, PPS, 0.0, 50.0, 120.0);
+        tracks::paint_playhead(&cr, PPS * 50.0, 120.0);
     }
     let data = surface.data().expect("pixels").to_vec();
     let stride = surface.stride() as usize;

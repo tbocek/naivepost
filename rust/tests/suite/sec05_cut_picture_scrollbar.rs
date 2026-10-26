@@ -159,27 +159,43 @@ fn check_the_bar_appears_when_the_session_stops_fitting(app: &adw::Application) 
         adj.upper() > adj.page_size(),
         "{adj:?} should have room left to scroll"
     );
-    // §A's grab rule: "thumb geared at high zoom so one screenful is always 40 px of drag". The gear is a
-    // number about the BAR, and `bar_width` falls back to the width the bar was last refreshed with while
-    // GTK still reports 0 for an un-laid-out bar — which is exactly the state this headless window is in.
-    // So the length the PAINT used is the answer, read through the same door it reads (`gear_px_for_test`), not this
-    // widget's own allocation: one refresh, one width, both sides of every identity below.
+    // Inventory §B: "upper=totalW, page=viewW, step viewW/8" -- the thumb is the view's share of the tape, at
+    // the zoom the + presses left.
+    let (total, view) = extents(&window);
+    assert!(
+        (adj.page_size() - view).abs() < 1.0 && (adj.upper() - total.max(view)).abs() < 1.0,
+        "the thumb is the view's share: page {} of {} against view {view} of {total}",
+        adj.page_size(),
+        adj.upper()
+    );
+    // The bar keeps the ONE adjustment its scroll handler listens on: a repaint re-states it, and moving it
+    // scrolls the band. A fresh adjustment per repaint left the handler on the first one, so the thumb moved
+    // nothing.
+    let held = bar.adjustment();
+    ui::cut_view::refresh_page_scrollbar(&window);
+    assert_eq!(
+        bar.adjustment(),
+        held,
+        "a repaint keeps the bar's adjustment"
+    );
+    let before = ui::cut_view::origin();
+    held.set_value(before + 200.0);
+    settle();
+    assert!(
+        (ui::cut_view::origin() - (before + 200.0)).abs() < 1.0,
+        "moving the thumb scrolls the band: origin {before} -> {}",
+        ui::cut_view::origin()
+    );
+    // §A's gear is a DRAG rule on top of that, asked of the length the paint measured the bar at.
     let bar_px = ui::cut_view::gear_px_for_test();
-    assert!(
-        (ui::cut_view::thumb_px(total, bar_px) - cut_screen::SCROLLBAR_DRAG_PX).abs() <= 1.0,
-        "a {bar_px} px bar gears its thumb to {} px, not {}",
-        ui::cut_view::thumb_px(total, bar_px),
-        cut_screen::SCROLLBAR_DRAG_PX
-    );
-    // And the adjustment carries that gear as its page size: `paint_scrollbar` sets page = view × fraction,
-    // so the thumb's fraction of the range is the geared fraction, whatever the session's length is. Every
-    // number here comes from the ONE refresh whose adjustment we are reading.
-    let fraction = adj.page_size() / adj.upper();
-    assert!(
-        (fraction - ui::cut_view::thumb_geared(adj.upper(), bar_px) * (view / adj.upper())).abs()
-            < 1e-6,
-        "the bar's page size is the geared slice of the view: {fraction}"
-    );
+    if let Some(per_px) = ui::cut_view::drag_gear(total, view, bar_px) {
+        assert!(
+            (view / per_px - cut_screen::SCROLLBAR_DRAG_PX).abs() <= 1.0,
+            "a geared drag crosses one screenful in {} px, not {}",
+            view / per_px,
+            cut_screen::SCROLLBAR_DRAG_PX
+        );
+    }
     RAN_SHOWN.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 

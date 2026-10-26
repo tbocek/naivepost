@@ -19,6 +19,34 @@ pub fn session_dir(root: &Path) -> PathBuf {
     root.join(SESSION_NAME)
 }
 
+/// The folder this process has open (03-shell F0.6/F0.9: "every step reads and writes the project that is
+/// open"). Process-wide, not per GTK thread, because the steps that read it run on worker threads too.
+static OPEN_DIR: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+
+/// THE project folder: what the launch opened (F0.6), or what Open, New or a renaming Save took on since.
+/// Before anything took a folder on (a test that builds no window), the working copy beside the working
+/// directory, which is what a launch with nothing remembered opens.
+///
+/// Every step, save and read asks this. The first port asked `session_dir(current_dir())` in 66 places,
+/// so a launch that opened a remembered project, or an Open, left every step reading and writing the
+/// working copy beside the launch folder while the header named the other project.
+pub fn open_dir() -> PathBuf {
+    open_dir_if_set().unwrap_or_else(|| session_dir(&std::env::current_dir().unwrap_or_default()))
+}
+
+/// [`open_dir`] when something took a folder on, `None` before that.
+pub fn open_dir_if_set() -> Option<PathBuf> {
+    OPEN_DIR.read().map(|held| held.clone()).unwrap_or_default()
+}
+
+/// Take `dir` on as the open project. Only the doors that open a project call it: the window's build
+/// (with the launch's decision), Open, New, and a Save that renamed the folder.
+pub fn set_open_dir(dir: &Path) {
+    if let Ok(mut held) = OPEN_DIR.write() {
+        *held = Some(dir.to_path_buf());
+    }
+}
+
 /// What a launch opened, one variant per step so the caller — and a test — can tell which question
 /// answered rather than only what path came out.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -399,9 +399,11 @@ pub fn frame_files(listed: &[(f64, PathBuf)]) -> Vec<(f64, PathBuf)> {
     out
 }
 
-/// List one source's extracted frames as `(seconds in the recording, path)` pairs, oldest first, using the
-/// ONE naming rule Prepare wrote them with ([`crate::clock::read_frame`], the inverse of `clock::frame_name`).
-pub fn listed_frames(dir: &Path) -> Vec<(f64, PathBuf)> {
+/// List one source's extracted frames as `(session seconds, path)` pairs, oldest first, using the ONE naming
+/// rule Prepare wrote them with: a frame is named by its real instant, and `zero` is the session's
+/// ([`crate::frames_run::session_zero`]) that turns it back into a session second
+/// ([`crate::clock::frame_session_seconds`], which also reads the first rewrite's 1970 names).
+pub fn listed_frames(dir: &Path, zero: f64) -> Vec<(f64, PathBuf)> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -410,7 +412,7 @@ pub fn listed_frames(dir: &Path) -> Vec<(f64, PathBuf)> {
         .filter_map(|entry| {
             let path = entry.path();
             let stem = path.file_stem()?.to_str()?;
-            crate::clock::read_frame(stem).map(|seconds| (seconds, path))
+            crate::clock::frame_session_seconds(stem, zero).map(|seconds| (seconds, path))
         })
         .collect();
     out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));

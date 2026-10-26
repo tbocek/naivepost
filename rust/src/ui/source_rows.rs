@@ -17,33 +17,6 @@ use crate::services;
 use crate::source_probe;
 use crate::sources::{self, Control, TrackInfo};
 
-/// §4's "slot 1 highlighted", as ink the app owns rather than a theme class.
-///
-/// `suggested-action` is what adwaita would paint, and under the headless renderer (and in the light crop
-/// `snapshot_sources::write_column_png` installs over the column) that class comes out as a bare digit —
-/// the one thing about this control a glance has to catch was invisible. The rule stays the same: slot 1
-/// only, added at build and re-set on every cycle.
-pub const SLOT_ONE_CSS: &str = ".narrator-one { font-weight: bold; border: 2px solid #26a269; }\n";
-
-/// Install [`SLOT_ONE_CSS`] once per process, the way `produce_page` and `cut_lane_rows` install theirs.
-fn install_row_css_once() {
-    use std::cell::RefCell as RefCellOnce;
-    thread_local! {
-        static LOADED: RefCellOnce<bool> = const { RefCellOnce::new(false) };
-    }
-    if LOADED.with(|loaded| *loaded.borrow()) {
-        return;
-    }
-    let provider = gtk::CssProvider::new();
-    provider.load_from_string(SLOT_ONE_CSS);
-    gtk::style_context_add_provider_for_display(
-        &gtk::gdk::Display::default().expect("a display to style"),
-        &provider,
-        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
-    LOADED.with(|loaded| loaded.replace(true));
-}
-
 /// What a row needs to be drawn: the live session, the status line a press reports on, and the list the
 /// row belongs to, so a removal can redraw what follows it.
 #[derive(Clone)]
@@ -75,11 +48,10 @@ pub fn repaint(rows: &Rows) {
 /// read as a row index, and with the split toggle also wearing a microphone (before this) the pair looked
 /// like one control that had moved.
 pub const NARRATOR_ICON: &str = "audio-input-microphone-symbolic";
-/// The 🎥 footage toggle's face. §4 draws a camera for it, and the theme this container ships does not
-/// resolve `camera-video-symbolic` (the file sits in `/usr/share/icons/Adwaita/symbolic/devices/`, which
-/// that theme's `index.theme` does not list — so every video row drew the broken-image picture), hence the
-/// recorder glyph: what footage is, recorded. Distinct from the mic and the loudspeaker at a glance.
-pub const FOOTAGE_ICON: &str = "media-record-symbolic";
+/// The 🎥 footage toggle's face: §4's camera. The first port drew `media-record-symbolic`, a black dot, after
+/// finding `camera-video-symbolic` unresolved in the container's theme; both themes the app meets ship it
+/// (`symbolic/devices/` on the host and in the container), and a dot did not say "footage" to anyone.
+pub const FOOTAGE_ICON: &str = "camera-video-symbolic";
 /// The 🗣 split-the-voice toggle's face. §4 names 🗣 and no installed theme ships a speaking-head symbolic
 /// (`ls /usr/share/icons/*/symbolic/*/*speaker*` finds only `audio-speakers-symbolic`), so the rewrite
 /// draws a loudspeaker: the voice this file splits off, and unmistakably NOT the narrator's microphone.
@@ -113,7 +85,7 @@ fn icon_button(icon: &str, name: &str, tip: &str) -> gtk::Button {
 /// own `session.naivepost` sits) and this project's folder. Same pair every page reads.
 fn session_roots() -> (PathBuf, PathBuf) {
     let root = std::env::current_dir().unwrap_or_default();
-    (root.clone(), crate::startup::session_dir(&root))
+    (root, crate::startup::open_dir())
 }
 
 /// The file's audio streams, measured by the real ffprobe — §4 counts streams FROM THE FILE, so neither
@@ -125,14 +97,98 @@ fn session_roots() -> (PathBuf, PathBuf) {
 /// shows no track button. Saying it on the log instead would shout on every paint of a folder that has
 /// no ffprobe installed.
 pub fn audio_streams(source: &Source) -> Vec<TrackInfo> {
-    let paths = match crate::settings::from_environment() {
-        Some(paths) => paths,
-        None => return vec![],
+    if !super::background::on_worker() {
+        PROBED_HERE.with(|count| count.set(count.get() + 1));
+    }
+    let Some(ffprobe) = ffprobe_now() else {
+        return vec![];
     };
-    let conf = crate::settings::read(&paths).unwrap_or_default();
-    let ffprobe = services::ffprobe_for(&conf.ffmpeg, "ffprobe");
     let file = resolved(source);
     source_probe::audio_streams(&ffprobe, &file, &source_probe::run_ffprobe).unwrap_or_default()
+}
+
+/// The ffprobe the settings name, or `None` with no settings folder at all.
+fn ffprobe_now() -> Option<String> {
+    let paths = crate::settings::from_environment()?;
+    let conf = crate::settings::read(&paths).unwrap_or_default();
+    Some(services::ffprobe_for(&conf.ffmpeg, "ffprobe"))
+}
+
+/// A file as far as a probe is concerned: where it is, how big, when it last changed. A file replaced under
+/// the same name is a new file to probe.
+type Version = (PathBuf, u64, Option<std::time::SystemTime>);
+
+/// What ffprobe read, per file version: a row is drawn from here and never probes itself (§03-shell §1, the
+/// window thread never waits; the first rewrite ran one ffprobe per row on every repaint, a 🗑 included).
+static PROBED: std::sync::Mutex<Vec<(Version, Vec<TrackInfo>)>> = std::sync::Mutex::new(Vec::new());
+
+/// How many probes ran on this (the window's) thread: none ever should; a test reads it.
+pub fn probed_here_for_test() -> usize {
+    PROBED_HERE.with(std::cell::Cell::get)
+}
+
+thread_local! {
+    /// Probes run on the window thread itself, counted for [`probed_here_for_test`].
+    static PROBED_HERE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Versions a worker is probing now, so a repaint while it runs does not ask again.
+    static ASKED: RefCell<Vec<Version>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The file's version, read with one `stat`.
+fn version_of(file: &std::path::Path) -> Version {
+    let meta = std::fs::metadata(file).ok();
+    (
+        file.to_path_buf(),
+        meta.as_ref().map(|meta| meta.len()).unwrap_or(0),
+        meta.and_then(|meta| meta.modified().ok()),
+    )
+}
+
+/// The streams already probed for this version, or `None` when no probe has landed for it.
+fn probed(version: &Version) -> Option<Vec<TrackInfo>> {
+    PROBED.lock().ok().and_then(|held| {
+        held.iter()
+            .find(|(known, _)| known == version)
+            .map(|(_, tracks)| tracks.clone())
+    })
+}
+
+/// Probe this version on a worker and redraw the list when it lands. The row meanwhile has no track button,
+/// the face §4 gives a file whose streams nobody measured.
+fn ask_probe(rows: &Rows, version: Version) {
+    let asked = ASKED.with(|asked| {
+        let mut asked = asked.borrow_mut();
+        if asked.contains(&version) {
+            return false;
+        }
+        asked.push(version.clone());
+        true
+    });
+    if !asked {
+        return;
+    }
+    let Some(ffprobe) = ffprobe_now() else {
+        return;
+    };
+    let rows = rows.clone();
+    let owed = crate::ui::settle::owe("source row probe", &rows.list);
+    let file = version.0.clone();
+    super::background::run(
+        "probe",
+        move || {
+            source_probe::audio_streams(&ffprobe, &file, &source_probe::run_ffprobe)
+                .unwrap_or_default()
+        },
+        move |tracks| {
+            if let Ok(mut held) = PROBED.lock() {
+                held.retain(|(known, _)| known.0 != version.0);
+                held.push((version.clone(), tracks));
+            }
+            ASKED.with(|asked| asked.borrow_mut().retain(|known| *known != version));
+            repaint(&rows);
+            drop(owed);
+        },
+    );
 }
 
 /// One row: the file's name, and the controls §4 gives it. A control that does not apply to this file
@@ -141,9 +197,16 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
     let session = rows.session.clone();
     let source = session.borrow().sources[index].clone();
     let name = sources::row_name(&source.path);
-    // §4's stream count, from the file itself. Probing costs one short ffprobe per row at build time;
-    // a row list is rebuilt rarely (a removal, a load), never on a timer.
-    let tracks = audio_streams(&source);
+    // §4's stream count, from the file itself: probed once per file version on a worker, and drawn from
+    // what landed. Until it lands the row has no track button.
+    let version = version_of(&resolved(&source));
+    let tracks = match probed(&version) {
+        Some(tracks) => tracks,
+        None => {
+            ask_probe(rows, version);
+            Vec::new()
+        }
+    };
     let count = tracks.len();
     let any_track_out = false; // probe state (§5) owns "still being read"; nothing is mid-read at build.
 
@@ -174,13 +237,10 @@ pub fn row_at(rows: &Rows, index: usize) -> gtk::ListBoxRow {
     slot_face.set_widget_name(&format!("narrator-face-{index}"));
     face.append(&slot_face);
     narrator.set_child(Some(&face));
-    if source.narrator == 1 {
-        install_row_css_once();
-        narrator.add_css_class("suggested-action");
-        narrator.add_css_class("narrator-one");
-    }
+    // No colour for voice 1: every recording starts there, so a highlight would mark nothing.
     wire_narrator(
         &narrator,
+        &slot_face,
         session.clone(),
         &rows.status,
         index,
@@ -284,8 +344,11 @@ fn track_menu(
     let face_button = menu.clone();
     let shown = face.to_string();
     let total = tracks.len();
-    for track in tracks {
-        let ticked = held.borrow().sources[index].tracks.contains(&track.index);
+    for (at, track) in tracks.iter().enumerate() {
+        // `tracks` holds 0-based AUDIO stream indices (01 §2; ffmpeg's `0:a:N`, the first audio stream 0):
+        // the track's place among the file's audio streams, not ffprobe's file-wide index the label shows.
+        let stream = at as u32;
+        let ticked = sources::ticked_tracks(&held.borrow().sources[index]).contains(&stream);
         let check = gtk::CheckButton::with_label(&track.label());
         check.set_widget_name(&format!("track-{index}-{}", track.index));
         check.set_active(ticked);
@@ -296,14 +359,14 @@ fn track_menu(
         let number = track.index;
         check.connect_toggled(move |box_| {
             let on = box_.is_active();
-            if !sources::tick_track(&mut held.borrow_mut(), index, number, on) {
+            if !sources::tick_track(&mut held.borrow_mut(), index, stream, on) {
                 // The last ticked track cannot come unticked (§4): a row hearing nothing is not a
                 // choice anyone made. The box goes back the way it came and the reason is said.
                 box_.set_active(true);
                 status.set_text(&sources::last_track_says(number));
                 return;
             }
-            let left = held.borrow().sources[index].tracks.len();
+            let left = sources::ticked_tracks(&held.borrow().sources[index]).len();
             face_button.set_label(&format!("{left}/{total}"));
             status.set_text(&format!(
                 "{shown}: track {number} {}",
@@ -338,7 +401,11 @@ fn wire_footage(
                     "not footage"
                 }
             ));
+            return;
         }
+        // Refused (only a video may be footage): the button goes back, so it never shows what the
+        // session does not hold, as 🗣's refusal does.
+        button.set_active(!button.is_active());
     });
 }
 
@@ -346,6 +413,7 @@ fn wire_footage(
 /// moving it, so the button cannot also be borrowed into it.
 fn wire_narrator(
     narrator: &gtk::Button,
+    slot_face: &gtk::Label,
     session: Rc<RefCell<Project>>,
     status: &gtk::Label,
     index: usize,
@@ -353,21 +421,17 @@ fn wire_narrator(
 ) {
     let status = status.clone();
     let face = narrator.clone();
+    let slot_face = slot_face.clone();
     narrator.connect_clicked(move |_| {
         let slot = sources::cycle_narrator(&mut session.borrow_mut(), index);
-        // The button's face is the slot it just took, so the row repaints itself.
-        face.set_label(&slot.to_string());
+        // The number in the face is the slot it just took. Only the number: `set_label` on the button
+        // replaced its whole face (the microphone with the number) with a bare number.
+        slot_face.set_text(&slot.to_string());
         face.set_tooltip_text(Some(&format!(
             "{}{}",
             sources::slot_tip(slot),
             sources::ROW_KEY
         )));
-        face.remove_css_class("suggested-action");
-        face.remove_css_class("narrator-one");
-        if slot == 1 {
-            face.add_css_class("suggested-action");
-            face.add_css_class("narrator-one");
-        }
         status.set_text(&format!("{name}: narrator {slot}"));
     });
 }

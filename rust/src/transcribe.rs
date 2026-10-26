@@ -296,7 +296,7 @@ pub fn timecode(secs: f64) -> String {
 pub fn write_transcript(tree: &Tree, source: &str, lines: &[Line]) -> Result<(), String> {
     textfmt::write_lines(lines, &tree.transcript_tsv(source))?;
     // The same writer as the tsv, so both files carry §6's 0644 and neither is half a file.
-    textfmt::write_rows(&tree.transcript_srt(source), &srt_text(lines))
+    textfmt::write_rows_or_none(&tree.transcript_srt(source), &srt_text(lines))
 }
 
 /// S6: the words an answer sent back that cannot be placed on the clock. A word with no usable

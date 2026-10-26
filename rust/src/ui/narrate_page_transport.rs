@@ -105,13 +105,19 @@ pub fn narrate_preview_playing() -> bool {
 /// page nobody has played yet leaves ▶ as the step's button.
 pub(crate) fn publish_transport() {
     let s = narrate_page::read_state();
+    let window = crate::ui::window::main_window();
     crate::ui::window::publish_preview_transport(
-        &crate::ui::window::main_window(),
+        &window,
         crate::run::Transport {
             playing: s.playing,
             started: s.started,
         },
     );
+    // The page's own ▶ shows the same answer as the bar: ⏸ while the preview plays (§1's "▶/⏸").
+    narrate_page::paint_play_face(&window, s.playing);
+    // And the bar itself: ⏹ is live while a preview stands (F4.5 S6). The first rewrite published the transport
+    // without painting the bar, so ⏹ stayed grey under a playing preview.
+    crate::ui::window_bench::repaint_run_bar(&window);
 }
 
 /// A press cued real players: from now on the bar belongs to this preview (§5).
@@ -134,6 +140,8 @@ pub fn press_preview_stop(window: &adw::ApplicationWindow) -> String {
         // ⏹ ENDS the preview rather than pausing it: with `started` left up, `bar_serves_the_preview`
         // would keep the bar answering for a preview that no longer exists and ⏹ would stay sensitive.
         state.started = false;
+        // A row's take still out on a worker is given up: it is filed when it lands, and not played.
+        state.busy = false;
     });
     publish_transport();
     let said = narrate_preview::hand_play_back(stopped)

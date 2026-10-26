@@ -51,7 +51,8 @@ fn number(value: f64) -> String {
 
 /// S2: the pairs `meta.env` holds — §1's own conditionals, in its own order.
 ///
-/// `INTERVAL` and `SCALE` are always there; the video pair only when there is footage and the audio pair
+/// `INTERVAL` and `SCALE` are always there, `INTERVAL` being the extraction grid the frames on disk sit on
+/// (Freq, which it once held, is gone); the video pair only when there is footage and the audio pair
 /// only when narrator 1 resolves. Which footage row is *the* one is not spelled out, so it is the first
 /// row with 🎥 ticked whose file is a video: that is the row the rest of Prepare treats as primary, and
 /// an unticked video is footage for nobody. Likewise slot 1's holder is the narrator's own microphone
@@ -61,7 +62,10 @@ fn number(value: f64) -> String {
 /// what lives inside it, root-relative under the application root, absolute otherwise.
 pub fn meta(project: &Project, root: &Path, tree_dir: &Path) -> Vec<(String, String)> {
     let mut pairs = vec![
-        ("INTERVAL".to_string(), number(project.interval)),
+        (
+            "INTERVAL".to_string(),
+            number(crate::prepare::EXTRACTION_GRID),
+        ),
         ("SCALE".to_string(), SCALES.to_string()),
     ];
     let mut stored = |key_file: &str, key_base: &str, path: &str| {
@@ -97,7 +101,7 @@ pub fn write_meta(tree: &Tree, project: &Project, root: &Path) -> Result<(), Str
 /// is how every other ▶ leg resolves a path (§F1.1's own `startup::session_dir(cwd)`). A caller that
 /// already knows its root passes it to [`write_meta`] directly.
 pub fn default_root() -> PathBuf {
-    crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
+    crate::startup::open_dir()
 }
 
 /// §3 (▶ Prepare): stamp `inputs/meta.env` at the start of a run, before any stage reads a source.

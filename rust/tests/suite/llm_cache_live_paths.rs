@@ -389,15 +389,9 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
         .into_iter()
         .map(str::to_string)
         .collect();
-    // §6's tool-flow rule: "with tools, the cached unit is the finished item list of a job with
-    // identical inputs". So the fake answers with CALLS — `drop_words(4 from before)` then `finish`, one
-    // contiguous stretch at the join, which is what `Join` accepts (two separate gaps it refuses) — and
-    // what lands in the slot is the answer those accepted calls came to, not the raw call list.
-    let answer = json!({"choices": [{"message": {"content": null, "tool_calls": [
-        {"id": "c1", "type": "function", "function": {"name": "drop_words",
-            "arguments": json!({"side": "before", "count": 4}).to_string()}},
-        {"id": "cf", "type": "function", "function": {"name": "finish", "arguments": "{}"}}
-    ]}}]})
+    // §3.5: the answer quotes what goes, four words off BEFORE, one stretch at the join.
+    let answer = json!({"choices": [{"message": {"content":
+        json!({"drop_before": "network is live today", "drop_after": ""}).to_string()}}]})
     .to_string();
     let fake = Fake::start(answer);
     let scene = Scene::new("textedit", &fake.url);
@@ -409,9 +403,11 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
         "A lecture.",
         1,
         3,
+        "the network is live today [CUT] the network goes live now",
         &before,
         &after,
         1,
+        None,
         &|| false,
     );
     assert!(
@@ -435,15 +431,13 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
     );
     let rows_after_first = requests::read(&scene.tree).expect("requests.tsv").len();
     assert_one_hex_slot(&scene.cached_names(naivepost::joins::STEP), "textedit");
-    // What is filed is an ANSWER this door can read back, and for a tool flow it is the answer the
-    // ACCEPTED calls came to — `drop_answer`'s `{"joined":…}` document — not the raw call list. That is
-    // §6's "with tools, the cached unit is the finished item list of a job with identical inputs", and it
-    // is what makes the replay below cost no socket.
+    // What is filed is the ANSWER this door reads back, the quoted words, which is what makes the replay
+    // below cost no socket.
     let slot_name = scene.cached_names(naivepost::joins::STEP).remove(0);
     let kept = std::fs::read_to_string(scene.tree.cache_llm(naivepost::joins::STEP, &slot_name))
         .expect("the slot is readable");
     assert!(
-        naivepost::joins::parse_joined(&kept).is_some(),
+        naivepost::joins::parse_quotes(&kept).is_some(),
         "the slot holds the join's own answer text, which is what makes the replay cost nothing: {kept}"
     );
 
@@ -453,9 +447,11 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
         "A lecture.",
         1,
         3,
+        "the network is live today [CUT] the network goes live now",
         &before,
         &after,
         1,
+        None,
         &|| false,
     );
     assert!(

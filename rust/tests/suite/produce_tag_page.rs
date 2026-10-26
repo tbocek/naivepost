@@ -453,7 +453,7 @@ fn seed_page(_window: &adw::ApplicationWindow) {
 
 /// The scripted spawner: no ffmpeg here, so each command's own output file is written here.
 fn scripted_spawn() -> naivepost::produce_translate::SpawnSlot {
-    Rc::new(|command: &naivepost::produce_exec::Command| {
+    std::sync::Arc::new(|command: &naivepost::produce_exec::Command| {
         if let Some(out) = command.argv.last() {
             let path = Path::new(out);
             if let Some(dir) = path.parent() {
@@ -469,6 +469,11 @@ fn press_play(window: &adw::ApplicationWindow) -> String {
     let button =
         ui::line_step_button(window, "play-button").expect("the run bar drew a play-button");
     button.emit_by_name::<()>("clicked", &[]);
+    // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
     ui::find_status(window.upcast_ref())
         .expect("the window has a status line")
@@ -549,7 +554,6 @@ fn check_skipped_encode_still_rewrites_the_page(root: &Path) {
         },
         &project.sources,
         Some("1"),
-        project.no_narration,
         (1920, 1080),
     );
     naivepost::produce_stamp::write_stamp(&tree, &current).expect("stamp written");

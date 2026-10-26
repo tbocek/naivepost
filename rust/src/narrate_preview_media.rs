@@ -23,7 +23,7 @@
 //! never drift in how they are addressed.
 
 use crate::cut::{Cut, Seg};
-use crate::{cut_hear, layout, narrate_preview, play_back, preview, project, startup};
+use crate::{cut_hear, layout, narrate_preview, play_back, preview, project};
 
 /// The footage list the picture plays: one entry per kept clip, in cut order, each resolved to a file that
 /// exists. DECISION (the spec names no file for a kept clip — inventory §A.3 says only "Two players: video
@@ -51,7 +51,7 @@ pub fn picture_files(tree: &layout::Tree, cut: &Cut) -> Vec<String> {
         .iter()
         .filter(|seg| !seg.is_insert() && seg.e > seg.s)
     {
-        let Some(path) = footage_path(&root, tree, &sources, seg) else {
+        let Some(path) = footage_path(&root, tree, &sources, seg, cut) else {
             continue;
         };
         let text = path.to_string_lossy().into_owned();
@@ -88,7 +88,8 @@ fn covering_source(tree: &layout::Tree, cut: &Cut, at: f64) -> Option<String> {
     let covering = cut_hear::scene_at(&cut.segs, at)
         .and_then(|scene| cut.segs.get(scene))
         .filter(|seg| !seg.is_insert() && seg.e > seg.s)?;
-    footage_path(&root, tree, &sources, covering).map(|path| path.to_string_lossy().into_owned())
+    footage_path(&root, tree, &sources, covering, cut)
+        .map(|path| path.to_string_lossy().into_owned())
 }
 
 /// Move `wanted` to the front, keeping the rest in order; unchanged when it is already first or absent.
@@ -116,6 +117,14 @@ pub fn footage_second(cut: &Cut, at: f64) -> f64 {
     let Some(scene) = scene_at(cut, at) else {
         return at.max(0.0);
     };
+    // The session's own recordings say where in THEIR file the scene's first second lies: a scene at 100 s on a
+    // recording that started at 52 s is 48 s into the file, not 0 s. Only a page that knows no recordings (a test
+    // that names its cut alone) measures from the scene.
+    if let Some(recording) = recording_under(cut, scene, at) {
+        let start =
+            (scene.s - recording.start + crate::timeline::shift_of(cut, &recording.base)).max(0.0);
+        return start + (at - scene.s).max(0.0) * narrate_preview::seek_rate(&cut.fx, at);
+    }
     let travelled = (at - scene.s).max(0.0) * narrate_preview::seek_rate(&cut.fx, at);
     (travelled + scene.ss.max(0.0)).max(0.0)
 }
@@ -131,7 +140,21 @@ fn footage_path(
     tree: &layout::Tree,
     sources: &[project::Source],
     seg: &Seg,
+    cut: &Cut,
 ) -> Option<std::path::PathBuf> {
+    // The session's own recording under the scene, named by its file's stem: what the band and the Cut page
+    // play. A page that knows no recordings falls back to the `cam<N>` naming below.
+    if let Some(recording) = recording_under(cut, seg, seg.s.max(0.0)) {
+        if let Some(source) = sources
+            .iter()
+            .find(|source| file_stem(&source_name(&source.path)) == recording.base)
+        {
+            let path = layout::resolve(root, tree.dir(), &source.path);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
     let base = format!("cam{}", seg.cam);
     let footage: Vec<&project::Source> = sources.iter().filter(|source| source.footage).collect();
     let named: Option<&project::Source> = footage
@@ -216,6 +239,29 @@ pub fn bed_gain(cut: &Cut, at: f64, line_speaking: bool, game_volume: f64, volum
 }
 
 /// The scene deciding this second, if the cut has one (a removed stretch has no hearing of its own).
+/// The recording the cut shows at session second `at` and the second inside it: what the Narrate preview's still
+/// frame is looked up by (its frames are filed under the recording's base). `None` off every footage scene or
+/// with no recordings known.
+pub fn shown_at(cut: &Cut, at: f64) -> Option<(String, f64)> {
+    let scene = scene_at(cut, at).filter(|scene| !scene.is_insert())?;
+    let recording = recording_under(cut, scene, at)?;
+    Some((recording.base.clone(), footage_second(cut, at)))
+}
+
+/// The session recording a footage scene shows at `at`: the one on the scene's camera row whose span holds `at`
+/// (rows by `timeline::rows_for`, the colouring every page uses), or `None` when the page knows no recordings.
+fn recording_under(cut: &Cut, scene: &Seg, at: f64) -> Option<crate::timeline::Recording> {
+    let recordings = crate::ui::page_recordings();
+    let rows = crate::timeline::rows_for(&recordings, cut);
+    let row = scene.cam.max(0) as usize;
+    recordings
+        .into_iter()
+        .zip(rows)
+        .filter(|(_, placed)| *placed == row)
+        .map(|(recording, _)| recording)
+        .find(|recording| recording.start <= at && at < recording.end)
+}
+
 fn scene_at(cut: &Cut, at: f64) -> Option<&Seg> {
     cut_hear::scene_at(&cut.segs, at).and_then(|scene| cut.segs.get(scene))
 }
@@ -243,7 +289,7 @@ pub fn said_argv(program: &str, args: &[String]) -> String {
 /// hands its own tree to these doors instead; this exists so the leg can cue real footage whenever a project
 /// folder is open at all, rather than only after some flow remembered to publish one.
 pub fn session_tree() -> Option<layout::Tree> {
-    let dir = startup::session_dir(&std::env::current_dir().ok()?);
+    let dir = crate::startup::open_dir();
     layout::Tree::new(&dir).ok()
 }
 

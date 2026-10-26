@@ -52,6 +52,17 @@ pub fn press_svg_item(window: &adw::ApplicationWindow) -> String {
     }
 }
 
+thread_local! {
+    /// How many drawing choosers this thread has raised: a headless test cannot answer one, but it can see that a
+    /// press raised exactly one.
+    static SVG_CHOOSER_ASKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many drawing choosers have been raised. A test's look; the program never asks.
+pub fn svg_chooser_asks_for_test() -> usize {
+    SVG_CHOOSER_ASKS.with(std::cell::Cell::get)
+}
+
 /// Open the native file chooser over `dir` for a drawing. Kept apart from [`press_svg_item`] so the decision
 /// (where, which title, which filter) is testable without a display: a headless run simply never answers the
 /// dialog, exactly as `open_insert_chooser` is. Its answer forwards to [`svg_chosen`].
@@ -68,6 +79,7 @@ fn open_svg_chooser(
     dir: &std::path::Path,
     filter_name: &str,
 ) {
+    SVG_CHOOSER_ASKS.with(|asks| asks.set(asks.get() + 1));
     let chooser = gtk::FileChooserNative::builder()
         .title(title)
         .modal(true)
@@ -143,8 +155,46 @@ pub fn request_svg_raster(path: &str) {
         return;
     }
     // Which ffmpeg and which folder are `make_here`'s business — the same doors every other ffmpeg job uses, so a
-    // path typed into Settings is honoured here too and no folder is invented for the occasion.
-    match make_here(path) {
+    // path typed into Settings is honoured here too and no folder is invented for the occasion. Both are read
+    // here, on the window thread; ffmpeg itself runs on a worker (§03-shell §1), the cache saying "being made"
+    // meanwhile, and the open form gets its picture when the raster lands.
+    let paths = crate::settings::from_environment();
+    let program = match &paths {
+        Some(paths) => crate::audio_task::ffmpeg_program(paths),
+        None => crate::run_stages::FFMPEG.to_string(),
+    };
+    let dir = raster_dir();
+    // A raster already on disk (the file was seen before) is a stat away, so it is ready at once, no worker.
+    if let Some(on_disk) = dir
+        .as_ref()
+        .map(|dir| dir.join(fx_svg::raster_file_name(path)))
+        .filter(|out| out.exists())
+    {
+        settle_raster(path, Ok(on_disk));
+        return;
+    }
+    let file = path.to_string();
+    crate::ui::background::run(
+        "svg-raster",
+        move || {
+            let dir = dir.ok_or_else(|| "no project folder to keep the raster in".to_string())?;
+            crate::ui::cut_svg_raster::make(&program, &file, &dir, &|line| log_line(line))
+        },
+        {
+            let path = path.to_string();
+            move |made| {
+                settle_raster(&path, made);
+                if let Some(window) = crate::ui::window::built_window() {
+                    paint_svg_raster(&window, &path);
+                }
+            }
+        },
+    );
+}
+
+/// The raster's answer into the per-file cache, said once.
+fn settle_raster(path: &str, made: Result<std::path::PathBuf, String>) {
+    match made {
         Ok(file) => {
             SVG_RASTERS.with(|cell| cell.borrow_mut().done_with(path, &file));
             log_line(&format!(
@@ -232,8 +282,9 @@ pub fn svg_drag_ended_with_source(
         .map(|band| (band.start, band.end));
     match fx_svg::place(choice, &file, line, sel, source) {
         Some(fx) => {
+            // `show_svg_form` wires the buttons it draws; wiring them again here (the first rewrite) ran every
+            // Apply twice and opened two choosers for one ⋯ Choose.
             show_svg_form(window, &fx);
-            wire_svg_buttons(window);
             let said = format!(
                 "{} \u{2014} press \u{25b8} Apply puts the drawing on the picture",
                 fx_svg::form_title(fx.t)

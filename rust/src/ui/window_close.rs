@@ -49,22 +49,24 @@ pub(crate) fn flush_held_narration(window: &adw::ApplicationWindow) {
         if entries.is_empty() {
             continue;
         }
-        let _ = narration::save(
+        if let Err(why) = narration::save(
             &narration::Narration {
                 entries,
                 silent: silent.clone(),
             },
             &tree,
-        );
+        ) {
+            // The window is closing, so the terminal hears it as well as the log.
+            let line = format!("!!! could not save the narration -- {why}");
+            eprintln!("naivepost: {line}");
+            crate::ui::window_logs::say_failure(&line);
+        }
     }
     if let Some(shell) =
         crate::ui::window::WINDOW_SHELLS.with(|shells| shells.borrow().last().cloned())
     {
         shell.borrow_mut().narration_pending.flush();
     }
-    // The flag just settled has to reach disk before the close hook's own project write runs: that write
-    // saves the LIVE project, whose `no_narration` was set by a tick through the same held handle. If
-    // this flush ran first and nothing rewrote the file, the naivepost.json on disk would still show the
-    // pre-tick value -- which is what §7 F4.8 node 2 pins (the tick survives a reopen).
+    // The live project reaches disk here too (§2 S6): what the session holds now is what a reopen reads.
     let _ = crate::ui::window_line_step::flush_session_on_close();
 }

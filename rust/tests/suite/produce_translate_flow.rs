@@ -519,7 +519,7 @@ fn seed_page(_window: &adw::ApplicationWindow) {
 /// The scripted spawner: no ffmpeg exists in this container, so each command's own output file is
 /// "written" here, the way `tests/suite/produce_render_exec.rs` fakes it.
 fn scripted_spawn() -> trans::SpawnSlot {
-    Rc::new(|command: &naivepost::produce_exec::Command| {
+    std::sync::Arc::new(|command: &naivepost::produce_exec::Command| {
         if let Some(out) = command.argv.last() {
             let path = Path::new(out);
             if let Some(dir) = path.parent() {
@@ -640,6 +640,11 @@ fn check_press_writes_the_translated_sidecar(root: &Path) {
     let button =
         ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
     button.emit_by_name::<()>("clicked", &[]);
+    // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
 
     let said = ui::find_status(window.upcast_ref())
@@ -753,6 +758,11 @@ fn check_press_writes_the_sheet_and_says_what_it_holds(root: &Path) {
     let button =
         ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
     button.emit_by_name::<()>("clicked", &[]);
+    // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
 
     let said = ui::find_status(window.upcast_ref())

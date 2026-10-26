@@ -261,14 +261,29 @@ pub fn stage_open_over_window(window: &adw::ApplicationWindow) -> Result<StagedM
     holder.set_child(Some(&copy));
     holder.present();
     // Its own top level, with its own frames: owed until GTK has given it a size.
-    crate::ui::settle::when("the menu laid out in its holder", &holder, |holder| holder.width() > 0 && holder.height() > 0, |_| {});
-    Ok(StagedMenu { holder, copy, rows, width, height })
+    crate::ui::settle::when(
+        "the menu laid out in its holder",
+        &holder,
+        |holder| holder.width() > 0 && holder.height() > 0,
+        |_| {},
+    );
+    Ok(StagedMenu {
+        holder,
+        copy,
+        rows,
+        width,
+        height,
+    })
 }
 
 /// Paints the Cut page with the staged menu OVER it, into `out`: the window first, then the menu where the
 /// popover would sit, at its own size; then closes the holder. A holder not painted yet has no render node:
 /// that is an error, and the holder stays open for another try.
-pub fn paint_staged(window: &adw::ApplicationWindow, menu: &StagedMenu, out: &Path) -> Result<MenuShot, String> {
+pub fn paint_staged(
+    window: &adw::ApplicationWindow,
+    menu: &StagedMenu,
+    out: &Path,
+) -> Result<MenuShot, String> {
     let button = menu_button(window, "effect-button");
     let bounds = button
         .compute_bounds(window.upcast_ref::<gtk::Widget>())
@@ -276,7 +291,11 @@ pub fn paint_staged(window: &adw::ApplicationWindow, menu: &StagedMenu, out: &Pa
     let (asked_w, asked_h) = crate::snapshot_face::asked_shot_wh();
     let (w, h) = (
         if asked_w > 0 { asked_w } else { window.width() },
-        if asked_h > 0 { asked_h } else { window.height() },
+        if asked_h > 0 {
+            asked_h
+        } else {
+            window.height()
+        },
     );
     let (x, y) = (
         panel_x(bounds.x(), bounds.width(), menu.width, w).floor(),
@@ -284,14 +303,19 @@ pub fn paint_staged(window: &adw::ApplicationWindow, menu: &StagedMenu, out: &Pa
     );
     let surface = crate::snapshot_face::render_surface(window.upcast_ref(), w, h)?;
     let cr = cairo::Context::new(&surface).map_err(|err| err.to_string())?;
-    let painted = crate::snapshot_face::render_surface(menu.copy.upcast_ref(), menu.width, menu.height).and_then(|panel| {
-        cr.set_source_surface(&panel, x as f64, y as f64).map_err(|err| err.to_string())?;
-        cr.paint().map_err(|err| err.to_string())
-    });
+    let painted =
+        crate::snapshot_face::render_surface(menu.copy.upcast_ref(), menu.width, menu.height)
+            .and_then(|panel| {
+                cr.set_source_surface(&panel, x as f64, y as f64)
+                    .map_err(|err| err.to_string())?;
+                cr.paint().map_err(|err| err.to_string())
+            });
     painted?;
     menu.holder.close();
     let mut file = std::fs::File::create(out).map_err(|err| err.to_string())?;
-    surface.write_to_png(&mut file).map_err(|err| err.to_string())?;
+    surface
+        .write_to_png(&mut file)
+        .map_err(|err| err.to_string())?;
     Ok((menu.rows, (menu.width, menu.height), (x as i32, y as i32)))
 }
 

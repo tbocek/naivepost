@@ -192,6 +192,10 @@ fn check_the_lane_button_places_a_probed_row(app: &adw::Application) {
         ui::line_step_button(&window, "lane-button").expect("the toolbar carries lane-button");
     button.emit_by_name::<()>("clicked", &[]);
     settle();
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+        "the workers answered"
+    );
 
     let lanes = ui::review_lanes(&window);
     if lanes.is_empty() {

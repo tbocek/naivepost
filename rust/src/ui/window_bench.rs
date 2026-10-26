@@ -75,7 +75,10 @@ pub(crate) fn bench_box(
     let mut bench_state = bench::Bench::new();
     // The snapshot seam above; `select` ignores an index off the end, so this is a no-op unless a
     // caller asked for a specific row.
-    bench_state.select(bench_open_row(bench::ROWS.len()));
+    // §03-shell §5b: the prompts are configured in profiles, so the bench is the User Context alone; a
+    // snapshot's ask for another row is spent and ignored.
+    let _ = bench_open_row(bench::ROWS.len());
+    bench_state.select(0);
     let row = Rc::new(RefCell::new(bench_state));
     // Each handler below holds its own handle on the same answer to "where does this machine keep a
     // prompt", which is why it travels as an `Rc` rather than as a borrow of the caller's.
@@ -112,6 +115,8 @@ pub(crate) fn bench_box(
     // "Describe prompt" beside a picker still showing "User Context". Set before `paint_bench` so
     // no notify fires against a half-built heading.
     picker.set_selected(u32::try_from(row.borrow().selected).unwrap_or(0));
+    // The prompt rows are gone from the page (a profile's per-step sections replace them): no picker to show.
+    picker.set_visible(false);
 
     // **4** Reset, live only while this machine holds an edit.
     let reset = gtk::Button::with_label("Reset");
@@ -129,12 +134,11 @@ pub(crate) fn bench_box(
 
     // **5** the prompt or the User Context.
     let editor = gtk::TextView::new();
+    crate::ui::margins::text_box(&editor);
     editor.set_widget_name("bench-text");
     editor.set_monospace(true);
     editor.set_wrap_mode(gtk::WrapMode::WordChar);
     editor.set_vexpand(true);
-    editor.set_top_margin(6);
-    editor.set_bottom_margin(6);
     let scroller = gtk::ScrolledWindow::new();
     scroller.set_child(Some(&editor));
     scroller.set_vexpand(true);
@@ -153,6 +157,8 @@ pub(crate) fn bench_box(
     // The box's contents are set when the row changes, never from its own `changed` handler: typing
     // stores text and storing must not retype the buffer out from under the cursor.
     let guard = Rc::new(std::cell::Cell::new(false));
+    // F0.14: the profile row in the heading (User Context row only) and its form in the scroller's place.
+    crate::ui::profile_form::attach(&heading, &mark, &scroller, &editor, session);
     paint_bench(
         &row, &title, &mark, &picker, &reset, &editor, &guard, session, &paths,
     );
@@ -202,7 +208,16 @@ pub(crate) fn bench_box(
             return;
         };
         // User Context has no shipped wording to restore, and `bench::reset` says so with `None`.
-        if let Ok(Some(_)) = bench::reset(paths, &current) {
+        let reset_now = match bench::reset(paths, &current) {
+            Ok(reset_now) => reset_now,
+            Err(why) => {
+                super::window_logs::say_failure(&format!(
+                    "!!! could not reset the prompt -- {why}"
+                ));
+                None
+            }
+        };
+        if reset_now.is_some() {
             paint_bench(
                 &row_for_reset,
                 &title_for_reset,
@@ -223,6 +238,7 @@ pub(crate) fn bench_box(
     let mark_for_text = mark;
     let reset_for_text = reset;
     let row_for_text = row;
+    let failing = std::rc::Rc::new(std::cell::Cell::new(false));
     buffer.connect_changed(move |buffer| {
         if guard.get() {
             return;
@@ -236,7 +252,17 @@ pub(crate) fn bench_box(
         let mut held = session_for_text.borrow_mut();
         match paths_for_text.as_ref() {
             Some(paths) => {
-                let _ = bench::store(paths, &mut held, &current, &text);
+                // Every keystroke stores, so a failing write is said once per run of failures, not per key.
+                match bench::store(paths, &mut held, &current, &text) {
+                    Ok(()) => failing.set(false),
+                    Err(why) => {
+                        if !failing.replace(true) {
+                            super::window_logs::say_failure(&format!(
+                                "!!! could not save the prompt -- {why}"
+                            ));
+                        }
+                    }
+                }
             }
             // With no config folder a prompt has nowhere to go; the User Context still lands on the
             // session, which is where it belongs.
@@ -316,6 +342,7 @@ fn paint_bench(
         held.row(),
     ));
     guard.set(false);
+    crate::ui::profile_form::follow_row(editor, bench::is_context(held.row()));
 }
 
 /// The mark and Reset, both live only while this machine holds the row's wording (§1).
@@ -360,7 +387,7 @@ pub(crate) fn refresh_cut_readouts(window: &adw::ApplicationWindow) {
         .map(|(start, end)| end - start)
         .sum();
     let rows = cut_screen::idle_readouts(
-        crate::cut_screen::THUMB_AT_OPEN,
+        crate::ui::cut_tracks::thumb_px(),
         &cut_.aspect,
         crate::ui::preview_player(window).playhead.unwrap_or(0.0),
         cut_select::marks(ui::selection(window).as_ref()),
@@ -493,8 +520,29 @@ fn descendants(root: &gtk::Widget) -> Vec<gtk::Widget> {
 /// `Shell::outputs` alone — this function only prefixes and sets labels, so a sentence on that row
 /// always traces back to a rule in `shell.rs`. The folder button is insensitive while there is no
 /// project folder to open, which is the visible proof the row knows what it is counting.
-#[allow(clippy::too_many_arguments)] // the readout row paints inputs, outputs, their folder button and
-                                     // the log expander from one shell read
+#[allow(clippy::too_many_arguments)]
+// the readout row paints inputs, outputs, their folder button and
+// the log expander from one shell read
+/// The four readings [`paint_readouts`] takes off a worker.
+struct Readings {
+    inputs: String,
+    inputs_tip: Option<String>,
+    outputs: String,
+    outputs_tip: Option<String>,
+}
+
+thread_local! {
+    /// How many readout repaints were asked; a landing paints only when it answers the newest.
+    static READOUT_ASKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    /// Readouts read on the window thread itself: none ever should; a test reads it.
+    static READ_HERE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many readouts were read on this (the window's) thread.
+pub fn readouts_read_here_for_test() -> usize {
+    READ_HERE.with(std::cell::Cell::get)
+}
+
 pub(crate) fn paint_readouts(
     shell: &Shell,
     project: &Project,
@@ -505,25 +553,61 @@ pub(crate) fn paint_readouts(
     outputs_folder: &gtk::Button,
     outputs_label: &gtk::Label,
 ) {
-    inputs_label.set_text(&format!(
-        "{INPUTS_PREFIX}{}",
-        shell.inputs(tree, project, cut, narration)
-    ));
-    // §1 badge **6**: the Inputs row's tooltip is per-file. Prepare has one; every other page's
-    // row clears it rather than keeping a stale per-source list from the tab just left.
-    match shell.inputs_tip(tree, project) {
-        Some(tip) => {
-            inputs_label.set_tooltip_text(Some(&tip));
-            inputs_label.set_sensitive(true);
-        }
-        None => inputs_label.set_tooltip_text(None::<&str>),
-    }
-    outputs_label.set_text(&shell.outputs(tree));
-    // §6's second half: "newest <ago>" on hover, cleared for any page that has no age to date.
-    match shell.outputs_tip(tree) {
-        Some(tip) => outputs_label.set_tooltip_text(Some(&tip)),
-        None => outputs_label.set_tooltip_text(None::<&str>),
-    }
+    // The four readings count files in the page's folders, which can be thousands of frames: they are read
+    // on a worker and painted when they land (§03-shell §1, the window thread never waits). The last
+    // readout stays up meanwhile, and only the newest ask is painted, so quick tab switches cannot land
+    // out of order.
+    let asked = READOUT_ASKS.with(|asks| {
+        asks.set(asks.get() + 1);
+        asks.get()
+    });
+    let held = (
+        shell.clone(),
+        project.clone(),
+        tree.cloned(),
+        cut.clone(),
+        narration.clone(),
+    );
+    let owed = crate::ui::settle::owe("readouts", outputs_label);
+    let inputs_label = inputs_label.clone();
+    let outputs_label = outputs_label.clone();
+    super::background::run(
+        "readouts",
+        move || {
+            if !super::background::on_worker() {
+                READ_HERE.with(|count| count.set(count.get() + 1));
+            }
+            let (shell, project, tree, cut, narration) = held;
+            let tree = tree.as_ref();
+            Readings {
+                inputs: shell.inputs(tree, &project, &cut, &narration),
+                inputs_tip: shell.inputs_tip(tree, &project),
+                outputs: shell.outputs(tree),
+                outputs_tip: shell.outputs_tip(tree),
+            }
+        },
+        move |read: Readings| {
+            if READOUT_ASKS.with(|asks| asks.get()) == asked {
+                inputs_label.set_text(&format!("{INPUTS_PREFIX}{}", read.inputs));
+                // §1 badge **6**: the Inputs row's tooltip is per-file. Prepare has one; every other page's
+                // row clears it rather than keeping a stale per-source list from the tab just left.
+                match read.inputs_tip {
+                    Some(tip) => {
+                        inputs_label.set_tooltip_text(Some(&tip));
+                        inputs_label.set_sensitive(true);
+                    }
+                    None => inputs_label.set_tooltip_text(None::<&str>),
+                }
+                outputs_label.set_text(&read.outputs);
+                // §6's second half: "newest <ago>" on hover, cleared for any page that has no age to date.
+                match read.outputs_tip {
+                    Some(tip) => outputs_label.set_tooltip_text(Some(&tip)),
+                    None => outputs_label.set_tooltip_text(None::<&str>),
+                }
+            }
+            drop(owed);
+        },
+    );
     outputs_folder.set_sensitive(tree.is_some());
     // §1 badge **4**: the header's project name/path is redrawn at the same tick as the readouts
     // ("show the page and its Inputs/Outputs readouts", F0.1 S4), at whatever stage its width allows.
@@ -533,10 +617,12 @@ pub(crate) fn paint_readouts(
     if let Some(tree) = tree {
         // Prepare's tooltip goes further than "open this folder": §1 asks that it name the three
         // subfolders the count covers, so the number says what is inside it.
-        let page_tip = if shell.page == crate::shell::Page::Prepare {
-            format!(" ({})", prepare::OUTPUTS_TIP)
-        } else {
-            String::new()
+        let page_tip = match shell.page {
+            crate::shell::Page::Prepare => format!(" ({})", prepare::OUTPUTS_TIP),
+            // §08-produce §1: "folder button tooltip: produce/ — the finished video, the per-clip encodes,
+            // the thumbnail and the upload text".
+            crate::shell::Page::Produce => format!(" ({})", crate::produce_screen::FOLDER_TIP),
+            _ => String::new(),
         };
         outputs_folder.set_tooltip_text(Some(&format!(
             "{OUTPUTS_FOLDER_TIP}: {}{page_tip}",
@@ -559,7 +645,6 @@ pub(crate) fn paint_readouts(
 /// for the other two, and that is why their ▶ runs the step while a preview plays.
 pub fn paint_run_bar(
     play: &gtk::Button,
-    lucky: &gtk::Button,
     stop_: &gtk::Button,
     bar: &run::RunBar,
     page: Page,
@@ -571,17 +656,33 @@ pub fn paint_run_bar(
     // ⏹ is sensitive whenever there is something to end — a run, a playing preview, or one parked
     // part way through. `controls` already decides that; this only draws it.
     stop_.set_sensitive(drawn.stop_sensitive);
-    // §2: the gears are insensitive while a run is busy; ⏸ and ⏹ are what act on that run.
-    lucky.set_sensitive(drawn.lucky_sensitive);
-    // §2: the gears turn while ANY run computes, a single ▶ step included, so the bar says work is going
-    // on even when the progress bar has nothing to count. Owning the class here (not only in `lucky_run`)
-    // is what makes that true: `lucky_run` also toggles it around a chain, and both agree -- ON exactly
-    // while a run stands -- so the two never fight.
-    if drawn.gears_turning {
-        crate::ui::lucky_run::set_turning(lucky, true);
-    } else {
-        crate::ui::lucky_run::set_turning(lucky, false);
-    }
+}
+
+/// Repaint the run bar's ▶ and ⏹ from `window`'s bar and its preview, for a change that came from outside the
+/// run bar: a Cut transport press starts or stops a preview, and ⏹ ("Stop the run or the playback", F0.3) must
+/// be live while one plays. The first rewrite painted ⏹ only from the run bar's own presses, so a preview
+/// started from ▶ / ▶✂ / ▶✂✂ left it grey and the playback could not be stopped from the bar.
+pub fn repaint_run_bar(window: &adw::ApplicationWindow) {
+    let (Some(play), Some(stop_)) = (
+        crate::ui::window::play_button(window),
+        crate::ui::window::stop_button(window),
+    ) else {
+        return;
+    };
+    let Some(bar) = crate::ui::window::RUN_BARS.with(|bars| bars.borrow().last().cloned()) else {
+        return;
+    };
+    // A press painting while the bar is being changed elsewhere skips this paint; that change paints.
+    let Ok(bar) = bar.try_borrow() else {
+        return;
+    };
+    paint_run_bar(
+        &play,
+        &stop_,
+        &bar,
+        crate::ui::window::state(window).page,
+        crate::ui::window::preview_player(window).transport,
+    );
 }
 
 /// §10's prose log heights: 220 px open, 110 px collapsed. No `P.` id exists for them, so they are
@@ -612,11 +713,7 @@ pub fn paint_progress(
     crate::ui::shell_beats::status_from_queue(line.status, queue, line.owned);
     log.set_expanded(expanded);
     if expanded {
-        let buffer = log_view.buffer();
-        buffer.set_text("");
-        super::log_link::paint_lines(&buffer, &ui::window_logs());
-        // The newest line is the one worth seeing.
-        let mut end = buffer.end_iter();
-        log_view.scroll_to_iter(&mut end, 0.0, false, 0.0, 1.0);
+        // The newest line is the one worth seeing while the person follows it (`log_paint::follow_end`).
+        super::log_paint::repaint_lines(log_view, &ui::window_logs());
     }
 }

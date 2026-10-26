@@ -107,57 +107,6 @@ impl Paths {
     }
 }
 
-/// How many requests a server may take at once. Every one defaults to 1 — §6 of
-/// 03-shell.md spells that as "absent = 1" — and is written only when it says otherwise, so
-/// a machine left on the defaults does not look different after every save.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Slots {
-    pub llm: u32,
-    pub asr: u32,
-    pub diar: u32,
-    pub align: u32,
-    pub tts: u32,
-    pub sep: u32,
-    pub sd: u32,
-}
-
-impl Default for Slots {
-    fn default() -> Self {
-        Self {
-            llm: 1,
-            asr: 1,
-            diar: 1,
-            align: 1,
-            tts: 1,
-            sep: 1,
-            sd: 1,
-        }
-    }
-}
-
-impl Slots {
-    /// The seven keys, in the order they are written.
-    pub const KEY_NAMES: [&'static str; 7] = [
-        "LLM_SLOTS",
-        "AUDIOCPP_ASR_SLOTS",
-        "AUDIOCPP_DIAR_SLOTS",
-        "AUDIOCPP_ALIGN_SLOTS",
-        "AUDIOCPP_TTS_SLOTS",
-        "AUDIOCPP_SEP_SLOTS",
-        "SD_SLOTS",
-    ];
-
-    const KEYS: [(&'static str, fn(&Slots) -> u32); 7] = [
-        ("LLM_SLOTS", |s| s.llm),
-        ("AUDIOCPP_ASR_SLOTS", |s| s.asr),
-        ("AUDIOCPP_DIAR_SLOTS", |s| s.diar),
-        ("AUDIOCPP_ALIGN_SLOTS", |s| s.align),
-        ("AUDIOCPP_TTS_SLOTS", |s| s.tts),
-        ("AUDIOCPP_SEP_SLOTS", |s| s.sep),
-        ("SD_SLOTS", |s| s.sd),
-    ];
-}
-
 /// The remembered project list: a session folder and the project file last open in it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectRef {
@@ -187,12 +136,14 @@ pub struct Conf {
     pub firefox: String,
     pub sd_server: String,
     pub sd_key: String,
+    /// The model that answers Prepare's small yes/no questions about frames (§F1.6 S6, the text gate): a fast
+    /// vision model on the same server. Empty = the main model answers them ([`Conf::decider`]).
+    pub decision_model: String,
     /// The `code:tag:name` list of 00-principles.md §6.
     pub subtitle_languages: String,
     /// Keys this build does not know, kept in file order so a read-modify-write cannot
     /// erase a setting a newer build put here.
     unknown: Vec<(String, String)>,
-    pub slots: Slots,
     /// The project file last open in each session folder, keyed by folder because every
     /// path inside a project is relative to it. Ordered, so an unchanged save is
     /// byte-identical (§7).
@@ -200,7 +151,20 @@ pub struct Conf {
 }
 
 impl Conf {
-    const KEYS: [(&'static str, fn(&Conf) -> &str); 15] = [
+    /// The model that judges the text gate (§F1.6 S6): the decision model when one is set, else the main one,
+    /// which describes the same frames anyway. The gate always runs, so there is no "no gate" to fall to.
+    pub fn decider(&self) -> String {
+        let decision = self.decision_model.trim();
+        if decision.is_empty() {
+            self.model.trim().to_string()
+        } else {
+            decision.to_string()
+        }
+    }
+}
+
+impl Conf {
+    const KEYS: [(&'static str, fn(&Conf) -> &str); 16] = [
         ("LLM_SERVER", |c| &c.server),
         ("LLM_MODEL", |c| &c.model),
         ("LLM_API_KEY", |c| &c.key),
@@ -216,10 +180,11 @@ impl Conf {
         ("FIREFOX", |c| &c.firefox),
         ("SD_SERVER", |c| &c.sd_server),
         ("SD_API_KEY", |c| &c.sd_key),
+        ("DECISION_MODEL", |c| &c.decision_model),
     ];
 
-    /// The fifteen keys this store holds, read off [`Conf::KEYS`] so a key added there is listed
-    /// here without a second list to forget. Mirrors [`Slots::KEY_NAMES`]; used by anything that
+    /// The sixteen keys this store holds, read off [`Conf::KEYS`] so a key added there is listed
+    /// here without a second list to forget. Used by anything that
     /// has to say which ids are machine settings (directive A, 11 §5).
     pub fn key_names() -> Vec<&'static str> {
         Self::KEYS.iter().map(|(key, _)| *key).collect()
@@ -272,14 +237,6 @@ pub fn render(conf: &Conf) -> String {
         "SUBTITLE_LANGUAGES={}\n",
         quote(&conf.subtitle_languages)
     ));
-    for (key, get) in Slots::KEYS {
-        let value = get(&conf.slots);
-        // "absent = 1" (03-shell.md §6): writing the default would make every default
-        // machine look like it had been configured.
-        if value != 1 {
-            out.push_str(&format!("{key}={value}\n"));
-        }
-    }
     for (key, value) in &conf.unknown {
         out.push_str(&format!("{key}={}\n", quote(value)));
     }
@@ -369,20 +326,13 @@ pub fn parse(text: &str) -> Result<Conf, String> {
         };
         let key = key.trim();
         let value = unquote(value.trim());
-        // The named settings first, then the slots, then the remembered projects. Each
+        // The named settings first, then the remembered projects. Each
         // arm takes the value by reference so only the unknown-key arm has to move it.
         if set_key(&mut conf, key, &value) {
             continue;
         }
         if key == "SUBTITLE_LANGUAGES" {
             conf.subtitle_languages = value;
-            continue;
-        }
-        if Slots::KEYS.iter().any(|(k, _)| *k == key) {
-            let parsed = value
-                .parse::<u32>()
-                .map_err(|_| format!("line {}: {key}={value:?} is not a number", n + 1))?;
-            set_slot(&mut conf.slots, key, parsed);
             continue;
         }
         if key.starts_with("PROJECT_") {
@@ -446,27 +396,24 @@ fn set_key(conf: &mut Conf, key: &str, value: &str) -> bool {
         "FIREFOX" => &mut conf.firefox,
         "SD_SERVER" => &mut conf.sd_server,
         "SD_API_KEY" => &mut conf.sd_key,
+        "DECISION_MODEL" => &mut conf.decision_model,
         _ => return false,
     };
     *field = value.to_string();
     true
 }
 
-/// Assign one of the slot counts by its key.
-fn set_slot(slots: &mut Slots, key: &str, value: u32) {
-    // The seven `*_SLOTS` keys; each absent from the file means 1 (03-shell.md §6), so a
-    // slot is only ever written when it differs.
-    let field = match key {
-        "LLM_SLOTS" => &mut slots.llm,
-        "AUDIOCPP_ASR_SLOTS" => &mut slots.asr,
-        "AUDIOCPP_DIAR_SLOTS" => &mut slots.diar,
-        "AUDIOCPP_ALIGN_SLOTS" => &mut slots.align,
-        "AUDIOCPP_TTS_SLOTS" => &mut slots.tts,
-        "AUDIOCPP_SEP_SLOTS" => &mut slots.sep,
-        "SD_SLOTS" => &mut slots.sd,
-        _ => return,
-    };
-    *field = value;
+/// One named setting's value (`LLM_SERVER`, `AUDIOCPP_API_KEY`, ...), `None` for a name this file does not hold.
+pub fn value_named<'a>(conf: &'a Conf, key: &str) -> Option<&'a str> {
+    Conf::KEYS
+        .iter()
+        .find(|(name, _)| *name == key)
+        .map(|(_, get)| get(conf))
+}
+
+/// Set one named setting. False for a name this file does not hold (nothing is changed then).
+pub fn set_named(conf: &mut Conf, key: &str, value: &str) -> bool {
+    set_key(conf, key, value)
 }
 
 /// Read `llm.conf`. No file is no settings — a machine that has never opened the dialog.
@@ -588,8 +535,20 @@ pub const LEGACY_MODELS: &str = "AUDIOCPP_MODELS";
 /// Whether this key belongs to an older build: one of the four named ones, or any
 /// `PROMPT_*` — the per-step prompt overrides §7 keeps as files instead.
 fn legacy_key(key: &str) -> bool {
-    IGNORED_KEYS.contains(&key) || key.starts_with("PROMPT_")
+    IGNORED_KEYS.contains(&key) || key.starts_with("PROMPT_") || RETIRED_SLOT_KEYS.contains(&key)
 }
+
+/// The per-model request counts an earlier build wrote (`LLM_SLOTS` and the rest). Requests now go one at a
+/// time per server (02-services.md §1), so these are read and dropped.
+pub const RETIRED_SLOT_KEYS: [&str; 7] = [
+    "LLM_SLOTS",
+    "AUDIOCPP_ASR_SLOTS",
+    "AUDIOCPP_DIAR_SLOTS",
+    "AUDIOCPP_ALIGN_SLOTS",
+    "AUDIOCPP_TTS_SLOTS",
+    "AUDIOCPP_SEP_SLOTS",
+    "SD_SLOTS",
+];
 
 /// root, is not a project at all — the prototype keeps only the pairs where both are set.
 pub fn remembered(projects: &BTreeMap<String, String>) -> Vec<ProjectRef> {
@@ -714,13 +673,12 @@ pub fn prompt_file_ok(key: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The prompt to send: this machine's edited text when there is one, else the shipped one.
-///
-/// Adoption runs first so the request that needs a key is also the read that rewrites its legacy
-/// wording — see [`adopt_legacy_prompt`].
+/// The prompt to send: the open project's profile section for the step, else the shipped wording.
 pub fn prompt_text(paths: &Paths, key: &str, shipped: &str) -> Result<String, String> {
-    adopt_legacy_prompt(paths, key)?;
-    Ok(read_prompt(paths, key)?.unwrap_or_else(|| shipped.to_string()))
+    // §03-shell §5b: a step's wording is the open project's profile section for that step when it has one (the
+    // profile holds the whole prompt), else the shipped prompt. Machine-level edits (`prompts/<key>.txt`, the old
+    // bench rows) are no longer read: a profile is the one place the prompts are configured.
+    Ok(crate::profile::active_section(paths, key).unwrap_or_else(|| shipped.to_string()))
 }
 
 /// The names the folder-per-wording era wrote a job's DEFAULT wording under — one folder
@@ -732,41 +690,6 @@ pub const LEGACY_PROMPT_NAMES: [&str; 2] = ["General.txt", "Default.txt"];
 /// where this one keeps a file per job (§04-prepare#6).
 pub fn legacy_prompt_file(paths: &Paths, key: &str, name: &str) -> PathBuf {
     paths.prompts_dir().join(key).join(name)
-}
-
-/// Adopt one job's legacy wording: write `prompts/<key>/General.txt|Default.txt` as
-/// `prompts/<key>.txt`, once (§04-prepare.md §6).
-///
-/// The old build kept one FOLDER per job with one file per wording; this one keeps one file per job.
-/// Reading the old copy without rewriting it would leave the same edit invisible to every reader that
-/// only knows the new layout (`read_prompt`, and therefore every live request), so the rewrite is what
-/// makes an inherited edit real here rather than a fallback that quietly expires. Adoption is ONE way:
-/// a `prompts/<key>.txt` that already holds wording wins untouched, because overwriting it would throw
-/// away a newer edit for an older one. The old copy stays where it is — nothing in §6 asks for it to be
-/// deleted, and removing a person's file on a read is not this function's business.
-pub fn adopt_legacy_prompt(paths: &Paths, key: &str) -> Result<(), String> {
-    prompt_file_ok(key)?;
-    if let Ok(text) = fs::read_to_string(paths.prompt_file(key)) {
-        if !text.trim().is_empty() {
-            return Ok(());
-        }
-    }
-    for name in LEGACY_PROMPT_NAMES {
-        let path = legacy_prompt_file(paths, key, name);
-        match fs::read_to_string(&path) {
-            Ok(text) => {
-                let text = text.trim();
-                if text.is_empty() {
-                    continue;
-                }
-                write_mode(&paths.prompts_dir(), 0o700)?;
-                return write_bytes(&paths.prompt_file(key), text.as_bytes(), 0o600);
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(err) => return Err(format!("{}: {err}", path.display())),
-        }
-    }
-    Ok(())
 }
 
 /// What this machine holds for one prompt, newest layout first: `prompts/<key>.txt`, then
@@ -951,7 +874,7 @@ pub fn install_mime_package(paths: &Paths) -> Result<(), String> {
 /// Create a directory and force its mode — a created directory's mode is masked by the
 /// umask, which is why it cannot simply be trusted (§1's rule, applied to the machine's own
 /// folders because this file holds credentials).
-fn write_mode(dir: &Path, mode: u32) -> Result<(), String> {
+pub(crate) fn write_mode(dir: &Path, mode: u32) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
     // Created here? Then its mode is masked by the umask and has to be forced. A directory
     // that already existed is left alone — relabelling somebody else's folder (an existing

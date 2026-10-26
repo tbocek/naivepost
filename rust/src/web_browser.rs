@@ -5,21 +5,14 @@
 //! is that closure: it finds Firefox, launches ONE headless instance per call, reads the page, and hands back
 //! hits or text. Nothing here decides policy; it only moves bytes between a browser and `web_tools`.
 //!
-//! # How the page is taken, and why not WebDriver BiDi
+//! # How the page is taken
 //!
-//! §2 describes driving headless Firefox "over WebDriver BiDi" on ports from 9223 up, which is what the
-//! prototype does (`go/websearch.go`). The rewrite launches `firefox --headless --dump-dom <url>` instead: one
-//! process per call, started and reaped, printing the RENDERED document to stdout. §2's own binding rule is
-//! "one headless browser launched and killed per tool call", so a persistent BiDi session buys nothing a dump
-//! does not, while costing a second protocol to get right and a port to collide on. `--dump-dom` still renders
-//! JavaScript, so a search page that builds its results client-side arrives complete — which is the only reason
-//! the prototype needed a driver at all. The debugging port is still allocated from 9223 upward as §2 says, so a
-//! machine running the prototype's browser and this one's do not fight over it.
-//!
-//! Measured in the build container (Alpine 3.24, no display, no GPU): `/usr/bin/firefox-esr` exists and
-//! `firefox-esr --headless --dump-dom <url>` runs and prints the DOM; the engine itself is NOT reachable from
-//! there, so hit extraction is tested against a canned DuckDuckGo-shaped DOM rather than a live query. On a
-//! user's machine the same code dials the real engine.
+//! Over WebDriver BiDi ([`crate::bidi`]), as §2 says and the prototype does (`go/websearch.go`): one headless
+//! Firefox per call on a throwaway profile, on a debugging port it chooses itself, the page navigated to and
+//! read by script, the browser killed on the way out. The first port launched `firefox --headless --dump-dom
+//! <url>` instead and called it measured; `--dump-dom` is Chrome's flag, Firefox ignores it and never exits,
+//! so every search and read timed out and the steps never had a web tool. Its tests passed because they
+//! drove a shell script that printed a page, not a browser.
 //!
 //! # The budget
 //!
@@ -28,18 +21,11 @@
 //! ladder can never hold a step open for minutes. A dump that outlives its slice is KILLED — an orphaned
 //! headless browser would sit on the port and the memory until the app exits.
 
-use std::io::Read as IoRead;
 use std::path::PathBuf;
-use std::process::Child;
-use std::sync::atomic::{AtomicU16, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::tools;
 use crate::web_tools::Hit;
-
-/// §2's first port for a headless browser. Kept even if the prototype is also installed, and bumped per call so
-/// two searches (two jobs asking at once) never share a profile lock.
-pub const FIRST_PORT: u16 = 9223;
 
 /// Seconds allowed for the browser to boot before anything is asked of it. §2 names 15 s inside the 45 s call.
 pub const BOOT_SECONDS: u64 = 15;
@@ -124,89 +110,90 @@ fn on_path(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Ports from [`FIRST_PORT`] upward, one per launched browser. Atomic because two jobs may search at once.
-fn next_port() -> u16 {
-    static NEXT: AtomicU16 = AtomicU16::new(FIRST_PORT);
-    NEXT.fetch_add(1, Ordering::SeqCst)
-}
+/// How long a navigation may wait for the page's load event before what has arrived is read anyway:
+/// the prototype's 10 s, inside the call's own budget.
+const NAVIGATE_SECONDS: u64 = 10;
 
-/// One headless browser launch, killed on drop: §2's "one headless browser launched and killed per tool call"
-/// made structural, so no exit path — answer, error, or timeout — can leave a firefox behind holding a port.
-struct Launched {
-    child: Child,
-}
+/// What is left of the budget for reading after navigation: the navigation stops this much before the
+/// deadline, so a page still loading at the end is read as it stands rather than lost to the clock.
+const READ_RESERVE: Duration = Duration::from_secs(2);
 
-impl Drop for Launched {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-/// Launch `browser --headless --dump-dom <url>` and return its stdout, killing it if `budget` runs out first.
-///
-/// The budget covers everything §2 counts: boot, navigation and render. `--profile` gets a private temp folder
-/// so a user's real profile is never touched and two calls never contend for its lock.
-pub fn dump_with(browser: &std::path::Path, url: &str, budget: Duration) -> Result<String, String> {
-    let port = next_port();
-    let profile = std::env::temp_dir().join(format!("naivepost-web-{}-{port}", std::process::id()));
-    let _ = std::fs::create_dir_all(&profile);
-    let child = crate::subprocess::spawn_piped(
-        &browser.to_string_lossy(),
-        &[
-            "--headless",
-            "--no-remote",
-            "--profile",
-            &profile.to_string_lossy(),
-            "--remote-debugging-port",
-            &port.to_string(),
-            "--window-size",
-            "1280,1024",
-            "--dump-dom",
-            url,
-        ],
-    )
-    .map_err(|why| format!("could not start {}: {why}", browser.display()))?;
-    let mut launched = Launched { child };
-    // Reading stdout on THIS thread with the deadline checked around the wait: `--dump-dom` writes once and
-    // exits, so a blocked read past the budget means the browser hung, and §2's answer is to kill it.
+/// One browser, one page, within `budget` (boot, navigation and reading together, §2's "including browser
+/// boot and render wait"). Launched on a port of its own choosing and killed on return.
+fn on_page<T>(
+    browser: &std::path::Path,
+    url: &str,
+    budget: Duration,
+    read: impl FnOnce(&mut crate::bidi::Browser, bool, Instant) -> Result<T, String>,
+) -> Result<T, String> {
     let started = Instant::now();
-    loop {
-        match launched.child.try_wait() {
-            Ok(Some(status)) => {
-                let mut text = String::new();
-                if let Some(mut out) = launched.child.stdout.take() {
-                    let _ = out.read_to_string(&mut text);
-                }
-                drop(launched);
-                let _ = std::fs::remove_dir_all(&profile);
-                if !status.success() && text.trim().is_empty() {
-                    return Err(format!(
-                        "the browser exited {status} without printing a page"
-                    ));
-                }
-                return Ok(text);
-            }
-            Ok(None) | Err(_) => {
-                if started.elapsed() >= budget {
-                    // Killed through Drop. The reason names the budget so a reader knows whether to raise the
-                    // setting, close tabs, or blame the network.
-                    drop(launched);
-                    return Err(format!(
-                        "the page did not finish within {} s",
-                        budget.as_secs()
-                    ));
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
+    let deadline = started + budget;
+    let late = |why: String| {
+        if why.contains("timed out") || Instant::now() >= deadline {
+            format!("the page did not finish within {} s", budget.as_secs())
+        } else {
+            why
         }
-    }
+    };
+    let boot = (started + Duration::from_secs(BOOT_SECONDS)).min(deadline);
+    let mut page = crate::bidi::Browser::launch(browser, boot).map_err(late)?;
+    let navigated = (started + Duration::from_secs(NAVIGATE_SECONDS))
+        .min(deadline.checked_sub(READ_RESERVE).unwrap_or(deadline))
+        .max(Instant::now());
+    let loaded = page.navigate(url, navigated).map_err(late)?;
+    read(&mut page, loaded, deadline).map_err(late)
+}
+
+/// The rendered document at `url`, as HTML, within `budget`: what [`page_text`] reads for `web_read`.
+pub fn dump_with(browser: &std::path::Path, url: &str, budget: Duration) -> Result<String, String> {
+    on_page(browser, url, budget, |page, loaded, deadline| {
+        if !loaded {
+            return Err("timed out".to_string());
+        }
+        page.eval("document.documentElement.outerHTML", deadline)
+    })
 }
 
 /// [`dump_with`] with the browser resolved from the settings box — the door the tool closures use.
 pub fn dump(setting: &str, url: &str, budget: Duration) -> Result<String, String> {
     let browser = firefox_path(setting)?;
     dump_with(&browser, url, budget)
+}
+
+/// DuckDuckGo's result anchors, read off the rendered page (the prototype's `ddgExtract`, plus the older
+/// `result__a`/`result__snippet` markup, because the engine changes this without asking). The page repeats an
+/// anchor in its carousels; [`crate::web_tools::dedupe`] drops the repeats.
+pub const RESULTS_SCRIPT: &str = r#"JSON.stringify(Array.from(document.querySelectorAll('a[data-testid="result-title-a"], a.result__a')).map(a => {
+  const root = a.closest('article') || a.closest('[data-testid="result"]') || a.closest('.result') || a.closest('.result__body') || a.parentElement;
+  const snip = root && (root.querySelector('[data-result="snippet"]') || root.querySelector('span[data-testid="result-snippet"]') || root.querySelector('.result__snippet'));
+  return {title: (a.innerText || "").trim(), url: a.href, snippet: snip ? (snip.innerText || "").trim() : ""};
+}).filter(r => r.url.startsWith('http')))"#;
+
+/// The result anchors on the page at `url`: the page is asked every half second until it shows some or the
+/// budget runs out (the results are drawn by script after the load, §2's render wait). A page that never
+/// shows any answers with none, which the ladder reads as "this query found nothing".
+pub fn search_with(
+    browser: &std::path::Path,
+    url: &str,
+    budget: Duration,
+) -> Result<Vec<Hit>, String> {
+    on_page(browser, url, budget, |page, _loaded, deadline| loop {
+        let raw = page.eval(RESULTS_SCRIPT, deadline)?;
+        let hits: Vec<Hit> = serde_json::from_str::<Vec<serde_json::Value>>(&raw)
+            .unwrap_or_default()
+            .iter()
+            .map(|hit| Hit {
+                title: hit["title"].as_str().unwrap_or_default().to_string(),
+                url: hit["url"].as_str().unwrap_or_default().to_string(),
+                snippet: hit["snippet"].as_str().unwrap_or_default().to_string(),
+            })
+            .filter(|hit| !hit.url.is_empty() && !hit.title.is_empty())
+            .collect();
+        if !hits.is_empty() || Instant::now() + Duration::from_millis(500) >= deadline {
+            return Ok(hits);
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    })
 }
 
 // ---- HTML to what the rules want ---------------------------------------------------------
@@ -319,117 +306,6 @@ fn unescape(text: &str) -> String {
         .replace("&nbsp;", " ")
 }
 
-/// DuckDuckGo's result anchors. The current layout wraps each result in `<article>` with its title link under
-/// an `<h2>`; the older markup put `result__a`/`result__snippet` classes on the anchors directly. Both shapes
-/// are read, because the engine changes this markup without asking anyone.
-pub fn search_hits(html: &str) -> Vec<Hit> {
-    let mut hits: Vec<Hit> = Vec::new();
-    for block in article_blocks(html) {
-        let Some((href, title)) = first_link(&block) else {
-            continue;
-        };
-        if href.is_empty() || title.trim().is_empty() {
-            continue;
-        }
-        hits.push(Hit {
-            title: clean(&title),
-            url: clean(&href),
-            snippet: clean(&first_snippet(&block)),
-        });
-    }
-    hits
-}
-
-/// Each `<article>…</article>` of the result page, or the whole document when the layout has none (the older
-/// markup has no articles, and its links are found in the same pass).
-fn article_blocks(html: &str) -> Vec<String> {
-    let lower = html.to_ascii_lowercase();
-    let mut blocks = Vec::new();
-    let mut cursor = 0usize;
-    while let Some(rel) = lower[cursor..].find("<article") {
-        let start = cursor + rel;
-        let Some(end_rel) = lower[start..].find("</article>") else {
-            break;
-        };
-        blocks.push(html[start..start + end_rel].to_string());
-        cursor = start + end_rel;
-    }
-    if blocks.is_empty() {
-        blocks.push(html.to_string());
-    }
-    blocks
-}
-
-/// The first anchor with an href and text: the result's title link.
-fn first_link(block: &str) -> Option<(String, String)> {
-    let mut rest = block;
-    while let Some(rel) = rest.to_ascii_lowercase().find("<a ") {
-        let start = rel + 2;
-        let Some(close) = rest[start..].find('>') else {
-            break;
-        };
-        let attrs = &rest[start..start + close];
-        let href = attribute(attrs, "href").unwrap_or_default();
-        let after = &rest[start + close + 1..];
-        let Some(text_end) = after.to_ascii_lowercase().find("</a>") else {
-            break;
-        };
-        let text = &after[..text_end];
-        if !href.trim().is_empty() && !text.trim().is_empty() {
-            return Some((href, text.to_string()));
-        }
-        rest = after;
-    }
-    None
-}
-
-/// The block's snippet: the older `result__snippet` element, else the block's own text after the title link.
-fn first_snippet(block: &str) -> String {
-    let lower = block.to_ascii_lowercase();
-    if let Some(rel) = lower.find("result__snippet") {
-        let tail = &block[rel..];
-        if let Some(close) = tail.find('>') {
-            let body = &tail[close + 1..];
-            if let Some(end) = body.find('<') {
-                return body[..end].to_string();
-            }
-        }
-    }
-    let (_, after_title) = match (lower.find("</a>"), block.find("</a>")) {
-        (Some(rel), _) => (0, &block[rel + 4..]),
-        _ => (0, block),
-    };
-    page_text(after_title)
-        .lines()
-        .next()
-        .unwrap_or_default()
-        .to_string()
-}
-
-/// One attribute out of a tag's attribute list, quoted or bare.
-fn attribute(attrs: &str, name: &str) -> Option<String> {
-    let lower = attrs.to_ascii_lowercase();
-    let rel = lower.find(name)?;
-    let after_name = &attrs[rel + name.len()..];
-    let after_eq = after_name.trim_start();
-    let rest = after_eq.strip_prefix('=')?.trim_start();
-    if let Some(stripped) = rest.strip_prefix('"') {
-        let end = stripped.find('"')?;
-        return Some(stripped[..end].to_string());
-    }
-    let end = rest.find([' ', '>']).unwrap_or(rest.len());
-    Some(rest[..end].to_string())
-}
-
-/// Collapse the whitespace a DOM dump sprinkles everywhere and drop the entity noise from one field.
-fn clean(text: &str) -> String {
-    page_text(text)
-        .replace('\n', " ")
-        .split_whitespace()
-        .collect::<Vec<&str>>()
-        .join(" ")
-}
-
 // ---- the closures the rules take ---------------------------------------------------------
 
 /// One search rung: navigate, extract, hand back the hits. `budget` is the WHOLE call's slice for this rung —
@@ -439,9 +315,11 @@ pub fn query_for(setting: &str, budget: Duration) -> impl Fn(&str) -> Result<Vec
     let browser = firefox_path(setting);
     move |query: &str| {
         let browser = browser.clone()?;
-        let url = duckduckgo(query);
-        let html = dump_with(&browser, &url, budget)?;
-        Ok(crate::web_tools::dedupe(search_hits(&html)))
+        Ok(crate::web_tools::dedupe(search_with(
+            &browser,
+            &duckduckgo(query),
+            budget,
+        )?))
     }
 }
 
@@ -545,7 +423,13 @@ pub fn dispatch(step: &str, firefox: &str, asked: &crate::exchanges::ToolCall) -
 /// DuckDuckGo's result page for one query. `kl=noah` is the plain desktop layout; the engine serves the same
 /// markup regardless of locale, and a redirect-free URL keeps the budget for the page itself.
 pub fn duckduckgo(query: &str) -> String {
-    format!("https://duckduckgo.com/?q={}", percent_encode(query))
+    // `NAIVEPOST_SEARCH_URL` names another engine page, for a test that serves the result page itself (the
+    // same kind of seam as `NAIVEPOST_PLAYER`): the browser, the protocol and the reading stay the real ones.
+    let base = std::env::var("NAIVEPOST_SEARCH_URL")
+        .ok()
+        .filter(|url| !url.trim().is_empty())
+        .unwrap_or_else(|| "https://duckduckgo.com/".to_string());
+    format!("{base}?q={}", percent_encode(query))
 }
 
 /// Percent-encode a query for a URL. Hand-rolled to avoid a dependency for one call site: everything outside

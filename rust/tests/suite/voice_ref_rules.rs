@@ -88,7 +88,8 @@ fn f4_6_s1_a_tagged_narrator_and_a_folder_file_are_both_accepted_with_their_own_
 fn f4_6_s1_narrator_slot_ids_parse_and_a_file_name_does_not() {
     assert_eq!(voice_ref::narrator_slot("narrator1"), Some(1));
     assert_eq!(voice_ref::narrator_slot("narrator4"), Some(4));
-    assert_eq!(voice_ref::narrator_slot("narrator0"), Some(0));
+    assert_eq!(voice_ref::narrator_slot("own"), Some(1), "`own` IS slot 1");
+    assert_eq!(voice_ref::narrator_slot("narrator0"), None, "no slot 0");
     assert_eq!(voice_ref::narrator_slot("narratorX"), None);
     assert_eq!(voice_ref::narrator_slot("warm.wav"), None);
     // Slot 0 is not a slot the picker offers, so it refuses rather than choosing nothing.

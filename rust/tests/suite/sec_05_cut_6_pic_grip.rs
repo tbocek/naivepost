@@ -215,9 +215,11 @@ fn widget_check(app: &adw::Application) {
     );
     let row_y = geo.bands.first_picture + geo.bands.row_height / 2.0;
     // Lay a band down first: draw from 10 s out to 40 s.
+    // GTK's drag signals carry the OFFSET from the press after `drag-begin`.
+    let travel = geo.px_of(40.0) - geo.px_of(10.0);
     gesture.emit_by_name::<()>("drag-begin", &[&geo.px_of(10.0), &row_y]);
-    gesture.emit_by_name::<()>("drag-update", &[&geo.px_of(40.0), &row_y]);
-    gesture.emit_by_name::<()>("drag-end", &[&geo.px_of(40.0), &row_y]);
+    gesture.emit_by_name::<()>("drag-update", &[&travel, &0.0f64]);
+    gesture.emit_by_name::<()>("drag-end", &[&travel, &0.0f64]);
     settle();
     let laid = ui::selection(&window).expect("the drag drew a band");
     println!("GRIP laid = {}..{}", laid.start, laid.end);
@@ -228,7 +230,7 @@ fn widget_check(app: &adw::Application) {
     let end_px = geo.px_of(laid.end);
     let before_start = laid.start;
     gesture.emit_by_name::<()>("drag-begin", &[&(end_px - 8.0), &row_y]);
-    gesture.emit_by_name::<()>("drag-update", &[&(end_px - 8.0 - 6.0 * geo.pps), &row_y]);
+    gesture.emit_by_name::<()>("drag-update", &[&(-6.0 * geo.pps), &0.0f64]);
     settle();
     let resized = ui::selection(&window).expect("the band is still there after the end grab");
     println!(
@@ -255,19 +257,19 @@ fn widget_check(app: &adw::Application) {
     // The counter-case that separates the two reaches: the SAME 8 px offset on the SELECTION BAND's y.
     // There the narrow grip applies, so the press is outside an end and the page draws a NEW band from
     // where the hand landed instead of resizing the one on screen.
+    // The band is kept under 32 px (7 s at 4 px/s): a wider one wears §1's ✕ 16 px in from its end (badge 27),
+    // and a press 8 px in would land on that mark rather than on the band's ground.
     ui::clear_selection(&window);
+    let travel = geo.px_of(17.0) - geo.px_of(10.0);
     gesture.emit_by_name::<()>("drag-begin", &[&geo.px_of(10.0), &row_y]);
-    gesture.emit_by_name::<()>("drag-update", &[&geo.px_of(40.0), &row_y]);
-    gesture.emit_by_name::<()>("drag-end", &[&geo.px_of(40.0), &row_y]);
+    gesture.emit_by_name::<()>("drag-update", &[&travel, &0.0f64]);
+    gesture.emit_by_name::<()>("drag-end", &[&travel, &0.0f64]);
     settle();
     let again = ui::selection(&window).expect("a second band laid down");
     let sel_y = (geo.bands.selection.0 + geo.bands.selection.1) / 2.0;
     let right_edge = geo.px_of(again.end);
     gesture.emit_by_name::<()>("drag-begin", &[&(right_edge - 8.0), &sel_y]);
-    gesture.emit_by_name::<()>(
-        "drag-update",
-        &[&(right_edge - 8.0 - 3.0 * geo.pps), &sel_y],
-    );
+    gesture.emit_by_name::<()>("drag-update", &[&(3.0 * geo.pps), &0.0f64]);
     settle();
     let redrawn = ui::selection(&window).expect("the press left a band on screen");
     println!(

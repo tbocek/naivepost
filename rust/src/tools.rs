@@ -70,6 +70,8 @@ pub enum Tool {
     TranslateLine,
     // 3.11 Policy derivation
     SetPolicy,
+    // 3.12 Text gate
+    JudgeText,
 }
 
 impl Tool {
@@ -112,6 +114,7 @@ impl Tool {
             Self::SetThumbnailInstruction,
             Self::TranslateLine,
             Self::SetPolicy,
+            Self::JudgeText,
         ]
         .to_vec()
     }
@@ -154,6 +157,7 @@ impl Tool {
             Self::SetThumbnailInstruction => "set_thumbnail_instruction",
             Self::TranslateLine => "translate_line",
             Self::SetPolicy => "set_policy",
+            Self::JudgeText => "judge_text",
         }
     }
 }
@@ -218,16 +222,10 @@ pub fn offered(job: Job) -> Vec<Tool> {
             Tool::MarkAbandoned,
             Tool::Unmark,
         ],
-        Job::Joins => vec![
-            Tool::GetContext,
-            Tool::GetLines,
-            Tool::GetEvents,
-            Tool::GetFrames,
-            Tool::Finish,
-            Tool::DropWords,
-            Tool::KeepJoin,
-            Tool::GetWords,
-        ],
+        // §3.5: the text edit offers no tools. It answers the words it removes, quoted, in one reply: offered
+        // drop_words/keep_join beside a prompt asking for text, the 27B answered nothing usable at 125 of 127 asks
+        // on 07-news (2026-10-26), and the quoted answer beat the tool flow on the same 18 joins.
+        Job::Joins => vec![],
         Job::ModelCut => vec![
             Tool::GetContext,
             Tool::GetLines,
@@ -293,6 +291,111 @@ pub fn offered(job: Job) -> Vec<Tool> {
 /// [`Job`] and could not be reached through [`offered`] even if it wanted to be.
 pub fn policy_tools() -> Vec<Tool> {
     vec![Tool::GetContext, Tool::SetPolicy]
+}
+
+impl Tool {
+    /// The tool's arguments as a JSON schema, from §3's tables (`name?` is optional). Sent with the offer: a
+    /// llama.cpp server builds its grammar from it, and a tool offered by name alone is answered with `{}` (probed
+    /// 2026-10-25 on the user's server: `judge_text` came back `{}` without a schema and `{"changed":true,…}`
+    /// with one), so every tool the first rewrite offered reached its executor with no arguments.
+    pub fn parameters(self) -> serde_json::Value {
+        use serde_json::json;
+        let number = || json!({"type": "number"});
+        let integer = || json!({"type": "integer"});
+        let text = || json!({"type": "string"});
+        let schema = |props: serde_json::Value, required: &[&str]| json!({"type": "object", "properties": props, "required": required});
+        match self {
+            Self::GetContext
+            | Self::Finish
+            | Self::KeepJoin
+            | Self::CutStatus
+            | Self::FinishCut
+            | Self::ListEmotions => schema(json!({}), &[]),
+            Self::GetLines | Self::GetEvents | Self::SpeechAround => {
+                schema(json!({"from": number(), "to": number()}), &["from", "to"])
+            }
+            Self::WebSearch => schema(
+                json!({"broad": text(), "medium": text(), "narrow": text()}),
+                &["broad", "medium", "narrow"],
+            ),
+            Self::WebRead => schema(json!({"url": text()}), &["url"]),
+            Self::GetFrames => schema(
+                json!({"clip": integer(), "at": number(), "from": number(), "to": number()}),
+                &[],
+            ),
+            Self::RecordEvent => schema(
+                json!({"frame": integer(), "text": text(), "calm": {"type": "boolean"}}),
+                &["frame", "text"],
+            ),
+            Self::SetState | Self::SetTitle | Self::SetDescription => {
+                schema(json!({"text": text()}), &["text"])
+            }
+            Self::FixLine | Self::TranslateLine => {
+                schema(json!({"n": integer(), "text": text()}), &["n", "text"])
+            }
+            Self::FlagLine => schema(json!({"n": integer(), "why": text()}), &["n", "why"]),
+            Self::MarkAbandoned => schema(
+                json!({"from": integer(), "to": integer(), "again": integer()}),
+                &["from", "to", "again"],
+            ),
+            Self::Unmark => schema(json!({"from": integer(), "to": integer()}), &["from", "to"]),
+            Self::DropWords | Self::GetWords => schema(
+                json!({"side": {"type": "string", "enum": ["before", "after"]}, "count": integer()}),
+                &["side", "count"],
+            ),
+            Self::AddSegment => schema(
+                json!({"start": number(), "end": number(), "why": text()}),
+                &["start", "end", "why"],
+            ),
+            Self::RemoveSegment => schema(json!({"start": number()}), &["start"]),
+            Self::SetSpeed => schema(
+                json!({"start": number(), "rate": number()}),
+                &["start", "rate"],
+            ),
+            Self::AddCaption => schema(
+                json!({"clip": integer(), "start": number(), "end": number(), "text": text()}),
+                &["clip", "start", "end", "text"],
+            ),
+            Self::SetClipSpeed => schema(
+                json!({"clip": integer(), "rate": number()}),
+                &["clip", "rate"],
+            ),
+            Self::AddEffect => schema(
+                json!({"clip": integer(), "kind": {"type": "string", "enum": ["zoom", "stop", "volume"]},
+                    "start": number(), "end": number(), "gain": number()}),
+                &["clip", "kind", "start", "end"],
+            ),
+            Self::WriteLine => schema(
+                json!({"clip": integer(), "at": number(), "text": text(), "emotion": text(),
+                    "pos": {"type": "string", "enum": ["top", "center", "bottom"]}}),
+                &["clip", "at", "text", "emotion"],
+            ),
+            Self::LeaveSilent | Self::DescribeInsert => {
+                schema(json!({"clip": integer()}), &["clip"])
+            }
+            Self::PickFrame => schema(
+                json!({"clip": integer(), "offset": number()}),
+                &["clip", "offset"],
+            ),
+            Self::SetThumbnailInstruction => {
+                schema(json!({"text": text(), "negative": text()}), &["text"])
+            }
+            Self::SetPolicy => schema(
+                json!({"field": text(), "value": {"type": ["string", "number", "boolean"]}, "because": text()}),
+                &["field", "value", "because"],
+            ),
+            Self::JudgeText => schema(
+                json!({"changed": {"type": "boolean"}, "what": text()}),
+                &["changed", "what"],
+            ),
+        }
+    }
+}
+
+/// The tool of §3.12, the text gate's one question (F1.6 S6), asked of the decision model per pair of frames —
+/// like §3.11's it belongs to no [`Job`].
+pub fn text_gate_tools() -> Vec<Tool> {
+    vec![Tool::JudgeText]
 }
 
 /// The one shape a problem comes back in: `{}` around a sentence the model can act on.

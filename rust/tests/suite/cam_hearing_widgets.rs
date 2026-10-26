@@ -34,6 +34,8 @@ static RAN_GUTTER: AtomicBool = AtomicBool::new(false);
 static RAN_HELD: AtomicBool = AtomicBool::new(false);
 static RAN_PREVIEW: AtomicBool = AtomicBool::new(false);
 static RAN_HANDED_BACK: AtomicBool = AtomicBool::new(false);
+static RAN_ROW_SWITCH: AtomicBool = AtomicBool::new(false);
+static RAN_ONE_PRESS: AtomicBool = AtomicBool::new(false);
 
 /// Kept footage on camera `row`.
 fn film(s: f64, e: f64, row: i32) -> Seg {
@@ -126,13 +128,15 @@ fn cut_window(app: &adw::Application) -> adw::ApplicationWindow {
 fn check_a_row_click_watches_it_and_says_what_the_cut_shows(app: &adw::Application) {
     let window = cut_window(app);
 
-    let rows = ui::camera_rows_box(&window).expect("the Cut page drew `camera-rows`");
-    assert!(rows.is_mapped(), "`camera-rows` is on the visible page");
-    let plate_one = ui::line_step_button(&window, "watch-row-1").expect("`watch-row-1` exists");
-    assert!(
-        plate_one.is_mapped(),
-        "the first row's name plate is realized"
+    // §1: the rows are the band's own (one picture row per camera, each with its pinned plate); the row list's
+    // named controls stay in the tree, unseen, as the doors the band's marks fire.
+    ui::camera_rows_box(&window).expect("the Cut page keeps `camera-rows`");
+    assert_eq!(
+        ui::cut_view::band_scene_for(&window).row_count,
+        2,
+        "the band draws a row per camera"
     );
+    let plate_one = ui::line_step_button(&window, "watch-row-1").expect("`watch-row-1` exists");
     // The plate spells a signed shift on the row that HAS one: `cut_cam::name_plate` writes `{:+.2} s`,
     // so row 2's plate carries "−19.00 s" (**2** in `spec/img/05-rows.png`). Row 1 is unshifted and
     // its plate is the bare base name -- which is why the check reads the shifted row, not any row.
@@ -449,7 +453,87 @@ fn window_round() {
         check_a_row_watch_moves_the_preview_frame(app);
         RAN_PREVIEW.store(true, Ordering::SeqCst);
         RAN_HANDED_BACK.store(true, Ordering::SeqCst);
+        check_the_row_switch_speaks_for_the_whole_row(app);
+        RAN_ROW_SWITCH.store(true, Ordering::SeqCst);
+        check_a_switch_whose_press_changes_nothing_presses_once(app);
+        RAN_ONE_PRESS.store(true, Ordering::SeqCst);
     });
+}
+
+/// §05-cut §1's per-row sound switch through the widget: OFF silences every kept scene shown from that row
+/// (`Seg::mute`), says so, and one ↶ brings it back.
+fn check_the_row_switch_speaks_for_the_whole_row(app: &adw::Application) {
+    let window = cut_window(app);
+    ui::reopen_history_on(&window, &seeded_cut());
+    let switch = ui::toggle_button(&window, "row-switch-1").expect("`row-switch-1` exists");
+    assert!(switch.is_active(), "row 1 is heard at first");
+    switch.set_active(false);
+    settle();
+    let cut_now = cut_of(&window);
+    assert!(
+        cut_now
+            .segs
+            .iter()
+            .filter(|seg| seg.cam == 0)
+            .all(|seg| seg.mute),
+        "every scene shown from row 1 is silent: {:?}",
+        cut_now.segs
+    );
+    assert!(
+        cut_now
+            .segs
+            .iter()
+            .filter(|seg| seg.cam == 1)
+            .all(|seg| !seg.mute),
+        "and the other row is untouched"
+    );
+    assert!(!switch.is_active(), "the face reads OFF");
+    common::click(&window, "undo-button");
+    assert!(
+        cut_of(&window).segs.iter().all(|seg| !seg.mute),
+        "one ↶ brings the row's sound back"
+    );
+    window.close();
+}
+
+/// A switch whose press changes nothing (a lane in no scene yet) leaves at most one undo step, and its face reads
+/// what the cut says, not what the click asked for.
+fn check_a_switch_whose_press_changes_nothing_presses_once(app: &adw::Application) {
+    let window = cut_window(app);
+    // A lane and no scene to say anything about it: `toggle_lane_all` answers "in no scene yet" and changes nothing.
+    let mut seeded = cut::Cut::default();
+    seeded.lanes.push(cut::Lane {
+        name: "ghost".to_string(),
+        src: "ghost".to_string(),
+        at: 0.0,
+        off: 0.0,
+        dur: 5.0,
+    });
+    ui::seed_review_cut(&window, &seeded);
+    ui::reopen_history_on(&window, &seeded);
+    ui::refresh_camera_rows(&window);
+    settle();
+    let switch =
+        ui::toggle_button(&window, "gutter-switch-ghost").expect("`gutter-switch-ghost` exists");
+    let face = switch.is_active();
+    switch.set_active(!face);
+    settle();
+    assert_eq!(
+        switch.is_active(),
+        face,
+        "nothing changed, so the face reads what the cut says"
+    );
+    let undo = common::widget(&window, "undo-button")
+        .downcast::<gtk::Button>()
+        .expect("the undo button");
+    if undo.is_sensitive() {
+        common::click(&window, "undo-button");
+    }
+    assert!(
+        !undo.is_sensitive(),
+        "at most ONE step was recorded for one press"
+    );
+    window.close();
 }
 
 #[test]
@@ -490,5 +574,13 @@ fn f2_10_wire_the_camera_row_widgets_reach_the_rules_through_real_clicks() {
     assert!(
         RAN_HANDED_BACK.load(Ordering::SeqCst),
         "the hand-back assertion block never ran"
+    );
+    assert!(
+        RAN_ROW_SWITCH.load(Ordering::SeqCst),
+        "the row-switch check never ran"
+    );
+    assert!(
+        RAN_ONE_PRESS.load(Ordering::SeqCst),
+        "the one-press check never ran"
     );
 }

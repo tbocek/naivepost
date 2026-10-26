@@ -138,6 +138,9 @@ pub(crate) fn show_insert_form(
             let picker = gtk::Button::with_label("Logo\u{2026}");
             picker.set_widget_name(&format!("insert-logo-{}", field.key));
             picker.set_tooltip_text(Some("pick a mark to sit beside the title"));
+            // The first rewrite drew this button and wired nothing to it.
+            let (win, key) = (window.clone(), field.key.clone());
+            picker.connect_clicked(move |_| open_logo_chooser(&win, &key));
             row.append(&picker);
         }
         holder.append(&row);
@@ -386,7 +389,7 @@ pub fn press_insert_apply(window: &adw::ApplicationWindow) -> String {
 /// and the segments an insert added are fields of it. A project with no tree keeps the insert in memory only.
 pub(crate) fn save_insert_cut(cut_: &Cut) {
     // §7's one writer: the session resolution and the call to `cut::save` are `cut_save`'s, not this door's.
-    let _ = crate::cut_save::write_cut(cut_);
+    crate::ui::window_logs::save_cut_or_say(cut_);
 }
 
 /// A landed cut is written by the flow that landed it — `cut_suggest_words_run` for the words cut,
@@ -424,8 +427,7 @@ pub fn press_insert(window: &adw::ApplicationWindow) -> String {
         Ok(at) => at,
         Err(refusal) => return refusal.to_string(),
     };
-    let root = std::env::current_dir().unwrap_or_default();
-    let dir = startup::session_dir(&root);
+    let dir = startup::open_dir();
     let assets = cut_insert::chooser_dir(&dir);
     cut_insert::seed_cards(&assets, &cut_cards::seeds());
     let title = cut_insert::chooser_title(band.as_ref());
@@ -435,6 +437,77 @@ pub fn press_insert(window: &adw::ApplicationWindow) -> String {
     );
     open_insert_chooser(window, title, &assets, sound_only, at);
     format!("{} \u{2014} choose the file", title)
+}
+
+thread_local! {
+    /// How many Logo… choosers this thread has raised: a headless test cannot answer a native chooser, but it can
+    /// see that the press raised one (and only one).
+    static LOGO_ASKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// How many Insert choosers this thread has raised, for the same reason.
+    static INSERT_ASKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many Insert choosers have been raised. A test's look; the program never asks.
+pub fn insert_asks_for_test() -> usize {
+    INSERT_ASKS.with(std::cell::Cell::get)
+}
+
+/// How many Logo… choosers have been raised. A test's look; the program never asks.
+pub fn logo_asks_for_test() -> usize {
+    LOGO_ASKS.with(std::cell::Cell::get)
+}
+
+/// F2.12 S4: Logo… beside a logo field opens an image chooser over the insert folder, several files at once
+/// (the prototype's `pickLogos`). The answer goes through [`answer_logos`].
+#[allow(deprecated)] // the same GtkFileChooser API `open_insert_chooser` keeps, for the same reason
+fn open_logo_chooser(window: &adw::ApplicationWindow, key: &str) {
+    LOGO_ASKS.with(|asks| asks.set(asks.get() + 1));
+    let chooser = gtk::FileChooserNative::builder()
+        .title("Logos for this field")
+        .modal(true)
+        .action(gtk::FileChooserAction::Open)
+        .select_multiple(true)
+        .build();
+    let _ = chooser.set_current_folder(Some(&gio::File::for_path(cut_insert::chooser_dir(
+        &startup::open_dir(),
+    ))));
+    let filter = gtk::FileFilter::new();
+    filter.set_name(Some("Images"));
+    for ext in ["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"] {
+        filter.add_pattern(&format!("*.{ext}"));
+    }
+    chooser.add_filter(&filter);
+    let (win, key) = (window.clone(), key.to_string());
+    chooser.connect_response(move |chooser, response| {
+        if response != gtk::ResponseType::Accept {
+            return;
+        }
+        let picked: Vec<std::path::PathBuf> = chooser
+            .files()
+            .iter::<gio::File>()
+            .flatten()
+            .filter_map(|file| file.path())
+            .collect();
+        answer_logos(&win, &key, &picked);
+    });
+    chooser.show();
+}
+
+/// The Logo… chooser's answer: the picked files added to the field's entry by [`cut_insert::add_logos`]. Answers
+/// whether the field was there to take them.
+pub fn answer_logos(
+    window: &adw::ApplicationWindow,
+    key: &str,
+    picked: &[std::path::PathBuf],
+) -> bool {
+    let Some(entry) = ui::find_widget_by_name(window.upcast_ref(), &format!("insert-field-{key}"))
+        .and_then(|widget| widget.downcast::<gtk::Entry>().ok())
+    else {
+        return false;
+    };
+    let joined = cut_insert::add_logos(&entry.text(), picked, &startup::open_dir());
+    entry.set_text(&joined);
+    true
 }
 
 /// Open the native file chooser over `dir`. Kept apart from [`press_insert`] so the decision (where, which
@@ -448,6 +521,7 @@ pub(crate) fn open_insert_chooser(
     sound_only: bool,
     at: f64,
 ) {
+    INSERT_ASKS.with(|asks| asks.set(asks.get() + 1));
     let chooser = gtk::FileChooserNative::builder()
         .title(title)
         .modal(true)
@@ -478,8 +552,17 @@ pub(crate) fn open_insert_chooser(
         let Some(file) = chooser.file().and_then(|f| f.path()) else {
             return;
         };
-        // The same body a widget test drives, so the chooser and the seam cannot drift apart.
-        insert_chosen(&win, &file, at);
+        // The two probes (length, own sound) run on a worker (§03-shell §1: ffprobe takes up to a second); the
+        // form opens when they land, through the same body a widget test drives.
+        let raw = file.to_string_lossy().to_string();
+        let held = win.clone();
+        crate::ui::background::run(
+            "insert-probe",
+            move || probe_chosen(&raw),
+            move |probes| {
+                insert_with_probes(&held, &file, at, None, probes);
+            },
+        );
     });
     chooser.show();
 }
@@ -503,17 +586,37 @@ pub fn insert_chosen_with_length(
     at: f64,
     file_seconds: Option<f64>,
 ) -> String {
+    let probes = probe_chosen(&file.to_string_lossy());
+    insert_with_probes(window, file, at, file_seconds, probes)
+}
+
+/// The chosen file's two probes: its own length and whether it brings a sound. Runs anywhere; the chooser runs
+/// it on a worker.
+///
+/// S3: the file's own length comes from the real probe (ffprobe), which is also what S7's render is asked
+/// against. `None` — a still, an unreadable file, a machine with no ffprobe — falls back to
+/// `P.policy.insertDefaultSeconds`, which is the whole point of the fallback rather than a failure. S4's first
+/// tick question — "does the FILE bring a sound of its own?" — is a fact about the file, so it is measured with
+/// the same probe §4's track menu measures its stream count with. A missing tool or an unparsable answer reads
+/// as no sound, which is what `audio_streams` already decides for a row's menu.
+fn probe_chosen(raw: &str) -> (Option<f64>, bool) {
+    (
+        crate::ui::cut_card_preview::probe_seconds(crate::ui::cut_card_preview::FFPROBE, raw),
+        file_has_sound(raw),
+    )
+}
+
+/// The form for a chosen file, from its probes: everything [`insert_chosen_with_length`] does after asking.
+fn insert_with_probes(
+    window: &adw::ApplicationWindow,
+    file: &std::path::Path,
+    at: f64,
+    file_seconds: Option<f64>,
+    (probed, file_has_sound): (Option<f64>, bool),
+) -> String {
     let raw = file.to_string_lossy().to_string();
     let band = ui::selection(window);
     let animated = svg_is_animated(file);
-    // S3: the file's own length comes from the real probe (ffprobe), which is also what S7's render is asked
-    // against. `None` — a still, an unreadable file, a machine with no ffprobe — falls back to
-    // `P.policy.insertDefaultSeconds`, which is the whole point of the fallback rather than a failure.
-    let probed = crate::ui::cut_card_preview::probe_card_seconds(window, &raw);
-    // S4's first tick question — "does the FILE bring a sound of its own?" — is a fact about the file, so it is
-    // measured with the same probe §4's track menu measures its stream count with. A missing tool or an
-    // unparsable answer reads as no sound, which is what `audio_streams` already decides for a row's menu.
-    let file_has_sound = file_has_sound(&raw);
     // §S4's tick is a question about SOUND, and an audio file IS all sound: `sound_open` reads the two flags as
     // "does anything have to be answered for", so a bare WAV must arrive with its own flag set or the door
     // answers nothing (which is what `Kind::Audio` alone cannot say on its own).

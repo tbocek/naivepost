@@ -57,7 +57,7 @@ fn run_round(app: &adw::Application) {
     let tree = session_tree();
     // A project with footage so no tab is locked, and a cut the rows sit on.
     let mut project = Project::default();
-    project.language = "pl".to_string();
+    project.policy.language.value = "pl".to_string();
     project.sources.push(Source {
         path: "/media/take.mp4".into(),
         footage: true,
@@ -121,23 +121,20 @@ fn run_round(app: &adw::Application) {
         playing: false,
         started: false,
         busy: false,
-        narration_off: false,
         covered_spans: vec![],
-        language: "pl".into(),
+        language: "pl".to_string(),
     });
     ui::refresh(&window);
     settle();
 
     // The click. Everything after it is the program's own legs over HTTP.
     button(&window, "line-speak-0").emit_by_name::<()>("clicked", &[]);
+    // The dial runs on a worker (§03-shell §1); the take lands, and is heard, when it answers.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
-    // The dial is synchronous inside the handler, but the socket's thread needs its moment too.
-    for _ in 0..40 {
-        if expected.is_file() {
-            break;
-        }
-        settle();
-    }
 
     let said = status_text(&window);
     assert!(

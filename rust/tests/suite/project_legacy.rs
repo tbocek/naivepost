@@ -36,9 +36,9 @@ fn sec_01_project_and_files_2_naivepostjson_legacy_videos_and_audios_become_sour
     assert_eq!(p.sources[0].path, "project:sources/a.mkv");
     assert!(p.sources[0].footage, "videos are footage");
     assert!(!p.sources[1].footage, "audios are recordings");
-    // The first recording is the voice the narration is spoken in.
+    // Every recording is voice 1, the voice the narration is spoken in: there is no "no voice".
     assert_eq!(p.sources[1].narrator, 1);
-    assert_eq!(p.sources[2].narrator, 0);
+    assert_eq!(p.sources[2].narrator, 1);
 
     project::save(&p, t.dir()).unwrap();
     let text = read(&t);

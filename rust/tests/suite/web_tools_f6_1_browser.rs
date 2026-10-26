@@ -1,20 +1,16 @@
-//! F6.1 §2's web tools over a REAL browser process.
+//! F6.1 §2's web tools over a REAL browser: the Firefox this machine has (firefox-esr in the build container),
+//! driven over WebDriver BiDi exactly as the program drives it, reading pages from a local HTTP server.
 //!
-//! `tests/suite/web_tools_f6_1.rs` proves the rules with a canned closure. What it cannot prove is that anything ever
-//! launches a browser — and until this round nothing did: `web_search` was offered on the wire while no code
-//! could answer it. These tests point the SETTINGS `firefox` key (the seam the program itself reads) at a stub
-//! executable written into the scenario folder, so a real `Command::new` runs, prints a rendered DOM, and exits.
-//! No network is involved: DuckDuckGo is not reachable from this container, so hit extraction is checked against
-//! a canned result-page DOM rather than a live query.
+//! The first version of this file pointed the settings at a shell script that printed a page to stdout,
+//! imitating `firefox --dump-dom`. Firefox has no such flag, so every check passed while the program's own
+//! searches and reads all timed out. A real browser is the only thing that can answer for one. Nothing here
+//! touches the network: DuckDuckGo's result markup is served from 127.0.0.1, and the search door is asked for
+//! that page ([`web_browser::search_with`]), the same door `query_for` uses with the engine's address.
 //!
 //! # Why one scenario at a time
 //!
-//! Pointing the settings at a stub means re-pointing PROCESS-WIDE state — `cwd`, `XDG_CONFIG_HOME`,
-//! `XDG_DATA_HOME` and the settings file every later read goes through — so two checks in this binary may not be
-//! inside their scenarios at the same moment: while one wrote its stub name into `FIREFOX`, another's default
-//! `Conf` would overwrite it, and the first would silently dial the machine's own firefox instead. Hence
-//! [`fixture`]'s scenario guard, the same shape `tests/suite/wire.rs` needs for the same reason (it cannot even be a
-//! standalone binary because of it).
+//! The settings file, `cwd` and the XDG folders are process-wide, so two checks may not be inside their
+//! scenarios at the same moment ([`fixture`]'s guard, the same shape `tests/suite/wire.rs` needs).
 
 use std::path::{Path, PathBuf};
 
@@ -34,36 +30,19 @@ fn long_page(body: &str) -> String {
     )
 }
 
-/// The stub browser: a shell script that appends its own pid to `launches` (so "one browser per call" is
-/// countable) and prints whatever DOM the scenario asked for. It ignores the URL, which is the point — the leg
-/// must not care what it was pointed at.
-fn write_stub(dir: &Path, dom: &str, sleep_seconds: u64) -> PathBuf {
-    std::fs::create_dir_all(dir).expect("stub folder");
-    let path = dir.join("fake-firefox.sh");
-    // The DOM is written to its own file rather than embedded in the script: quoting HTML through a shell string
-    // is how a test breaks on an apostrophe instead of on the thing it means to check.
-    let dom_path = dir.join("dom.html");
-    std::fs::write(&dom_path, dom).expect("dom written");
-    let script = format!(
-        "#!/bin/sh\necho $$ >> \"{dir}/launches\"\nsleep {sleep_seconds}\ncat \"{dom}\"\nexit 0\n",
-        dir = dir.display(),
-        dom = dom_path.display(),
-        sleep_seconds = sleep_seconds,
-    );
-    common::write_script(&path, script).expect("stub written");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("stub executable");
-    }
-    path
+/// The Firefox the checks drive.
+fn firefox() -> PathBuf {
+    common::firefox()
 }
 
-fn launches(dir: &Path) -> usize {
-    std::fs::read_to_string(dir.join("launches"))
-        .map(|text| text.lines().count())
-        .unwrap_or(0)
+/// A local server holding `pages`: its base address.
+fn serve(pages: Vec<(&'static str, String)>) -> String {
+    let site = common::Site::start();
+    for (path, body) in pages {
+        site.set(path, body);
+    }
+    // The serving thread holds the page table, so the server outlives this handle.
+    site.url("")
 }
 
 /// Point the settings at `browser`, the way the Settings box does.
@@ -75,7 +54,7 @@ fn point_at(browser: &Path) {
 }
 
 /// A scenario: the temp root plus the guard that keeps this the only test inside the process-wide env. Derefs to
-/// the root so a caller writes `write_stub(&root, ..)` and never has to know about the guard.
+/// the root so a caller joins paths onto it and never has to know about the guard.
 struct Scenario {
     root: PathBuf,
     /// Dropped last, which is why the folder goes in `Drop`: the removal must happen while no other test can be
@@ -118,49 +97,59 @@ fn fixture(tag: &str) -> Scenario {
     }
 }
 
-/// A DuckDuckGo-shaped result page: `<article>` blocks, each with an `<h2><a href>` title and a snippet line.
-/// This is the markup the current engine serves; the older `result__snippet` shape has its own test below.
+/// A DuckDuckGo-shaped result page, in the markup the engine serves today: `<article data-testid="result">`
+/// blocks, each with its `result-title-a` anchor and a `data-result="snippet"` line. The older `result__a`
+/// shape has its own check below.
 fn ddg_page(urls: &[&str]) -> String {
     let articles = urls
         .iter()
         .enumerate()
         .map(|(i, url)| {
             format!(
-                "<article><h2><a href=\"{url}\">Result number {}</a></h2><div>The snippet for result {}, which says the fact.</div></article>",
+                "<article data-testid=\"result\"><h2><a data-testid=\"result-title-a\" href=\"{url}\">Result number {}</a></h2><div data-result=\"snippet\">The snippet for result {}, which says the fact.</div></article>",
                 i + 1,
                 i + 1
             )
         })
         .collect::<Vec<String>>()
         .join("");
-    format!("<html><head><title>search</title><style>b{{}}</style></head><body>{articles}</body></html>")
+    format!("<html><head><title>search</title></head><body>{articles}</body></html>")
+}
+
+/// The search door on the local server: what `query_for` does with the engine's address, with this page's.
+fn local_search(base: String) -> impl Fn(&str) -> Result<Vec<Hit>, String> {
+    move |query: &str| {
+        web_browser::search_with(
+            &firefox(),
+            &format!("{base}/search?q={}", query.replace(' ', "+")),
+            web_browser::ladder_slice(),
+        )
+        .map(web_tools::dedupe)
+    }
 }
 
 // ---- S5/the browser leg -------------------------------------------------------------------
 
-/// A search through a real subprocess: the ladder asks its three queries, the stub answers each with the same
-/// page, and what comes back is the numbered hit list plus §2's log line naming the rung that answered.
+/// A search through a real browser: the ladder asks its three queries, each page is read for its result
+/// anchors, and what comes back is the numbered hit list plus §2's log line naming the rung that answered.
 #[test]
 fn f6_1_web_s5_a_real_search_answers_with_numbered_hits_and_logs_its_ladder() {
-    let root = fixture("search");
+    let _root = fixture("search");
     let urls = [
         "https://one.example/a",
         "https://two.example/b",
         "https://one.example/a",
     ];
-    let stub = write_stub(&root, &ddg_page(&urls), 0);
-    point_at(&stub);
-    let conf = settings::read(&settings::from_environment().unwrap()).unwrap();
+    let base = serve(vec![("/search", ddg_page(&urls))]);
 
     let args = r#"{"broad":"the game","medium":"the game and the thing","narrow":"the thing"}"#;
-    let ask = web_browser::query_for(&conf.firefox, web_browser::ladder_slice());
+    let ask = local_search(base.clone());
     let (answer, line) = web_tools::search("narrate", args, &ask);
 
     assert!(
         answer.starts_with("Results for \"the thing\":"),
         "the narrowest rung that found anything is what the header names: {answer}"
     );
-    // Deduped by URL and capped at P.eng.searchHits: the repeated URL appears once.
     assert_eq!(
         answer.matches("one.example/a").count(),
         1,
@@ -169,6 +158,10 @@ fn f6_1_web_s5_a_real_search_answers_with_numbered_hits_and_logs_its_ladder() {
     assert!(
         answer.contains("1. Result number 1"),
         "hits are numbered: {answer}"
+    );
+    assert!(
+        answer.contains("The snippet for result 1"),
+        "the snippet is read off the page: {answer}"
     );
     assert!(
         answer.contains("two.example/b"),
@@ -187,47 +180,62 @@ fn f6_1_web_s5_a_real_search_answers_with_numbered_hits_and_logs_its_ladder() {
         ),
         "§2's search line verbatim"
     );
-    // One browser per QUERY of the ladder that ran, each launched and killed: the stub recorded every launch.
-    assert!(
-        launches(&root) >= 1,
-        "the browser really ran: {}",
-        launches(&root)
-    );
 }
 
 /// Eight is the cap (`P.eng.searchHits`): a page with more results still answers eight.
 #[test]
 fn f6_1_web_s5_hits_are_capped_at_eight() {
-    let root = fixture("cap");
+    let _root = fixture("cap");
     let urls: Vec<String> = (0..12).map(|i| format!("https://e.example/{i}")).collect();
     let refs: Vec<&str> = urls.iter().map(String::as_str).collect();
-    let stub = write_stub(&root, &ddg_page(&refs), 0);
-    point_at(&stub);
-    let conf = settings::read(&settings::from_environment().unwrap()).unwrap();
+    let base = serve(vec![("/search", ddg_page(&refs))]);
 
-    let ask = web_browser::query_for(&conf.firefox, web_browser::ladder_slice());
-    let hits = ask("anything").expect("the stub answered");
+    let hits = local_search(base.clone())("anything").expect("the browser answered");
     assert_eq!(
         hits.len(),
         tools::WEB_SEARCH_MAX_HITS,
         "eight hits, not twelve"
     );
-    // And `dedupe` is applied by the leg itself, so a caller cannot forget the cap.
-    let deduped = web_tools::dedupe(hits.clone());
-    assert_eq!(deduped.len(), tools::WEB_SEARCH_MAX_HITS);
 }
 
-/// A read through a real subprocess: page text, not markup, with the count §2 logs.
+/// The old DuckDuckGo markup (`result__a`/`result__snippet`, no `<article>`) is still read: engines change this
+/// without asking.
+#[test]
+fn f6_1_web_s5_the_older_result_markup_is_still_read() {
+    let _root = fixture("older");
+    let base = serve(vec![(
+        "/search",
+        "<html><body><div class=\"result__body\"><a class=\"result__a\" href=\"https://old.example/x\">Old style</a><a class=\"result__snippet\">The snippet lives here.</a></div></body></html>".to_string(),
+    )]);
+    let hits = local_search(base.clone())("old").expect("the browser answered");
+    assert_eq!(
+        hits.len(),
+        1,
+        "one result found in the older shape: {hits:?}"
+    );
+    assert_eq!(hits[0].url, "https://old.example/x");
+    assert_eq!(hits[0].title, "Old style");
+    assert!(
+        hits[0].snippet.contains("snippet lives here"),
+        "{:?}",
+        hits[0].snippet
+    );
+}
+
+/// A read through a real browser: page text, not markup, with the count §2 logs.
 #[test]
 fn f6_1_web_s5_a_real_read_returns_page_text_and_logs_the_count() {
-    let root = fixture("read");
-    let stub = write_stub(&root, &long_page("The tower is 634 metres tall."), 0);
-    point_at(&stub);
-    let conf = settings::read(&settings::from_environment().unwrap()).unwrap();
+    let _root = fixture("read");
+    let base = serve(vec![(
+        "/height",
+        long_page("The tower is 634 metres tall."),
+    )]);
 
-    let fetch = web_browser::read_page_for(&conf.firefox, web_browser::read_budget());
-    let args = r#"{"url":"https://tower.example/height"}"#;
-    let (answer, line) = web_tools::read_call("narrate", args, &fetch);
+    let fetch =
+        web_browser::read_page_for(&firefox().to_string_lossy(), web_browser::read_budget());
+    let url = format!("{base}/height");
+    let args = format!(r#"{{"url":"{url}"}}"#);
+    let (answer, line) = web_tools::read_call("narrate", &args, &fetch);
     assert!(
         answer.contains("The tower is 634 metres tall."),
         "the page's words survive: {answer}"
@@ -238,32 +246,28 @@ fn f6_1_web_s5_a_real_read_returns_page_text_and_logs_the_count() {
     );
     let said = line.expect("a read logs its line");
     assert!(
-        said.starts_with(">>> narrate: read https://tower.example/height ("),
+        said.starts_with(&format!(">>> narrate: read {url} (")),
         "{said}"
     );
     assert!(said.ends_with(" characters)"), "{said}");
 }
 
 /// §3's row: at most 6000 bytes, cut back to a character boundary, marked. Driven through the real leg so the
-/// whole path (subprocess → text → clip) is the one the program uses.
+/// whole path (browser → text → clip) is the one the program uses.
 #[test]
 fn f6_1_web_s5_a_long_page_is_clipped_on_a_character_boundary() {
-    let root = fixture("clip");
+    let _root = fixture("clip");
     // Multi-byte characters straddling the 6000th byte are the case that panics a naive slice.
     let body = "\u{e9}".repeat(tools::WEB_READ_MAX_BYTES + 500);
-    let stub = write_stub(
-        &root,
-        &format!("<html><body><p>{body}</p></body></html>"),
-        0,
-    );
-    point_at(&stub);
-    let conf = settings::read(&settings::from_environment().unwrap()).unwrap();
+    let base = serve(vec![(
+        "/wide",
+        format!("<html><body><p>{body}</p></body></html>"),
+    )]);
 
-    let fetch = web_browser::read_page_for(&conf.firefox, web_browser::read_budget());
-    let page = fetch("https://wide.example").expect("the stub answered");
+    let fetch =
+        web_browser::read_page_for(&firefox().to_string_lossy(), web_browser::read_budget());
+    let page = fetch(&format!("{base}/wide")).expect("the browser answered");
     let clipped = web_tools::clip_page(&page);
-    // The marker is the last thing in the string; it costs three bytes of its own and is NOT counted against the
-    // cap (`clip_page`'s rule: every byte of the 6000 should be page text).
     assert!(clipped.ends_with('…'), "a clipped page says so");
     let without_marker = clipped.trim_end_matches(" \u{2026}");
     assert!(
@@ -281,17 +285,15 @@ fn f6_1_web_s5_a_long_page_is_clipped_on_a_character_boundary() {
 /// A bot wall is named, not handed over — through the real leg, so a captcha page cannot reach the model.
 #[test]
 fn f6_1_web_s5_a_bot_wall_is_named_not_handed_over() {
-    let root = fixture("wall");
-    let stub = write_stub(
-        &root,
-        &long_page("Checking your browser before accessing this site."),
-        0,
-    );
-    point_at(&stub);
-    let conf = settings::read(&settings::from_environment().unwrap()).unwrap();
+    let _root = fixture("wall");
+    let base = serve(vec![(
+        "/walled",
+        long_page("Checking your browser before accessing this site."),
+    )]);
 
-    let fetch = web_browser::read_page_for(&conf.firefox, web_browser::read_budget());
-    let answer = web_tools::read("https://walled.example", &fetch);
+    let fetch =
+        web_browser::read_page_for(&firefox().to_string_lossy(), web_browser::read_budget());
+    let answer = web_tools::read(&format!("{base}/walled"), &fetch);
     assert!(
         answer.starts_with("web_read failed: the page is behind a bot wall ("),
         "the wall is refused by name: {answer}"
@@ -302,45 +304,37 @@ fn f6_1_web_s5_a_bot_wall_is_named_not_handed_over() {
     );
 }
 
-/// A stub that prints nothing at all: the page had no text, which is a refusal rather than an empty answer.
+/// A page with nothing in it: the page had no text, which is a refusal rather than an empty answer.
 #[test]
 fn f6_1_web_s5_a_page_with_no_text_refuses() {
-    let root = fixture("empty");
-    let stub = write_stub(&root, "", 0);
-    point_at(&stub);
-    let conf = settings::read(&settings::from_environment().unwrap()).unwrap();
+    let _root = fixture("empty");
+    let base = serve(vec![("/nothing", String::new())]);
 
-    let fetch = web_browser::read_page_for(&conf.firefox, web_browser::read_budget());
-    let answer = web_tools::read("https://nothing.example", &fetch);
+    let fetch =
+        web_browser::read_page_for(&firefox().to_string_lossy(), web_browser::read_budget());
+    let answer = web_tools::read(&format!("{base}/nothing"), &fetch);
     assert_eq!(answer, "web_read failed: the page had no text", "{answer}");
 }
 
-/// §2's 45 s is ONE budget including browser boot, and a browser that never finishes must be KILLED rather than
-/// waited on forever. A stub that sleeps past its slice proves both halves.
+/// §2's 45 s is ONE budget including browser boot, and a page that never arrives must end the call at the
+/// deadline with a reason, the browser killed rather than waited on.
 #[test]
 fn f6_1_web_s5_a_browser_that_outlives_its_budget_is_killed_and_says_so() {
-    let root = fixture("timeout");
-    let stub = write_stub(&root, &long_page("too late"), 30);
-    point_at(&stub);
-    let conf = settings::read(&settings::from_environment().unwrap()).unwrap();
+    let _root = fixture("timeout");
+    let base = serve(Vec::new());
 
     let started = std::time::Instant::now();
-    // A two-second slice stands in for a rung's third of the ladder: the rule under test is that the deadline
-    // ends the call, not how long the real budget is.
-    let fetch = web_browser::read_page_for(&conf.firefox, std::time::Duration::from_secs(2));
-    let outcome = fetch("https://slow.example");
-    let took = started.elapsed();
-    let why = outcome.expect_err("a browser asleep past its slice must not answer");
-    assert!(why.contains("did not finish within 2 s"), "{why}");
-    assert!(
-        took < std::time::Duration::from_secs(10),
-        "it stopped at the deadline, not at the sleep: {took:?}"
+    let fetch = web_browser::read_page_for(
+        &firefox().to_string_lossy(),
+        std::time::Duration::from_secs(8),
     );
-    // And nothing was left running: the killed stub's children are gone, so a second call still works.
-    let again = web_browser::read_page_for(&conf.firefox, std::time::Duration::from_secs(2));
+    let outcome = fetch(&format!("{base}/slow"));
+    let took = started.elapsed();
+    let why = outcome.expect_err("a page that never arrives must not answer");
+    assert!(why.contains("did not finish within 8 s"), "{why}");
     assert!(
-        again("https://slow.example").is_err(),
-        "the next call behaves the same way"
+        took < std::time::Duration::from_secs(14),
+        "it stopped at the deadline, not at the server's 30 s: {took:?}"
     );
 }
 
@@ -349,23 +343,30 @@ fn f6_1_web_s5_a_browser_that_outlives_its_budget_is_killed_and_says_so() {
 #[test]
 fn f6_1_web_s5_firefox_is_found_by_setting_then_path_then_install_paths() {
     let root = fixture("find");
-    let stub = write_stub(&root, "", 0);
+    let named = root.join("my-firefox");
+    common::write_script(&named, "#!/bin/sh\nexit 0\n".to_string()).expect("a named binary");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&named, std::fs::Permissions::from_mode(0o755))
+            .expect("executable");
+    }
 
     // The setting wins, even when a real firefox is on PATH: a person who named one meant that one.
     let found =
-        web_browser::firefox_path(&stub.to_string_lossy()).expect("the named binary is used");
-    assert_eq!(found, stub, "the settings box's own binary");
+        web_browser::firefox_path(&named.to_string_lossy()).expect("the named binary is used");
+    assert_eq!(found, named, "the settings box's own binary");
 
     // Nothing named: PATH order decides, and the container ships firefox-esr where Debian ships firefox.
-    let named = web_browser::firefox_path("").expect("something on PATH");
-    let name = named
+    let on_path = web_browser::firefox_path("").expect("something on PATH");
+    let name = on_path
         .file_name()
         .expect("a file name")
         .to_string_lossy()
         .to_string();
     assert!(
-        web_browser::PATH_NAMES.contains(&name.as_str()),
-        "{name} is one of the names §2 lists"
+        web_browser::PATH_NAMES.contains(&name.as_str())
+            || web_browser::INSTALL_PATHS.contains(&on_path.to_string_lossy().as_ref()),
+        "{name} is one of the names or places §2 lists"
     );
 
     // Named but missing: the reason is the filesystem's, ready for `unavailable_log`'s `firefox: <stat error>`.
@@ -390,8 +391,7 @@ fn f6_1_web_s5_firefox_is_found_by_setting_then_path_then_install_paths() {
 /// The offer itself: a machine with no browser gets neither web tool, and says so once — the sentence §2 gives.
 #[test]
 fn f6_1_web_s5_a_step_without_a_browser_drops_the_tools_and_says_why_once() {
-    let root = fixture("offer");
-    let _ = root;
+    let _root = fixture("offer");
     let offered = vec![
         naivepost::tools::Tool::GetLines,
         naivepost::tools::Tool::WebSearch,
@@ -419,57 +419,41 @@ fn f6_1_web_s5_a_step_without_a_browser_drops_the_tools_and_says_why_once() {
     assert!(line.starts_with(">>> narrate: no web search"), "{line}");
 }
 
-/// The setting is honoured, not merely consulted: a named binary that answers is what the leg uses, with no
-/// fallback to the firefox on this machine. That fallback is the whole failure mode this pins — a lost settings
-/// value does not announce itself, it quietly sends the call to a real browser, which here means a 45 s wait and
-/// a timeout instead of the page the test wrote.
+/// The setting is honoured, not merely consulted: the browser the box names is the one launched. The named
+/// binary is a wrapper that records its launch and then runs the real firefox, so the page coming back AND the
+/// record together prove the leg used the setting rather than the firefox on PATH.
 #[test]
 fn f6_1_web_s5_a_named_browser_is_the_one_that_answers() {
     let root = fixture("named");
-    let marker = "the stub browser answered with this marker";
-    let stub = write_stub(&root, &long_page(marker), 0);
-    point_at(&stub);
+    let marker = "the named browser answered with this marker";
+    let base = serve(vec![("/named", long_page(marker))]);
+    let wrapper = root.join("named-firefox");
+    common::write_script(
+        &wrapper,
+        format!(
+            "#!/bin/sh\necho $$ >> \"{}\"\nexec \"{}\" \"$@\"\n",
+            root.join("launches").display(),
+            firefox().display()
+        ),
+    )
+    .expect("the wrapper");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755))
+            .expect("executable");
+    }
+    point_at(&wrapper);
     let conf =
         settings::read(&settings::from_environment().unwrap()).expect("the settings the box holds");
-    assert_eq!(
-        conf.firefox,
-        stub.to_string_lossy(),
-        "the settings file really names the stub before anything is asked of it"
-    );
+    assert_eq!(conf.firefox, wrapper.to_string_lossy());
 
     let fetch = web_browser::read_page_for(&conf.firefox, web_browser::read_budget());
-    let page = fetch("https://named.example/").expect("the named browser answered");
-    assert!(
-        page.contains(marker),
-        "the stub's own page came back: {page}"
-    );
-    // A system firefox here reaches nothing and gives an error or an empty document; either way the marker could
-    // not appear in what it printed, so this is the difference between the two browsers having answered.
-    assert!(!page.trim().is_empty(), "an answer, not an empty document");
-    assert!(
-        launches(&root) >= 1,
-        "and it was the stub that ran: {}",
-        launches(&root)
-    );
-}
-
-/// The old DuckDuckGo markup (`result__snippet`, no `<article>`) is still read: engines change this without asking.
-#[test]
-fn f6_1_web_s5_the_older_result_markup_is_still_read() {
-    let html = "<html><body><div class=\"result__body\"><a class=\"result__a\" href=\"https://old.example/x\">Old style</a><a class=\"result__snippet\">The snippet lives here.</a></div></body></html>";
-    let hits: Vec<Hit> = web_browser::search_hits(html);
-    assert_eq!(
-        hits.len(),
-        1,
-        "one result found in the older shape: {hits:?}"
-    );
-    assert_eq!(hits[0].url, "https://old.example/x");
-    assert_eq!(hits[0].title, "Old style");
-    assert!(
-        hits[0].snippet.contains("snippet lives here"),
-        "{:?}",
-        hits[0].snippet
-    );
+    let page = fetch(&format!("{base}/named")).expect("the named browser answered");
+    assert!(page.contains(marker), "the page came back: {page}");
+    let launched = std::fs::read_to_string(root.join("launches"))
+        .map(|text| text.lines().count())
+        .unwrap_or(0);
+    assert_eq!(launched, 1, "and it was the named binary that ran, once");
 }
 
 /// Page text keeps paragraph structure and drops scripts: the 200-character floor is meaningless if a whole page

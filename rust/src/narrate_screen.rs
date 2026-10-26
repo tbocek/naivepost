@@ -243,7 +243,7 @@ pub fn band_status(takes: &[(f64, f64)]) -> &'static str {
 // --- The voice picker (§1's numbers 7, 9, 11–13) --------------------------------------------------------
 
 /// §1 (`unlabelled dropdown`): the id of the first row. `captions` is what short-circuits everything that
-/// speaks (F4.8), so it is an id and not a label with no id behind it.
+/// speaks, so it is an id and not a label with no id behind it.
 pub const CAPTIONS: &str = "captions";
 
 /// One row of the dropdown: the id stored in `narrate/voice.txt` and the words on the row.
@@ -265,7 +265,13 @@ pub fn voice_options(narrators: usize, files: &[&str]) -> Vec<VoiceOption> {
     }];
     for slot in 1..=narrators {
         options.push(VoiceOption {
-            id: format!("narrator{slot}"),
+            // Slot 1 is spelled `own` (inventory §voice ids, frozen): it is the id every take of the project's own
+            // voice is keyed without, so picking Narrator 1 by hand does not re-speak every line under a new key.
+            id: if slot == 1 {
+                crate::narrate_data::OWN_VOICE.to_string()
+            } else {
+                format!("narrator{slot}")
+            },
             label: format!("Narrator {slot} \u{2014} cut from the recording"),
         });
     }
@@ -773,7 +779,7 @@ pub fn audition_without_recording(case: Audition, line_no: usize) -> (Audition, 
 }
 
 /// §1 (`A clip no recording covers speaks alone off the tick`): with nothing under it the line is all there is to
-/// hear, so it plays without waiting for a picture. The tick is F4.8's narration switch, not this module's state.
+/// hear, so it plays without waiting for a picture.
 pub fn speaks_alone_off_the_tick(no_recording: bool) -> bool {
     no_recording
 }
@@ -982,14 +988,7 @@ pub fn time_refused(requested: f64, clip_s: f64, clip_e: f64, at: f64) -> String
     )
 }
 
-// --- Narration off, and the two readouts (§1's numbers 1, 22) ----------------------------------------------------
-
-/// §1 (`Off greys lines, preview and voice picker`). Greyed rather than removed, so the page does not reflow
-/// under someone who is deciding. Produce hides **only** the game-volume slider: the shipped tooltip also promises
-/// the subtitle choices go, which §1 calls stale (captions come from the transcript), so this list stops at three.
-pub fn off_greys() -> [&'static str; 3] {
-    ["lines", "preview", "voice"]
-}
+// --- The readouts (§1's number 22) ------------------------------------------------------------------------------
 
 /// §1 (`Inputs: "N clip(s) · mm:ss[ · ⚠ N clip(s) unwritten, N line(s) off the cut][ · no timeline]"`). The two
 /// counts are [`crate::shell::refit`]'s answers: a clip is unwritten when no entry sits on it and it is not
@@ -1026,3 +1025,22 @@ pub fn outputs_readout() -> &'static str {
 /// The Outputs folder button's tooltip: what pressing it DOES. Deliberately NOT [`outputs_readout`], which
 /// is the readout's own line — repeating it on the button made the readout look like a copy of a tooltip.
 pub const OUTPUTS_FOLDER_TIP: &str = "Open the narration folder";
+
+/// §1 **8** ▶ (prototype `takeQueue`): what the take band plays, from the red bar `at`. The takes from the bar on,
+/// the one the bar stands inside trimmed to begin there, one after another; with no take after the bar, the
+/// recording itself from the bar to its end (`false`: these are not takes, which is how takes get found). Nothing
+/// when the bar is at or past the recording's end.
+pub fn take_queue(takes: &[(f64, f64)], at: f64, duration: f64) -> (Vec<(f64, f64)>, bool) {
+    let queued: Vec<(f64, f64)> = takes
+        .iter()
+        .filter(|(_, end)| *end > at)
+        .map(|(start, end)| (start.max(at), *end))
+        .collect();
+    if !queued.is_empty() {
+        return (queued, true);
+    }
+    if at < 0.0 || at >= duration {
+        return (Vec::new(), false);
+    }
+    (vec![(at, duration)], false)
+}

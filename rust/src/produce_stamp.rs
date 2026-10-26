@@ -77,8 +77,6 @@ pub struct Input<'a> {
     pub aspect: &'a str,
     /// The selected voice: switching voices keeps every line and every setting and changes only the sound.
     pub voice: &'a str,
-    /// §1's narration flag (`Project::no_narration`): with it on, no line is spoken at all.
-    pub no_narration: bool,
     /// The cut's effects — every zoom, text, svg, volume, speed and stop. The render is handed this very
     /// list (`Materials::fx_for`, answered from `cut.fx`) and builds its filter graph from each record, so a
     /// stamp that counted only the segments could call a video up to date when an effect was added beside it.
@@ -143,12 +141,10 @@ impl<'a> Input<'a> {
             ),
             ("aspect", hash_text(self.aspect)),
             ("voice", hash_text(self.voice)),
-            // The flag alone: with narration off no line is spoken, and the lines themselves must not be
-            // able to hold the video up-to-date behind the tick.
-            (
-                "narration",
-                hash_text(if self.no_narration { "off" } else { "on" }),
-            ),
+            // A constant where the first rewrite's narration switch stood ("on" for every narrated project):
+            // kept so a video rendered before the switch went still reads up to date. A narration without
+            // lines is already in the hash through `lines`.
+            ("narration", hash_text("on")),
             // Appended after the flowchart's seven: the three things the render reads that the diagram's
             // wording folds into "the segments" — the effects drawn over them, the beds mixed under them and
             // the frame they are drawn onto. Order is fixed here, like the seven above.
@@ -355,7 +351,6 @@ pub fn gate_stamp(
     cut: &crate::cut::Cut,
     sources: &[project::Source],
     voice: Option<&str>,
-    no_narration: bool,
     shape: (i32, i32),
 ) -> String {
     let entries = crate::narration::load(tree).unwrap_or_default().entries;
@@ -366,7 +361,6 @@ pub fn gate_stamp(
         sources,
         aspect: &cut.aspect,
         voice: voice.unwrap_or(""),
-        no_narration,
         fx: &cut.fx,
         lanes: &cut.lanes,
         shape,

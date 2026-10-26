@@ -112,24 +112,6 @@ fn stamps(at: &[f64]) -> Vec<PathBuf> {
         .collect()
 }
 
-/// §F1.6 / §1: the row's spacing is the FOLDER's own, measured through the same parse that places a cell.
-#[test]
-fn sec_05_cut_1_screen_the_picture_row_measures_its_grid_from_the_folder() {
-    let per_second = stamps(&[0.0, 1.0, 2.0]);
-    assert_eq!(cut_tracks::frame_step_seconds(&per_second), 1.0);
-    let quarter = stamps(&[0.0, 0.25, 0.5]);
-    assert!(
-        (cut_tracks::frame_step_seconds(&quarter) - 0.25).abs() < 1e-9,
-        "a 250 ms grid must measure as 0.25 s"
-    );
-    // Nothing to measure — one entry, none, or names that are not stamps. All answer 0, which tells the caller to
-    // take the FIRST batch rather than aim at a grid it cannot know.
-    assert_eq!(cut_tracks::frame_step_seconds(&stamps(&[3.0])), 0.0);
-    assert_eq!(cut_tracks::frame_step_seconds(&[]), 0.0);
-    let junk: Vec<PathBuf> = vec![PathBuf::from("f000001.jpg"), PathBuf::from("f000002.jpg")];
-    assert_eq!(cut_tracks::frame_step_seconds(&junk), 0.0);
-}
-
 /// §1: the listed frames mark their own cells — a row with frames in it is NOT the flat band an empty lane paints.
 #[test]
 fn sec_05_cut_1_screen_a_listed_frame_marks_its_own_cell() {
@@ -170,15 +152,21 @@ fn sec_05_cut_1_screen_a_listed_frame_marks_its_own_cell() {
             }
         }
     }
-    // How much of the row the listed frames CAN cover: one cell per frame, each `step * pps` wide, at the lane
-    // shot's own zoom. Asked of the frames `write_png` itself staged (the same door it paints from), so the bound
-    // tracks the fixture rather than a guess about it.
+    // How much of the row the listed frames CAN cover: the seconds from their first stamp to their last, at the
+    // lane shot's own zoom (the film strip tiles that stretch with pictures). Asked of the frames `write_png` itself
+    // staged (the same door it paints from), so the bound tracks the fixture rather than a guess about it.
     naivepost::ui::cut_picture::set_snapshot_dir(&dir);
     let paths = naivepost::ui::cut_picture::snapshot_frame_tree()
         .map(|tree| cut_tracks::frame_paths(&tree, "session-tape"))
         .unwrap_or_default();
-    let step = cut_tracks::frame_step_seconds(&paths);
-    let covered = (paths.len() as f64 * step * snapshot_lane::PPS).min(shot.width as f64);
+    let instant = |path: &PathBuf| {
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .and_then(naivepost::clock::read_frame)
+            .unwrap_or(0.0)
+    };
+    let span = paths.last().map(instant).unwrap_or(0.0) - paths.first().map(instant).unwrap_or(0.0);
+    let covered = (span * snapshot_lane::PPS).min(shot.width as f64);
     let want = (ys.len() as f64 * covered / 4.0) as usize / 2;
     assert!(
         !paths.is_empty(),
@@ -192,9 +180,9 @@ fn sec_05_cut_1_screen_a_listed_frame_marks_its_own_cell() {
     assert!(
         differing > want,
         "only {differing} sample(s) of the row differ from the same row painted with NO frames listed; the {} \
-         listed frames at a {:.2} s grid should mark about {:.0} px of the row",
+         listed frames over {:.2} s should mark about {:.0} px of the row",
         paths.len(),
-        step,
+        span,
         covered
     );
     let _ = std::fs::remove_dir_all(&dir);

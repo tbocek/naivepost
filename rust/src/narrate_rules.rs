@@ -25,7 +25,7 @@
 //! * failed synthesis sticky until retried — [`crate::narrate_preview::Failed`] remembers by wav rather than by row,
 //!   and [`crate::narrate_preview::failed_playing_on`] / [`crate::narrate_preview::sticky_failed`] say which of the
 //!   two situations the log is in;
-//! * captions-only short-circuits everything that speaks — [`voice_is_captions`] and [`speaks_anything`];
+//! * captions-only short-circuits everything that speaks — [`voice_is_captions`];
 //! * the run bar is the preview's transport only once the preview started — [`bar_serves_the_preview`], next to
 //!   [`crate::run::transport_for`], which answers the page question;
 //! * cache keys stable, nothing deletes old wavs — [`deletes_a_spoken_take`], beside the frozen key in
@@ -46,16 +46,9 @@ use crate::run::{Transport, NARRATOR_SLOTS};
 /// `captions` is the picker's first row and an **id**, not a label with no id behind it, which is why every step
 /// that could speak checks it rather than matching words. It joins a run and never shortens it — F4.6's S1 says a
 /// captions-only voice still opens and closes the speaking job so the bar finishes — and the lines it would have
-/// spoken go through the same seam F4.8 uses ([`crate::narrate_off::lines_to_speak`]).
+/// spoken go through the same seam every step reads ([`crate::narration::lines_to_speak`]).
 pub fn voice_is_captions(voice: &str) -> bool {
     voice == CAPTIONS
-}
-
-/// §5's clause read with F4.8's: is there anything for a voice to speak at all? A video gets here two ways and the
-/// spec keeps them distinct — the voice chosen is `captions` (§1's picker), or narration is switched off
-/// (`no_narration`, §01 line 75). Either answer means no request, no take and no subtitle track from a voice.
-pub fn speaks_anything(voice: &str, no_narration: bool) -> bool {
-    !voice_is_captions(voice) && !no_narration
 }
 
 /// §5 (`the run bar is the preview's transport only once the preview started`): ▶ belongs to the step until the
@@ -103,12 +96,12 @@ pub fn narrator_slot(id: &str) -> Option<usize> {
 /// voice — and then the page shows **no** row rather than the first one, because a picker silently pointing at a
 /// voice nobody chose is how the wrong speaker gets into a finished video.
 ///
-/// `own` selects the Narrator 1 row: a project written before slots were numbered stores `own`, and it means the
-/// same recording slot 1 holds today, so naming that row is honest where an empty picker would say "nothing was
-/// chosen". A file's name matches its own row exactly, which is how the voices folder stays recognisable.
+/// Narrator 1's row is `own` (the frozen id); a `narrator1` the first rewrite wrote into `voice.txt` names the same
+/// slot and shows the same row. A file's name matches its own row exactly, which is how the voices folder stays
+/// recognisable.
 pub fn picker_row(options: &[VoiceOption], stored: &str) -> Option<usize> {
-    let wanted = if stored == OWN_VOICE {
-        "narrator1"
+    let wanted = if narrator_slot(stored) == Some(1) {
+        OWN_VOICE
     } else {
         stored
     };

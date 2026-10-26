@@ -96,7 +96,16 @@ pub fn stage_chunk(
     let changes = describe::read_changes(tree, lane);
     let duration = frames_on_disk.last().copied().unwrap_or(0.0) + describe::GRID;
     let project = crate::project::load(tree.dir()).ok();
-    let freq = frame_interval(project.as_ref());
+    // F1.6 S6: a frame goes per scene change and one every heartbeat between them: what is on screen did not
+    // change in between, and a closer step would describe the same slide anew. The changes are the text gate's
+    // when it ran, else the pixel pass's.
+    let freq = crate::text_gate::HEARTBEAT_S;
+    if crate::text_gate::changes_for_describe(tree, lane).is_some() {
+        log(&format!(
+            ">>> [{lane}] describing the text gate's {} scene change(s), one frame each and one every {freq} s between",
+            changes.len(),
+        ));
+    }
     // Where this source's stored frames sit on the session clock: the index `stage` put on the row, so
     // the offset comes from the same placement every other stage reads.
     let index = source_index.unwrap_or(0);
@@ -124,17 +133,10 @@ pub fn stage_chunk(
     }
     let mut answered = 0usize;
     let mut from_cache = 0usize;
-    // §09 §4's other half, applied to this step: one chunk's request does not read the chunk before
-    // it (`run_chunk` re-reads `events.tsv`/`state.txt` from disk for every chunk, so a chunk only
-    // ever waits on an ALREADY-WRITTEN row, never on a sibling in flight), so the step may put
-    // `P.machine.slots` of its asks on the wire at once instead of one. `in_flight(true, slots)` is
-    // the ONE rule that decides that number; at the default of 1 this is exactly the old serial
-    // walk, so nothing changes for the common case. Sending them one at a time left the extra slots
-    // to the model's other clients while this app's own independent asks queued behind each other.
-    // §09 §10 hangs one thing off this number: when a whole chunk plan fits in one round, the retry
-    // loop below can find the chunk's own stored reply on its second pass and must file that hit — so
-    // the rounds decide whether an in-run replay is even possible.
-    let at_once = crate::llm_liveness::in_flight(true, crate::services::llm_slots(conf));
+    // §02 §1: one request at a time per server, so the chunks go one after another. The rounds below still
+    // decide one thing (§09 §10): whether the retry loop can find a chunk's own stored reply on its second
+    // pass, which it files as a hit.
+    let at_once = crate::llm_liveness::in_flight(true, 1);
     // The two files stay the main thread's alone — `events.tsv` is appended per chunk and is the
     // resume marker, and `state.txt` holds "the state after the last chunk", so BOTH must go down
     // in chunk order however the asks overlapped. Workers therefore only ask; the round's answers
@@ -240,20 +242,11 @@ fn user_context(tree: &Tree) -> String {
         .unwrap_or_default()
 }
 
-/// The frame interval this project asks for — `P.project.frameInterval`, which the project file holds
-/// as `interval` (the number F1.6 extracted on and F1.7 stamps with). A session that cannot be read
-/// falls back to the same default `Project::default()` carries, so the two never disagree.
-fn frame_interval(project: Option<&crate::project::Project>) -> f64 {
-    project
-        .map(|project| project.interval)
-        .unwrap_or_else(|| crate::project::Project::default().interval)
-}
-
 /// The session folder the walk works in — the working folder's own, resolved the way every other dial
 /// resolves it (§1's re-read-per-request seams all start here). Named for what it returns rather than
 /// for a settings folder: `run_task` needs the SESSION to open the tree in, and only then the paths.
 fn session_dir() -> std::path::PathBuf {
-    crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
+    crate::startup::open_dir()
 }
 
 /// The row a chunk served from the cache hands [`crate::request_timing::record_cached`]. Its `started`
@@ -594,10 +587,11 @@ fn ask(
 /// four pictures and stamping four would misdate every event after the gap.
 fn read_images(tree: &Tree, lane: &str, batch: &[f64]) -> Result<Vec<Vec<u8>>, String> {
     let dir = tree.llm_frames_dir(lane);
+    let base = crate::describe_scale::name_base(tree, lane);
     batch
         .iter()
         .map(|at| {
-            let name = describe::scaled_name(*at);
+            let name = describe::scaled_name(base, *at);
             let path = dir.join(&name);
             std::fs::read(&path).map_err(|_| {
                 format!(
@@ -893,6 +887,10 @@ fn write_batch(
         return missing;
     }
     // The STATE goes with the rows: a cleared state is itself an answer (§S6).
-    let _ = describe::write_chunk(tree, lane, &rows, held.state());
+    if let Err(why) = describe::write_chunk(tree, lane, &rows, held.state()) {
+        crate::ui::window::log_line(&format!(
+            "!!! [{lane}] describe: could not write this chunk's rows -- {why}"
+        ));
+    }
     0
 }

@@ -112,13 +112,10 @@ fn play_pauses_and_the_next_play_resumes(app: &adw::Application) {
     window.present();
 
     let play = ui::play_button(&window).expect("the run bar has a play-button");
-    // First press: nothing was running, so ▶ starts Prepare's step (§F0.2 S3/S4).
+    // First press: nothing was running, so ▶ starts Prepare's step (§F0.2 S3/S4). Its walk is on the
+    // run's worker (§03-shell §1), so the run stands open until the window takes the worker's answer,
+    // which it cannot before this check turns the main loop.
     play.emit_clicked();
-    let started = ui::state(&window).status.clone();
-    assert!(
-        !started.is_empty(),
-        "the first ▶ opened a run and the bar took the status line: {started:?}"
-    );
     let bar = ui::run_bar(&window).expect("the window holds a run bar");
     {
         let held = bar.borrow();
@@ -170,6 +167,15 @@ fn play_pauses_and_the_next_play_resumes(app: &adw::Application) {
             "and its source snapshot survived both presses: a restart would take a fresh one"
         );
     }
+    // The resumed walk goes on to its end, and the run closes when the window takes the answer.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
+    assert!(
+        bar.borrow().running.is_none(),
+        "the run closed when it ended"
+    );
 
     std::env::set_current_dir(&cwd).expect("cwd back");
     window.close();
@@ -247,6 +253,7 @@ fn scratch_from(root: &Path) -> PathBuf {
 /// actually runs (`prepare_run::begin`). The arming came from the ⏹ press above.
 #[test]
 fn sec_04_prepare_5_rules_b6_stop_mid_describe_restarts_only_the_describing() {
+    let _turn = crate::common::describe_flags_turn();
     let tree = Tree::new(scratch("b6-describe")).expect("a session folder");
     seed_stopped_describe(&tree);
     let project = with_sources(&["project:sources/lecture.mkv"]);
@@ -317,6 +324,7 @@ fn sec_04_prepare_5_rules_b6_stop_mid_describe_restarts_only_the_describing() {
 /// the next ▶ says nothing and the describing's files survive untouched.
 #[test]
 fn sec_04_prepare_5_rules_b6_a_stop_outside_describe_restarts_nothing() {
+    let _turn = crate::common::describe_flags_turn();
     let tree = Tree::new(scratch("b6-outside")).expect("a session folder");
     seed_stopped_describe(&tree);
     let project = with_sources(&["project:sources/lecture.mkv"]);
@@ -369,6 +377,7 @@ fn sec_04_prepare_5_rules_b6_a_stop_outside_describe_restarts_nothing() {
 /// press since, the files stand; the clear happens inside the press's own door, not at the stop.
 #[test]
 fn sec_04_prepare_5_rules_b6_the_restart_happens_only_on_the_next_play() {
+    let _turn = crate::common::describe_flags_turn();
     let tree = Tree::new(scratch("b6-onlynext")).expect("a session folder");
     seed_stopped_describe(&tree);
     let project = with_sources(&["project:sources/lecture.mkv"]);

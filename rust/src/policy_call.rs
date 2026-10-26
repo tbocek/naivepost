@@ -82,8 +82,7 @@ fn current_paths() -> Option<Paths> {
 /// what the window's own log/readout paths use. `cache/llm` belongs to a project (§6), and a
 /// derivation is about THIS session, so this is the folder whose cache makes a repeated context free.
 fn session_tree() -> Option<Tree> {
-    let root = std::env::current_dir().unwrap_or_default();
-    Tree::new(startup::session_dir(&root)).ok()
+    Tree::new(startup::open_dir()).ok()
 }
 
 /// S2's live round for this window's session, reading its own settings. The door the window calls.
@@ -562,6 +561,7 @@ fn current_value(policy: &Policy, row: &CatalogueRow) -> String {
         // P.policy.targetLengthSeconds — a number row, so the model gets the seconds as digits; `0` is §10's
         // "none" and stays 0 rather than an empty string, which would read as a field with no value.
         "targetLengthSeconds" => format!("{}", policy.target_length_seconds.value),
+        "language" => policy.language.value.clone(),
         _ => String::new(),
     }
 }

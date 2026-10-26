@@ -483,7 +483,7 @@ fn f1_13_s6_one_list_for_the_whole_session_and_its_parameters() {
     };
     // The fixed line covers the camera's first word only; everything else is a skipped (EVENT/blank) row.
     let lines = |source: &str, start: f64, _end: f64| match source {
-        "camera.mkv" if start < 11.0 => Some(vec!["Hallo".to_string(), "Welt".to_string()]),
+        "camera.mkv" if start < 11.0 => Some((14.1, vec!["Hallo".to_string(), "Welt".to_string()])),
         _ => None,
     };
 
@@ -773,4 +773,51 @@ fn f1_13_s7_without_a_wave_cache_the_list_is_still_built_and_no_stray_is_claimed
         (4.8, 5.2),
         "times stand where they were glued"
     );
+}
+
+/// S4 with a fixed line that covers several words, the ordinary case: each word keeps its own spelling. The
+/// first rewrite ended each window at its first word's end, so the rest of the line was hung on every word in
+/// turn and each word of 07-news's list carried its whole sentence; the join model was shown one sentence
+/// eighteen times over.
+#[test]
+fn f1_13_s4_a_fixed_line_respells_each_of_its_words_once() {
+    let mic = vec![
+        token("for", 1.0, 1.3),
+        token("api", 1.4, 2.0),
+        token("curl", 3.7, 4.1),
+        token("next", 9.0, 9.4),
+    ];
+    let sources = vec![("mic.wav".to_string(), mic)];
+    let lines = |_: &str, start: f64, _end: f64| {
+        if start < 5.0 {
+            Some((
+                4.2,
+                vec!["For".to_string(), "API".to_string(), "curl.".to_string()],
+            ))
+        } else {
+            Some((9.5, vec!["Next.".to_string()]))
+        }
+    };
+    let (list, _) = words::list(&sources, |_, _, _| None, |_| None, lines);
+    let written: Vec<&str> = list.iter().map(|word| word.written.as_str()).collect();
+    assert_eq!(written, ["For", "API", "curl.", "Next."]);
+}
+
+/// S6: the list runs on the session clock, whatever order the rows were added in. 07-news's rows were added
+/// newest first; the list followed them, so join 1 was asked with the lecture's LAST take as BEFORE and the
+/// take recorded just before it as AFTER.
+#[test]
+fn f1_13_s6_the_list_follows_the_session_clock_not_the_row_order() {
+    let tree = temp_project("clock");
+    let mut project = Project::default();
+    for name in ["2026-10-25 10-39-43.mkv", "2026-10-25 10-28-46.mkv"] {
+        project.sources.push(add_recording(&tree, name, 4096));
+    }
+    write_aligned(&tree, "2026-10-25 10-39-43", &[("goodbye", 0.0, 0.4)]);
+    write_aligned(&tree, "2026-10-25 10-28-46", &[("welcome", 0.0, 0.4)]);
+
+    words::press_word_list(&tree, &project, MarkingPass::Joins);
+    let list = words::load(&tree).unwrap().expect("the list was built");
+    let said: Vec<&str> = list.iter().map(|word| word.match_word.as_str()).collect();
+    assert_eq!(said, ["welcome", "goodbye"], "10-28-46 was recorded first");
 }

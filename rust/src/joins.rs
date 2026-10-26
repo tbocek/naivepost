@@ -35,8 +35,8 @@ use crate::prompts;
 use crate::seam_retries;
 use crate::textfmt::{self, Retake};
 use crate::tools::textedit::{
-    self, one_stretch_at_join, seam_snap, Join, Side, JOIN_REACH_WORDS, SEAM_CEIL, SEAM_MAX_WORDS,
-    SEAM_NOISE_WORDS, SEAM_REACH_WORDS, SEAM_SNAP_WORDS,
+    self, Join, Side, JOIN_REACH_WORDS, SEAM_CEIL, SEAM_MAX_WORDS, SEAM_NOISE_WORDS,
+    SEAM_REACH_WORDS, SEAM_SNAP_WORDS,
 };
 use crate::word_list::{self, Word};
 
@@ -128,18 +128,84 @@ pub fn no_seam_log() -> String {
 ///
 /// Thinking is ON for this job (`P.machine.textEditThinking`, [`prompts::thinking`]) — measured at
 /// 15/29 joins right without it against 20/29 with.
-pub fn request(context: &str, k: usize, n: usize, before: &[String], after: &[String]) -> String {
-    let material = format!(
-        "JOIN {k} of {n}.\n\nBEFORE (the end of the take that was interrupted):\n{}\n\n\
-         AFTER (the beginning of the take that follows):\n{}\n\n\
-         Answer {{\"joined\":\"...\"}} and nothing else: these {b} words and then these {a}, in \
-         that order, with the stretch at the join left out.",
-        before.join(" "),
-        after.join(" "),
-        b = before.len(),
-        a = after.len(),
+/// The words either side of [`CUT`] the close-up shows: near enough that the restart is in view at once.
+pub const CLOSE_WORDS: usize = 15;
+
+/// How many of BEFORE's last words the ask prints as BEFORE: the wide view carries the rest. Measured this way
+/// on 07-news (2026-10-26); a quote is still matched against the whole window.
+pub const BEFORE_WORDS: usize = 25;
+
+/// Where the join is, in every view the ask shows.
+pub const CUT: &str = "[CUT]";
+
+/// Where another join is, in the wide view: marked so the model does not take it for its own.
+pub const OTHER_TAKE: &str = "[another take starts]";
+
+/// One join's ask (§F1.10 S3), the join shown three ways: the WIDE view of the speech around it with this join
+/// marked [`CUT`] and the others [`OTHER_TAKE`]; the words CLOSE to the cut; and BEFORE and AFTER themselves,
+/// AFTER being the whole take that follows up to where the next one starts. `refused` is why the previous
+/// answer at this join was refused, said to the retry so it does not make the same mistake again.
+pub fn request(
+    context: &str,
+    k: usize,
+    n: usize,
+    wide: &str,
+    before: &[String],
+    after: &[String],
+    refused: Option<&str>,
+) -> String {
+    let close = format!(
+        "{} {CUT} {}",
+        before[before.len().saturating_sub(CLOSE_WORDS)..].join(" "),
+        after[..after.len().min(CLOSE_WORDS)].join(" ")
     );
+    let mut material = format!(
+        "JOIN {k} of {n}.\n\nWIDE VIEW (this join is at {CUT}; every {OTHER_TAKE} is another join, not yours):\n{wide}\n\n\
+         CLOSE TO THE CUT:\n{close}\n\n\
+         BEFORE (the end of the take that was interrupted):\n...{}\n\n\
+         AFTER (the whole take that follows, up to where the next one starts):\n{}\n\n\
+         Answer {{\"drop_before\":\"...\",\"drop_after\":\"...\"}} and nothing else: the last words of BEFORE and the \
+         first words of AFTER that go, copied exactly, or empty.",
+        before[before.len().saturating_sub(BEFORE_WORDS)..].join(" "),
+        after.join(" "),
+    );
+    if let Some(reason) = refused {
+        material.push_str(&format!(
+            "\n\nYour previous answer at this join was refused: {reason}. Answer again."
+        ));
+    }
     prompt_assembly::user_message(context, "textedit", &material)
+}
+
+/// The wide view of one join: up to `reach` standing words either side of `seam`, with [`CUT`] at it and
+/// [`OTHER_TAKE`] at every other seam inside the view.
+pub fn wide_view(
+    words: &[Word],
+    kept: &[bool],
+    seam: usize,
+    seams: &[usize],
+    reach: usize,
+) -> String {
+    let standing = |index: usize| kept.get(index).copied().unwrap_or(true);
+    let cut = seam.min(words.len());
+    let before: Vec<usize> = (0..cut).filter(|i| standing(*i)).collect();
+    let after: Vec<usize> = (cut..words.len()).filter(|i| standing(*i)).collect();
+    let mut shown: Vec<&str> = Vec::new();
+    for &index in &before[before.len().saturating_sub(reach)..] {
+        if seams.contains(&index) {
+            shown.push(OTHER_TAKE);
+        }
+        shown.push(&words[index].written);
+    }
+    shown.push(CUT);
+    for (at, &index) in after.iter().take(reach).enumerate() {
+        if at > 0 && seams.contains(&index) {
+            shown.push(OTHER_TAKE);
+        }
+        shown.push(&words[index].written);
+    }
+    shown.retain(|word| !word.is_empty());
+    shown.join(" ")
 }
 
 /// Whether this job thinks. Kept as a named question rather than assumed at the call site: §F1.10's
@@ -178,242 +244,108 @@ impl Outcome {
     }
 }
 
-/// S3: read `{"joined":"..."}` and say what it leaves out.
+/// S3: read the words the answer removes and say what that comes to (§02 §3.5).
 ///
-/// The tool's own surface asks for counts (`drop_words(side, count)`); a model answers with text.
-/// This is the door between them: the answer is matched backwards against the words the join was
-/// shown, preferring the LATER saying of anything repeated, and the counts that fall out are handed
-/// to the tool so the tool's ceilings and error sentences are the ones that decide.
+/// The answer QUOTES what goes: `{"drop_before":"<the last words of BEFORE>","drop_after":"<the first words of
+/// AFTER>"}`. Each quote is matched against the words the join was shown, from the seam outwards, compared bare
+/// (case and punctuation are the transcript's, not the word's), so the model never counts. The counts that fall
+/// out go to the tool, so its ceilings and its sentences decide, the same as for any other removal.
 ///
-/// Backwards, and preferring the later saying, because the shared middle of a restart is spoken twice
-/// and the answer keeps one copy: matching forwards would attribute the kept copy to BEFORE and charge
-/// the removal to AFTER, which is backwards from where the stumble actually is.
-///
-/// The reply is checked word by word against what was shown, punctuation stripped: the prompt allows
-/// no other words, and one invented word anywhere means the answer describes a video this session does
-/// not contain. That is a refusal naming the word, not a best-effort fit.
+/// The prototype had the model write the joined text back and matched it backwards to find what was left out;
+/// with tools offered beside that, the 27B answered nothing usable at 125 of 127 asks on 07-news (2026-10-26).
+/// A quote that does not match what was shown is refused with the reason, and the retry is shown that reason.
 pub fn answer_join(
     join: &mut Join,
     reply: &str,
     shown_before: &[String],
     shown_after: &[String],
 ) -> Outcome {
-    let joined = match parse_joined(reply) {
-        Some(text) => text,
-        None => return Outcome::Refused("no \"joined\" in the answer".to_string()),
+    let Some((quote_before, quote_after)) = parse_quotes(reply) else {
+        return Outcome::Refused(
+            "no \"drop_before\"/\"drop_after\" in the answer -- answer {\"drop_before\":\"…\",\"drop_after\":\"…\"}"
+                .to_string(),
+        );
     };
-    let words: Vec<String> = joined.split_whitespace().map(|w| w.to_string()).collect();
-    if words.is_empty() {
-        // An empty string is not "nothing left out" — it is no answer at all. `keep_join` is how a
-        // model says the takes need no repair, and it has to say that rather than leave it blank.
-        return Outcome::Refused("no words in the answer".to_string());
-    }
-
-    // Which words the answer kept, and therefore which it left out. The split between BEFORE's part
-    // and AFTER's part is found rather than assumed: a repaired join is ONE run of speech with no
-    // marker inside it saying where one take's words end and the next begin.
-    let parts = match split_answer(&words, shown_before, shown_after) {
-        Some(parts) => parts,
-        None => {
-            return Outcome::Refused(
-                "the answer keeps neither the end of BEFORE nor the start of AFTER".to_string(),
-            )
-        }
+    let Some(drop_before) = quoted_tail(&quote_before, shown_before) else {
+        return Outcome::Refused(format!(
+            "\"{quote_before}\" is not how BEFORE ends -- quote its last words exactly as shown"
+        ));
     };
-    // What went is measured against what was SHOWN on each side, so a respelled or folded word that
-    // matched nothing in the answer still counts as left out rather than silently vanishing.
-    let drop_before = shown_before.len() - parts.head.len();
-    let drop_after = shown_after.len() - parts.tail.len();
+    let Some(drop_after) = quoted_head(&quote_after, shown_after) else {
+        return Outcome::Refused(format!(
+            "\"{quote_after}\" is not how AFTER starts -- quote its first words exactly as shown"
+        ));
+    };
     if drop_before == 0 && drop_after == 0 {
-        // Everything shown is in the answer: the model kept both takes whole. That is `keep_join`,
-        // said in the only other way it could be said.
+        // Nothing removed: the two takes belong together as they stand, a whole answer.
         join.keep_join();
         return Outcome::Kept;
     }
-
-    // One stretch at the join: words off the end of BEFORE, or off the start of AFTER, or some of
-    // each — but never a run that stops short of the seam on one side while another run sits past it.
-    if !(drop_before == 0 || drop_after == 0) {
-        // Both sides gave way. Allowed (the spec says "some of each"), and still one stretch because
-        // the two halves touch the seam from either side of it. Checked through the tool so the same
-        // rule that guards a model's own calls guards this one.
-        let runs_before = vec![drop_before];
-        let runs_after = vec![drop_after];
-        if !one_stretch_at_join(&runs_before, &runs_after) {
-            return Outcome::Refused("two stretches left out, not one at the join".to_string());
-        }
-    }
-
-    // The removal has to REACH the seam on the side it came from: dropping words out of the middle of
-    // BEFORE while its last words survive is not a join repair, it is an edit somewhere else in the
-    // video. Measured against the unmatched span on each side rather than a word count, because what
-    // matters is where the gap sits, not how big it is.
-    if drop_before > 0 {
-        let (_first, last) = unmatched_span(&parts.head, shown_before);
-        if last < shown_before.len() {
-            // The kept run resumes before the end of BEFORE: the removal stops short of the seam by
-            // however many words sit after it. P.machine.seamSnapWords decides whether that snaps.
-            let gap = shown_before.len() - last;
-            if let Err(reason) = seam_snap(Side::Before, gap) {
+    // Hand the counts to the tool and let its ceilings speak. A refusal arrives as an error JSON carrying the
+    // tool's own sentence, which is the sentence the log and the retry want.
+    for (side, count) in [(Side::Before, drop_before), (Side::After, drop_after)] {
+        if count > 0 {
+            if let Some(reason) = tool_error(&join.drop_words(side, count)) {
                 return Outcome::Refused(reason);
             }
         }
     }
-    if drop_after > 0 {
-        let (first, _last) = unmatched_span(&parts.tail, shown_after);
-        if first > 0 {
-            // The kept run starts past the seam: the removal is that many words late.
-            if let Err(reason) = seam_snap(Side::After, first) {
-                return Outcome::Refused(reason);
-            }
-        }
-    }
-
-    // Hand the counts to the tool and let its ceilings speak. A refusal here arrives as an error JSON
-    // carrying the tool's own sentence, which is the sentence the log wants.
-    let mut refused: Option<String> = None;
-    if drop_before > 0 {
-        let verdict = join.drop_words(Side::Before, drop_before);
-        if let Some(reason) = tool_error(&verdict) {
-            refused = Some(reason);
-        }
-    }
-    if refused.is_none() && drop_after > 0 {
-        let verdict = join.drop_words(Side::After, drop_after);
-        if let Some(reason) = tool_error(&verdict) {
-            refused = Some(reason);
-        }
-    }
-    match refused {
-        Some(reason) => Outcome::Refused(reason),
-        None => Outcome::Applied {
-            before: join.dropped_count(Side::Before),
-            after: join.dropped_count(Side::After),
-        },
+    Outcome::Applied {
+        before: join.dropped_count(Side::Before),
+        after: join.dropped_count(Side::After),
     }
 }
 
-/// Read `{"joined":"..."}` out of a reply. Tolerant of surrounding whitespace and of a fence a model
-/// added despite being told not to; intolerant of anything that is not that one field, because a
-/// report about the join is not an answer about it.
-pub fn parse_joined(reply: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(reply.trim()).ok()?;
-    value
-        .get("joined")?
-        .as_str()
-        .map(|text| text.trim().to_string())
-}
-
-/// Split an answer into the two parts it says were kept — the end of BEFORE and the start of AFTER —
-/// rather than assuming it keeps each side as a whole block.
-///
-/// A model that repairs a join returns ONE run of speech, and where that run stops matching BEFORE
-/// and starts matching AFTER is not marked. Matching the whole answer against each side separately
-/// gets this wrong in the ordinary case: join 23 keeps BEFORE up to "ermöglichen" and then all of
-/// AFTER, which shares no contiguous head with either list, so both sides looked dropped and the
-/// answer was refused as "two stretches".
-///
-/// So every split point is tried and the LONGEST total removal wins, because the stumble is what the
-/// answer left out and leaving more out than it meant would cut words the speaker kept. Ties go to
-/// the split that takes less from AFTER, since the spec has BEFORE give way first.
-/// The two runs an answer kept: the tail of BEFORE and the head of AFTER.
-#[derive(Debug, Clone)]
-pub struct Parts {
-    pub head: Vec<String>,
-    pub tail: Vec<String>,
-}
-
-/// §5 bullet 3: *"'prefer the later saying' is the direction of the match, not a request to the
-/// model"*. Of two readings that leave out the same number of words, the one charging BEFORE wins — the
-/// kept copy of anything said twice is attributed to AFTER, because the shared middle of a restart is
-/// spoken twice and the answer keeps one copy, which is the LATER saying.
-///
-/// The app decides this; the model is never asked. Asking it would turn something the word list already
-/// settles into a coin flip, and `spec/prompts/textedit.md` says so in its own voice ("BEFORE gives way
-/// first", "what was said last is what the speaker meant to keep") without ever putting the choice to it.
-fn later_saying_wins(candidate_head: usize, best_head: usize) -> bool {
-    candidate_head > best_head
-}
-
-/// Split the answer into the two parts it kept, scoring every cut by how much it leaves out.
-///
-/// The cut is FOUND rather than assumed because nothing in a repaired join marks the seam. For each
-/// way of cutting the answer, both halves must be subsequences of their own side (an answer may drop a
-/// word from what it keeps -- a folded or respelled one -- without that being a second removal), and
-/// the reading with the FEWEST words left out wins. Ties go to whichever keeps more of BEFORE, since
-/// the spec has BEFORE give way first: what was said last is what the speaker meant to keep.
-fn split_answer(
-    answer: &[String],
-    shown_before: &[String],
-    shown_after: &[String],
-) -> Option<Parts> {
-    let mut best: Option<(usize, Parts)> = None;
-    for split in 0..=answer.len() {
-        let head = answer[..split].to_vec();
-        let tail = answer[split..].to_vec();
-        if !is_subsequence(&head, shown_before) || !is_subsequence(&tail, shown_after) {
-            continue;
-        }
-        let removed = (shown_before.len() - head.len()) + (shown_after.len() - tail.len());
-        match best {
-            Some((best_removed, ref best_parts))
-                if best_removed < removed
-                    || (best_removed == removed
-                        && !later_saying_wins(head.len(), best_parts.head.len())) => {}
-            _ => best = Some((removed, Parts { head, tail })),
-        }
+/// The two quotes of an answer. A fence or a word around the JSON is tolerated (the object is taken from the
+/// first `{` to the last `}`); an object with neither field is no answer.
+pub fn parse_quotes(reply: &str) -> Option<(String, String)> {
+    let from = reply.find('{')?;
+    let to = reply.rfind('}')?;
+    let value: serde_json::Value = serde_json::from_str(reply.get(from..=to)?).ok()?;
+    let field = |key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string)
+    };
+    let (before, after) = (field("drop_before"), field("drop_after"));
+    if before.is_none() && after.is_none() {
+        return None;
     }
-    best.map(|(_, parts)| parts)
+    Some((before.unwrap_or_default(), after.unwrap_or_default()))
 }
 
-/// Does every word of `needles` appear in `hay`, in order? Each matched as spelled-equal, and each
-/// later needle only after the position the previous one matched at. An empty `needles` matches.
-fn is_subsequence(needles: &[String], hay: &[String]) -> bool {
-    let mut cursor = 0usize;
-    for word in needles {
-        match (cursor..hay.len()).find(|&i| same_spelling(&hay[i], word)) {
-            // `find` yields the index itself, not an offset into the range -- advance TO it plus one.
-            Some(index) => cursor = index + 1,
-            None => return false,
-        }
-    }
-    true
+/// The bare words of some texts, in order: what a quote and a shown run are compared by.
+fn bare_words<'a>(texts: impl IntoIterator<Item = &'a String>) -> Vec<String> {
+    texts
+        .into_iter()
+        .flat_map(|text| text.split_whitespace())
+        .map(word_list::bare)
+        .filter(|word| !word.is_empty())
+        .collect()
 }
 
-/// Where a kept run leaves its gap on this side: the index of the FIRST unmatched word, and the index
-/// just past the LAST unmatched one. Used to say which way a stretch missed the seam.
-fn unmatched_span(kept: &[String], shown: &[String]) -> (usize, usize) {
-    let mut cursor = 0usize;
-    let mut first = shown.len();
-    let mut last = 0usize;
-    for word in kept {
-        match (cursor..shown.len()).position(|i| same_spelling(&shown[i], word)) {
-            Some(offset) => {
-                if offset > 0 {
-                    if first > cursor {
-                        first = cursor;
-                    }
-                    last = cursor + offset;
-                }
-                cursor += offset + 1;
-            }
-            None => break,
-        }
+/// How many of BEFORE's last shown words the quote names, or `None` when it is not how BEFORE ends. The fewest
+/// that match: a respelling folded onto one word leaves its followers empty, and those belong to the fold, not
+/// to the quote's first word.
+fn quoted_tail(quote: &str, shown: &[String]) -> Option<usize> {
+    let wanted = bare_words(&[quote.to_string()]);
+    if wanted.is_empty() {
+        return Some(0);
     }
-    if cursor < shown.len() {
-        if first > cursor {
-            first = cursor;
-        }
-        last = shown.len();
-    }
-    (first.min(shown.len()), last)
+    (1..=shown.len()).find(|n| bare_words(&shown[shown.len() - n..]) == wanted)
 }
 
-/// Two printed words spelling the same thing. Punctuation and case are the transcript's, not the
-/// word's: a comma the model did not bother to repeat is no obstacle, and neither is a full stop it
-/// added. Compared bare, the same way every other pass in the session compares words.
-fn same_spelling(a: &str, b: &str) -> bool {
-    word_list::bare(a) == word_list::bare(b)
+/// How many of AFTER's first shown words the quote names, or `None` when it is not how AFTER starts. The most
+/// that match, so a folded word's empty followers go with it.
+fn quoted_head(quote: &str, shown: &[String]) -> Option<usize> {
+    let wanted = bare_words(&[quote.to_string()]);
+    if wanted.is_empty() {
+        return Some(0);
+    }
+    (1..=shown.len())
+        .rev()
+        .find(|n| bare_words(&shown[..*n]) == wanted)
 }
 
 /// The refusal sentence inside a tool reply, if the reply is one.
@@ -663,6 +595,12 @@ pub fn write_pair(
         }
         text.push_str(&textfmt::write_final(run, &[]));
     }
+    // Nothing was ever heard: no text and no marks, rather than two empty files (§3). A pass that cut every
+    // word it had is an answer, and its marks are written below like any other.
+    if words.is_empty() {
+        crate::textfmt::write_rows_or_none(&tree.final_txt(), "")?;
+        return crate::textfmt::write_rows_or_none(&tree.retakes_tsv(), "");
+    }
     hand_edit::write_final(tree, &text)?;
     hand_edit::write_marks(tree, marks)
 }
@@ -723,7 +661,12 @@ pub fn written_log(removed: usize, total: usize, stretches: usize) -> String {
 ///
 /// The requests themselves arrive with the runner rounds, exactly as F1.7's plan lines do: what
 /// lands on a press is the flow's own arithmetic, printed.
-pub fn press_joins(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<String> {
+pub fn press_joins(
+    tree: &Tree,
+    project: &Project,
+    pass: MarkingPass,
+    reached: &mut dyn FnMut(f64, &str),
+) -> Vec<String> {
     if pass != MarkingPass::Joins {
         return Vec::new();
     }
@@ -757,7 +700,7 @@ pub fn press_joins(tree: &Tree, project: &Project, pass: MarkingPass) -> Vec<Str
     // Seams exist; the answers come from the textedit model, asked here over the wire. The brief
     // line goes first so the person sees the pass start, then each seam's own line: applied, kept,
     // or refused with its reason.
-    let pass = crate::join_ask::run_seams(tree, project, &words, &times);
+    let pass = crate::join_ask::run_seams(tree, project, &words, &times, reached);
     let mut lines = vec![brief_log(&words, seams.len())];
     let spoke = !pass.logs.is_empty();
     lines.extend(pass.logs);
@@ -806,7 +749,7 @@ fn narrator_of(project: &Project) -> Option<String> {
     project
         .sources
         .iter()
-        .find(|source| source.narrator != 0)
+        .find(|source| crate::sources::is_narrator_mic(source))
         .map(lane_of)
 }
 
@@ -831,8 +774,9 @@ fn session_words(tree: &Tree, project: &Project) -> (Vec<Word>, Vec<(f64, f64)>)
     let hz = crate::transcribe::SAMPLE_RATE as f64;
     let mut words: Vec<Word> = Vec::new();
     let mut times: Vec<(f64, f64)> = Vec::new();
-    for source in &project.sources {
-        if source.narrator != 0 {
+    // On the session clock, as the session word list is: BEFORE has to be the earlier recording.
+    for source in crate::fix_session::in_clock_order(project) {
+        if crate::sources::is_narrator_mic(source) {
             // The narrator mic is heard and not played: no seam into it is a seam in the film.
             continue;
         }

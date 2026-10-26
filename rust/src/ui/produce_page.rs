@@ -52,7 +52,6 @@ pub struct ProduceState {
     // ---- what the Inputs row reads ----------------------------------------------
     pub clips: usize,
     pub seconds: f64,
-    pub narration_off: bool,
     pub to_speak: usize,
     pub publish_written: bool,
     /// The session's own language, which is never offered for translation.
@@ -62,16 +61,14 @@ pub struct ProduceState {
     pub cut_line: String,
     /// The first line the narration reads aloud, empty with nothing to speak.
     pub first_spoken: String,
-    /// Aspect ratios present in the kept clips, spelled as §A spells them; more than one means the
-    /// render letterboxes.
-    pub mixed_sizes: Vec<String>,
+    /// The separate recordings (sources not marked as footage) mixed into each clip's own sound, by base
+    /// name: the tooltip's "which recordings are mixed" (prototype: `snappedSources`' audio half).
+    pub mixed_recordings: Vec<String>,
     /// The voice the take would use, empty until F4.6's picker answers.
     pub voice: String,
     // ---- the Outputs row ---------------------------------------------------------
     pub out_files: usize,
     pub out_bytes: u64,
-    /// A render is running: ⤓ Save video and ↻ Transcode both refuse while it is.
-    pub rendering: bool,
     /// The base picture's own shape, unknown until something reads the file (`None`).
     pub base_shape: Option<(u32, u32)>,
     /// The finished video's shape. `(0, 0)` means NO SHAPE IS KNOWN YET — the page invents no default,
@@ -88,11 +85,11 @@ thread_local! {
         resolution: String::new(), frame_rate: String::new(), audio: String::new(),
         subtitles: String::new(), translate: Vec::new(), game_volume: 0.22, crf: 24.0,
         vfr: false, mono: false, blurred_edges: true,
-        clips: 0, seconds: 0.0, narration_off: false, to_speak: 0, publish_written: false,
+        clips: 0, seconds: 0.0, to_speak: 0, publish_written: false,
         session_language: String::new(),
-        cut_line: String::new(), first_spoken: String::new(), mixed_sizes: Vec::new(),
+        cut_line: String::new(), first_spoken: String::new(), mixed_recordings: Vec::new(),
         voice: String::new(),
-        out_files: 0, out_bytes: 0, rendering: false,
+        out_files: 0, out_bytes: 0,
         base_shape: None, video_shape: (0, 0),
     }) };
 }
@@ -158,10 +155,9 @@ fn heading(text: &str, tip: &str) -> gtk::Label {
 /// `TextView`s rather than single-line `Entry`s.
 fn text_box(name: &str, lines: i32, tip: &str) -> gtk::TextView {
     let view = gtk::TextView::new();
+    crate::ui::margins::text_box(&view);
     view.set_widget_name(name);
     view.set_wrap_mode(gtk::WrapMode::WordChar);
-    view.set_top_margin(4);
-    view.set_bottom_margin(4);
     // `lines` visible rows: one line-height of request per row, which is what makes a "4-line box" be
     // four rows tall rather than whatever the column hands out.
     view.set_size_request(-1, 20 * lines);
@@ -192,7 +188,9 @@ fn build_left_column() -> gtk::Box {
 
     // The slots themselves, rebuilt whole by `draw_slots`; the empty state lives in here too, because
     // §A prints it where the slots go.
-    let slots = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    // Side by side and of one width each (§1: "up to 8 slots side by side, left to right").
+    let slots = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    slots.set_homogeneous(true);
     slots.set_widget_name("publish-images");
     left.append(&slots);
 
@@ -243,24 +241,33 @@ fn build_left_column() -> gtk::Box {
     let picture = gtk::DrawingArea::new();
     picture.set_vexpand(false);
     picture.set_widget_name("thumbnail-picture");
-    picture.set_widget_name("thumbnail-picture");
     picture.set_halign(gtk::Align::Fill);
-    picture.set_size_request(320, 180);
+    picture.set_hexpand(true);
+    // Height only: §A's "min 120" is a floor on the plate's HEIGHT, and asking for a WIDTH here too made the
+    // whole left column wider than the half it was given (see `produce_slots::SLOT_PICTURE_MIN_PX`). The
+    // plate fills its column, which is what §1's picture shows — the thumbnail spans the column.
+    picture.set_size_request(-1, PLATE_MIN_H_PX);
     picture.add_css_class("produce-plate");
     picture.set_tooltip_text(Some(
         "Drag a box over the picture to put words on it \u{2014} they print to fill the box. Drag a border \
 to resize, the middle to move, and press its \u{270e} to reword or remove it.",
     ));
     picture_holder.set_child(Some(&picture));
+    crate::ui::produce_paint::follow_plate(&picture);
     // §A: a word mark is visible ON the picture, not only as its chip below. The holder that can float
     // children over a `DrawingArea` (which holds none) is the overlay above; §1 pins the left column's
     // child ORDER, so the column appends THAT holder rather than a wrapper around the plate.
-    let marks = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    // A `Fixed`, because each box sits at its own x/y over the plate: in a stacking box a second mark was
+    // placed under the first instead of where it belongs. It fills the overlay, so its origin is the plate's.
+    let marks = gtk::Fixed::new();
     marks.set_widget_name("thumbnail-word-boxes");
     // The overlay slot the dashed boxes are appended to; empty until a mark exists, so it draws nothing.
     picture_holder.add_overlay(&marks);
     // Not measured: the holder must not push the plate's size around, it only floats over it.
     picture_holder.set_measure_overlay(&marks, false);
+    // …and not a target: it fills the overlay above the plate, so every press on the thumbnail landed on it and
+    // the plate's drag-a-box gesture never saw a real drag. The marks' words stand in their ✎ chips below.
+    marks.set_can_target(false);
     left.append(&picture_holder);
     // The ✎ chips live in a named holder so `refresh` can rebuild them with the marks they stand for.
     let chips = gtk::Box::new(gtk::Orientation::Vertical, 2);
@@ -305,13 +312,16 @@ fn build_right_column() -> gtk::Box {
     title.set_hexpand(true);
     right.append(&title);
 
-    // **9** the YouTube description, eight lines.
+    // **9** the YouTube description, eight lines at least, and the column's spare height: in §1's picture
+    // the box runs down to the separator, and the settings under it take only their own lines.
     right.append(&heading("YouTube description", ""));
-    right.append(&text_box(
+    let description = text_box(
         "description-box",
         screen::DESCRIPTION_LINES as i32,
         "What goes under the video on YouTube",
-    ));
+    );
+    description.set_vexpand(true);
+    right.append(&description);
 
     // §1's separator between what a person WRITES and how the video is ENCODED: "the YouTube description
     // heading and box, a separator, then the encoder settings". Named because the spec lists it as one of
@@ -336,57 +346,33 @@ fn build_right_column() -> gtk::Box {
     transcode_row.append(&again);
     right.append(&transcode_row);
 
-    // **11**–**14** the thirteen settings rows, in a scroller as §A puts them.
+    // **11**–**14** the thirteen settings rows, in a scroller as §A puts them. The scroller is as tall as
+    // its lines (`propagate_natural_height`) and does not expand: the description above takes the slack,
+    // which is what §1's picture shows. With the scroller expanding instead, the slack drew as an empty band
+    // under the last line. It still scrolls the lines when the column is shorter than they are.
     let scroller = gtk::ScrolledWindow::new();
-    // `Automatic` on BOTH axes: the grid lays out several label+control pairs to a line (§A), so its natural
-    // width is wider than a narrow window's right column, and with an `External` horizontal policy it simply
-    // ran off the edge instead of scrolling. Automatic gives it a bar when the column is squeezed and full
-    // width whenever the column has room — which is what makes the pairing measurable at all.
     scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
-    // No minimum content WIDTH on purpose: a floor wider than the column is exactly what overflowed it. The
-    // grid lays itself out at whatever width the column gives it, which is what makes the pairing measurable
-    // and keeps items 11–14 inside the column instead of cut at its edge.
-    // And room to be TALL: the page hosts this scroller inside `page-scroll-Produce`, whose own scroller
-    // shrinks anything that expands (see `window_page_box`'s comment on why pages scroll), so with only
-    // `vexpand` the grid got one row's height and six of its lines were invisible. §1 asks for the encoder
-    // settings "in a scroller", so the grid's own height is what scrolls, not what the shell leaves over.
-    scroller.set_min_content_height(GRID_MIN_H_PX);
-    scroller.set_vexpand(true);
-    let grid = gtk::Grid::new();
-    grid.set_widget_name("encoder-settings");
-    grid.set_row_spacing(6);
-    grid.set_column_spacing(8);
+    scroller.set_propagate_natural_height(true);
+    let settings = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    settings.set_widget_name("encoder-settings");
     // Built un-wired here: `wire` attaches every control after `set_content`, because a handler put on
     // a widget that is not yet in the realized tree never fires (the same reason the Cut page attaches its
     // gestures after `set_content`).
-    layout::build_settings(&grid, 0);
-    scroller.set_child(Some(&grid));
+    layout::build_settings(&settings);
+    scroller.set_child(Some(&settings));
     right.append(&scroller);
-
-    // **15** the Inputs readout, and the Outputs count with its folder button.
-    let readouts = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    readouts.set_halign(gtk::Align::End);
-    let inputs = gtk::Label::new(Some(""));
-    inputs.set_widget_name("produce-inputs");
-    inputs.set_xalign(1.0);
-    readouts.append(&inputs);
-    let outputs = gtk::Label::new(Some(""));
-    outputs.set_widget_name("produce-outputs");
-    outputs.set_xalign(1.0);
-    readouts.append(&outputs);
-    let folder = gtk::Button::from_icon_name("folder-symbolic");
-    folder.set_widget_name("produce-folder-button");
-    folder.set_tooltip_text(Some(screen::FOLDER_TIP));
-    readouts.append(&folder);
-    right.append(&readouts);
+    // §1's **15**, the Inputs readout and the Outputs count, is the window's bottom bar (03-shell §1:
+    // "the visible tab's Inputs: readout, then the Outputs: label, the Outputs folder button and the
+    // Outputs count"), painted by `Shell::inputs` / `Shell::outputs`. A copy in this column was a second
+    // readout that disagreed with the first.
     right
 }
 
-/// How tall the encoder scroller has to be to show the lines §A groups: five rows of controls plus their
-/// spacing. Shorter and the last pairs hide behind the scroller's own bar instead of being drawn.
-const GRID_MIN_H_PX: i32 = 240;
+/// The plate's own floor (§A: "the result picture (min 120)"). A height, never a width: a width here is a
+/// minimum the left column cannot shrink below, and that is what clipped its headings.
+const PLATE_MIN_H_PX: i32 = 180;
 
-/// The height the page asks its column for, so the encoder scroller's [`GRID_MIN_H_PX`] is a FLOOR rather
+/// The height the page asks its column for, so the encoder grid's own lines are a FLOOR rather
 /// than a wish. `page_box` hosts every page inside `page-scroll-<page>`, whose vertical policy is `Never`
 /// (§1 wants nothing scrolling as a whole at §1's minimum size), so a child that only expands gets whatever
 /// height is left over — and headless, where nothing maps the window before a snapshot takes its pixels,
@@ -516,28 +502,33 @@ pub fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Wid
     walk(&content, name)
 }
 
-fn label(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Label> {
-    widget_in(window, name)?.downcast().ok()
-}
-
 /// Redraw the settings rows whole. A row's presence is part of what is being drawn — §F4.8 takes the
 /// Game-audio row away with the narration tick — so `refresh` cannot only update values inside whatever
 /// `build()` happened to draw first: the grid is emptied and refilled from `settings_rows_shown`, which
 /// is the same door `build_settings` walks. Rebuilding also re-attaches nothing twice, because every
 /// child is removed from the grid before any is added.
 fn rebuild_settings(window: &adw::ApplicationWindow, _s: &ProduceState) {
-    let Some(grid) =
-        widget_in(window, "encoder-settings").and_then(|w| w.downcast::<gtk::Grid>().ok())
+    let Some(settings) =
+        widget_in(window, "encoder-settings").and_then(|w| w.downcast::<gtk::Box>().ok())
     else {
         return;
     };
-    while let Some(child) = grid.first_child() {
-        grid.remove(&child);
+    while let Some(child) = settings.first_child() {
+        settings.remove(&child);
     }
-    layout::build_settings(&grid, 0);
+    layout::build_settings(&settings);
     // The fresh controls carry no handlers until this runs: rebuilding the grid would otherwise leave
     // every row decorative.
     wire_settings(window);
+    // F0.14 S9: a project whose profile sets the encoder rows shows them here, greyed: they are changed in
+    // Profiles, the one place a profile's settings live.
+    let set_by = encoder_profile();
+    settings.set_sensitive(set_by.is_none());
+    settings.set_tooltip_text(
+        set_by
+            .map(|name| format!("Set by the profile {name} \u{2014} change them in Profiles"))
+            .as_deref(),
+    );
 }
 
 /// Say it on the status line and in the log, the page's two output channels.
@@ -552,13 +543,11 @@ fn say(window: &adw::ApplicationWindow, said: &str) -> String {
 /// Repaint everything the held state owns: slots, the settings' values, the readouts.
 pub fn refresh(window: &adw::ApplicationWindow) {
     let mut s = read_state();
-    // §A's Game-audio row and §15's "no narration" clause are the same fact about the project, so they are
-    // decided BEFORE anything is drawn: `build_settings` reads the held state, and a page that rebuilt its
-    // rows from last minute's flag drew the slider beside a readout saying there is no narration. `None` (no
-    // session to read) leaves whatever a flow published in place rather than claiming the folder is empty.
-    if let Some(counts) = session_readouts(s.narration_off) {
-        s.to_speak = counts.0;
-        s.publish_written = screen::publish_written(s.publish_written, counts.1);
+    // §15's counts are read BEFORE anything is drawn. `None` (no session to read) leaves whatever a flow
+    // published in place rather than claiming the folder is empty.
+    if let Some(counts) = session_readouts() {
+        s.to_speak = counts.owed;
+        s.publish_written = screen::publish_written(s.publish_written, counts.publish_written);
     }
     draw_into(&s);
     // `draw_into` rebuilt the slot rows whole, so their fresh `DrawingArea`s have no painter until this
@@ -592,77 +581,52 @@ pub fn refresh(window: &adw::ApplicationWindow) {
         }
     }
     SETTINGS_GUARD.with(|guard| guard.set(false));
-    if let Some(inputs) = label(window, "produce-inputs") {
-        inputs.set_text(&screen::inputs_line(
-            s.clips,
-            s.seconds,
-            s.narration_off,
-            s.to_speak,
-            s.publish_written,
-        ));
-        // The tooltip answers "what exactly is behind that count": the clip range, the first line to
-        // // be spoken, the voice in use, and whether text leaves the machine. Only what THIS session has
-        // is stated; a thing the flows have not published yet contributes no row rather than a guess.
-        let first_line = if s.first_spoken.is_empty() {
-            None
-        } else {
-            Some(s.first_spoken.as_str())
-        };
-        let voice = if s.voice.is_empty() {
-            None
-        } else {
-            Some(s.voice.as_str())
-        };
-        inputs.set_tooltip_text(Some(&screen::inputs_tooltip(
-            &s.cut_line,
-            first_line,
-            &s.mixed_sizes,
-            voice,
-            s.publish_written,
-        )));
-    }
-    if let Some(outputs) = label(window, "produce-outputs") {
-        outputs.set_text(&screen::outputs_summary(s.out_files, s.out_bytes));
-    }
 }
 
 /// §15's two session counts: how many narration lines still need to be spoken, and whether `publish.json`
-/// exists. `None` when this working directory is no session at all — a page opened over a folder without a
-/// `session.naivepost` has nothing to count, and keeps what a flow published rather than inventing zeros.
+/// exists. The page's `refresh` and the bottom bar's Produce readout (`Shell::inputs`) both ask here, so the
+/// two cannot disagree.
 ///
 /// "Still needs to be spoken" is the prototype's own question (`updateInputs` counts `entries` whose
 /// `ttsWav` is missing, and says "no narration" when there are no lines at all), asked here through the
 /// stamp's seam: `wav_of` is where a take lives, so the count and the stamp can never disagree about which
-/// lines are owed. Narration off is answered by the caller's own flag, not read here: the page holds it
-/// (§A hides Game audio behind it) and `lines_to_speak` already returns nothing for it. The flag arrives
-/// through [`note_narration_off`] rather than being read off disk here, so that the rows and the readout
-/// cannot be built from two different answers.
-fn session_readouts(narration_off: bool) -> Option<(usize, bool)> {
-    let dir = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
-    let tree = crate::layout::Tree::new(&dir).ok()?;
-    let lines = crate::narration::load(&tree)
+/// lines are owed. A narration with no lines with words is "no narration" (there is no switch, §07 §1).
+pub fn session_counts(tree: &crate::layout::Tree) -> SessionCounts {
+    let lines = crate::narration::load(tree)
         .map(|n| n.entries)
         .unwrap_or_default();
-    let owed = crate::narrate_off::lines_to_speak(narration_off, &lines)
+    let owed = crate::narration::lines_to_speak(&lines)
         .iter()
         .filter(|line| {
-            crate::produce_stamp::wav_of(&tree, line, None, 0).is_none_or(|wav| !wav.exists())
+            crate::produce_stamp::wav_of(tree, line, None, 0).is_none_or(|wav| !wav.exists())
         })
         .count();
-    // §A's "no upload text" is the file's existence, and `publish::is_written` is that question already
-    // asked (a present-but-unparseable record is still one the next ▶ overwrites).
-    Some((owed, crate::publish::is_written(&tree)))
+    SessionCounts {
+        owed,
+        narrated: crate::narration::has_lines(&lines),
+        // §A's "no upload text" is the file's existence, and `publish::is_written` is that question already
+        // asked (a present-but-unparseable record is still one the next ▶ overwrites).
+        publish_written: crate::publish::is_written(tree),
+    }
 }
 
-/// Hand the page the narration switch of the project this window is about (§F4.8, §08 §A).
-///
-/// The page does NOT read `naivepost.json` for this: `build_settings` hides the Game-audio row from the
-/// held state and `inputs_line` spells its "no narration" clause from the same field, so a page that
-/// learned the fact twice — once from a file probe, once from whatever a flow published — drew the slider
-/// beside a readout saying there is no narration. One door, called by whoever takes a project on or moves
-/// the tick, publishes it once.
-pub fn note_narration_off(off: bool) {
-    mutate(|state| state.narration_off = off);
+/// What [`session_counts`] read off the session's files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionCounts {
+    /// Lines with words whose take is not on disk yet.
+    pub owed: usize,
+    /// Whether the narration has a line with words at all.
+    pub narrated: bool,
+    /// Whether `publish.json` exists.
+    pub publish_written: bool,
+}
+
+/// [`session_counts`] for the session beside the launch; `None` when this working directory is no session
+/// at all, which keeps what a flow published rather than inventing zeros.
+fn session_readouts() -> Option<SessionCounts> {
+    let dir = crate::startup::open_dir();
+    let tree = crate::layout::Tree::new(&dir).ok()?;
+    Some(session_counts(&tree))
 }
 
 // --- the seams: one widget press, one rules call, one printed sentence -------------------------------
@@ -768,7 +732,13 @@ pub fn press_save_video_from_button(window: &adw::ApplicationWindow) -> String {
 
 /// Store one row's value and answer with the sentence this press produced.
 fn store_setting(row: &str, value: &str) -> String {
-    mutate(|s| match row {
+    mutate(|s| store_setting_on(s, row, value))
+}
+
+/// One setting on a page state: the page's own rules (§A's container forcing included), shared by a hand on the
+/// page and a profile's `## produce` rows.
+fn store_setting_on(s: &mut ProduceState, row: &str, value: &str) -> String {
+    match row {
         "Container" => {
             let container = parse_container(value);
             let codec = parse_codec(&s.codec);
@@ -808,13 +778,14 @@ fn store_setting(row: &str, value: &str) -> String {
             set_plain_row(s, other, value);
             format!("{other} {value}")
         }
-    })
+    }
 }
 
 /// One setting changed on the row. Container carries §A's forcing rule: webm forces vp9 and turns
 /// "track in file" into "none in the video", and what got forced is said rather than silently applied.
 pub fn set_setting(window: &adw::ApplicationWindow, row: &str, value: &str) -> String {
     let said = store_setting(row, value);
+    keep_settings();
     // The path the save dialog was OPENED on is this row's own offer, so a chooser that is never answered still
     // leaves the press naming the file the row asks for (`produce_press_wiring::asked_path` reads it back).
     if row == "Container" {
@@ -834,8 +805,102 @@ pub fn set_toggle(window: &adw::ApplicationWindow, row: &str, on: bool) -> Strin
         "Frame edges" => s.blurred_edges = on,
         _ => (),
     });
+    keep_settings();
     refresh(window);
     say(window, &format!("{row} {}", if on { "on" } else { "off" }))
+}
+
+/// F0.14 S9: a profile's `## produce` rows on a project's encoder settings, through the page's own rules: each
+/// row as a hand would set it on the page (`Frame timing`, `Channels`, `Frame edges` take on/off; `Translate`
+/// takes `none` or languages separated by commas). Rows the profile does not list keep the project's value.
+pub fn apply_rows(
+    produce: &crate::project::Produce,
+    rows: &[(String, String)],
+) -> crate::project::Produce {
+    let mut s = read_state_default();
+    set_encoder_fields(&mut s, produce);
+    for (row, value) in rows {
+        let on = value.trim() == "on";
+        match row.as_str() {
+            "Frame timing" => s.vfr = on,
+            "Channels" => s.mono = on,
+            "Frame edges" => s.blurred_edges = on,
+            "Translate" => {
+                s.translate.clear();
+                for language in value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty() && *l != "none")
+                {
+                    crate::ui::produce_languages::apply(&mut s, language, true);
+                }
+            }
+            _ => {
+                store_setting_on(&mut s, row, value.trim());
+            }
+        }
+    }
+    produce_settings(&s)
+}
+
+/// The narration's game audio level, set on the Narrate page (§07 §1): kept with the encoder settings, which the
+/// render and the narration preview read, through the same door as a row changed on this page.
+pub fn set_game_volume(value: f64) {
+    mutate(|s| s.game_volume = value.clamp(0.0, 1.0));
+    keep_settings();
+}
+
+/// A page state holding these encoder settings: what the Profiles window seeds its copy of the grid from.
+pub(crate) fn encoder_state(produce: &crate::project::Produce) -> ProduceState {
+    let mut s = read_state_default();
+    set_encoder_fields(&mut s, produce);
+    s
+}
+
+/// The profile that sets this project's encoder rows (§03-shell F0.14 S9), if any: its name.
+fn encoder_profile() -> Option<String> {
+    // The window's own project, which a profile chosen on Prepare has just changed (the file follows).
+    let used = crate::ui::window::SESSION
+        .with(|slots| slots.borrow().last().cloned())
+        .and_then(|session| session.borrow().profile.clone())?;
+    let paths = crate::settings::from_environment()?;
+    let template = crate::profile::parse(&crate::profile::load(&paths, &used.name).ok()?).ok()?;
+    // Game audio is the Narrate page's; the rows this page shows are the rest.
+    template
+        .produce
+        .iter()
+        .any(|(row, _)| row != "Game audio")
+        .then_some(used.name)
+}
+
+/// The Produce page shows these encoder settings now (a profile chosen on Prepare set them), when it is built.
+pub fn show_encoder(produce: &crate::project::Produce) {
+    mutate(|s| set_encoder_fields(s, produce));
+    if let Some(window) = held_window() {
+        refresh(&window);
+    }
+}
+
+/// The encoder half of a page state, from a project's `produce`.
+fn set_encoder_fields(s: &mut ProduceState, p: &crate::project::Produce) {
+    s.container = container_name(p.container).to_string();
+    s.codec = codec_name(p.codec).to_string();
+    s.preset = crate::produce_render::preset_name(p.preset).to_string();
+    s.resolution = match p.resolution {
+        crate::project::Resolution::P720 => "720p",
+        crate::project::Resolution::P1080 => "1080p",
+        crate::project::Resolution::Original => "original",
+    }
+    .to_string();
+    s.frame_rate = crate::produce_render::frame_rate_name(p.frame_rate).to_string();
+    s.audio = p.audio_kbps.to_string();
+    s.subtitles = subtitles_name(p.subtitles).to_string();
+    s.translate = p.translate.clone();
+    s.game_volume = p.game_volume;
+    s.crf = f64::from(p.crf);
+    s.vfr = p.vfr;
+    s.mono = p.mono;
+    s.blurred_edges = p.blurred_edges;
 }
 
 fn set_plain_row(s: &mut ProduceState, row: &str, value: &str) {
@@ -937,6 +1002,151 @@ fn parse_subtitles(value: &str) -> Subtitles {
     }
 }
 
+/// The encoder rows as the project keeps them (`naivepost.json`'s `produce`, §01 §3): written on every change, so
+/// the settings a person chose are the ones the project reopens on. Nothing to write without a project open; a
+/// write that fails is said on the log, and the row keeps the choice either way.
+fn keep_settings() {
+    let dir = crate::startup::open_dir();
+    let Ok(mut project) = crate::project::load(&dir) else {
+        return;
+    };
+    project.produce = produce_settings(&read_state());
+    if let Err(why) = crate::project::save(&project, &dir) {
+        crate::ui::window::log_line(&format!("!!! the encoder settings were not kept: {why}"));
+    }
+}
+
+/// The page as the opened project holds it (§08-produce#1-screen): the encoder rows from `naivepost.json`'s
+/// `produce`, the publish half from `publish.json` (else the project's own copy), the cut's clips and length, the
+/// narration switch, the session's language and the voice. The first port only ever filled this state from tests
+/// and the snapshot bench, so a live page showed its defaults, rendered with them, and carried one project's
+/// typed title into the next.
+pub fn load_page(tree: &crate::layout::Tree) -> ProduceState {
+    let project = crate::project::load(tree.dir()).unwrap_or_default();
+    let cut = crate::cut::load(tree).unwrap_or_default();
+    let p = &project.produce;
+    // The project's own record carries everything the page shows (the printed title, whether it was seeded, the
+    // crop); `publish.json` is what a run wrote, and fills what the project's copy left empty.
+    let mut publish = project.publish.clone().unwrap_or_default();
+    if crate::publish::is_written(tree) {
+        let written = crate::publish::load(tree).unwrap_or_default();
+        let fill = |held: &mut String, from: &str| {
+            if held.is_empty() {
+                *held = from.to_string();
+            }
+        };
+        fill(&mut publish.title, &written.title);
+        fill(&mut publish.thumb_title, &written.thumb_title);
+        fill(&mut publish.prompt, &written.prompt);
+        fill(&mut publish.negative, &written.negative);
+        fill(&mut publish.description, &written.description);
+        if publish.frames.is_empty() {
+            publish.frames = written.frames;
+        }
+        if publish.texts.is_empty() {
+            publish.texts = written.texts;
+        }
+        publish.own = publish.own || written.own;
+        publish.title_seeded = publish.title_seeded || written.title_seeded;
+    }
+    let clips: Vec<&crate::cut::Seg> = cut.segs.iter().filter(|seg| seg.e > seg.s).collect();
+    let narration = crate::narration::load(tree).unwrap_or_default();
+    ProduceState {
+        frames: publish.frames.clone(),
+        own: publish.own,
+        texts: publish.texts.clone(),
+        title: publish.title.clone(),
+        thumb_title: publish.thumb_title.clone(),
+        title_seeded: publish.title_seeded,
+        instruction: publish.prompt.clone(),
+        negative: publish.negative.clone(),
+        description: publish.description.clone(),
+        container: container_name(p.container).to_string(),
+        codec: codec_name(p.codec).to_string(),
+        preset: crate::produce_render::preset_name(p.preset).to_string(),
+        resolution: match p.resolution {
+            crate::project::Resolution::P720 => "720p",
+            crate::project::Resolution::P1080 => "1080p",
+            crate::project::Resolution::Original => "original",
+        }
+        .to_string(),
+        frame_rate: crate::produce_render::frame_rate_name(p.frame_rate).to_string(),
+        audio: p.audio_kbps.to_string(),
+        subtitles: subtitles_name(p.subtitles).to_string(),
+        translate: p.translate.clone(),
+        game_volume: p.game_volume,
+        crf: f64::from(p.crf),
+        vfr: p.vfr,
+        mono: p.mono,
+        blurred_edges: p.blurred_edges,
+        clips: clips.len(),
+        seconds: crate::shell::cut_seconds(&cut),
+        session_language: language_name(&project.policy.language.value),
+        cut_line: match (clips.first(), clips.last()) {
+            (Some(first), Some(last)) => format!(
+                "{} clip(s) from {} to {}",
+                clips.len(),
+                crate::tools::mm_ss(first.s),
+                crate::tools::mm_ss(last.e)
+            ),
+            _ => String::new(),
+        },
+        first_spoken: narration
+            .entries
+            .iter()
+            .find(|entry| !entry.text.is_empty() && entry.pos.is_empty())
+            .map(|entry| entry.text.clone())
+            .unwrap_or_default(),
+        voice: crate::ui::narrate_seed::project_voice(tree),
+        mixed_recordings: project
+            .sources
+            .iter()
+            .filter(|source| !source.footage)
+            // The stem, as the prototype's `baseName` spells it.
+            .filter_map(|source| {
+                std::path::Path::new(&source.path)
+                    .file_stem()
+                    .map(|stem| stem.to_string_lossy().to_string())
+            })
+            .collect(),
+        // The base's own shape, off the file's header, and the finished video's from the cut's aspect: the two
+        // the base slot's crop box is decided by. No aspect set is no shape known, and no box.
+        base_shape: publish.frames.first().and_then(|stored| {
+            let path = crate::layout::resolve(tree.dir(), tree.dir(), stored);
+            gtk::gdk_pixbuf::Pixbuf::file_info(&path)
+                .map(|(_, wide, high)| (wide.max(0) as u32, high.max(0) as u32))
+        }),
+        video_shape: if cut.aspect.trim().is_empty() {
+            (0, 0)
+        } else {
+            crate::produce_upload::frame_size_from_aspect(&cut.aspect)
+        },
+        ..read_state_default()
+    }
+}
+
+/// The page's resting values for the fields no project states (the thread-local's own start).
+fn read_state_default() -> ProduceState {
+    ProduceState {
+        game_volume: 0.22,
+        crf: 24.0,
+        blurred_edges: true,
+        ..ProduceState::default()
+    }
+}
+
+/// The Translate row's name for a language code (§A lists English, German, French); another code is shown as it
+/// is written.
+fn language_name(code: &str) -> String {
+    match code {
+        "en" => "English",
+        "de" => "German",
+        "fr" => "French",
+        other => other,
+    }
+    .to_string()
+}
+
 pub(crate) fn container_name(c: Container) -> &'static str {
     match c {
         Container::Mp4 => "mp4",
@@ -991,7 +1201,7 @@ pub fn container_of_row() -> Container {
 /// The render's own output file, which is what a copy reads and weighs. Named here so the wiring module
 /// asks the page rather than guessing the container spelling twice.
 pub fn rendered_video() -> std::path::PathBuf {
-    let dir = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let dir = crate::startup::open_dir();
     match crate::layout::Tree::new(dir) {
         Ok(tree) => tree.final_video(container_word().as_str()),
         Err(_) => std::path::PathBuf::from("produce/final.mp4"),
@@ -1006,6 +1216,7 @@ pub fn row_settings() -> crate::project::Produce {
 
 /// The page's row as the settings struct the transcode log reads. Public for `produce_press_wiring`;
 fn produce_settings(s: &ProduceState) -> crate::project::Produce {
+    let defaults = crate::project::Produce::default();
     crate::project::Produce {
         container: parse_container(&s.container),
         codec: parse_codec(&s.codec),
@@ -1014,6 +1225,30 @@ fn produce_settings(s: &ProduceState) -> crate::project::Produce {
             "original" => crate::project::Resolution::Original,
             _ => crate::project::Resolution::P1080,
         },
+        // Every row reaches the render: a preset, rate, bitrate or subtitle choice the page shows and the encode
+        // ignores would be the page lying about the file.
+        preset: [
+            crate::project::Preset::Ultrafast,
+            crate::project::Preset::Veryfast,
+            crate::project::Preset::Fast,
+            crate::project::Preset::Medium,
+            crate::project::Preset::Slow,
+            crate::project::Preset::VerySlow,
+        ]
+        .into_iter()
+        .find(|preset| crate::produce_render::preset_name(*preset) == s.preset)
+        .unwrap_or(defaults.preset),
+        frame_rate: [
+            crate::project::FrameRate::Source,
+            crate::project::FrameRate::F60,
+            crate::project::FrameRate::F30,
+            crate::project::FrameRate::F24,
+        ]
+        .into_iter()
+        .find(|rate| crate::produce_render::frame_rate_name(*rate) == s.frame_rate)
+        .unwrap_or(defaults.frame_rate),
+        audio_kbps: s.audio.parse().unwrap_or(defaults.audio_kbps),
+        subtitles: parse_subtitles(&s.subtitles),
         game_volume: s.game_volume,
         crf: s.crf as u32,
         vfr: s.vfr,
@@ -1067,6 +1302,11 @@ pub fn set_text_field(field: &str, text: &str) -> String {
 /// ONE PAGE, ONE WINDOW. `build()` runs once per window and each build publishes ITS OWN root, so a
 /// second window gets its own widgets and its own wires — which is what makes this safe to call again.
 pub fn wire(window: &adw::ApplicationWindow) {
+    // The page is the opened project's, loaded whole: the state is one per process, so without this a project
+    // opened after another kept the first one's title, images and settings.
+    if let Ok(tree) = crate::layout::Tree::new(crate::startup::open_dir()) {
+        set_state(load_page(&tree));
+    }
     // Hold the WINDOW, not just the content root: the slot row needs it to attach its per-slot buttons,
     // which are looked up by name from the window root.
     ROOT.with(|held| *held.borrow_mut() = Some(window.clone().upcast()));
@@ -1083,35 +1323,29 @@ pub fn wire(window: &adw::ApplicationWindow) {
             let w = win.clone();
             let owned = name.to_string();
             button.connect_clicked(move |_| match owned.as_str() {
+                // §1 item 1: an image chooser over the session's own frames; the pick lands through
+                // `produce_choosers::answer_image`.
                 "add-image-button" => {
-                    // The stand-in for the file chooser: a real extracted frame when the session has one, so
-                    // the row gains a picture the crop and the request can open (`produce_slots::real_frame_entry`).
-                    // With nothing extracted there is no chooser to answer, but §A's Add image still hands a
-                    // picture back — the row takes the next name it would have shown. A slot's Change… is
-                    // stricter (it swaps one picture for another, and with nothing on disk it refuses with
-                    // NO_FRAME_TO_ADD); an empty row has nothing to swap, only something to add.
-                    let next = crate::ui::produce_slots::real_frame_entry().unwrap_or_else(|| {
-                        format!(
-                            "project:produce/publish/frame-{}.jpg",
-                            read_state().frames.len() + 1
-                        )
-                    });
-                    press_add_image(&w, &next);
+                    crate::ui::produce_choosers::open_image_chooser(&w, None);
                 }
+                // The five presses that call a model, sd.cpp, ffmpeg or copy a video walk on a worker
+                // (§03-shell §1): the button greys until the walk's sentence lands.
                 "title-suggest" => {
-                    press_suggest(&w);
+                    crate::ui::produce_press_wiring::reword_from_button(&w);
                 }
+                // ⤓ export and ⤓ Save video ask where first (a save dialog on the page's default name); the
+                // answer walks on a worker.
                 "thumbnail-export" => {
-                    press_export_thumbnail(&w);
+                    crate::ui::produce_choosers::open_export_dialog(&w);
                 }
                 "thumbnail-redraw" => {
-                    press_redraw_thumbnail(&w, true);
+                    crate::ui::produce_press_wiring::redraw_from_button(&w, true);
                 }
                 "transcode-save" => {
-                    press_save_video_from_button(&w);
+                    crate::ui::produce_choosers::open_save_video_dialog(&w);
                 }
                 _ => {
-                    press_transcode_again(&w);
+                    crate::ui::produce_press_wiring::transcode_from_button(&w);
                 }
             });
         }
@@ -1213,6 +1447,7 @@ fn wire_settings(window: &adw::ApplicationWindow) {
         std::rc::Rc::new(|| SETTINGS_GUARD.with(|guard| guard.get())),
         std::rc::Rc::new(move |language, on| {
             mutate(|s| crate::ui::produce_languages::apply(s, language, on));
+            keep_settings();
             refresh(&w);
             let said = crate::ui::produce_languages::status_line(language, on);
             say(&w, &said);
@@ -1261,14 +1496,13 @@ pub(crate) fn draw_into(s: &ProduceState) {
         make_base: std::rc::Rc::new(|w, i| {
             press_make_base(w, i);
         }),
+        // The crop and print walk on a worker (§03-shell §1).
         set_thumbnail: std::rc::Rc::new(|w, i| {
-            press_set_thumbnail(w, i);
+            crate::ui::produce_press_wiring::set_thumbnail_from_button(w, i);
         }),
-        // Change… stands in for the file chooser by naming the newest frame the session holds, or a
-        // synthesised one when nothing is extracted: the slot always ends up holding a different picture.
+        // Change… opens the image chooser for this slot; the pick takes the slot's place.
         change: std::rc::Rc::new(|w, i| {
-            let stood_in_for = crate::ui::produce_slots::next_stood_in();
-            press_change_image(w, i, &stood_in_for);
+            crate::ui::produce_choosers::open_image_chooser(w, Some(i));
         }),
         remove: std::rc::Rc::new(|w, i| {
             press_remove_image(w, i);
@@ -1285,11 +1519,14 @@ pub(crate) fn draw_into(s: &ProduceState) {
 /// a soft words failure and a passing render are what a test can assert against without a server. When the
 /// real F5.6 words and F5.2 render land in their own rounds they replace those two closures and nothing
 /// else in this function changes.
+///
+/// Where it runs (§03-shell §1): the gate and the snapshot are read here, on the window thread; the halves, the
+/// tag page and the skip's tag page walk on a worker, and the run's own ending closes the bar it opened, so ⏹
+/// reaches the run while it walks. Answers the sentence when the press ended here, empty while it goes on.
 pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
     let s = read_state();
     let project = crate::ui::window::live_project();
-    let root = std::env::current_dir().unwrap_or_default();
-    let tree = crate::layout::Tree::new(crate::startup::session_dir(&root)).ok();
+    let tree = crate::layout::Tree::new(crate::startup::open_dir()).ok();
     // S3: ONE function answers "what is the cut", and the Cut page's own segments win so a tweak that
     // was never saved still renders. `review_cut_of` is that live cut.
     let cut = match tree.as_ref() {
@@ -1301,6 +1538,7 @@ pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
     // S1: nothing to render. The shell refuses before the bar opens; this is the page's own copy of that
     // answer for the door that calls the seam directly.
     if cut.segs.is_empty() {
+        crate::ui::run_close::close_window_run();
         return say(window, crate::cut::NO_CUT_YET);
     }
     let settings = produce_settings(&s);
@@ -1331,7 +1569,6 @@ pub fn press_produce_run(window: &adw::ApplicationWindow) -> String {
         &cut,
         &project.sources,
         voice,
-        project.no_narration,
         crate::ui::produce_snapshot::first_footage_shape(
             tree,
             &crate::ui::cut_folds::page_recordings(),
@@ -1365,8 +1602,7 @@ fn finish_produce(
     // S2: a stale video standing here gets the overwrite question, in §S2's own two paragraphs. Asking
     // writes nothing; only the answer's Overwrite runs the encode.
     if gate == crate::produce_flow::Gate::ConfirmOverwrite {
-        let root = std::env::current_dir().unwrap_or_default();
-        let video = crate::layout::Tree::new(crate::startup::session_dir(&root))
+        let video = crate::layout::Tree::new(crate::startup::open_dir())
             .map(|t| t.final_video(container_name(parse_container(&s.container))))
             .unwrap_or_default();
         let (win, st, prj, ct, set) = (
@@ -1376,16 +1612,29 @@ fn finish_produce(
             cut.clone(),
             settings.clone(),
         );
-        return crate::ui::produce_confirm::confirm_then(window, &video, move || {
-            encode_and_finish(
-                &win,
-                &st,
-                &prj,
-                &ct,
-                &set,
-                crate::produce_flow::Gate::Encode,
-            );
-        });
+        // The run stays open while the question stands: Overwrite walks it, Cancel or × closes it with the
+        // question left said.
+        let asked_on = window.clone();
+        return crate::ui::produce_confirm::confirm_then(
+            window,
+            &video,
+            move || {
+                encode_and_finish(
+                    &win,
+                    &st,
+                    &prj,
+                    &ct,
+                    &set,
+                    crate::produce_flow::Gate::Encode,
+                );
+            },
+            move |asked| {
+                crate::ui::run_close::close_window_run();
+                if let Some(status) = crate::ui::window::find_status(asked_on.upcast_ref()) {
+                    status.set_text(asked);
+                }
+            },
+        );
     }
     encode_and_finish(window, s, project, &cut, &settings, gate)
 }
@@ -1399,10 +1648,21 @@ fn encode_and_finish(
     settings: &crate::project::Produce,
     gate: crate::produce_flow::Gate,
 ) -> String {
+    let language = project.policy.language.value.clone();
     if gate == crate::produce_flow::Gate::Skip {
-        // F5.5 S5 runs on the skip path too: the page is rewritten even when the encode was skipped.
-        crate::ui::produce_languages::tag_page(settings);
-        return say(window, crate::produce_flow::SKIP_LOG);
+        // F5.5 S5 runs on the skip path too: the page is rewritten even when the encode was skipped. Its poster
+        // is an ffmpeg call, so the page is written on a worker and the skip said when it lands.
+        let settings = settings.clone();
+        let w = window.clone();
+        crate::ui::background::run(
+            "produce",
+            move || crate::ui::produce_languages::tag_page(&settings, &language),
+            move |()| {
+                crate::ui::run_close::close_window_run();
+                say(&w, crate::produce_flow::SKIP_LOG);
+            },
+        );
+        return String::new();
     }
     // S3: EVERYTHING the two halves read is gathered here, once, on the GUI thread. From this line on the
     // run asks `snap` and never the page: a render walks subprocesses for minutes, and a leg that re-read
@@ -1432,7 +1692,6 @@ fn encode_and_finish(
         clips: s.clips,
         publish_written: s.publish_written,
         voice: s.voice.clone(),
-        no_narration: project.no_narration,
     };
     let run = crate::produce_flow::Run {
         aspect: run.cut.aspect.clone(),
@@ -1440,27 +1699,46 @@ fn encode_and_finish(
     };
     // S4: the one opening line, logged before either half starts.
     crate::ui::window::log_line(&crate::produce_flow::opening_line(&run, false));
-    // S5/S6: both halves through `run_with`, so the closing line and the bar's progress text come from
-    // one place. The words half is F5.6's; its failure is logged with the spec's own tail and never stops
-    // the render. The render half is F5.2's, run here by `produce_exec`: it plans the whole run, walks
-    // the subprocesses and reports back what it made.
-    let ending = crate::produce_flow::run_with(
-        &run,
-        |run| match words_half(run) {
-            Ok(()) => (true, None),
-            Err(why) => {
-                crate::ui::window::log_line(&crate::produce_flow::words_failed(&why));
-                (false, Some(why))
-            }
+    // S5/S6 on a worker (§03-shell §1): the snapshot above is everything the halves read, and the page's state
+    // and scripted seams travel with it ([`crate::ui::produce_worker::Carried`]).
+    let carried = crate::ui::produce_worker::Carried::take();
+    let settings = settings.clone();
+    let w = window.clone();
+    crate::ui::background::run(
+        "produce",
+        move || {
+            carried.load();
+            // The run's `llm/` page is this thread's (§7 keeps one per thread).
+            crate::exchange_leg::note_run_started();
+            // Both halves through `run_with`, so the closing line and the bar's progress text come from
+            // one place. The words half is F5.6's; its failure is logged with the spec's own tail and never
+            // stops the render. The render half is F5.2's, run by `produce_exec`: it plans the whole run, walks
+            // the subprocesses and reports back what it made.
+            let ending = crate::produce_flow::run_with(
+                &run,
+                |run| match words_half(run) {
+                    Ok(()) => (true, None),
+                    Err(why) => {
+                        crate::ui::window::log_line(&crate::produce_flow::words_failed(&why));
+                        (false, Some(why))
+                    }
+                },
+                |run| crate::ui::produce_snapshot::render_half(run, &snap),
+            );
+            // F5.5 S5: after both halves; the page's own outcome is an input to nothing (S6 keeps the
+            // render's error as the run's verdict).
+            crate::ui::produce_languages::tag_page(&settings, &language);
+            crate::exchange_leg::note_run_ended();
+            ending
         },
-        |run| crate::ui::produce_snapshot::render_half(run, &snap),
+        move |ending| {
+            crate::ui::window::log_line(&ending.log);
+            if !ending.progress.is_empty() {
+                crate::ui::window::log_line(&ending.progress);
+            }
+            crate::ui::run_close::close_window_run();
+            say(&w, ending.status);
+        },
     );
-    // F5.5 S5: after both halves; the page's own outcome is an input to nothing (S6 keeps the render's
-    // error as the run's verdict).
-    crate::ui::produce_languages::tag_page(settings);
-    crate::ui::window::log_line(&ending.log);
-    if !ending.progress.is_empty() {
-        crate::ui::window::log_line(&ending.progress);
-    }
-    say(window, ending.status)
+    String::new()
 }

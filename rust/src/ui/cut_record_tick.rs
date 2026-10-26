@@ -42,6 +42,11 @@ pub trait RecordingPreviewPage {
     fn root(&self) -> Option<std::path::PathBuf> {
         None
     }
+    /// Where the player itself stands, as a session second, when it can say (the built-in player): S4's "the line
+    /// follows the player". `None` (a table, or a player that cannot be asked) advances the line by the tick.
+    fn player_second(&self) -> Option<f64> {
+        None
+    }
 }
 
 /// A page made of plain data — what a test drives `step` with, and anything else that has the state but not
@@ -119,7 +124,9 @@ pub fn step(
     // S3: "every second plays, cuts and all" — the advance never skips, whatever the cut removed. The step is one
     // tick at the FLAT rate of the second the line left (§06 §2: the preview runs speed at one rate and does not
     // follow the ramps), so a hand-drawn ×2 moves the line twice as far per tick.
-    let mut at = crate::cut_speed_play::advance(&page.cut().fx, from, elapsed_secs);
+    let mut at = page
+        .player_second()
+        .unwrap_or_else(|| crate::cut_speed_play::advance(&page.cut().fx, from, elapsed_secs));
     // S3: at a recording's end the line walks on to the next one; a camera still rolling there keeps the
     // line where it is and the player re-cues onto that file instead.
     at = preview::walk_on(runs, at).unwrap_or(at);
@@ -177,6 +184,19 @@ pub fn start(window: Rc<adw::ApplicationWindow>) {
             page.say(&line);
             log_line(&format!(">>> {line}"));
         }
+        // The built-in player ran out of its file and no recording took over (the line found nothing to walk on
+        // to): the recording is played to its end, so the preview pauses there.
+        if crate::play_built_in::ended() {
+            play_back::halt();
+            ui::publish_preview_transport(
+                &page.0,
+                crate::run::Transport {
+                    playing: false,
+                    started: true,
+                },
+            );
+            cut_record_play::paint_transport(&page.0);
+        }
         // The session clock, smoothed to the moment between ticks (§D's face, mm:ss.d).
         if let Some(head) = page.playhead() {
             let shown = preview::live_clock(
@@ -208,7 +228,7 @@ impl RecordingPreviewPage for WindowPage {
     fn is_recording_playing(&self) -> bool {
         // S4: the line follows THE PLAYER — with no player process running there is nothing to follow, so
         // a press whose cue failed (logged where it happened) moves no line.
-        play_back::playing_pid().is_some() && {
+        play_back::running() && {
             let player = ui::preview_player(&self.0);
             player.transport.playing && !player.cut_only && !player.reviewing
         }
@@ -243,5 +263,8 @@ impl RecordingPreviewPage for WindowPage {
     }
     fn root(&self) -> Option<std::path::PathBuf> {
         ui::line_root(&self.0)
+    }
+    fn player_second(&self) -> Option<f64> {
+        cut_record_play::playing_second()
     }
 }

@@ -1,64 +1,44 @@
 //! §10-parameters#3-project-settings-tab-controls — the project's own tab controls.
 //!
 //! `spec/10-parameters.md` §3 lists what one project says about itself, edited on the
-//! project's tabs rather than in `llm.conf`: Freq, language, narration on/off, copy
-//! sources, the User Context; the encoder settings; the publish state; the aspect.
+//! project's tabs rather than in `llm.conf`: copy sources, the User Context; the encoder
+//! settings; the publish state; the aspect.
 //!
 //! §10's intro files values in three homes (`P.policy` §2, `P.machine` §1, `P.eng` §5).
-//! §3 is the fourth, and it spells exactly one id with a `P.` prefix —
-//! `P.project.frameInterval`, Freq — leaving the rest of its rows nameless. AGENT.md's
-//! tuning-number rule gives those a bare `project.` prefix, so [`listed`] carries one
-//! `P.` row and the rest bare ones: only the first answers to
-//! [`params::Family::Project`]. Inventing further `P.project.*` ids would claim that §10
-//! had written rows it did not.
+//! §3 is the fourth, and spells no id with a `P.` prefix (its one, `P.project.frameInterval`,
+//! went with Freq). AGENT.md's tuning-number rule gives its rows a bare `project.` prefix.
 //!
 //! This module holds no numbers and no defaults of its own. Every answer here is read from
-//! the owner that already holds it — [`crate::prepare`] for the Freq stops,
-//! [`crate::project::Project::default`] and [`crate::project::Produce::default`] for the
+//! the owner that already holds it — [`crate::project::Project::default`] and [`crate::project::Produce::default`] for the
 //! stored values, [`crate::produce_screen`] for the encoder rows' option lists,
 //! [`crate::fx_aspect`] for the shape words, [`crate::publish`] for whether the upload
 //! text exists — so this is a catalogue over them, not a second copy that can drift.
 
-use crate::{fx_aspect, prepare, produce_screen, project::Project};
+use crate::{fx_aspect, produce_screen, project::Project};
 
-/// The tab controls in §3's own order: the five project controls, then the thirteen
+/// The tab controls in §3's own order: the two project controls, then the thirteen
 /// encoder rows (§A's list, taken whole from [`produce_screen::SETTINGS_ROWS`] rather
 /// than retyped here), then the publish state, then the aspect.
 ///
-/// `no_narration` is the project's flag: with narration off the game-volume row is not offered at all
-/// (F4.8 — "Produce: no game-volume slider"), which [`produce_screen::settings_rows_shown`] decides.
-pub fn rows_for(no_narration: bool) -> Vec<&'static str> {
-    let mut rows = vec![
-        "Freq",
-        "Language",
-        "Narration",
-        "Copy into project",
-        "User Context",
-    ];
-    rows.extend(produce_screen::settings_rows_shown(no_narration));
+/// The game-volume row is a project setting wherever its slider is drawn (the Narrate page now), so the
+/// catalogue keeps it among the stored rows. There is no Narration row: the project has no narration switch
+/// (§07 §1; first rewrite: a "Narration" tick stored as `no_narration`).
+pub fn rows() -> Vec<&'static str> {
+    let mut rows = vec!["Copy into project", "User Context"];
+    rows.extend(produce_screen::SETTINGS_ROWS.iter().copied());
     rows.push("Publish");
     rows.push("Aspect");
     rows
 }
 
-/// Every row the tab can hold, for a narrated project — the full list, before F4.8 takes the
-/// game-volume row away from one that has no narration.
-pub fn rows() -> Vec<&'static str> {
-    rows_for(false)
-}
-
 /// What the control shows before this project has an opinion. Read from the stored
 /// default each time, never from a literal typed here.
 ///
-/// Two of these read inverted, because the file does: Narration *on* is
-/// `no_narration == false`, and "copy sources" *on* is `reference_sources == false`
-/// (§01: the flag stores the negation on purpose).
+/// One of these reads inverted, because the file does: "copy sources" *on* is
+/// `reference_sources == false` (§01: the flag stores the negation on purpose).
 pub fn default_for(row: &str) -> Option<String> {
     let empty = Project::default();
     match row {
-        "Freq" => Some(prepare::freq_label(prepare::FREQ_DEFAULT)),
-        "Language" => Some(empty.language.clone()),
-        "Narration" => Some(tick(!empty.no_narration)),
         "Copy into project" => Some(tick(!empty.reference_sources)),
         // Empty means nothing is sent with the request, which is still the default's answer.
         "User Context" => Some(empty.context.clone()),
@@ -78,10 +58,7 @@ pub fn default_for(row: &str) -> Option<String> {
 /// offered by the Cut form ([`fx_aspect::ASPECTS`]) rather than by this tab.
 pub fn values_for(row: &str) -> Option<Vec<String>> {
     match row {
-        // The seven stops §3 lists, labelled by [`prepare::freq_label`] so the dropdown
-        // and this list cannot spell a stop differently.
-        "Freq" => Some(freq_labels()),
-        "Narration" | "Copy into project" | "Frame timing" | "Channels" | "Frame edges" => {
+        "Copy into project" | "Frame timing" | "Channels" | "Frame edges" => {
             Some(TICK_VALUES.iter().map(|v| (*v).to_string()).collect())
         }
         other => produce_screen::options(other)
@@ -90,19 +67,9 @@ pub fn values_for(row: &str) -> Option<Vec<String>> {
 }
 
 /// Where this control writes, so a reader can follow the value back to one field instead
-/// of finding two places that could hold it. The two inversions are named here as well as
-/// in [`default_for`]: the tick reads on while the key reads `no_narration`.
+/// of finding two places that could hold it. The inversion is named here as well as in
+/// [`default_for`]: the tick reads on while the key reads `reference_sources`.
 pub fn stored_in(row: &str) -> &'static str {
-    if row == "Freq" {
-        return "project.interval";
-    }
-    if row == "Language" {
-        return "project.language";
-    }
-    // The tick is narration on; the field is narration off.
-    if row == "Narration" {
-        return "project.no_narration (inverted)";
-    }
     // The tick is copy into project; the field is reference-in-place.
     if row == "Copy into project" {
         return "project.reference_sources (inverted)";
@@ -124,31 +91,13 @@ pub fn stored_in(row: &str) -> &'static str {
 
 /// The §10 §3 catalogue: one row per tab control, in [`rows`]' order.
 ///
-/// Only Freq carries a `P.` id, because only Freq has one in §3. The others take the
-/// bare `project.` prefix AGENT.md prescribes for a value §10 gives no `P.` id, and
-/// therefore report [`params::Family::Other`] — the same treatment `machine.jpegQuality`
+/// Every row takes the bare `project.` prefix AGENT.md prescribes for a value §10 gives no
+/// `P.` id, and therefore reports [`params::Family::Other`] — the same treatment `machine.jpegQuality`
 /// and `preview.playTickMs` get elsewhere in the catalogue.
 pub fn listed() -> Vec<crate::params::Param> {
     let empty = Project::default();
     let encode_defaults = produce_screen::defaults();
     let mut params = vec![
-        // The one `P.` row §3 spells. Stops and default both come from prepare, whose
-        // doc comment already names this id; nothing here repeats 0.25 or 1.0.
-        crate::params::Param {
-            id: "P.project.frameInterval",
-            spelled: stops_spelled(),
-            from: "prepare::FREQ_STOPS / FREQ_DEFAULT",
-        },
-        param(
-            "project.language",
-            empty.language.clone(),
-            "project::Project::default — language",
-        ),
-        param(
-            "project.narration",
-            tick(!empty.no_narration),
-            "project::Project::default — no_narration (inverted)",
-        ),
         param(
             "project.copySources",
             tick(!empty.reference_sources),
@@ -201,31 +150,6 @@ fn tick(on: bool) -> String {
     } else {
         "off".to_string()
     }
-}
-
-/// The Freq stops as labels, in stop order, printed by [`prepare::freq_label`]: a
-/// fraction of a second bare, a second and up with its unit.
-fn freq_labels() -> Vec<String> {
-    prepare::FREQ_STOPS
-        .iter()
-        .map(|stop| prepare::freq_label(*stop))
-        .collect()
-}
-
-/// The stop list as §3 writes it: `0.25, 0.5, 1, 2, 3, 4, 5` — whole seconds without
-/// the `.0`, built from [`prepare::FREQ_STOPS`] so the numbers stay single-sourced.
-fn stops_spelled() -> String {
-    prepare::FREQ_STOPS
-        .iter()
-        .map(|stop| {
-            if *stop == stop.trunc() {
-                format!("{}", *stop as i64)
-            } else {
-                format!("{stop}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 /// An empty User Context catalogued as what it is rather than as a blank cell: §3 lists

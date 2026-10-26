@@ -31,6 +31,12 @@ pub fn note_startup(lines: &[String]) {
 }
 
 pub(crate) fn log_line(line: &str) {
+    // A worker's line waits for the window thread: this thread-local is the window thread's record, and a
+    // worker's own copy of it is a list nobody reads (§03-shell §1, "The window thread never waits").
+    if crate::ui::background::on_worker() {
+        crate::ui::background::hold_line(line);
+        return;
+    }
     LOGS.with(|logs| logs.borrow_mut().push(line.to_string()));
 }
 
@@ -58,8 +64,40 @@ pub fn note_unload(said: &str) {
 ///
 /// The thread-local is THE record: every reader counts lines in it (a migration note checked as
 /// `before + 1` counts exactly what it added). §S4's unload answers on its own thread and does NOT join
-/// this record -- its news lives in [`crate::ui::run_close::SHARED_LOG`] and on the status row, because a
+/// this record -- its news lives in [`crate::ui::run_close::SHARED_LOG`] because a
 /// sentence written after the close returned would land after the run's last word (§2).
 pub fn window_logs() -> Vec<String> {
     LOGS.with(|logs| logs.borrow().clone())
+}
+
+/// A write a person's action asked for failed (§03-shell §7: such a write never fails silently). Said in the log at
+/// once, and put on the status line once the handler that caused it has returned (an idle), so the handler's own
+/// sentence about the action cannot paint over it. On a worker only the log line is said: the status line belongs
+/// to the window thread, and the worker's line reaches the log there.
+pub(crate) fn say_failure(line: &str) {
+    log_line(line);
+    if crate::ui::background::on_worker() {
+        return;
+    }
+    let shown = line.trim_start_matches('!').trim_start().to_string();
+    glib::idle_add_local_once(move || {
+        if let Some(window) = crate::ui::window::built_window() {
+            if let Some(status) =
+                crate::ui::window::find_status(gtk4::prelude::Cast::upcast_ref(&window))
+            {
+                status.set_text(&shown);
+            }
+        }
+    });
+}
+
+/// Write the cut a press changed, saying a failed write (§03-shell §7). A session with no project folder yet keeps
+/// the cut in memory only, as before: there is no file to fail to write.
+pub(crate) fn save_cut_or_say(cut_: &crate::cut::Cut) {
+    if crate::layout::Tree::new(crate::startup::open_dir()).is_err() {
+        return;
+    }
+    if let Err(why) = crate::cut_save::write_cut(cut_) {
+        say_failure(&format!("!!! could not save the cut -- {why}"));
+    }
 }

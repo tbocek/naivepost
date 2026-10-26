@@ -21,7 +21,7 @@ use crate::roles::Job;
 /// `tools` is deliberately absent although `prompts/tools.md` sits beside these files: that file
 /// holds the web tools' descriptions ([`crate::web_tools`] copies them verbatim), not a system
 /// prompt anyone can send.
-pub const KEYS: [&str; 13] = [
+pub const KEYS: [&str; 14] = [
     "system",
     "describe",
     "fix",
@@ -35,6 +35,7 @@ pub const KEYS: [&str; 13] = [
     "translate",
     "youtube",
     "policy",
+    "textgate",
 ];
 
 /// The four §4 gives thinking: "Thinking on for textedit, cut, narrate, youtube; off elsewhere."
@@ -180,6 +181,7 @@ pub fn shipped_file(key: &str) -> Option<&'static str> {
             "cut" => "prompts/cut.md",
             "captions" => "prompts/captions.md",
             "speed" => "prompts/speed.md",
+            "textgate" => "prompts/textgate.md",
             "effects" => "prompts/effects.md",
             "narrate" => "prompts/narrate.md",
             "translate" => "prompts/translate.md",

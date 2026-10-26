@@ -218,8 +218,9 @@ fn round(app: &adw::Application) {
         let (from_px, to_px) = (50.0f64, 150.0f64);
         // A drag: begin, move, release. GTK hands offsets, and these handlers read x only.
         gesture.emit_by_name::<()>("drag-begin", &[&from_px, &20.0f64]);
-        gesture.emit_by_name::<()>("drag-update", &[&to_px, &20.0f64]);
-        gesture.emit_by_name::<()>("drag-end", &[&to_px, &20.0f64]);
+        // GTK's drag signals carry the OFFSET from the press after `drag-begin`.
+        gesture.emit_by_name::<()>("drag-update", &[&(to_px - from_px), &0.0f64]);
+        gesture.emit_by_name::<()>("drag-end", &[&(to_px - from_px), &0.0f64]);
         settle();
         let selection = ui::narrate_band::live_selection().expect("the drag left a live selection");
         // The gesture hands PIXEL offsets; what the slot must hold is SECONDS, so the check is that the
@@ -230,8 +231,8 @@ fn round(app: &adw::Application) {
         );
         // A press that barely travels is a CLICK and moves the red bar instead (§1).
         gesture.emit_by_name::<()>("drag-begin", &[&300.0f64, &20.0f64]);
-        gesture.emit_by_name::<()>("drag-update", &[&302.0f64, &20.0f64]);
-        gesture.emit_by_name::<()>("drag-end", &[&302.0f64, &20.0f64]);
+        gesture.emit_by_name::<()>("drag-update", &[&2.0f64, &0.0f64]);
+        gesture.emit_by_name::<()>("drag-end", &[&2.0f64, &0.0f64]);
         settle();
         assert_eq!(
             ui::narrate_band::live_selection(),
@@ -255,8 +256,8 @@ fn round(app: &adw::Application) {
         let gesture = ui::narrate_band::band_gesture_for_test(&window).expect("the band gesture");
         let (from_px, to_px) = (100.0, 400.0);
         gesture.emit_by_name::<()>("drag-begin", &[&from_px, &20.0]);
-        gesture.emit_by_name::<()>("drag-update", &[&to_px, &20.0]);
-        gesture.emit_by_name::<()>("drag-end", &[&to_px, &20.0]);
+        gesture.emit_by_name::<()>("drag-update", &[&(to_px - from_px), &0.0]);
+        gesture.emit_by_name::<()>("drag-end", &[&(to_px - from_px), &0.0]);
         settle();
         let wanted = ui::narrate_band::live_selection().expect("a selection to commit");
         click(&window, "take-add");
@@ -887,8 +888,8 @@ fn s9_glyph_round(app: &adw::Application) {
     // Make a take first, by dragging and pressing the real ＋, so there is something to take away.
     ui::narrate_band::clear_hand();
     gesture.emit_by_name::<()>("drag-begin", &[&100.0f64, &20.0f64]);
-    gesture.emit_by_name::<()>("drag-update", &[&400.0f64, &20.0f64]);
-    gesture.emit_by_name::<()>("drag-end", &[&400.0f64, &20.0f64]);
+    gesture.emit_by_name::<()>("drag-update", &[&300.0f64, &0.0f64]);
+    gesture.emit_by_name::<()>("drag-end", &[&300.0f64, &0.0f64]);
     settle();
     let wanted = ui::narrate_band::live_selection().expect("a dragged span");
     click(&window, "take-add");
@@ -963,7 +964,7 @@ fn s10_widgets_round(app: &adw::Application) {
         "**9** Add file\u{2026} says what it does"
     );
     for name in [
-        "narration-tick",     // **1**
+        "narrate-game-row",   // **1**
         "narrate-preview",    // **2**
         "narrate-picture",    // **2**'s frame
         "narrate-back-3s",    // **3**
@@ -1105,6 +1106,7 @@ fn s11_inputs_round(app: &adw::Application) {
     stale.has_timeline = true;
     let window = narrate_page(app, stale.clone());
     stage_session_and_repaint(&window, &stale);
+    crate::common::settle_workers();
     assert_eq!(
         text_of(&found(&window, "inputs-readout")),
         "Inputs: 4 clip(s) \u{b7} 03:15 \u{b7} \u{26a0} 1 clip(s) unwritten, 2 line(s) off the cut",
@@ -1121,6 +1123,7 @@ fn s11_inputs_round(app: &adw::Application) {
     quiet.has_timeline = false;
     let window = narrate_page(app, quiet.clone());
     stage_session_and_repaint(&window, &quiet);
+    crate::common::settle_workers();
     assert_eq!(
         text_of(&found(&window, "inputs-readout")),
         "Inputs: 4 clip(s) \u{b7} 03:15 \u{b7} no timeline",
@@ -1135,6 +1138,7 @@ fn s11_inputs_round(app: &adw::Application) {
     none.length = 0.0;
     let window = narrate_page(app, none.clone());
     stage_session_and_repaint(&window, &none);
+    crate::common::settle_workers();
     assert_eq!(
         text_of(&found(&window, "inputs-readout")),
         "Inputs: no cut yet \u{2014} build one on the Cut step",

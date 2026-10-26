@@ -923,7 +923,7 @@ fn seed_page(_window: &adw::ApplicationWindow) {
 
 /// No ffmpeg in this container: each command's own output file is "written" here.
 fn scripted_spawn() -> naivepost::produce_translate::SpawnSlot {
-    Rc::new(|command: &naivepost::produce_exec::Command| {
+    std::sync::Arc::new(|command: &naivepost::produce_exec::Command| {
         if let Some(out) = command.argv.last() {
             let path = Path::new(out);
             if let Some(dir) = path.parent() {
@@ -976,7 +976,7 @@ fn scratch_png_path() -> std::path::PathBuf {
 /// writing the plain PNG where the server's bytes would land (so the print leg has a real picture to letter),
 /// and hands back the job id exactly as the real submit leg answers.
 fn scripted_draw(tree: Tree) -> ui::produce_languages::DrawSlot {
-    Rc::new(move |_body: &serde_json::Value| {
+    std::sync::Arc::new(move |_body: &serde_json::Value| {
         let plain = tree.thumbnail_plain_png();
         naivepost::produce_upload_print::flat_png_for_test(&plain, 640, 360, 0.25)
             .map_err(|why| why.to_string())?;
@@ -1148,6 +1148,11 @@ fn check_press_writes_the_upload_text(root: &Path) {
         "the run bar drew its play-button"
     );
     button.emit_by_name::<()>("clicked", &[]);
+    // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
 
     let said = ui::find_status(window.upcast_ref())

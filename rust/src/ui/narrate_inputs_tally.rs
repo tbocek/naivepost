@@ -95,7 +95,7 @@ pub fn apply(state: &mut crate::ui::narrate_page::NarrateState, tree: Option<&Tr
 
 /// Fill the tally ONLY where the state still carries what a fresh page starts with. A flow that published
 /// counts of its own keeps them — the page may not overwrite an answer a caller computed for a moment that
-/// has already passed (the same reason `narrate_off::skips` refuses to recompute the run's counts per step).
+/// has already passed.
 pub fn fill_defaults(state: &mut crate::ui::narrate_page::NarrateState, tree: Option<&Tree>) {
     if state.unwritten != 0 || state.off_cut != 0 || state.has_timeline {
         return;

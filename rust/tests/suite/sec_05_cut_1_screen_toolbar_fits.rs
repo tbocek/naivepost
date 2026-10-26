@@ -254,22 +254,19 @@ fn check_the_transport_is_glyphs_with_the_sentence_in_the_tip(app: &adw::Applica
             .is_some_and(|tip| tip.contains("cuts and all")),
         "and its tooltip says what it plays"
     );
-    // The four frame steps too: \u{a7}A group 1 gives them the arrows, and the word "f" would only widen
-    // the row (the sentence is `FRAME_TIP`).
+    // The four frame steps too: \u{a7}A group 1 spells them \u{2039}\u{2039}f, \u{2039}f, f\u{203a}, f\u{203a}\u{203a}
+    // (the sentence is `FRAME_TIP`).
     for (name, glyph) in [
-        ("line-step-back-five", "\u{2039}\u{2039}"),
-        ("line-step-back", "\u{2039}"),
-        ("line-step-forward", "\u{203a}"),
-        ("line-step-forward-five", "\u{203a}\u{203a}"),
+        ("line-step-back-five", "\u{2039}\u{2039}f"),
+        ("line-step-back", "\u{2039}f"),
+        ("line-step-forward", "f\u{203a}"),
+        ("line-step-forward-five", "f\u{203a}\u{203a}"),
     ] {
         let step = &naivepost::cut_screen::TRANSPORT_BUTTONS
             .iter()
             .find(|tool| tool.name == name)
             .unwrap_or_else(|| panic!("\u{a7}1 item 8 names `{name}`"));
-        assert_eq!(
-            step.label, glyph,
-            "`{name}` wears the bare arrow \u{a7}A draws"
-        );
+        assert_eq!(step.label, glyph, "`{name}` wears the face \u{a7}A spells");
         assert!(
             step.tip.contains("frame"),
             "`{name}` leaves which way and how far to the tooltip: {:?}",
@@ -297,15 +294,15 @@ fn check_the_volume_group_wears_its_icon(app: &adw::Application) {
             .is_some_and(|p| p.upcast_ref::<gtk::Widget>() == row.upcast_ref::<gtk::Widget>()),
         "the icon belongs to the volume group, not somewhere else on the page"
     );
-    let label = icon
-        .downcast_ref::<gtk::Label>()
-        .expect("the icon is a glyph label");
+    let image = icon
+        .downcast_ref::<gtk::Image>()
+        .expect("the icon is the theme's speaker image");
     assert_eq!(
-        label.text().as_str(),
-        naivepost::ui::SPEAKER_GLYPH,
-        "the icon is the module's own speaker glyph, the one the row badges use"
+        image.icon_name().as_deref(),
+        Some(naivepost::cut_screen::VOLUME_ICON),
+        "the icon is the prototype's `audio-volume-high-symbolic`"
     );
-    // Order inside the row: word, icon, slider — §A spells them in that order and the prototype draws it so.
+    // Order inside the row: icon, then slider -- \u{a7}A's "icon + 0..100", with no word beside them.
     let order: Vec<String> = row
         .observe_children()
         .iter::<glib::Object>()
@@ -314,19 +311,13 @@ fn check_the_volume_group_wears_its_icon(app: &adw::Application) {
         .map(|w| w.widget_name().to_string())
         .collect();
     println!("VOLUME ROW children {order:?}");
-    // The word label is unnamed (another item's test pins it as the row's FIRST child by type), so the
-    // order is read by position: something before the icon, and the slider after it.
-    let glyph = order
-        .iter()
-        .position(|n| n == "preview-volume-icon")
-        .expect("icon named");
-    let slider = order
-        .iter()
-        .position(|n| n == "preview-volume")
-        .expect("slider named");
-    assert!(
-        glyph > 0 && glyph < slider,
-        "word, then icon, then slider: {order:?}"
+    assert_eq!(
+        order,
+        vec![
+            "preview-volume-icon".to_string(),
+            "preview-volume".to_string()
+        ],
+        "icon, then slider: {order:?}"
     );
     assert_eq!(
         scale.width_request(),

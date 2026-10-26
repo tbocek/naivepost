@@ -56,7 +56,14 @@ fn f5_1_s4_a_line_with_no_wav_is_spoken_for_real_by_the_render_leg() {
 
     // A project with a language of its own: the run must speak the project's language, not "en".
     let project = naivepost::project::Project {
-        language: "pl".to_string(),
+        policy: naivepost::project::Policy {
+            language: naivepost::project::Field {
+                value: "pl".to_string(),
+                origin: Default::default(),
+                because: None,
+            },
+            ..Default::default()
+        },
         ..Default::default()
     };
     naivepost::project::save(&project, tree.dir()).expect("naivepost.json written");

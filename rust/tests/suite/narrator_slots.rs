@@ -121,46 +121,97 @@ fn p_policy_narratorslots_s4_voice_ids_name_no_slot_past_the_bound() {
     assert_eq!(rules::narrator_slot("aria"), None);
 }
 
-// --- S5: the cycle gives each slot once, then has none left -----------------------------------
+// --- S5: the cycle walks every voice and comes back to 1, never to none ------------------------
 
 #[test]
-fn p_policy_narratorslots_s5_the_cycle_visits_every_slot_once_then_none() {
-    // Five rows for four slots: the fifth gets nothing, because there is no fifth slot to give.
-    let mut project = untagged(NARRATOR_SLOTS + 1);
-    let given: Vec<u32> = (0..=NARRATOR_SLOTS)
-        .map(|index| sources::cycle_narrator(&mut project, index))
+fn p_policy_narratorslots_s5_the_cycle_walks_every_voice_then_back_to_one() {
+    // One row clicked over and over from voice 1: 2, … the last voice, then 1 again. There is no "no
+    // voice": every recording is somebody. Voices are not exclusive, so a row on 1 beside it changes
+    // nothing about where the cycle goes.
+    let mut project = untagged(2);
+    project.sources[0].narrator = 1;
+    project.sources[1].narrator = 1;
+    let given: Vec<u32> = (0..NARRATOR_SLOTS)
+        .map(|_| sources::cycle_narrator(&mut project, 0))
         .collect();
-    let expected: Vec<u32> = (1..=NARRATOR_SLOTS as u32).chain([0]).collect();
-    assert_eq!(given, expected, "cycling free slots 1..N then none");
-    // Nobody was moved to make room: each holder is still the row that was given the slot.
-    for slot in 1..=NARRATOR_SLOTS as u32 {
-        assert_eq!(
-            sources::slot_holder(&project, slot),
-            Some((slot - 1) as usize)
-        );
-    }
-    assert_eq!(project.sources[NARRATOR_SLOTS].narrator, 0);
+    let expected: Vec<u32> = (2..=NARRATOR_SLOTS as u32).chain([1]).collect();
+    assert_eq!(given, expected, "cycling 1..N and back to 1");
+    assert_eq!(
+        project.sources[1].narrator, 1,
+        "the other row keeps its voice"
+    );
 }
 
-// --- S6: a slot past the bound is stripped on load --------------------------------------------
+// --- S6: a voice past the bound, or an older file's 0, is voice 1 on load ----------------------
 
 #[test]
-fn p_policy_narratorslots_s6_a_slot_past_the_bound_is_untagged_on_load() {
+fn p_policy_narratorslots_s6_a_slot_past_the_bound_is_voice_one_on_load() {
     let too_many = NARRATOR_SLOTS as u32 + 1;
     let mut project = Project {
-        sources: vec![row("cam.mkv", true, 1), row("extra.wav", false, too_many)],
+        sources: vec![
+            row("cam.mkv", true, 1),
+            row("extra.wav", false, too_many),
+            row("older.wav", false, 0),
+        ],
         ..Default::default()
     };
     let mut report: Vec<String> = Vec::new();
     sources::clean_on_load(&mut project, &mut report);
-    // The row keeps its file and loses the tag: a slot that does not exist cannot be held.
-    assert_eq!(project.sources[1].narrator, 0);
+    // An older file's 0 ("no voice") is voice 1 now, and unsaid: it is no mistake of the person's.
+    assert_eq!(project.sources[2].narrator, 1, "a 0 reads as voice 1");
+    assert!(
+        !report.iter().any(|line| line.contains("older.wav")),
+        "the 0 goes unsaid: {report:?}"
+    );
+    // The row keeps its file and goes to voice 1: a voice that does not exist cannot be held, and there
+    // is no "no voice" to put it in.
+    assert_eq!(project.sources[1].narrator, 1);
     assert!(
         report
             .iter()
-            .any(|line| line.contains(&format!("slot {too_many} is taken"))),
+            .any(|line| line.contains(&format!("voice {too_many} is past the last one"))),
         "{report:?}"
     );
     // Slot 1 itself is untouched — only the impossible tag was removed.
     assert_eq!(project.sources[0].narrator, 1);
+}
+
+// --- the voice number on a video is not a narrator microphone ----------------------------------
+
+#[test]
+fn p_policy_narratorslots_s7_a_video_with_a_voice_is_film_not_a_narrator_mic() {
+    // A number says which voice speaks in a recording. Only an AUDIO recording with one is a narrator
+    // microphone (heard by the app, not played by the video): the first rewrite read a tagged camera
+    // recording that way too, and left its words out of the joins and the retake marking.
+    let project = Project {
+        sources: vec![
+            row("cam.mkv", true, 1),
+            row("cam2.mkv", true, 1),
+            row("mic.wav", false, 1),
+            row("room.wav", false, 0),
+        ],
+        ..Default::default()
+    };
+    let mic: Vec<bool> = project
+        .sources
+        .iter()
+        .map(sources::is_narrator_mic)
+        .collect();
+    assert_eq!(mic, [false, false, true, false]);
+    // Voice 1's recording is its dedicated microphone when there is one, else the first with that number.
+    assert_eq!(sources::narrator_of(&project, 1), Some("mic.wav"));
+    let cameras_only = Project {
+        sources: vec![row("cam.mkv", true, 1), row("cam2.mkv", true, 1)],
+        ..Default::default()
+    };
+    assert_eq!(sources::narrator_of(&cameras_only, 1), Some("cam.mkv"));
+    // The transcript step writes commentary only for the microphone.
+    let stage = naivepost::fix_call::stage(&project);
+    let commentary: Vec<&str> = stage
+        .tasks
+        .iter()
+        .filter(|task| task.args.len() >= 3)
+        .map(|task| task.args[2].as_str())
+        .collect();
+    assert_eq!(commentary, ["0", "0", "1", "0"]);
 }

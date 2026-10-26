@@ -10,7 +10,7 @@
 //!
 //! §2 says `web_search(broad, medium, narrow)` drives headless Firefox over WebDriver BiDi against DuckDuckGo's
 //! result page, deduping by URL; the prototype does exactly that ([`go/websearch.go`](../../go/websearch.go)'s
-//! `ddgExtract` script and its BiDi client), launching and killing one browser per call on ports from 9223 up.
+//! `ddgExtract` script and its BiDi client), launching and killing one browser per call on a port each browser chooses itself.
 //! That is a wire protocol, not a rule about what the model sees, so it lives behind the [`Query`] / [`ReadPage`]
 //! closures: what this module decides is which query is asked, in what order, and what comes back when the web
 //! answers, errors or blocks.

@@ -58,28 +58,25 @@ fn check_the_volume_slider_hands_one_number_to_every_preview(app: &adw::Applicat
         Some(cut_hear::VOLUME_TIP.to_string()),
         "the tooltip is the shared sentence, verbatim, so it cannot drift from the module's"
     );
-    // The label beside the trough, read off the widget tree. A tooltip only says what a control is to a
-    // pointer that already found it; the word next to the slider is what makes it findable, and this
-    // checks that word is in the tree AND drawn -- not merely constructed somewhere.
+    // Inventory \u{a7}A group 2: "icon + 0..100" -- the theme's speaker ahead of the trough, drawn, and no word.
     let row = scale
         .parent()
-        .expect("the slider sits in a labelled row, not loose in the page column");
+        .expect("the slider sits in the volume row, not loose in the page column");
     let row = row
         .downcast::<gtk::Box>()
         .expect("the volume row is a horizontal Box");
-    let label = row
+    let icon = row
         .first_child()
-        .and_then(|c| c.downcast::<gtk::Label>().ok())
-        .expect("the first thing in the volume row is the label");
-    println!("LABEL {} mapped={}", label.text(), label.is_mapped());
+        .and_then(|c| c.downcast::<gtk::Image>().ok())
+        .expect("the first thing in the volume row is the speaker icon");
     assert_eq!(
-        label.text().as_str(),
-        cut_hear::VOLUME_LABEL,
-        "the word beside the slider is the module's own, so the two cannot disagree"
+        icon.icon_name().as_deref(),
+        Some(naivepost::cut_screen::VOLUME_ICON),
+        "the speaker is the theme's own symbolic icon"
     );
     assert!(
-        label.is_mapped(),
-        "the label is actually drawn, not just built"
+        icon.is_mapped(),
+        "the icon is actually drawn, not just built"
     );
     println!("ROW height={}", row.height());
     assert!(

@@ -378,6 +378,15 @@ pub fn press_paste(window: &adw::ApplicationWindow) -> String {
 /// added here, because a lane that arrived already green would be a cut nobody made; ＋ Add lays scenes on
 /// it later. Name: `Copied`, then `Copied-2`, `Copied-3`… past every row already taken, since
 /// `Lane::name` keys `Cut::rows` and every scene's `quiet` list.
+/// The ⇲ button's door: [`press_lane`], except that with nothing in hand the footage file is probed on a worker
+/// (§03-shell §1: ffprobe can take half a second) and the row is filed when the length lands.
+pub fn press_lane_from_button(window: &adw::ApplicationWindow) -> String {
+    if copy_hand().is_some() {
+        return press_lane(window);
+    }
+    crate::ui::cut_lane::lane_for_footage_file_on_worker(window)
+}
+
 pub fn press_lane(window: &adw::ApplicationWindow) -> String {
     let Some(hand) = copy_hand() else {
         // §B's other half: nothing in hand, so a footage FILE gets the row — see [`crate::ui::cut_lane`].
@@ -452,6 +461,57 @@ pub(crate) fn wire_copy_esc(window: &adw::ApplicationWindow) {
     window.add_controller(controller.clone());
     COPY_ESC_KEYS.with(|cell| *cell.borrow_mut() = Some(controller));
 }
+/// Whether another Esc owner has something to drop: a copy, a held effect, an arm or an open form. Those
+/// controllers answer Esc themselves; the hand's layer stands back for them, whichever order GTK asks the
+/// window's controllers in.
+fn esc_belongs_elsewhere(window: &adw::ApplicationWindow) -> bool {
+    copy_hand().is_some()
+        || ui::held_effect().is_some()
+        || ui::zoom_armed()
+        || ui::zoom_form_open().is_some()
+        || crate::ui::cut_text_hand::text_armed()
+        || crate::ui::cut_text_hand::text_form_open().is_some()
+        || crate::ui::cut_svg::svg_armed()
+        || crate::ui::cut_svg::svg_form_open().is_some()
+        || crate::ui::cut_speed_hand::speed_form_open().is_some()
+        || crate::ui::cut_volume_hand::volume_form_open().is_some()
+        || crate::ui::cut_label_hand::label_form_open().is_some()
+        || crate::ui::window_insert::insert_open(window).is_some()
+}
+
+/// The last Esc layer: with no copy, effect, arm or form left to drop, Esc puts down the clip or edge in
+/// hand, and with nothing in hand it clears the selection; one layer per press, so a person who held a clip
+/// inside a selection gets the selection back on the second Esc rather than losing both to one. Proceeds with
+/// nothing to drop, and while another Esc owner has something ([`esc_belongs_elsewhere`]).
+pub(crate) fn wire_hand_esc(window: &adw::ApplicationWindow) {
+    let controller = gtk::EventControllerKey::new();
+    let win = window.clone();
+    controller.connect_key_pressed(move |_ctrl, key, _code, _mods| {
+        if key != gtk::gdk::Key::Escape || esc_belongs_elsewhere(&win) {
+            return glib::Propagation::Proceed;
+        }
+        let said = match ui::held_now() {
+            Some(cut_line::Held::Edge) => HAND_EDGE_DOWN,
+            Some(cut_line::Held::Clip) => HAND_CLIP_DOWN,
+            _ if ui::clear_selection(&win) => SELECTION_DROPPED,
+            _ => return glib::Propagation::Proceed,
+        };
+        if said != SELECTION_DROPPED {
+            crate::ui::cut_hand::clear_all();
+        }
+        if let Some(status_line) = ui::find_status(win.upcast_ref()) {
+            status_line.set_text(said);
+        }
+        glib::Propagation::Stop
+    });
+    window.add_controller(controller);
+}
+/// What Esc says when it puts down a held edge.
+pub const HAND_EDGE_DOWN: &str = "the edge in hand is put down";
+/// What Esc says when it puts down a held clip.
+pub const HAND_CLIP_DOWN: &str = "the clip in hand is put down";
+/// What Esc says when it clears the selection.
+pub const SELECTION_DROPPED: &str = "the selection is cleared";
 /// F2.9: set the three copy buttons from live ui::state. Copy is live with a band a second or longer; Paste
 /// and Lane only while a hand is held. Runs from `refresh_selection_readout`, which every draw, nudge and
 /// clear already calls, so a greyed button is always today's answer.

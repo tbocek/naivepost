@@ -580,9 +580,8 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s14_add_effect_places_th
 #[test]
 fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s15_get_frames_walks_the_clip_s_own_seconds(
 ) {
-    let mut clips = Clips::new(&[(1, 120.0, 5.0), (2, 200.0, 30.0)]);
-    let step = 1.0;
-    clips.set_frame_interval(step);
+    let clips = Clips::new(&[(1, 120.0, 5.0), (2, 200.0, 30.0)]);
+    let step = naivepost::prepare::MODEL_FRAME_STEP;
 
     // Every frame of a clip, named by the clip and its offset inside it — the space every other number this
     // pass sends is in. The session's own second comes along so the caller can find the picture.

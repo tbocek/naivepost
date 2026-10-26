@@ -10,7 +10,7 @@ A desktop editor for already-recorded sessions: camera footage, separate microph
 
 **Linear on purpose**: the timeline is the recording in shooting order; the edit is which stretches stay. Cards, stills and sounds can be spliced in and a moment shown from another camera; nothing is rearranged.
 
-Four workflows, in order, one tab and one ▶ each: **Prepare → Cut → Narrate → Produce**. "I'm feeling lucky" runs all four in one press.
+Four workflows, in order, one tab and one ▶ each: **Prepare → Cut → Narrate → Produce**.
 
 ## 2. Rules the prototype holds to (keep them)
 
@@ -22,7 +22,7 @@ Four workflows, in order, one tab and one ▶ each: **Prepare → Cut → Narrat
 6. **Every model reply is walked back onto the timeline** (kept footage only, snapped edges, marked stretches removed, effects clamped) before the page sees it.
 7. **Preview equals render.** The same functions compute camera path, text fitting, fades, sound ducking and clip clock for preview and ffmpeg.
 8. **Observability never breaks the work.** Every model exchange is written as a readable page; a failure to record is a log line, never a failed step.
-9. **The GUI thread owns the widgets.** Runners read snapshots and caches; a fence test keeps pipeline code from reaching a widget.
+9. **The GUI thread owns the widgets, and never waits.** Runners read snapshots and caches; a fence test keeps pipeline code from reaching a widget. Nothing that can block runs on the GUI thread: no subprocess waited on (ffmpeg, ffprobe, firefox), no server call (the LLM, audio.cpp, sd.cpp, a model list, a health check), no sleep, no join on a worker, no walk over a media folder. Such work runs on a worker thread; the GUI thread takes its log lines, progress and answer from a poll (every 50 ms) and paints them. A button whose work is on a worker shows that it is busy rather than waiting for it (rewrite rule; the first rewrite ran the whole Prepare walk, the policy derivation, the retake pass and the audio.cpp preflight inside the ▶ handler, and the window went "Not Responding" for minutes; see [`03-shell.md` §1](03-shell.md#1-the-window)).
 10. **Measured, not assumed.** Changes to how a model is asked are scored against a hand-made cut, the unchanged prompt as control (several such measurements are in the prototype's comments; numbers in [`10-parameters.md`](10-parameters.md)).
 
 ## 3. Rewrite directive A — no implicit behaviour
@@ -113,14 +113,14 @@ Prototype: the Cut page is one editor (`cutEditor`, `cut.go`, 6 874 lines) that 
 - **Effect**: zoom, speed (incl. stop), text, svg, volume, label; spans `[t, t+dur)` of session time.
 - **Line**: one narration entry over one clip (`narrate/narration.json`).
 - **Policy**: the project's editing parameters ([§3](#3-rewrite-directive-a--no-implicit-behaviour)).
-- **Run**: one press of ▶ (the visible step) or of "I'm feeling lucky" (every step): one progress bar, one log page, one cancel.
+- **Run**: one press of ▶ (the visible step): one progress bar, one log page, one cancel.
 
 ## 8. The screenshots
 
 Every `.png` in `img/` is a screenshot of the prototype on a real project. The rewrite matches its arrangement, not its data (other files, other numbers, other text). Every screen's picture also shows the prototype's window frame, and the rewrite changes these parts of it, whichever screen the picture is of:
 
-- **Run bar:** the chain dropdown ("1 steps") is gone; "I'm feeling lucky" stands in its place ([`03-shell.md` §2](03-shell.md#2-the-run-bar)).
-- **Prepare's Freq row:** the frame-size dropdown ("Original") and the Style dropdown ("Lecture") are gone ([`03-shell.md` §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it), [§6](#6-generalisations) here).
+- **Run bar:** the chain dropdown ("1 steps") is gone, and nothing stands in its place: ▶ runs the visible step ([`03-shell.md` §2](03-shell.md#2-the-run-bar)).
+- **Prepare's Freq row:** the whole row is gone, Freq with it (the text gate decides which frames describe sees), as are the frame-size dropdown ("Original") and the Style dropdown ("Lecture") ([`03-shell.md` §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it), [§6](#6-generalisations) here).
 - **Sources rows:** the prototype's ✂ split-the-voice toggle is drawn as 🗣 ([`03-shell.md` §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it)).
 
 An `.svg` in `img/` is a proposed screen the prototype lacks, drawn in its style.

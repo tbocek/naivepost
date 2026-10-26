@@ -467,6 +467,12 @@ fn scene_split_in_two(segs: &[Seg], start: f64, end: f64) -> bool {
 
 // --- S4: ⌦ / Delete / BackSpace ----------------------------------------------------------------------
 
+/// The same scene: its span and what it shows. A held clip is a copy taken when the hand picked it up, so it is
+/// found again in the cut by what it is rather than by an index an edit since may have moved.
+fn same_seg(a: &Seg, b: &Seg) -> bool {
+    (a.s - b.s).abs() < 1e-9 && (a.e - b.e).abs() < 1e-9 && a.ins == b.ins && a.cam == b.cam
+}
+
 /// F2.7 ⌦ (`in order: a held effect; a held clip; a selection; the scene under the line`).
 ///
 /// The order is the whole rule and is tested as such: a person who holds an effect AND has a band wants
@@ -485,23 +491,43 @@ pub fn delete_verb(
     scene_under_line: Option<&Seg>,
     segs: &[Seg],
 ) -> Outcome {
+    // Every branch answers the WHOLE list the cut is left with, and the page writes it when it differs from
+    // the one it has. The first rewrite answered the sentence and an empty list, which the page reads as
+    // "nothing to write", so a real ⌦ said "removed" over a cut that kept every second it had.
+    let without = |gone: &Seg| -> Vec<Seg> {
+        let mut left = segs.to_vec();
+        if let Some(at) = left.iter().position(|seg| same_seg(seg, gone)) {
+            left.remove(at);
+        }
+        left
+    };
     if held_effect.is_some() {
-        // First branch, and nothing else is looked at: the effect is what the hand last touched.
+        // First branch, and nothing else is looked at: the effect is what the hand last touched. The effect
+        // record is the effects lane's to drop (`ui::remove_held_effect`); the scenes stay as they are.
         return Outcome::Applied {
             status: format!("removed the effect \u{2014} {UNDO_TAIL}"),
-            segs: Vec::new(),
+            segs: segs.to_vec(),
             keeps_selection: false,
             into_hand: false,
         };
     }
-    if let Some(card) = held_clip {
+    if let Some(clip) = held_clip {
         // The only door a spliced card has (§J rule 8), so it outranks even a live selection.
-        return Outcome::Applied {
-            status: format!(
+        let status = if clip.ins.is_empty() {
+            format!(
+                "removed the clip {} \u{2013} {} \u{2014} {UNDO_TAIL}",
+                crate::tools::mm_ss(clip.s),
+                crate::tools::mm_ss(clip.e)
+            )
+        } else {
+            format!(
                 "removed the card \u{2014} {} ({REMOVE_UNDO_TAIL})",
-                card.ins.as_str()
-            ),
-            segs: Vec::new(),
+                clip.ins.as_str()
+            )
+        };
+        return Outcome::Applied {
+            status,
+            segs: without(clip),
             keeps_selection: false,
             into_hand: false,
         };
@@ -516,17 +542,22 @@ pub fn delete_verb(
             .filter(|seg| is_footage(seg) && (seg.e.min(band.end) - seg.s.max(band.start)) > 0.0)
             .count();
         let left = segs.iter().filter(|seg| is_footage(seg)).count();
+        // The cutting itself is － Remove's: the same band leaves the same scenes whichever door took it.
+        let cut_down = match remove(Some(band), segs) {
+            Outcome::Applied { segs, .. } => segs,
+            Outcome::Refused(_) => segs.to_vec(),
+        };
         return Outcome::Applied {
             status: format!("removed \u{2014} {taken} segment(s), was {left}"),
-            segs: Vec::new(),
+            segs: cut_down,
             keeps_selection: false,
             into_hand: false,
         };
     }
-    if scene_under_line.is_some() {
+    if let Some(scene) = scene_under_line {
         return Outcome::Applied {
             status: format!("removed the scene under the line \u{2014} {UNDO_TAIL}"),
-            segs: Vec::new(),
+            segs: without(scene),
             keeps_selection: false,
             into_hand: false,
         };

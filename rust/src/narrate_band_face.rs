@@ -33,11 +33,38 @@ pub fn recording_exists(tree: &layout::Tree, project: &Project, voice: &str) -> 
 /// because §A.7's lane is the RECORDING's waveform: an invalidation may empty `narrate/`, it may not make the
 /// voice's video disappear from the page. `None` only when there is genuinely no recording.
 pub fn band_seconds(tree: &layout::Tree, project: &Project, voice: &str) -> Option<f64> {
-    if let Some(seconds) = crate::ui::narrate_band::recording_seconds() {
+    // The RECORDING's own seconds first: the wave, the takes, the red bar and ▶ are all seconds of the
+    // recording, and the first rewrite measured the ruler from the built reference instead, so a band over a
+    // ten-minute recording mapped its bar onto the reference's few seconds and ▶ played from somewhere else.
+    if let Some(seconds) = recording_path(tree, project, voice)
+        .filter(|path| path.is_file())
+        .and_then(|path| probe_cached(&path))
+    {
         return Some(seconds);
     }
-    let path = recording_path(tree, project, voice)?;
-    probe_seconds(&path)
+    crate::ui::narrate_band::recording_seconds()
+}
+
+thread_local! {
+    /// Each recording's length by (path, size, mtime): asked once, not on every paint (ffprobe is a process).
+    static LENGTHS: std::cell::RefCell<std::collections::HashMap<(PathBuf, u64, i64), Option<f64>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+fn probe_cached(path: &Path) -> Option<f64> {
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |at| at.as_secs() as i64);
+    let key = (path.to_path_buf(), meta.len(), mtime);
+    if let Some(known) = LENGTHS.with(|lengths| lengths.borrow().get(&key).copied()) {
+        return known;
+    }
+    let seconds = probe_seconds(path);
+    LENGTHS.with(|lengths| lengths.borrow_mut().insert(key, seconds));
+    seconds
 }
 
 /// Where this voice's recording is, without asking whether it exists: the door every answer above reads.

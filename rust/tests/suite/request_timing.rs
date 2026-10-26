@@ -399,7 +399,7 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s6_rows_are_tallied_per_servi
 #[test]
 fn sec_09_llm_and_tools_10_every_request_timed_new_s7_the_run_ends_with_one_line_per_service() {
     // §10's own sentence, quoted exactly.
-    let expected = ">>> requests: llm 57 in 2h 13m on the wire, 4m waiting for a slot; \
+    let expected = ">>> requests: llm 57 in 2h 13m on the wire, 4m waiting its turn; \
                    audio 38 in 6m 10s; web 3 in 12s";
     let line = rt::summary_line(&rt::tally(&spec_example_rows()));
     assert_eq!(line, expected, "\ngot:      {line}\nexpected: {expected}");
@@ -497,7 +497,7 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s9_the_run_ends_with_one_line
     let line = naivepost::request_run::closing_line().expect("the open project has a log to tally");
     assert!(line.starts_with(">>> requests: llm 1 in "), "{line}");
     assert!(line.contains("on the wire"), "{line}");
-    assert!(line.contains("waiting for a slot"), "{line}");
+    assert!(line.contains("waiting its turn"), "{line}");
     assert!(line.contains("; audio 1 in "), "{line}");
     assert!(
         !line.contains("image"),
@@ -505,7 +505,7 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s9_the_run_ends_with_one_line
     );
     // The same numbers s7 spells from hand: 20 s then 6.5 s rounds to 7 s, and the wait to 4 s.
     assert!(line.contains("llm 1 in 20s"), "{line}");
-    assert!(line.contains("4s waiting for a slot"), "{line}");
+    assert!(line.contains("4s waiting its turn"), "{line}");
     assert!(line.contains("audio 1 in 7s"), "{line}");
 }
 
@@ -583,12 +583,6 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s8_the_wait_share_is_what_slo
         cached: 0,
     };
     assert!((rt::wait_share(&queued).expect("waited") - 1.0).abs() < 1e-9);
-
-    // The decision itself, with the threshold supplied by the caller.
-    assert!(rt::wants_more_slots(0.5, 0.2));
-    assert!(!rt::wants_more_slots(0.1, 0.2));
-    // Exactly at the threshold is advice, not a demand.
-    assert!(!rt::wants_more_slots(0.2, 0.2));
 
     // Only the four outside services exist, so subprocess work (ffmpeg, ffprobe -- logged as the
     // commands they ran, per §10) has no home in this file.

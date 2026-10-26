@@ -4,14 +4,17 @@
 //! (`sec_12_decisions_4_walk_back_live.rs` and `sec_12_decisions_4_walk_back_live_b.rs`) because libadwaita
 //! initialises only inside the one `run_with_args` a process gets.
 //!
-//! What makes it a walk-back fixture rather than any other words-mode session: the two scenes are split by a
-//! silence short enough to be a seam and long enough for the envelope to report, so the trimmed runs come out
-//! with a spoken hole between them that `words_cut` leaves open and `close_holes` shuts. Every number below is
+//! What makes it a walk-back fixture rather than any other words-mode session: two recordings on the page's tape,
+//! each with its own words under its own lane (the shape a real project has), split by a gap short enough to be
+//! a seam, so the trimmed runs come out with a spoken hole between them that `words_cut` leaves open and
+//! `close_holes` shuts. The first version cut ONE recording into two `cam0` scenes with one shared word list,
+//! the shape that hid that a real project's words, filed under the recording's own name, were never found. Every number below is
 //! chosen against a named constant in `src/suggest.rs`, restated in the comments so a later change to one of
 //! those constants fails this fixture loudly instead of quietly making it prove nothing.
 
 use naivepost::layout::Tree;
 use naivepost::project::Project;
+use naivepost::timeline::Recording;
 use naivepost::wave::Wave;
 
 use super::press_fixture::Fixture;
@@ -49,10 +52,39 @@ pub fn first_word() -> f64 {
     1.0
 }
 
-/// The page's cut for both live checks: TWO scenes with a real gap between them, because
-/// [`timeline::filmed_runs`] merges touching spans — adjacent scenes are one filmed stretch and therefore one
-/// spoken run, and `close_holes` only has something to close when two trimmed runs are separated on the
-/// session clock. Both scenes read the same `cam0` word list, each on its own tape seconds.
+/// The first recording: stamped at the session's zero, five seconds long.
+pub const LANE_A: &str = "2026-05-01 10-00-00";
+/// The second recording: stamped six seconds later (its file name places it at session second 6.0, which is
+/// `SCENE_GAP_START`), twenty-four seconds long.
+pub const LANE_B: &str = "2026-05-01 10-00-06";
+
+/// The page's tape: the two recordings under their own names on the session clock, with the `GAP_SECONDS` gap
+/// between them, because [`timeline::filmed_runs`] merges touching spans and `close_holes` only has something to
+/// close when two trimmed runs are separated.
+pub fn tape() -> Vec<Recording> {
+    vec![
+        Recording {
+            base: LANE_A.to_string(),
+            start: 0.0,
+            end: SCENE_GAP_START - GAP_SECONDS,
+        },
+        Recording {
+            base: LANE_B.to_string(),
+            start: SCENE_GAP_START,
+            end: 30.0,
+        },
+    ]
+}
+
+/// Publish [`tape`] as the page's, the way the Cut page does once it has measured its recordings. Called right
+/// before a words cut reads it: the window publishes its own tape from the project it was built with, and the
+/// test's tape has to be the one standing when the press reads it.
+pub fn publish_tape() {
+    naivepost::ui::set_session_recordings(&tape());
+}
+
+/// The page's cut for both live checks: the same two spans as the tape, so the base the page shows and the
+/// recordings the words are read from agree.
 pub fn base_cut() -> naivepost::cut::Cut {
     naivepost::cut::Cut {
         segs: vec![
@@ -78,56 +110,53 @@ pub fn base_cut() -> naivepost::cut::Cut {
 /// has a materialisation (§1's fourth row demands one) without cutting the hole back open, and a wave cache
 /// whose envelope measures that silence.
 pub fn words_fixture(tag: &str) -> Fixture {
-    let f = Fixture::fresh(tag)
+    let mut f = Fixture::fresh(tag)
         .with_timeline()
-        .with_words(&[
-            ("hello", first_word()),
-            ("there", FIRST_LAST),
-            // The second scene reads the SAME tape seconds, moved onto the session clock by its own `seg.s`
-            // (`timeline::session_at`), so these are file seconds: `second_first_local` → 6.1 and 3.0 → 9.0.
-            ("half", second_first_local()),
-            ("end", 3.0),
-        ])
+        .with_words_on(LANE_A, &[("hello", first_word()), ("there", FIRST_LAST)])
+        // B's own file seconds, moved onto the session clock by its start (`timeline::session_at`):
+        // `second_first_local` → 6.1 and 3.0 → 9.0.
+        .with_words_on(LANE_B, &[("half", second_first_local()), ("end", 3.0)])
         .with_marks(&[super::press_fixture::retake(25.0, 26.0)]);
-    write_envelope(&f.tree, &f.project);
+    f.project = write_recordings(&f.tree, &f.project);
     f
 }
 
-/// Write the lane's envelope through the program's own writer, stamped against the recording it describes:
-/// talk, silence, talk. `read_lanes`/`silences_of` read exactly this file, so the silence is measured off a
-/// cached wave rather than handed to the code under test. The lane sits at session second 0 —
-/// `fix_transcripts::placement` answers 0 for a single unstamped source — so the buckets below are session
-/// seconds directly.
-fn write_envelope(tree: &Tree, project: &Project) {
-    let name = "lecture.mkv";
+/// The two recordings as files, each with its envelope written through the program's own writer and stamped
+/// against the file it describes, and the project's footage rows naming them. `read_lanes`/`silences_of` read
+/// exactly these files; both lanes are sound throughout, so the hole between the runs is the gap between the two
+/// recordings, which is what a restart leaves. Returns the project as rewritten.
+fn write_recordings(tree: &Tree, project: &Project) -> Project {
     std::fs::create_dir_all(tree.sources_dir()).expect("sources folder");
-    let path = tree.sources_dir().join(name);
-    std::fs::write(&path, [7u8; 4_096]).expect("recording file");
-    let meta = std::fs::metadata(&path).expect("recording stats");
-    let mtime = meta
-        .modified()
-        .unwrap()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64;
-    let mut peaks = vec![LOUD; ((SCENE_GAP_START - GAP_SECONDS) * HZ) as usize];
-    peaks.extend(vec![QUIET; (GAP_SECONDS * HZ) as usize]);
-    // Loud again for the rest of the lane, which is where the second group of words sits.
-    peaks.extend(vec![LOUD; ((30.0 - SCENE_GAP_START) * HZ) as usize]);
-    let wave = Wave {
-        hz: HZ,
-        chans: vec![peaks],
-    };
-    naivepost::wave::write(tree, "lecture", &wave, meta.len() as i64, mtime)
-        .expect("write the wave cache");
-    // The project's footage row must name this recording, or `read_lanes` has no lane to read at all.
     let mut next = project.clone();
-    next.sources = vec![naivepost::project::Source {
-        path: format!("project:sources/{name}"),
-        footage: true,
-        ..Default::default()
-    }];
+    next.sources = Vec::new();
+    for recording in tape() {
+        let name = format!("{}.mkv", recording.base);
+        let path = tree.sources_dir().join(&name);
+        std::fs::write(&path, [7u8; 4_096]).expect("recording file");
+        let meta = std::fs::metadata(&path).expect("recording stats");
+        let mtime = meta
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let wave = Wave {
+            hz: HZ,
+            chans: vec![vec![
+                LOUD;
+                ((recording.end - recording.start) * HZ) as usize
+            ]],
+        };
+        naivepost::wave::write(tree, &recording.base, &wave, meta.len() as i64, mtime)
+            .expect("write the wave cache");
+        next.sources.push(naivepost::project::Source {
+            path: format!("project:sources/{name}"),
+            footage: true,
+            ..Default::default()
+        });
+    }
     let json = serde_json::to_string_pretty(&next).expect("project serialises");
     std::fs::write(tree.dir().join(naivepost::project::PROJECT_FILE), json)
-        .expect("rewrite naivepost.json with the footage row");
+        .expect("rewrite naivepost.json with the footage rows");
+    next
 }

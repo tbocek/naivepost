@@ -138,9 +138,8 @@ fn text_block(app: &adw::Application) {
         playing: false,
         started: false,
         busy: false,
-        narration_off: false,
         covered_spans: vec![],
-        language: "en".into(),
+        language: "en".to_string(),
     };
     release_last_window();
     let window = ui::build_window(
@@ -419,7 +418,7 @@ fn run_round(app: &adw::Application) {
 
     let tree = session_tree();
     let mut project = Project::default();
-    project.language = "en".to_string();
+    project.policy.language.value = "en".to_string();
     project.sources.push(Source {
         path: "/media/lecture.mkv".into(),
         footage: true,
@@ -498,9 +497,8 @@ fn run_round(app: &adw::Application) {
         playing: false,
         started: false,
         busy: false,
-        narration_off: false,
         covered_spans: vec![],
-        language: "en".into(),
+        language: "en".to_string(),
     };
     ui::set_state(state.clone());
     ui::refresh(&window);
@@ -672,6 +670,11 @@ fn run_round(app: &adw::Application) {
         "the roll starts at zero"
     );
     button(&window, "line-reroll-0").emit_by_name::<()>("clicked", &[]);
+    // The new take is dialled on a worker (§03-shell §1): it lands before the next check reads the page.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the re-roll's worker answered"
+    );
     settle();
     assert_eq!(ui::read_state().entries[0].roll, 1, "↻ is roll + 1");
     assert!(

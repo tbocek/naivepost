@@ -132,10 +132,28 @@ pub fn set_playhead(window: &adw::ApplicationWindow, at: f64) {
     if let Some(player) = live_player(window) {
         player.borrow_mut().playhead = Some(at);
     }
+    // §1 has ONE red line. The page keeps the line's second in two slots (the player's, which ▶ and the band
+    // read, and the line's, which the picture, the steps and the save read), so a move through either door
+    // writes both: a tick that moved only this one left the picture standing while the line ran.
+    crate::ui::window_line_step::hold_line_at(at);
+    show_playhead_reading(window, at);
     crate::ui::cut_view::follow_playhead(window, at);
+    // The picture at the line follows it, ten times a second while ▶ runs (F2.1 S4).
+    crate::ui::cut_picture::refresh(window);
     // The tick writes the playhead; the playing half reads the smoothed clock at paint time, so this is what
     // keeps the black mask and the camera layer from drifting off the picture between ticks.
     crate::ui::cut_preview_frame::repaint(window);
+}
+
+/// The form column's Playhead reading (§1 badge 4): the red line's second on the preview's clock face, written by
+/// every door that moves the line.
+pub(crate) fn show_playhead_reading(window: &adw::ApplicationWindow, at: f64) {
+    let name = crate::cut_screen::readout_widget("Playhead");
+    if let Some(label) = crate::ui::window::find_widget_by_name(window.upcast_ref(), &name)
+        .and_then(|widget| widget.downcast::<gtk::Label>().ok())
+    {
+        label.set_text(&crate::preview::clock(Some(at)));
+    }
 }
 
 /// Stand the preview in one of its three modes (recording / ✂ cut / ▶✂✂ review), playing or not,
@@ -221,8 +239,15 @@ pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_pl
         // S2/S3: both change what the clock means or what is playing, so both get their sentence. Both also
         // need a process making sound from the line the press just snapped to: ▶✂ owns that player, so the
         // press starts it (`cut_play_back::cue_clips` has no other program door).
-        cut_play::Pressed::SwitchedToCut { status: line, .. } => {
-            crate::ui::cut_cut_play::cue_running(window, preview_playhead(window));
+        // F2.2 S2: "if playing, carry on" — a switch made while paused only switches; the transport and the
+        // player must not disagree about whether anything plays.
+        cut_play::Pressed::SwitchedToCut {
+            status: line,
+            kept_playing,
+        } => {
+            if *kept_playing {
+                crate::ui::cut_cut_play::cue_running(window, preview_playhead(window));
+            }
             if released.is_none() {
                 status.set_text(line)
             }

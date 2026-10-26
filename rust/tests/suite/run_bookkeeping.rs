@@ -9,7 +9,7 @@
 //! * S2 — `qJob` / `qPush` / `qTake` / `prog` / `qDone`: the bar's two halves, their text, their
 //!   tooltip, and the fraction that must never go backwards.
 //! * S3 — `checkpoint()` between subprocesses: pause polls, stop returns the stop error.
-//! * S4 — `endRun`: running off, the lucky chain moves on, the audio models unloaded best-effort.
+//! * S4 — `endRun`: running off, the audio models unloaded best-effort.
 
 use std::time::Duration;
 
@@ -22,7 +22,6 @@ use naivepost::runqueue::{
     TRACK_FIX, TRACK_FRAMES, TRACK_STT,
 };
 use naivepost::services::{Kind, UNLOAD_IS_BEST_EFFORT, UNLOAD_TIMEOUT};
-use naivepost::shell::Page;
 
 /// A project folder no other test run shares, for the exchange-page half of S1.
 fn tree(tag: &str) -> Tree {
@@ -506,8 +505,8 @@ fn f0_5_s2_the_joined_line_is_what_the_close_writes() {
 // --- S4: endRun -------------------------------------------------------------------------------------
 
 #[test]
-fn f0_5_s4_end_run_turns_running_off_and_moves_the_chain_on() {
-    // F0.5 S4: running off, controls refreshed, and a lucky run moves to its next step.
+fn f0_5_s4_end_run_turns_running_off_and_hands_over_the_unload() {
+    // F0.5 S4: running off, controls refreshed, and the audio unload handed over.
     let mut bar = RunBar::default();
     bar.running = Some(naivepost::run::Run {
         step: Step::Suggest,
@@ -517,27 +516,18 @@ fn f0_5_s4_end_run_turns_running_off_and_moves_the_chain_on() {
     });
     bar.status = "stopping…".into();
 
-    let ended = runqueue::end_run(&mut bar, Some(Page::Narrate));
+    let ended = runqueue::end_run(&mut bar);
 
     assert!(bar.running.is_none(), "S4: running is off");
     assert_eq!(
         bar.status, "",
         "S4: the bar's sentence is cleared for what comes next"
     );
-    assert!(ended.chain_moves_on, "S4: the chain has Narrate to move to");
     assert_eq!(
         ended.audio_unload,
         Kind::UnloadAll,
         "S4: and the audio unload is handed over"
     );
-}
-
-#[test]
-fn f0_5_s4_no_next_step_means_the_chain_stops_here() {
-    // F0.5 S4: with nothing queued behind it, the chain does not move on.
-    let mut bar = RunBar::default();
-    let ended = runqueue::end_run(&mut bar, None);
-    assert!(!ended.chain_moves_on, "no next page, no move");
 }
 
 #[test]

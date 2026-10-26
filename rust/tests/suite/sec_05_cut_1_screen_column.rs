@@ -268,6 +268,12 @@ fn check_the_thumbnail_ladder_steps_its_readout(app: &adw::Application) {
         bigger, before,
         "🖼+ moves the number it drives: {before} -> {bigger}"
     );
+    // And the band itself: the number is the height every picture row is drawn at, not a label of its own.
+    assert_eq!(
+        format!("{} px", naivepost::ui::cut_tracks::thumb_px()),
+        bigger,
+        "the band paints at the size the readout says"
+    );
     common::find_named(&window, "thumb-minus")
         .expect("§A's 🖼− is on the column")
         .emit_by_name::<()>("clicked", &[]);
@@ -567,55 +573,59 @@ fn check_the_gutter_is_a_column_not_a_band(app: &adw::Application) {
         );
     }
     println!("GUTTER rails inside track-layers: gutter-badges + gutter-switches");
-    // And the controls §B names are really ON that rail at the band's left edge, not packed beside it:
-    // badge 23 (the whole-cut fold badge) on `gutter-badges`, badge 29 (the row's sound switch) on
-    // `gutter-switches`. Positions come from the realized tree, so a holder that exists but draws nothing
-    // off-screen cannot pass this.
-    let band_left = span(&layers).0;
-    let badge = common::find_named(&window, "fold-all-button")
-        .expect("\u{a7}1 badge 23: the fold-all badge lives in the gutter");
-    let (badge_left, badge_right) = span(&badge);
-    println!("GUTTER badge 23 x={badge_left}..{badge_right}, band left {band_left}");
-    assert!(
-        badge_left >= band_left && badge_right <= band_left + naivepost::cut_screen::GUTTER_PX as i32,
-        "the fold-all badge sits inside the gutter's {} px: {badge_left}..{badge_right} vs band {band_left}",
-        naivepost::cut_screen::GUTTER_PX
-    );
+    // And the controls §B names are drawn IN the gutter, on the band itself: badge 23 (the whole-cut fold
+    // badge) at its top and badge 29 (each lane's sound switch) below it, every one inside the first 30 px.
+    let marks = naivepost::ui::cut_band_marks::placed_on(&window);
+    use naivepost::ui::cut_band_marks::Mark;
+    let badge = marks
+        .iter()
+        .find(|placed| matches!(placed.mark, Mark::FoldAll(_)))
+        .expect("\u{a7}1 badge 23: the fold-all badge is drawn in the gutter");
     let lane = "mic-lav";
-    let switch = common::find_named(&window, &format!("gutter-switch-{lane}"))
+    let lane_index = naivepost::ui::cut_view::band_scene_for(&window)
+        .lanes
+        .iter()
+        .position(|kept| kept.name == lane)
+        .unwrap_or_else(|| panic!("`{lane}` is one of the cut's lanes"));
+    let switch = marks
+        .iter()
+        .find(|placed| matches!(placed.mark, Mark::LaneSound(i, _) if i == lane_index))
         .unwrap_or_else(|| panic!("\u{a7}1 badge 29: `{lane}` has no gutter switch"));
-    // The real widget, fired the way the toolkit fires it: pressing the rail's switch must reach the
-    // hearing rule, which is what makes this the wire as well as the position check.
-    if let Ok(toggle) = switch.clone().downcast::<gtk::ToggleButton>() {
-        toggle.emit_by_name::<()>("toggled", &[]);
-        settle();
+    for placed in [badge, switch] {
+        assert!(
+            placed.pinned && placed.x < naivepost::cut_screen::GUTTER_PX,
+            "{placed:?} sits inside the gutter's {} px",
+            naivepost::cut_screen::GUTTER_PX
+        );
     }
-    let (left, right) = span(&switch);
-    println!("GUTTER badge 29 {lane} x={left}..{right}, band left {band_left}");
-    assert!(
-        left >= band_left && right <= band_left + naivepost::cut_screen::GUTTER_PX as i32,
-        "`gutter-switch-{lane}` must be inside the gutter column: {left}..{right} vs band {band_left}"
-    );
     // §1's order IN the gutter: the whole-cut fold-all badge is its first control, above every lane's own
-    // sound switch ("fold-all badge, per-lane and per-row sound switches, empty-row cross"). And it has to
-    // be PAINTED there: the rail is dark ink, so a badge left in the theme's dark label colour sits
-    // dark-on-dark at the top of the column and reads as absent (what the render showed).
-    crate::common::wait_until(
-        "the fold-all badge is laid out (it has pixels of its own)",
-        || badge.width() > 0 && badge.height() > 0,
+    // sound switch ("fold-all badge, per-lane and per-row sound switches, empty-row cross").
+    println!(
+        "GUTTER order: fold-all y={}, `{lane}` switch y={}",
+        badge.y, switch.y
     );
     assert!(
-        badge.is_mapped(),
-        "badge 23 is built but never painted (mapped=false): {} px at y={}",
-        badge.height(),
-        top_y(&badge)
+        badge.y <= switch.y,
+        "the fold-all badge sits at the gutter's TOP, above the lane switches (\u{a7}1's order): \
+         badge y={} vs {lane} switch y={}",
+        badge.y,
+        switch.y
     );
-    let (badge_top, switch_top) = (top_y(&badge), top_y(&switch));
-    println!("GUTTER order: fold-all y={badge_top}, `{lane}` switch y={switch_top}");
-    assert!(
-        badge_top <= switch_top,
-        "the fold-all badge sits at the gutter's TOP, above the lane switches (§1's order): \
-         badge y={badge_top} vs {lane} switch y={switch_top}"
+    // The real press, fired the way the toolkit fires it: a click on the band where the lane's switch is drawn
+    // reaches the hearing rule, which is what makes this the wire as well as the position check.
+    let heard_before = matches!(switch.mark, Mark::LaneSound(_, true));
+    let gesture =
+        naivepost::ui::window::band_line_gesture_for_test(&window).expect("the band takes clicks");
+    gesture.emit_by_name::<()>("released", &[&1i32, &switch.x, &switch.y]);
+    settle();
+    let after = naivepost::ui::cut_band_marks::placed_on(&window)
+        .into_iter()
+        .find(|placed| matches!(placed.mark, Mark::LaneSound(i, _) if i == lane_index))
+        .expect("the switch is still drawn");
+    assert_ne!(
+        matches!(after.mark, Mark::LaneSound(_, true)),
+        heard_before,
+        "the press turned `{lane}` over for the whole cut: {after:?}"
     );
     RAN_GUTTER.store(true, Ordering::SeqCst);
 }

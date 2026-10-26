@@ -96,6 +96,9 @@ struct Session {
 }
 
 fn session(tag: &str) -> Session {
+    // A NAMED picture program: these scenarios are about the picture PROCESS (its exit, its pid), which the
+    // built-in pipeline, used when no program is named, has no part in.
+    std::env::set_var("NAIVEPOST_PICTURE_PLAYER", "fake-picture-player");
     let dir = std::env::temp_dir().join(format!("np-s6preview-{tag}.naivepost"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("session folder");
@@ -174,7 +177,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_a_ta
     let said = leg::start_running(&session.tree, &cut, &entries, 0.0, 1.0, 1.0, spawn)
         .expect("the preview starts over the session's own footage");
     assert!(said.contains("playing"), "started: {said}");
-    let first = leg::tick_loop(&session.tree, &cut, &entries, 0.6, 1.0, 1.0, false, spawn);
+    let first = leg::tick_loop(&session.tree, &cut, &entries, 0.6, 1.0, 1.0, spawn);
     assert!(
         matches!(first, leg::Stepped::Speaking { .. }),
         "the tick entered the line: {first:?}"
@@ -197,7 +200,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_a_ta
         !alive(voice_pid),
         "the take's player is gone: pid {voice_pid}"
     );
-    let stepped = leg::tick_loop(&session.tree, &cut, &entries, 3.0, 1.0, 1.0, false, spawn);
+    let stepped = leg::tick_loop(&session.tree, &cut, &entries, 3.0, 1.0, 1.0, spawn);
     assert!(
         !matches!(stepped, leg::Stepped::Paused),
         "a take that finished first is not the end of the preview, got {stepped:?}"
@@ -271,7 +274,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_the_
         .expect("the preview starts over the session's own footage");
     assert!(said.contains("playing"), "started: {said}");
     // The take needs the voice player to appear, and it only does once the tick walks into the line.
-    let first = leg::tick_loop(&session.tree, &cut, &entries, 0.6, 1.0, 1.0, false, spawn);
+    let first = leg::tick_loop(&session.tree, &cut, &entries, 0.6, 1.0, 1.0, spawn);
     assert!(
         matches!(first, leg::Stepped::Speaking { .. }),
         "the tick entered the line: {first:?}"
@@ -292,7 +295,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_the_
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    let ended = leg::tick_loop(&session.tree, &cut, &entries, 3.0, 1.0, 1.0, false, spawn);
+    let ended = leg::tick_loop(&session.tree, &cut, &entries, 3.0, 1.0, 1.0, spawn);
     assert!(
         matches!(ended, leg::Stepped::Paused),
         "the tick reports the ending: {ended:?}"

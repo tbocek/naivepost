@@ -113,9 +113,7 @@ fn push_frame(out: &mut Vec<f64>, at: f64) {
 /// S0: the refusal for a folder extracted frame-by-frame. Describe needs a known interval because
 /// its stamps, its resume and its chunk boundaries are all arithmetic on it.
 pub fn every_frame_refusal(base: &str) -> String {
-    format!(
-        "{base} was extracted as every-frame; describe needs a fixed interval -- rerun Prepare with e.g. 1s"
-    )
+    format!("{base} was extracted as every-frame; describe needs the 250 ms grid -- rerun Prepare")
 }
 
 /// S0: does this folder look like an every-frame extraction rather than F1.6's?
@@ -178,11 +176,12 @@ pub fn scale_plan(width: u32) -> Vec<String> {
     vec!["-vf".to_string(), format!("scale={width}:-2")]
 }
 
-/// S1: the name the scaled copy is written under — the same clock name the stored frame has, so a
+/// S1: the name the scaled copy is written under — the same clock name the stored frame has (`base` is the
+/// instant the stored folder's first picture names, [`crate::describe_scale::name_base`]; `at` counts from it), so a
 /// row in `events.tsv` and a file in `.llmframes/` point at the same instant. [`crate::clock`]
 /// owns that one spelling; this only adds the extension.
-pub fn scaled_name(at: f64) -> String {
-    format!("{}.jpg", frame_name(at))
+pub fn scaled_name(base: f64, at: f64) -> String {
+    format!("{}.jpg", frame_name(base + at))
 }
 
 /// S1: the alongside-recording note. A recording's words are placed against this video's clock by
@@ -677,12 +676,7 @@ pub fn stage_log(
 /// The take's length comes from the frames themselves rather than from a probe of the media file: the
 /// grid stops at the last picture that exists, so describing against that is describing against what
 /// will actually be sent, and no ffprobe run is paid for at press time.
-pub fn stage_log_for(
-    tree: &Tree,
-    lane: &str,
-    freq: f64,
-    alongside: &[(String, f64)],
-) -> Vec<String> {
+pub fn stage_log_for(tree: &Tree, lane: &str, alongside: &[(String, f64)]) -> Vec<String> {
     let frames = frames_on_disk(&tree.frames_dir(lane));
     let changes = read_changes(tree, lane);
     // Length as the last frame plus one grid step: that is where the extraction stopped.
@@ -692,7 +686,7 @@ pub fn stage_log_for(
         &frames,
         &changes,
         duration,
-        freq,
+        crate::text_gate::HEARTBEAT_S,
         alongside,
     )
 }
@@ -702,8 +696,15 @@ fn base_of_lane(lane: &str) -> &str {
     lane
 }
 
-/// Read this source's scene changes out of `scenes.tsv` (`time\tscore`, one row per change).
+/// This source's scene changes as F1.7 describes by: the text gate's (`textscenes.tsv`, F1.6 S6) when it ran and
+/// is no older than the pixel pass, else the pixel pass's own ([`read_pixel_changes`]).
 pub fn read_changes(tree: &Tree, lane: &str) -> Vec<f64> {
+    crate::text_gate::changes_for_describe(tree, lane)
+        .unwrap_or_else(|| read_pixel_changes(tree, lane))
+}
+
+/// The pixel pass's scene changes out of `scenes.tsv` (`time\tscore`, one row per change).
+pub fn read_pixel_changes(tree: &Tree, lane: &str) -> Vec<f64> {
     let Ok(text) = std::fs::read_to_string(tree.scenes_tsv(lane)) else {
         return Vec::new();
     };

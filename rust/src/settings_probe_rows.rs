@@ -134,8 +134,17 @@ pub fn aligner_row(models: &[services::AudioModel], configured: &str) -> Result<
 /// The ffmpeg row: which binary, that ffprobe is beside it, then what the build has. Every list is
 /// read by running THAT binary (`-version`, `-filters`, `-encoders`), so the verdict describes the
 /// build the pipeline will actually shell out to, not the one on PATH.
+///
+/// An empty box is tested as the binary every step runs for it ([`crate::run_stages::FFMPEG`] on PATH,
+/// `audio_task::ffmpeg_program`'s rule); testing it as "nothing named" said "not on PATH" on a machine
+/// whose ffmpeg the pipeline was using all along.
 pub fn ffmpeg_row(typed: &str) -> Result<String, String> {
-    let Some(program) = resolve(typed) else {
+    let named = if typed.trim().is_empty() {
+        crate::run_stages::FFMPEG
+    } else {
+        typed
+    };
+    let Some(program) = resolve(named) else {
         return checks::ffmpeg_verdict(None, false, "", None, None);
     };
     let shown = program.display().to_string();
@@ -163,9 +172,12 @@ pub fn firefox_row(typed: &str) -> Result<String, String> {
     if typed.trim().eq_ignore_ascii_case(checks::FIREFOX_OFF) {
         return checks::firefox_verdict(typed, None, None);
     }
-    let Some(program) = resolve(typed) else {
-        return checks::firefox_verdict(typed, None, None);
-    };
+    // The browser the search itself launches (`web_browser::firefox_path`, §9's lookup): the box, else
+    // firefox/firefox-esr/firefox-bin on PATH, else the usual install paths. An empty box IS that lookup
+    // (`llm_web_offer::availability` offers the web tools for it); testing it as "nothing named" said
+    // "--version failed" on a machine whose firefox every search was using.
+    let program =
+        crate::web_browser::firefox_path(typed).map_err(|why| format!("will not run: {why}"))?;
     let version = run(&program.display().to_string(), &["--version"])?;
     // The program's own search door: one headless launch of the engine's own DuckDuckGo page, hits
     // counted the way the pipeline counts them. No network is a failure of THIS row, said as such.
@@ -175,8 +187,8 @@ pub fn firefox_row(typed: &str) -> Result<String, String> {
     checks::firefox_verdict(typed, Some(&version), hits)
 }
 
-/// Which binary a box names: a path as typed, else the name looked up on PATH, else the shipped name on
-/// PATH. `None` only when the box is empty, which each row's verdict turns into its missing sentence.
+/// Which binary a box names: a path as typed, else the name looked up on PATH. `None` when neither finds
+/// it (or the box is empty), which each row's verdict turns into its missing sentence.
 pub fn resolve(typed: &str) -> Option<std::path::PathBuf> {
     let wanted = typed.trim();
     if wanted.is_empty() {
@@ -264,21 +276,19 @@ pub fn audio_endpoint(conf: &Conf, typed: &str) -> Endpoint {
 /// the same rule [`crate::settings_probe::probe`] states: a down server is worth knowing about before a
 /// project exists, the `requests.tsv` line is simply not written.
 pub fn probe_tree() -> Option<crate::layout::Tree> {
-    crate::layout::Tree::new(crate::startup::session_dir(
-        &std::env::current_dir().unwrap_or_default(),
-    ))
-    .ok()
+    crate::layout::Tree::new(crate::startup::open_dir()).ok()
 }
 
 /// Build the chat caller a row sends through: the same leg the flows use, so ⏹ reaches it and
 /// `requests.tsv` records it. The body is the caller's — [`llm_row`] and [`vision_row`] build it, and each
 /// hands over the ceiling its [`crate::model_list::Probe`] states so §9's 60 s and 120 s bound the socket
 /// rather than sitting in a comment.
-pub fn chat_ask<'a>(
-    conf: &'a Conf,
-    typed: &'a str,
-) -> impl Fn(&str, Option<u64>) -> Result<String, String> + 'a {
-    let endpoint = llm_endpoint(conf, typed);
+///
+/// The address is the Server box's, as for the audio rows ([`audio_endpoint`]), and the model is `conf`'s,
+/// which [`crate::settings_probe::probe`] sets from the row's own box. Dialling what the Model row typed sent
+/// `https://Qwen3.8 (27B; …)/v1/chat/completions` and failed with "invalid uri character".
+pub fn chat_ask(conf: &Conf) -> impl Fn(&str, Option<u64>) -> Result<String, String> + '_ {
+    let endpoint = llm_endpoint(conf, &conf.server);
     let model = conf.model.clone();
     move |body: &str, budget: Option<u64>| {
         crate::settings_probe::chat_post(&probe_tree(), &endpoint, &model, body, budget)

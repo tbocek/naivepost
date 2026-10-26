@@ -107,10 +107,8 @@ fn f0_9_s1_and_s3_opening_a_real_project_sets_root_out_and_sources() {
         "nothing missing, nothing dropped"
     );
     // The rest of the apply list came along with the loaded project unchanged.
-    assert_eq!(applied.project.interval, 2.5, "S3: interval");
-    assert_eq!(applied.project.language, "de", "S3: language");
+    assert_eq!(applied.project.policy.language.value, "de", "S3: language");
     assert!(applied.project.reference_sources, "S3: the reference flag");
-    assert!(!applied.project.no_narration, "S3: the narration flag");
     assert_eq!(
         applied.project.context, "a lecture opened from elsewhere",
         "S3: context"

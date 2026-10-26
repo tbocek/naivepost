@@ -28,6 +28,10 @@ fn window_round() {
         a_valid_project_switches_the_session(app);
         s4_refreshes_every_page_through_the_doors_a_tab_switch_uses(app);
         s4_the_opened_project_lands_in_the_conf_on_disk(app);
+        s4_the_opened_project_owns_the_whole_window(app);
+        RAN_OWNS.store(true, std::sync::atomic::Ordering::SeqCst);
+        s0_an_open_during_a_run_is_refused(app);
+        RAN_REFUSED.store(true, std::sync::atomic::Ordering::SeqCst);
         RAN.store(true, std::sync::atomic::Ordering::SeqCst);
         the_dropped_source_is_said_by_the_real_open(app);
         RAN_DROP.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -36,6 +40,8 @@ fn window_round() {
 
 static RAN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static RAN_DROP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_OWNS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static RAN_REFUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// A project folder holding `body` as its `naivepost.json`, with real files for `present`.
 /// A project folder written with `body` as its `naivepost.json`, plus real files for each of the
@@ -227,8 +233,9 @@ fn a_valid_project_switches_the_session(app: &adw::Application) {
     let before = ui::session_sources(&window);
 
     let opened = ui::open_from(&window, &folder);
-
     assert!(opened, "F0.9: a real project opens");
+    // S4 builds the window again on the opened folder: the one to read is the new one.
+    let window = ui::window::main_window();
     let after = ui::session_sources(&window);
     assert_ne!(after, before, "the session switched to the opened project");
     assert_eq!(
@@ -295,16 +302,20 @@ fn s4_refreshes_every_page_through_the_doors_a_tab_switch_uses(app: &adw::Applic
         ui::tab_dimmed(&window, Page::Cut),
         "a session with no footage opens with Cut greyed"
     );
+    crate::common::settle_workers();
     let before = ui::inputs_readout(&window)
         .map(|l| l.text().to_string())
         .unwrap_or_default();
 
     assert!(ui::open_from(&window, &folder), "the project opened");
+    // S4 builds the window again on the opened folder: the one to read is the new one.
+    let window = ui::window::main_window();
 
     assert!(
         !ui::tab_dimmed(&window, Page::Cut),
         "S4: the tabs were repainted from the opened project — Cut is live now"
     );
+    crate::common::settle_workers();
     let after = ui::inputs_readout(&window)
         .map(|l| l.text().to_string())
         .unwrap_or_default();
@@ -333,6 +344,13 @@ fn s4_the_opened_project_lands_in_the_conf_on_disk(app: &adw::Application) {
         TWO_SOURCES_ONE_GONE,
         &["keep.mkv"],
     );
+    // Another launch folder's remembered project, already in the file: the open must keep it.
+    fs::create_dir_all(config.join("naivepost")).unwrap();
+    fs::write(
+        config.join("naivepost").join("llm.conf"),
+        "PROJECT_1_ROOT=\"/somewhere/else\"\nPROJECT_1_FILE=\"/somewhere/else/p.naivepost/naivepost.json\"\n",
+    )
+    .unwrap();
     std::env::set_var("XDG_CONFIG_HOME", &config);
 
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
@@ -342,7 +360,10 @@ fn s4_the_opened_project_lands_in_the_conf_on_disk(app: &adw::Application) {
     // is process-wide and every open writes through the same file. That is the point: a second open ADDS
     // its own pair rather than replacing the first, so the numbering here is not PROJECT_1.
     let opened = ui::open_from(&window, &folder);
+    // S4 builds the window again on the opened folder: the one to read is the new one.
+    let window = ui::window::main_window();
     let status = ui::state(&window).status;
+    crate::common::settle_workers();
     let inputs = ui::inputs_readout(&window)
         .map(|l| l.text().to_string())
         .unwrap_or_default();
@@ -361,9 +382,21 @@ fn s4_the_opened_project_lands_in_the_conf_on_disk(app: &adw::Application) {
     let conf = config.join("naivepost").join("llm.conf");
     let body = fs::read_to_string(&conf).expect("the open wrote llm.conf");
     // The writer quotes every value (`settings::quote`), so the file holds `"‹path›"`, not a bare path.
+    // "This root" is the folder the app was launched from (F0.6 S2's key), never the opened folder.
+    let launch_root = std::env::current_dir().expect("the pinned working directory");
     assert!(
-        body.contains(&format!("ROOT=\"{}\"", folder.display())),
-        "the ROOT half is in the file: {body}"
+        body.contains(&format!("ROOT=\"{}\"", launch_root.display())),
+        "the ROOT half is the launch folder: {body}"
+    );
+    assert!(
+        !body.contains(&format!("ROOT=\"{}\"", folder.display())),
+        "the opened folder is not stored as its own root: {body}"
+    );
+    // Another root's pair, seeded before the open, is still there: the open ADDS to the list.
+    assert!(
+        body.contains("ROOT=\"/somewhere/else\"")
+            && body.contains("FILE=\"/somewhere/else/p.naivepost/naivepost.json\""),
+        "another launch folder's remembered project survives the open: {body}"
     );
     assert!(
         body.contains(&format!("FILE=\"{}\"", folder.join(PROJECT_FILE).display())),
@@ -387,6 +420,8 @@ fn the_dropped_source_is_said_by_the_real_open(app: &adw::Application) {
 
     // The seam the folder chooser's response calls — same body, no dialog in the way.
     assert!(ui::open_from(&window, &folder), "the project opened");
+    // S4 builds the window again on the opened folder: the one to read is the new one.
+    let window = ui::window::main_window();
 
     assert_eq!(
         ui::session_sources(&window),
@@ -435,5 +470,153 @@ fn f0_9_s3_the_real_open_button_logs_the_dropped_source() {
     assert!(
         RAN_DROP.load(std::sync::atomic::Ordering::SeqCst),
         "the dropped-source check never ran"
+    );
+}
+
+/// A footage project with a context of its own, to tell the opened project's page from the old one's.
+const NEWS_WITH_CONTEXT: &str = r#"{
+  "sources": [
+    {"path": "project:sources/news.mkv", "footage": true, "narrator": 1, "sepvoice": false, "tracks": [0]}
+  ],
+  "interval": 1,
+  "language": "en",
+  "context": "A weekly news segment, read to camera."
+}"#;
+
+/// The text a widget tree shows in its labels, for "is this row drawn".
+fn label_texts(node: &gtk::Widget, out: &mut Vec<String>) {
+    if let Some(label) = node.downcast_ref::<gtk::Label>() {
+        out.push(label.text().to_string());
+    }
+    let mut child = node.first_child();
+    while let Some(c) = child {
+        label_texts(&c, out);
+        child = c.next_sibling();
+    }
+}
+
+/// S4's "refresh every page", as the person sees it: after an Open over a window showing another project,
+/// Prepare DRAWS the opened sources and the opened User Context, a click on Cut moves to Cut (the lock is
+/// asked of the opened project), and every step's folder is the opened one. The first port renamed the
+/// header and repainted the readouts, and left the old rows, the old context and the old lock question.
+fn s4_the_opened_project_owns_the_whole_window(app: &adw::Application) {
+    let root = temp_dir("s4-owns");
+    let folder = project_folder(
+        &root.join("06-news.naivepost"),
+        NEWS_WITH_CONTEXT,
+        &["news.mkv"],
+    );
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let old = ui::build_window(app, &model, "Prepare");
+    old.present();
+    let launch_copy = naivepost::startup::open_dir();
+
+    assert!(ui::open_from(&old, &folder), "the project opened");
+    let window = ui::window::main_window();
+    common::settle();
+
+    // Prepare's list draws the opened project's one source, by its file name.
+    assert_eq!(
+        ui::source_rows_refresh::drawn_rows(&window),
+        1,
+        "S4: the list draws the opened project's rows"
+    );
+    let list = ui::find_source_widget(&window, "sources-list").expect("the sources list");
+    let mut shown = Vec::new();
+    label_texts(&list, &mut shown);
+    assert!(
+        shown.iter().any(|text| text == "news.mkv"),
+        "S4: the opened source is drawn: {shown:?}"
+    );
+    // The User Context box shows the opened project's context.
+    let bench = ui::find_source_widget(&window, "bench-text")
+        .and_then(|w| w.downcast::<gtk::TextView>().ok())
+        .expect("the bench's text box");
+    let buffer = bench.buffer();
+    let context = buffer.text(&buffer.start_iter(), &buffer.end_iter(), false);
+    assert_eq!(
+        context.as_str(),
+        "A weekly news segment, read to camera.",
+        "S4: the User Context is the opened project's"
+    );
+    // Every step works on the opened folder.
+    assert_eq!(
+        naivepost::startup::open_dir(),
+        folder,
+        "F0.6: the opened folder is THE project folder"
+    );
+    // A click on Cut moves there: the lock is asked of the opened project, which has footage.
+    ui::tab_button(&window, Page::Cut)
+        .expect("the Cut tab")
+        .emit_clicked();
+    common::settle();
+    assert_eq!(
+        ui::state(&window).page,
+        Page::Cut,
+        "S4: Cut opens for the opened project (status said {:?})",
+        ui::state(&window).status
+    );
+    // The window it replaced flushed into ITS folder, and nothing of the opened project went there.
+    let leaked = fs::read_to_string(launch_copy.join(PROJECT_FILE)).unwrap_or_default();
+    assert!(
+        !leaked.contains("news.mkv"),
+        "the old folder never receives the opened project: {leaked}"
+    );
+    window.close();
+}
+
+/// S0: an Open while a run is under way is refused in New's and Save's shape, and the window stays.
+fn s0_an_open_during_a_run_is_refused(app: &adw::Application) {
+    let root = temp_dir("s0-run");
+    let folder = project_folder(
+        &root.join("busy.naivepost"),
+        NEWS_WITH_CONTEXT,
+        &["news.mkv"],
+    );
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    let bar = ui::run_bar(&window).expect("the run bar");
+    let queue = ui::run_queue(&window).expect("the queue");
+    naivepost::runqueue::start_run(
+        &mut bar.borrow_mut(),
+        &mut queue.borrow_mut(),
+        &mut naivepost::exchanges::RunLog::new(),
+        naivepost::run::Step::Prepare,
+        naivepost::run::Snapshot::default(),
+    );
+
+    assert!(!ui::open_from(&window, &folder), "S0: refused");
+    assert_eq!(
+        ui::state(&window).status,
+        ui::window::OPEN_STOP_FIRST,
+        "S0: in New's and Save's shape"
+    );
+    assert_eq!(
+        ui::window::main_window(),
+        window,
+        "S0: the window was not replaced"
+    );
+    bar.borrow_mut().running = None;
+    window.close();
+}
+
+#[test]
+fn f0_9_s4_the_opened_project_owns_the_whole_window() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_OWNS.load(std::sync::atomic::Ordering::SeqCst),
+        "the whole-window check never ran"
+    );
+}
+
+#[test]
+fn f0_9_s0_an_open_during_a_run_is_refused() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_REFUSED.load(std::sync::atomic::Ordering::SeqCst),
+        "the refusal check never ran"
     );
 }

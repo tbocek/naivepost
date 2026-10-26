@@ -35,6 +35,8 @@ static RAN_SPLICE: AtomicBool = AtomicBool::new(false);
 static RAN_OVER: AtomicBool = AtomicBool::new(false);
 static RAN_EDIT: AtomicBool = AtomicBool::new(false);
 static RAN_LANE_ONLY: AtomicBool = AtomicBool::new(false);
+static RAN_SOUND_TICK: AtomicBool = AtomicBool::new(false);
+static RAN_LOGO: AtomicBool = AtomicBool::new(false);
 
 /// A footage scene on camera 0.
 /// A spliced card: `s == e` with a `dur`, which is what makes it an insert (`Seg::is_insert`).
@@ -519,6 +521,123 @@ fn f2_12_s5_lane_adds_a_row_and_cuts_nothing(app: &adw::Application) {
     window.close();
 }
 
+/// S4's sound tick through the widget: ticked, the spliced video is silent (`Seg::mute`); left alone, it is heard.
+fn f2_12_s4_the_sound_tick_decides_whether_the_insert_is_heard(app: &adw::Application) {
+    for ticked in [true, false] {
+        let window = cut_page(
+            app,
+            &tape(),
+            &cut::Cut {
+                segs: vec![clip(0.0, 90.0)],
+                ..Default::default()
+            },
+        );
+        ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
+        // A real video with a sound track: the tick is offered only for a file the probe hears sound in.
+        let path = std::env::temp_dir()
+            .join("np-insert-cards")
+            .join(if ticked { "muted.mkv" } else { "heard.mkv" });
+        std::fs::create_dir_all(path.parent().expect("a folder")).expect("video dir");
+        let made = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=160x120:rate=10:duration=2",
+            ])
+            .args([
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=2",
+                "-shortest",
+            ])
+            .arg(&path)
+            .status()
+            .expect("ffmpeg runs");
+        assert!(made.success(), "the test video was written");
+        ui::insert_chosen_with_length(&window, &path, 20.0, Some(3.0));
+        settle();
+        radio(&window, "insert-mode-between").set_active(true);
+        settle();
+        let tick = child_named(&form_holder(&window), "insert-sound-tick")
+            .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+            .expect("a video's form carries the sound tick");
+        tick.set_active(ticked);
+        settle();
+        button(&window, "insert-apply-button").emit_by_name::<()>("clicked", &[]);
+        settle();
+        let placed = cut_of(&window)
+            .segs
+            .into_iter()
+            .find(|seg| seg.is_insert())
+            .expect("the video was spliced in");
+        assert_eq!(
+            placed.mute, ticked,
+            "the tick, read at Apply, is whether the insert is silent (ticked: {ticked})"
+        );
+        window.close();
+    }
+}
+
+/// S4's Logo… beside a logo field: one press raises one image chooser, and its answer lands in the field as items,
+/// a file inside the project relative to it and one outside absolute, after what was typed. The first rewrite drew
+/// the button and wired nothing to it.
+fn f2_12_s4_logo_raises_one_chooser_and_its_answer_lands_in_the_field(app: &adw::Application) {
+    let window = cut_page(
+        app,
+        &tape(),
+        &cut::Cut {
+            segs: vec![clip(0.0, 90.0)],
+            ..Default::default()
+        },
+    );
+    ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 20.0 });
+    let dir = std::env::temp_dir().join("np-insert-cards");
+    std::fs::create_dir_all(&dir).expect("card dir");
+    let card = dir.join("logo-card.svg");
+    std::fs::write(
+        &card,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1920\" height=\"1080\">\
+         <!-- Input: mark[logo] | Mark | a logo beside the title -->\
+         <text x=\"100\" y=\"200\">{{mark}}</text></svg>",
+    )
+    .expect("card written");
+    ui::insert_chosen_with_length(&window, &card, 20.0, Some(3.0));
+    settle();
+    let holder = form_holder(&window);
+    let field = child_named(&holder, "insert-field-mark")
+        .and_then(|w| w.downcast::<gtk::Entry>().ok())
+        .expect("the logo field has its entry");
+    field.set_text("Typed first");
+    let asks = ui::logo_asks_for_test();
+    child_named(&holder, "insert-logo-mark")
+        .and_then(|w| w.downcast::<gtk::Button>().ok())
+        .expect("a logo field carries its Logo… button")
+        .emit_by_name::<()>("clicked", &[]);
+    settle();
+    assert_eq!(ui::logo_asks_for_test() - asks, 1, "one press, one chooser");
+    // A headless chooser never answers; its answer door is what the chooser's response calls.
+    let project = naivepost::startup::open_dir();
+    assert!(ui::answer_logos(
+        &window,
+        "mark",
+        &[
+            project.join("assets").join("dust2.png"),
+            std::path::PathBuf::from("/elsewhere/logos/de.svg"),
+        ],
+    ));
+    assert_eq!(
+        field.text().as_str(),
+        "Typed first, assets/dust2.png, /elsewhere/logos/de.svg",
+        "inside the project relative, outside absolute, after what was typed"
+    );
+    window.close();
+}
+
 fn window_round() {
     common::one_app_round(|app| {
         f2_12_s1_a_click_with_no_target_refuses(app);
@@ -535,6 +654,10 @@ fn window_round() {
         RAN_EDIT.store(true, Ordering::SeqCst);
         f2_12_s5_lane_adds_a_row_and_cuts_nothing(app);
         RAN_LANE_ONLY.store(true, Ordering::SeqCst);
+        f2_12_s4_the_sound_tick_decides_whether_the_insert_is_heard(app);
+        RAN_SOUND_TICK.store(true, Ordering::SeqCst);
+        f2_12_s4_logo_raises_one_chooser_and_its_answer_lands_in_the_field(app);
+        RAN_LOGO.store(true, Ordering::SeqCst);
     });
 }
 
@@ -573,4 +696,9 @@ fn f2_12_wire_the_insert_button_and_form_reach_the_rules_through_real_widgets() 
         RAN_LANE_ONLY.load(Ordering::SeqCst),
         "the lane check never ran"
     );
+    assert!(
+        RAN_SOUND_TICK.load(Ordering::SeqCst),
+        "the sound-tick check never ran"
+    );
+    assert!(RAN_LOGO.load(Ordering::SeqCst), "the Logo check never ran");
 }

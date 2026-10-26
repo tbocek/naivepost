@@ -150,7 +150,7 @@ fn channels_of(lane_src: &str) -> Option<u8> {
         .or_else(|| std::env::current_dir().ok());
     let path = match root {
         Some(root) => {
-            let project = crate::startup::session_dir(&root);
+            let project = crate::startup::open_dir();
             crate::layout::resolve(&root, &project, lane_src)
         }
         None => std::path::PathBuf::from(lane_src),

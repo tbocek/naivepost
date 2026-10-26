@@ -31,10 +31,6 @@ use naivepost::{open_project, sources, ui};
 const ITEM: &str =
     "sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it";
 
-/// §4's sentence for the auto-fill, spelled once here and asserted nowhere else so the wording cannot
-/// drift without a red test.
-const SLOT_1_SEATED: &str = "is the narrator now -- slot 1 was empty";
-
 /// A real `.naivepost` folder whose `naivepost.json` lists `rows`, with a file on disk for each so the
 /// drop rule keeps every row and only the FLAGS are wrong. Written under the caller's own temp dir.
 fn dirty_folder(dir: &Path, rows: &[naivepost::project::Source]) -> PathBuf {
@@ -52,8 +48,8 @@ fn dirty_folder(dir: &Path, rows: &[naivepost::project::Source]) -> PathBuf {
     folder
 }
 
-/// Two rows claiming slot 1, a slot outside the range the narrator button can reach, and footage on an
-/// audio file: everything §4 says a load must clear, spelled in a project file.
+/// Two rows on voice 1 (allowed: a voice number is shared), a voice past the last one, and footage on an
+/// audio file: the last two are what §4 says a load must clear, spelled in a project file.
 fn contradictory_rows() -> Vec<naivepost::project::Source> {
     vec![
         row("project:sources/cam.wav", false, 1),
@@ -76,15 +72,15 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
         .expect("a hand-edited project still opens");
     let project = &applied.project;
 
-    // The second claimant loses its tag; the first holder keeps it (§4: one row per narrator slot).
+    // Both keep voice 1: the number says which voice, and one person is usually every recording.
     assert_eq!(
-        project.sources[1].narrator, 0,
-        "{ITEM}: two rows cannot hold slot 1"
+        project.sources[1].narrator, 1,
+        "{ITEM}: two rows may share voice 1"
     );
-    // A slot past the last one is not honoured either.
+    // A voice past the last one is not honoured either: it is voice 1, there being no "no voice".
     assert_eq!(
-        project.sources[2].narrator, 0,
-        "{ITEM}: slot 9 is past the last slot"
+        project.sources[2].narrator, 1,
+        "{ITEM}: voice 9 is past the last one"
     );
     // Only a video may be footage: the audio row loses the flag, not the row.
     assert!(
@@ -100,8 +96,7 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     // Each clearing is REPORTED -- silently losing a tag someone typed is worse than a line about it --
     // and the lines ride `Applied.lines`, which is what the shell logs on an open.
     for said in [
-        "second.wav: slot 1 is taken -- untagged",
-        "wild.mkv: slot 9 is taken -- untagged",
+        "wild.mkv: voice 9 is past the last one -- voice 1",
         "mic.wav: an audio file has no frames -- not footage",
     ] {
         assert!(
@@ -145,20 +140,13 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     fs::remove_dir_all(&root).ok();
 }
 
-/// Seat a narrator when the load itself emptied slot 1 by dropping its holder.
-///
-/// §4's auto-fill is not tied to a strip alone: "Slot 1 auto-filled whenever unheld -- after an add, a
-/// removal, a rescan that dropped a row, or a load that stripped a bad tag". `apply` drops missing rows
-/// before it cleans, so a project whose slot-1 file has gone loses the narrator with nothing stripped, and
-/// the session would open with nobody to speak in. This test drops the holder and checks another present,
-/// untagged recording takes the slot -- and says so on the load's own report.
+/// A load that drops a missing recording seats nobody in its place: voices are not exclusive, so there is
+/// no slot left empty to fill, and every other row keeps the voice the person gave it.
 #[test]
-fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_a_load_that_dropped_the_narrator_seats_another_one(
+fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell_snapshots_it_a_load_that_dropped_a_voice_moves_nobody(
 ) {
     common::pin_private_cwd();
     let root = common::temp_dir_created("clean-dropped-slot1");
-    // A real folder whose slot-1 holder has NO file on disk (so `apply`'s drop rule removes it), plus a
-    // present untagged recording and a present footage row: §4 seats the recording, footage last.
     let folder = root.join("gone.naivepost");
     fs::create_dir_all(folder.join("sources")).expect("sources folder");
     for name in ["mic.wav", "cam.mkv"] {
@@ -167,8 +155,8 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     let project = Project {
         sources: vec![
             row("project:sources/old.wav", false, 1),
-            row("project:sources/mic.wav", false, 0),
-            row("project:sources/cam.mkv", true, 0),
+            row("project:sources/mic.wav", false, 2),
+            row("project:sources/cam.mkv", true, 3),
         ],
         ..Default::default()
     };
@@ -176,41 +164,21 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
 
     let applied = open_project::apply(&folder, |path| path.is_file())
         .expect("a project with one missing source still opens");
-
     assert_eq!(
         applied.dropped,
         ["project:sources/old.wav"],
         "{ITEM}: only the missing row goes"
     );
+    let voices = |sources: &[naivepost::project::Source]| -> Vec<u32> {
+        sources.iter().map(|source| source.narrator).collect()
+    };
     assert_eq!(
-        sources::slot_holder(&applied.project, 1),
-        Some(0),
-        "{ITEM}: the load left slot 1 unheld -- §4 fills it whenever it is empty"
+        voices(&applied.project.sources),
+        [2, 3],
+        "{ITEM}: nobody was moved into the dropped row's voice"
     );
-    assert_eq!(
-        applied.project.sources[0].path, "project:sources/mic.wav",
-        "{ITEM}: a recording is seated before footage"
-    );
-    assert!(
-        applied
-            .lines
-            .iter()
-            .any(|line| line.contains(SLOT_1_SEATED)),
-        "{ITEM}: the load never said who took slot 1: {:?}",
-        applied.lines
-    );
-    // The SAME rule through the launch's door, which is the other half of "a load": it takes a project on
-    // exactly as the button does, so its own drop must seat a narrator too.
-    let (launched, report) = ui::launch::load_for_launch(&folder);
-    assert_eq!(
-        sources::slot_holder(&launched, 1),
-        Some(0),
-        "{ITEM}: the launch dropped the holder and left slot 1 empty"
-    );
-    assert!(
-        report.iter().any(|line| line.contains(SLOT_1_SEATED)),
-        "{ITEM}: the launch never filled the slot its own drop emptied: {report:?}"
-    );
+    let (launched, _) = ui::launch::load_for_launch(&folder);
+    assert_eq!(voices(&launched.sources), [2, 3]);
     fs::remove_dir_all(&root).ok();
 }
 
@@ -226,8 +194,8 @@ fn sec_03_shell_4_sources_list_lives_on_prepare_specified_here_because_the_shell
     let (project, report) = ui::launch::load_for_launch(&folder);
 
     assert_eq!(
-        project.sources[1].narrator, 0,
-        "{ITEM}: the launch strips a duplicated slot"
+        project.sources[1].narrator, 1,
+        "{ITEM}: the launch keeps a shared voice"
     );
     assert!(
         !project.sources[3].footage,
@@ -296,6 +264,8 @@ fn open_through_the_open_button(app: &adw::Application) {
         opened,
         "{ITEM}: opening a hand-edited project still succeeds"
     );
+    // F0.9 S4 builds the window again on the opened folder: its session is the one the open filled.
+    let session = ui::session_handle(&ui::window::main_window());
 
     // The live session -- what ▶ freezes as the run's snapshot -- holds the CLEANED rows.
     let held = session.borrow();
@@ -305,28 +275,23 @@ fn open_through_the_open_button(app: &adw::Application) {
         "{ITEM}: nothing was dropped, only flagged wrong"
     );
     assert_eq!(
-        held.sources[1].narrator, 0,
-        "{ITEM}: the duplicate slot survived the open"
+        held.sources[1].narrator, 1,
+        "{ITEM}: a shared voice is kept on the open"
     );
     assert_eq!(
-        held.sources[2].narrator, 0,
-        "{ITEM}: the out-of-range slot survived the open"
+        held.sources[2].narrator, 1,
+        "{ITEM}: the out-of-range voice is voice 1 after the open"
     );
     assert!(
         !held.sources[3].footage,
         "{ITEM}: footage survived on an audio file"
-    );
-    assert_eq!(
-        sources::slot_holder(&held, 1),
-        Some(0),
-        "{ITEM}: slot 1 was left unheld after a strip"
     );
     drop(held);
     // And the shell said what it changed: the strip lines went to the log the open writes.
     let log = ui::window::logs_for_test();
     assert!(
         log.iter()
-            .any(|line| line.contains("slot 1 is taken -- untagged")),
+            .any(|line| line.contains("voice 9 is past the last one -- voice 1")),
         "{ITEM}: the open never logged the strip: {log:?}"
     );
 

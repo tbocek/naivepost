@@ -1,11 +1,11 @@
 //! F3.1 — the two zoom rules that had no caller, taken out of `window.rs` so the page keeps its call site and
 //! this file keeps the rule.
 //!
-//! [`preview_press`] is the sentence after §S5: with nothing armed or held and the preview paused, a press on
-//! the picture is about framing, not about drawing. A press inside a zoom's box takes that zoom (the page then
-//! drags it, which is §S5's "drag its overlay"); a press clear of every box draws a new rectangle for the zoom
-//! in force, whose status sentence is `fx_zoom::placed_status` — the §S5 wording that promises
-//! "↶ Undo takes it back", because the form it opens writes on Apply.
+//! [`preview_press`] is the sentence after §S5: with nothing armed or held and the preview paused, a DRAG on the
+//! picture is about framing. A drag from inside a zoom's box takes that zoom; a drag clear of every box draws a
+//! new rectangle, whose status sentence is `fx_zoom::placed_status`, the §S5 wording that promises
+//! "↶ Undo takes it back", because the form it opens writes on Apply. A click (no travel past GTK's drag
+//! threshold) is never a framing question: it only plays and pauses (`cut_preview_press::play_toggle_on_click`).
 //!
 //! [`settle_plate`] is §2's "rect stroked white WITH A PLATE": the plate beside the box names the zoom the
 //! panel is framing with, from `fx_zoom::zoom_plate`, and is drawn where the box is — which is the one part of
@@ -16,7 +16,7 @@ use gtk4 as gtk;
 
 use crate::cut::Cut;
 use crate::fx_text;
-use crate::fx_zoom::{self, Camera};
+use crate::fx_zoom;
 use crate::ui::cut_preview_frame;
 use crate::ui::window::{self, record_edit, review_cut_of, selection, set_held_effect};
 
@@ -26,22 +26,24 @@ pub enum Pressed {
     /// The press took the zoom whose box was pressed: nothing was written, the hand holds it now, and the
     /// answer is `fx_zoom::re_frame_status` of that second (§S6's wording).
     Held { status: String },
-    /// A fresh box for the zoom in force, opened as its form (§S2 after S5: "a press clear of every box draws
-    /// it a new rectangle"). The form is on the page already; this is the sentence for the status row.
+    /// A fresh box, opened as its form (§S2 after S5: "a drag clear of every box draws a new rectangle"). The
+    /// form is on the page already; this is the sentence for the status row.
     Framed { status: String },
     /// Nothing to say: §S1's arm owns the press, or there was no zoom to take and no box to draw.
     Silent,
 }
 
-/// F3.1, the paragraph after S5: the press on a paused preview, answered through the page's own doors.
+/// F3.1, the paragraph after S5: the drag on a paused preview, answered through the page's own doors.
 ///
-/// `box_under_pointer` is which zoom's box the press fell inside — the panel can only be asked of a frame the
-/// page has painted, so the caller answers it from [`framed_boxes`]. While ⊕ Zoom is armed the gesture is the
-/// arm's (§S2), and a press there is not a framing question at all.
+/// `box_under_pointer` is which zoom's box the drag started inside: the panel can only be asked of a frame the
+/// page has painted, so the caller answers it from [`framed_boxes`]. `drawn` is the rectangle the drag covered,
+/// `None` when it is under `fx_zoom::DRAG_MIN_PX`. While ⊕ Zoom is armed the gesture is the arm's (§S2), and a
+/// drag there is not this question at all.
 pub fn preview_press(
     win: &adw::ApplicationWindow,
     at: f64,
     box_under_pointer: Option<usize>,
+    drawn: Option<fx_zoom::Rect>,
 ) -> Pressed {
     if zoom_armed() {
         return Pressed::Silent;
@@ -60,18 +62,22 @@ pub fn preview_press(
             return Pressed::Held { status: said };
         }
     }
-    // Clear of every box: a new rectangle for the zoom in force. The seconds of the rectangle come from the
-    // camera the panel is showing, so what the form offers is what was on the screen a moment ago rather than
-    // the whole source. `fx_zoom::preview_press` is the rule-side door (nothing armed or held, paused, camera
-    // settled); the panel only gets here with the first two true, and the third is what the camera answers.
-    let camera = fx_zoom::camera_at(&cut_.fx, at);
-    match fx_zoom::preview_press(true, true, camera == fx_zoom::SETTLED, None) {
+    // Clear of every box: a new rectangle, framed by the box the drag drew. `fx_zoom::preview_press` is the
+    // rule-side door (nothing armed or held, paused); nothing is held here, and the transport answers the second.
+    // The camera in force does not gate it: a drag past the threshold is someone drawing, and the box they drew is
+    // the framing. (The first rewrite framed on a click, from the camera's own box, and only where no zoom held
+    // the camera; under a placed zoom the same press was a refusal.)
+    let paused = !window::preview_player(win).transport.playing;
+    match fx_zoom::preview_press(true, paused, true, None) {
         Some(fx_zoom::PressPreview::DrawsNew) => {}
         _ => return Pressed::Silent,
     }
+    let Some(drawn) = drawn else {
+        return Pressed::Silent;
+    };
     let marked = marked_band_at(win, at);
     let form = fx_zoom::form_from_drag(
-        box_of(camera, preview_picture_px(win)),
+        drawn,
         PREVIEW_PANEL_W,
         PREVIEW_PANEL_H,
         at,
@@ -88,17 +94,18 @@ pub fn preview_press(
     }
 }
 
-/// F3.1, the paragraph after S5: the release of a click on the preview — the page's own caller for
-/// [`preview_press`]. The corner the hand came up on is where the press was, so that is the point asked about;
-/// `at` is the second the red line stands on, which is what a zoom drawn there would run from.
+/// F3.1, the paragraph after S5: the release of a drag on the preview, the page's own caller for
+/// [`preview_press`]. The corner the drag started on is the point asked about; `at` is the second the red line
+/// stands on, which is what a zoom drawn there would run from.
 ///
-/// Returns the sentence for the status row, or the empty string when this press is not a framing question at all
-/// (no zoom in force and nothing to take), which is what lets the page fall back to its §S2 refusal.
-pub fn press_on_release(win: &adw::ApplicationWindow, at_px: (f64, f64)) -> String {
+/// Returns the sentence for the status row, or the empty string when this drag is not a framing question at all
+/// (a playing preview, or a box under the floor), which is what lets the page fall back to its §S2 refusal.
+pub fn press_on_release(win: &adw::ApplicationWindow, from: (f64, f64), to: (f64, f64)) -> String {
     let cut_ = review_cut_of(win);
     let at = window::paste_line(win);
     let fit = cut_preview_frame::fit_size_of(win, PREVIEW_PANEL_W, PREVIEW_PANEL_H);
-    match preview_press(win, at, box_under_pointer(&cut_, at, fit, at_px)) {
+    let drawn = fx_zoom::free_rectangle(from, to);
+    match preview_press(win, at, box_under_pointer(&cut_, at, fit, from), drawn) {
         Pressed::Silent => String::new(),
         Pressed::Held { status } | Pressed::Framed { status } => status,
     }
@@ -344,17 +351,6 @@ fn marked_band_at(win: &adw::ApplicationWindow, at: f64) -> Option<(f64, f64)> {
     None
 }
 
-/// The camera as the rectangle it was framed from — the inverse of `fx_zoom::to_fractions`, so a box drawn from
-/// the camera in force round-trips to the same three numbers. Measured on the panel the press happened on.
-fn box_of(camera: Camera, panel: (f64, f64)) -> fx_zoom::Rect {
-    fx_zoom::Rect {
-        x: (camera.cx - camera.hf / 2.0) * panel.0,
-        y: (camera.cy - camera.hf / 2.0) * panel.1,
-        w: camera.hf * panel.0,
-        h: camera.hf * panel.1,
-    }
-}
-
 // The F3.1 zoom-by-hand arm group, moved out of `window.rs`, which is past its size budget. The rule half
 // lives in `src/fx_zoom.rs` (`arm`, `NO_LINE`, `ARM_WORDS`/`arm_tail`, `whole_source_shown`, `disarm`); what
 // came with it is only the page's own state and wording, so the callback holds no decision of its own.
@@ -481,31 +477,24 @@ pub fn zoom_drag_ended_with_source(
     to: (f64, f64),
     source: (f64, f64),
 ) -> String {
-    // §F3.1's paragraph after S5: with nothing armed or held, a release on the preview is a PRESS about framing,
-    // not a box nobody asked for — a press inside a zoom's box takes that zoom, a press clear of every box draws
-    // a new rectangle for the zoom in force. A release that covered real pixels is still a hand-drawn box and
-    // stays refused (only ⊕ Zoom frames by hand); one under the floor was a click, which is what the rule reads.
+    // §F3.1's paragraph after S5 and §05 F2.1 S2: with nothing armed or held, a CLICK on the picture (press and
+    // release inside GTK's drag threshold) only plays and pauses, whatever is placed under it; framing starts only
+    // once the pointer has travelled while pressed. This is where the panel's ONE button-1 release arrives (the
+    // painted frame lies over the picture's button, so the button never sees a pointer click), which makes it
+    // the one place a click and a drag are told apart. The first rewrite ran the framing press on a click as well
+    // as the toggle, so a click over a placed zoom started play AND took the zoom or opened a zoom form.
     if !zoom_armed() {
-        let width = (to.0 - from.0).abs();
-        let height = (to.1 - from.1).abs();
-        if fx_zoom::drag_counts(width, height) {
+        if ui::held_effect().is_some() {
             return "no zoom armed \u{2014} pick \u{2295} Zoom first".to_string();
         }
-        if ui::held_effect().is_none() {
-            // F3.4 S5 (`a press without travel toggles play/pause wherever it lands`): a click that landed inside an
-            // overlay's own box is the picture's toggle, not a framing question — the box must not swallow it.
-            // Claimed here because this is where the panel's ONE button-1 release arrives; `cut_preview_press`
-            // performs it through the picture's own door and answers `None` for every other click, so §F3.1's
-            // after-S5 rule below is untouched.
-            let at = ui::paste_line(window);
-            let fit = cut_preview_frame::fit_size_of(window, PREVIEW_PANEL_W, PREVIEW_PANEL_H);
-            if let Some(said) = cut_preview_press::play_toggle_on_press(window, at, fit, from) {
-                return said;
-            }
-            let said = super::cut_zoom_hand::press_on_release(window, from);
-            if !said.is_empty() {
-                return said;
-            }
+        let threshold = f64::from(window.settings().gtk_dnd_drag_threshold());
+        let travelled = (to.0 - from.0).abs() > threshold || (to.1 - from.1).abs() > threshold;
+        if !travelled {
+            return cut_preview_press::play_toggle_on_click(window).unwrap_or_default();
+        }
+        let said = press_on_release(window, from, to);
+        if !said.is_empty() {
+            return said;
         }
         return "no zoom armed \u{2014} pick \u{2295} Zoom first".to_string();
     }
@@ -748,6 +737,12 @@ pub fn show_zoom_form(window: &adw::ApplicationWindow, form: &fx_zoom::Form) {
     // Stored only now that the widgets exist and belong to THIS window: `zoom_form_open()` then always means
     // "there is a form on screen behind it", never "a value was parked somewhere".
     set_zoom_form(Some(form.clone()));
+    // §A's pinned heading names the open form and carries its ✕, as it does for the insert form; the first
+    // rewrite never pinned it for a zoom, so a box drawn by hand left a form with no ✕ on screen.
+    crate::ui::cut_form_frame::set_pinned(
+        window,
+        crate::ui::cut_form_frame::open_form_title(window).as_deref(),
+    );
 }
 
 /// One labelled numeric row: the field's name, its help as the tooltip, and an entry named for the field.

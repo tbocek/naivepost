@@ -1,8 +1,7 @@
 //! F0.5 A run's bookkeeping — the four things `run_bookkeeping.rs` could not pin because they only
 //! exist once a press is involved: that a single-step ▶ closes what it opened (§S4), that the queue's
-//! joined line reaches the status row over whatever stood there (§2 / S2), that a lucky step boundary
-//! really passes its next page (S4's "a lucky run moves on"), and that ⏹'s close takes the idle pulse
-//! down with the run (§2).
+//! joined line reaches the status row over whatever stood there (§2 / S2), that the close hands the
+//! audio unload over (S4), and that the close takes the idle pulse down with the run (§2).
 //!
 //! The rules themselves stay proved in `run_bookkeeping.rs` against `naivepost::runqueue`; these are
 //! the wires (spec/00-principles.md §5).
@@ -16,7 +15,6 @@ use adw::prelude::*;
 use naivepost::project::{Project, Source};
 use naivepost::run::{self, RunBar};
 use naivepost::runqueue::{self, Queue, TRACK_FRAMES};
-use naivepost::shell::Page;
 use naivepost::ui;
 
 /// Whether GTK has a display to build widgets against; `gtk4::init` may only be called once, and the
@@ -128,7 +126,6 @@ fn window_round() {
         single_step_closes(app);
         line_overwrites(app);
         unload_handed_over(app);
-        lucky_moves_on();
         the_pulse_belongs_to_the_run();
         RAN.store(true, std::sync::atomic::Ordering::SeqCst);
     });
@@ -165,6 +162,11 @@ fn single_step_closes(app: &adw::Application) {
         "a run from an earlier scenario never closed, so ▶ here would be a pause, not a step"
     );
     play.emit_by_name::<()>("clicked", &[]);
+    // Prepare's ▶ hands its walk to a worker (§03-shell §1); the close lands when the window takes its answer.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
 
     let bar = ui::run_bar(&window).expect("the window carries a run bar");
     // The close runs inside the press, but the unload it hands over is a thread and the repaint lands on
@@ -196,6 +198,11 @@ fn single_step_closes(app: &adw::Application) {
             "the second ▶ answering as a step, not a pause"
         ),
         "nothing was under way, so the second press is not a pause"
+    );
+    // Prepare's ▶ hands its walk to a worker (§03-shell §1); the close lands when the window takes its answer.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -244,7 +251,6 @@ fn line_overwrites(app: &adw::Application) {
         &progress,
         &log,
         &view,
-        None,
     );
     assert_eq!(
         ui::state(&window).status,
@@ -259,71 +265,12 @@ fn line_overwrites(app: &adw::Application) {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// S4's "a lucky run moves to its next step": the chain's step boundary passes the page it is moving
-/// to, which is the ONLY place in the program where `end_run` gets a `Some(page)` — without it
-/// `EndRun::chain_moves_on` would be true only in tests. No window needed: the driver's handles hold
-/// widgets, and their types are all GTK needs.
-#[test]
-fn f0_5_s4_a_lucky_run_moves_on() {
-    // libadwaita widgets may only be built on the main thread, and `run_with_args` runs its `activate`
-    // there -- so the window-free scenarios run inside the same round the widget checks use.
-    window_round();
-}
-
 /// §2: the idle pulse belongs to the press — ▶ stands it while the run holds nothing countable, and
 /// the close takes it down rather than leaving a timer ticking on an idle bar. Nothing pumps the main
 /// loop between the two assertions, so a standing timer can only be the press's doing.
 #[test]
 fn f0_5_s2_the_press_stands_a_pulse() {
     window_round();
-}
-
-/// S4's "a lucky run moves to its next step", run inside the round so its widgets are on the main
-/// thread: the chain's step boundary passes the page it is moving to, which is the ONLY place in the
-/// program where `end_run` gets a `Some(page)` -- without it `EndRun::chain_moves_on` would be true
-/// only in tests.
-fn lucky_moves_on() {
-    let handles = handles();
-    let bar = handles.bar.clone();
-    bar.borrow_mut().running = Some(run::Run {
-        step: run::Step::Prepare,
-        paused: false,
-        log_expanded: true,
-        sources: run::Snapshot::default(),
-    });
-    report_frames(&handles.queue);
-    let joined = handles.queue.borrow().text_and_tip().0;
-
-    naivepost::ui::run_close::close_chain_step(&handles, Some(Page::Cut));
-
-    // The move happened: a boundary with a next page reports that the chain moves on...
-    assert!(
-        runqueue::end_run(&mut RunBar::default(), Some(Page::Cut)).chain_moves_on,
-        "S4: a boundary with a next page moves on"
-    );
-    // ...and the press's ONE run stays open across it, because §2 wants ⏸/⏹ acting for the whole chain.
-    assert!(
-        bar.borrow().running.is_some(),
-        "S4: the chain keeps its run open between steps (F0.4 S1 must still see it as busy)"
-    );
-    // Its queue's line went to the status row and the queue was reset for the next step's counting.
-    assert_eq!(
-        handles.status.text().as_str(),
-        joined.as_str(),
-        "§2: the step's line reached the row"
-    );
-    assert_eq!(
-        handles.queue.borrow().text_and_tip().0,
-        "",
-        "S1: the next step counts from an empty queue"
-    );
-
-    // The chain's END is the other half: no next page, so the run really closes.
-    naivepost::ui::run_close::close_chain_step(&handles, None);
-    assert!(
-        bar.borrow().running.is_none(),
-        "S4: with nowhere to move on, the run ends"
-    );
 }
 
 /// §2's idle pulse, also inside the round: arming stands a timer while the run holds nothing
@@ -350,7 +297,7 @@ fn the_pulse_belongs_to_the_run() {
         "once something counts, the needle owns the bar"
     );
     ui::shell_beats::arm_pulse(&handles.progress, &handles.bar, &handles.queue);
-    naivepost::ui::run_close::close_chain_step(&handles, None);
+    close(&handles);
     assert!(
         !ui::shell_beats::pulse_standing_for_test(),
         "S4: closing the run takes the pulse down with it"
@@ -367,15 +314,15 @@ fn f0_5_bookkeeping_reaches_the_shell() {
 }
 
 #[test]
-fn f0_5_s4_the_chain_close_hands_over_the_unload() {
+fn f0_5_s4_the_close_hands_over_the_unload() {
     window_round();
 }
 
-/// §S4's "audio models unloaded off-thread", at the door the chain closes through, over a REAL socket.
+/// §S4's "audio models unloaded off-thread", at the door every run closes through, over a REAL socket.
 /// The seam is the settings file: `fire_unload` reads audio.cpp's address out of it on every run (§1's
 /// re-read-per-request rule), so pointing that one box at a loopback fake makes the check about bytes
-/// that crossed a socket rather than about a stub. `close_chain_step` hands the unload over at each step
-/// boundary; the program's own bounded wait (`settings_probe::drain_unload`) then retires the leg, and
+/// that crossed a socket rather than about a stub. `close_step_run` hands the unload over when a run
+/// closes; the program's own bounded wait (`settings_probe::drain_unload`) then retires the leg, and
 /// the thread's report — written by nothing else in the program — lands in the log.
 fn unload_handed_over(app: &adw::Application) {
     // FIRST in the round: this is the one scenario that pins `XDG_CONFIG_HOME` (process-wide), and it
@@ -399,14 +346,12 @@ fn unload_handed_over(app: &adw::Application) {
         sources: run::Snapshot::default(),
     });
 
-    // §2 at the hand-off: with a chain running the row is the run's, so what the close writes there is
-    // the step's own track line and NOT whatever stood there before -- `lucky_run::press` lends the row
-    // to the run for its length through `mark_chain_row`, and §S4's housekeeping answers into it.
-    handles.status.set_text("a sentence from before the chain");
-    naivepost::ui::run_close::mark_chain_row(Some(&handles.status));
+    // §2 at the close: what the close writes on the row is the step's own track line and NOT whatever
+    // stood there before.
+    handles.status.set_text("a sentence from before the run");
     report_frames(&handles.queue);
     let joined = handles.queue.borrow().text_and_tip().0;
-    naivepost::ui::run_close::close_chain_step(&handles, Some(Page::Cut));
+    close(&handles);
     // The hand-off is counted while it dials (`cancel_leg::leg_started` inside `fire_unload`'s thread).
     naivepost::settings_probe::drain_unload(std::time::Duration::from_secs(5));
     let dialed = wait_until(|| fake.hits() > 0, "the unload reached audio.cpp");
@@ -430,25 +375,15 @@ fn unload_handed_over(app: &adw::Application) {
         said.contains("models unloaded"),
         "answered servers say so, rather than the run staying quiet: {said}"
     );
-    // §2 at the hand-off: the row now carries the step's own line, not the sentence that was there when
-    // the press started. Read through a short wait because the unload answers from its OWN thread (§S4)
-    // and may still be dialling: if it has answered by now, its news is what the row holds instead.
-    let on_row = wait_until(
-        || {
-            let row = handles.status.text().to_string();
-            row == joined || row == said.replacen(naivepost::ui::run_close::UNLOAD_PREFIX, "", 1)
-        },
-        "the row to take the run's words (the step's line, or the housekeeping news once it lands)",
+    // §2 at the close: the row carries the step's own line, not the sentence that was there before.
+    assert_eq!(
+        handles.status.text().as_str(),
+        joined.as_str(),
+        "§2: the close puts the run's words on the row (log said {said:?})"
     );
     assert!(
-        on_row,
-        "§2: while the chain runs the row belongs to the run, not to what stood there before (row said {:?}, step line {joined:?}, log said {said:?})",
-        handles.status.text(),
-    );
-    // And the pair §S4 pins together: the move happened WITHOUT ending the press's one run.
-    assert!(
-        handles.bar.borrow().running.is_some(),
-        "S4: the chain keeps ONE run open across a step boundary (F0.4 S1 still reads it as busy)"
+        handles.bar.borrow().running.is_none(),
+        "S4: the close ends the run"
     );
     // The other close door, on the same socket: a single-step ▶ must hand the unload over too.
     single_step_close_dials(app);
@@ -463,7 +398,7 @@ fn f0_5_s4_the_single_step_close_dials_the_unload() {
 /// [`unload_handed_over`] (one scenario per binary may pin `XDG_CONFIG_HOME`, so this runs inside it and
 /// shares its fake), but reached through the real button: `ui::play_button(...).emit_by_name("clicked")`
 /// walks Prepare's step and closes what it opened, and the close must hand the audio unload over exactly
-/// as the chain's boundary does — which before this wiring it never did at all.
+/// as the bare close does — which before this wiring it never did at all.
 fn single_step_close_dials(app: &adw::Application) {
     let project = footage_project();
     let window = ui::build_window(app, &project, "Prepare");
@@ -480,6 +415,11 @@ fn single_step_close_dials(app: &adw::Application) {
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_by_name::<()>("clicked", &[]);
+    // Prepare's ▶ hands its walk to a worker (§03-shell §1); the close lands when the window takes its answer.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
 
     // The press closed its own bookkeeping (§S4), so the bar is idle again -- the same state the logic
     // check in `single_step_closes` asserts, read here off the widget press rather than off a call.
@@ -501,7 +441,7 @@ fn single_step_close_dials(app: &adw::Application) {
             || press_server_hits() > dialled,
             "the single-step close dialled audio.cpp"
         ),
-        "S4: a lone step's close hands the audio unload over too, not only the chain's"
+        "S4: the ▶ press hands the audio unload over through the real button too"
     );
     let said = naivepost::ui::run_close::unload_line_for_test()
         .expect("the press recorded its own housekeeping");
@@ -663,22 +603,42 @@ fn scratch(tag: &str) -> std::path::PathBuf {
     dir
 }
 
+/// The widgets and state a run's close repaints, held together for the window-free scenarios.
+struct Handles {
+    bar: Rc<RefCell<RunBar>>,
+    status: gtk4::Label,
+    progress: gtk4::ProgressBar,
+    log: gtk4::Expander,
+    log_view: gtk4::TextView,
+    queue: Rc<RefCell<Queue>>,
+    exchange_log: Rc<RefCell<naivepost::exchanges::RunLog>>,
+}
+
+/// Close the run these handles hold through the program's one close door (§S4).
+fn close(handles: &Handles) {
+    naivepost::ui::run_close::close_step_run(
+        &handles.bar,
+        &handles.queue,
+        &handles.exchange_log,
+        &handles.status,
+        &handles.progress,
+        &handles.log,
+        &handles.log_view,
+    );
+}
+
 /// The driver's handles. GTK is initialised by the application the widget round runs, so these tests
 /// only build widgets -- calling `gtk4::init()` a second time after `adw::Application::run` crashes
 /// GDK, which is why the round runs first and `ensure_gtk` only fills in when there was no app.
-fn handles() -> naivepost::ui::lucky_run::Handles {
+fn handles() -> Handles {
     ensure_gtk();
-    naivepost::ui::lucky_run::Handles {
+    Handles {
         bar: Rc::new(RefCell::new(RunBar::default())),
-        shell: Rc::new(RefCell::new(naivepost::shell::Shell::default())),
-        stack: adw::ViewStack::new(),
-        guard: Rc::new(std::cell::Cell::new(false)),
         status: gtk4::Label::new(None),
         progress: gtk4::ProgressBar::new(),
         log: gtk4::Expander::new(None),
         log_view: gtk4::TextView::new(),
         queue: Rc::new(RefCell::new(Queue::new())),
         exchange_log: Rc::new(RefCell::new(naivepost::exchanges::RunLog::new())),
-        procs: Rc::new(RefCell::new(run::Subprocesses::default())),
     }
 }

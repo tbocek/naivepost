@@ -6,7 +6,7 @@
 //!
 //! Every number comes out of the realized tree (`translate_coordinates`, `width()`, `height()`) or
 //! out of the same pure functions the painter indexes with (`cut_tracks::band_height_px`,
-//! `cut_view::fits`, `cut_view::thumb_geared`), never off a screenshot: a layout that merely renders
+//! `cut_view::fits`, `cut_view::drag_gear`), never off a screenshot: a layout that merely renders
 //! is not evidence — the broken page rendered fine and was wrong by 750 px.
 //!
 //! One live scenario per binary: this fixture re-points the process-wide cwd, so a second fixture
@@ -153,6 +153,10 @@ fn check_the_preview_holds_a_real_picture(app: &adw::Application) {
     );
     assert!(shown, "the page's own refresh found and showed a frame");
     settle();
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+        "the workers answered"
+    );
 
     let picture = common::find_named(&window, "preview-picture")
         .expect("badge 1's picture widget is on the page");
@@ -354,22 +358,20 @@ fn check_the_scrollbar_shows_and_hides(app: &adw::Application) {
     // installed while the allocation is still what it is here, so the check asks the program's own
     // door rather than assuming which axis GTK laid out first.
     let geared_bar = naivepost::ui::cut_view::gear_px_for_test();
-    println!(
-        "BAR zoomed: upper {upper}, page-length {page_length}, thumb-geared-over {geared_bar} px, thumb {}",
-        naivepost::ui::cut_view::thumb_px(total, geared_bar)
-    );
+    println!("BAR zoomed: upper {upper}, page-length {page_length}, bar {geared_bar} px");
+    // Inventory §B: page = viewW, so the thumb is the view's share of the tape.
     assert!(
-        (page_length - 40.0).abs() < 1.0,
-        "one screenful is 40 px of drag whatever the zoom: page length {page_length} measured over \
-         a {geared_bar} px bar (upper {upper}, view {view_now})"
+        (page_length - view_now).abs() < 1.0,
+        "the thumb is the view's share: page {page_length} against view {view_now} (upper {upper})"
     );
-    // The pure rule behind it, spelled once: 40 px of the bar, clamped so a narrow bar's thumb is
-    // never smaller than the floor ratio.
-    let geared = naivepost::ui::cut_view::thumb_geared(total, geared_bar);
-    assert!(
-        (geared * geared_bar - 40.0).abs() < 0.01 || geared >= 1.0,
-        "`thumb_geared` answers 40 px of the bar: {geared} x {geared_bar}"
-    );
+    // §1's gear is on the drag: where it engages, one screenful is 40 px of it.
+    if let Some(per_px) = naivepost::ui::cut_view::drag_gear(total, view_now, geared_bar) {
+        assert!(
+            (view_now / per_px - 40.0).abs() < 0.01,
+            "a geared drag crosses one screenful in 40 px, not {}",
+            view_now / per_px
+        );
+    }
     RAN_BAR.store(true, Ordering::SeqCst);
     window.close();
 }
@@ -423,7 +425,7 @@ fn check_the_red_line_is_two_pixels_on_its_own_layer(app: &adw::Application) {
     let cr = cairo::Context::new(&surface).expect("a context");
     cr.set_source_rgb(1.0, 1.0, 1.0);
     let _ = cr.paint();
-    naivepost::ui::cut_tracks::paint_playhead(&cr, 1.0, 0.0, 20.0, 10.0);
+    naivepost::ui::cut_tracks::paint_playhead(&cr, 20.0, 10.0);
     // `flush` returns a result the painter itself ignores (a failed flush paints nothing new, and
     // there is nothing to recover from here); silence the must-use so the check reads as an assertion.
     cr.target().flush();

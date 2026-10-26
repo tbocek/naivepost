@@ -283,8 +283,10 @@ fn f1_7_s6_pressing_play_writes_events_tsv_and_the_state() {
 /// set, scaled copies that did not exist before, and the closing sentence in the window log.
 fn check_the_press_writes_the_two_files(app: &adw::Application) {
     let (_keep, tree) = pin_session("files");
-    // Four frames at 1 s over a 4-second take: exactly one chunk of P.machine.describeFramesPerReq.
-    seed_frames(&tree, &[0.0, 1.0, 2.0, 3.0], &[]);
+    // Four frames one heartbeat apart (describe sends one per heartbeat inside a scene): exactly one chunk
+    // of P.machine.describeFramesPerReq.
+    let beat = naivepost::text_gate::HEARTBEAT_S;
+    seed_frames(&tree, &[0.0, beat, 2.0 * beat, 3.0 * beat], &[]);
     assert!(
         !tree
             .llm_frames_dir(LANE)
@@ -293,8 +295,24 @@ fn check_the_press_writes_the_two_files(app: &adw::Application) {
         "nothing is pre-scaled by the test: the program must make the copies"
     );
 
+    // The video is heard as well as seen (F1.3 S0): its speech row finds a decoded silence and the markers a
+    // silent take is written up with, so it asks no server and this press costs only describe's asks.
+    for marker in [
+        tree.voice16k_wav(LANE),
+        tree.words_json(LANE),
+        tree.turns_json(LANE),
+    ] {
+        std::fs::create_dir_all(marker.parent().unwrap()).expect("the lane's folder");
+    }
+    std::fs::write(
+        tree.voice16k_wav(LANE),
+        crate::common::silent_wav_bytes(1.0),
+    )
+    .expect("the decode");
+    std::fs::write(tree.words_json(LANE), r#"{"text":""}"#).expect("nothing heard");
+    std::fs::write(tree.turns_json(LANE), "[]").expect("no turns");
+
     let model = Project {
-        interval: 1.0,
         sources: vec![footage("project:sources/lecture.mkv")],
         ..Project::default()
     };
@@ -305,6 +323,11 @@ fn check_the_press_writes_the_two_files(app: &adw::Application) {
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_clicked();
+    // Prepare's ▶ hands its walk to a worker (§03-shell §1); its lines and ending land on the poll.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     let logs = ui::window_logs();
 
     // The two files S6 owns, read through the same doors the logic test reads them through.

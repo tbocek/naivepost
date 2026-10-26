@@ -21,12 +21,23 @@ use crate::{clock, describe, frames, separate_media, subprocess};
 /// Resume lives here rather than in a marker file: "scaled ONCE" (§F1.7 S1) means a copy already on
 /// disk is not paid for twice, and the copy's existence is exactly the fact that rule needs. A
 /// half-written run therefore costs only the frames it had not reached.
-pub fn missing(dir: &Path, frames: &[f64]) -> Vec<f64> {
+pub fn missing(dir: &Path, base: f64, frames: &[f64]) -> Vec<f64> {
     frames
         .iter()
         .copied()
-        .filter(|at| !dir.join(describe::scaled_name(*at)).exists())
+        .filter(|at| !dir.join(describe::scaled_name(base, *at)).exists())
         .collect()
+}
+
+/// The instant the stored folder's first picture names: what a picked second (which counts from that picture,
+/// `describe::frames_on_disk`) is added to for a scaled copy's name, so the copy carries the stored frame's own
+/// date and time. 0 for a folder with nothing readable in it.
+pub fn name_base(tree: &Tree, lane: &str) -> f64 {
+    earliest_name(&tree.frames_dir(lane))
+        .and_then(|name| {
+            clock::read_frame(name.to_string_lossy().strip_suffix(".jpg").unwrap_or(""))
+        })
+        .unwrap_or(0.0)
 }
 
 /// Scale every frame that still needs it into `.llmframes/` and say how many were made.
@@ -51,7 +62,8 @@ pub fn ensure(
     log: &mut impl FnMut(&str),
 ) -> Result<usize, String> {
     let out_dir = tree.llm_frames_dir(lane);
-    let todo = missing(&out_dir, frames);
+    let base = name_base(tree, lane);
+    let todo = missing(&out_dir, base, frames);
     if todo.is_empty() {
         return Ok(0);
     }
@@ -67,10 +79,13 @@ pub fn ensure(
     // assumed -- without this, scaling asks ffmpeg for a file whose name was never written.
     let zero = earliest_name(&stored)
         .and_then(|name| stored_seconds(&name.to_string_lossy(), start))
-        .unwrap_or(start);
+        .unwrap_or(0.0);
     let mut scaled = 0usize;
     for at in &todo {
-        let input = stored.join(frames::frame_file(zero, *at));
+        // The stored name is the take's clock start, plus where its first picture sits, plus the picked
+        // second: `frames_on_disk` measured `at` from that first picture. The first rewrite left `start` out, so
+        // every recording but the session's first asked for a frame named from 1970 and failed.
+        let input = stored.join(frames::frame_file(start + zero, *at));
         if !input.exists() {
             return Err(format!(
                 "{}: no stored frame to scale -- {} is not there",
@@ -87,7 +102,7 @@ pub fn ensure(
         // `-update 1` is the other half: it lets one still image be written under a plain, literal
         // name, and that name has to be the frame's own clock name, because `missing`, `read_images`
         // and S2's resume rule all resolve `describe::scaled_name`.
-        let out = out_dir.join(describe::scaled_name(*at));
+        let out = out_dir.join(describe::scaled_name(base, *at));
         // The scale filter is an OUTPUT option, which in ffmpeg means it has to appear AFTER the `-i`
         // whose stream it acts on: a `-vf` sitting before the `-i` becomes an option of the input, is
         // applied to nothing, and ffmpeg then COPIES the JPEG -- exit 0, a native-width "scaled" copy,

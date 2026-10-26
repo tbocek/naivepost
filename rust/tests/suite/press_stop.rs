@@ -29,6 +29,7 @@ fn bar_with_run(step: run::Step, paused: bool) -> RunBar {
 /// the run comes down with it.
 #[test]
 fn f0_3_s1_stops_the_page_transport_and_still_stops_the_run() {
+    let _turn = crate::common::describe_flags_turn();
     let mut bar = bar_with_run(run::Step::Suggest, false);
     let mut procs = Subprocesses::default();
     procs.register(4101);
@@ -65,6 +66,7 @@ fn f0_3_s1_stops_the_page_transport_and_still_stops_the_run() {
 /// S1 also covers a preview that was started and parked rather than playing: `Transport::cued`.
 #[test]
 fn f0_3_s1_a_cued_preview_counts_as_playback_too() {
+    let _turn = crate::common::describe_flags_turn();
     let mut bar = bar_with_run(run::Step::Narrate, false);
     let mut procs = Subprocesses::default();
 
@@ -90,6 +92,7 @@ fn f0_3_s1_a_cued_preview_counts_as_playback_too() {
 /// `transport.playing` that would claim Prepare owns a preview.
 #[test]
 fn f0_3_s1_prepare_page_has_no_transport() {
+    let _turn = crate::common::describe_flags_turn();
     for page in [Page::Prepare, Page::Produce] {
         assert!(
             run::transport_for(
@@ -149,6 +152,7 @@ fn f0_3_s1_prepare_page_has_no_transport() {
 /// keeps what it already said rather than being cleared.
 #[test]
 fn f0_3_s2_no_run_is_nothing_more() {
+    let _turn = crate::common::describe_flags_turn();
     let mut bar = RunBar {
         running: None,
         status: "narration written: 42 lines".to_string(),
@@ -179,6 +183,7 @@ fn f0_3_s2_no_run_is_nothing_more() {
 /// killed, and the pause cleared because a stop is not a pause.
 #[test]
 fn f0_3_s3_flag_cancel_and_kill_all() {
+    let _turn = crate::common::describe_flags_turn();
     let mut bar = bar_with_run(run::Step::Prepare, true);
     let mut procs = Subprocesses::default();
     procs.register(9001);
@@ -243,6 +248,7 @@ fn f0_3_s4_stopped_subprocess_is_not_a_failure() {
 /// S5: a stop that reached Describe arms exactly one restart-from-the-start; reading it clears it.
 #[test]
 fn f0_3_s5_a_stop_inside_describe_arms_a_restart_from_the_start() {
+    let _turn = crate::common::describe_flags_turn();
     let mut bar = bar_with_run(run::Step::Prepare, false);
     let mut procs = Subprocesses::default();
 
@@ -275,6 +281,7 @@ fn f0_3_s5_a_stop_inside_describe_arms_a_restart_from_the_start() {
 /// ended it.
 #[test]
 fn f0_3_s3_stop_terminates_a_registered_child_for_real() {
+    let _turn = crate::common::describe_flags_turn();
     let mut child = std::process::Command::new("sleep")
         .arg("60")
         .spawn()
@@ -370,6 +377,7 @@ fn f0_3_s3_the_button_leg_terminates_every_registered_child() {
 /// signalling it twice never raises an error either way.
 #[test]
 fn f0_3_s4_a_child_already_gone_is_not_reported_and_not_a_failure() {
+    let _turn = crate::common::describe_flags_turn();
     let mut child = std::process::Command::new("sleep")
         .arg("0.1")
         .spawn()
@@ -407,6 +415,7 @@ fn f0_3_s4_a_child_already_gone_is_not_reported_and_not_a_failure() {
 /// S5: the arming comes from the stage seam, not from a literal the caller remembers to pass.
 #[test]
 fn f0_3_s3_describe_stage_is_what_the_press_reads() {
+    let _turn = crate::common::describe_flags_turn();
     assert!(!naivepost::stop_legs::describe_stage(), "outside the stage");
     naivepost::stop_legs::enter_describe();
     assert!(naivepost::stop_legs::describe_stage(), "inside the stage");
@@ -446,6 +455,7 @@ fn f0_3_s3_describe_stage_is_what_the_press_reads() {
 /// transcripts) is what spec/00-principles #4 protects; only the untrustworthy event stream goes.
 #[test]
 fn f0_3_s5_an_armed_stop_describes_from_the_start() {
+    let _turn = crate::common::describe_flags_turn();
     use naivepost::stop_legs::describes_from_the_start as from_start;
     // Armed by a stop inside Describe, nothing on disk: start from the beginning.
     assert!(
@@ -470,6 +480,7 @@ fn f0_3_s5_an_armed_stop_describes_from_the_start() {
 /// contract `RunBar::describe_restarts` holds for the bar's own flag.
 #[test]
 fn f0_3_s5_one_armed_stop_arms_exactly_one_run() {
+    let _turn = crate::common::describe_flags_turn();
     assert!(
         !naivepost::stop_legs::take_describe_restart(),
         "starts unarmed"

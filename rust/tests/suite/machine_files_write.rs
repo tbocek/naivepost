@@ -61,7 +61,7 @@ fn window_round() {
 
 /// The dialog's own answer provider: nothing is probed here, only saved.
 fn echoing() -> ui_settings::Provider {
-    std::rc::Rc::new(|_key, typed| Ok(format!("{typed} answered")))
+    std::sync::Arc::new(|_key, typed| Ok(format!("{typed} answered")))
 }
 
 /// Open the dialog over `window` answering from `provider` (same trick as `tests/suite/settings_widgets.rs`:

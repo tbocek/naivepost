@@ -19,18 +19,17 @@
 //! rules testable at 4:45 and 5:00 without waiting for either, which is the whole reason a stall rule can be
 //! pinned by a test rather than hoped for.
 //!
-//! # Two models on one server are two slot counts
+//! # One request per server
 //!
-//! §5's Settings text says so, and says why: "two models on one GPU share it however this is set". The spin
-//! button counts *this app's* requests to *one model*; the server may hold more slots and serve other clients
-//! with them. So [`Gate`] is built per model and knows nothing about its neighbours — [`shares_a_server`] exists
-//! only so a caller can warn that two boxes point at one machine, never to merge their counts.
+//! The app gives each server one of its requests at a time (02 §1); [`Gate`] is the queue that holds the
+//! rest, and `slot_gate` builds one per server with a single slot. The gate itself takes any count, which is
+//! what its own tests exercise.
 //!
 //! # Ids used
 //!
 //! `P.eng.llmStallMinutes` (5) → [`STALL_MINUTES`], `P.eng.llmWholeMinutes` (10) → [`WHOLE_MINUTES`],
-//! `P.eng.llmTailChars` (90 shown, 360 kept) → [`TAIL_BYTES`] and [`TAIL_KEPT_BYTES`], `P.machine.slots`
-//! (default 1, one count per model) → [`DEFAULT_SLOTS`] with the seven counts in [`crate::settings::Slots`].
+//! `P.eng.llmTailChars` (90 shown, 360 kept) → [`TAIL_BYTES`] and [`TAIL_KEPT_BYTES`], the gate's
+//! count range → [`SLOTS_MIN`]..[`SLOTS_MAX`].
 
 use std::collections::{HashMap, HashSet};
 
@@ -59,10 +58,6 @@ pub const TAIL_BYTES: usize = 90;
 /// How much text the watch holds on to (§10's row: "90 (360 kept)"). Comfortably more than the tail, so trimming
 /// the tail is cheap and never needs the whole answer.
 pub const TAIL_KEPT_BYTES: usize = 360;
-
-/// A model's slot count when nothing says otherwise (`P.machine.slots`, default 1 — §5 spells that as "absent =
-/// 1"). One row covers all seven models; each keeps its own value in [`crate::settings::Slots`].
-pub const DEFAULT_SLOTS: u32 = 1;
 
 /// The silence bound the live watch uses, in seconds. `llmStallMinutes` is §4's number; `NAIVEPOST_LLM_STALL_SECONDS`
 /// is the seam a live test reads to watch a five-minute stall without living through five minutes of it, which is why
@@ -473,8 +468,7 @@ pub struct Gate {
 }
 
 impl Gate {
-    /// A gate for one model with `slots` of them ([`clamped_slots`]' range). Two models on one server get two
-    /// gates; nothing here knows they share a machine.
+    /// A gate named `model` (the server it holds, in this app) with `slots` turns ([`clamped_slots`]' range).
     pub fn new(model: &str, slots: u32) -> Self {
         Self {
             model: model.to_string(),
@@ -586,8 +580,8 @@ impl Gate {
         self.queue.clone()
     }
 
-    /// §4's line: `>>> ‹step›: waiting for ‹model› -- all N slot(s) busy (‹steps›)`, naming every holder so a reader
-    /// can see how many slots are spoken for. Empty when the step is queued behind its own earlier call — see
+    /// §4's line: `>>> ‹step›: waiting for ‹server› -- busy with ‹steps›`, naming every holder so a reader can see
+    /// what the step is waiting behind. Empty when the step is queued behind its own earlier call — see
     /// [`Self::naming_itself`].
     fn waiting_log(&mut self, step: &str) -> String {
         if self.naming_itself(step) {
@@ -599,8 +593,8 @@ impl Gate {
         }
         let holders = self.held.join(", ");
         format!(
-            ">>> {step}: waiting for {} -- all {} slot(s) busy ({holders})",
-            self.model, self.slots
+            ">>> {step}: waiting for {} -- busy with {holders}",
+            self.model
         )
     }
 
@@ -608,7 +602,11 @@ impl Gate {
     /// would name the asker, and "publish is waiting for publish" says less than silence — the reason it is
     /// waiting is already obvious from there being two of its requests in flight.
     fn naming_itself(&self, step: &str) -> bool {
-        self.held.iter().any(|holder| holder == step)
+        // Compared on the step's own name: `slot_gate::hold` gives every ask a `#N` of its own, so "Publish#4"
+        // behind "Publish#3" is the same step behind itself. Compared whole, the two never matched and the
+        // rule never held.
+        let name = |holder: &str| holder.split('#').next().unwrap_or(holder).to_string();
+        self.held.iter().any(|holder| name(holder) == name(step))
     }
 }
 
@@ -627,47 +625,5 @@ pub fn in_flight(independent: bool, slots: u32) -> usize {
         clamped_slots(slots) as usize
     } else {
         1
-    }
-}
-
-/// Do these two models live on one server? A caller warns with this; it never merges slot counts, because §5 says
-/// plainly that two models on one GPU share it however the boxes are set.
-///
-/// Compared on scheme, host and port of the two servers' URLs — after [`crate::services::server_url`] has done
-/// its scheme/slash work. A bare host reads as `https` (02 §20), so `llama:8080` and `http://llama:8080` are
-/// two addresses, one reached over TLS and one not, and conflating them would point a warning's reader at the
-/// wrong box.
-pub fn shares_a_server(a: &str, b: &str) -> bool {
-    // Compared on host *and* port. Two ports on one machine are two servers by agreement — the arrangement §1
-    // describes — so they need no warning; one address wearing two prefixes is one server, and that is the case
-    // worth naming, because it is one GPU being asked for two jobs at once. Two spellings of one machine
-    // (`llama` and `10.0.0.4`) cannot be told apart here without DNS, so this never claims more than it can see.
-    let host_and_port = |raw: &str| -> Option<String> {
-        // services::server_url does the scheme and trailing-slash work, so `llama:8080` and `http://llama:8080/`
-        // are one address here. The port is then added when the box leaves it off, because a URL without one means
-        // its scheme's default — `http://host` and `http://host:80` are one server, and missing that would let the
-        // common case slip past a warning that exists to be read.
-        let url = crate::services::server_url(raw)?;
-        // The scheme is part of the address kept below: a bare host reads as `https` (02 §20), so `llama:8080`
-        // and `http://llama:8080` really are two addresses — one reached over TLS, one not — and conflating
-        // them would send a warning's reader to the wrong box.
-        let (scheme, after_scheme) = url.split_once("://")?;
-        let host_and_maybe_port = after_scheme.split(['/', '?', '#']).next().unwrap_or("");
-        if host_and_maybe_port.is_empty() {
-            return None;
-        }
-        let with_port = match host_and_maybe_port.rsplit_once(':') {
-            Some((_host, port)) if !port.is_empty() => host_and_maybe_port.to_string(),
-            _ => format!(
-                "{}:{}",
-                host_and_maybe_port,
-                if scheme == "https" { 443 } else { 80 }
-            ),
-        };
-        Some(format!("{scheme}://{with_port}"))
-    };
-    match (host_and_port(a), host_and_port(b)) {
-        (Some(one), Some(other)) => one == other,
-        _ => false,
     }
 }

@@ -145,7 +145,6 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s1_prev
     assert_eq!(JOB_NARRATION, "narration");
     assert_eq!(JOB_SPEAKING, "speaking");
     assert!(rules::voice_is_captions(CAPTIONS));
-    assert!(!rules::speaks_anything(CAPTIONS, false));
     assert_eq!(pass::progress(2, 2), "writing 2/2 clips");
 
     // The run itself stops at the write, so the speaking half never synthesizes — but the outcome it

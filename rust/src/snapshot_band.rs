@@ -48,7 +48,7 @@ pub fn rest_band(window: &adw::ApplicationWindow) {
 
 /// The run-bar row's own children, printed as `name x=.. w=..`.
 ///
-/// §1 counts six things in that row (▶ , the lucky gears , ⏹ , the progress bar , then the two readouts and
+/// §1 counts five things in that row (▶ , ⏹ , the progress bar , then the two readouts and
 /// the folder button between them) and says all of them are on screen at the minimum size. A shot can hold
 /// every one of them in the tree and still draw ⏹ UNDER the progress bar — which is what the shell shot showed
 /// while a name lookup found it happily — so the numbers of each direct child are printed here and read off the

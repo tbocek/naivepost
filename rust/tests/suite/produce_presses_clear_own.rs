@@ -47,6 +47,7 @@ fn walk(calls: &Calls, clear_own: ClearOwn) -> Legs {
     let for_print = calls.clone();
     let for_model = calls.clone();
     let for_draw = calls.clone();
+    let for_save = calls.clone();
     Legs {
         has_cut: Box::new(|| true),
         has_video: Box::new(|| true),
@@ -69,8 +70,12 @@ fn walk(calls: &Calls, clear_own: ClearOwn) -> Legs {
                 status: "done".to_string(),
                 ahead: 0,
                 done: true,
-                png: Vec::new(),
+                png: vec![137, 80, 78, 71],
             })
+        }),
+        save_picture: Box::new(move |_job, _png| {
+            for_save.borrow_mut().push("picture".to_string());
+            Ok(())
         }),
         print: Box::new(move |kind, _words| {
             for_print.borrow_mut().push(format!("print-{kind}"));

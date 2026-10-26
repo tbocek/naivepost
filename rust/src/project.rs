@@ -13,17 +13,10 @@ use crate::layout;
 
 pub const PROJECT_FILE: &str = "naivepost.json";
 
-/// `interval` — Freq: seconds between the frames sent to the describe model.
-pub const INTERVAL_MIN: f64 = 0.25;
-pub const INTERVAL_MAX: f64 = 5.0;
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Project {
     pub sources: Vec<Source>,
-    pub interval: f64,
-    pub language: String,
-    pub no_narration: bool,
     /// Inverted on purpose: absent = copy sources into the project.
     pub reference_sources: bool,
     pub vid_dir: Option<String>,
@@ -36,11 +29,22 @@ pub struct Project {
     /// key holding null would say that with the wrong answer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish: Option<Publish>,
+    /// F0.14: the profile this project's `context` is made from, with this project's own values. Absent = the
+    /// context is free text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<ProfileUse>,
+}
+
+/// A project's use of a profile (§01 §3 `profile`): the profile's name and the values filled in here.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProfileUse {
+    pub name: String,
+    pub values: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-#[derive(Default)]
 pub struct Source {
     pub path: String,
     pub footage: bool,
@@ -49,13 +53,24 @@ pub struct Source {
     pub tracks: Vec<u32>,
 }
 
+/// Every recording is a voice, 1..N: there is no "no voice", so a row starts at voice 1, the one the
+/// narration is spoken in (§4). A file written without the field reads the same way.
+impl Default for Source {
+    fn default() -> Self {
+        Self {
+            path: String::new(),
+            footage: false,
+            narrator: 1,
+            sepvoice: false,
+            tracks: Vec::new(),
+        }
+    }
+}
+
 impl Default for Project {
     fn default() -> Self {
         Self {
             sources: Vec::new(),
-            interval: 1.0,
-            language: "en".to_string(),
-            no_narration: false,
             reference_sources: false,
             vid_dir: None,
             aud_dir: None,
@@ -63,6 +78,7 @@ impl Default for Project {
             policy: Policy::default(),
             produce: Produce::default(),
             publish: None,
+            profile: None,
         }
     }
 }
@@ -180,6 +196,23 @@ pub struct Policy {
     /// through `cut_suggest_model_run::target_length_seconds` without a rewiring.
     #[serde(rename = "targetLengthSeconds", default = "no_target_field")]
     pub target_length_seconds: Field<f64>,
+    /// `P.policy.language`: the language the recordings are spoken in, as its code ("en", "de", …): what
+    /// the speech recogniser is told and what the voice speaks. Read from the User Context by F0.7 like every
+    /// other policy field; the first port had a Language box on Prepare for it.
+    #[serde(rename = "language", default = "english_field")]
+    pub language: Field<String>,
+}
+
+/// The language a session is in when nothing says otherwise: English, §10's default.
+pub const DEFAULT_LANGUAGE: &str = "en";
+
+/// A `language` field for a project file written before the field moved into the policy, or without it.
+fn english_field() -> Field<String> {
+    Field {
+        value: DEFAULT_LANGUAGE.to_string(),
+        origin: Origin::Default,
+        because: None,
+    }
 }
 
 impl Default for Policy {
@@ -220,6 +253,7 @@ impl Default for Policy {
                 origin: Origin::Default,
                 because: None,
             },
+            language: english_field(),
             decorations_pass: Field {
                 value: true,
                 origin: Origin::Default,
@@ -249,8 +283,7 @@ pub struct Produce {
     pub audio_kbps: u32,
     pub subtitles: Subtitles,
     pub translate: Vec<String>,
-    /// How loud the original audio sits under the narration; hidden when
-    /// narration is off, which is `no_narration`, not this value.
+    /// How loud the original audio sits under the narration (drawn on the Narrate page).
     pub game_volume: f64,
     pub crf: u32,
     /// §A "Frame timing", the tick `peak rate (VFR)`: the frame rate above is a ceiling rather than a
@@ -308,6 +341,10 @@ pub enum Resolution {
     #[default]
     #[serde(rename = "1080p")]
     P1080,
+    /// Written `original`, as §A spells the option and as the row reader parses it. The first rewrite wrote
+    /// `Original`, which that reader did not know, so a project saved with it opened at 1080p; the old spelling
+    /// is still read.
+    #[serde(rename = "original", alias = "Original")]
     Original,
 }
 
@@ -529,9 +566,9 @@ fn alias_produce(mut value: serde_json::Value) -> serde_json::Value {
 #[serde(default)]
 struct Raw {
     sources: Vec<Source>,
-    interval: f64,
-    language: String,
-    no_narration: bool,
+    /// The project file's top-level `language`, from before it moved into the policy: read once, never
+    /// written ([`migrate_language`]).
+    language: Option<String>,
     reference_sources: bool,
     vid_dir: Option<String>,
     aud_dir: Option<String>,
@@ -549,6 +586,8 @@ struct Raw {
     )]
     produce_legacy: crate::project_produce::RawProduce,
     publish: Option<RawPublish>,
+    /// F0.14's profile use, read as written.
+    profile: Option<ProfileUse>,
 
     // Legacy, read and migrated once, never written again.
     videos: Option<Vec<String>>,
@@ -570,9 +609,7 @@ impl Default for Raw {
         let empty = Project::default();
         Self {
             sources: empty.sources,
-            interval: empty.interval,
-            language: empty.language,
-            no_narration: empty.no_narration,
+            language: None,
             reference_sources: empty.reference_sources,
             vid_dir: empty.vid_dir,
             aud_dir: empty.aud_dir,
@@ -581,6 +618,7 @@ impl Default for Raw {
             produce: empty.produce,
             produce_legacy: crate::project_produce::RawProduce::default(),
             publish: None,
+            profile: None,
             videos: None,
             audios: None,
             in_dir: None,
@@ -691,12 +729,6 @@ fn migrate(
     let publish_raw = raw.publish.take();
     let mut project = Project {
         sources: std::mem::take(&mut raw.sources),
-        // The range is the spec's; what to do outside it is not said. Clamping beats
-        // an error or a panic: 0 was the prototype's "every frame", and an interval
-        // of 0 would divide every later step.
-        interval: raw.interval.clamp(INTERVAL_MIN, INTERVAL_MAX),
-        language: std::mem::take(&mut raw.language),
-        no_narration: raw.no_narration,
         reference_sources: raw.reference_sources,
         vid_dir: raw.vid_dir.take(),
         aud_dir: raw.aud_dir.take(),
@@ -706,10 +738,9 @@ fn migrate(
         // this app writes them reads back identically either way.
         produce: std::mem::take(&mut stored.settings),
         publish: publish_raw.map(migrate_publish),
+        profile: raw.profile.take(),
     };
-    // An absent `language` is the default "en"; serde's default gave us that, so a
-    // file that never named one stays English without a report line.
-
+    migrate_language(&mut project, &raw, &mut report);
     migrate_sources(&mut project, &raw, &mut report);
     migrate_dirs(&mut project, &raw, dir, &mut report);
     migrate_style(&mut project, has_policy, &raw, &mut report);
@@ -758,17 +789,16 @@ fn migrate_sources(project: &mut Project, raw: &Raw, report: &mut Vec<String>) {
             ..Source::default()
         });
     }
-    // "narrator 1..N (exclusive)" — the first recording carries voice 1, which is
-    // the one the narration is spoken in.
-    for (n, path) in raw.audios.as_deref().unwrap_or(&[]).iter().enumerate() {
+    // Every recording carries a voice, and one person is usually all of them: voice 1, the one the
+    // narration is spoken in.
+    for path in raw.audios.as_deref().unwrap_or(&[]) {
         project.sources.push(Source {
             path: path.clone(),
-            narrator: if n == 0 { 1 } else { 0 },
             ..Source::default()
         });
     }
     report.push(format!(
-        "videos/audios: {} sources, the first recording is narrator 1",
+        "videos/audios: {} sources, every recording is voice 1",
         project.sources.len()
     ));
 }
@@ -815,6 +845,33 @@ fn migrate_dirs(project: &mut Project, raw: &Raw, dir: &Path, report: &mut Vec<S
 /// The two video styles chose which pipeline ran; the generalisations put that in
 /// the policy, so `style` maps onto it — as a `source: default` the User Context can
 /// still override.
+/// A top-level `language` (the Language box the first port had on Prepare) becomes the policy's language,
+/// unless the file's policy already holds one of its own. Said once, like every other fold; an absent or empty
+/// key (English, the default) says nothing.
+fn migrate_language(project: &mut Project, raw: &Raw, report: &mut Vec<String>) {
+    let Some(code) = raw
+        .language
+        .as_deref()
+        .map(str::trim)
+        .filter(|code| !code.is_empty())
+    else {
+        return;
+    };
+    if project.policy.language.origin != Origin::Default {
+        return;
+    }
+    if code != project.policy.language.value {
+        report.push(format!(
+            ">>> language {code} moved from the project file into the editing policy -- the User Context sets it from now on"
+        ));
+    }
+    project.policy.language = Field {
+        value: code.to_string(),
+        origin: Origin::User,
+        because: Some("the Language box before it moved into the User Context".to_string()),
+    };
+}
+
 fn migrate_style(project: &mut Project, has_policy: bool, raw: &Raw, report: &mut Vec<String>) {
     let Some(style) = raw.style.as_deref() else {
         return;
@@ -994,16 +1051,6 @@ fn marshal(project: &Project) -> Result<Vec<u8>, String> {
 /// Write `<dir>/naivepost.json`, creating the directory if needed.
 pub fn save(project: &Project, dir: &Path) -> Result<(), String> {
     write_bytes(dir, &marshal(project)?)
-}
-
-/// `P.project.frameInterval` for the session in `dir`: the project's own `interval`, and for a
-/// folder with no readable project the same default [`Project::default`] carries, so the two
-/// never disagree. Frames exist only this far apart (§02 §3.9), so every door that names a frame
-/// grid asks here instead of assuming a spread — the number stays in [`Project::interval`].
-pub fn frame_interval(dir: &Path) -> f64 {
-    load(dir)
-        .map(|project| project.interval)
-        .unwrap_or_else(|_| Project::default().interval)
 }
 
 fn write_bytes(dir: &Path, bytes: &[u8]) -> Result<(), String> {

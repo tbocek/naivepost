@@ -69,7 +69,9 @@ fn main() -> ExitCode {
 // The launch itself lives in [`naivepost::ui::launch`] (F0.6): which project to open, what to leave
 // remembered for the next start, and §7's desktop registration. `main` only builds the application
 // and hands gio the two doors above.
-fn parse_snapshot(args: &[String]) -> Result<(String, PathBuf, PathBuf, naivepost::snapshot_ready::ShotOn), String> {
+fn parse_snapshot(
+    args: &[String],
+) -> Result<(String, PathBuf, PathBuf, naivepost::snapshot_ready::ShotOn), String> {
     let mut screen = None;
     let mut dir = None;
     let mut out = None;

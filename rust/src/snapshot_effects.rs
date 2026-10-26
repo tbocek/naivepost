@@ -150,7 +150,7 @@ pub fn paint(
         );
         // The three job buttons themselves: this screen exists to show THEM working, so a shot where one of
         // The three passes ran as jobs of the cut, so what this screen records is what they PLACED: no control
-        // starts them (§2's run bar holds only ▶ / lucky / ⏹ / the bar and the readouts), and a pass that placed
+        // starts them (§2's run bar holds only ▶ / ⏹ / the bar and the readouts), and a pass that placed
         // nothing would otherwise print a bare page and still exit 0.
         let shown = ui::find_status(window.upcast_ref())
             .map(|row| row.text().to_string())

@@ -43,6 +43,7 @@ static TAKEN_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static EXPORT_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static SAVE_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static TRANSCODE_FAIL: Mutex<Option<String>> = Mutex::new(None);
+static REDRAW_REAL_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static REFUSAL_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static EXPORT_MEASURED_FAIL: Mutex<Option<String>> = Mutex::new(None);
 static SET_THUMB_SOLE_FAIL: Mutex<Option<String>> = Mutex::new(None);
@@ -108,16 +109,26 @@ fn slot_button_counts(
     walk(&images, &mut rows);
     let mut counts = std::collections::BTreeMap::new();
     for row in rows {
-        let mut buttons = 0usize;
-        for child in row.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
-            if child.downcast_ref::<gtk::Button>().is_some() {
-                buttons += 1;
-            }
-        }
+        let buttons = inside(&row)
+            .iter()
+            .filter(|child| child.downcast_ref::<gtk::Button>().is_some())
+            .count();
         counts.insert(row.widget_name().to_string(), buttons);
     }
     counts
+}
+
+/// Everything inside a slot, at any depth: a slot is a column holding its picture, a caption line and a
+/// wrapping box of buttons, so its buttons and labels are not its own children.
+fn inside(slot: &gtk::Widget) -> Vec<gtk::Widget> {
+    let mut out = Vec::new();
+    let mut child = slot.first_child();
+    while let Some(node) = child {
+        child = node.next_sibling();
+        out.extend(inside(&node));
+        out.push(node);
+    }
+    out
 }
 
 /// Lay one real extracted JPEG per moment where the live cut's footage folders are looked for (ALL of them,
@@ -185,8 +196,14 @@ fn slot_picture_names(
     walk(&images, &mut rows);
     let mut out = std::collections::BTreeMap::new();
     for row in rows {
-        for child in row.observe_children().iter::<glib::Object>() {
-            let Ok(child) = child else { continue };
+        for child in inside(&row) {
+            // A button's own text is a label too; only the caption's labels name the picture.
+            if child
+                .parent()
+                .is_some_and(|p| p.downcast_ref::<gtk::Button>().is_some())
+            {
+                continue;
+            }
             let Some(label) = child.downcast_ref::<gtk::Label>() else {
                 continue;
             };
@@ -228,6 +245,11 @@ fn press_slot(window: &adw::ApplicationWindow, name: &str) -> String {
         .and_then(|widget| widget.downcast::<gtk::Button>().ok())
         .unwrap_or_else(|| panic!("this window drew no widget named {name}"));
     button.emit_by_name::<()>("clicked", &[]);
+    // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
     ui::find_status(window.upcast_ref())
         .expect("the window has a status line")
@@ -382,9 +404,10 @@ fn newest_frame() -> Option<(f64, PathBuf)> {
     let tree = session_tree();
     let mut newest: Option<(f64, PathBuf)> = None;
     for stem in stems {
-        for (seconds, path) in
-            naivepost::produce_upload_media::listed_frames(&tree.frames_dir(&stem))
-        {
+        for (seconds, path) in naivepost::produce_upload_media::listed_frames(
+            &tree.frames_dir(&stem),
+            naivepost::frames_run::session_zero(&tree),
+        ) {
             if newest.as_ref().is_none_or(|(at, _)| seconds >= *at) {
                 newest = Some((seconds, path));
             }
@@ -489,7 +512,7 @@ fn point_settings_at(url: &str) {
 fn script_legs() -> FakeLlm {
     reset_counters();
     // The picture: counted, then accepted, with the plain PNG laid down for the print leg's base.
-    ui::produce_languages::set_draw_for_test(std::rc::Rc::new(|_body| {
+    ui::produce_languages::set_draw_for_test(std::sync::Arc::new(|_body| {
         DRAWS.fetch_add(1, Ordering::SeqCst);
         lay_plain_picture();
         Ok(naivepost::produce_upload::DrawnJob {
@@ -519,11 +542,96 @@ fn press(window: &adw::ApplicationWindow, name: &str) -> String {
     let button = ui::line_step_button(window, name)
         .unwrap_or_else(|| panic!("the page drew no widget named {name}"));
     button.emit_by_name::<()>("clicked", &[]);
+    // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
     ui::find_status(window.upcast_ref())
         .expect("the window has a status line")
         .text()
         .to_string()
+}
+
+/// Click a button that asks for a file (§08 items 1, 3, 6 and 10) and answer it. The press must raise its REAL
+/// dialog (counted by the opener, `produce_choosers::asks_for_test(which)`) and change nothing by itself; the
+/// answer is then given through the door the dialog's response calls (`answer`), and its walk lands before the
+/// status is read. `slot` names a slot button (found inside the slot row) rather than a page button.
+fn press_answering(
+    window: &adw::ApplicationWindow,
+    name: &str,
+    which: &str,
+    answer: impl FnOnce(&adw::ApplicationWindow),
+) -> String {
+    let asked = ui::produce_choosers::asks_for_test(which);
+    let status = || {
+        ui::find_status(window.upcast_ref())
+            .expect("the window has a status line")
+            .text()
+            .to_string()
+    };
+    let frames_before = ui::produce_page::read_state().frames.clone();
+    let status_before = status();
+    ui::produce_page::hold_window_for_test(window);
+    let button = ui::line_step_button(window, name)
+        .or_else(|| slot_widget(window, name).and_then(|w| w.downcast::<gtk::Button>().ok()))
+        .unwrap_or_else(|| panic!("the page drew no button named {name}"));
+    button.emit_by_name::<()>("clicked", &[]);
+    settle();
+    assert_eq!(
+        ui::produce_choosers::asks_for_test(which),
+        asked + 1,
+        "{name} raised its {which} dialog, once"
+    );
+    assert_eq!(
+        ui::produce_page::read_state().frames,
+        frames_before,
+        "{name} changes nothing before the dialog answers"
+    );
+    assert_eq!(
+        status(),
+        status_before,
+        "{name} says nothing before the dialog answers"
+    );
+    answer(window);
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the answer's worker answered"
+    );
+    settle();
+    status()
+}
+
+/// ⤓ export through its button: the save dialog raised, then answered with `to` (the page's own default when
+/// `None`, which is what a person accepting the dialog as it opens sends).
+fn press_export(window: &adw::ApplicationWindow, to: Option<&str>) -> String {
+    let to = to
+        .map(str::to_string)
+        .unwrap_or_else(ui::produce_press_wiring::offered_export_name);
+    press_answering(window, "thumbnail-export", "export", |w| {
+        ui::produce_choosers::answer_export(w, &to);
+    })
+}
+
+/// ⤓ Save video through its button, the same way: the dialog raised, then answered with `to` or its default.
+fn press_save(window: &adw::ApplicationWindow, to: Option<&str>) -> String {
+    let to = to.map(str::to_string).unwrap_or_else(|| {
+        session_tree()
+            .produce_dir()
+            .join(ui::produce_press_wiring::offered_save_name())
+            .display()
+            .to_string()
+    });
+    press_answering(window, "transcode-save", "save-video", |w| {
+        ui::produce_choosers::answer_save_video(w, &to);
+    })
+}
+
+/// The JPEG `seed_row` laid for the moment `at` (cam0's frames folder).
+fn newest_file_of(tree: &Tree, at: f64) -> PathBuf {
+    tree.frames_dir("cam0")
+        .join(format!("{}.jpg", naivepost::clock::frame_name(at)))
 }
 
 /// The lines logged since the last mark, so a check reads only its own press.
@@ -555,10 +663,17 @@ fn check_export_measured(root: &Path) {
         source.len()
     );
 
-    let said = press(&window, "thumbnail-export");
+    // The dialog answered with a name of the person's own, `.png` typed: the ladder writes there, `.jpg` forced.
+    let chosen = std::env::temp_dir().join(format!("np-export-{}", std::process::id()));
+    std::fs::create_dir_all(&chosen).expect("a folder to export into");
+    let said = press_export(&window, Some(chosen.join("picked.png").to_str().unwrap()));
     assert!(
         said.starts_with(">>> exported "),
         "§F5.7's own line: {said:?}"
+    );
+    assert!(
+        chosen.join("picked.jpg").is_file(),
+        "the JPEG is where the dialog said, extension forced: {said:?}"
     );
     // The file the ladder wrote is the one the sentence NAMES — `export_name` gives a bare name and the leg
     // writes it where the process was standing, so the path to measure is the one in the line itself.
@@ -762,7 +877,11 @@ fn check_add_image_is_a_real_frame(root: &Path) {
     ui::produce_page::refresh(&window);
     settle();
 
-    let said = press(&window, "add-image-button");
+    // ＋ Add image… raises the image chooser; the person picks the frame on disk.
+    let picked = frame.clone();
+    let said = press_answering(&window, "add-image-button", "image", |w| {
+        ui::produce_choosers::answer_image(w, None, &picked);
+    });
     assert!(
         said.starts_with("image added:"),
         "the press confirms: {said:?}"
@@ -794,47 +913,31 @@ fn check_add_image_is_a_real_frame(root: &Path) {
     settle();
 }
 
-/// A session with NOTHING extracted: ＋ Add image is a chooser with nothing in it, so the row takes the next
-/// name it would have shown (`frame-<n>.jpg`) rather than a path to a file that is not there — and a slot's
-/// `Change…`, which SWAPS a picture, refuses outright. The other half of §1 item 1 ("a real path appends") is
-/// `check_add_image_is_a_real_frame`.
+/// ＋ Add image… with NOTHING extracted: the chooser still opens (there is always a folder to pick from), and
+/// a chooser closed without a pick adds nothing. The first rewrite had no chooser and made up
+/// `produce/publish/frame-1.jpg`, a path to a file that was not there.
 fn check_add_image_nothing_extracted(root: &Path) {
     let _tree = session(root);
     let _fake = script_legs();
-    // No cut seeded on purpose: with no cut there is no footage folder to look in, which is the honest "the
-    // chooser had nothing in it". The press must still refuse rather than invent a name.
     let window = produce_window(&app_in_round());
     let mut page = ui::produce_page::read_state();
     page.frames = Vec::new();
     ui::produce_page::set_state(page);
     ui::produce_page::refresh(&window);
     settle();
-    let mark = log_mark();
-
-    let said = press(&window, "add-image-button");
-    let logged = logs_since(mark);
-    assert_eq!(
-        said,
-        format!("image added: frame-1.jpg"),
-        "with nothing on disk the row takes the next name it would have shown, not a path to a missing file"
-    );
-    assert_eq!(
-        ui::produce_page::read_state().frames,
-        vec!["project:produce/publish/frame-1.jpg".to_string()],
-        "and exactly one entry lands, under the publish folder the page owns: {:?}",
-        ui::produce_page::read_state().frames
-    );
+    // Cancelled: the answer never comes.
+    press_answering(&window, "add-image-button", "image", |_| {});
     assert!(
-        !logged.iter().any(|line| line.contains("frame-2.jpg")),
-        "one press adds one entry, whatever the stand-in answers: {logged:?}"
+        ui::produce_page::read_state().frames.is_empty(),
+        "a chooser closed without a pick adds nothing: {:?}",
+        ui::produce_page::read_state().frames
     );
     window.close();
     settle();
 }
 
-/// Change… over a slot whose picture is gone from disk and with nothing else extracted: the stand-in chooser
-/// has no real frame to name, so it answers with its own synthesised one — the slot's picture still MOVES (the
-/// door's whole point) and the row keeps its length.
+/// Change… over a slot whose picture is gone from disk: the image chooser opens, and a picture picked from
+/// outside the project takes the slot's place (written as its absolute path); the row keeps its length.
 fn check_change_nothing_extracted(root: &Path) {
     let tree = session(root);
     let _fake = script_legs();
@@ -857,10 +960,17 @@ fn check_change_nothing_extracted(root: &Path) {
     std::fs::remove_file(&frame).expect("the frame is removed from under the slot");
     let before = ui::produce_page::read_state().frames.clone();
 
-    let said = press_slot(&window, "image-change-0");
+    // A picture from outside the project: it lands in the same slot, written as its absolute path.
+    let outside = std::env::temp_dir().join(format!("np-outside-{}.png", std::process::id()));
+    naivepost::produce_upload_print::flat_png_for_test(&outside, 64, 36, 0.3)
+        .expect("a picture outside the project");
+    let picked = outside.clone();
+    let said = press_answering(&window, "image-change-0", "image", |w| {
+        ui::produce_choosers::answer_image(w, Some(0), &picked);
+    });
     assert!(
         said.starts_with("image changed:"),
-        "the slot's Change… always hands back a different picture: {said:?}"
+        "the slot takes the picked picture: {said:?}"
     );
     let after = ui::produce_page::read_state().frames.clone();
     assert_eq!(
@@ -868,9 +978,10 @@ fn check_change_nothing_extracted(root: &Path) {
         before.len(),
         "Change… never adds or drops a slot"
     );
-    assert_ne!(
-        after[0], before[0],
-        "and the slot's picture moved: {after:?}"
+    assert_eq!(
+        after[0],
+        outside.display().to_string(),
+        "and the slot holds the picked picture, outside the project as its absolute path: {after:?}"
     );
     window.close();
     settle();
@@ -977,11 +1088,21 @@ fn check_slot_buttons(root: &Path) {
     );
 
     // --- Change…: one slot's picture, in place -----------------------------------------
-    // Every laid frame is still on disk, so the stand-in chooser answers with the newest of them: exactly one
-    // result is possible, and it must land in slot 1 rather than at the end of the row.
+    // The chooser is answered with the newest laid frame: it must land in slot 1 (as the moment it shows),
+    // rather than at the end of the row.
     let newest = row[row.len() - 1].clone();
+    let newest_file = {
+        let at: f64 = newest
+            .trim_start_matches("frame:")
+            .parse()
+            .expect("a moment entry");
+        tree.frames_dir("cam0")
+            .join(format!("{}.jpg", naivepost::clock::frame_name(at)))
+    };
     let before_change = ui::produce_page::read_state().frames.clone();
-    let said = press_slot(&window, "image-change-1");
+    let said = press_answering(&window, "image-change-1", "image", |w| {
+        ui::produce_choosers::answer_image(w, Some(1), &newest_file);
+    });
     assert!(
         said.starts_with("image changed:"),
         "the press names the new picture: {said:?}"
@@ -1028,7 +1149,10 @@ fn check_slot_buttons(root: &Path) {
         naivepost::produce_screen::MAX_IMAGES,
         "the row is full now"
     );
-    let said = press(&window, "add-image-button");
+    let ninth = newest_file_of(&tree, 1.0);
+    let said = press_answering(&window, "add-image-button", "image", |w| {
+        ui::produce_choosers::answer_image(w, None, &ninth);
+    });
     assert_eq!(
         said,
         format!(
@@ -1254,6 +1378,114 @@ fn check_redraw(root: &Path) {
     settle();
 }
 
+/// A fake sd.cpp on loopback: `POST /sdcpp/v1/img_gen` answers a job id, `GET /sdcpp/v1/jobs/<id>` answers it
+/// done with `png` as `result.images[0].b64_json` (the shape `produce_upload_draw::state_of` reads). Every request
+/// line is recorded, so a check proves the REAL submit and poll went out.
+fn fake_sd(png: Vec<u8>) -> (String, std::sync::Arc<Mutex<Vec<String>>>) {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
+    let address = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+    let seen = std::sync::Arc::new(Mutex::new(Vec::new()));
+    let log = seen.clone();
+    let done = serde_json::json!({
+        "id": "job-7",
+        "status": "done",
+        "result": { "images": [ { "b64_json": naivepost::checks::base64(&png) } ] },
+    })
+    .to_string();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let mut reader = BufReader::new(stream.try_clone().expect("a clone to read with"));
+            let mut first = String::new();
+            let _ = reader.read_line(&mut first);
+            let mut length = 0usize;
+            loop {
+                let mut line = String::new();
+                if reader
+                    .read_line(&mut line)
+                    .ok()
+                    .filter(|n| *n > 0)
+                    .is_none()
+                {
+                    break;
+                }
+                if let Some(rest) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = rest.trim().parse().unwrap_or(0);
+                }
+                if line.trim().is_empty() {
+                    break;
+                }
+            }
+            let mut payload = vec![0u8; length];
+            let _ = reader.read_exact(&mut payload);
+            log.lock().unwrap().push(first.trim().to_string());
+            let body = if first.starts_with("POST /sdcpp/v1/img_gen") {
+                r#"{"id":"job-7"}"#.to_string()
+            } else {
+                done.clone()
+            };
+            let framed = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(framed.as_bytes());
+            let _ = stream.flush();
+        }
+    });
+    (address, seen)
+}
+
+/// §F5.6 S6 through the real ↻ over the thumbnail and the REAL sd.cpp legs: no draw script, a fake sd.cpp on
+/// loopback named in the settings. The press submits, polls, and the picture the server handed back is the
+/// plain thumbnail on disk.
+fn check_redraw_real_server(root: &Path) {
+    let tree = session(root);
+    let _fake = script_legs();
+    ui::produce_languages::clear_draw_for_test();
+    let png_file = root.join("drawn.png");
+    naivepost::produce_upload_print::flat_png_for_test(&png_file, 96, 54, 0.6)
+        .expect("the picture the server draws");
+    let png = std::fs::read(&png_file).expect("its bytes");
+    let (sd, seen) = fake_sd(png.clone());
+    let paths = naivepost::settings::from_environment().expect("the settings folder");
+    let mut conf = naivepost::settings::read(&paths).expect("the settings");
+    conf.sd_server = sd;
+    naivepost::settings::save(&paths, &conf).expect("sd.cpp pointed at the fake");
+    let window = produce_window(&app_in_round());
+    seed_live_cut(&window);
+    let mut page = ui::produce_page::read_state();
+    page.instruction = "a ship on a calm sea".to_string();
+    ui::produce_page::set_state(page);
+    ui::produce_page::refresh(&window);
+    settle();
+
+    let mark = log_mark();
+    let said = press(&window, "thumbnail-redraw");
+    let logged = logs_since(mark);
+    let asked = seen.lock().unwrap().clone();
+    assert!(
+        asked
+            .iter()
+            .any(|line| line.starts_with("POST /sdcpp/v1/img_gen")),
+        "the real submit went out: {asked:?} ({said:?})"
+    );
+    assert!(
+        asked
+            .iter()
+            .any(|line| line.starts_with("GET /sdcpp/v1/jobs/job-7")),
+        "and the real poll: {asked:?}"
+    );
+    assert_eq!(
+        std::fs::read(tree.thumbnail_plain_png()).ok().as_deref(),
+        Some(png.as_slice()),
+        "the server's picture is the plain thumbnail on disk ({said:?}): {logged:?}"
+    );
+    window.close();
+    settle();
+}
+
 // ---- S2: ↻ beside Title -----------------------------------------------------------
 
 /// ↻ suggest: one LLM call answering three things, and NO draw — the picture stays exactly as it was.
@@ -1342,7 +1574,7 @@ fn check_export(_root: &Path) {
     let _fake = script_legs();
     let window = produce_window(&app_in_round());
     seed_live_cut(&window);
-    let said = press(&window, "thumbnail-export");
+    let said = press_export(&window, None);
     assert_eq!(
         said,
         naivepost::produce_runs::EXPORT_NO_PICTURE,
@@ -1371,8 +1603,18 @@ fn check_export(_root: &Path) {
         ui::produce_press_wiring::export_path(Some("/tmp/pic.png")).ends_with("pic.jpg"),
         "a typed name keeps its path and takes the forced extension"
     );
-    let said = press(&window, "thumbnail-export");
-    assert_eq!(said, naivepost::produce_runs::EXPORT_NO_PICTURE, "{said:?}");
+    // With a picture on disk, the dialog accepted as it opens writes the JPEG under the page's own default.
+    // (This clause once asserted the refusal here and only "passed" because the round's failures were read
+    // before the round finished; see `round`.)
+    let said = press_export(&window, None);
+    assert!(
+        said.starts_with(">>> exported ") && said.contains("session-thumbnail.jpg"),
+        "{said:?}"
+    );
+    assert!(
+        std::path::Path::new(&ui::produce_press_wiring::offered_export_name()).is_file(),
+        "the JPEG is at the default the dialog opened on"
+    );
     // The rung the page chose is the rung `jpeg_rung` picks over the same weights — the decision is shared,
     // not duplicated page-side.
     let sizes = vec![4096u64; naivepost::produce_runs::JPEG_QUALITIES.len()];
@@ -1388,8 +1630,8 @@ fn check_export(_root: &Path) {
 // ---- S7: ⤓ Save video -------------------------------------------------------------
 
 /// ⤓ Save video: refused while nothing was rendered; once a video stands there, the walk announces the copy
-/// and confirms its size. Driven through the page's own button seam (`press_save_video_from_button`),
-/// because the destination comes from a file chooser that does not exist headless.
+/// and confirms its size. Driven through the real button: the save dialog is raised, then answered through the
+/// door its response calls (`produce_choosers::answer_save_video`).
 fn check_save(root: &Path) {
     let tree = session(root);
     let _fake = script_legs();
@@ -1397,7 +1639,7 @@ fn check_save(root: &Path) {
     seed_live_cut(&window);
     // No video on disk yet: the press names ▶ rather than copying nothing. Its one line is the refusal, so
     // the mark taken below sits after it and reads only the successful press that follows.
-    let said = ui::produce_page::press_save_video_from_button(&window);
+    let said = press_save(&window, None);
     assert_eq!(
         said,
         naivepost::produce_runs::SAVE_NO_VIDEO,
@@ -1408,17 +1650,25 @@ fn check_save(root: &Path) {
     let video = tree.final_video("mp4");
     std::fs::create_dir_all(video.parent().unwrap()).unwrap();
     std::fs::write(&video, vec![3u8; 4096]).unwrap();
-    let said = ui::produce_page::press_save_video_from_button(&window);
+    // The dialog opens on the project-named default `save_default` gives (`<project>.<container>`) …
+    assert_eq!(
+        ui::produce_press_wiring::offered_save_name(),
+        "session.mp4",
+        "the save dialog's default name"
+    );
+    // … and the copy goes where the person answered it.
+    let chosen = std::env::temp_dir().join(format!("np-saved-{}.mp4", std::process::id()));
+    let _ = std::fs::remove_file(&chosen);
+    let said = press_save(&window, Some(chosen.to_str().unwrap()));
     let logged = logs_since(mark);
     assert!(
         said.starts_with("saved "),
         "the confirm line is what the status carries: {said:?}"
     );
-    // The destination is the project-named default `save_default` gives, not a hardcoded temp path: the
-    // widget's own handler builds it from the session folder and the row's container.
-    assert!(
-        said.contains("session.mp4"),
-        "named after the session project: {said:?}"
+    assert_eq!(
+        std::fs::metadata(&chosen).map(|m| m.len()).unwrap_or(0),
+        4096,
+        "the whole video is at the path the dialog answered: {said:?}"
     );
     assert!(
         !logged.iter().any(|l| l.contains("/tmp/copy.mp4")),
@@ -1487,8 +1737,8 @@ fn check_refusals(_root: &Path) {
     // Nothing seeded: no cut, no video, no picture.
     let redraw = press(&window, "thumbnail-redraw");
     let suggest = press(&window, "title-suggest");
-    let save = ui::produce_page::press_save_video_from_button(&window);
-    let export = press(&window, "thumbnail-export");
+    let save = press_save(&window, None);
+    let export = press_export(&window, None);
     assert_eq!(redraw, naivepost::produce_runs::REDRAW_NO_CUT);
     assert_eq!(suggest, naivepost::produce_runs::REWORD_NO_CUT);
     assert_eq!(save, naivepost::produce_runs::SAVE_NO_VIDEO);
@@ -1515,6 +1765,11 @@ fn run_round(app: &adw::Application) {
         &REDRAW_FAIL,
         "redraw press",
         std::panic::AssertUnwindSafe(in_root("redraw".to_string(), check_redraw)),
+    );
+    record(
+        &REDRAW_REAL_FAIL,
+        "redraw press against a fake sd.cpp",
+        std::panic::AssertUnwindSafe(in_root("redraw-real".to_string(), check_redraw_real_server)),
     );
     record(
         &REWORD_FAIL,
@@ -1614,8 +1869,29 @@ fn run_round(app: &adw::Application) {
     });
 }
 
+/// The one round this binary drives, started by whichever test asks first. `Once` makes the other test WAIT for
+/// it to finish before reading its slots: the first version read them at once from the second test, so a check
+/// that failed inside a round still running was never seen (a broken ⤓ Save video passed that way).
+fn round() -> PathBuf {
+    let root = std::env::temp_dir().join(format!("np-f56-presses-{}", std::process::id()));
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("temp root created");
+        std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
+        let app = adw::Application::builder()
+            .application_id(ui::APP_ID)
+            .flags(gio::ApplicationFlags::NON_UNIQUE)
+            .build();
+        app.connect_activate(run_round);
+        app.run_with_args(&["naivepost"]);
+    });
+    root
+}
+
 #[test]
 fn f5_7_s1_pressing_the_page_buttons_runs_each_walk_through_the_real_widget() {
+    round();
     // The application is started once, by whichever check runs first in this binary (alphabetically that is
     // `f5_6_s3_s4_s6_presses_through_the_real_widgets`); both share the round it activates on its own thread.
     // This check reads back its own six slots plus the four F5.6 ones, so a red block names itself here too.
@@ -1626,6 +1902,8 @@ fn f5_7_s1_pressing_the_page_buttons_runs_each_walk_through_the_real_widget() {
     let export = EXPORT_FAIL.lock().unwrap().take();
     let save = SAVE_FAIL.lock().unwrap().take();
     let transcode = TRANSCODE_FAIL.lock().unwrap().take();
+    let redraw_real = REDRAW_REAL_FAIL.lock().unwrap().take();
+    assert!(redraw_real.is_none(), "{}", redraw_real.unwrap_or_default());
     assert!(refusals.is_none(), "{}", refusals.unwrap_or_default());
     assert!(redraw.is_none(), "{}", redraw.unwrap_or_default());
     assert!(reword.is_none(), "{}", reword.unwrap_or_default());
@@ -1663,20 +1941,7 @@ fn f5_6_s3_s4_s6_presses_through_the_real_widgets() {
     // `run_with_args` owns — a second activate elsewhere is what produced "Default main context is already
     // acquired by another thread!". `run_round` dispatches the four doors and parks a failure in each one's
     // own slot; reading those slots here is what fails the test, naming the §F5.6 step whose door broke.
-    let root = std::env::temp_dir().join(format!("np-f56-presses-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&root).expect("temp root created");
-    std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
-
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        let app = adw::Application::builder()
-            .application_id(ui::APP_ID)
-            .flags(gio::ApplicationFlags::NON_UNIQUE)
-            .build();
-        app.connect_activate(run_round);
-        app.run_with_args(&["naivepost"]);
-    });
+    let root = round();
 
     let export = EXPORT_MEASURED_FAIL.lock().unwrap().take();
     let set_thumb = SET_THUMB_SOLE_FAIL.lock().unwrap().take();

@@ -13,18 +13,13 @@ use harness::*;
 use serde_json::Value;
 #[path = "joined_answer.rs"]
 mod joined_answer;
-use joined_answer::{chat, finish};
+use joined_answer::chat;
 
 #[test]
 fn f1_10_s3_a_live_join_call_carries_the_join_message_to_the_llm() {
     let fixture = fixture("msg");
-    // Every ask this scenario serves ends the flow. The loop now runs WITH tools offered (the `None`
-    // that used to sit there is the bug this round fixes), and a tool round is not an answer, so a
-    // closing `finish` call keeps one seam from costing two sockets. Both are answered.
-    let llm = FakeLlm::start(vec![
-        finish(),
-        chat("the network is live today the network goes live now"),
-    ]);
+    // One answer, kept whole: the scenario is about what went out.
+    let llm = FakeLlm::start(vec![chat("", "")]);
     point_at(&llm.url());
     let lines = press(&fixture.tree, &fixture.project);
     let seen = llm.next_seen();
@@ -42,11 +37,17 @@ fn f1_10_s3_a_live_join_call_carries_the_join_message_to_the_llm() {
     );
     assert!(
         seen.body
-            .contains("AFTER (the beginning of the take that follows):"),
+            .contains("AFTER (the whole take that follows, up to where the next one starts):"),
         "AFTER labelled as the spec labels it"
     );
     assert!(
-        seen.body.contains("LEAVE OUT ONE STRETCH, AT THE JOIN"),
+        seen.body.contains("WIDE VIEW (this join is at [CUT]")
+            && seen.body.contains("CLOSE TO THE CUT:"),
+        "the join went out in its three views: {}",
+        clip(&seen.body)
+    );
+    assert!(
+        seen.body.contains("HOW TO FIND THE CUT"),
         "the shipped textedit wording rode in the system message"
     );
     let value: serde_json::Value = serde_json::from_str(&seen.body).expect("a JSON body");

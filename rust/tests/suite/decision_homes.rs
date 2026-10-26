@@ -146,7 +146,11 @@ fn sec_11_flow_index_5_where_each_kind_of_decision_lives_directive_a_s4_servers_
     );
     // Every conf key is a server, a model id, a folder or a binary path — read off the store itself.
     let keys = settings::Conf::key_names();
-    assert_eq!(keys.len(), 15, "§10 §1's fifteen settings");
+    assert_eq!(
+        keys.len(),
+        16,
+        "§10 §1's sixteen settings (DECISION_MODEL the newest)"
+    );
     for key in &keys {
         assert_eq!(
             decision_homes::home_of(key),
@@ -163,16 +167,6 @@ fn sec_11_flow_index_5_where_each_kind_of_decision_lives_directive_a_s4_servers_
         "SD_SERVER",
     ] {
         assert!(keys.contains(&key), "{key} missing from the conf keys");
-    }
-
-    // Slot counts are conf keys too, and route through the same check rather than the dotted rule.
-    assert_eq!(settings::Slots::KEY_NAMES.len(), 7);
-    for key in settings::Slots::KEY_NAMES {
-        assert!(
-            decision_homes::is_machine_setting(key),
-            "{key} is a conf key"
-        );
-        assert_eq!(decision_homes::home_of(key), Some(Home::Machine));
     }
 
     // Both routes agree on what §10 spells out: the rowed `P.machine.*` ids are machine settings as
@@ -240,7 +234,6 @@ fn sec_11_flow_index_5_where_each_kind_of_decision_lives_directive_a_s6_every_kn
     let mut ids: Vec<&'static str> = catalogued();
     ids.extend(prompts::KEYS.iter().copied());
     ids.extend(settings::Conf::key_names());
-    ids.extend(settings::Slots::KEY_NAMES.iter().copied());
 
     for id in ids {
         let home = decision_homes::home_of(id).unwrap_or_else(|| panic!("{id} has no home"));

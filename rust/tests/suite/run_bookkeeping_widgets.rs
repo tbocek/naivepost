@@ -15,7 +15,6 @@ fn window_round() {
         idle_window_carries_both_widgets(app);
         play_expands_the_log_through_the_widget(app);
         stop_leaves_the_bar_where_the_step_left_it(app);
-        lucky_opens_the_bookkeeping_the_same_way(app);
         play_walks_the_stage_onto_the_bar(app);
         RAN.store(true, std::sync::atomic::Ordering::SeqCst);
     });
@@ -155,49 +154,6 @@ fn stop_leaves_the_bar_where_the_step_left_it(app: &adw::Application) {
     window.close();
 }
 
-/// S1 through the lucky wire: the chain is a run like any other, so pressing the gears opens the
-/// bookkeeping exactly as ▶ does, and the chain's end hands the controls back.
-fn lucky_opens_the_bookkeeping_the_same_way(app: &adw::Application) {
-    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
-    let window = ui::build_window(app, &model, "Prepare");
-    window.present();
-
-    let lucky = ui::lucky_button(&window).expect("F0.4's gears are in the run bar");
-    assert!(
-        !ui::log_expander(&window)
-            .expect("log expander")
-            .is_expanded(),
-        "closed before the press"
-    );
-
-    // The press walks its whole chain synchronously, so this returns AFTER the chain's end: the log is
-    // open only while a run is under way (S1 opens it, S4's end leaves it), and the chain was over before
-    // the next line ran. Standing a run open on THIS window's bar -- the call ▶ makes before it walks its
-    // step -- is the mid-chain state this check is about, painted through the shell's own door.
-    stand_a_run_open(&window, &model);
-    assert!(
-        ui::log_expander(&window)
-            .expect("log expander")
-            .is_expanded(),
-        "S1: a run under way keeps the log open the same way ▶ does"
-    );
-    assert!(ui::state(&window).log_expanded, "and `state()` agrees");
-
-    lucky.emit_clicked();
-    // The chain walked all four steps and ended, so the bar is back where it started and the gears are
-    // pressable again — the run is gone rather than parked.
-    assert_eq!(
-        ui::progress_bar(&window).expect("progress bar").fraction(),
-        0.0,
-        "S4: the chain's end leaves no progress standing"
-    );
-    assert!(
-        lucky.is_sensitive(),
-        "the gears are handed back once the chain ends"
-    );
-    window.close();
-}
-
 #[test]
 fn f0_5_the_run_bookkeeping_reaches_the_widgets() {
     common::pin_private_cwd();
@@ -270,5 +226,9 @@ fn play_walks_the_stage_onto_the_bar(app: &adw::Application) {
         taken > 0 || shown == 0.0,
         "nothing taken and a moved needle would mean the bar was painted from somewhere else"
     );
+    // Let go of the queue before the close: closing turns the main loop, the ▶ above started a real run on a
+    // worker, and that run's ending borrows this queue to close it. Held across the close, the borrow made the
+    // file panic whenever the run happened to land then ("RefCell already borrowed", run_close.rs).
+    drop(held);
     window.close();
 }

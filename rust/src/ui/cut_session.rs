@@ -30,7 +30,6 @@ use crate::cut::Cut;
 use crate::layout;
 use crate::project::Project;
 use crate::settings;
-use crate::sources;
 use crate::timeline::Recording;
 use crate::ui::save_apply;
 
@@ -74,8 +73,9 @@ pub fn session_recordings(
             &crate::layout::resolve(root, project_dir, &source.path),
             &name,
         ) else {
-            // Said by name and reason rather than dropped quietly: a missing row reads as a bug.
-            crate::ui::window::log_line(&format!("{name}: no row \u{2014} ffprobe gave no length"));
+            // Not measured yet (asked on a worker; the landing repaints the page) or not measurable (said once,
+            // when ffprobe answered with nothing). The first rewrite said "ffprobe gave no length" here for
+            // every row still being measured, so every open logged a failure that was not one.
             continue;
         };
         let shift = cut_.shift.get(&name).copied().unwrap_or(0.0);
@@ -152,24 +152,108 @@ pub fn refresh_page_spans(cut_: &Cut) -> Option<Vec<Recording>> {
     Some(spans)
 }
 
-/// What ffprobe says this file runs for, remembered per path. `None` carries the refusal upward as a skip.
+/// What ffprobe says this file runs for, remembered per path. `None` carries the refusal upward as a skip, and
+/// it is also the answer while the length is being read: a probe is a subprocess, so it runs on a worker
+/// (§03-shell §1, the window thread never waits; the first rewrite probed every footage file inside the window's
+/// build). When the last one lands the page's spans are asked again and the Cut page repainted.
 fn length_of(configured: &str, path: &Path, name: &str) -> Option<f64> {
     let key = path.display().to_string();
     if let Some(known) = LENGTHS.with(|cell| cell.borrow().get(&key).copied()) {
         return Some(known);
     }
-    let answered = crate::cut_lanes::probe_duration(configured, &key, &mut |line| {
-        crate::ui::window::log_line(line)
-    })
-    .ok()
-    .filter(|seconds| *seconds > 0.0);
-    if let Some(seconds) = answered {
-        LENGTHS.with(|cell| {
-            cell.borrow_mut().insert(key, seconds);
-        });
-    }
     let _ = name;
-    answered
+    if UNREADABLE.with(|cell| cell.borrow().contains(&key)) {
+        return None;
+    }
+    ask_length(configured.to_string(), key);
+    None
+}
+
+thread_local! {
+    /// Files ffprobe could not measure: not asked again, the same skip the first answer was.
+    static UNREADABLE: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Files being measured now, and the mark that holds a snapshot back until the last one lands.
+    static MEASURING: RefCell<(Vec<String>, Option<crate::ui::settle::Owed>)> =
+        const { RefCell::new((Vec::new(), None)) };
+}
+
+/// Measure one file on a worker; the last landing re-asks the spans and repaints the page.
+fn ask_length(configured: String, key: String) {
+    let first = MEASURING.with(|cell| {
+        let mut held = cell.borrow_mut();
+        if held.0.contains(&key) {
+            return None;
+        }
+        held.0.push(key.clone());
+        Some(held.0.len() == 1)
+    });
+    let Some(first) = first else {
+        return;
+    };
+    if first {
+        if let Some(window) = crate::ui::window::built_window() {
+            let owed = crate::ui::settle::owe("footage lengths", &window);
+            MEASURING.with(|cell| cell.borrow_mut().1 = Some(owed));
+        }
+    }
+    let probed = key.clone();
+    super::background::run(
+        "length",
+        move || {
+            crate::cut_lanes::probe_duration(&configured, &probed, &mut |line| {
+                crate::ui::window::log_line(line)
+            })
+            .ok()
+            .filter(|seconds| *seconds > 0.0)
+        },
+        move |answered: Option<f64>| {
+            match answered {
+                Some(seconds) => LENGTHS.with(|cell| {
+                    cell.borrow_mut().insert(key.clone(), seconds);
+                }),
+                None => {
+                    // Said by name and reason rather than dropped quietly: a missing row reads as a bug. Once:
+                    // a file ffprobe could not measure is not asked again.
+                    let name = std::path::Path::new(&key)
+                        .file_stem()
+                        .map(|stem| stem.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| key.clone());
+                    crate::ui::window::log_line(&format!(
+                        "{name}: no row \u{2014} ffprobe gave no length"
+                    ));
+                    UNREADABLE.with(|cell| cell.borrow_mut().push(key.clone()))
+                }
+            }
+            let done = MEASURING.with(|cell| {
+                let mut held = cell.borrow_mut();
+                held.0.retain(|known| *known != key);
+                if held.0.is_empty() {
+                    held.1.take()
+                } else {
+                    None
+                }
+            });
+            if MEASURING.with(|cell| cell.borrow().0.is_empty()) {
+                repaint_measured();
+                drop(done);
+            }
+        },
+    );
+}
+
+/// Every length the page asked for has landed: the session's spans, asked again of the open project, and the
+/// Cut page's rows, badges and band drawn from them.
+fn repaint_measured() {
+    let cut_ = crate::ui::window::newest_review_cut();
+    if let Some(spans) = for_open_session(&cut_).filter(|spans| !spans.is_empty()) {
+        crate::ui::cut_folds::set_session_recordings(&spans);
+    }
+    let Some(window) = crate::ui::window::built_window() else {
+        return;
+    };
+    crate::ui::refresh_camera_rows(&window);
+    crate::ui::cut_folds::refresh_fold_badges(&window);
+    gtk4::prelude::WidgetExt::queue_draw(&window);
 }
 
 /// The configured ffmpeg decides where ffprobe lives; `""` means no settings home, which the probe reports
@@ -181,8 +265,11 @@ fn configured_ffmpeg() -> String {
 }
 
 /// What a `Scope::Sound` / a name plate / the clock all call a source: its file name, without the folder.
+/// A recording's name on the Cut page: the file's stem, the name Prepare files its frames, describe lines and
+/// transcript under (`inputs/frames/<source>/`, [`crate::audio_task::source_lane`]). The full file name (with
+/// its `.mkv`) named no folder, so every frame lookup on the page came back empty: no picture, no thumbnails.
 fn base(source: &crate::project::Source) -> String {
-    sources::row_name(&source.path)
+    crate::audio_task::source_lane(&source.path)
 }
 
 /// The page's session spans: what this session actually filmed, asked of the OPEN PROJECT
@@ -198,7 +285,19 @@ fn base(source: &crate::project::Source) -> String {
 pub fn session_or_kept(cut_: &Cut) -> Vec<Recording> {
     let mut spans = for_open_session(cut_).unwrap_or_default();
     let mut named: Vec<String> = spans.iter().map(|span| span.base.clone()).collect();
-    for span in kept_cam_spans(cut_) {
+    // The cut's camera spans (`cam<N>`) stand in for recordings only when the session named no footage FILE (its
+    // list also carries the cut's lanes, which are not files of the session): their names never match a file, so
+    // added beside the real recordings they drew one phantom row spanning the cut.
+    let lanes = lane_recordings(cut_);
+    let files_named = spans
+        .iter()
+        .any(|span| !lanes.iter().any(|lane| lane.base == span.base));
+    let implied = if !files_named {
+        kept_cam_spans(cut_)
+    } else {
+        Vec::new()
+    };
+    for span in implied {
         if named.contains(&span.base) {
             continue;
         }

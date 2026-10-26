@@ -70,3 +70,52 @@ pub fn run_after_cut(
     }
     lines
 }
+
+/// [`run_after_cut`]'s asks, walked off the window (§03-shell §1: Suggest's run asks on a worker): each pass
+/// over the cut the one before it left, its sentence said as it finishes, exactly as `run_after_cut` says it.
+/// Nothing is written: [`land_after_cut`] lands the answers on the window thread, one undo step per pass.
+pub fn walk_after_cut(
+    inputs: &crate::ui::window::PassInputs,
+    cut_: &crate::cut::Cut,
+    mut log: impl FnMut(&str),
+) -> Vec<crate::ui::window::PassOut> {
+    let mut cut_ = cut_.clone();
+    let mut outs = Vec::new();
+    for pass in order(&inputs.policy) {
+        let out = match pass {
+            Pass::Captions => crate::ui::window::walk_captions(inputs, &cut_),
+            Pass::Speeds => crate::ui::cut_speeds_pass::walk_speeds(inputs, &cut_),
+            Pass::Decorations => crate::ui::cut_effects_pass::walk_effects(inputs, &cut_),
+        };
+        if !out.said.is_empty() {
+            log(&out.said);
+        }
+        if let Some(placed) = &out.cut {
+            cut_ = placed.clone();
+        }
+        outs.push(out);
+    }
+    outs
+}
+
+/// Land what [`walk_after_cut`] walked, in its order, and answer §S3's effect line as [`run_after_cut`] does:
+/// what the cut holds afterwards minus what it held before.
+pub fn land_after_cut(
+    window: &adw::ApplicationWindow,
+    outs: &[crate::ui::window::PassOut],
+) -> Vec<String> {
+    if outs.is_empty() {
+        return Vec::new();
+    }
+    let before = crate::ui::review_cut_of(window).fx.len();
+    for out in outs {
+        crate::ui::window::land_pass(window, out);
+    }
+    let after = crate::ui::review_cut_of(window).fx.len();
+    let landed = after.saturating_sub(before);
+    if landed > 0 {
+        vec![suggest::effects_line(landed)]
+    } else {
+        Vec::new()
+    }
+}

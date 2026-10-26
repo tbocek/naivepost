@@ -551,6 +551,11 @@ pub enum Gesture {
         /// overlap made by a drag gets a row of its own instead of burying the other recording on the row.
         /// `None` when the drag moved scenes or a whole row, which pin nothing.
         dragged: Option<String>,
+        /// The scenes after the slide: a scene or a selection slides along its recording by moving its
+        /// own start and end, so this is where that move lives. The first rewrite worked the landing out,
+        /// put it in the sentence and dropped it, so the page said "the scene moved +1.00 s" over a scene
+        /// that had not moved. Unchanged for a recording or a row, which slide the shift instead.
+        segs: Vec<Seg>,
     },
 }
 
@@ -605,6 +610,7 @@ pub fn right_gesture(
 
     // (b) the movement itself, per what was taken.
     let mut shift = shift_at_open.clone();
+    let mut slid = segs.to_vec();
     let mut moved = 0.0_f64;
     match &slide {
         Slide::Recording(base) => {
@@ -613,14 +619,30 @@ pub fn right_gesture(
             moved = d_seconds;
         }
         Slide::Selection(scenes) => {
-            // The marked scenes move together, each bounded by its own neighbours, so the cut shifts and
-            // the film does not. Each scene's own landing is computed; the gesture reports the first
-            // scene's delta as the number the sentence quotes.
+            // The marked scenes move together, by ONE amount, so the cut shifts and the film does not:
+            // each is bounded by the neighbours that stay put (a selected neighbour moves with it and
+            // fences nothing), and the shortest landing any of them allows is the one they all take.
+            let staying: Vec<usize> = (0..segs.len()).filter(|i| !scenes.contains(i)).collect();
+            let mut together: Option<f64> = None;
             for scene in scenes {
-                if let Some(seg) = segs.get(*scene) {
-                    let landed =
-                        slide_scene(segs, *scene, seg.s + d_seconds, rec_start, rec_end, pps);
-                    moved = landed - seg.s;
+                let Some(seg) = segs.get(*scene) else {
+                    continue;
+                };
+                let mut fence: Vec<Seg> = staying.iter().map(|i| segs[*i].clone()).collect();
+                fence.push(seg.clone());
+                let own = fence.len() - 1;
+                let delta =
+                    slide_scene(&fence, own, seg.s + d_seconds, rec_start, rec_end, pps) - seg.s;
+                together = Some(match together {
+                    Some(held) if held.abs() <= delta.abs() => held,
+                    _ => delta,
+                });
+            }
+            moved = together.unwrap_or(0.0);
+            for scene in scenes {
+                if let Some(seg) = slid.get_mut(*scene) {
+                    seg.s += moved;
+                    seg.e += moved;
                 }
             }
         }
@@ -628,6 +650,8 @@ pub fn right_gesture(
             if let Some(seg) = segs.get(*index) {
                 let landed = slide_scene(segs, *index, seg.s + d_seconds, rec_start, rec_end, pps);
                 moved = landed - seg.s;
+                slid[*index].s = landed;
+                slid[*index].e = landed + (seg.e - seg.s);
             }
         }
         Slide::Row(_) => {
@@ -672,6 +696,7 @@ pub fn right_gesture(
             Slide::Recording(base) => Some(base.clone()),
             _ => None,
         },
+        segs: slid,
     }
 }
 
@@ -828,13 +853,25 @@ pub fn ruler_ticks(rec_end: f64, pps: f64, every_seconds: f64) -> Vec<(f64, Stri
     if rec_end <= 0.0 || pps <= 0.0 || every_seconds <= 0.0 {
         return Vec::new();
     }
+    // A step under a second labels each tick with its tenth (`00:00.5`), or two neighbouring ticks would
+    // read the same second (`00:00 00:00 00:01 00:01`, the first rewrite at a 0.5 s step). Ticks are counted,
+    // not summed, so a 0.2 s step does not drift off its own seconds.
+    let sub_second = every_seconds < 1.0;
     let mut ticks = Vec::new();
-    let mut t = 0.0;
-    while t <= rec_end + f64::EPSILON {
-        // `tools::mm_ss` and not `preview::clock`: the ruler marks whole seconds, and the tenth the
-        // playhead clock carries would turn every label into `00:300`.
-        ticks.push((t * pps, tools::mm_ss(t)));
-        t += every_seconds;
+    let mut n = 0u64;
+    loop {
+        let t = n as f64 * every_seconds;
+        if t > rec_end + 1e-9 {
+            break;
+        }
+        let label = if sub_second {
+            let tenths = (t * 10.0).round() as u64;
+            format!("{}.{}", tools::mm_ss((tenths / 10) as f64), tenths % 10)
+        } else {
+            tools::mm_ss(t)
+        };
+        ticks.push((t * pps, label));
+        n += 1;
     }
     ticks
 }

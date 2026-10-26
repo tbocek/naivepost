@@ -4,8 +4,7 @@
 
 /// The session's folder, resolved the way the page resolves everything else on this path.
 pub(crate) fn session_tree() -> crate::layout::Tree {
-    let root = std::env::current_dir().unwrap_or_default();
-    crate::layout::Tree::new(crate::startup::session_dir(&root)).unwrap_or_else(|_| {
+    crate::layout::Tree::new(crate::startup::open_dir()).unwrap_or_else(|_| {
         crate::layout::Tree::new(std::path::Path::new("session.naivepost")).unwrap()
     })
 }

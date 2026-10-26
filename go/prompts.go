@@ -62,6 +62,9 @@ var promptDefs = []promptDef{
 	// the same times, one line out for every line in
 	{key: "translate", def: strings.TrimSpace(translateSystem)},
 	{key: "youtube", def: strings.TrimSpace(youtubeSystem)},
+	// ...and, for a video too long to be read at once, the notes on each of
+	// its parts that the upload text is then written from (publishBrief)
+	{key: "youtube-part", def: strings.TrimSpace(youtubePartSystem)},
 	// "improve" was here, and before that it had already come off the bench:
 	// the Improve button asked the model why a step decided what it did and
 	// offered edits to the prompts below. Button, prompt and cards are all

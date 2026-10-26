@@ -48,7 +48,7 @@ pub fn holds_card(button: u32, clicks: u32) -> bool {
 /// converts a surface x the same way.
 fn second_at(window: &adw::ApplicationWindow, x_px: f64) -> f64 {
     let scene = cut_view::band_scene_for(window);
-    cut_tracks::band_span(&scene).t_at(x_px - cut_view::origin())
+    cut_tracks::band_t_at(&scene, x_px)
 }
 
 /// The hold itself: aim at a card, and it comes into the hand with `insert-button` re-worded underneath.

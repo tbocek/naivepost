@@ -231,7 +231,6 @@ pub fn clips() -> Vec<(u32, f64, f64)> {
 
 /// The decorated clip list needs a frame interval set before a span survives the parser.
 pub fn decorated_clips() -> naivepost::tools::clips::Clips {
-    let mut held = naivepost::tools::clips::Clips::new(&clips());
-    held.set_frame_interval(1.0);
+    let held = naivepost::tools::clips::Clips::new(&clips());
     held
 }

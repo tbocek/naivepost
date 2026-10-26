@@ -122,6 +122,7 @@ pub(crate) fn show_text_form(window: &adw::ApplicationWindow, fx: &cut::Fx) {
     let words_key = gtk::Label::new(Some(fx_text::FORM_FIELDS[0]));
     words_key.set_xalign(0.0);
     let words_view = gtk::TextView::new();
+    crate::ui::margins::text_box(&words_view);
     words_view.set_widget_name("text-field-words");
     words_view.set_wrap_mode(gtk::WrapMode::WordChar);
     words_view.set_tooltip_text(Some(fx_text::WORDS_HELP));
@@ -502,8 +503,9 @@ pub fn text_drag_ended_with_source(
         .map(|band| (band.start, band.end));
     match fx_text::place(choice, line, selection, source) {
         Some(fx) => {
+            // `show_text_form` wires the buttons it draws; wiring them again here (the first rewrite) ran
+            // every Apply twice, the second pass refusing over the first one's sentence.
             show_text_form(window, &fx);
-            wire_text_buttons(window);
             format!(
                 "{} \u{2014} type the words and \u{25b8} Apply puts them on the picture",
                 fx_text::form_title(fx.t)

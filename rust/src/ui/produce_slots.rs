@@ -19,40 +19,19 @@ use crate::ui::produce_page::ProduceState;
 // inline form too complex to read.
 type Door = Rc<dyn Fn(&adw::ApplicationWindow, usize)>;
 
+/// The narrowest a slot's plate may be drawn. §A's 200 px is the roomy-column size; this is only what GTK
+/// may never shrink below, so the row fits a half-width column instead of forcing the page to scroll.
+const SLOT_PICTURE_MIN_PX: i32 = 64;
+
+/// A slot picture's height: a 16:9 frame at the width three slots share in a half-width column.
+const SLOT_PICTURE_H_PX: i32 = 96;
+
 pub struct Doors {
     pub make_base: Door,
     pub set_thumbnail: Door,
-    /// Change… hands back the name the stand-in chooser chose, plus the slot it landed in.
+    /// Change…: the slot whose picture the image chooser replaces.
     pub change: Door,
     pub remove: Door,
-}
-
-/// The picture Change…'s stand-in chooser answers with. A headless run has no chooser, so with nothing
-/// extracted the name is synthesised — counting presses rather than reading the row, because the whole point of
-/// the door is that the slot's picture MOVES, and deriving a name from the current state would hand back what a
-/// previous press already put there. When the session DOES hold frames the newest one answers, so every later
-/// step (crop, request, print) gets pixels it can open.
-pub fn next_stood_in() -> String {
-    static CHANGE_STAND_IN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let pick = CHANGE_STAND_IN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    real_frame_entry().unwrap_or(format!("project:produce/publish/chosen-{pick}.jpg"))
-}
-/// The newest extracted frame this session holds, as the `frame:<seconds>` entry a slot or the image row
-/// understands. Empty cut or no prepare folders answer `None` — the honest "nothing to choose from", not a
-/// path invented to keep a button busy.
-pub fn real_frame_entry() -> Option<String> {
-    let stems = crate::ui::produce_press_wiring::frame_source_stems();
-    let tree = crate::ui::produce_languages::session_tree();
-    let mut newest: Option<(f64, std::path::PathBuf)> = None;
-    for stem in stems {
-        for (seconds, path) in crate::produce_upload_media::listed_frames(&tree.frames_dir(&stem)) {
-            if newest.as_ref().is_none_or(|(at, _)| seconds >= *at) {
-                newest = Some((seconds, path));
-            }
-        }
-    }
-    // The entry names the moment; `entry_file` resolves it back to the path through the same listing.
-    newest.map(|(seconds, _)| format!("frame:{seconds:.3}"))
 }
 
 /// The per-slot buttons for however many slots the page holds.
@@ -85,7 +64,7 @@ pub fn wire_buttons(window: &adw::ApplicationWindow, doors: &Doors) {
     }
 }
 
-/// One row per picture, rebuilt whole because the base changes when slot 0 is removed.
+/// One slot per picture, side by side, rebuilt whole because the base changes when slot 0 is removed.
 pub fn draw(
     list: &gtk::Box,
     s: &ProduceState,
@@ -113,22 +92,45 @@ pub fn draw(
     }
     let count = s.frames.len();
     for (index, path) in s.frames.iter().enumerate() {
-        let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        row.set_widget_name(&format!("image-slot-{index}"));
-        // §A: every slot shows its picture, 200 px across. Like `thumbnail-picture` it is a bare plate
-        // painted by the page's CSS class — there is no `connect_draw` handler anywhere in `src/`.
+        // §1: "up to 8 slots side by side, left to right". A slot is a column: its picture, its name and
+        // whether it is the base, then its buttons, which wrap when the slot is narrow.
+        let slot = gtk::Box::new(gtk::Orientation::Vertical, 4);
+        slot.set_widget_name(&format!("image-slot-{index}"));
+        slot.set_hexpand(true);
+        // §A: every slot shows its picture, 200 px across in a roomy column. A size request is a MINIMUM GTK
+        // will not shrink below, so the plate asks only for its floor and grows with the slot: at 200 px
+        // three slots and their buttons asked for more than the left half of a 1280 px window.
+        let plate = gtk::Overlay::new();
         let picture = gtk::DrawingArea::new();
         picture.set_widget_name(&format!("image-picture-{index}"));
-        picture.set_size_request(200, -1);
+        picture.set_size_request(SLOT_PICTURE_MIN_PX, SLOT_PICTURE_H_PX);
+        picture.set_hexpand(true);
         picture.add_css_class("produce-plate");
-        row.append(&picture);
+        plate.set_child(Some(&picture));
+        // §1: the base wears a crop box when its shape differs from the video's, because the thumbnail
+        // keeps only the video's own shape of it. `shows_crop_box` is the rule and it answers false for an
+        // unknown video shape (a zero side). The plate's painter draws the box (`produce_paint::draw_crop`);
+        // this is the box's place over it, which carries its tooltip.
+        let base_shape = if index == 0 { s.base_shape } else { None };
+        if screen::shows_crop_box(base_shape, s.video_shape) {
+            let crop = gtk::Box::new(gtk::Orientation::Vertical, 0);
+            crop.set_widget_name(&format!("image-crop-box-{index}"));
+            crop.set_tooltip_text(Some(
+                "The part of this frame the thumbnail keeps \u{2014} the video's own shape. Drag it over \
+what matters.",
+            ));
+            plate.add_overlay(&crop);
+            plate.set_measure_overlay(&crop, false);
+        }
+        slot.append(&plate);
+        let caption = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         let name = gtk::Label::new(Some(path.rsplit('/').next().unwrap_or(path)));
         name.set_xalign(0.0);
         name.set_hexpand(true);
         name.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
-        row.append(&name);
+        caption.append(&name);
         // §1: the FIRST image is the base the image model edits and the others are references the
-        // instruction can name, so the row says which it is rather than leaving it to slot order.
+        // instruction can name, so the slot says which it is rather than leaving it to slot order.
         let tag = gtk::Label::new(Some(if index == 0 { "base" } else { "reference" }));
         tag.set_widget_name(&format!("image-base-tag-{index}"));
         tag.add_css_class("dim-label");
@@ -137,24 +139,14 @@ pub fn draw(
         } else {
             "A reference the instruction can name \u{2014} \"the ship from the second image\""
         }));
-        row.append(&tag);
-        // §1: the base wears a crop box when its shape differs from the video's, because the thumbnail
-        // keeps only the video's own shape of it. `shows_crop_box` is the rule and it answers false for an
-        // unknown video shape (a zero side), so nothing is drawn against a frame nobody has read yet.
-        let base_shape = if index == 0 { s.base_shape } else { None };
-        if screen::shows_crop_box(base_shape, s.video_shape) {
-            let crop = gtk::Box::new(gtk::Orientation::Vertical, 0);
-            crop.set_widget_name(&format!("image-crop-box-{index}"));
-            crop.set_size_request(120, 68);
-            crop.add_css_class("produce-crop-box");
-            crop.set_tooltip_text(Some(
-                "The part of this frame the thumbnail keeps \u{2014} the video's own shape. Drag it over \
-what matters.",
-            ));
-            row.append(&crop);
-        }
+        caption.append(&tag);
+        slot.append(&caption);
         // The buttons a slot offers come from `slot_actions`: `Make base` only on a reference,
         // `Set Thumbnail` / `Change\u{2026}` / `remove` on every one.
+        let buttons = gtk::FlowBox::new();
+        buttons.set_selection_mode(gtk::SelectionMode::None);
+        buttons.set_column_spacing(4);
+        buttons.set_row_spacing(4);
         for action in screen::slot_actions(index, count) {
             let (widget_name, label) = match *action {
                 "Make base" => (format!("image-make-base-{index}"), "Make base"),
@@ -164,9 +156,10 @@ what matters.",
             };
             let button = gtk::Button::with_label(label);
             button.set_widget_name(&widget_name);
-            row.append(&button);
+            buttons.append(&button);
         }
-        list.append(&row);
+        slot.append(&buttons);
+        list.append(&slot);
     }
     // The buttons are found by name from the window root, so they can be wired the moment they exist:
     // `wire` runs before the first `refresh`, when there are no slots yet and nothing to attach to.

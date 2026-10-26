@@ -14,7 +14,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 
 use crate::produce_screen;
-use crate::project::TextMark;
+use crate::project::{TextMark, TitleBox};
 use crate::ui::produce_page::ProduceState;
 
 /// One painted box: `(x, y, width, height)` in plate px plus the words to print in it.
@@ -22,80 +22,111 @@ pub type PaintedBox = (f64, f64, f64, f64, String);
 
 /// One box per word mark, plus the title band, in plate pixels (§1 item 7: "✎ to reword", §A's marks
 /// visible on the picture). Pure so a test can pin the geometry without GTK: the draw func below only
-/// strokes what this returns. The title prints across the top strip the FIRST time only.
+/// strokes what this returns. The title prints in `band`, the same box the render prints it into (§A: "the
+/// title box defaults to {0.5, 0.25, 1, 0.4}"), and only while it prints.
 pub fn layout_marks(
     marks: &[TextMark],
     title: &str,
     title_printed: bool,
+    band: &TitleBox,
     w: f64,
     h: f64,
 ) -> Vec<PaintedBox> {
     let mut boxes = Vec::new();
     if title_printed && !title.is_empty() {
-        // §A draws the title band across the top of the picture, inset so it never touches an edge.
-        let inset = w * 0.06;
-        boxes.push((
-            inset,
-            h * 0.06,
-            w - 2.0 * inset,
-            h * 0.22,
-            title.to_string(),
-        ));
+        let (x, y, bw, bh) = place(band.cx, band.cy, band.wf, band.hf, w, h);
+        boxes.push((x, y, bw, bh, title.to_string()));
     }
     for mark in marks {
-        let bw = (mark.wf * w).max(1.0);
-        let bh = (mark.hf * h).max(1.0);
-        // The mark's centre is stored as a fraction of the plate, so the box is that centre minus half
-        // its size — clamped inside the plate, because a box hanging off the edge prints nothing.
-        let x = (mark.cx * w - bw / 2.0).clamp(0.0, (w - bw).max(0.0));
-        let y = (mark.cy * h - bh / 2.0).clamp(0.0, (h - bh).max(0.0));
+        let (x, y, bw, bh) = place(mark.cx, mark.cy, mark.wf, mark.hf, w, h);
         boxes.push((x, y, bw, bh, mark.text.clone()));
     }
     boxes
 }
 
+/// A box stored as centre and size fractions of the plate, in plate px: the centre minus half the size,
+/// clamped inside the plate, because a box hanging off the edge prints nothing.
+fn place(cx: f64, cy: f64, wf: f64, hf: f64, w: f64, h: f64) -> (f64, f64, f64, f64) {
+    let bw = (wf * w).max(1.0);
+    let bh = (hf * h).max(1.0);
+    let x = (cx * w - bw / 2.0).clamp(0.0, (w - bw).max(0.0));
+    let y = (cy * h - bh / 2.0).clamp(0.0, (h - bh).max(0.0));
+    (x, y, bw, bh)
+}
+
 /// Put one word box where its mark says, over the plate. The box is a child of `thumbnail-word-boxes`
-/// (the holder that floats above `thumbnail-picture`), sized and placed by the SAME fractions
+/// (the `Fixed` that floats above `thumbnail-picture`), sized and placed by the SAME fractions
 /// [`layout_marks`] strokes, so the dashed widget and the dashed ink cannot drift apart. Called from
-/// `draw_word_chips`, which rebuilds both the boxes and the chips whole.
+/// `draw_word_chips`, which rebuilds both the boxes and the chips whole; [`follow_plate`] moves them again
+/// whenever the plate's size changes.
 pub fn place_overlay_box(box_on_picture: gtk::Box, mark: &TextMark) {
     // The page's own root — what `build()` published and `wire` replaces with the window — is the only tree
     // that holds BOTH the plate and the word-box holder; `page_image_box_for_test` answers a box INSIDE it,
     // too small a subtree to see either name.
-    let root = match crate::ui::produce_page::page_root() {
-        Some(root) => root,
-        None => return,
+    let Some(root) = crate::ui::produce_page::page_root() else {
+        return;
     };
-    let holder = match find_named(&root, "thumbnail-word-boxes") {
-        Some(holder) => holder,
-        None => return,
+    let (Some(holder), Some(plate)) = (
+        find_named(&root, "thumbnail-word-boxes"),
+        find_named(&root, "thumbnail-picture"),
+    ) else {
+        return;
     };
-    let plate = match find_named(&root, "thumbnail-picture") {
-        Some(plate) => plate,
-        None => return,
-    };
-    // The overlay the box floats in is already there (the plate holds no children of its own), so this only
-    // finds it again; a plate whose parent is that overlay answers it.
     overlay_over_plate(&plate, &holder);
-    // The plate's own size, not a guessed 320×180: §A's box is a fraction OF THE PICTURE, so a wider
-    // column draws a wider box. Until the plate has an allocation, fall back to its requested size.
+    let holder = holder_fixed(&holder);
+    let (x, y, w, h) = box_px(mark);
+    box_on_picture.set_size_request(w, h);
+    holder.put(&box_on_picture, x, y);
+}
+
+/// Where a mark's box goes on the plate as it is now: `(x, y, width, height)` in plate px. The plate's own
+/// size, not a guessed 320×180: §A's box is a fraction OF THE PICTURE, so a wider column draws a wider box.
+/// Until the plate has an allocation it falls back to its requested size, and [`follow_plate`] corrects it.
+fn box_px(mark: &TextMark) -> (f64, f64, i32, i32) {
     let (wide, high) = plate_px();
-    let (x, y, w, h, _) = layout_marks(std::slice::from_ref(mark), "", false, wide, high)
-        .pop()
-        .unwrap_or((0.0, 0.0, 28.0, 28.0, String::new()));
-    holder_box(&holder).append(&box_on_picture);
-    box_on_picture.set_size_request(w.max(28.0) as i32, h.max(28.0) as i32);
-    // GTK 4 has no "put this overlay at x,y" call: an overlay child is placed by ITS OWN alignment plus
-    // margins. Centre-to-centre on both axes with a margin of (centre − half the plate) lands the box's
-    // centre exactly where the mark's centre fraction says, whatever the plate's allocation turns out to be.
-    box_on_picture.set_halign(gtk::Align::Center);
-    box_on_picture.set_valign(gtk::Align::Center);
-    let cx = x + w / 2.0;
-    let cy = y + h / 2.0;
-    box_on_picture.set_margin_start((cx - wide / 2.0).round() as i32);
-    box_on_picture.set_margin_end((wide / 2.0 - cx).round() as i32);
-    box_on_picture.set_margin_top((cy - high / 2.0).round() as i32);
-    box_on_picture.set_margin_bottom((high / 2.0 - cy).round() as i32);
+    let (px, py, pw, ph) = picture_on_plate(wide, high);
+    let (x, y, w, h, _) = layout_marks(
+        std::slice::from_ref(mark),
+        "",
+        false,
+        &TitleBox::default(),
+        pw,
+        ph,
+    )
+    .pop()
+    .unwrap_or((0.0, 0.0, 28.0, 28.0, String::new()));
+    (px + x, py + y, w.max(28.0) as i32, h.max(28.0) as i32)
+}
+
+/// Keep the word boxes on their marks when the plate changes size. The plate only has its real size after
+/// GTK lays the column out, and the boxes had been placed at the fallback 320×180 on a plate twice as wide:
+/// the dashed box stood off-centre and above the picture. A move during the plate's own allocation would
+/// resize inside a resize, so it runs once that allocation is done, and is owed until then (`ui::settle`),
+/// which keeps a snapshot from taking its picture between the two.
+pub fn follow_plate(plate: &gtk::DrawingArea) {
+    plate.connect_resize(|plate, _, _| {
+        let owed = crate::ui::settle::owe("the thumbnail's word boxes on their marks", plate);
+        glib::idle_add_local_once(move || {
+            let _owed = owed;
+            let Some(holder) = word_box_holder() else {
+                return;
+            };
+            let marks = crate::ui::produce_page::read_state().texts;
+            let mut child = holder.first_child();
+            while let Some(node) = child {
+                child = node.next_sibling();
+                let index = node
+                    .widget_name()
+                    .strip_prefix("words-box-")
+                    .and_then(|i| i.parse::<usize>().ok());
+                if let Some(mark) = index.and_then(|i| marks.get(i)) {
+                    let (x, y, w, h) = box_px(mark);
+                    node.set_size_request(w, h);
+                    holder.move_(&node, x, y);
+                }
+            }
+        });
+    });
 }
 
 /// Walk down from `node` for the widget named `name`. The page's own lookups are private to
@@ -114,13 +145,27 @@ fn find_named(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
     None
 }
 
-/// The holder as the box it is built as. `find_named` answers a bare `Widget`, and gtk4-rs resolves
-/// `BoxExt::append` against the wrong `append` in scope unless the receiver is already a `gtk::Box`.
-fn holder_box(holder: &gtk::Widget) -> gtk::Box {
+/// The `Fixed` the word boxes float in, found from the page's root.
+fn word_box_holder() -> Option<gtk::Fixed> {
+    let root = crate::ui::produce_page::page_root()?;
+    find_named(&root, "thumbnail-word-boxes").map(|holder| holder_fixed(&holder))
+}
+
+/// Take every word box off the plate, before `draw_word_chips` puts the current marks' boxes back.
+pub fn clear_overlay_boxes() {
+    if let Some(holder) = word_box_holder() {
+        while let Some(child) = holder.first_child() {
+            holder.remove(&child);
+        }
+    }
+}
+
+/// The holder as the `Fixed` it is built as.
+fn holder_fixed(holder: &gtk::Widget) -> gtk::Fixed {
     holder
         .clone()
-        .downcast::<gtk::Box>()
-        .expect("the word-box holder is a Box")
+        .downcast::<gtk::Fixed>()
+        .expect("the word-box holder is a Fixed")
 }
 
 /// The overlay the word boxes float in. `build_left_column` already made it — the plate inside it holds no
@@ -141,7 +186,10 @@ fn overlay_over_plate(plate: &gtk::Widget, holder: &gtk::Widget) -> gtk::Overlay
 /// The plate's current px size, or the size it asked for before GTK laid it out. `thumbnail-picture` is
 /// the `DrawingArea` itself; the overlay that floats the word boxes over it carries its own name.
 fn plate_px() -> (f64, f64) {
-    let plate = crate::ui::produce_page::widget_in_root("thumbnail-picture");
+    // Found from the page's root by name: `widget_in_root` answers only `gtk::Box`es, and the plate is a
+    // `DrawingArea`, so through it this always fell back to 320×180 and every word box was sized for that.
+    let plate = crate::ui::produce_page::page_root()
+        .and_then(|root| find_named(&root, "thumbnail-picture"));
     match plate {
         Some(widget) if widget.width() > 0 && widget.height() > 0 => {
             (widget.width() as f64, widget.height() as f64)
@@ -159,8 +207,8 @@ const PLATE_H: f64 = 180.0;
 /// `DrawingArea` carries no draw func until this runs on it.
 pub fn install(window: &adw::ApplicationWindow) {
     if let Some(area) = plate(window, "thumbnail-picture") {
-        area.set_draw_func(move |_area, cr, width, height| {
-            paint_thumbnail(cr, width.max(1) as f64, height.max(1) as f64);
+        area.set_draw_func(move |area, cr, width, height| {
+            paint_thumbnail(area, cr, width.max(1) as f64, height.max(1) as f64);
         });
         area.queue_draw();
     }
@@ -170,8 +218,8 @@ pub fn install(window: &adw::ApplicationWindow) {
         let Some(area) = plate(window, &name) else {
             continue;
         };
-        area.set_draw_func(move |_area, cr, width, height| {
-            paint_slot(cr, width.max(1) as f64, height.max(1) as f64, index);
+        area.set_draw_func(move |area, cr, width, height| {
+            paint_slot(area, cr, width.max(1) as f64, height.max(1) as f64, index);
         });
         area.queue_draw();
     }
@@ -213,44 +261,199 @@ fn missing(cr: &cairo::Context, w: f64, h: f64) {
     }
 }
 
+/// What a plate's picture is when it is painted.
+enum Photo {
+    /// Painted, landing at `(x, y, width, height)` on the plate.
+    Painted((f64, f64, f64, f64)),
+    /// Being decoded on a worker: the plate shows its ground until the picture lands.
+    Coming,
+    /// No file, or a file that is not a picture: the missing marker.
+    Missing,
+}
+
 /// Draw the frame's own picture into the plate, aspect-preserved (the plate is the video's shape, the frame
-/// may not be — that difference is exactly what the crop box exists to show). gdk-pixbuf decodes it and
-/// [`raster`] spells its pixels into a cairo surface; the Cut preview's own door is not used because it
-/// refuses a good file whose rowstride is padded.
-fn draw_photo(cr: &cairo::Context, path: &std::path::Path, w: f64, h: f64) -> bool {
+/// may not be, and that difference is exactly what the crop box exists to show). The picture is painted from
+/// [`decoded`]'s cache: a draw func never decodes (§03-shell §1; the first rewrite decoded every full-size
+/// JPEG on every paint, nine of them each time the page repainted).
+fn photo_rect(
+    area: &gtk::DrawingArea,
+    cr: &cairo::Context,
+    path: &std::path::Path,
+    w: f64,
+    h: f64,
+) -> Photo {
     if path.as_os_str().is_empty() {
-        return false;
+        return Photo::Missing;
     }
-    let Ok(pixbuf) = gtk::gdk_pixbuf::Pixbuf::from_file(path) else {
-        return false;
+    let (surface, wide, high) = match decoded(area, path) {
+        Decoded::Ready(surface, wide, high) => (surface, wide.max(1), high.max(1)),
+        Decoded::Coming => return Photo::Coming,
+        Decoded::Missing => return Photo::Missing,
     };
-    let wide = pixbuf.width().max(1);
-    let high = pixbuf.height().max(1);
-    // Fit inside the plate, centred — never stretched, or a tall frame would lie about its shape.
+    let (x, y, _, _) = fit(wide as f64, high as f64, w, h);
     let scale = (w / wide as f64).min(h / high as f64);
-    let x = ((w - wide as f64 * scale) / 2.0).max(0.0);
-    let y = ((h - high as f64 * scale) / 2.0).max(0.0);
     let _ = cr.save();
     cr.translate(x, y);
     if scale != 1.0 {
         cr.scale(scale, scale);
     }
-    let painted = match raster(&pixbuf) {
-        Some(surface) => {
-            let _ = cr.set_source_surface(&surface, 0.0, 0.0);
-            cr.paint().is_ok()
-        }
-        None => false,
-    };
+    let _ = cr.set_source_surface(&surface, 0.0, 0.0);
+    let painted = cr.paint().is_ok();
     let _ = cr.restore();
-    painted
+    if painted {
+        Photo::Painted((x, y, wide as f64 * scale, high as f64 * scale))
+    } else {
+        Photo::Missing
+    }
 }
 
-/// This pixbuf as a cairo surface, its rows copied one at a time so a source whose `rowstride` is padded
-/// past `width * n_channels` still lands on cairo's unpadded stride (a JPEG's usually is). ARgb32 is
-/// little-endian BGRA, so a 3-channel pixbuf gets the alpha byte the same way and an alpha-bearing one
-/// copies whole.
-fn raster(pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Option<cairo::ImageSurface> {
+/// The longest side a plate's picture is kept at once decoded: a plate is a few hundred pixels wide, and a
+/// full-size frame kept whole would be 8 MB of pixels per slot.
+const KEPT_SIDE: i32 = 1280;
+
+/// A file as the cache knows it: its size and its change time, so a redraw that rewrote the file is decoded
+/// again rather than shown stale.
+type Stamp = (u64, Option<std::time::SystemTime>);
+
+/// What [`decoded`] answers.
+enum Decoded {
+    Ready(cairo::ImageSurface, i32, i32),
+    Coming,
+    Missing,
+}
+
+/// A held answer: the picture, or `None` when the file did not decode.
+type Held = Option<(cairo::ImageSurface, i32, i32)>;
+
+thread_local! {
+    /// Every plate picture decoded so far, with the stamp it was decoded at; `ASKED` holds what is on a
+    /// worker now.
+    static PICTURES: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, (Stamp, Held)>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+    static ASKED: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, Stamp>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// The picture at `path`, if a worker has decoded this version of it; otherwise ask for it once and answer
+/// [`Decoded::Coming`]. Reading the file's size and time is the only disk work a paint does.
+fn decoded(area: &gtk::DrawingArea, path: &std::path::Path) -> Decoded {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return Decoded::Missing;
+    };
+    let stamp: Stamp = (meta.len(), meta.modified().ok());
+    if let Some((held_at, held)) = PICTURES.with(|pictures| pictures.borrow().get(path).cloned()) {
+        if held_at == stamp {
+            return match held {
+                Some((surface, wide, high)) => Decoded::Ready(surface, wide, high),
+                None => Decoded::Missing,
+            };
+        }
+    }
+    let asked_now = ASKED.with(|asked| {
+        let mut asked = asked.borrow_mut();
+        if asked.get(path) == Some(&stamp) {
+            return false;
+        }
+        asked.insert(path.to_path_buf(), stamp);
+        true
+    });
+    if asked_now {
+        // Owed until it lands, so a snapshot of the page waits for the picture rather than shooting the ground.
+        let owed = crate::ui::settle::owe("a Produce plate's picture", area);
+        let file = path.to_path_buf();
+        crate::ui::background::run(
+            "produce-plate",
+            {
+                let file = file.clone();
+                move || {
+                    gtk::gdk_pixbuf::Pixbuf::from_file_at_scale(&file, KEPT_SIDE, KEPT_SIDE, true)
+                        .ok()
+                        .and_then(|pixbuf| pixels(&pixbuf))
+                }
+            },
+            move |answer| {
+                let held = answer.and_then(|(bytes, wide, high)| {
+                    surface_of(&bytes, wide, high).map(|surface| (surface, wide, high))
+                });
+                ASKED.with(|asked| asked.borrow_mut().remove(&file));
+                PICTURES.with(|pictures| pictures.borrow_mut().insert(file, (stamp, held)));
+                drop(owed);
+                redraw_plates();
+            },
+        );
+    }
+    Decoded::Coming
+}
+
+/// Ask every plate on the page to paint again: a picture landed.
+fn redraw_plates() {
+    let Some(window) = crate::ui::produce_page::held_window() else {
+        return;
+    };
+    if let Some(area) = plate(&window, "thumbnail-picture") {
+        area.queue_draw();
+    }
+    for index in 0..crate::produce_screen::MAX_IMAGES {
+        if let Some(area) = plate(&window, &format!("image-picture-{index}")) {
+            area.queue_draw();
+        }
+    }
+}
+
+/// For a test: whether this plate picture has been decoded and is held. A paint never decodes, so a picture
+/// that was never painted, or whose decode has not landed yet, answers `false`.
+pub fn picture_held_for_test(path: &std::path::Path) -> bool {
+    PICTURES.with(|pictures| {
+        pictures
+            .borrow()
+            .get(path)
+            .is_some_and(|(_, held)| held.is_some())
+    })
+}
+
+/// For a test: paint slot `index`'s picture onto a surface of its own exactly as the slot's draw func does, and
+/// answer whether the picture itself was painted (not the ground, not the missing marker). The first paint of
+/// a picture answers `false`: it only asks a worker for the decode.
+pub fn paint_slot_for_test(window: &adw::ApplicationWindow, index: usize) -> bool {
+    let Some(area) = plate(window, &format!("image-picture-{index}")) else {
+        return false;
+    };
+    let Ok(surface) = cairo::ImageSurface::create(cairo::Format::ARgb32, 320, 180) else {
+        return false;
+    };
+    let Ok(cr) = cairo::Context::new(&surface) else {
+        return false;
+    };
+    let state = crate::ui::produce_page::read_state();
+    let path = frame_path(state.frames.get(index));
+    matches!(
+        photo_rect(&area, &cr, &path, 320.0, 180.0),
+        Photo::Painted(_)
+    )
+}
+
+/// Cairo's surface over pixels [`pixels`] spelled.
+fn surface_of(bytes: &[u8], wide: i32, high: i32) -> Option<cairo::ImageSurface> {
+    // Hand cairo a COPY of its own: `ImageSurface::data()` of a `create_for_data` surface came back EMPTY
+    // in this repo's cairo version, so an image built that way painted nothing while still reporting a
+    // good status: the exact silent failure that left every plate black.
+    let mut surface = cairo::ImageSurface::create(cairo::Format::ARgb32, wide, high).ok()?;
+    {
+        let mut target = surface.data().ok()?;
+        if target.len() < bytes.len() {
+            return None;
+        }
+        target[..bytes.len()].copy_from_slice(bytes);
+    }
+    surface.status().ok()?;
+    Some(surface)
+}
+
+/// This pixbuf's pixels as cairo's ARgb32 bytes, its rows copied one at a time so a source whose
+/// `rowstride` is padded past `width * n_channels` still lands on cairo's unpadded stride (a JPEG's usually
+/// is). ARgb32 is little-endian BGRA, so a 3-channel pixbuf gets the alpha byte the same way and an
+/// alpha-bearing one copies whole. Runs on the decode worker; [`surface_of`] makes the surface.
+fn pixels(pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Option<(Vec<u8>, i32, i32)> {
     let (wide, high) = (pixbuf.width(), pixbuf.height());
     if wide <= 0 || high <= 0 {
         return None;
@@ -282,23 +485,15 @@ fn raster(pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Option<cairo::ImageSurface> {
             to[target + 3] = alpha;
         }
     }
-    // Hand cairo a COPY of its own: `ImageSurface::data()` of a `create_for_data` surface came back EMPTY
-    // in this repo's cairo version, so an image built that way painted nothing while still reporting a
-    // good status — the exact silent failure that left every plate black.
-    let mut surface = cairo::ImageSurface::create(cairo::Format::ARgb32, wide, high).ok()?;
-    {
-        let mut target = surface.data().ok()?;
-        if target.len() < pixels.len() {
-            return None;
-        }
-        target[..pixels.len()].copy_from_slice(&pixels);
-    }
-    surface.status().ok()?;
-    Some(surface)
+    Some((pixels, wide, high))
 }
 
-/// The violet dashed box §A draws for a word mark, with its words inside.
-fn draw_words(cr: &cairo::Context, boxes: &[PaintedBox]) {
+/// The violet dashed box §A draws for a word mark, with its words inside, printed by the render's own rule
+/// ([`crate::produce_runs::reprint`]: the Cut page's fitter, wrapped into lines) and scaled from the render's
+/// picture to the `picture_w` px it is drawn at here, so the editor shows the lines the thumbnail will carry.
+fn draw_words(cr: &cairo::Context, boxes: &[PaintedBox], picture_w: f64, picture_h: f64) {
+    // `reprint` fits the words in its own 1920-wide picture; the plate draws that picture `picture_w` wide.
+    let scale = picture_w / f64::from(crate::produce_runs::WIDTH);
     for (x, y, bw, bh, text) in boxes {
         cr.set_line_width(2.0);
         cr.set_dash(&[6.0, 4.0], 0.0);
@@ -309,31 +504,55 @@ fn draw_words(cr: &cairo::Context, boxes: &[PaintedBox]) {
         if text.is_empty() {
             continue;
         }
-        // Words printed to fill the box (§1): the font shrinks with the box rather than overflowing it.
-        // Cairo alone has no text engine beyond its toy API — that is all a plate needs, and it is what
-        // `produce_upload_print` already uses for the upload card.
-        cr.set_source_rgb(1.0, 1.0, 1.0);
-        let size = (bh * 0.55).max(8.0);
+        let fitted = crate::produce_runs::reprint(
+            text,
+            TitleBox {
+                cx: (x + bw / 2.0) / picture_w,
+                cy: (y + bh / 2.0) / picture_h,
+                wf: bw / picture_w,
+                hf: bh / picture_h,
+            },
+        );
+        let size = (fitted.size * scale).max(6.0);
         cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
         cr.set_font_size(size);
-        match cr.text_extents(text) {
-            Ok(extent) => cr.move_to(
-                x + ((bw - extent.width()) / 2.0).max(2.0),
-                y + (bh + extent.height()) / 2.0,
-            ),
-            Err(_) => cr.move_to(x + 2.0, y + bh / 2.0),
+        let leading = size * 1.2;
+        let mut baseline = y + ((bh - leading * fitted.lines.len() as f64) / 2.0).max(0.0) + size;
+        for line in &fitted.lines {
+            let left = match cr.text_extents(line) {
+                Ok(extent) => x + ((bw - extent.width()) / 2.0).max(0.0),
+                Err(_) => *x,
+            };
+            cr.set_source_rgba(0.0, 0.0, 0.0, 0.45);
+            cr.move_to(left + size * 0.03, baseline + size * 0.03);
+            let _ = cr.show_text(line);
+            cr.set_source_rgb(1.0, 1.0, 1.0);
+            cr.move_to(left, baseline);
+            let _ = cr.show_text(line);
+            baseline += leading;
         }
-        let _ = cr.show_text(text);
     }
+}
+
+/// The box the title prints in: the record's own when it has one, else the default, as the render reads it.
+fn title_band() -> TitleBox {
+    crate::layout::Tree::new(session_dir())
+        .ok()
+        .and_then(|tree| crate::publish::load(&tree).ok())
+        .and_then(|record| record.title_box)
+        .unwrap_or_default()
 }
 
 /// The base slot's crop box: the video-shape rectangle the thumbnail keeps, drawn over the taller/wider
 /// frame. Its centre is §10's `publish.crop` (x/y fractions of the frame), which is where a drag lands.
-fn draw_crop(cr: &cairo::Context, state: &ProduceState, w: f64, h: f64) {
+/// `picture` is where the base landed on the slot (`(x, y, width, height)`): the crop is a part OF THE FRAME,
+/// so it is laid over the frame, not over the slot's letterbox.
+fn draw_crop(cr: &cairo::Context, state: &ProduceState, picture: (f64, f64, f64, f64)) {
     if !produce_screen::shows_crop_box(state.base_shape, state.video_shape) {
         return;
     }
-    // Keep the video's aspect inside the plate; that kept rectangle IS the crop.
+    let (left, top, w, h) = picture;
+    // Keep the video's aspect inside the frame; that kept rectangle IS the crop.
     let (vw, vh) = (state.video_shape.0 as f64, state.video_shape.1 as f64);
     let scale = (w / vw).min(h / vh);
     let bw = vw * scale;
@@ -350,8 +569,8 @@ fn draw_crop(cr: &cairo::Context, state: &ProduceState, w: f64, h: f64) {
         }
         None => (0.5, 0.5),
     };
-    let centre_x = crop.0.clamp(0.0, 1.0) * (w - bw).max(0.0);
-    let centre_y = crop.1.clamp(0.0, 1.0) * (h - bh).max(0.0);
+    let centre_x = left + crop.0.clamp(0.0, 1.0) * (w - bw).max(0.0);
+    let centre_y = top + crop.1.clamp(0.0, 1.0) * (h - bh).max(0.0);
     cr.set_line_width(2.0);
     cr.set_source_rgba(0.82, 0.64, 0.08, 0.2);
     cr.rectangle(centre_x, centre_y, bw, bh);
@@ -361,34 +580,98 @@ fn draw_crop(cr: &cairo::Context, state: &ProduceState, w: f64, h: f64) {
     let _ = cr.stroke();
 }
 
+/// A `wide`×`high` picture fitted inside a `w`×`h` plate and centred, never stretched (a tall frame drawn
+/// wide would lie about its shape): `(x, y, width, height)` on the plate.
+fn fit(wide: f64, high: f64, w: f64, h: f64) -> (f64, f64, f64, f64) {
+    let scale = (w / wide.max(1.0)).min(h / high.max(1.0));
+    let (pw, ph) = (wide * scale, high * scale);
+    (((w - pw) / 2.0).max(0.0), ((h - ph) / 2.0).max(0.0), pw, ph)
+}
+
+/// The picture the thumbnail plate shows, picked as the prototype's `showShot` picks it but from the plain
+/// half first: the drawn `thumbnail-plain.png` with the marked words printed over it HERE (answered `true`), so
+/// a box just marked shows its words before any ▶; else the printed `thumbnail.png` as it stands (a run stopped
+/// between the two writes leaves only it); else nothing has been drawn yet. Never the image row's base: that
+/// is what the model EDITS, not what the upload gets (the first rewrite showed the base and printed the words
+/// over it, so the panel showed a thumbnail that did not exist).
+fn thumbnail_shown() -> Option<(std::path::PathBuf, bool)> {
+    let tree = crate::layout::Tree::new(session_dir()).ok()?;
+    let plain = tree.thumbnail_plain_png();
+    if plain.is_file() {
+        return Some((plain, true));
+    }
+    let printed = tree.thumbnail_png();
+    printed.is_file().then_some((printed, false))
+}
+
+/// Where the shown thumbnail sits on a `w`×`h` plate: `(x, y, width, height)`. The word marks are fractions OF
+/// THE PICTURE (§A), so the paint, the dashed boxes and the drag all measure from this one rectangle; with
+/// nothing drawn yet it is the whole plate. Only the file's header is read, per call, so a redraw is seen at
+/// once.
+pub fn picture_on_plate(w: f64, h: f64) -> (f64, f64, f64, f64) {
+    thumbnail_shown()
+        .and_then(|(path, _)| gtk::gdk_pixbuf::Pixbuf::file_info(&path))
+        .map_or((0.0, 0.0, w, h), |(_, wide, high)| {
+            fit(f64::from(wide), f64::from(high), w, h)
+        })
+}
+
 /// The thumbnail plate, painted on its own surface (the way `snapshot_lane` and `snapshot_preview_frame`
 /// paint a subject the window shot cannot show): ground, photo, crop, words. Used by the `08-produce`
 /// staging step to write a legible thumbnail beside the window shot.
 /// The thumbnail plate: photo (or the missing marker), then the crop, then the words on top.
-fn paint_thumbnail(cr: &cairo::Context, w: f64, h: f64) {
+fn paint_thumbnail(area: &gtk::DrawingArea, cr: &cairo::Context, w: f64, h: f64) {
     let state = crate::ui::produce_page::read_state();
     ground(cr, w, h);
-    if !draw_photo(cr, &frame_path(state.frames.first()), w, h) {
-        missing(cr, w, h);
-    }
-    draw_crop(cr, &state, w, h);
+    let shown = thumbnail_shown();
+    let photo = match shown.as_ref() {
+        Some((path, _)) => photo_rect(area, cr, path, w, h),
+        None => Photo::Missing,
+    };
+    let rect = match photo {
+        Photo::Painted(rect) => Some(rect),
+        Photo::Coming => None,
+        Photo::Missing => {
+            missing(cr, w, h);
+            None
+        }
+    };
+    // No crop box here: the thumbnail is already the video's shape; the crop belongs to the base's slot. A
+    // printed `thumbnail.png` carries its words already, and printing them again would double them.
+    let Some((x, y, pw, ph)) = rect.filter(|_| shown.as_ref().is_some_and(|(_, live)| *live))
+    else {
+        return;
+    };
+    // The marks are fractions OF THE PICTURE (§A), so they are laid out over the picture where it landed on the
+    // plate, not over the plate's letterbox; and the words print as the render prints them (`print_words`).
+    let _ = cr.save();
+    cr.translate(x, y);
     draw_words(
         cr,
-        &layout_marks(&state.texts, &state.thumb_title, state.title_seeded, w, h),
+        &layout_marks(
+            &state.texts,
+            &state.thumb_title,
+            state.title_seeded,
+            &title_band(),
+            pw,
+            ph,
+        ),
+        pw,
+        ph,
     );
+    let _ = cr.restore();
 }
 
 /// One image slot's plate. Only the base (**2**) can differ in shape from the video, so only it draws a
 /// crop box; the references are shown whole.
-fn paint_slot(cr: &cairo::Context, w: f64, h: f64, index: usize) {
+fn paint_slot(area: &gtk::DrawingArea, cr: &cairo::Context, w: f64, h: f64, index: usize) {
     let state = crate::ui::produce_page::read_state();
     ground(cr, w, h);
     let path = frame_path(state.frames.get(index));
-    if !draw_photo(cr, &path, w, h) {
-        missing(cr, w, h);
-    }
-    if index == 0 {
-        draw_crop(cr, &state, w, h);
+    match photo_rect(area, cr, &path, w, h) {
+        Photo::Painted(picture) if index == 0 => draw_crop(cr, &state, picture),
+        Photo::Painted(_) | Photo::Coming => {}
+        Photo::Missing => missing(cr, w, h),
     }
 }
 
@@ -409,9 +692,7 @@ fn frame_path(entry: Option<&String>) -> std::path::PathBuf {
 fn session_dir() -> std::path::PathBuf {
     open_project()
         .or_else(crate::ui::save_apply::open_dir)
-        .unwrap_or_else(|| {
-            crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
-        })
+        .unwrap_or_else(|| crate::startup::open_dir())
 }
 
 thread_local! {

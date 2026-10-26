@@ -24,6 +24,16 @@ fn fake(
     body: &'static str,
     echo: bool,
 ) -> (String, std::sync::mpsc::Receiver<String>) {
+    fake_answering("200 OK", content_type, body, echo)
+}
+
+/// [`fake`] answering with another status line, e.g. `500 Internal Server Error`.
+fn fake_answering(
+    status: &'static str,
+    content_type: &'static str,
+    body: &'static str,
+    echo: bool,
+) -> (String, std::sync::mpsc::Receiver<String>) {
     // Bound the read: a GET sends no body, and `read_line` on a keep-alive socket would otherwise sit
     // until the client's own timeout and the answer would never be written.
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
@@ -78,7 +88,7 @@ fn fake(
             body
         };
         let framed = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answered}",
+            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answered}",
             answered.len()
         );
         let _ = stream.write_all(framed.as_bytes());
@@ -146,7 +156,10 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s1_llm
     let _env = env_turn();
     let (url, rx) = fake("application/json", leak(chat_answer("ok")), false);
     write_conf(&conf_at(&url));
-    let verdict = settings_probe::probe("llm", &url).expect("the row probed the fake LLM");
+    // The Model row's box holds a model id, never an address: the row dials the Server box. An id like the
+    // real one (spaces, parentheses, a semicolon) had been dialled as a host: "invalid uri character".
+    let id = "Qwen3.8 (27B; 145k ctx; Q4_K_XL; visual)";
+    let verdict = settings_probe::probe("llm", id).expect("the row probed the fake LLM");
     let sent = recorded(&rx);
     // §5's switches are proven by the bytes the row put on the wire, which is what the fake recorded;
     // the verdict line is `checks`' sentence about the reply, so a GET could never produce this.
@@ -169,13 +182,31 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s1_llm
         on_the_wire["chat_template_kwargs"]["enable_thinking"], false,
         "thinking off, in the template kwargs"
     );
-    assert_eq!(
-        on_the_wire["model"], "probe-model",
-        "the id comes from the Model box"
-    );
+    assert_eq!(on_the_wire["model"], id, "the id comes from the Model box");
     // The switches are proven by the bytes on the wire; the verdict line is `checks`' own sentence about
     // the reply, so it is checked for the content the fake answered with.
     assert!(verdict.contains("ok"), "{verdict}");
+}
+
+/// s1 — what is TYPED is what a row reads (§5: "each Test reads what is typed"): with the dialog's boxes laid
+/// over the saved file, the row dials the Server box as typed, not the address saved before it.
+#[test]
+fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s1_a_row_reads_the_typed_server(
+) {
+    crate::common::pin_private_cwd();
+    let _env = env_turn();
+    let (saved, _) = fake("application/json", leak(chat_answer("saved")), false);
+    write_conf(&conf_at(&saved));
+    let (typed, rx) = fake("application/json", leak(chat_answer("ok")), false);
+    let verdict = settings_probe::with_typed(conf_at(&typed), || {
+        settings_probe::probe("llm", "probe-model")
+    })
+    .expect("the row probed the typed server");
+    assert!(recorded(&rx).starts_with("POST /v1/chat/completions"));
+    assert!(
+        verdict.contains("ok"),
+        "the typed server answered, not the saved one: {verdict}"
+    );
 }
 
 /// s2 — the vision row sends the 48 px red square as a data URL and passes only if the reply says red.
@@ -189,15 +220,100 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s2_vis
     // the colour the fake was told to name.
     let (url, rx) = fake("application/json", leak(chat_answer("red")), false);
     write_conf(&conf_at(&url));
-    let verdict = settings_probe::probe("llm-vision", &url).expect("the model saw it");
+    // The Vision box empty: "the model above".
+    let verdict = settings_probe::probe("llm-vision", "").expect("the model saw it");
     assert!(verdict.contains("red"), "{verdict}");
     let _ = rx;
 
     // And a model that answers the wrong colour is refused — the square is the test, not the port.
     let (wrong, _) = fake("application/json", leak(chat_answer("blue")), false);
     write_conf(&conf_at(&wrong));
-    let failure = settings_probe::probe("llm-vision", &wrong).expect_err("blue is not red");
+    let failure = settings_probe::probe("llm-vision", "").expect_err("blue is not red");
     assert!(failure.contains("not seeing the image"), "{failure}");
+}
+
+/// A chat answer carrying one `judge_text` call, the shape the text gate reads.
+fn judge_answer(changed: bool) -> String {
+    format!(
+        r#"{{"choices":[{{"message":{{"content":"","tool_calls":[{{"id":"c1","type":"function","function":{{"name":"judge_text","arguments":"{{\"changed\": {changed}, \"what\": \"a red square\"}}"}}}}]}}}}]}}"#
+    )
+}
+
+/// F0.13's Decision row: the text gate's own request (prompt, `judge_text` with its schema, one picture as both
+/// FIRST and SECOND) to the Decision box's model, else the Model box's; it passes only on `changed` false.
+#[test]
+fn sec_03_shell_5_f0_13_the_decision_row_asks_the_gate_question_of_two_identical_frames() {
+    crate::common::pin_private_cwd();
+    let _env = env_turn();
+    let (url, rx) = fake("application/json", leak(judge_answer(false)), false);
+    write_conf(&conf_at(&url));
+    let verdict =
+        settings_probe::probe("decision", "clef").expect("the same picture twice is the same");
+    assert!(
+        verdict.contains("clef judged two identical frames the same through judge_text"),
+        "{verdict}"
+    );
+    let sent: serde_json::Value = request_body(&recorded(&rx))
+        .expect("the fake recorded the POST body")
+        .parse()
+        .expect("the POST carries a JSON body");
+    assert_eq!(sent["model"], "clef", "the Decision box names the model");
+    let tool = &sent["tools"][0]["function"];
+    assert_eq!(tool["name"], "judge_text", "the gate's own tool: {sent}");
+    assert!(
+        tool["parameters"]["properties"]["changed"].is_object(),
+        "with its schema, or llama.cpp answers {{}}: {tool}"
+    );
+    let user = sent["messages"][1]["content"].to_string();
+    assert_eq!(
+        user.matches(&checks::vision_probe_url()).count(),
+        2,
+        "the red square as FIRST and as SECOND"
+    );
+
+    // An empty Decision box asks the Model box's model, as the gate itself does.
+    let (url, rx) = fake("application/json", leak(judge_answer(false)), false);
+    write_conf(&conf_at(&url));
+    settings_probe::probe("decision", "").expect("the main model judges");
+    let sent: serde_json::Value = request_body(&recorded(&rx)).unwrap().parse().unwrap();
+    assert_eq!(
+        sent["model"], "probe-model",
+        "empty Decision = the Model box"
+    );
+
+    // Two identical frames called different is refused: the gate would split every scene.
+    let (url, _) = fake("application/json", leak(judge_answer(true)), false);
+    write_conf(&conf_at(&url));
+    let failure = settings_probe::probe("decision", "clef").expect_err("a change between twins");
+    assert!(failure.contains("would split every scene"), "{failure}");
+
+    // A server refusing the request is said with its status and its words, not read as an empty reply (the
+    // live Clef answered 500 and the row said "answered without judge_text").
+    let (url, _) = fake_answering(
+        "500 Internal Server Error",
+        "application/json",
+        r#"{"error":{"code":500,"message":"the current context does not support logits computation"}}"#,
+        false,
+    );
+    write_conf(&conf_at(&url));
+    let failure = settings_probe::probe("decision", "clef").expect_err("a 500 is no answer");
+    assert!(
+        failure.contains("clef answered 500") && failure.contains("does not support logits"),
+        "{failure}"
+    );
+
+    // Prose instead of the tool is said with what the model wrote.
+    let (url, _) = fake(
+        "application/json",
+        leak(chat_answer("they look alike")),
+        false,
+    );
+    write_conf(&conf_at(&url));
+    let failure = settings_probe::probe("decision", "clef").expect_err("no judge_text");
+    assert!(
+        failure.contains("answered without judge_text: they look alike"),
+        "{failure}"
+    );
 }
 
 /// s3 — the four audio.cpp model rows check the DECLARED TASK of the id in the box.
@@ -335,8 +451,25 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s6_the
         "the first of the list is the one left out"
     );
 
-    // A box that names nothing resolves to nothing, and the verdict is `checks`' PATH sentence.
-    let absent = naivepost::settings_probe_rows::ffmpeg_row("").expect_err("nothing named");
+    // An empty box is tested as what every step runs for it, `ffmpeg` on PATH: the same answer the box
+    // naming `ffmpeg` gets. It said "not on PATH" on a machine whose ffmpeg the pipeline was using.
+    let empty = naivepost::settings_probe_rows::ffmpeg_row("");
+    assert_eq!(
+        empty,
+        naivepost::settings_probe_rows::ffmpeg_row("ffmpeg"),
+        "§5: an empty ffmpeg box is ffmpeg on PATH"
+    );
+    let on_path = std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join("ffmpeg").is_file()));
+    let line = empty.clone().unwrap_or_else(|why| why);
+    assert_eq!(
+        line.contains("not on PATH"),
+        !on_path,
+        "\"not on PATH\" only when PATH has no ffmpeg: {line}"
+    );
+    // A name PATH does not have is the missing sentence.
+    let absent = naivepost::settings_probe_rows::ffmpeg_row("no-such-ffmpeg-here")
+        .expect_err("nothing by that name");
     assert!(absent.contains("not on PATH"), "{absent}");
 
     // The real binary, if this machine has one: the row must answer with its own verdict, never a stub.
@@ -364,9 +497,40 @@ fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s7_the
     let missing = naivepost::settings_probe_rows::firefox_row("/nonexistent/firefox")
         .expect_err("a binary that is not there is not a pass");
     assert!(!missing.contains("nothing wired"), "{missing}");
-    // `checks::firefox_verdict`'s own words for a binary that will not run: that is the verdict the row
-    // gives when the path does not resolve, and it names the row it belongs to in the log line.
-    assert!(missing.contains("--version"), "{missing}");
+    // The lookup's own reason (the filesystem's) after the row's "will not run".
+    assert!(missing.starts_with("will not run: "), "{missing}");
+}
+
+/// s7 — the firefox row with an EMPTY box tests the browser §9's lookup finds (firefox/firefox-esr/firefox-bin
+/// on PATH first), the one every search launches. A stand-in `firefox` first on PATH answers `--version` and
+/// fails the launch at once, so the row has to name ITS version: proof the empty box was looked up.
+#[test]
+fn sec_02_services_5_details_confirmed_against_the_code_verification_pass_s7_an_empty_firefox_box_is_looked_up(
+) {
+    crate::common::pin_private_cwd();
+    let dir = std::env::temp_dir().join(format!("np-fake-firefox-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("scratch folder");
+    let fake = dir.join("firefox");
+    std::fs::write(
+        &fake,
+        "#!/bin/sh\n[ \"$1\" = --version ] && echo 'Mozilla Firefox 0.0-stand-in' && exit 0\nexit 1\n",
+    )
+    .expect("the stand-in");
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).expect("executable");
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let mut dirs = vec![dir.clone()];
+    dirs.extend(std::env::split_paths(&path));
+    unsafe { std::env::set_var("PATH", std::env::join_paths(dirs).expect("a PATH")) };
+
+    let line = naivepost::settings_probe_rows::firefox_row("").unwrap_or_else(|why| why);
+
+    unsafe { std::env::set_var("PATH", &path) };
+    let _ = std::fs::remove_dir_all(&dir);
+    assert!(
+        line.contains("Mozilla Firefox 0.0-stand-in"),
+        "§5: an empty firefox box is tested as the firefox on PATH: {line}"
+    );
 }
 
 /// s8 — "No Save in Settings": the file is written 600 ms after the last keystroke, and again on close.

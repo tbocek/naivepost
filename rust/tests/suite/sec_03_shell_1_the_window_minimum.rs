@@ -335,7 +335,8 @@ fn s1k_opening_the_log_through_the_expander_moves_the_divider(app: &adw::Applica
 }
 
 /// §1's collapsed sentence as drawn numbers: the bottom half is EXACTLY the run-bar row plus the log
-/// header, it ends where the window does, and the page half is exactly the handle.
+/// header (and the 8 px gap between them), it ends §1's 12 px margin above where the window does, and the
+/// page half is exactly the handle.
 fn s1l_collapsed_band_counts_only_its_two_rows(app: &adw::Application) {
     let window = minimum_window(app, "Prepare", false);
     let paned = divider(&window);
@@ -344,14 +345,17 @@ fn s1l_collapsed_band_counts_only_its_two_rows(app: &adw::Application) {
         ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), "bottom-bar")
             .expect("the bottom band is drawn");
     println!("{ITEM} s1l: band y={y:.0} h={h:.0} in a {} px window (run {row_h:.0} + header {header_h:.0})", window.height());
+    let gap = naivepost::ui::margins::BAR_GAP_PX as f64;
     assert!(
-        (h - (row_h + header_h)).abs() <= 20.0,
-        "{ITEM} §1: the collapsed bottom half is the run-bar row + the log header and nothing else: \
-         {h:.0} px vs {:.0} px", row_h + header_h
+        (h - (row_h + gap + header_h)).abs() <= 20.0,
+        "{ITEM} §1: the collapsed bottom half is the run-bar row + the 8 px gap + the log header and nothing \
+         else: {h:.0} px vs {:.0} px", row_h + gap + header_h
     );
+    let margin = naivepost::ui::margins::BAR_EDGE_PX as f64;
     assert!(
-        (y + h - window.height() as f64).abs() <= 2.0,
-        "{ITEM} §1: no empty space under the collapsed log — the band ends at {:.0} in a {} px window",
+        (y + h + margin - window.height() as f64).abs() <= 2.0,
+        "{ITEM} §1: no empty space under the collapsed log but its 12 px margin — the band ends at {:.0} in a \
+         {} px window",
         y + h, window.height()
     );
     assert!(

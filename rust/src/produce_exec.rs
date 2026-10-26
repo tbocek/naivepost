@@ -342,9 +342,9 @@ pub fn speech_plan(run: &Run, tree: &Tree, mats: &Materials, speaking: bool) -> 
     if !speaking {
         return Vec::new();
     }
-    // The seam first: narration off answers empty, and a blank line is never spoken. Everything below
-    // works on THAT list, so no caller can speak a line the tick or a deliberate silence rules out.
-    let speakable = crate::narrate_off::lines_to_speak(run.no_narration, &run.lines);
+    // The seam first: a blank line is never spoken. Everything below works on THAT list, so no caller can
+    // speak a line a deliberate silence rules out; a narration with no words answers empty.
+    let speakable = crate::narration::lines_to_speak(&run.lines);
     match render::speak_job(false, &speakable, |entry| {
         (mats.wav_of)(entry).is_some_and(|wav| wav.is_file())
     }) {
@@ -407,10 +407,10 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
 
     // S2: does this voice speak? `crate::narrate_screen::CAPTIONS` is the id the voice dropdown stores
     // for "No audio — captions only" (§1), so the stored id, not the row's label, is the question.
-    // §1's `no_narration` flag short-circuits the same way, and the warning branches only where the lines
-    // exist but nothing is spoken and no track carries them.
+    // The warning branches only where the lines exist but nothing is spoken and no track carries them. A
+    // narration with no lines speaks nothing either: `speech_plan` reads them through the one seam.
     let voice_is_captions = run.voice == crate::narrate_screen::CAPTIONS;
-    let speaking = !voice_is_captions && !run.no_narration;
+    let speaking = !voice_is_captions;
     let captions_warning = if speaking {
         None
     } else {
@@ -552,7 +552,6 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
         sources: &sources_now,
         aspect: &run.aspect,
         voice: &run.voice,
-        no_narration: run.no_narration,
         // The three the encoder reads beside the segments, taken from the same hands that feed it: `mats.fx_for`
         // is answered from `run.cut.fx` and the bed list from `run.cut.lanes`, and `plan_clips` builds every
         // frame box on `mats.src_shape`. A stamp that missed them could skip a render that had never seen them.
@@ -1111,7 +1110,9 @@ pub const FFMPEG: &str = "ffmpeg";
 /// before running it and carries the failing output inside the error.
 pub fn spawn_tool(command: &Command) -> Result<(), String> {
     let args: Vec<&str> = command.args().iter().map(|a| a.as_str()).collect();
-    crate::subprocess::run(command.program(), &args, |line| {
+    // Listed while it runs, so ⏹ reaches the encode the render is waiting on (§03-shell §1: the run is
+    // walked on a worker, and the window's stop signals that list).
+    crate::subprocess::run_listed(command.program(), &args, |line| {
         crate::ui::window::log_line(line)
     })
     .map(|_| ())

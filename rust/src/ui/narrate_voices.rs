@@ -33,16 +33,42 @@ pub fn press_add_file(window: &adw::ApplicationWindow) {
         } else {
             None
         };
-        let said = match picked {
-            Some(path) => match add_voice_file(&win, &path) {
-                Ok(name) => name,
-                Err(why) => why,
-            },
-            None => refused_no_file(),
-        };
-        set_status(&win, &said);
+        answer_chooser(&win, picked);
     });
+    CHOOSERS_RAISED.with(|raised| raised.set(raised.get() + 1));
     chooser.show();
+}
+
+thread_local! {
+    /// How many "Add file…" choosers the button raised.
+    static CHOOSERS_RAISED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many "Add file…" choosers the button raised, for a test pressing the real button.
+pub fn choosers_raised_for_test() -> usize {
+    CHOOSERS_RAISED.with(std::cell::Cell::get)
+}
+
+/// The chooser's answer, the one door its response runs and a test answering it drives: no pick says so;
+/// a pick is converted on a worker (§03-shell §1, "The window thread never waits") and offered when it lands.
+pub fn answer_chooser(window: &adw::ApplicationWindow, picked: Option<std::path::PathBuf>) {
+    let Some(path) = picked else {
+        set_status(window, &refused_no_file());
+        return;
+    };
+    set_status(window, &copying_status(&path));
+    let held = window.clone();
+    crate::ui::background::run(
+        "add a voice file",
+        move || copy_voice_file(&path),
+        move |copied| {
+            let said = match copied {
+                Ok(name) => offer_copied(&held, &name),
+                Err(why) => why,
+            };
+            set_status(&held, &said);
+        },
+    );
 }
 
 /// Put one sentence on the shell's status line. The chooser's answer has to reach the same line the
@@ -70,6 +96,24 @@ pub fn add_voice_file(
     window: &adw::ApplicationWindow,
     source: &std::path::Path,
 ) -> Result<String, String> {
+    let name = copy_voice_file(source)?;
+    Ok(offer_copied(window, &name))
+}
+
+/// What the status line says while a chosen recording is being converted.
+pub fn copying_status(source: &std::path::Path) -> String {
+    format!(
+        "copying {} into the voices folder\u{2026}",
+        source
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| source.display().to_string())
+    )
+}
+
+/// The ffmpeg half of [`add_voice_file`]: convert `source` into the voices folder and answer the name it
+/// was filed under. Touches no window, so the chooser runs it on a worker.
+pub fn copy_voice_file(source: &std::path::Path) -> Result<String, String> {
     if !source.exists() {
         return Err(format!(
             "{} is not there \u{2014} nothing was copied",
@@ -105,13 +149,15 @@ pub fn add_voice_file(
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     crate::subprocess::run(&ffmpeg, &borrowed, |_| {})
         .map_err(|why| format!("{} could not be copied: {why}", source.display()))?;
-    // Offer it now: the picker's rows come from the page state, so adding the name and refreshing is
-    // what makes the new voice selectable without a restart.
-    crate::ui::narrate_page::offer_voice(&name);
+    Ok(name)
+}
+
+/// The window half: offer the copied voice now, since the picker's rows come from the page state, so
+/// adding the name and refreshing is what makes the new voice selectable without a restart.
+fn offer_copied(window: &adw::ApplicationWindow, name: &str) -> String {
+    crate::ui::narrate_page::offer_voice(name);
     crate::ui::narrate_page::refresh(window);
-    Ok(format!(
-        "{name} added to the voices folder \u{2014} pick it in the voice dropdown"
-    ))
+    format!("{name} added to the voices folder \u{2014} pick it in the voice dropdown")
 }
 
 /// The voices folder this machine reads: Settings' `AUDIOCPP_VOICES`, else the legacy models root's

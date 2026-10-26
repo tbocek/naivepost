@@ -78,11 +78,10 @@ pub fn press(
     now_ms: u64,
 ) -> cut_line::ClickOutcome {
     let cut_ = ui::review_cut_of(window);
-    // The zoom and the scroll the band paints with. `Scene::of` hands `paint_at` `cut_view::pps()` and
-    // `cut_view::origin()` untranslated, so a press converts by those two numbers and nothing else.
-    let pps = cut_view::pps();
-    let origin = cut_view::origin();
-    let at = ((x_px - cut_view::gutter_px() - origin) / pps).max(0.0);
+    // The band as it is painted: a press converts through the painter's own inverse (`band_t_at`), so the
+    // scroll, the folds and the gaps between recordings are counted the way the ink was laid down.
+    let scene = cut_view::band_scene_for(window);
+    let at = cut_tracks::band_t_at(&scene, x_px);
     // §B's gutter is the band's left strip -- the 30 px that carry the row name plates, not tape. A press
     // there sizes rows and must move no line and watch nothing (S1's parenthetical).
     let gutter = x_px < cut_view::gutter_px();
@@ -103,7 +102,7 @@ pub fn press(
     // (a press already on a scene's own picture is S1's click) and clear of the effects lane and the gutter,
     // which never reached the tape. `press_tries_reach` states that condition.
     if cut_line::press_tries_reach(on_picture, gutter, outcome.takes_scene) {
-        pick_on_band(&cut_, pps, origin, x_px);
+        pick_on_band(&cut_, &scene, x_px);
     }
 
     // S4's cue-and-scroll follows the position rather than being a rule of its own: the frame under the
@@ -111,6 +110,10 @@ pub fn press(
     if outcome.line_moved {
         cut_picture::note_line_moved(window, outcome.line_at);
         cut_view::follow_playhead(window, outcome.line_at);
+    }
+    // F2.10 S3: a click that watches a row says what the cut shows there, as the row's own plate did.
+    if let Some(row) = outcome.watches {
+        crate::ui::cut_cameras::press_watch_row(window, row as i32);
     }
     outcome
 }
@@ -170,31 +173,33 @@ fn scene_on_row(
 /// a player process that is running whether or not the transport was told (F2.1/F2.2 started them).
 fn something_playing(window: &adw::ApplicationWindow) -> bool {
     ui::preview_player(window).transport.playing
-        || play_back::playing_pid().is_some()
+        || play_back::running()
         || cut_play_back::playing_pid().is_some()
 }
 
 /// S1b on the drawn geometry: nearest edge within [`cut_line::EDGE_REACH_PX`] → the edge; else inside a
-/// box → its border; else the whole clip. Boxes come from [`cut_tracks::clip_boxes_shifted`] (hand
-/// corrections applied, as painted) moved into on-screen pixels by subtracting the scroll origin.
-fn pick_on_band(cut_: &cut::Cut, pps: f64, origin: f64, x_px: f64) {
-    let boxes = cut_tracks::clip_boxes_shifted(&cut_.segs, &cut_.shift, pps);
+/// box → its border; else the whole clip. Boxes are the ones the band paints ([`cut_tracks::band_boxes`]:
+/// hand corrections, folds and the gutter applied) moved into on-screen pixels by subtracting the scroll
+/// origin. The first rewrite measured tape pixels without the gutter against band pixels with it, so every
+/// edge sat 30 px off.
+fn pick_on_band(cut_: &cut::Cut, scene: &cut_tracks::Scene, x_px: f64) {
+    let boxes = cut_tracks::band_boxes(scene);
     let mut nearest: Option<(f64, usize)> = None;
-    for held in &boxes {
-        let left = held.x - origin;
-        let right = left + held.w;
+    for (index, (x, w)) in boxes.iter().enumerate() {
+        let left = x - scene.origin;
+        let right = left + w;
         let edge_px = (x_px - left).abs().min((x_px - right).abs());
         let better = nearest.map(|(best, _)| edge_px < best).unwrap_or(true);
         if better {
-            nearest = Some((edge_px, held.index));
+            nearest = Some((edge_px, index));
         }
     }
     let Some((edge_px, index)) = nearest else {
         return;
     };
-    let held = &boxes[index];
-    let left = held.x - origin;
-    let inside = x_px >= left && x_px <= left + held.w;
+    let (x, w) = boxes[index];
+    let left = x - scene.origin;
+    let inside = x_px >= left && x_px <= left + w;
     let pick = cut_line::first_press_pick(edge_px, inside);
     ui::apply_pick(pick, cut_.segs.get(index).cloned());
 }
@@ -206,7 +211,27 @@ pub fn attach(window: &adw::ApplicationWindow, band: &gtk::Widget) {
     let gesture = gtk::GestureClick::new();
     gesture.set_button(1);
     let win = window.clone();
+    // Where the press landed: a release that comes after the hand moved past the drag slop ended a DRAG (a
+    // selection, a trim, a move), not a click. GTK does not cancel a mouse click for moving, so without this
+    // the release placed the line at the drag's end and cleared the selection the drag had just drawn: no
+    // real drag on the band ever kept its selection (the signal-emitting tests never sent that release).
+    // GTK always sends the press before its release; a release with no press stored (only a test emitting
+    // the signal alone can make one) is measured as the click it stands for.
+    let pressed_at: std::rc::Rc<std::cell::Cell<Option<(f64, f64)>>> = Default::default();
+    let at_press = pressed_at.clone();
+    gesture.connect_pressed(move |_g, _n_press, x, y| at_press.set(Some((x, y))));
     gesture.connect_released(move |_g, _n_press, x, y| {
+        if let Some((px, py)) = pressed_at.take() {
+            if crate::cut_select::is_drag((x - px).abs())
+                || crate::cut_select::is_drag((y - py).abs())
+            {
+                return;
+            }
+        }
+        // A mark on the band (a ✕, a fold badge, a sound switch, a lens) takes the press; the line stays.
+        if crate::ui::cut_band_marks::press_at(&win, x, y) {
+            return;
+        }
         press(&win, x, y, crate::ui::window::line_now_ms());
     });
     band.add_controller(gesture.clone());

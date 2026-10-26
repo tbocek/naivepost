@@ -12,7 +12,7 @@
 //! This module holds no values of its own — that would break the very rule it describes. It only
 //! routes an id to its kind, so a caller (a doc test, a form, a review script) can ask "whose
 //! decision is this?" without knowing which prefix table answered. The routing delegates to the
-//! owners: [`prompts::is_known`], [`settings::Conf::key_names`] + [`settings::Slots::KEY_NAMES`],
+//! owners: [`prompts::is_known`], [`settings::Conf::key_names`],
 //! and [`params::family`], so none of the four homes can be claimed twice.
 
 use crate::{
@@ -80,13 +80,12 @@ impl Home {
 
 /// Whether this conf or slot key is one of the machine's own settings (§10 §1).
 ///
-/// These are `llm.conf` KEYNAMES rather than §10 parameter ids — `LLM_SERVER`, `FFMPEG`,
-/// `LLM_SLOTS` — so they cannot be routed by the `P.*` prefix rule and need their own check. Both
-/// lists are read from the store itself, so a key added there is a machine setting here too.
+/// These are `llm.conf` KEYNAMES rather than §10 parameter ids — `LLM_SERVER`, `FFMPEG` — so they
+/// cannot be routed by the `P.*` prefix rule and need their own check. The list is read from the store
+/// itself, so a key added there is a machine setting here too.
 pub fn is_machine_setting(conf_key: &str) -> bool {
     settings::Conf::key_names()
         .iter()
-        .chain(settings::Slots::KEY_NAMES.iter())
         .any(|key| *key == conf_key)
 }
 
@@ -95,7 +94,7 @@ pub fn is_machine_setting(conf_key: &str) -> bool {
 /// Order matters, and each step defers to a different owner:
 /// 1. a prompt key ([`prompts::is_known`]) — first because a prompt key is a bare word like `cut`
 ///    that matches no prefix rule at all.
-/// 2. a `llm.conf` key name ([`is_machine_setting`]) — also bare (`FFMPEG`, `LLM_SLOTS`), and
+/// 2. a `llm.conf` key name ([`is_machine_setting`]) — also bare (`FFMPEG`, `LLM_SERVER`), and
 ///    checked before the dotted-bare rule below so a conf key is never mistaken for an unrowed
 ///    engineering value.
 /// 3. a rowed §10 id, routed through [`params::family`] so the two prefix tables cannot drift:

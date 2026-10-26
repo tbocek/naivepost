@@ -20,13 +20,7 @@ pub fn draw_word_chips(window: &adw::ApplicationWindow, s: &ProduceState) {
     }
     // The dashed boxes themselves live over the plate, in their own holder, and are rebuilt by the same
     // door so a removed mark loses its box too.
-    if let Some(boxes) =
-        widget_in_root("thumbnail-word-boxes").and_then(|w| w.downcast::<gtk::Box>().ok())
-    {
-        while let Some(child) = boxes.first_child() {
-            boxes.remove(&child);
-        }
-    }
+    crate::ui::produce_paint::clear_overlay_boxes();
     for (index, mark) in s.texts.iter().enumerate() {
         // §A: the box itself is visible ON the picture (dashed violet), not only as its chip below. The
         // widget is made here and `produce_paint::place_overlay_box` moves it into the holder floating over
@@ -48,7 +42,7 @@ pub fn draw_word_chips(window: &adw::ApplicationWindow, s: &ProduceState) {
     }
 }
 
-/// The drag-a-box gesture over the picture. The box is kept as FRACTIONS of the plate, not pixels:
+/// The drag-a-box gesture over the picture. The box is kept as FRACTIONS of the picture, not pixels:
 /// `screen::place_words` is resolution-independent, so a saved mark survives being shown at another
 /// size. Each corner first goes through [`screen::snap`] against [`screen::overlay_snap_targets`] — the
 /// plate's edges and middles plus every box already on it (§A: "boxes snap to the picture's and each
@@ -74,8 +68,15 @@ pub fn install_words_gesture(window: &adw::ApplicationWindow) {
     });
     gesture.connect_drag_end(move |_g, offset_x, offset_y| {
         let (start_x, start_y) = start.get();
-        let wide = f64::from(plate.width()).max(1.0);
-        let high = f64::from(plate.height()).max(1.0);
+        // Measured on the PICTURE where it sits on the plate, not on the plate: a mark is a fraction of the
+        // picture (§A), and a wide thumbnail letterboxed in a taller plate put every box below where it was
+        // drawn when the plate was the unit.
+        let (left, top, wide, high) = crate::ui::produce_paint::picture_on_plate(
+            f64::from(plate.width()).max(1.0),
+            f64::from(plate.height()).max(1.0),
+        );
+        let (wide, high) = (wide.max(1.0), high.max(1.0));
+        let (start_x, start_y) = (start_x - left, start_y - top);
         // The targets are read when the drag ENDS, not when it was wired: whatever boxes the page holds at
         // that moment are the ones this box may line up with.
         let (xs, ys) = screen::overlay_snap_targets(wide, high, &read_state().texts);

@@ -72,7 +72,7 @@ fn run_round() {
     // diarized turns and the transcript are planted too, so S2's automatic pick has real solo seconds
     // and real words to clear its floors with, rather than the test telling the rule what to choose.
     let mut project = naivepost::project::Project::default();
-    project.language = "pl".to_string();
+    project.policy.language.value = "pl".to_string();
     project.sources.push(naivepost::project::Source {
         path: "/media/narrator-mic.wav".into(),
         footage: false,

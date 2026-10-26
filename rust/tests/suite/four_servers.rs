@@ -537,27 +537,11 @@ fn sec_02_services_1_the_four_servers_s11_ffprobe_comes_from_ffmpegs_folder() {
     assert_eq!(probe.file_name().unwrap().to_str().unwrap(), "ffprobe");
 }
 
-/// Slot counts: one per model, absent meaning 1.
+/// Requests go one at a time per server (§1), so the per-model counts an earlier build wrote (`LLM_SLOTS`,
+/// `AUDIOCPP_ASR_SLOTS`, …) are read and dropped: a file holding them still reads, and the next save
+/// leaves them out.
 #[test]
-fn sec_02_services_1_the_four_servers_s12_slot_counts_are_per_model() {
-    // Two models on one server are two slot counts, since a GPU shared between them is not two
-    // GPUs — so each task reads its own key, and an absent key is 1.
-    let conf = Conf::default();
-    assert_eq!(svc::slots_for(&conf, svc::AudioTask::Asr), 1);
-    assert_eq!(svc::llm_slots(&conf), 1);
-
-    let mut conf = Conf::default();
-    conf.slots.llm = 3;
-    conf.slots.asr = 2;
-    conf.slots.tts = 4;
-    assert_eq!(svc::llm_slots(&conf), 3);
-    assert_eq!(svc::slots_for(&conf, svc::AudioTask::Asr), 2);
-    assert_eq!(svc::slots_for(&conf, svc::AudioTask::Diar), 1);
-    assert_eq!(svc::slots_for(&conf, svc::AudioTask::Tts), 4);
-    assert_eq!(svc::slots_for(&conf, svc::AudioTask::Sep), 1);
-    assert_eq!(svc::slots_for(&conf, svc::AudioTask::Align), 1);
-
-    // And the keys are the ones §7 defines, so a hand-edited file works too.
+fn sec_02_services_1_the_four_servers_s12_old_slot_counts_are_read_and_dropped() {
     let root = temp_dir("slots");
     let paths = paths(&root);
     write_conf_lines(
@@ -568,10 +552,17 @@ fn sec_02_services_1_the_four_servers_s12_slot_counts_are_per_model() {
             "LLM_SLOTS=3",
         ],
     )
-    .expect("write slots");
-    let conf = settings::read(&paths).expect("read back");
-    assert_eq!(svc::slots_for(&conf, svc::AudioTask::Asr), 2);
-    assert_eq!(svc::llm_slots(&conf), 3);
+    .expect("write an older build's conf");
+    let conf = settings::read(&paths).expect("a conf with old slot counts still reads");
+    assert_eq!(conf.audio_server, "http://127.0.0.1:8765");
+    settings::save(&paths, &conf).expect("save it back");
+    let written = std::fs::read_to_string(paths.conf_path()).expect("the conf");
+    for key in settings::RETIRED_SLOT_KEYS {
+        assert!(
+            !written.contains(key),
+            "{key} is dropped on save:\n{written}"
+        );
+    }
 }
 
 /// §1's last paragraph: every request is recorded with what it cost. That half already exists in

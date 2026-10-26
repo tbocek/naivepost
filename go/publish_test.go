@@ -8,6 +8,8 @@ import (
 	"image/color"
 	"image/jpeg"
 	"image/png"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1398,5 +1400,130 @@ func TestTheThumbnailCanBeAFramePickedOutOfTheVideo(t *testing.T) {
 	}
 	if !strings.Contains(youtubeSystem, "cannot promise something the video does not contain") {
 		t.Error("the prompt does not say why a real frame is the better answer")
+	}
+}
+
+// A long video's brief is read in parts. A 68-minute video's brief was 137k
+// tokens into a 140k context, and the model's thinking ran into the end of it
+// with no answer. Two hours of clips are read in 45-minute parts, each whole
+// on a call of its own, numbered and timed as in the whole video, and the
+// upload text is written from the notes of every part, on its own ceiling
+// rather than the 64k of the other thinking calls. Where a 45-minute part does
+// not fit the server's context the parts are of 30 minutes, and where those do
+// not either it is said, not sent. A video of one part is its own brief.
+func TestALongVideosBriefIsReadInParts(t *testing.T) {
+	var nCtx int
+	var counted []int
+	var parts []string
+	var maxTokens []float64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/props":
+			if r.URL.Query().Get("model") != "test" {
+				t.Errorf("/props asked without the model's id: %q", r.URL.RawQuery)
+			}
+			fmt.Fprintf(w, `{"default_generation_settings":{"n_ctx":%d}}`, nCtx)
+		case "/tokenize":
+			var req struct{ Content string }
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Error(err)
+			}
+			counted = append(counted, len(req.Content)/4)
+			toks, _ := json.Marshal(make([]int, len(req.Content)/4))
+			fmt.Fprintf(w, `{"tokens":%s}`, toks)
+		case "/v1/chat/completions":
+			var req struct {
+				MaxTokens float64 `json:"max_tokens"`
+				Messages  []struct{ Content string }
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Error(err)
+			}
+			if strings.Contains(req.Messages[0].Content, "You read one part") {
+				parts = append(parts, req.Messages[1].Content)
+				fmt.Fprintf(w, `{"choices":[{"message":{"content":"notes on part %d"}}]}`, len(parts))
+				return
+			}
+			maxTokens = append(maxTokens, req.MaxTokens)
+			fmt.Fprint(w, `{"choices":[{"message":{"content":"TITLE: T\nTHUMBNAIL: x\n\nD"}}]}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	a := &App{root: t.TempDir()}
+	a.outDir = a.root
+	if err := a.writeConf(appConf{Server: srv.URL, Model: "test"}); err != nil {
+		t.Fatal(err)
+	}
+	// two hours in 24 clips of five minutes, a screen description every 2 s
+	var tsv strings.Builder
+	var segs []cutSeg
+	for c := 0; c < 24; c++ {
+		segs = append(segs, cutSeg{S: float64(c * 300), E: float64(c*300 + 300)})
+	}
+	for s := 0; s < 7200; s += 2 {
+		fmt.Fprintf(&tsv, "%d\t%d\tEVENT\tthe screen at second %d, much as it was a moment before\n", s, s+1, s)
+		if s%60 == 0 {
+			fmt.Fprintf(&tsv, "%d\t%d\tSPEAKER_00\tspoken line %d\n", s, s+3, s)
+		}
+	}
+	if err := os.MkdirAll(a.transcriptDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(a.transcriptDir(), "session.tsv"), []byte(tsv.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	nCtx = 1 << 30
+	brief, err := a.publishBrief(0, segs, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parts) != 3 {
+		t.Fatalf("%d part calls, want two hours in parts of 45 minutes: 3", len(parts))
+	}
+	for i, want := range []string{"THIS PART OF IT: clips 1–9, 0:00–45:00", "THIS PART OF IT: clips 10–18, 45:00–90:00", "THIS PART OF IT: clips 19–24, 90:00–120:00"} {
+		if !strings.Contains(parts[i], want) {
+			t.Errorf("part %d does not say %q", i+1, want)
+		}
+	}
+	// nothing in a part is left out: every line of its clips is in it
+	for _, line := range []string{"CLIP 10 (at 45:00 in the video, 300 s)", "spoken line 2700\n", "the screen at second 2702,"} {
+		if !strings.Contains(parts[1], line) {
+			t.Errorf("part 2 lacks %q", line)
+		}
+	}
+	whole := a.publishBriefOf(segs, nil, a.sessionRows(), 0, len(segs))
+	if got, want := strings.Count(parts[0]+parts[1]+parts[2], "EVENT:"), strings.Count(whole, "EVENT:"); got != want {
+		t.Errorf("the parts hold %d screen descriptions, the whole brief %d", got, want)
+	}
+	for i, want := range []string{"PART 1: clips 1–9, 0:00–45:00 in the video\nnotes on part 1", "PART 3: clips 19–24, 90:00–120:00 in the video\nnotes on part 3"} {
+		if !strings.Contains(brief, want) {
+			t.Errorf("the upload brief lacks part %d's notes:\n%s", 2*i+1, brief)
+		}
+	}
+
+	if _, _, _, _, err := a.writeUploadAt(brief, segs); err != nil {
+		t.Fatal(err)
+	}
+	if len(maxTokens) != 1 || maxTokens[0] != publishTokens {
+		t.Errorf("the upload call asked for %v tokens, want %d", maxTokens, publishTokens)
+	}
+
+	// a context a 45-minute part does not fit: parts of 30
+	rest, part45 := counted[0], counted[1]
+	nCtx = publishTokens + toolRounds*searchPageChars/3 + rest + part45 - 1
+	parts = nil
+	if _, err := a.publishBrief(0, segs, nil); err != nil || len(parts) != 4 || !strings.Contains(parts[3], "clips 19–24, 90:00–120:00") {
+		t.Errorf("err %v, %d part calls, want two hours in parts of 30 minutes: 4", err, len(parts))
+	}
+	// ...and one a 30-minute part does not fit either
+	nCtx = publishTokens + toolRounds*searchPageChars/3 + rest + part45/3
+	if _, err := a.publishBrief(0, segs, nil); err == nil || !strings.Contains(err.Error(), "a part of 30 minutes is") {
+		t.Errorf("err = %v, want the parts too big to read", err)
+	}
+	// forty minutes is one part, and its own brief
+	nCtx, parts = 1<<30, nil
+	if short, err := a.publishBrief(0, segs[:8], nil); err != nil || len(parts) != 0 || !strings.Contains(short, "CLIP 8 (at 35:00") || strings.Contains(short, "THIS PART") {
+		t.Errorf("err %v, %d part calls for a 40-minute video, want its brief whole", err, len(parts))
 	}
 }

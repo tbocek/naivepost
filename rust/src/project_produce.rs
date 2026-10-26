@@ -228,7 +228,8 @@ fn parse_resolution(word: &str) -> Option<crate::project::Resolution> {
     match word {
         "720p" => Some(crate::project::Resolution::P720),
         "1080p" => Some(crate::project::Resolution::P1080),
-        "original" => Some(crate::project::Resolution::Original),
+        // `Original` is how the first rewrite wrote it; read so a project saved then keeps its choice.
+        "original" | "Original" => Some(crate::project::Resolution::Original),
         _ => None,
     }
 }

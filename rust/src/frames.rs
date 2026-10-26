@@ -96,6 +96,9 @@ pub fn scene_pass_plan(threshold: f64) -> Vec<String> {
         "-an".to_string(),
         "-f".to_string(),
         "null".to_string(),
+        // The output: ffmpeg refuses a command with none ("At least one output file must be specified"), and
+        // the first rewrite left it off, so the scene pass failed on every real recording (its tests stub ffmpeg).
+        "-".to_string(),
     ]
 }
 
@@ -106,6 +109,19 @@ fn trim_number(secs: f64) -> String {
     }
     let text = format!("{secs:.3}");
     text.trim_end_matches('0').trim_end_matches('.').to_string()
+}
+
+/// Where the video's pictures end, from the scene sweep (S2): its last scored frame. The container's duration
+/// (what ffprobe's `format=duration` says) counts the sound too, and a recording whose sound outlasts its
+/// picture by a fraction of a second named a grid step past the last picture: `ffmpeg -ss <that> -frames:v 1`
+/// writes nothing, and the first rewrite failed the whole frames stage on it. With no scores (a sweep that saw
+/// nothing) the container's duration stands.
+pub fn picture_end(container: f64, scores: &[(f64, f64)]) -> f64 {
+    match scores.iter().map(|(at, _)| *at).reduce(f64::max) {
+        // Just past the last scored second, so `frame_seconds`' `at < end` keeps that second.
+        Some(last) => (last + 1e-6).min(container),
+        None => container,
+    }
 }
 
 /// S2: the scores out of ffmpeg's `metadata=print` output, as `(time, score)` pairs.

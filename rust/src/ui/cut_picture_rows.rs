@@ -4,67 +4,29 @@
 //!
 //! Two rules shape it. §1/§F1.6 says the grid is Prepare's own (`intervalSeconds`, restarted at each scene
 //! change) and "the band has a picture at every zoom", so the spacing is MEASURED from the frame names rather
-//! than assumed. §7 says a draw must never block on a decode, so the live page draws placeholder cells and only
-//! a snapshot process opts into reading pixels ([`allow_frame_decoding`]).
+//! than assumed. §7 says a draw must never block on a decode, so the live page decodes in a worker (inventory §D:
+//! "decoded in a worker in batches of 6 at the row height"): a cell paints the frame once it is decoded, and the
+//! slate placeholder until then, and each landed batch repaints the band. A snapshot process decodes in the draw
+//! instead ([`allow_frame_decoding`]): it has one picture to write and nothing waiting on it. The first port drew
+//! placeholders on the live page and never decoded at all, so the app's tape had no pictures.
 //!
 //! The row's bottom belongs to the wave strip (`Rows::wave_top`), so a cell covers the FILM part only; who owns
-//! which pixels is decided once, here and in `draw_row_wave_strips`.
+//! which pixels is decided once, here and in `cut_wave_rows::draw_row_waves`.
 
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+use std::sync::mpsc;
+
+use gtk4::prelude::*;
+
+use crate::ui::cut_colours::{FILM_GROUND, SLATE};
 use crate::{clock, ui::cut_tracks};
 
-/// How many thumbnails one pass of the band takes off the list to show: inventory §D's `thumbBatch 6`
-/// ("decoded in a worker in batches of 6 at the row height"). The prototype hands a loader six files at a time
-/// so a long row costs six decodes a round and not the row's whole list; this band shows one representative
-/// frame per row and reads no pixels at all (a draw must never block on a decode), so the number here bounds
-/// how far one pass looks into the frame list — six seconds of tape at Prepare's own 250 ms grid — which is
-/// where the prototype's batch and this page's cheap draw meet. §6 lists it, so it is a constant and a row.
+/// Inventory §D's `thumbBatch 6`: the live tape's thumbnails are "decoded in a worker in batches of 6 at the row
+/// height". The worker takes up to this many waiting frames, decodes them, and hands them back together, so the
+/// band repaints once per batch rather than once per frame.
 pub const THUMB_BATCH: usize = 6;
-
-/// The slice one batch covers: at most [`THUMB_BATCH`] paths starting at `start`, empty past the end. A plain
-/// function of a list and an index so the batch's shape can be tested without a window or a decode.
-pub fn batch_of(paths: &[std::path::PathBuf], start: usize) -> &[std::path::PathBuf] {
-    let from = start.min(paths.len());
-    let to = from.saturating_add(THUMB_BATCH).min(paths.len());
-    &paths[from..to]
-}
-
-/// The seconds between two entries of a row's frame list, MEASURED from the list's own stamps: Prepare's grid is
-/// `intervalSeconds` (§10), which is a project setting rather than a constant — a session extracted every 10 s and
-/// one extracted every 250 ms both arrive as names, and the only honest answer is the gap the names show. Read
-/// through `clock::read_frame`, the same parse the row's x placement uses, so a cell's width and its position come
-/// from one rule. A list with nothing to measure (none, or one entry) answers 0, which tells the caller to take the
-/// FIRST batch rather than aim at a grid it cannot know.
-pub fn frame_step_seconds(paths: &[std::path::PathBuf]) -> f64 {
-    let stamp = |path: &std::path::Path| {
-        path.file_name()
-            .and_then(|n| n.to_str())
-            .and_then(clock::read_frame)
-    };
-    let first = paths.first().and_then(|p| stamp(p));
-    let second = paths.get(1).and_then(|p| stamp(p));
-    let (Some(first), Some(second)) = (first, second) else {
-        return 0.0;
-    };
-    (second - first).max(0.0)
-}
-
-/// A thumbnail's x, on the folded span: frames are named by their second, so the file name is the position.
-/// An unparsable name draws at the row's start rather than nowhere.
-///
-/// The stamp is read by `clock::read_frame` — the same parser [`frame_step_seconds`] measures the grid with — MINUS
-/// `first`, the first frame of this row's own list. A name is a wall-clock instant (§B.3
-/// `‹YYYY-MM-DD_HH-MM-SS.mmm›.jpg`) while the band's x axis is seconds OF THE SESSION, so the two only agree once
-/// the row's own zero is subtracted; a session recorded at 17:25 lays its first cell at 0 either way. Reading
-/// `11..19` as `HH:MM:SS` by hand instead (the way this function used to) looks for digits where the separators are,
-/// always fails, and every cell fell back to x = 0 — which is how the lane shot's picture row came out one flat
-/// band under the gutter.
-pub fn path_x(scene: &cut_tracks::Scene, path: &std::path::Path, first: f64) -> f64 {
-    path.file_name()
-        .and_then(|n| n.to_str())
-        .and_then(clock::read_frame)
-        .map(|seconds| cut_tracks::band_x(scene, seconds - first))
-        .unwrap_or(0.0)
-}
 
 /// The first frame's own instant — the row's zero, which [`path_x`] subtracts. `0.0` when the list has nothing to
 /// measure, which leaves an unparsable name where it always landed: at the row's start.
@@ -92,7 +54,7 @@ pub fn allow_frame_decoding() {
     DECODE_FRAMES.with(|flag| flag.set(true));
 }
 
-fn frame_decoding_allowed() -> bool {
+pub(crate) fn frame_decoding_allowed() -> bool {
     DECODE_FRAMES.with(|flag| flag.get())
 }
 
@@ -113,7 +75,7 @@ pub fn draw_picture_rows(
         }
         cut_tracks::fill(
             cr,
-            (0.8, 0.8, 0.82),
+            FILM_GROUND,
             x0,
             rows.pictures,
             width,
@@ -121,53 +83,61 @@ pub fn draw_picture_rows(
             1.0,
         );
     }
-    let Some((_, paths)) = scene.thumbs.first() else {
-        return;
-    };
-    // §1/§2: "the band has a picture at every zoom", and §2's own picture is a ROW OF PICTURES, not a grey plate
-    // with one mark in it. So this pass draws EVERY frame whose second lands inside the visible tape, each at the
-    // x its own name stamps (`path_x`), as a cell one grid step wide at the row's height — which is what a thumbnail
-    // is: a small picture of that moment, side by side with the next. The pixels come from the staged JPEG through
-    // gdk-pixbuf; a decode in a draw is exactly what §7 forbids on the live page, so this only happens where the
-    // frames are already on disk and few (a snapshot's own frames are listed by `frame_paths`).
-    // When no file can be read, the cell falls back to the slate placeholder the old mark used, so a row never goes
-    // blank because a decoder was unhappy.
-    let at = (scene.origin / scene.pps).max(0.0);
-    let step = frame_step_seconds(paths);
-    let first = if step > 0.0 {
-        (at / step).floor() as usize
-    } else {
-        0
-    };
-    let width = (step * scene.pps).max(2.0);
-    let first_second = first_second(paths);
+    // A film strip: each recording's stretch of its row tiled with cells at the picture's own shape (the row's
+    // height × 16:9), each showing the frame at the second the cell stands on. The second comes from the band's
+    // own span (folds included), and the frame from its name: a frame is named on its FILE's clock, so the file's
+    // first frame plus the second inside the file is the name looked up, the same rule the preview uses
+    // (`cut_picture::refresh`). Cells one frame-step wide (4 px at 1 s and 4 px/s), stretched to the row's
+    // height, read as a barcode; and only the first recording's list used to be drawn at all.
     // The cell is the FILM part of the row: the wave strip owns its bottom (`Rows::wave_top`), and drawing under
     // it would have the two painters disagree about who owns those pixels — the strip is painted next.
     let film_h = (rows.row_h - cut_tracks::ROW_WAVE_PX).max(1.0);
-    // §D's `thumbBatch 6` bounds ONE loader round, not the row: a pass keeps taking batches until the cells it is
-    // being handed have run past the right edge of the tape, or the row would stop after six frames however wide
-    // the view is.
-    let mut start = first;
-    loop {
-        let batch = batch_of(paths, start);
-        if batch.is_empty() {
-            break;
+    let cell_w = (film_h * 16.0 / 9.0).max(8.0);
+    let span = cut_tracks::band_span(scene);
+    // The live page cuts each cell's picture from the recording itself on the fly (`cut_film_cache`), on a grid
+    // that follows the zoom; Prepare's frames stand in until it lands. A snapshot (which decodes in its draw and has
+    // one picture to write) paints Prepare's frames only, so its pictures do not depend on a background cut.
+    let on_the_fly = !frame_decoding_allowed();
+    let step = crate::ui::cut_film_cache::step_for(cell_w / scene.pps.max(1e-6));
+    let no_frames: Vec<PathBuf> = Vec::new();
+    for (index, recording) in scene.recordings.iter().enumerate() {
+        let paths = scene
+            .thumbs
+            .iter()
+            .find(|(base, _)| *base == recording.base)
+            .map_or(&no_frames, |(_, paths)| paths);
+        let file = if on_the_fly {
+            crate::ui::cut_record_play::recording_file(&recording.base)
+        } else {
+            None
+        };
+        if paths.is_empty() && file.is_none() {
+            continue;
         }
-        let mut past_edge = false;
-        for path in batch {
-            let x = path_x(scene, path, first_second);
-            if x >= tape {
-                past_edge = true;
-                break;
+        let top = rows.pictures + scene.row_of(index) as f64 * rows.row_h;
+        let zero = first_second(paths);
+        let (x0, x1) = (
+            cut_tracks::band_x(scene, recording.start),
+            cut_tracks::band_x(scene, recording.end),
+        );
+        // From the first cell that reaches the scroll: cells left of it are off the band.
+        let skipped = ((scene.origin - x0).max(0.0) / cell_w).floor();
+        let mut x = x0 + skipped * cell_w;
+        while x < x1 && x < tape {
+            let width = cell_w.min(x1 - x);
+            let t = span.t_at(x + width / 2.0);
+            let cut = file.as_ref().and_then(|file| {
+                let second = crate::ui::cut_film_cache::snapped(t - recording.start, step);
+                crate::ui::cut_film_cache::picture_at(file, second)
+            });
+            let shown = cut.or_else(|| cut_tracks::frame_near(paths, zero + (t - recording.start)));
+            match shown {
+                Some(path) => paint_frame_cell(cr, &path, x, top, width, film_h),
+                // Nothing cut yet and no Prepare frame: the slate, so the cell reads as waiting, not as black film.
+                None => cut_tracks::fill(cr, SLATE, x, top, width, film_h, 1.0),
             }
-            if x + width >= 0.0 {
-                paint_frame_cell(cr, path, x, rows.pictures, width, film_h);
-            }
+            x += cell_w;
         }
-        if past_edge {
-            break;
-        }
-        start += THUMB_BATCH;
     }
 }
 
@@ -182,8 +152,24 @@ fn paint_frame_cell(
     width: f64,
     height: f64,
 ) {
-    cut_tracks::fill(cr, (0.65, 0.68, 0.72), x, top, width, height, 1.0);
+    cut_tracks::fill(cr, SLATE, x, top, width, height, 1.0);
     if !frame_decoding_allowed() {
+        // The live page: the worker's decode if it has landed, else ask for it and keep the placeholder.
+        if let Some(surface) = decoded(path, height.max(1.0) as i32) {
+            let (sw, sh) = (surface.width() as f64, surface.height() as f64);
+            if sw > 0.0 && sh > 0.0 {
+                cr.save().ok();
+                cr.rectangle(x, top, width, height);
+                cr.clip();
+                cr.translate(x, top);
+                // At the frame's own shape, scaled to the row's height; a cell narrower than the frame (a
+                // recording's last one) shows its left part.
+                cr.scale(height / sh, height / sh);
+                let _ = cr.set_source_surface(&surface, 0.0, 0.0);
+                let _ = cr.paint();
+                cr.restore().ok();
+            }
+        }
         return;
     }
     // Whole pixels, at most the cell's own box: gdk-pixbuf scales on the way in, so nothing here holds a 960 px
@@ -202,11 +188,134 @@ fn paint_frame_cell(
     let _ = cr.paint();
 }
 
+// ---- the live page's decodes: a worker, a cache, a repaint ---------------------------------------
+
+/// One decode asked of the worker: a frame, at a row height.
+type ThumbKey = (PathBuf, i32);
+
+/// What the worker hands back: the key, and the frame's premultiplied ARGB32 pixels with their width and height
+/// (`None` when the file would not decode). Plain bytes, because a cairo surface may only live on its thread.
+type Decoded = Vec<(ThumbKey, Option<(Vec<u8>, i32, i32)>)>;
+
+thread_local! {
+    /// Decoded frames by (file, row height): `Some` once landed, `None` for a file that would not decode.
+    static THUMBS: RefCell<HashMap<ThumbKey, Option<cairo::ImageSurface>>> = RefCell::new(HashMap::new());
+    /// Asked of the worker and not landed yet, so a repaint does not ask again.
+    static ASKED: RefCell<HashSet<ThumbKey>> = RefCell::new(HashSet::new());
+    /// The worker's inbox; started on the first ask.
+    static WORKER: RefCell<Option<mpsc::Sender<ThumbKey>>> = const { RefCell::new(None) };
+    /// The band surfaces to repaint when decodes land (see [`note_band`]).
+    static BANDS: RefCell<Vec<glib::WeakRef<gtk4::DrawingArea>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// How many thumbnails the live page holds decoded, and how many it has asked for and is still waiting on.
+pub fn thumbs_for_test() -> (usize, usize) {
+    (
+        THUMBS.with(|thumbs| thumbs.borrow().values().filter(|t| t.is_some()).count()),
+        ASKED.with(|asked| asked.borrow().len()),
+    )
+}
+
+/// Register a band surface: it is repainted when a batch of decodes lands.
+pub fn note_band(band: &gtk4::DrawingArea) {
+    BANDS.with(|bands| bands.borrow_mut().push(band.downgrade()));
+}
+
+/// Repaint every registered band: a batch of decodes, or of pictures cut on the fly (`cut_film_cache`), landed.
+pub fn repaint_bands() {
+    BANDS.with(|bands| {
+        bands.borrow_mut().retain(|band| match band.upgrade() {
+            Some(band) => {
+                band.queue_draw();
+                true
+            }
+            None => false,
+        })
+    });
+}
+
+/// The frame at `path` decoded at `height` px tall, if the worker has delivered it; otherwise asks for it once.
+fn decoded(path: &std::path::Path, height: i32) -> Option<cairo::ImageSurface> {
+    let key: ThumbKey = (path.to_path_buf(), height);
+    if let Some(found) = THUMBS.with(|thumbs| thumbs.borrow().get(&key).cloned()) {
+        return found;
+    }
+    if ASKED.with(|asked| asked.borrow_mut().insert(key.clone())) {
+        ask_worker(key);
+    }
+    None
+}
+
+/// Hand one decode to the worker, starting it (and the loop that collects its answers) on the first ask.
+fn ask_worker(key: ThumbKey) {
+    WORKER.with(|worker| {
+        let mut worker = worker.borrow_mut();
+        if worker.is_none() {
+            let (ask, asked) = mpsc::channel::<ThumbKey>();
+            let (tell, told) = mpsc::channel::<Decoded>();
+            std::thread::spawn(move || {
+                // One batch: the next ask, waited for, and up to `THUMB_BATCH - 1` more already waiting.
+                while let Ok(first) = asked.recv() {
+                    let mut keys = vec![first];
+                    while keys.len() < THUMB_BATCH {
+                        match asked.try_recv() {
+                            Ok(key) => keys.push(key),
+                            Err(_) => break,
+                        }
+                    }
+                    let batch: Decoded = keys
+                        .into_iter()
+                        .map(|key| {
+                            // Scaled on the way in, aspect kept, at the row's height: a thumbnail's worth of work.
+                            let pixels = gtk4::gdk_pixbuf::Pixbuf::from_file_at_scale(
+                                &key.0, -1, key.1, true,
+                            )
+                            .ok()
+                            .and_then(|pixbuf| frame_pixels(&pixbuf));
+                            (key, pixels)
+                        })
+                        .collect();
+                    if tell.send(batch).is_err() {
+                        return;
+                    }
+                }
+            });
+            glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+                let mut landed = false;
+                while let Ok(batch) = told.try_recv() {
+                    for (key, pixels) in batch {
+                        let surface = pixels.and_then(|(bytes, w, h)| surface_of(&bytes, w, h));
+                        THUMBS.with(|thumbs| thumbs.borrow_mut().insert(key.clone(), surface));
+                        ASKED.with(|asked| asked.borrow_mut().remove(&key));
+                        landed = true;
+                    }
+                }
+                if landed {
+                    repaint_bands();
+                }
+                glib::ControlFlow::Continue
+            });
+            *worker = Some(ask);
+        }
+        if let Some(worker) = worker.as_ref() {
+            // A worker that is gone (it never is while the app runs) leaves the cell on its placeholder.
+            let _ = worker.send(key);
+        }
+    });
+}
+
 /// This pixbuf as a cairo ARgb32 surface, its rows copied one at a time so a JPEG whose `rowstride` is padded
 /// past `width * n_channels` still lands on cairo's unpadded stride. gdk-pixbuf hands back NON-premultiplied
 /// alpha and cairo wants it premultiplied, hence the per-pixel multiply. Same rule as `produce_paint::raster`,
 /// kept local because the band owns its own pictures.
 fn frame_raster(pixbuf: &gtk4::gdk_pixbuf::Pixbuf) -> Option<cairo::ImageSurface> {
+    let (pixels, wide, high) = frame_pixels(pixbuf)?;
+    surface_of(&pixels, wide, high)
+}
+
+/// The pixbuf's pixels as cairo's premultiplied ARGB32 bytes, unpadded: the half of [`frame_raster`] that may run
+/// on the decode worker.
+pub(crate) fn frame_pixels(pixbuf: &gtk4::gdk_pixbuf::Pixbuf) -> Option<(Vec<u8>, i32, i32)> {
     let (wide, high) = (pixbuf.width(), pixbuf.height());
     if wide <= 0 || high <= 0 {
         return None;
@@ -237,13 +346,22 @@ fn frame_raster(pixbuf: &gtk4::gdk_pixbuf::Pixbuf) -> Option<cairo::ImageSurface
             to[target + 3] = alpha;
         }
     }
+    Some((pixels, wide, high))
+}
+
+/// Unpadded ARGB32 bytes as a cairo surface; the half of [`frame_raster`] that runs on the window's thread.
+fn surface_of(pixels: &[u8], wide: i32, high: i32) -> Option<cairo::ImageSurface> {
     let mut surface = cairo::ImageSurface::create(cairo::Format::ARgb32, wide, high).ok()?;
+    let stride = surface.stride() as usize;
+    let row = wide as usize * 4;
     {
         let mut target = surface.data().ok()?;
-        if target.len() < pixels.len() {
-            return None;
+        for y in 0..high as usize {
+            let from = pixels.get(y * row..(y + 1) * row)?;
+            target
+                .get_mut(y * stride..y * stride + row)?
+                .copy_from_slice(from);
         }
-        target[..pixels.len()].copy_from_slice(&pixels);
     }
     surface.status().ok()?;
     Some(surface)

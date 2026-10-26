@@ -10,8 +10,7 @@ use crate::startup;
 /// `session_reads`): the project file's own folder, so a source path and a `cache/waves` file read
 /// from the tree built on it belong to the same project. `None` when nothing is open.
 fn open_project_dir() -> Option<std::path::PathBuf> {
-    let root = std::env::current_dir().unwrap_or_default();
-    let dir = startup::session_dir(&root);
+    let dir = startup::open_dir();
     dir.join(crate::project::PROJECT_FILE)
         .is_file()
         .then_some(dir)

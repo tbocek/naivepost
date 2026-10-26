@@ -391,8 +391,9 @@ fn f1_2_s7_one_row_becomes_two_and_the_wish_is_cleared() {
     assert!(voice.path.ends_with(".split-voice.wav"), "{}", voice.path);
     assert!(rest.footage, "the rest keeps the footage");
     assert!(!voice.footage, "a wav is never footage");
-    assert_eq!(rest.narrator, 0, "the rest takes nobody's slot");
-    assert_eq!(voice.narrator, 2, "the voice keeps the slot the row held");
+    // There is no "no voice" to give the rest, so both halves keep the voice the row held.
+    assert_eq!(rest.narrator, 2, "the rest keeps the row's voice");
+    assert_eq!(voice.narrator, 2, "the voice keeps the row's voice");
     assert!(
         !rest.sepvoice && !voice.sepvoice,
         "the wish is cleared on both"

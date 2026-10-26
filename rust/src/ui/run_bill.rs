@@ -64,7 +64,7 @@ pub fn bill_for(
 /// This session's project folder, resolved the way every other flow resolves it. `None` when no
 /// session folder exists yet: nothing counted is knowable, and "0 frames" is a claim, not an absence.
 fn session_tree() -> Option<layout::Tree> {
-    let dir = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let dir = crate::startup::open_dir();
     layout::Tree::new(&dir).ok()
 }
 

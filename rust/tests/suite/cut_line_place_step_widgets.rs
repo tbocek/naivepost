@@ -125,7 +125,7 @@ fn check_the_four_step_buttons_move_the_line(app: &adw::Application) {
     // asserted against step_frames(true), not a hardcoded 5, so a retune shows up here.
     let before = ui::line_position(&window).t;
     let back_five = ui::line_step_button(&window, "line-step-back-five").expect("back-five button");
-    assert_eq!(back_five.label().unwrap().as_str(), "\u{2039}\u{2039}",
+    assert_eq!(back_five.label().unwrap().as_str(), "\u{2039}\u{2039}f",
         "the shift variant is the one wired to that name (\u{a7}A group 1's glyph; the sentence is the tooltip)");
     assert_eq!(
         back_five.tooltip_text().as_deref(),
@@ -164,7 +164,7 @@ fn check_the_key_controller_is_attached_and_refuses_without_a_hold(app: &adw::Ap
     ui::set_line_position(&window, cut_line::LinePos { t: 40.0 });
     let before = ui::line_position(&window).t;
     assert_eq!(
-        ui::arrow_steps(&window, false, None, FPS, 10_100),
+        ui::arrow_steps(&window, false, false, None, FPS, 10_100),
         ui::Step::Still,
         "an arrow with nothing held refuses"
     );
@@ -176,12 +176,26 @@ fn check_the_key_controller_is_attached_and_refuses_without_a_hold(app: &adw::Ap
 
     // With a hold, the same arrow nudges the hold instead of the line.
     assert_eq!(
-        ui::arrow_steps(&window, false, Some(cut_line::Held::Edge), FPS, 10_200),
+        ui::arrow_steps(
+            &window,
+            false,
+            false,
+            Some(cut_line::Held::Edge),
+            FPS,
+            10_200
+        ),
         ui::Step::Nudged { frames: 1 },
         "with an edge held the arrow nudges THAT, one frame"
     );
     assert_eq!(
-        ui::arrow_steps(&window, true, Some(cut_line::Held::Clip), FPS, 10_300),
+        ui::arrow_steps(
+            &window,
+            true,
+            false,
+            Some(cut_line::Held::Clip),
+            FPS,
+            10_300
+        ),
         ui::Step::Nudged { frames: 5 },
         "Shift makes it five"
     );
@@ -578,7 +592,6 @@ fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application)
 
     let gesture = naivepost::ui::window::band_line_gesture_for_test(&window)
         .expect("the painted band carries the line-click gesture");
-    let pps = cut_view::pps();
     let origin = cut_view::origin();
     // The geometry the band paints with: the same doors `cut_line_press` reads.
     let boxes = cut_view::band_clip_boxes_for_test(&window);
@@ -594,7 +607,11 @@ fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application)
     // The fixture's own spans are what the band paints, so the press goes at a second they really cover
     // (its kept footage runs 0-9.5 / 10-30 / 40-70) rather than at whatever x happens to be mid-box.
     let pressed_at = 12.0;
-    let inside_x = origin + cut_view::gutter_px() + pressed_at * pps;
+    // Where the painter draws that second (`cut_tracks::band_x`: the gutter, the filmed cells, then the scroll
+    // off): a press must be aimed where the ink is, which is not `gutter + s·pps` once the tape does not start at
+    // 0 s or has a gap.
+    let painted_x = |t: f64| cut_tracks::band_x(&cut_view::band_scene_for(&window), t) - origin;
+    let inside_x = painted_x(pressed_at);
     let held_seg =
         naivepost::cut_delete::scene_under(&naivepost::ui::review_cut_of(&window).segs, pressed_at)
             .cloned();
@@ -642,7 +659,7 @@ fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application)
     // (a) On the picture row, inside the painted clip: the line goes to THAT second and row 0 is watched.
     gesture.emit_by_name::<()>("released", &[&1i32, &inside_x, &row_y]);
     settle();
-    let expected = ((inside_x - cut_view::gutter_px() - origin) / pps).max(0.0);
+    let expected = pressed_at;
     assert!(
         (ui::line_position(&window).t - expected).abs() < 1e-6,
         "the band press put the line at the pixel it was given: {} vs {expected}",
@@ -671,7 +688,7 @@ fn check_a_real_band_press_uses_where_the_pointer_landed(app: &adw::Application)
     // (c) On the effects lane (§A puts it between the selection band and the picture rows): S1 watches only
     // a picture row, so the line moves -- a track press is a track press -- but nothing is watched.
     let lane_y = (bands.fx.0 + bands.fx.1) / 2.0;
-    let on_time_x = origin + cut_view::gutter_px() + 20.0 * pps;
+    let on_time_x = painted_x(20.0);
     gesture.emit_by_name::<()>("released", &[&1i32, &on_time_x, &lane_y]);
     settle();
     assert!(
@@ -796,6 +813,10 @@ fn check_a_step_moves_one_frame_of_the_probed_rate(app: &adw::Application) {
 
     let window = cut_window(app);
     settle();
+    // Nothing in hand: this is the line's own step. An earlier check's track press took a scene in hand, and with
+    // a hold f› nudges THAT instead (F2.4 S2).
+    ui::set_held_edge(None);
+    ui::set_held_clip(None);
     // The session's footage row must point at that file: write it through the handle every page reads.
     let session = ui::session_handle(&window);
     {
@@ -868,16 +889,27 @@ fn check_a_real_press_clear_of_the_green_takes_the_edge_by_the_reach(app: &adw::
     // reaches across bare ground for the edge. The fixture's spans are 0-9.5 / 10-30 / 40-70, so the
     // 9.5-10 gap serves. A box starting at second 0 will not do: its left edge lies under the gutter,
     // and a gutter press takes nothing (S1), as the band check above pins.
+    // The boxes as PAINTED (`cut_tracks::band_boxes`: gutter and filmed cells counted, unscrolled), which is
+    // where a hand aims; the index matches `boxes`.
+    let painted = cut_tracks::band_boxes(&cut_view::band_scene_for(&window));
     let target = boxes
         .iter()
         .find(|held| {
-            let left_on_screen = held.x - origin;
-            held.w > 0.0 && left_on_screen > cut_view::gutter_px() + cut_line::EDGE_REACH_PX
+            let left = painted[held.index].0;
+            let left_on_screen = left - origin;
+            // ...and no other box's end within 4 px of it, so the press 2 px left of it is nearest THIS edge.
+            let alone = painted
+                .iter()
+                .enumerate()
+                .all(|(i, (x, w))| i == held.index || (x + w - left).abs() > 4.0);
+            held.w > 0.0
+                && alone
+                && left_on_screen > cut_view::gutter_px() + cut_line::EDGE_REACH_PX
         })
         .expect(
             "a painted box whose left edge is clear of the gutter, i.e. beside a dropped stretch",
         );
-    let box_left = target.x - origin;
+    let box_left = painted[target.index].0 - origin;
     let seg = naivepost::ui::review_cut_of(&window)
         .segs
         .get(target.index)
@@ -905,7 +937,7 @@ fn check_a_real_press_clear_of_the_green_takes_the_edge_by_the_reach(app: &adw::
     // the whole clip comes into hand and the edge slot goes back to empty.
     ui::set_held_edge(None);
     ui::set_held_clip(None);
-    let mid_x = box_left + target.w / 2.0;
+    let mid_x = box_left + painted[target.index].1 / 2.0;
     gesture.emit_by_name::<()>("released", &[&1i32, &mid_x, &row_y]);
     settle();
     assert!(

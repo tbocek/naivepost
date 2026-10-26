@@ -3,7 +3,7 @@
 //! and badge **31**, the scrollbar, with its geared thumb once the tape outgrows the view.
 //!
 //! `spec/05-cut.md` §1 lists both, and `spec/img/05-cut.png` draws both. The rules themselves live in
-//! `cut_view` (`fits`, `thumb_geared`, `DRAG_PER_SCREENFUL_PX`) and were already right; what was wrong was
+//! `cut_view` (`fits`, `drag_gear`, `DRAG_PER_SCREENFUL_PX`) and were already right; what was wrong was
 //! how the shot got there. These checks drive the page's own doors (the toolbar's − / + buttons, which is
 //! what `snapshot.rs` presses too) rather than poking state, so a future change that forces a widget visible
 //! or hides one the geometry asks for fails here.
@@ -202,23 +202,16 @@ fn check_the_scrollbar_paints_a_geared_thumb(app: &adw::Application) {
         "zooming in over the toolbar's own + door made the tape wider than the view: {total} > {view_now}"
     );
     let adjustment = bar.adjustment();
-    let geared_bar = naivepost::ui::cut_view::gear_px_for_test();
-    let geared = naivepost::ui::cut_view::thumb_geared(total, geared_bar);
     println!(
-        "S31 zoomed: total {total} px over view {view_now} px; bar length {geared_bar} px; \
-         geared fraction {geared}; page_size {}; DRAG_PER_SCREENFUL_PX {}",
+        "S31 zoomed: total {total} px over view {view_now} px; page_size {}; upper {}",
         adjustment.page_size(),
-        naivepost::ui::cut_view::DRAG_PER_SCREENFUL_PX
+        adjustment.upper()
     );
     assert!(bar.is_visible(), "so badge 31 shows");
     assert!(
-        (adjustment.page_size() - view_now * geared).abs() < 1.0,
-        "the thumb is the GEARED one \u{2014} {:?} of the bar, i.e. {:.0} px of drag per screenful \
-         \u{2014} not a proportional sliver: page_size {}, expected {}",
-        geared,
-        naivepost::ui::cut_view::DRAG_PER_SCREENFUL_PX,
-        adjustment.page_size(),
-        view_now * geared
+        (adjustment.page_size() - view_now).abs() < 1.0,
+        "the thumb is the view's share of the tape (inventory \u{a7}B page = viewW): page_size {}, view {view_now}",
+        adjustment.page_size()
     );
     assert_eq!(
         naivepost::ui::cut_view::DRAG_PER_SCREENFUL_PX,
@@ -270,31 +263,41 @@ fn round() {
 
 static RAN_ROW_LIST: AtomicBool = AtomicBool::new(false);
 
-/// §1's badges **28** (row name plate) and **29** (the row's sound switch) are the row list under the tape —
-/// the deepest thing the page draws, so the first controls a clamped page divider starves. `cam_hearing_widgets`
-/// already pins that these plates exist and answer a click; this asks only whether the pane handed them
-/// pixels, which is what a clamped divider takes away.
-///
-/// NOT pinned here, because it does not hold at §1's minimum window size: the row PLATES themselves come out
-/// 0x0 in every headless layout tried (this file's `cut_page`, a fresh two-camera window like
-/// `cam_hearing_widgets::cut_window`, with and without an explicit `refresh_camera_rows`) — `camera-rows` is
-/// mapped but 1182x0, so its children get nothing. That is the lower pane's own height budget, a separate
-/// question from the divider clamp this round fixed, and it needs a program change rather than a test.
+/// §1's badges **28** (row name plate) and **29** (the row's sound switch) are ON the band: the plate pinned at
+/// the row's left, the switch in the gutter at the row's wave strip, both inside the surface the pane gave the
+/// band — the deepest things the page draws, so the first a clamped divider starves.
 fn check_the_row_list_is_painted(app: &adw::Application) {
     let window = cut_page(app);
-    // The rows are drawn from the page's own cut slot, which `build_window` only fills after the tab is
-    // showing — so the list is filled by the same door a repaint uses, not left at build time.
     naivepost::ui::refresh_camera_rows(&window);
     settle();
-    let rows = common::find_named(&window, "camera-rows")
-        .expect("`camera-rows` (§1's row list) is missing from the page");
+    let band = common::find_named(&window, "track-band").expect("the band is on the page");
+    assert!(band.is_mapped(), "the band is on the page and mapped");
+    let switch = naivepost::ui::cut_band_marks::placed_on(&window)
+        .into_iter()
+        .find(|placed| {
+            matches!(
+                placed.mark,
+                naivepost::ui::cut_band_marks::Mark::RowSound(0, _)
+            )
+        })
+        .expect("\u{a7}1 badge 29: row 1's sound switch is on the band");
     assert!(
-        rows.is_mapped(),
-        "`camera-rows` is on the page but never mapped"
+        switch.pinned && switch.x < naivepost::cut_screen::GUTTER_PX,
+        "it sits in the gutter: {switch:?}"
     );
     assert!(
-        common::find_named(&window, "watch-row-1").is_some(),
-        "the row list drew no name plate for the session's recording"
+        switch.y < f64::from(band.height()),
+        "and inside the pixels the pane gave the band ({} px): {switch:?}",
+        band.height()
+    );
+    let scene = naivepost::ui::cut_view::band_scene_for(&window);
+    let first = scene
+        .recordings
+        .first()
+        .expect("the session's recording is on the band");
+    assert!(
+        !naivepost::ui::cut_tracks::plates(&scene, first).is_empty(),
+        "\u{a7}1 badge 28: the row's plate names its recording"
     );
 }
 

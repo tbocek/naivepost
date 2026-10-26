@@ -51,9 +51,9 @@ WHAT EACH JOB IS GIVEN, AND WHAT IT ANSWERS WITH -- nothing around the answer:
     {"abandoned":[{"from":<n>,"to":<n>,"again":<n>}]}
     <n> is a line number exactly as the request gave it. "from" to "to" is the stretch that was abandoned, inclusive; "again" is the line where the attempt that was kept begins, or 0 when it was broken off and never picked up. Nothing to mark is a whole answer: {"abandoned":[]}.
   translate: the numbered lines of one video's subtitle track. Answers exactly those lines, in order, translated -- one line out for every line in, each beginning with its own number and a tab.
-  textedit: ONE join -- the last words of the take that was interrupted, then the first words of the take that follows. Answers strict JSON and nothing else:
-    {"joined":"<the two parts run on as one, with the stumble left out>"}
-    Every word of the answer must be a word the request gave, spelled and ordered as it gave it; the only thing you may do is leave words out, and what you leave out must be one stretch at the join. Leaving nothing out is a whole answer: a recording that stopped between two thoughts is not a stumble.
+  textedit: ONE join, marked [CUT] -- a wide view of the speech around it, the words close to it, the end of the take that was interrupted (BEFORE) and the take that follows (AFTER). Answers the words to remove, strict JSON and nothing else:
+    {"drop_before":"<the last words of BEFORE that go, copied exactly, or empty>","drop_after":"<the first words of AFTER that go, copied exactly, or empty>"}
+    Only words at the join go: the end of BEFORE, the start of AFTER, or some of each. Removing nothing is a whole answer: a recording that stopped between two thoughts is not a stumble.
   cut: the footage range and the session timeline. Answers SEGMENTS, strict JSON and nothing else:
     {"segments":[{"start":<sec>,"end":<sec>}]}
     <sec> is session seconds, a number. Segments in order, never overlapping, and inside the range the request gives.

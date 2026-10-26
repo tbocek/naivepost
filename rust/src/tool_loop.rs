@@ -49,7 +49,10 @@ pub fn schemas(offered: &[Tool], describe: &dyn Fn(&Tool) -> Option<&'static str
     offered
         .iter()
         .map(|tool| {
-            let mut schema = json!({ "type": "function", "function": { "name": tool.name() } });
+            let mut schema = json!({
+                "type": "function",
+                "function": { "name": tool.name(), "parameters": tool.parameters() }
+            });
             if let Some(text) = describe(tool) {
                 schema["function"]["description"] = json!(text);
             }

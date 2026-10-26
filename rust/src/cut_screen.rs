@@ -13,33 +13,62 @@
 use crate::cut::Cut;
 use crate::{prepare, tools};
 
-/// Horizontal padding every Cut-toolbar button keeps, in px. Adwaita's default (~24 px per side) is what
-/// makes §A's one row of six groups wider than the bar at §1's 1240 px floor — measured with
-/// `tests/suite/sec_05_cut_1_screen_toolbar_fits.rs`: the six groups' natural widths summed to 1646 px
-/// against a 1182 px bar, so GTK shrank each group and Copy/Paste/Insert/Lane painted inside their own
-/// scroller's clip. At 4 px the same six rows sum to 1079 and every §1 control sits inside its own group
-/// at REST — but not with the transport live, which is the state `just snapshot 05-cut` renders: there the
-/// word-labelled ▶ button adds ~110 px, the six rows sum past the 1222 px bar, GTK has no slack to hand out,
-/// shrinks `group-verbs` below its 396 px natural and paints Insert/Lane under `+ Effect`. 2 px keeps the
-/// six naturals under the bar so every group gets what its buttons ask for.
-/// The `min-width` is what makes a thin padding safe: without it a one-glyph step button measures 10 px wide,
-/// under the 16 px click target `cut_line_place_step_widgets` asks for, so the glyph keeps a clickable square
-/// while the padding comes down.
-pub const BUTTON_PADDING_PX: u32 = 2;
+/// Horizontal padding every Cut-toolbar button keeps, in px, and the width it never goes under: an icon button
+/// about as wide as Adwaita's own image button (the prototype's bar used the theme's defaults). Linked buttons
+/// stand flush, so the padding is what keeps one icon off the next; at 2 px and 16 px the verbs' icons touched.
+/// The bar still fits §1's 1240 px floor: measured with `tests/suite/sec_05_cut_1_screen_toolbar_fits.rs`, the
+/// six groups' natural widths had 320 px to spare against the 1182 px bar before this, and that test asserts the
+/// sum stays under the bar.
+pub const BUTTON_PADDING_PX: u32 = 6;
 
-/// The click-target floor a toolbar button must keep, in px — the same number
-/// `cut_line_place_step_widgets` asserts, spelled here because this rule is what delivers it.
-pub const BUTTON_MIN_WIDTH_PX: u32 = 16;
+/// The click-target floor a toolbar button keeps, in px.
+pub const BUTTON_MIN_WIDTH_PX: u32 = 32;
 
 /// The toolbar's one CSS rule, installed process-wide by `ui::window_page_box`. `#cut-toolbar` scopes it to
 /// that bar so no other button in the shell changes size. Built from [`BUTTON_PADDING_PX`] so the number
 /// stays a single source rather than a literal buried in a string.
 pub fn toolbar_css() -> String {
     format!(
-        "#cut-toolbar button {{ padding-left: {px}px; padding-right: {px}px; min-width: {min}px; }}",
+        "#cut-toolbar button {{ padding-left: {px}px; padding-right: {px}px; min-width: {min}px; }}\n\
+         #group-transport-row button {{ padding-left: {tpx}px; padding-right: {tpx}px; min-width: {tmin}px; }}",
         px = BUTTON_PADDING_PX,
-        min = BUTTON_MIN_WIDTH_PX
+        min = BUTTON_MIN_WIDTH_PX,
+        tpx = TRANSPORT_PADDING_PX,
+        tmin = TRANSPORT_MIN_WIDTH_PX
     )
+}
+
+/// The transport's buttons are the ones a hand goes back to all the time (▶, ▶✂, ▶✂✂, the frame steps), so they
+/// keep a wider target than the rest of the bar: the prototype's are about a thumb wide.
+pub const TRANSPORT_MIN_WIDTH_PX: u32 = 36;
+/// Their padding either side of the glyph.
+pub const TRANSPORT_PADDING_PX: u32 = 6;
+
+/// Pixels between two toolbar groups (the prototype's bar spacing); the buttons inside a group are linked.
+pub const TOOLBAR_GAP_PX: i32 = 6;
+
+/// The preview volume's icon (inventory §A group 2: "icon + 0..100").
+pub const VOLUME_ICON: &str = "audio-volume-high-symbolic";
+
+/// The symbolic icon a toolbar button wears instead of its words, the prototype's own choice per button
+/// (`go/cut.go` 4678-4798). `None` keeps the words: the transport, whose ▶/⏸ face the refresh rewrites, the
+/// frame steps, and Insert/Edit.
+pub fn tool_icon(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "add-button" => "list-add-symbolic",
+        "split-button" => "edit-cut-symbolic",
+        "remove-button" => "list-remove-symbolic",
+        "copy-button" => "edit-copy-symbolic",
+        "paste-button" => "edit-paste-symbolic",
+        "lane-button" => "go-down-symbolic",
+        "undo-button" => "edit-undo-symbolic",
+        "redo-button" => "edit-redo-symbolic",
+        "revert-button" => "document-revert-symbolic",
+        "clear-cut-button" => "edit-clear-all-symbolic",
+        "zoom-out-button" => "zoom-out-symbolic",
+        "zoom-in-button" => "zoom-in-symbolic",
+        _ => return None,
+    })
 }
 
 /// The toolbar's groups, left to right (§1: transport, preview volume, verbs, effects dropdown,
@@ -110,10 +139,15 @@ pub fn zoom_up(pps: f64, floor: f64) -> f64 {
 /// Zoom keeping the second under `anchor_x` where it is (§A: the wheel "does the same, around the
 /// cursor"). The scroll back has to move too, or zooming in at the left edge pushes what you were
 /// looking at off screen and every zoom is a hunt for the same moment again.
+///
+/// `anchor_x` is a pixel of the VIEW (0 at the tape's first visible pixel, right of the gutter) and
+/// `origin_x` the scroll, how many tape pixels are off screen to the left, so the second under the anchor
+/// is `(anchor_x + origin_x) / pps`. The first rewrite subtracted the scroll instead, so every zoom away
+/// from the session's start computed a scroll below zero and jumped back to 0:00.
 pub fn zoom_around(pps: f64, factor: f64, anchor_x: f64, origin_x: f64, floor: f64) -> (f64, f64) {
-    let time = (anchor_x - origin_x) / pps;
+    let time = (anchor_x + origin_x) / pps;
     let next = (pps * factor).clamp(floor, ZOOM_MAX);
-    (next, (anchor_x - time * next).max(0.0))
+    (next, (time * next - anchor_x).max(0.0))
 }
 
 // --- Frame steps and the wheel (§1's two wheel rules) ------------------------------------------
@@ -180,12 +214,14 @@ pub fn wheel(over: WheelOver, shift: bool, dy: f64, dx: f64, view_px: f64) -> Wh
         }
         WheelOver::Tracks => {
             if shift || dx.abs() > dy.abs() {
+                // Shift turns the notch sideways the way a scrolled list does: down (away from the
+                // session's start) pans later, up pans earlier. The first rewrite had it reversed.
                 let direction = if dx < 0.0 {
                     -1.0
                 } else if dx > 0.0 {
                     1.0
                 } else {
-                    -dy.signum()
+                    dy.signum()
                 };
                 Wheel::Pan {
                     px: pan_px(view_px) * direction,
@@ -299,8 +335,7 @@ it stops at 240 px a second";
 
 /// One toolbar control: the name a test and the snapshot entry point find it by, what it says, and the
 /// sentence that says what pressing it would do. `label` carries the glyph the spec draws plus the
-/// words the page shows — the headless container has no icon theme, so a glyph alone would render as
-/// a box (the same reason `cut_hear::VOLUME_LABEL` spells "preview volume" as a word).
+/// words; a button [`tool_icon`] names an icon for wears the icon instead.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tool {
     pub name: &'static str,
@@ -344,22 +379,22 @@ pub const TRANSPORT_BUTTONS: [Tool; 7] = [
     },
     Tool {
         name: "line-step-back-five",
-        label: "\u{2039}\u{2039}",
+        label: "\u{2039}\u{2039}f",
         tip: FRAME_TIP,
     },
     Tool {
         name: "line-step-back",
-        label: "\u{2039}",
+        label: "\u{2039}f",
         tip: FRAME_TIP,
     },
     Tool {
         name: "line-step-forward",
-        label: "\u{203a}",
+        label: "f\u{203a}",
         tip: FRAME_TIP,
     },
     Tool {
         name: "line-step-forward-five",
-        label: "\u{203a}\u{203a}",
+        label: "f\u{203a}\u{203a}",
         tip: FRAME_TIP,
     },
 ];
@@ -644,7 +679,8 @@ pub fn idle_readouts(
         },
         Readout {
             label: "Playhead",
-            value: tools::mm_ss(playhead),
+            // The preview's own clock face (inventory §D: "mm:ss.d"), the one the status line reads while ▶ runs.
+            value: crate::preview::clock(Some(playhead)),
             tip: "",
         },
         Readout {

@@ -120,15 +120,8 @@ fn check_s4_the_run_bar_becomes_the_transport(app: &adw::Application) {
             started: true,
         },
     );
-    let model = naivepost::project::load(&fixture_dir()).expect("the fixture loads");
     assert_eq!(
-        tab_states::play(
-            Page::Cut,
-            &model,
-            true,
-            ui::preview_player(&window).transport
-        )
-        .0,
+        tab_states::play(Page::Cut, true, ui::preview_player(&window).transport).0,
         tab_states::Play::Transport { resume: true },
         "§2's rule: started but parked, so the transport owns ▶"
     );
@@ -177,16 +170,16 @@ fn check_s4_the_run_bar_becomes_the_transport(app: &adw::Application) {
     let stopped = ui::preview_player(&window).transport;
     assert!(!stopped.playing, "⏹ stopped the preview");
     assert!(
-        stopped.started,
-        "⏹ leaves a STOPPED player cued, which is why the next ▶ resumes rather than restarts: {stopped:?}"
+        !stopped.started,
+        "⏹ ENDED the preview rather than parking it: {stopped:?}"
     );
     // §2's "until ⏹" ends here: a preview nobody started any more is not a transport, so the button
-    // belongs to the page's step again. That is the same door `press_play` falls through when nothing
-    // was started (a fresh player), which `tests/suite/press_play_widgets.rs` walks for the toggle itself.
+    // belongs to the page's step again, read off the player ⏹ just wrote. The first rewrite's ⏹ kept
+    // `started` up, so ▶ stayed the preview's and Suggest was never reachable again.
     assert_eq!(
-        tab_states::play(Page::Cut, &model, true, Transport::default()).0,
+        tab_states::play(Page::Cut, true, stopped).0,
         tab_states::Play::Step(run::Step::Suggest),
-        "with no preview started at all, the rule says Suggest again"
+        "after ⏹ the rule says Suggest again"
     );
     assert!(
         ui::run_bar(&window)

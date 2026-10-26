@@ -58,7 +58,13 @@ pub fn stage(project: &crate::project::Project) -> crate::run_stages::Stage {
                 } else {
                     "audio".to_string()
                 },
-                source.narrator.to_string(),
+                // "1" only for the narrator MICROPHONE of voice 1: a video with a voice number is film, its
+                // words are content (`sources::is_narrator_mic`).
+                if crate::sources::is_narrator_mic(source) && source.narrator == 1 {
+                    "1".to_string()
+                } else {
+                    "0".to_string()
+                },
             ],
             already_done: false,
             session: None,
@@ -114,7 +120,7 @@ pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> R
 /// The session folder the walk works in — the working folder's own, resolved the way every other dial
 /// resolves it (§1's re-read-per-request seams all start here).
 fn session_dir() -> std::path::PathBuf {
-    crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
+    crate::startup::open_dir()
 }
 
 /// One source's transcript through the fixer: block by block, ask once per block, write the fixed

@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use naivepost::roles;
 use naivepost::services as svc;
-use naivepost::settings::{self, Conf, Paths, Slots};
+use naivepost::settings::{self, Conf, Paths};
 
 /// The item's id, interpolated into every assertion message so a failure names the item.
 const ITEM: &str = "sec_03_shell_6_the_settings_file";
@@ -70,15 +70,6 @@ fn full_conf() -> Conf {
     conf.sd_server = "http://sd:1234".into();
     conf.sd_key = "sk-sd".into();
     conf.subtitle_languages = "de:ger:German,en:eng:English".into();
-    conf.slots = Slots {
-        llm: 2,
-        asr: 3,
-        diar: 4,
-        align: 5,
-        tts: 6,
-        sep: 7,
-        sd: 8,
-    };
     conf.projects.insert(
         "/sessions/lecture".into(),
         "/sessions/lecture/naivepost.json".into(),
@@ -86,8 +77,8 @@ fn full_conf() -> Conf {
     conf
 }
 
-/// §6 lists the keys and says the file is "written whole": every one survives a render + parse, the
-/// slot counts are absent at their default of 1, a value that would break `source` is quoted and
+/// §6 lists the keys and says the file is "written whole": every one survives a render + parse, an old
+/// build's slot counts are dropped, a value that would break `source` is quoted and
 /// read back verbatim, and a key from a newer build is carried through rather than dropped.
 #[test]
 fn sec_03_shell_6_the_settings_file_s1_every_key_of_the_settings_file_is_written_and_read_back() {
@@ -108,13 +99,6 @@ fn sec_03_shell_6_the_settings_file_s1_every_key_of_the_settings_file_is_written
         "FIREFOX",
         "SD_SERVER",
         "SD_API_KEY",
-        "LLM_SLOTS",
-        "AUDIOCPP_ASR_SLOTS",
-        "AUDIOCPP_DIAR_SLOTS",
-        "AUDIOCPP_ALIGN_SLOTS",
-        "AUDIOCPP_TTS_SLOTS",
-        "AUDIOCPP_SEP_SLOTS",
-        "SD_SLOTS",
         "SUBTITLE_LANGUAGES",
     ] {
         assert!(
@@ -136,20 +120,12 @@ fn sec_03_shell_6_the_settings_file_s1_every_key_of_the_settings_file_is_written
         "{ITEM}: a key did not survive the round trip"
     );
 
-    // "absent = 1": a default machine writes none of the seven slot keys...
-    let bare = settings::render(&Conf::default());
-    for key in Slots::KEY_NAMES {
-        assert!(
-            !bare.contains(&format!("{key}=")),
-            "{ITEM}: the default {key} should not be written:\n{bare}"
-        );
-    }
-    // ...and a file with none reads back as all 1.
-    let defaults = settings::parse("LLM_SERVER=http://x\n").expect("one key parses");
-    assert_eq!(
-        defaults.slots,
-        Slots::default(),
-        "{ITEM}: absent slots are not all 1"
+    // The per-model counts an earlier build wrote are read and dropped: requests go one at a time per server.
+    let old = settings::parse("LLM_SERVER=http://x\nLLM_SLOTS=3\nSD_SLOTS=2\n")
+        .expect("old counts still parse");
+    assert!(
+        !settings::render(&old).contains("_SLOTS="),
+        "{ITEM}: an old slot count is not written back"
     );
 
     // A value that would break `source` — quote, dollar, backtick, backslash — round-trips verbatim.

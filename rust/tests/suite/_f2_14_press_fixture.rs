@@ -67,6 +67,12 @@ impl Fixture {
 
     /// Usable words for `cam0`: `words.json` AND `words.aligned.json`, both non-empty, at 16 kHz.
     pub fn with_words(self, spoken: &[(&str, f64)]) -> Self {
+        self.with_words_on("cam0", spoken)
+    }
+
+    /// Usable words for one recording's lane, filed under the lane the recording's own file names (its stem),
+    /// which is where Prepare files a real recording's words and where `runs_of` looks them up.
+    pub fn with_words_on(self, lane: &str, spoken: &[(&str, f64)]) -> Self {
         let words: Vec<Word> = spoken
             .iter()
             .map(|(text, at)| Word {
@@ -83,8 +89,8 @@ impl Fixture {
                 .join(" "),
             words,
         };
-        requests::write_words(&self.tree, "cam0", &doc).expect("write words.json");
-        requests::write_aligned(&self.tree, "cam0", &AlignedDoc { words: doc.words })
+        requests::write_words(&self.tree, lane, &doc).expect("write words.json");
+        requests::write_aligned(&self.tree, lane, &AlignedDoc { words: doc.words })
             .expect("write words.aligned.json");
         self
     }

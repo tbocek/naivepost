@@ -139,6 +139,13 @@ pub fn plan(step: run::Step, project: &Project) -> Vec<Stage> {
             if !separation.tasks.is_empty() {
                 stages.push(separation);
             }
+            // §F1.6 S6, the text gate: every recording judged before any is described, so a decision model
+            // and a describe model sharing one server are each loaded once. Always planned: the main model judges when no
+            // decision model is set.
+            let gate = crate::text_gate::stage(project);
+            if !gate.tasks.is_empty() {
+                stages.push(gate);
+            }
             // §F1.7 describe → §F1.8 fix come after the ingest stages: understanding is what reads
             // the frames and the transcript the stages above just produced.
             let describe = crate::describe_call::stage(project);
@@ -183,14 +190,16 @@ fn speech_stage(project: &Project) -> Stage {
     let tasks = project
         .sources
         .iter()
-        .filter(|source| !source.footage)
+        // Every recording is heard, a video's own sound too (03-shell §4: "Every file here is transcribed"):
+        // its words are the film's. The first rewrite heard only the rows that were not footage, so a
+        // project of videos alone got no transcript at all and its fix wrote empty files.
         .map(|source| Task {
             label: format!(
                 "transcribing {}",
                 crate::audio_task::source_lane(&source.path)
             ),
             program: AUDIO_TASK.to_string(),
-            args: vec![source.path.clone(), project.language.clone()],
+            args: vec![source.path.clone(), project.policy.language.value.clone()],
             already_done: false,
             session: None,
         })
@@ -221,7 +230,7 @@ pub fn phase_of_stage(name: &str) -> Option<prepare_run::Phase> {
     match name {
         "separation" => Some(prepare_run::Phase::Separate),
         "frames" | "speech" => Some(prepare_run::Phase::Ingest),
-        "describe" | "fix" => Some(prepare_run::Phase::Understand),
+        "textgate" | "describe" | "fix" => Some(prepare_run::Phase::Understand),
         _ => None,
     }
 }
@@ -230,41 +239,98 @@ pub fn phase_of_stage(name: &str) -> Option<prepare_run::Phase> {
 /// by position. Each stage gets its own phase's slice — separation 0–10 % when asked, ingest to 30 %,
 /// understand 30–100 % — and a stage outside those phases keeps the whole bar.
 pub fn phase_slices(stages: &[Stage], separation_asked: bool) -> Vec<(f64, f64)> {
-    stages
+    // A phase's width is split evenly among the stages planned in it, in plan order, so the bar only moves
+    // forward: the text gate, describe and fix each fill a third of understand's 70 % rather than each
+    // sweeping the whole of it (the first rewrite sent the bar back to 30 % at every stage).
+    let phases: Vec<Option<prepare_run::Phase>> = stages
         .iter()
-        .map(|stage| {
-            phase_of_stage(stage.name)
-                .map(|phase| prepare_run::share(phase, separation_asked))
-                .unwrap_or((0.0, 1.0))
+        .map(|stage| phase_of_stage(stage.name))
+        .collect();
+    phases
+        .iter()
+        .enumerate()
+        .map(|(index, phase)| {
+            let Some(phase) = phase else {
+                return (0.0, 1.0);
+            };
+            // `share` answers where the phase starts and ENDS; `Queue::phase` takes a base and a WIDTH. The first
+            // rewrite handed the end over as the width, so understand ran from 30 % to 130 % and the bar stood
+            // full from the moment a stage was 70 % through.
+            let (start, end) = prepare_run::share(*phase, separation_asked);
+            let width = end - start;
+            let same = phases
+                .iter()
+                .filter(|other| *other == &Some(*phase))
+                .count()
+                .max(1);
+            let before = phases[..index]
+                .iter()
+                .filter(|other| *other == &Some(*phase))
+                .count();
+            let each = width / same as f64;
+            (start + each * before as f64, each)
         })
         .collect()
 }
 
-/// The page step's own walk, from the live window state.
-///
-/// Reads the run's `paused`/`stop_flag` fresh at every checkpoint through the same `Rc`s the ⏹
-/// handler writes, which is what makes a pause park this walk and a stop end it in the gap between
-/// two tasks. Narrate and Produce return no stages ([`plan`]) because those steps drive their own
-/// queues already; driving them here would count the same work twice onto one bar.
-pub fn drive_page(
+/// The run's ⏸ and ⏹ as the walk reads them. The walk runs on a worker (§03-shell §1, "The window thread never
+/// waits"), so it cannot borrow the window's run bar: the window copies the bar's two flags here whenever a press
+/// changes them ([`mirror_switches`]) and the walk reads them at every checkpoint.
+static PAUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Copy the bar's pause and stop where the walk reads them. Called by every press that changes either.
+pub fn mirror_switches(bar: &run::RunBar) {
+    use std::sync::atomic::Ordering;
+    PAUSED.store(
+        bar.running.as_ref().is_some_and(|running| running.paused),
+        Ordering::SeqCst,
+    );
+    STOPPED.store(bar.stop_flag, Ordering::SeqCst);
+}
+
+/// The children a walk on a worker has running, so ⏹ on the window thread can reach them. A child is
+/// listed from the moment it exists until it is reaped ([`spawn_task`]), so a stop never signals a pid that
+/// has since been handed to somebody else.
+static RUNNING_CHILDREN: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
+
+/// List a child a run on a worker has started, so ⏹ reaches it. Every listed child is unlisted once reaped.
+pub fn list_child(pid: u32) {
+    if let Ok(mut running) = RUNNING_CHILDREN.lock() {
+        running.push(pid);
+    }
+}
+
+/// Take a reaped child off the list ⏹ signals: the pid may be somebody else's from here on.
+pub fn unlist_child(pid: u32) {
+    if let Ok(mut running) = RUNNING_CHILDREN.lock() {
+        running.retain(|listed| *listed != pid);
+    }
+}
+
+/// Every child a worker's walk has running now, taken off the list: what ⏹ signals.
+pub fn take_running_children() -> Vec<u32> {
+    RUNNING_CHILDREN
+        .lock()
+        .map(|mut held| std::mem::take(&mut *held))
+        .unwrap_or_default()
+}
+
+/// The page step's own walk, on the worker the ▶ press handed it to. `queue` is the window's queue as
+/// `start_run` left it; every change the walk makes is handed to `on_queue` with the stage it is in, so the
+/// window can paint the bar while the walk goes on. ⏸ and ⏹ arrive through [`mirror_switches`]. Narrate and
+/// Produce return no stages ([`plan`]) because those steps drive their own queues already.
+pub fn drive_worker(
     step: run::Step,
     project: &Project,
-    queue: &QueueHolder,
-    bar: &BarHolder,
-    procs: &ProcsHolder,
+    queue: Queue,
+    on_queue: &mut dyn FnMut(&Queue, &str),
 ) -> Drive {
+    use std::sync::atomic::Ordering;
     let stages = plan(step, project);
     if stages.is_empty() {
         return Drive::Done { ran: 0, skipped: 0 };
     }
-    let paused = {
-        let bar = bar.clone();
-        move || bar.borrow().running.as_ref().is_some_and(|r| r.paused)
-    };
-    let stopped = {
-        let bar = bar.clone();
-        move || bar.borrow().stop_flag
-    };
     // §S6: hand the walk the bar's slices, so a Prepare run moves 0–10 / 10–30 / 30–100 instead of
     // reporting each stage as a whole bar. Empty for every other step, which is what they do today.
     let slices = if step == run::Step::Prepare {
@@ -272,21 +338,19 @@ pub fn drive_page(
     } else {
         Vec::new()
     };
-    drive_walk_with_slices(
+    let mut queue = queue;
+    let mut procs = Subprocesses::default();
+    walk(
         &stages,
-        &mut queue.borrow_mut(),
-        paused,
-        stopped,
+        &mut queue,
+        || PAUSED.load(Ordering::SeqCst),
+        || STOPPED.load(Ordering::SeqCst),
         crate::ui::window::log_line,
-        &mut procs.borrow_mut(),
+        &mut procs,
         &slices,
+        on_queue,
     )
 }
-
-/// The three pieces of window state a page walk needs, as the shared handles the shell holds.
-type QueueHolder = std::rc::Rc<std::cell::RefCell<Queue>>;
-type BarHolder = std::rc::Rc<std::cell::RefCell<run::RunBar>>;
-type ProcsHolder = std::rc::Rc<std::cell::RefCell<Subprocesses>>;
 
 /// Walk a prepared plan under the run's bookkeeping: the S2 sequence per stage, with §S3's
 /// checkpoint asked between every task.
@@ -306,10 +370,40 @@ where
     FN: Fn() -> bool,
     FS: Fn() -> bool,
 {
-    drive_walk_with_slices(stages, queue, paused, stop_flag, log, procs, &[])
+    walk(
+        stages,
+        queue,
+        paused,
+        stop_flag,
+        log,
+        procs,
+        &[],
+        &mut |_, _| {},
+    )
 }
 
-/// [`drive_walk_with_slices`] under its test name: the slices are the only thing this differs by, and
+/// [`walk`] with its `on_queue` hook, under its test name: what the window would be shown after every change of
+/// the bar, which is how a test sees a stage move the bar inside one task.
+pub fn drive_walk_watched_for_test(
+    stages: &[Stage],
+    queue: &mut Queue,
+    log: impl FnMut(&str),
+    slices: &[(f64, f64)],
+    on_queue: &mut dyn FnMut(&Queue, &str),
+) -> Drive {
+    walk(
+        stages,
+        queue,
+        || false,
+        || false,
+        log,
+        &mut Subprocesses::default(),
+        slices,
+        on_queue,
+    )
+}
+
+/// [`walk`] with slices, under its test name: the slices are the only thing this differs by, and
 /// a private helper cannot be reached from an integration test.
 pub fn drive_walk_with_slices_for_test<FN, FS>(
     stages: &[Stage],
@@ -324,13 +418,24 @@ where
     FN: Fn() -> bool,
     FS: Fn() -> bool,
 {
-    drive_walk_with_slices(stages, queue, paused, stop_flag, log, procs, slices)
+    walk(
+        stages,
+        queue,
+        paused,
+        stop_flag,
+        log,
+        procs,
+        slices,
+        &mut |_, _| {},
+    )
 }
 
 /// [`drive_walk`] with §S6's phase slices handed alongside the stages: one `(base, share)` per stage,
 /// applied through `Queue::phase` just before that stage's jobs are queued. An empty slice list — or a
-/// short one — leaves the bar unscaled, which is what every non-Prepare step wants.
-fn drive_walk_with_slices<FN, FS>(
+/// short one — leaves the bar unscaled, which is what every non-Prepare step wants. `on_queue` sees the
+/// queue after every change, with the stage's name: how a walk on a worker shows the window its progress.
+#[allow(clippy::too_many_arguments)] // the walk's whole state: stages, bar, switches, log, children, slices, hook
+fn walk<FN, FS>(
     stages: &[Stage],
     queue: &mut Queue,
     paused: FN,
@@ -338,6 +443,7 @@ fn drive_walk_with_slices<FN, FS>(
     mut log: impl FnMut(&str),
     procs: &mut Subprocesses,
     slices: &[(f64, f64)],
+    on_queue: &mut dyn FnMut(&Queue, &str),
 ) -> Drive
 where
     FN: Fn() -> bool,
@@ -361,11 +467,14 @@ where
         }
         queue.job(stage.track, stage.name, stage.phase, stage.of);
         queue.push(stage.track, stage.tasks.len(), stage.kind);
+        on_queue(queue, stage.name);
         let total = stage.tasks.len();
         // The walk's own position. A stop reports THIS, not an arithmetic guess off the loop index:
         // a run stopped between two tasks leaves exactly the tasks that were never reached.
         let mut progress = Progress::at_start(total);
         for task in stage.tasks.iter() {
+            // What the task before this one finished is shown before this one starts.
+            on_queue(queue, stage.name);
             // §S3: ask before every task. A pause waits one poll and asks again; a stop leaves now.
             if !wait_for_go(&paused, &stop_flag) {
                 return Drive::Stopped {
@@ -375,6 +484,11 @@ where
             }
             // §S2: taken whatever happens next — including a task already on disk.
             queue.take(stage.track);
+            // The status names the task that is running, from its first moment: before, the line kept the label
+            // of the task that had just ENDED (Prepare said "building the word list" for the minutes the joins
+            // repair after it took).
+            queue.prog(stage.track, position(progress.done, total), &task.label);
+            on_queue(queue, stage.name);
             if task.already_done {
                 skipped += 1;
                 progress = progress.advanced();
@@ -408,6 +522,33 @@ where
             // marks them with the program word it reads.
             if task.program == crate::frames_run::FRAMES_TASK {
                 if let Err(error) = crate::frames_run::run_task(task, &mut log) {
+                    return Drive::Failed {
+                        stage: stage.name,
+                        error,
+                    };
+                }
+                ran += 1;
+                progress = progress.advanced();
+                queue.prog(stage.track, position(progress.done, total), &task.label);
+                continue;
+            }
+            // The text gate's rows (F1.6 S6) are chat requests too, a stage of their own before describe.
+            if task.program == crate::text_gate::TEXT_GATE_TASK {
+                // The gate judges for minutes per recording: its every answer moves the bar inside this task's
+                // share and says where it is, so a person sees the stage working rather than a frozen line.
+                let done = progress.done;
+                let mut reached = |at: crate::text_gate::Reached| {
+                    report_within(
+                        queue,
+                        on_queue,
+                        stage,
+                        task,
+                        done,
+                        at.fraction(),
+                        &at.words(),
+                    );
+                };
+                if let Err(error) = crate::text_gate::run_task(task, &mut log, &mut reached) {
                     return Drive::Failed {
                         stage: stage.name,
                         error,
@@ -465,10 +606,16 @@ where
             if task.program == crate::fix_session::PLACEMENT_TASK
                 || task.program == crate::fix_session::SESSION_TASK
             {
+                // The merge row runs the marking pass, one model ask per join: each one moves the bar inside this
+                // row's share and names itself in the status, the way the text gate's judges do.
+                let done = progress.done;
+                let mut reached = |within: f64, words: &str| {
+                    report_within(queue, on_queue, stage, task, done, within, words);
+                };
                 let worked = if task.program == crate::fix_session::PLACEMENT_TASK {
                     crate::fix_session::run_placement(task, &mut log)
                 } else {
-                    crate::fix_session::run_session(task, &mut log)
+                    crate::fix_session::run_session(task, &mut log, &mut reached)
                 };
                 if let Err(error) = worked {
                     return Drive::Failed {
@@ -492,8 +639,27 @@ where
             queue.prog(stage.track, position(progress.done, total), &task.label);
         }
         queue.done(stage.track, 1.0);
+        on_queue(queue, stage.name);
     }
     Drive::Done { ran, skipped }
+}
+
+/// A long task's own progress, said while it runs: the bar moves `within` (0..1) through this task's share of the
+/// stage, and the status reads "<task> -- <words>". The text gate's judges and the merge row's join asks both
+/// report through here, so a stage that asks a model for minutes is never a frozen line on a full bar.
+fn report_within(
+    queue: &mut Queue,
+    on_queue: &mut dyn FnMut(&Queue, &str),
+    stage: &Stage,
+    task: &Task,
+    done: usize,
+    within: f64,
+    words: &str,
+) {
+    let total = stage.tasks.len();
+    let at = position(done, total) + within.clamp(0.0, 1.0) / total.max(1) as f64;
+    queue.prog(stage.track, at, &format!("{} -- {words}", task.label));
+    on_queue(queue, stage.name);
 }
 
 /// How far a walk has got: tasks finished, and how many are still ahead of it.
@@ -551,10 +717,7 @@ fn position(done: usize, total: usize) -> f64 {
 fn dial_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let paths = crate::settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
-    let tree = crate::layout::Tree::new(crate::startup::session_dir(
-        &std::env::current_dir().unwrap_or_default(),
-    ))
-    .ok();
+    let tree = crate::layout::Tree::new(crate::startup::open_dir()).ok();
     let source = task.args.first().cloned().unwrap_or_default();
     let lane = crate::audio_task::source_lane(&source);
     let conf = crate::settings::read(&paths).unwrap_or_default();
@@ -632,10 +795,12 @@ pub fn spawn_task(
     log(&subprocess::log_line(&task.program, &owned));
     let child = subprocess::spawn_piped(&task.program, &owned)
         .map_err(|err| format!("{} failed: {err}", subprocess::shown(&task.program, &owned)))?;
-    procs.register(child.id());
-    let out = child
-        .wait_with_output()
-        .map_err(|err| subprocess::failure(&task.program, &owned, &err.to_string()))?;
+    let pid = child.id();
+    procs.register(pid);
+    list_child(pid);
+    let out = child.wait_with_output();
+    unlist_child(pid);
+    let out = out.map_err(|err| subprocess::failure(&task.program, &owned, &err.to_string()))?;
     if out.status.success() {
         return Ok(());
     }

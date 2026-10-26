@@ -70,18 +70,6 @@ fn find_named_panic(window: &adw::ApplicationWindow, name: &str) -> gtk::Widget 
         .unwrap_or_else(|| panic!("no widget named `{name}` on the page"))
 }
 
-/// A widget's top edge in window coordinates — the one frame every widget on the page shares.
-#[allow(deprecated)] // 4.12's replacement needs a surface node this tree does not hand out
-fn top_edge(widget: &gtk::Widget) -> i32 {
-    let native = widget
-        .native()
-        .expect("the page is inside a realized window");
-    let (_, y) = widget
-        .translate_coordinates(&native, 0.0, 0.0)
-        .expect("the widget is laid out");
-    y as i32
-}
-
 /// A row's name plate label, read off the widget the page built.
 fn plate(window: &adw::ApplicationWindow, name: &str) -> String {
     ui::line_step_button(window, name)
@@ -115,10 +103,19 @@ fn check_the_row_plates_run_row_one_at_the_top(app: &adw::Application) {
         "the first row box is the one a status calls row 1: {order:?}"
     );
 
-    let row1 = find_named_panic(&window, "camera-row-1");
-    let row2 = find_named_panic(&window, "camera-row-2");
-    let (y1, y2) = (top_edge(&row1), top_edge(&row2));
-    println!("ROW ORDER camera-row-1 top y={y1}, camera-row-2 top y={y2}");
+    // On the band itself (§1): each row's sound switch sits on that row's wave strip, so their y reads the row
+    // order the band paints.
+    let switch_y = |row: usize| {
+        naivepost::ui::cut_band_marks::placed_on(&window)
+            .into_iter()
+            .find(|placed| {
+                matches!(placed.mark, naivepost::ui::cut_band_marks::Mark::RowSound(r, _) if r == row)
+            })
+            .map(|placed| placed.y)
+            .unwrap_or_else(|| panic!("row {} has its sound switch on the band", row + 1))
+    };
+    let (y1, y2) = (switch_y(0), switch_y(1));
+    println!("ROW ORDER row 1 at y={y1}, row 2 at y={y2}");
     assert!(
         y1 < y2,
         "row 1 is the TOP row, each further row below the one before: {y1} vs {y2}"

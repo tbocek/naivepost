@@ -14,6 +14,11 @@ const PPS: f64 = 2.0;
 const WIDTH: i32 = 300;
 
 /// The band's fixed rows above the pictures, as the painter lays them.
+/// Where second `t` is painted: after the 30 px gutter (§B), at the scene's zoom.
+fn x_at(t: f64) -> i32 {
+    (cut_screen::GUTTER_PX + t * PPS) as i32
+}
+
 fn head_px(scene: &Scene) -> i32 {
     (naivepost::cut_trim::RULER_H
         + tracks::SELECTION_BAND_PX
@@ -40,6 +45,8 @@ fn scene() -> Scene {
         }],
         fx: Vec::new(),
         recordings: tape(),
+        recording_rows: Vec::new(),
+        marks: Default::default(),
         folds: Vec::new(),
         selection: None,
         watched_row: None,
@@ -142,8 +149,8 @@ fn f2_12_s5_a_lane_adds_a_row_to_the_band() {
         lane.2 > lane.0 && lane.2 > lane.1,
         "a lane reads blue-grey against the plate grey, got {lane:?}"
     );
-    // And its span is where the lane runs: 20 s at 2 px/s is x 40, ten seconds wide.
-    let span = rgb(&after.0, after.1, 50, y);
+    // And its span is where the lane runs: 20..30 s, sampled at 25 s.
+    let span = rgb(&after.0, after.1, x_at(25.0), y);
     assert!(
         span.0 > 100 && span.2 > 100 && span.1 < span.0,
         "violet lane span at its own seconds: {span:?}"
@@ -158,9 +165,9 @@ fn f2_12_s5_an_over_card_eats_the_footage_it_covers() {
     let mut eaten = scene();
     eaten.segs.push(over_card(40.0, 45.0, "assets/tier.svg"));
     let y = head_px(&plain) + 20;
-    // 40..45 s at 2 px/s is x 80..90; sample the middle of the eaten stretch.
-    let kept = rgb(&painted(&plain).0, painted(&plain).1, 85, y);
-    let gone = rgb(&painted(&eaten).0, painted(&eaten).1, 85, y);
+    // 40..45 s; sample the middle of the eaten stretch.
+    let kept = rgb(&painted(&plain).0, painted(&plain).1, x_at(42.5), y);
+    let gone = rgb(&painted(&eaten).0, painted(&eaten).1, x_at(42.5), y);
     assert_ne!(
         gone, kept,
         "the same second reads differently once a card replaced it: {kept:?} -> {gone:?}"
@@ -174,11 +181,11 @@ fn f2_12_s5_an_over_card_eats_the_footage_it_covers() {
     );
     assert!(
         gone.0 < 240 && gone.2 < 240,
-        "darker than bare ground — the gap is painted: {gone:?}"
+        "not bare white — the gap is painted: {gone:?}"
     );
     // Footage outside the card is untouched by the card's presence.
-    let outside_kept = rgb(&painted(&plain).0, painted(&plain).1, 20, y);
-    let outside_gone = rgb(&painted(&eaten).0, painted(&eaten).1, 20, y);
+    let outside_kept = rgb(&painted(&plain).0, painted(&plain).1, x_at(10.0), y);
+    let outside_gone = rgb(&painted(&eaten).0, painted(&eaten).1, x_at(10.0), y);
     assert_eq!(
         outside_gone, outside_kept,
         "only the covered seconds changed"
@@ -199,8 +206,18 @@ fn f2_12_s5_a_spliced_card_leaves_the_footage_intact() {
         .segs
         .push(over_card(40.0, 45.0, "assets/tier.svg"));
     let y = head_px(&spliced_scene) + 20;
-    let splice_px = rgb(&painted(&spliced_scene).0, painted(&spliced_scene).1, 85, y);
-    let over_px = rgb(&painted(&over_scene).0, painted(&over_scene).1, 85, y);
+    let splice_px = rgb(
+        &painted(&spliced_scene).0,
+        painted(&spliced_scene).1,
+        x_at(42.5),
+        y,
+    );
+    let over_px = rgb(
+        &painted(&over_scene).0,
+        painted(&over_scene).1,
+        x_at(42.5),
+        y,
+    );
     assert_ne!(
         splice_px, over_px,
         "the same second must read differently for the two modes: splice {splice_px:?} over {over_px:?}"
@@ -208,10 +225,15 @@ fn f2_12_s5_a_spliced_card_leaves_the_footage_intact() {
     // And beside a spliced card the footage is exactly what it was with no card at all: the video grew by the
     // card's own seconds, the tape did not lose anything.
     let plain = scene();
-    let beside = rgb(&painted(&spliced_scene).0, painted(&spliced_scene).1, 20, y);
+    let beside = rgb(
+        &painted(&spliced_scene).0,
+        painted(&spliced_scene).1,
+        x_at(10.0),
+        y,
+    );
     assert_eq!(
         beside,
-        rgb(&painted(&plain).0, painted(&plain).1, 20, y),
+        rgb(&painted(&plain).0, painted(&plain).1, x_at(10.0), y),
         "footage elsewhere is intact"
     );
     // A spliced card also costs no band rows: it sits among the footage, unlike a lane.

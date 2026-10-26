@@ -30,10 +30,14 @@ fn session_tree() -> (Tree, std::path::PathBuf, std::path::PathBuf) {
     let dir = naivepost::startup::session_dir(&std::env::current_dir().unwrap());
     let tree = Tree::new(&dir).expect("the seeded session folder ends in .naivepost");
     let mut project = Project::default();
-    project.language = "pl".to_string();
+    project.policy.language.value = "pl".to_string();
+    // Narrator 1's recording, on disk: the take band's ▶ plays its seconds (§1 **8**).
+    std::fs::create_dir_all(dir.join("sources")).expect("sources/ made");
+    std::fs::write(dir.join("sources/take.mp4"), b"stub").expect("the recording written");
     project.sources.push(Source {
-        path: "/media/take.mp4".into(),
+        path: "project:sources/take.mp4".into(),
         footage: true,
+        narrator: 1,
         ..Default::default()
     });
     naivepost::project::save(&project, tree.dir()).expect("naivepost.json written");
@@ -105,9 +109,8 @@ fn run_round(app: &adw::Application) {
         playing: false,
         started: false,
         busy: false,
-        narration_off: false,
         covered_spans: vec![],
-        language: "pl".into(),
+        language: "pl".to_string(),
     });
     ui::refresh(&window);
     settle();
@@ -127,13 +130,8 @@ fn run_round(app: &adw::Application) {
     // selected-row handler resolves it through the same list the page drew and calls press_voice.
     picker.set_selected(3);
     settle();
-    // A stray `notify::selected` can land from the earlier seeding with the still-empty state and
-    // resolve to nothing; press the seam the picker fires, as the resolved row would, so the checked
-    // claim is the pick itself rather than one signal emission.
-    if read_voice_txt(&tree).is_empty() {
-        ui::press_voice(&window, "warm.wav");
-        settle();
-    }
+    // The pick alone: no fallback to the seam. The first version pressed `press_voice` itself when the
+    // dropdown's pick did not land, which would hide a picker that does nothing.
 
     assert_eq!(
         read_voice_txt(&tree),

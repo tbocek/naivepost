@@ -156,11 +156,7 @@ pub fn write_offsets(tree: &Tree, sources: &[Source]) -> Result<usize, String> {
     for (video, audio, offset) in &rows {
         out.push_str(&format!("{video}\t{audio}\t{offset:.2}\n"));
     }
-    let path = tree.offsets_tsv();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| format!("{}: {err}", parent.display()))?;
-    }
-    std::fs::write(&path, out.as_bytes()).map_err(|err| format!("{}: {err}", path.display()))?;
+    textfmt::write_rows_or_none(&tree.offsets_tsv(), &out)?;
     Ok(rows.len())
 }
 
@@ -551,12 +547,14 @@ pub fn write_fixed(
     let mut written = vec![tsv];
     if is_video {
         // The same writer the transcript step used, so both files carry §6's 0644 and one shape.
-        textfmt::write_rows(
+        textfmt::write_rows_or_none(
             &tree.subtitles_srt(source),
             &crate::transcribe::srt_text(lines),
         )?;
         written.push(tree.subtitles_srt(source));
     }
+    // Nothing heard, nothing written: neither file exists (§6), and the caller lists none.
+    written.retain(|file| file.exists());
     Ok(written)
 }
 
@@ -772,11 +770,7 @@ fn covers(mark: &Mark, row: &SessionLine) -> bool {
 
 /// S7: write `session.txt`.
 pub fn write_session_text(tree: &Tree, text: &str) -> Result<(), String> {
-    let path = tree.session_txt();
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| format!("{}: {err}", parent.display()))?;
-    }
-    std::fs::write(&path, text).map_err(|err| format!("{}: {err}", path.display()))
+    textfmt::write_rows_or_none(&tree.session_txt(), text)
 }
 
 /// What the whole step produced. `marked` is false when the policy said none or the pass failed — in
@@ -968,6 +962,8 @@ where
     // S7: the text the cut reads, which is also the text the user opens.
     let text = session_text(&rows, narrator, &marks);
     write_session_text(tree, &text)?;
-    out.files.push(tree.session_txt());
+    if tree.session_txt().exists() {
+        out.files.push(tree.session_txt());
+    }
     Ok(out)
 }

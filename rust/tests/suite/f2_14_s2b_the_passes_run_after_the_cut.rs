@@ -223,6 +223,11 @@ fn press_once(app: &adw::Application, switches: (bool, bool, bool)) -> Vec<Strin
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_by_name::<()>("clicked", &[]);
+    // Suggest asks on a worker (§03-shell §1, F2.14 "Where it runs"): the press lands when it answers.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+        "the suggest workers answered"
+    );
     settle();
     let added: Vec<String> = ui::window_logs()[logs_before..].to_vec();
     cut_suggest_land::point_session_at(None);

@@ -38,11 +38,12 @@ static RAN: AtomicBool = AtomicBool::new(false);
 /// allocation and a box's border can spill a pixel or two.
 const SLACK_PX: f64 = 4.0;
 
-/// §1's badges **10**-**13**, left to right: ▶, "I'm feeling lucky", ⏹, then the progress bar taking the
-/// row's free width. Badge 14/15 (the Inputs/Outputs readouts) come after them in the same row.
-const RUN_BUTTONS: [&str; 3] = ["play-button", "lucky-button", "stop-button"];
+/// §1's badges **10**, **12** and **13**, left to right: ▶, ⏹, then the progress bar taking the row's free
+/// width (badge 11, the prototype's "I'm feeling lucky", is gone). Badge 14/15 (the Inputs/Outputs readouts)
+/// come after them in the same row.
+const RUN_BUTTONS: [&str; 2] = ["play-button", "stop-button"];
 
-/// The row's children in §1's order and NOTHING else: the scrolling controls (▶ / lucky / ⏹), the bar that
+/// The row's children in §1's order and NOTHING else: the scrolling controls (▶ / ⏹), the bar that
 /// takes the free width, and the readouts at the right end. §2's list is the row's whole content — no gear,
 /// no pass buttons; those flows start from elsewhere.
 const ROW_CHILDREN: [&str; 3] = ["run-controls", "run-progress", "readout-row"];
@@ -121,7 +122,7 @@ fn s1_badges_10_to_15_are_drawn_in_the_run_bar_row(app: &adw::Application) {
         assert!(
             x >= previous_right - SLACK_PX,
             "{ITEM} §1: {name} starts at x={x:.0}, at or left of {previous_name}'s right edge \
-             ({previous_right:.0}) — §1's order is play, lucky, stop"
+             ({previous_right:.0}) — §1's order is play, stop"
         );
         inside_window(&window, name, x, w);
         previous_right = x + w;
@@ -262,9 +263,12 @@ fn s1_nothing_is_drawn_between_the_page_and_the_run_bar(app: &adw::Application) 
         to: f64,
         out: &mut Vec<String>,
     ) {
+        // The divider's own handle is §1's divider, not a stray: with the bar 8 px under it (§1's margins)
+        // it now sits inside the strip.
         if node.widget_name() != ""
             && node.widget_name() != "main-divider"
             && node.widget_name() != "bottom-bar"
+            && node.widget_name() != "GtkPanedHandle"
         {
             if let Some(b) = node.compute_bounds(window.upcast_ref::<gtk::Widget>()) {
                 let y = b.y() as f64;
@@ -386,7 +390,7 @@ fn child_names(widget: &gtk::Widget) -> Vec<String> {
         .collect()
 }
 
-/// §2's run bar holds EXACTLY what its list says: ▶ , "I'm feeling lucky" , ⏹ , the progress bar, then the
+/// §2's run bar holds EXACTLY what its list says: ▶ , ⏹ , the progress bar, then the
 /// Inputs readout, the "Outputs:" label, the folder button and the count. Nothing else may sit in that row — a
 /// control no section places there is what this check exists to catch (the editing-policy ⚙ and the three F3.x
 /// pass buttons once did, clipped to "Cap…" in the rendered shot). Checked on the Cut page, where those four
@@ -401,14 +405,14 @@ fn s1_the_run_bar_holds_only_what_section_two_lists(app: &adw::Application) {
         vec!["run-controls", "run-progress", "readout-row"],
         "{ITEM} §1/§2: the run-bar row holds something §2 does not list"
     );
-    // (b) inside the scroller: the three transport badges alone.
+    // (b) inside the scroller: the two transport badges alone.
     assert_eq!(
         child_names(
             &common::widget_in(&window, "run-controls-inner")
                 .expect("the controls sit in their scrolling box")
         ),
-        vec!["play-button", "lucky-button", "stop-button"],
-        "{ITEM} §2: the run bar's controls are not exactly \u{25b6} , lucky, \u{23f9}"
+        vec!["play-button", "stop-button"],
+        "{ITEM} §2: the run bar's controls are not exactly \u{25b6} , \u{23f9}"
     );
     // (c) the readouts at the row's right end, in §1's order.
     assert_eq!(
@@ -442,7 +446,7 @@ fn s1_the_run_bar_holds_only_what_section_two_lists(app: &adw::Application) {
 /// present in the tree. Every order check above compares one badge's box with the next badge's box, so a badge
 /// pushed sideways OUT of its scroller by content too wide for it passes all of them — GTK reports the box it
 /// gave the button inside the scrollable's own (wider) canvas, and `find_widget_by_name` walks the tree, so the
-/// rendered row showed ▶, "I'm feeling lucky" and the progress track with no ⏹ at all while the whole suite
+/// rendered row showed ▶, the prototype's gears and the progress track with no ⏹ at all while the whole suite
 /// stayed green. This is the check that measures the clip itself.
 fn s12_the_stop_button_is_drawn_inside_its_scroller(app: &adw::Application) {
     let window = minimum_window(app, "Prepare");

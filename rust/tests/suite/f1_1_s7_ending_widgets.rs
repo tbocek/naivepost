@@ -211,7 +211,6 @@ fn check_a_press_ends_on_screen(app: &adw::Application) {
         sources: vec![footage("project:sources/take.mkv")],
         // The frame interval the describe stage reads; stated rather than defaulted so this session
         // does not change if a parameter round retunes `Project::default()`.
-        interval: 1.0,
         ..Project::default()
     };
     let window = ui::build_window(app, &model, "Prepare");
@@ -221,6 +220,11 @@ fn check_a_press_ends_on_screen(app: &adw::Application) {
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_clicked();
+    // Prepare's ▶ hands its walk to a worker (§03-shell §1); its lines and ending land on the poll.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
 
     // The ending is read from the log, where `say_ending` writes it: the bar's own copy is emptied
     // again by §S4's close (`runqueue::end_run` clears `status`), and the label ends up carrying the
@@ -311,6 +315,11 @@ fn check_a_failing_press_ends_with_its_reason(app: &adw::Application) {
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_clicked();
+    // Prepare's ▶ hands its walk to a worker (§03-shell §1); its lines and ending land on the poll.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
 
     // Same reading as the check above: the log is where §S7's ending is readable after the press, since
     // §S4's close empties `bar.status` and the row ends up carrying the queue's line.

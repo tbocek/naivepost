@@ -18,9 +18,14 @@ fn project_round_trip() {
             sepvoice: true,
             tracks: vec![0, 1],
         }],
-        interval: 0.25,
-        language: "de".to_string(),
-        no_narration: true,
+        policy: naivepost::project::Policy {
+            language: naivepost::project::Field {
+                value: "de".to_string(),
+                origin: Default::default(),
+                because: None,
+            },
+            ..Default::default()
+        },
         reference_sources: true,
         context: "a lecture with two cameras".to_string(),
         ..Default::default()
@@ -43,9 +48,7 @@ fn empty_project_file_holds_the_spec_defaults() {
     let loaded = project::load(&dir).expect("load");
     std::fs::remove_dir_all(&dir).ok();
 
-    assert_eq!(loaded.interval, 1.0);
-    assert_eq!(loaded.language, "en");
-    assert!(!loaded.no_narration);
+    assert_eq!(loaded.policy.language.value, "en");
     assert!(!loaded.reference_sources);
     assert_eq!(loaded.context, "");
     assert!(loaded.sources.is_empty());

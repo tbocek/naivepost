@@ -13,7 +13,7 @@ use crate::{cut_play, tools, ui};
 pub const PLAY_LABEL: &str = crate::cut_screen::PLAY_GLYPH_CUT;
 /// Inventory §D's three-▶ rule: "each wears ⏸ only while its thing runs". The run bar's ▶ takes its icon
 /// from `run::controls`; this button belongs to the cut preview, so its face changes here and nowhere else.
-pub const PAUSE_LABEL: &str = "\u{23f8} Pause the cut";
+pub const PAUSE_LABEL: &str = "\u{23f8}\u{2702}";
 
 /// Paint the button from the page's state: S1's grey and the ⏸ face, both read rather than remembered.
 ///
@@ -34,11 +34,16 @@ pub fn paint(window: &adw::ApplicationWindow) {
             cut_only: player.cut_only,
             reviewing: player.reviewing,
         });
-    button.set_label(if ours_lit && player.transport.playing {
-        PAUSE_LABEL
-    } else {
-        PLAY_LABEL
-    });
+    crate::ui::cut_record_play::set_steady_label(
+        &button,
+        if ours_lit && player.transport.playing {
+            PAUSE_LABEL
+        } else {
+            PLAY_LABEL
+        },
+        &[PLAY_LABEL, PAUSE_LABEL],
+    );
+    crate::ui::cut_record_play::light_lit(window);
 }
 
 /// Paint BOTH skipping buttons — ▶✂ and ▶✂✂ — from this window's cut. They read the same cut slot, and the
@@ -60,6 +65,10 @@ pub fn paint_both_skipping_buttons(window: &adw::ApplicationWindow) {
 /// take no window: the leg's slots are process-wide, for `play_back`'s reason — a child outlives the call
 /// that started it.
 pub fn preroll_spare(window: &adw::ApplicationWindow, at: f64) -> bool {
+    // The built-in player seeks within its pipeline instead of holding a second process at the join.
+    if crate::play_built_in::in_use() {
+        return false;
+    }
     let files = ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now());
     crate::cut_play_back::preroll(&files, at, &|line| log_line(line)).is_ok()
 }
@@ -67,6 +76,10 @@ pub fn preroll_spare(window: &adw::ApplicationWindow, at: f64) -> bool {
 /// The join arrived and the spare was sitting on it: swap it in. Answers whether one was there to swap.
 pub fn swap_spare(window: &adw::ApplicationWindow) -> bool {
     let _ = window;
+    // No spare with the built-in player: the line's jump is followed by a seek (`cut_picture::refresh`).
+    if crate::play_built_in::in_use() {
+        return false;
+    }
     crate::cut_play_back::swap_spare_in(&|line| log_line(line)).is_some()
 }
 
@@ -77,6 +90,13 @@ pub fn release_spare() {
 
 /// S5 "stops show their still": freeze the running player's frame, or release it.
 pub fn freeze(hold: bool) -> bool {
+    if crate::play_built_in::in_use() && crate::play_built_in::file().is_some() {
+        return if hold {
+            crate::play_built_in::pause()
+        } else {
+            crate::play_built_in::resume()
+        };
+    }
     crate::cut_play_back::hold_still(hold)
 }
 
@@ -84,11 +104,16 @@ pub fn freeze(hold: bool) -> bool {
 /// a prerolled pipeline is a process holding a file for a jump that will now never happen.
 pub fn pause_media() {
     crate::cut_play_back::halt();
+    crate::play_built_in::pause();
 }
 
 /// S5 "speed effects at their flat rate", handed to the player at the head. What the player's argv can and
 /// cannot do about a rate is [`crate::cut_play_back::set_rate`]'s honest answer, not this door's.
 pub fn hand_rate(window: &adw::ApplicationWindow, rate: f64, at: f64) -> bool {
+    // The built-in player takes a rate as it plays (a flushing seek that carries it).
+    if crate::play_built_in::in_use() && crate::play_built_in::file().is_some() {
+        return crate::play_built_in::set_rate(rate);
+    }
     let files = ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now());
     crate::cut_play_back::set_rate(&files, rate, at, &|line| log_line(line))
 }
@@ -110,7 +135,7 @@ pub fn hand_gain(window: &adw::ApplicationWindow, gain: f64, at_secs: f64) {
     // the press is what starts this process), so a gain arriving while nothing plays must not cue a player nobody
     // asked for. It would also re-cue at the second the gain was named in rather than at the second ▶ chose,
     // which is how a parked line once moved the red line's `-s` by a tenth of a second.
-    if crate::play_back::playing_pid().is_some() {
+    if crate::play_back::running() {
         crate::play_back::set_volume(gain, at_secs);
     }
 }
@@ -125,10 +150,16 @@ pub fn hand_gain(window: &adw::ApplicationWindow, gain: f64, at_secs: f64) {
 /// out. A player that will not start is logged and answered `false`; the tick's arithmetic and every other
 /// preview rule are unaffected, which is the "carry on elsewhere" half of §0 (F2.1's cue door says the same).
 pub fn cue_running(window: &adw::ApplicationWindow, at: f64) -> bool {
-    let cued = cue_files(
-        &ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now()),
-        at,
-    );
+    let cued = if crate::play_built_in::in_use() {
+        // The built-in player: the scene's recording at `at`, in the preview's own picture.
+        crate::cut_play_back::halt();
+        ui::cut_record_play::play_in_preview(window, at, true)
+    } else {
+        cue_files(
+            &ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now()),
+            at,
+        )
+    };
     // §05-cut#8 bullet 2: the log carries the reason (`cue_files` already wrote it) and the status row says
     // where to find it. Both halves, because a status that reads "playback failed" without a reason and a
     // reason nobody was told about are the same failure twice over.

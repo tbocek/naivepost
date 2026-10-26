@@ -52,7 +52,6 @@ pub fn load_for_launch(path: &Path) -> (project::Project, Vec<String>) {
         crate::sources::clean_on_load(&mut project, &mut report);
         // …and the seating for the load whose OWN drop emptied slot 1 — the same second door `apply` opens,
         // so neither way of taking a project on can leave a session with no narrator.
-        crate::sources::fill_after_load(&mut project, &mut report);
     }
     (project, report)
 }
@@ -109,7 +108,9 @@ pub fn open_at_start(app: &adw::Application, handed: &[PathBuf]) {
         named => load_for_launch(named.path()),
     };
     // "" is Prepare, the page a session always starts on (§1).
-    ui::build_window(app, &project, "").present();
+    // The folder the decision named is the one this window works on (a remembered project elsewhere, or
+    // the working copy beside the root): `build_window_at` makes it every step's folder.
+    ui::window::build_window_at(app, &project, "", opened.path()).present();
     // S2 has to have something to find next time: record what THIS launch opened against this root.
     let remembered = remember_launch(paths.as_ref(), &conf, &root, &opened);
     // §7's other launch job: register with the desktop unless this run is a build cache or a Flatpak,

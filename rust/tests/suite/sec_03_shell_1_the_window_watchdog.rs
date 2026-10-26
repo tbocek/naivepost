@@ -127,10 +127,44 @@ fn sec_03_shell_1_the_window_s10_a_dump_names_the_stalled_thread_its_pid_and_its
     );
     // Whole seconds print plain, the way §7's other dump spells them.
     assert!(watchdog::dump_body(Duration::from_secs(4), 1, "").contains("4s"));
-    // The real capture is not empty: a dump of this process has frames in it.
+}
+
+/// §1's "every goroutine's stack": the dump lists EVERY thread of the process, not the watcher's own. A
+/// thread parked under a known name stands in for the hung GTK thread: it must be named, with its state
+/// and the kernel call it waits in, and the main thread (the GTK thread in the app) must be marked. The
+/// first port captured only the watcher's own backtrace, five lines that named no hang.
+#[test]
+fn sec_03_shell_1_the_window_s10_a_dump_lists_every_thread() {
+    let (park, parked) = std::sync::mpsc::channel::<()>();
+    let (ready, is_ready) = std::sync::mpsc::channel::<u32>();
+    let held = std::thread::Builder::new()
+        .name("np-parked".into())
+        .spawn(move || {
+            // SAFETY: gettid has no arguments and cannot fail.
+            ready.send(unsafe { libc::gettid() } as u32).unwrap();
+            let _ = parked.recv();
+        })
+        .expect("a thread to park");
+    let tid = is_ready.recv().expect("the parked thread's tid");
+
+    let dump = watchdog::stacks();
+
+    park.send(()).unwrap();
+    held.join().unwrap();
+    let line = dump
+        .lines()
+        .find(|line| line.starts_with(&format!("tid {tid} (np-parked)")))
+        .unwrap_or_else(|| panic!("§1: the parked thread is in the dump:\n{dump}"));
     assert!(
-        watchdog::stacks().len() > 20,
-        "a captured backtrace has something in it"
+        line.contains(" S waiting in "),
+        "§1: its state and wait are named: {line}"
+    );
+    let pid = std::process::id();
+    assert!(
+        dump.lines()
+            .any(|line| line.starts_with(&format!("tid {pid} "))
+                && line.ends_with("<- the gtk thread")),
+        "§1: the main thread is marked as the gtk thread:\n{dump}"
     );
 }
 

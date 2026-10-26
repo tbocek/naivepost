@@ -118,11 +118,29 @@ fn seed_live_cut(window: &adw::ApplicationWindow) {
     ui::produce_page::set_state(page);
 }
 
-/// Fire one named button and read the status line back — the same seam `produce_presses_widgets.rs` presses.
-fn press(window: &adw::ApplicationWindow, name: &str) -> String {
+/// Click a button that opens a save dialog (§08 items 6 and 10): the REAL dialog must be raised (counted by its
+/// opener), then it is answered through the door its response calls, and the walk lands before the status is read.
+fn press_answering(
+    window: &adw::ApplicationWindow,
+    name: &str,
+    which: &str,
+    answer: impl FnOnce(&adw::ApplicationWindow),
+) -> String {
+    let asked = ui::produce_choosers::asks_for_test(which);
     let button = ui::line_step_button(window, name)
         .unwrap_or_else(|| panic!("the page drew no widget named {name}"));
     button.emit_by_name::<()>("clicked", &[]);
+    settle();
+    assert_eq!(
+        ui::produce_choosers::asks_for_test(which),
+        asked + 1,
+        "{name} raised its {which} dialog"
+    );
+    answer(window);
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the answer's worker answered"
+    );
     settle();
     ui::find_status(window.upcast_ref())
         .expect("the window has a status line")
@@ -324,7 +342,9 @@ fn check_export_button(_root: &Path) {
     // The refusal still comes first: with no picture on disk the button names both ways out.
     let window = produce_window(&app_in_round());
     seed_live_cut(&window);
-    let said = press(&window, "thumbnail-export");
+    let said = press_answering(&window, "thumbnail-export", "export", |w| {
+        ui::produce_choosers::answer_export(w, &ui::produce_press_wiring::offered_export_name());
+    });
     assert_eq!(
         said,
         runs::EXPORT_NO_PICTURE,
@@ -336,9 +356,9 @@ fn check_export_button(_root: &Path) {
 
 // ---- S7: the copy goes where the door says ---------------------------------------
 
-/// The copy's destination is the path the save door answered, so the copy lands OUTSIDE the project, where
-/// a person actually points a save dialog. The door is the chooser's seam; the page's Change… stand-in is the
-/// same pattern (`produce_slots::next_stood_in`).
+/// The copy's destination is the path the save dialog answered, so the copy lands OUTSIDE the project, where
+/// a person actually points a save dialog. The button raises the real dialog; its answer is given through the
+/// door the dialog's response calls (`produce_choosers::answer_save_video`).
 fn check_save_uses_the_door(root: &Path) {
     let tree = session(root);
     let video = tree.final_video("mp4");
@@ -346,11 +366,12 @@ fn check_save_uses_the_door(root: &Path) {
     std::fs::write(&video, vec![3u8; 9000]).expect("a rendered video to copy");
     let chosen = root.join("elsewhere/my-cut.mp4");
     std::fs::create_dir_all(chosen.parent().unwrap()).expect("the chosen folder");
-    ui::produce_press_wiring::answer_path(Some(chosen.to_string_lossy().as_ref()));
-
     let window = produce_window(&app_in_round());
     seed_live_cut(&window);
-    let said = ui::produce_page::press_save_video_from_button(&window);
+    let picked = chosen.to_string_lossy().to_string();
+    let said = press_answering(&window, "transcode-save", "save-video", |w| {
+        ui::produce_choosers::answer_save_video(w, &picked);
+    });
     assert!(said.starts_with("saved "), "the confirm line: {said:?}");
     assert!(
         said.contains(chosen.to_string_lossy().as_ref()),
@@ -362,13 +383,12 @@ fn check_save_uses_the_door(root: &Path) {
         video.is_file(),
         "the render's own output stays where ▶ wrote it"
     );
-    ui::produce_press_wiring::answer_path(None);
     window.close();
     settle();
 }
 
-/// Nobody answered the dialog: the copy still goes somewhere, under the door's own offer —
-/// `<project>.<container>` for whatever the Container row says.
+/// The dialog accepted as it opens: the copy goes under the page's own offer, `<project>.<container>` for
+/// whatever the Container row says.
 fn check_save_default_name(root: &Path) {
     let tree = session(root);
     let video = tree.final_video("mp4");
@@ -383,7 +403,14 @@ fn check_save_default_name(root: &Path) {
         runs::save_default("session", Container::Mp4),
         "the offer is the project name and the row's container"
     );
-    let said = ui::produce_page::press_save_video_from_button(&window);
+    let offer = tree
+        .produce_dir()
+        .join(ui::produce_press_wiring::offered_save_name())
+        .display()
+        .to_string();
+    let said = press_answering(&window, "transcode-save", "save-video", |w| {
+        ui::produce_choosers::answer_save_video(w, &offer);
+    });
     assert!(said.starts_with("saved "), "{said:?}");
     assert!(
         said.contains("session.mp4"),

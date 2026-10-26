@@ -32,7 +32,7 @@ use naivepost::ui;
 type Poster = Rc<dyn Fn(&[String]) -> Result<(), String>>;
 
 /// The argv the scripted spawner was handed, one entry per spawned command.
-type SpawnedArgv = Rc<RefCell<Vec<Vec<String>>>>;
+type SpawnedArgv = std::sync::Arc<std::sync::Mutex<Vec<Vec<String>>>>;
 
 /// The same record one step deeper: which walk step wrote which argv.
 type SpawnedSteps = Rc<RefCell<Vec<(String, Vec<String>)>>>;
@@ -120,8 +120,8 @@ fn seed_page(_window: &adw::ApplicationWindow) {
 /// The scripted spawner, plus the argv it was handed: no ffmpeg here, and §3's claim about the join is only
 /// checkable if the commands the walk issued are remembered.
 fn scripted_spawn(seen: SpawnedArgv) -> naivepost::produce_translate::SpawnSlot {
-    Rc::new(move |command: &naivepost::produce_exec::Command| {
-        seen.borrow_mut().push(command.argv.clone());
+    std::sync::Arc::new(move |command: &naivepost::produce_exec::Command| {
+        seen.lock().unwrap().push(command.argv.clone());
         if let Some(out) = command.argv.last() {
             let path = Path::new(out);
             if let Some(dir) = path.parent() {
@@ -191,7 +191,7 @@ fn check_press_writes_what_the_catalogue_lists(root: &Path) {
     let stale = tree.clips_dir().join("joined.mp4");
     std::fs::create_dir_all(tree.clips_dir()).unwrap();
     std::fs::write(&stale, b"an older render's join").unwrap();
-    let seen = Rc::new(RefCell::new(Vec::new()));
+    let seen: SpawnedArgv = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     naivepost::produce_translate::set_spawn_for_test(scripted_spawn(seen.clone()));
 
     let window = produce_window(&app_in_round());
@@ -200,6 +200,11 @@ fn check_press_writes_what_the_catalogue_lists(root: &Path) {
     let button =
         ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
     button.emit_by_name::<()>("clicked", &[]);
+    // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     common::settle();
 
     let logs = ui::window::window_logs();
@@ -255,7 +260,7 @@ fn check_press_writes_what_the_catalogue_lists(root: &Path) {
         b"an older render's join",
         "§6's sweep cleared the leftover before the run wrote its own join"
     );
-    let commands = seen.borrow();
+    let commands = seen.lock().unwrap();
     assert!(
         commands
             .iter()

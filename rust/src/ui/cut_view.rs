@@ -17,19 +17,15 @@ use crate::ui::window::find_widget_by_name;
 use crate::{cut_screen, timeline, ui::cut_folds};
 
 /// One screenful of drag on the scrollbar (§1: "thumb geared at high zoom so one screenful is always
-/// 40 px of drag"). It is a DRAG distance, not the thumb's length: dragging the thumb by its own length
-/// moves the view by exactly one screenful, so `drag = thumb * total / view`, and solving for the thumb
-/// that makes that 40 gives `40 * view / total`. That is why the thumb shrinks as the session grows:
-/// the same 40 px of hand travel always crosses the same screenful, at any zoom.
+/// 40 px of drag"). It is a DRAG distance, not the thumb's length: the thumb is the view's share of the
+/// tape, as on any scrollbar, and GTK's own drag moves `total / bar` tape pixels per pixel. Once that
+/// crosses a screenful in less than 40 px (a long session zoomed in), the drag is geared instead, so 40 px
+/// of hand travel always crosses one screenful ([`drag_gear`], the prototype's `cut_scrollgear.go`).
 pub const DRAG_PER_SCREENFUL_PX: f64 = 40.0;
 
-/// GTK refuses a page smaller than 1 % of the bar (`gtk_adjustment_new` clamps `page_size` below
-/// `upper / 100`), which is the floor the thumb gets here rather than an invented minimum.
-const THUMB_FLOOR_RATIO: f64 = 0.01;
-
 thread_local! {
-    /// The band's pixels-per-second, seeded at the open zoom. `window.rs`'s `PREVIEW_PPS` stays the
-    /// placeholder strip's own number so F2.8's press geometry does not move; the real band reads this.
+    /// The band's pixels-per-second, seeded at the open zoom: the one zoom the band paints with, and the one the
+    /// toolbar's −/+ and the wheel both step.
     static PPS: std::cell::Cell<f64> = const { std::cell::Cell::new(cut_screen::ZOOM_AT_OPEN) };
     /// The left edge of the view, in timeline pixels from the start of the gutter.
     static ORIGIN: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
@@ -194,9 +190,12 @@ pub fn view_px(surface_width: f64) -> f64 {
     (surface_width - gutter_px()).max(0.0)
 }
 
-/// Clamp a scroll position into what exists: never left of the gutter, never past the last pixel.
+/// Clamp a scroll position into what exists: never left of the gutter, never past the last pixel. `total`
+/// counts the pinned gutter in front of the film and `view` does not (it is the band minus that gutter), so the
+/// film's own length is what is weighed against the view; weighing the gutter too let a scroll run one gutter
+/// past the last second.
 fn clamp_origin(px: f64, total: f64, view: f64) -> f64 {
-    px.clamp(0.0, (total - view).max(0.0))
+    px.clamp(0.0, (total - gutter_px() - view).max(0.0))
 }
 
 /// Set the scroll position, clamped to the timeline's own ends.
@@ -208,29 +207,27 @@ pub fn set_origin(px: f64, total: f64, view: f64) -> f64 {
 
 /// Does the whole session fit? When it does the scrollbar hides itself (§A: "hidden when everything
 /// fits") — a bar with a full-width thumb says nothing except that there is room to the right.
+///
+/// The film (`total` without the pinned gutter it counts) against the view (the band without that gutter): at
+/// the − floor the session exactly fills the view, so it fits and the bar hides. The first rewrite weighed the
+/// gutter on one side only, so the bar stayed up at the floor with a gutter's width to scroll.
 pub fn fits(total: f64, view: f64) -> bool {
-    total <= view
+    total - gutter_px() <= view + 1e-9
 }
 
-/// The thumb's fraction of the bar (§B: "thumb geared at high zoom"). See [`DRAG_PER_SCREENFUL_PX`]
-/// for the arithmetic: the bar is `bar_px` long and crossing one screenful must cost 40 px of it, so the
-/// thumb is `40 / bar_px` of the bar. GTK wants that fraction as the adjustment's `page_size`, whose own
-/// length is `fraction * upper` — hence [`paint_scrollbar`] multiplies it by the VIEW, not by `total`.
-pub fn thumb_geared(_total: f64, bar_px: f64) -> f64 {
-    if bar_px <= 0.0 {
-        return 1.0;
+/// Tape pixels one pixel of thumb drag moves when the drag is geared, or `None` while GTK's own drag
+/// already costs at least [`DRAG_PER_SCREENFUL_PX`] per screenful (§1's gear engages at high zoom only).
+/// `bar_px` is the bar's length; GTK's own drag moves `total / bar_px` per pixel.
+pub fn drag_gear(total: f64, view: f64, bar_px: f64) -> Option<f64> {
+    if bar_px <= 0.0 || view <= 0.0 {
+        return None;
     }
-    (DRAG_PER_SCREENFUL_PX / bar_px).clamp(THUMB_FLOOR_RATIO, 1.0)
-}
-
-/// The thumb's on-screen length in pixels — 40 px, which is the whole point of the gear.
-pub fn thumb_px(_total: f64, bar_px: f64) -> f64 {
-    thumb_geared(0.0, bar_px) * bar_px
+    let geared = view / DRAG_PER_SCREENFUL_PX;
+    (total / bar_px > geared).then_some(geared)
 }
 
 /// Pan by an eighth of the view (§A's Shift+wheel and a trackpad swipe). Delegates so the fraction is
-/// spelled once, in `cut_screen::pan_px`. Nothing converts the thumb to a drag distance: dragging the
-/// thumb by its own length moves one screenful, so [`thumb_px`] IS the 40 px §1 asks for.
+/// spelled once, in `cut_screen::pan_px`.
 pub fn pan_eighth(view: f64) -> f64 {
     cut_screen::pan_px(view)
 }
@@ -248,13 +245,18 @@ pub fn zoom_step(inward: bool, runs: &[(f64, f64)], total: f64, view: f64) -> (f
     // Zoom about the MIDDLE of the view (§A: the buttons "zoom about the view centre"), so pressing −
     // does not jump to the start of the session. The anchor has to be read at the OLD zoom, which is why
     // the step is computed before `set_pps` and handed over as a factor.
-    let centre = origin() + view / 2.0;
+    let centre = view / 2.0;
+    // Step from the zoom the band is drawn at. + never stops under the fit (from a stored zoom below it, the
+    // first press goes straight to the fit); − never WIDENS the tape: a band already showing the whole session
+    // at less than the fit stays where it is, and the press says the session is on screen.
+    let current = pps().min(cut_screen::ZOOM_MAX);
+    let lowest = if inward { floor } else { floor.min(current) };
     let (next, scrolled) = cut_screen::zoom_around(
-        pps(),
-        next_of(pps(), inward, floor) / pps(),
+        current,
+        next_of(current, inward, lowest) / current,
         centre,
         origin(),
-        floor,
+        lowest,
     );
     set_pps(next);
     (next, set_origin(scrolled, total, view))
@@ -283,10 +285,17 @@ pub fn zoom_around(
     let floor = timeline::floor_pps(runs, view);
     // The anchor arrives in PAGE pixels (where the pointer actually was). `origin()` scrolls the
     // TIMELINE, whose first pixel sits after the pinned gutter, so the second under the pointer is
-    // `(anchor - gutter - origin) / pps` and the scroll back has to be solved in that same space.
-    let time = (anchor_x - gutter_px() - origin()) / pps();
-    let next = (pps() * factor).clamp(floor, cut_screen::ZOOM_MAX);
-    let scrolled = (anchor_x - gutter_px() - time * next).max(0.0);
+    // `(anchor - gutter + origin) / pps` and the scroll back has to be solved in that same space.
+    // From the drawn zoom, as [`zoom_step`] steps: one scale and one floor for the buttons and the wheel, and a
+    // zoom out never widens a tape already narrower than the fit.
+    let current = pps().min(cut_screen::ZOOM_MAX);
+    let lowest = if factor < 1.0 {
+        floor.min(current)
+    } else {
+        floor
+    };
+    let (next, scrolled) =
+        cut_screen::zoom_around(current, factor, anchor_x - gutter_px(), origin(), lowest);
     // `set_pps` FIRST: the clamped scroll below is measured at the zoom it leaves behind, and reading a
     // stale one here is how a zoom "keeps" a second that has already moved.
     set_pps(next);
@@ -330,14 +339,55 @@ pub fn apply_wheel<S: Fn(i64)>(
 ) -> Option<String> {
     // A Shift notch pans an eighth of the view the tape is drawn on, so `cut_screen::wheel` gets the page's own
     // width; the zoom branch below re-reads it over the strip, which is where the ladder's floor lives.
+    apply_wheel_at(window, over, shift, dy, dx, 0.0, on_step)
+}
+
+/// [`apply_wheel`] with the pointer's x on the band (page pixels), so a zoom keeps the second under the
+/// cursor where it is (§1: "over the tracks it zooms around the cursor"); 0.0 means no pointer is known.
+pub fn apply_wheel_at<S: Fn(i64)>(
+    window: &adw::ApplicationWindow,
+    over: cut_screen::WheelOver,
+    shift: bool,
+    dy: f64,
+    dx: f64,
+    pointer_x: f64,
+    on_step: S,
+) -> Option<String> {
     let view = wheel_gestures_view(window);
     match cut_screen::wheel(over, shift, dy, dx, view) {
         cut_screen::Wheel::StepFrames { frames } => {
             on_step(frames);
             None
         }
+        cut_screen::Wheel::Zoom { factor, .. } => apply_wheel_result(
+            window,
+            cut_screen::Wheel::Zoom {
+                factor,
+                at_x: pointer_x,
+            },
+        ),
         action => apply_wheel_result(window, action),
     }
+}
+
+/// Where the pointer was over `widget` when the scroll that woke `ctrl` happened, in `widget`'s own pixels:
+/// the scroll event's own position when it carries one, else where `hovered` last saw the pointer (GDK's X11
+/// backend hands a wheel notch over with no position at all), else 0.0.
+fn pointer_x_on(ctrl: &gtk::EventControllerScroll, widget: &gtk::Widget, hovered: f64) -> f64 {
+    let (Some(event), Some(native)) = (ctrl.current_event(), widget.native()) else {
+        return hovered;
+    };
+    let Some((x, y)) = event.position() else {
+        return hovered;
+    };
+    let (sx, sy) = native.surface_transform();
+    native
+        .compute_point(
+            widget,
+            &gtk::graphene::Point::new((x - sx) as f32, (y - sy) as f32),
+        )
+        .map(|point| f64::from(point.x()))
+        .unwrap_or(0.0)
 }
 
 /// The three wheel gestures of §1, attached to the widgets they belong to.
@@ -380,6 +430,14 @@ pub fn attach_wheel<S>(
         let controller =
             gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::BOTH_AXES);
         controller.set_name(Some(&format!("wheel-{name}")));
+        // Where the pointer last stood over this ground, for a notch that arrives without a position.
+        let hovered = std::rc::Rc::new(std::cell::Cell::new(0.0_f64));
+        let motion = gtk::EventControllerMotion::new();
+        let seen = hovered.clone();
+        motion.connect_motion(move |_, x, _| seen.set(x));
+        let seen = hovered.clone();
+        motion.connect_enter(move |_, x, _| seen.set(x));
+        widget.add_controller(motion);
         let win = window.clone();
         let step = on_step.clone();
         controller.connect_scroll(move |ctrl, dx, dy| {
@@ -391,7 +449,13 @@ pub fn attach_wheel<S>(
                 .contains(gtk::gdk::ModifierType::SHIFT_MASK);
             let step2 = step.clone();
             let for_step = win.clone();
-            apply_wheel(&win, over, shift, dy, dx, move |frames| {
+            // The band is the tape itself, so its pixels are the page pixels a zoom anchors at; any other
+            // ground zooms about the middle.
+            let at = match ctrl.widget() {
+                Some(widget) if name == "track-band" => pointer_x_on(ctrl, &widget, hovered.get()),
+                _ => 0.0,
+            };
+            apply_wheel_at(&win, over, shift, dy, dx, at, move |frames| {
                 step2(&for_step, frames)
             });
             glib::Propagation::Stop
@@ -432,8 +496,9 @@ fn apply_wheel_result(
     let said = match action {
         cut_screen::Wheel::StepFrames { .. } => None,
         cut_screen::Wheel::Zoom { factor, at_x } => {
+            // `at_x` is the pointer on the band, in page pixels; 0.0 (no pointer known) zooms about the middle.
             let anchor = if at_x == 0.0 {
-                origin() + view / 2.0 + gutter_px()
+                view / 2.0 + gutter_px()
             } else {
                 at_x
             };
@@ -492,20 +557,19 @@ thread_local! {
     static BAR_WIDTH: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
 }
 
-/// Repaint the bar from the view: upper is the whole timeline, the page is the geared thumb (exactly
-/// [`DRAG_PER_SCREENFUL_PX`] px of bar, floored at what GTK will draw), the step is an eighth of the
-/// screenful, and the bar disappears when everything already fits.
+/// Repaint the bar from the view: upper is the whole timeline, the page (the thumb) is the view, the step
+/// an eighth of it, and the bar disappears when everything already fits. The bar's OWN adjustment is
+/// re-stated rather than replaced: [`attach_scrollbar`] listens on it, and a fresh adjustment per repaint
+/// left that listener on the first one, so dragging the thumb moved nothing.
 pub fn paint_scrollbar(bar: &gtk::Scrollbar, total: f64, view: f64) {
-    let thumb_fraction = thumb_geared(total, bar_width(bar));
-    let adjustment = gtk::Adjustment::new(
+    bar.adjustment().configure(
         origin(),
         0.0,
         total.max(view),
         pan_eighth(view),
+        view * 0.9,
         view,
-        view * thumb_fraction,
     );
-    bar.set_adjustment(Some(&adjustment));
     bar.set_visible(!fits(total, view));
 }
 
@@ -613,8 +677,40 @@ pub fn attach_scrollbar(window: &adw::ApplicationWindow) {
     let adjustment = bar.adjustment();
     let win = window.clone();
     on_scroll_changed(&adjustment, move |value| {
+        // A repaint re-states the value it already holds; only a real move scrolls.
+        if (value - origin()).abs() < 0.5 {
+            return;
+        }
         let view = view_px(surface_width(&win));
         set_origin(value, total_px(filmed_seconds(), pps()), view);
         repaint_page(&win);
     });
+    // §1's gear: a press on the bar claims the drag only while GTK's own drag would cross a screenful in
+    // under 40 px, and then moves the view `view / 40` per pixel from where the press found it.
+    let gear = gtk::GestureDrag::new();
+    gear.set_propagation_phase(gtk::PropagationPhase::Capture);
+    let pressed_at: std::rc::Rc<std::cell::Cell<Option<f64>>> = Default::default();
+    let (held, win, measured) = (pressed_at.clone(), window.clone(), bar.clone());
+    gear.connect_drag_begin(move |gesture, _x, _y| {
+        let (total, view) = extents(surface_width(&win));
+        if drag_gear(total, view, bar_width(&measured)).is_some() {
+            held.set(Some(origin()));
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+        } else {
+            held.set(None);
+            gesture.set_state(gtk::EventSequenceState::Denied);
+        }
+    });
+    let (held, win, measured) = (pressed_at, window.clone(), bar.clone());
+    gear.connect_drag_update(move |_gesture, dx, _dy| {
+        let Some(from) = held.get() else {
+            return;
+        };
+        let (total, view) = extents(surface_width(&win));
+        if let Some(per_px) = drag_gear(total, view, bar_width(&measured)) {
+            set_origin(from + dx * per_px, total, view);
+            repaint_page(&win);
+        }
+    });
+    bar.add_controller(gear);
 }

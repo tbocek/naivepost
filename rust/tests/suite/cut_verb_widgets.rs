@@ -61,13 +61,22 @@ fn check_the_verb_buttons_reach_the_rule(app: &adw::Application) {
     let remove_ = button(&window, "remove-button");
     println!(
         "BUTTONS add={:?} split={:?} remove={:?}",
-        add_.label(),
-        split_.label(),
-        remove_.label()
+        add_.icon_name(),
+        split_.icon_name(),
+        remove_.icon_name()
     );
-    assert_eq!(add_.label().as_deref(), Some("\u{ff0b} Add"));
-    assert_eq!(split_.label().as_deref(), Some("| Split"));
-    assert_eq!(remove_.label().as_deref(), Some("\u{ff0d} Remove"));
+    // The prototype's icons (inventory §A group 4), each named by `cut_screen::tool_icon`.
+    for (button, name) in [
+        (&add_, "add-button"),
+        (&split_, "split-button"),
+        (&remove_, "remove-button"),
+    ] {
+        assert_eq!(
+            button.icon_name().as_deref(),
+            naivepost::cut_screen::tool_icon(name),
+            "`{name}` wears its icon"
+        );
+    }
 
     // A fresh window holds no band, so nothing that needs one is live; | Split is the exception because
     // with no band it splits at the red line instead of doing nothing.
@@ -201,8 +210,9 @@ fn check_delete_takes_the_effect_first(app: &adw::Application) {
     ui::set_held_clip(Some(common::seg_cam(5.0, 9.0, 0)));
     let second = ui::press_delete_key(&window);
     assert!(
-        status_text(&window).starts_with("removed the card"),
-        "next in line is the held card: {}",
+        // The held segment is footage (no insert file), so ⌦ names it a clip; a spliced card says "card".
+        status_text(&window).starts_with("removed the clip"),
+        "next in line is the held clip: {}",
         second.status()
     );
 

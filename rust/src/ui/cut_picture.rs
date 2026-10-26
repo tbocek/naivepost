@@ -74,8 +74,9 @@ fn find(root: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
 
 /// Put one extracted frame on the panel. Returns whether anything is showing: a path that does not decode
 /// (or none at all) clears the picture rather than leaving a stale frame up, so the plate reads as empty
-/// tape instead of a broken image. The load is gdk-pixbuf's real decoder over a real file — the same
-/// library GTK itself uses for a `Picture`, and already in the lock through the `gtk` crate.
+/// tape instead of a broken image. The decode is gdk-pixbuf's real decoder over a real file, run on a worker
+/// ([`crate::ui::cut_picture_cache::picture`], §03-shell §1): a frame not decoded yet keeps the picture that
+/// is up, and goes up itself when it lands ([`repaint_landed`]). So a line move never waits on a decode.
 ///
 /// The request is remembered beside the frame ([`preview_asked_for_test`]) so a check can prove WHICH frame
 /// the panel was given: a headless window cannot read a paintable back off a `Picture`.
@@ -84,11 +85,18 @@ pub fn show_frame(window: &adw::ApplicationWindow, path: Option<&std::path::Path
         return false;
     };
     let shown = match path {
-        Some(file) => gtk::gdk_pixbuf::Pixbuf::from_file(file)
-            .map(|pixbuf| gtk::gdk::Texture::for_pixbuf(&pixbuf))
-            .ok(),
+        Some(file) => match crate::ui::cut_picture_cache::picture(file) {
+            crate::ui::cut_picture_cache::Decoded::Ready(held) => Some(held.texture),
+            crate::ui::cut_picture_cache::Decoded::Coming => {
+                // Owed until it lands, so a snapshot of the page waits for the picture.
+                owe_picture(&picture);
+                return true;
+            }
+            crate::ui::cut_picture_cache::Decoded::Missing => None,
+        },
         None => None,
     };
+    PICTURE_OWED.with(|owed| owed.borrow_mut().take());
     match shown {
         Some(texture) => {
             picture.set_paintable(Some(&texture));
@@ -101,6 +109,33 @@ pub fn show_frame(window: &adw::ApplicationWindow, path: Option<&std::path::Path
             false
         }
     }
+}
+
+thread_local! {
+    /// The picture owed while a listing or a decode is on a worker.
+    static PICTURE_OWED: std::cell::RefCell<Option<crate::ui::settle::Owed>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn owe_picture(picture: &gtk::Picture) {
+    PICTURE_OWED.with(|owed| {
+        let mut owed = owed.borrow_mut();
+        if owed.is_none() {
+            *owed = Some(crate::ui::settle::owe("the Cut preview's picture", picture));
+        }
+    });
+}
+
+/// A listing, a decode or a card render landed (`cut_picture_cache`): put the wanted frame up. The built-in
+/// player's picture is the player's own, so nothing is asked while it shows.
+pub fn repaint_landed() {
+    let Some(window) = crate::ui::window::built_window() else {
+        return;
+    };
+    if video_shown() {
+        return;
+    }
+    refresh(&window);
 }
 
 // The frame the panel was last given, or `None` when it was cleared. `preview_asked_for_test` reports what
@@ -183,8 +218,21 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
         if let (Some(line), Some(status)) = (held, ui::find_status(window.upcast_ref())) {
             status.set_text(&line);
         }
+        release_video(window);
+        // An empty path is a card whose frames a worker is still rendering: what is up stays up.
+        if frame.as_os_str().is_empty() {
+            return true;
+        }
         return show_frame(window, Some(&frame));
     }
+    // F2.1: once ▶ has played through the built-in player, the picture IS that player's (the prototype's way):
+    // the line it stands on is sought in it, and the extracted frames come back only when it cannot follow.
+    if video_shown()
+        && crate::ui::cut_record_play::follow_in_video(window, ui::line_position(window).t)
+    {
+        return true;
+    }
+    release_video(window);
     // The same spans the ROW LIST colours (`row_spans`), so a watched row number means one thing on the page.
     // Asked of that list first and falling back to the session's own tape: a cut with no footage scene yet
     // colours nothing, and a declared take must still be the picture then (F2.10 S3 says nothing about
@@ -198,9 +246,15 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     if recordings.is_empty() {
         return show_frame(window, None);
     }
-    // The watched row indexes the scene's rows; `scene_from` lays them in the recording order, so the row
-    // number picks the recording rather than needing a second mapping.
+    // The preview's row (the watched one, or the one the scene's lens picks) is a ROW of the colouring, and a
+    // row holds every file one camera filmed one after another. So the row narrows the recordings to that
+    // camera's, and the line's second picks the one it falls in. Indexing the recording list by the row
+    // number showed the first file of the session wherever the line stood.
     let row = ui::preview_row(window);
+    let t = crate::cut_speed_play::picture_second(
+        &ui::window::newest_review_cut().fx,
+        ui::line_position(window).t,
+    );
     // A snapshot names the session it is rendering (`snapshot.rs`), because its folder is the fixture and
     // not the working copy a real session writes frames into. Empty in every other case, so a live window
     // still answers from its own recordings.
@@ -208,7 +262,7 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     let chosen: Option<&timeline::Recording> = match named {
         // A snapshot names the session by base alone, so find that base among the recordings for its start.
         Some(base) => recordings.iter().find(|recording| recording.base == base),
-        None => recordings.get(row).or(recordings.first()),
+        None => recording_at(&recordings, row, t),
     };
     let Some(recording) = chosen else {
         return show_frame(window, None);
@@ -217,7 +271,6 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
     let Some(tree) = session_tree(window) else {
         return show_frame(window, None);
     };
-    let paths = cut_tracks::frame_paths(&tree, &base);
     // The frames on disk carry the FILE's own stamps, so the line's session second has to be converted
     // before it can pick one — otherwise a recording that does not start at 0:00, or one the hand slid,
     // shows a frame from the wrong part of the file (§B's `at(t)`). The SAME number is what
@@ -236,7 +289,24 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
         timeline::shift_of(&ui::window::newest_review_cut(), &base),
     );
     PREVIEW_ASKED.with(|slot| *slot.borrow_mut() = Some((base.clone(), at)));
-    let found = cut_tracks::frame_near(&paths, at);
+    // Listed on a worker (`cut_picture_cache`): until the first listing lands, the picture that is up stays up.
+    let Some(paths) = crate::ui::cut_picture_cache::frames_or_coming(&tree, &base) else {
+        if let Some(picture) = picture(window) {
+            owe_picture(&picture);
+        }
+        return true;
+    };
+    // Frames are named on the file's own clock: its start instant plus the frame's second in the file
+    // (`frames::frame_file(start, at)`), and the first frame of every folder is second 0. So that frame's name
+    // IS the start, and `at` is added to it before the names are compared. Compared bare, a second like 115
+    // named a 1970 instant before every frame, and the panel showed the file's first frame wherever the line was.
+    let zero = paths
+        .first()
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str())
+        .and_then(crate::clock::read_frame)
+        .unwrap_or(0.0);
+    let found = cut_tracks::frame_near(&paths, zero + at);
     // §9 (`With cameras of different shapes, both MUST use the first footage clip's frame`):
     // the panel used to measure its plate against whichever camera was playing while the
     // render measured against the first footage clip for the whole video. `source_frame` is
@@ -258,6 +328,95 @@ pub fn refresh(window: &adw::ApplicationWindow) -> bool {
         found.is_some(),
     );
     show_frame(window, found.as_deref())
+}
+
+thread_local! {
+    /// The preview's picture shows the built-in player's paintable (F2.1), not an extracted frame.
+    static VIDEO_SHOWN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Put the built-in player's frames on this window's picture: from here on the picture is the player's, until
+/// [`release_video`] hands it back to the extracted frames.
+pub fn show_video(window: &adw::ApplicationWindow) {
+    let (Some(picture), Some(paintable)) = (picture(window), crate::play_built_in::paintable())
+    else {
+        return;
+    };
+    if let Ok(paintable) = paintable.downcast::<gtk::gdk::Paintable>() {
+        picture.set_paintable(Some(&paintable));
+        VIDEO_SHOWN.with(|cell| cell.set(true));
+    }
+}
+
+/// Is the picture the built-in player's right now?
+pub fn video_shown() -> bool {
+    VIDEO_SHOWN.with(|cell| cell.get())
+}
+
+/// Give the picture back to the extracted frames and let the player's file go.
+fn release_video(window: &adw::ApplicationWindow) {
+    let _ = window;
+    if VIDEO_SHOWN.with(|cell| cell.replace(false)) {
+        crate::play_built_in::stop();
+    }
+}
+
+/// The recording the picture shows at session second `t` (the preview's row, as [`refresh`] chooses it) and that
+/// second on the recording's own clock.
+pub fn picture_source(
+    window: &adw::ApplicationWindow,
+    t: f64,
+) -> Option<(timeline::Recording, f64)> {
+    let cut_ = ui::window::newest_review_cut();
+    let colouring = crate::ui::cut_cameras::row_spans(&cut_);
+    let recordings = if colouring.is_empty() {
+        ui::page_recordings()
+    } else {
+        colouring
+    };
+    let recording = recording_at(&recordings, ui::preview_row(window), t)?.clone();
+    let local = timeline::local_at(
+        t,
+        recording.start,
+        0.0,
+        timeline::shift_of(&cut_, &recording.base),
+    );
+    Some((recording, local))
+}
+
+/// The recording the preview shows at session second `t` on `row`: among the recordings the colouring puts on
+/// that row (all of them when the row holds none), the one whose span holds `t`, else the nearest one.
+pub fn recording_at(
+    recordings: &[timeline::Recording],
+    row: usize,
+    t: f64,
+) -> Option<&timeline::Recording> {
+    let rows = timeline::rows_for(recordings, &ui::window::newest_review_cut());
+    let on_row: Vec<&timeline::Recording> = recordings
+        .iter()
+        .zip(rows)
+        .filter(|(_, at)| *at == row)
+        .map(|(recording, _)| recording)
+        .collect();
+    let pool: Vec<&timeline::Recording> = if on_row.is_empty() {
+        recordings.iter().collect()
+    } else {
+        on_row
+    };
+    let distance = |r: &timeline::Recording| {
+        if t < r.start {
+            r.start - t
+        } else if t > r.end {
+            t - r.end
+        } else {
+            0.0
+        }
+    };
+    pool.into_iter().min_by(|a, b| {
+        distance(a)
+            .partial_cmp(&distance(b))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })
 }
 
 /// The folder this window is working on. `line_root` is the page's own per-window slot for its folder (the
@@ -318,10 +477,28 @@ pub fn note_line_moved(window: &adw::ApplicationWindow, at: f64) {
 /// footage row's shape under aspect "source".
 ///
 /// A frame file's own shape, or `None` when there is no frame or it will not decode.
+///
+/// Read off the decoded frame the cache holds, else off the file's header (a few kilobytes, never a decode),
+/// remembered per file: a line move asks this every time.
 fn shown_shape(path: Option<&std::path::Path>) -> Option<(i32, i32)> {
-    let pixbuf = gtk::gdk_pixbuf::Pixbuf::from_file(path?).ok()?;
-    let (w, h) = (pixbuf.width(), pixbuf.height());
-    (w > 0 && h > 0).then_some((w, h))
+    let path = path?;
+    if let Some(shape) = crate::ui::cut_picture_cache::held_shape(path) {
+        return Some(shape);
+    }
+    if let Some(shape) = SHAPES.with(|shapes| shapes.borrow().get(path).copied()) {
+        return shape;
+    }
+    let shape = gtk::gdk_pixbuf::Pixbuf::file_info(path)
+        .map(|(_, w, h)| (w, h))
+        .filter(|(w, h)| *w > 0 && *h > 0);
+    SHAPES.with(|shapes| shapes.borrow_mut().insert(path.to_path_buf(), shape));
+    shape
+}
+
+thread_local! {
+    /// The header shapes [`shown_shape`] read, per file.
+    static SHAPES: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, Option<(i32, i32)>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 /// The first footage recording's shape, read from the frames Prepare already extracted for
@@ -334,7 +511,7 @@ fn first_footage_shape(window: &adw::ApplicationWindow) -> Option<(i32, i32)> {
     let first = recordings.first()?;
     let tree = session_tree(window)?;
     shown_shape(
-        cut_tracks::frame_paths(&tree, &first.base)
+        crate::ui::cut_picture_cache::frames_of(&tree, &first.base)
             .first()
             .map(|path| path.as_path()),
     )
@@ -375,6 +552,8 @@ pub fn note_plate_shape(window: &adw::ApplicationWindow, shape: (i32, i32)) {
 }
 
 pub fn wire_click(window: &adw::ApplicationWindow) {
+    // What the picture cache lands (a listing, a decode, a card's frames) goes up through this page's repaint.
+    crate::ui::cut_picture_cache::on_landed(repaint_landed);
     let Some(root) = window.content() else { return };
     let Some(button) = find(root.upcast_ref(), "preview-picture-button")
         .and_then(|widget| widget.downcast::<gtk::Button>().ok())

@@ -51,7 +51,14 @@ fn sec_01_project_and_files_2_naivepostjson_s5_a_tick_writes_then_writes_only_wh
     let root = pin_root("differ");
     let dir = session_dir(&root);
     let model = Project {
-        language: "en".to_string(),
+        policy: naivepost::project::Policy {
+            language: naivepost::project::Field {
+                value: "en".to_string(),
+                origin: Default::default(),
+                because: None,
+            },
+            ..Default::default()
+        },
         ..Default::default()
     };
     let session: Rc<RefCell<Project>> = Rc::new(RefCell::new(model.clone()));
@@ -64,7 +71,7 @@ fn sec_01_project_and_files_2_naivepostjson_s5_a_tick_writes_then_writes_only_wh
     );
     let first = json_of(&dir).expect("the tick wrote naivepost.json");
     assert!(
-        first.contains("\"language\": \"en\""),
+        policy_language(&first) == "en",
         "what was written is the session, not a blank: {first}"
     );
 
@@ -80,14 +87,14 @@ fn sec_01_project_and_files_2_naivepostjson_s5_a_tick_writes_then_writes_only_wh
     );
 
     // Now the session changes the way a widget handler changes it, and the next tick owes it.
-    session.borrow_mut().language = "de".to_string();
+    session.borrow_mut().policy.language.value = "de".to_string();
     assert_eq!(
         autosave::tick(&slot),
         Tick::Wrote,
         "an edited session is written on the next tick"
     );
     assert!(
-        json_of(&dir).is_some_and(|text| text.contains("\"language\": \"de\"")),
+        json_of(&dir).is_some_and(|text| policy_language(&text) == "de"),
         "the second write carries the edit"
     );
     assert_eq!(
@@ -109,7 +116,14 @@ fn sec_01_project_and_files_2_naivepostjson_s5_a_flow_write_leaves_the_timer_not
     let root = pin_root("flow-write");
     let dir = session_dir(&root);
     let model = Project {
-        language: "en".to_string(),
+        policy: naivepost::project::Policy {
+            language: naivepost::project::Field {
+                value: "en".to_string(),
+                origin: Default::default(),
+                because: None,
+            },
+            ..Default::default()
+        },
         ..Default::default()
     };
     let session: Rc<RefCell<Project>> = Rc::new(RefCell::new(model.clone()));
@@ -125,7 +139,7 @@ fn sec_01_project_and_files_2_naivepostjson_s5_a_flow_write_leaves_the_timer_not
     );
     let written = json_of(&dir).expect("naivepost.json written by the flow");
     assert!(
-        written.contains("\"language\": \"en\""),
+        policy_language(&written) == "en",
         "the flow wrote the session it was handed: {written}"
     );
 
@@ -138,7 +152,7 @@ fn sec_01_project_and_files_2_naivepostjson_s5_a_flow_write_leaves_the_timer_not
     );
 
     // And the rule still works after a flow write: change the session, the next tick owes it again.
-    session.borrow_mut().language = "nl".to_string();
+    session.borrow_mut().policy.language.value = "nl".to_string();
     assert_eq!(
         autosave::tick(&slot),
         Tick::Wrote,
@@ -195,7 +209,7 @@ fn check_close_writes_the_session(app: &adw::Application) {
     let root = pin_root("close");
     let dir = session_dir(&root);
     let mut model = project::load(&fixture_dir()).expect("fixture loads");
-    model.language = "en".to_string();
+    model.policy.language.value = "en".to_string();
 
     let window = ui::build_window(app, &model, "Prepare");
     // Read before the loop turns: the 2 s autosave writes on its own beat, so only this moment shows
@@ -211,24 +225,15 @@ fn check_close_writes_the_session(app: &adw::Application) {
         "the window is the built shell, so its close hook is the real one"
     );
 
-    let entry =
-        widget_in(&window, "language-entry").expect("the Prepare page draws the Language box");
-    let entry = entry
-        .downcast::<gtk4::Entry>()
-        .expect("the Language box is an entry");
-    entry.set_text("de");
+    // An edit the live session holds and the model the window was built with does not: the User Context.
+    ui::window::set_session_context(&window, "recorded in German");
     settle();
-    assert_eq!(
-        ui::bench_language(&window).as_deref(),
-        Some("de"),
-        "typing reached the live session, which is what the flush must write"
-    );
 
     window.close();
     settle();
     let text = json_of(&dir).expect("closing wrote naivepost.json");
     assert!(
-        text.contains("\"language\": \"de\""),
+        text.contains("recorded in German"),
         "the flush wrote the LIVE session, not the model the window was built with: {text}"
     );
 }
@@ -242,7 +247,14 @@ fn sec_01_project_and_files_2_naivepostjson_s6_the_close_flush_is_not_skippable(
     let dir = session_dir(&root);
     std::fs::create_dir_all(&dir).expect("session folder");
     let model = Project {
-        language: "pt".to_string(),
+        policy: naivepost::project::Policy {
+            language: naivepost::project::Field {
+                value: "pt".to_string(),
+                origin: Default::default(),
+                because: None,
+            },
+            ..Default::default()
+        },
         ..Default::default()
     };
     project::save(&model, &dir).expect("a file that already matches the session");
@@ -275,4 +287,13 @@ fn sec_01_project_and_files_2_naivepostjson_s5_the_interval_is_two_seconds() {
         std::time::Duration::from_secs(2),
         "P.window's autosave 2 s (10 §3)"
     );
+}
+
+/// The policy's language as the written `naivepost.json` holds it (`policy.language.value`).
+fn policy_language(text: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(text).unwrap_or_default()["policy"]["language"]
+        ["value"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
 }

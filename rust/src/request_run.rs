@@ -1,7 +1,7 @@
 //! The sentence a run ends with — `spec/09-llm-and-tools.md` §10's last paragraph.
 //!
 //! "At the end of every run the log says it in one line per service: `>>> requests: llm 57 in 2h 13m
-//! on the wire, 4m waiting for a slot; audio 38 in 6m 10s; web 3 in 12s`." [`crate::request_timing`]
+//! on the wire, 4m waiting its turn; audio 38 in 6m 10s; web 3 in 12s`." [`crate::request_timing`]
 //! already tallies rows and spells that sentence; what lived nowhere was the *when* — which rows belong
 //! to the run that just finished. This module owns that mark and the two doors around it: one taken when
 //! ▶ starts a run, one spoken when the run closes.

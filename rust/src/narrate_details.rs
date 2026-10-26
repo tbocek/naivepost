@@ -210,6 +210,12 @@ pub fn empty_sample_refusal() -> &'static str {
     "type a sample sentence to hear the voice"
 }
 
+/// A row's ▶ while its take is out on the wire (the synthesis runs on a worker, §03-shell §1): said so the
+/// row never reads as done before the take is heard, with the way to give up on it.
+pub fn speaking_line_status(line_no: usize) -> String {
+    format!("speaking line {line_no}\u{2026} \u{23f9} gives up on it")
+}
+
 /// The last press has not finished: a second one would start a second synthesis of a line nobody heard yet.
 pub fn busy_sample_status() -> &'static str {
     "still synthesizing the last sample\u{2026}"

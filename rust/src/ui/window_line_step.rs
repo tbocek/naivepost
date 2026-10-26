@@ -23,10 +23,10 @@ use crate::ui::window_trim_strip::note_place;
 /// with fifteen other controls: at a 1260 px window the words cost ~600 px, which is what pushed Copy,
 /// Paste, Insert and Lane (§1 items **13**-**16**) inside their group's scroller and off the visible bar.
 pub(crate) const LINE_STEP_BUTTONS: [(&str, &str, i64); 4] = [
-    ("line-step-back-five", "\u{2039}\u{2039} f", -5),
-    ("line-step-back", "\u{2039} f", -1),
-    ("line-step-forward", "f \u{203a}", 1),
-    ("line-step-forward-five", "f \u{203a}\u{203a}", 5),
+    ("line-step-back-five", "\u{2039}\u{2039}f", -5),
+    ("line-step-back", "\u{2039}f", -1),
+    ("line-step-forward", "f\u{203a}", 1),
+    ("line-step-forward-five", "f\u{203a}\u{203a}", 5),
 ];
 
 /// The reason ▶ had nothing to play. Spec silent on a session with no filmed stretch; §0 asks for a
@@ -97,6 +97,34 @@ pub fn line_position(window: &adw::ApplicationWindow) -> cut_line::LinePos {
         .unwrap_or(cut_line::LinePos { t: 0.0 })
 }
 
+/// Write the line's own slot and nothing else: the half of a line move that both doors share
+/// ([`set_line_position`] and `window_preview::set_playhead`), without the "a person put it down" side effects.
+/// F0.10 S3/S4: Save as moved this window's project to `dir`. Every per-window folder slot (the session the
+/// close hook flushes, the line's root, the session tree the pages read) follows it, or the next write would
+/// land in, and re-create, the folder the rename just moved away from.
+pub(crate) fn rehome_window(dir: &std::path::Path) {
+    let moved = |slots: &WindowFolders| {
+        if let Some(last) = slots.borrow_mut().last_mut() {
+            *last = dir.to_path_buf();
+        }
+    };
+    LINE_ROOTS.with(moved);
+    SESSION_DIRS.with(moved);
+    SESSION_TREES.with(|slots| {
+        if let Some(last) = slots.borrow_mut().last_mut() {
+            *last = crate::layout::Tree::new(dir).ok();
+        }
+    });
+}
+
+pub(crate) fn hold_line_at(t: f64) {
+    ui::LINE_STATES.with(|slots| {
+        if let Some(slot) = slots.borrow().last() {
+            slot.borrow_mut().0 = cut_line::LinePos { t };
+        }
+    });
+}
+
 /// Set this window's line WITHOUT saving -- the test/setup entry point. Saving is a side effect of a
 /// user moving the line, not of being told where it is, and a setup call that consumed the throttle
 /// would make the next real move silently unwritable for a second.
@@ -104,11 +132,12 @@ pub fn set_line_position(window: &adw::ApplicationWindow, pos: cut_line::LinePos
     let _ = window;
     // F2.12 S1: a placed line IS a target for Insert, and this is where the page learns one exists.
     note_place(true);
-    ui::LINE_STATES.with(|slots| {
-        if let Some(slot) = slots.borrow().last() {
-            slot.borrow_mut().0 = pos;
-        }
-    });
+    hold_line_at(pos.t);
+    // The other slot of the one red line: the player's, which ▶ plays from and the band paints.
+    if let Some(player) = crate::ui::window_preview::live_player(window) {
+        player.borrow_mut().playhead = Some(pos.t);
+    }
+    crate::ui::window_preview::show_playhead_reading(window, pos.t);
     // F3.6 S5 (`applied in the preview even while paused`): a line that LANDED on a second, so that second's
     // loudness goes to sound now — a parked line inside a raised passage must be heard at that loudness or the
     // fades cannot be judged without playing. `note_place(true)` is what says "a person put the line down":
@@ -199,23 +228,19 @@ pub fn place_line_press(
     hit: cut_line::Hit,
     now_ms: u64,
 ) -> cut_line::ClickOutcome {
-    // F2.2 S2: a click on the picture is another way in that cannot switch the preview, so an empty
-    // cut refuses it here rather than placing a line over nothing (nothing moves, clears or watches).
-    let refused =
-        hit.on_picture && cut_play_leg::other_way_in(&ui::review_cut_of(window)).is_some();
-    let outcome = if refused {
-        cut_line::refused_click(hit.at)
-    } else {
-        cut_line::click_outcome_in_row(
-            hit.at,
-            hit.on_picture,
-            hit.on_scene_picture,
-            hit.playing,
-            hit.sources,
-            hit.gutter,
-            hit.row,
-        )
-    };
+    // F2.4 S1: a click on a track places the line, an empty cut or not. F2.2 S2's "picture click" that
+    // refuses an empty cut is a click on the PREVIEW picture (a way into playback); the first rewrite read it as
+    // a click on the tracks' picture rows, so on a session with no cut yet every click on the pictures was
+    // refused in silence and the line never moved.
+    let outcome = cut_line::click_outcome_in_row(
+        hit.at,
+        hit.on_picture,
+        hit.on_scene_picture,
+        hit.playing,
+        hit.sources,
+        hit.gutter,
+        hit.row,
+    );
     if outcome.line_moved {
         move_line_and_save(window, cut_line::LinePos { t: outcome.line_at }, now_ms);
     }
@@ -231,19 +256,20 @@ pub fn place_line_press(
     outcome
 }
 
-/// F2.4 S2: ‹f / f› steps one frame (Shift five). With a hold, the HOLD moves; with nothing held the
-/// recording under the line seeks and pauses.
+/// F2.4 S2: ‹f / f› steps one frame (Shift five), backward or forward. With a hold, the HOLD moves; with nothing
+/// held the recording under the line seeks and pauses.
 pub fn step_the_line(
     window: &adw::ApplicationWindow,
     shift: bool,
+    backward: bool,
     held: Option<cut_line::Held>,
     fps: f64,
     now_ms: u64,
 ) -> Step {
-    let frames = cut_line::step_frames(shift);
-    if held.is_some() {
-        // Nudging the held edge/clip/effect needs the held item's own geometry, which belongs to the
-        // cut-editing rounds; the returned frame count is what the caller acts on once that exists.
+    let frames = cut_line::step_frames(shift) * if backward { -1 } else { 1 };
+    if let Some(held) = held {
+        // The first rewrite answered `Nudged` here and moved nothing: a held edge or clip stayed where it was.
+        nudge_held(window, held, frames, fps);
         return Step::Nudged { frames };
     }
     let from = line_position(window).t;
@@ -261,6 +287,7 @@ pub fn step_the_line(
 pub fn arrow_steps(
     window: &adw::ApplicationWindow,
     shift: bool,
+    backward: bool,
     held: Option<cut_line::Held>,
     fps: f64,
     now_ms: u64,
@@ -268,7 +295,76 @@ pub fn arrow_steps(
     if !cut_line::arrow_moves_line(held) {
         return Step::Still;
     }
-    step_the_line(window, shift, held, fps, now_ms)
+    step_the_line(window, shift, backward, held, fps, now_ms)
+}
+
+/// F2.4 S2/S3: nudge what is held by `frames` (signed) frames at `fps`, unsnapped, as one undo step each. An
+/// effect goes through `nudge_held_effect` (F3.8 S2); an edge is the border of the held clip nearest the red line
+/// (the pickup lands the line on it), moved through the same door a trim drag writes by; a clip slides along its
+/// recording with its length kept, clear of its neighbours. The status line says where it landed.
+pub fn nudge_held(window: &adw::ApplicationWindow, held: cut_line::Held, frames: i64, fps: f64) {
+    let delta = frames as f64 / fps.max(1.0);
+    let said = match held {
+        cut_line::Held::Effect => nudge_held_effect(window, delta),
+        cut_line::Held::Edge | cut_line::Held::Clip => {
+            match nudge_held_segment(window, held, delta) {
+                Some(said) => said,
+                None => return,
+            }
+        }
+    };
+    if let Some(status) = ui::find_status(window.upcast_ref()) {
+        status.set_text(&said);
+    }
+}
+
+/// The edge or clip half of [`nudge_held`]: `None` when the held segment is no longer on the cut.
+fn nudge_held_segment(
+    window: &adw::ApplicationWindow,
+    held: cut_line::Held,
+    delta: f64,
+) -> Option<String> {
+    let seg = ui::held_segment()?;
+    let mut cut_ = ui::newest_review_cut();
+    let index = cut_.segs.iter().position(|candidate| *candidate == seg)?;
+    if held == cut_line::Held::Edge {
+        let line = line_position(window).t;
+        let border = if (line - seg.s).abs() <= (line - seg.e).abs() {
+            crate::cut_trim::Border::Start
+        } else {
+            crate::cut_trim::Border::End
+        };
+        let at = match border {
+            crate::cut_trim::Border::Start => seg.s,
+            crate::cut_trim::Border::End => seg.e,
+        };
+        // `first` = true: a nudge is a whole edit, one ↶ each.
+        crate::ui::cut_trim_press::press_border_move(window, index, border, at + delta, true);
+        let moved = ui::newest_review_cut().segs.get(index).cloned();
+        ui::set_held_edge(moved.clone());
+        let moved = moved?;
+        return Some(crate::cut_trim::trim_status(index + 1, moved.s, moved.e));
+    }
+    // A clip: the slide rule a right-drag uses, with no snap reach (a nudge lands exactly where the frames say).
+    let length = seg.e - seg.s;
+    let landed = crate::cut_trim::slide_scene(
+        &cut_.segs,
+        index,
+        seg.s + delta,
+        0.0,
+        crate::ui::window_trim_strip::TRACK_REC_END,
+        f64::MAX,
+    );
+    let moved = {
+        let target = cut_.segs.get_mut(index)?;
+        target.s = landed;
+        target.e = landed + length;
+        target.clone()
+    };
+    ui::record_edit(window, &cut_);
+    ui::save_insert_cut(&cut_);
+    ui::set_held_clip(Some(moved.clone()));
+    Some(crate::cut_trim::trim_status(index + 1, moved.s, moved.e))
 }
 
 /// F2.4 S3: Space toggles the preview unless a text box has the focus.
@@ -317,6 +413,7 @@ thread_local! {
 /// Wire one step button to its signed frame count. A button press holds nothing, so this is always
 /// S2's seek-and-pause; the direction lives in `frames`, never inferred from the widget.
 pub(crate) fn wire_line_step(button: &gtk::Button, window: &adw::ApplicationWindow, frames: i64) {
+    // (The direction is in `frames`; a hold, when there is one, is nudged by them: `step_frames_of`.)
     let window = window.clone();
     button.connect_clicked(move |_| {
         let _ = step_frames_of(&window, frames);
@@ -326,6 +423,12 @@ pub(crate) fn wire_line_step(button: &gtk::Button, window: &adw::ApplicationWind
 /// Move the line by a signed number of frames and pause (F2.4 S2). The seam the buttons use; the rate
 /// comes from [`crate::cut_fps`] (the real ffprobe over the footage file), not a constant.
 pub fn step_frames_of(window: &adw::ApplicationWindow, frames: i64) -> Step {
+    // F2.4 S2: with an edge, clip or effect held the buttons nudge THAT (the first rewrite's buttons always moved
+    // the line, whatever was in hand).
+    if let Some(held) = ui::held_now() {
+        nudge_held(window, held, frames, crate::cut_fps::session_fps(window));
+        return Step::Nudged { frames };
+    }
     let from = line_position(window).t;
     let to = cut_line::step_line(from, frames, crate::cut_fps::session_fps(window));
     move_line_and_save(window, cut_line::LinePos { t: to }, now_ms());
@@ -337,17 +440,26 @@ pub fn step_frames_of(window: &adw::ApplicationWindow, frames: i64) -> Step {
     Step::SteppedTo { t: to }
 }
 
-/// S2's "then pause", all three ways something can play: the transport flag, ▶'s process, ▶✂'s pair.
+/// S2's "then pause", all three ways something can play: the transport flag, ▶'s process, ▶✂'s pair. A review
+/// paused this way is over, as a review ▶✂✂ pauses is (F2.3 S5), and the three faces are painted from what is left.
 pub(crate) fn pause_for_step(window: &adw::ApplicationWindow) {
+    let mut ended_review = false;
     if let Some(player) = ui::live_player(window) {
-        player.borrow_mut().transport.playing = false;
+        let mut held = player.borrow_mut();
+        held.transport.playing = false;
+        ended_review = std::mem::replace(&mut held.reviewing, false);
     }
-    if crate::play_back::playing_pid().is_some() {
+    if ended_review {
+        crate::ui::cut_review_play::clear();
+    }
+    if crate::play_back::running() {
         crate::play_back::halt();
     }
     if crate::cut_play_back::playing_pid().is_some() {
         crate::cut_play_back::halt();
     }
+    crate::lane_hear::halt_all();
+    crate::ui::cut_record_play::paint_transport(window);
 }
 /// A monotone-ish millisecond clock for the write throttle. Coarse is fine: the rule it feeds only asks
 /// whether a second has passed.
@@ -367,29 +479,16 @@ pub(crate) fn wire_line_keys(window: &adw::ApplicationWindow) {
         // S2/S3: the hold comes from the window's own held state, not a constant. With `None` hardcoded
         // here a real key press could never take S2's nudge branch, however much was in hand.
         let held = ui::held_now();
-        // F3.8 S2 (`Frame steps and ←/→ nudge a held effect unsnapped`): with an EFFECT in hand the arrows
-        // move that record, not the line. The step is `cut_line::step_frames(shift)` frames converted to
-        // seconds at the page's fps, and it lands exactly there: `nudge_held_effect` goes through
-        // `effect_rules::nudge`, which never consults snap marks, so a nudged band stays precisely one frame
-        // off the segment end it was beside. A clip or edge in hand keeps its existing path untouched.
-        if ui::held_effect().is_some() && matches!(key, gtk::gdk::Key::Left | gtk::gdk::Key::Right)
-        {
-            let frames = cut_line::step_frames(shift) as f64 / crate::cut_fps::session_fps(&win);
-            let delta = if key == gtk::gdk::Key::Left {
-                -frames
-            } else {
-                frames
-            };
-            let _ = nudge_held_effect(&win, delta);
-            return glib::Propagation::Stop;
-        }
+        // F3.8 S2 (`Frame steps and ←/→ nudge a held effect unsnapped`): with an effect in hand the steps move that
+        // record (`nudge_held`), as they move a held edge or clip.
         // One read of the session's rate per press: every branch below steps at the same number.
         let fps = crate::cut_fps::session_fps(&win);
         let response = match key {
-            gtk::gdk::Key::Left => arrow_steps(&win, shift, held, fps, now_ms()),
-            gtk::gdk::Key::Right => arrow_steps(&win, shift, held, fps, now_ms()),
-            gtk::gdk::Key::comma => step_the_line(&win, shift, held, fps, now_ms()),
-            gtk::gdk::Key::period => step_the_line(&win, shift, held, fps, now_ms()),
+            gtk::gdk::Key::Left => arrow_steps(&win, shift, true, held, fps, now_ms()),
+            gtk::gdk::Key::Right => arrow_steps(&win, shift, false, held, fps, now_ms()),
+            // `,` is ‹f and `.` is f›: the first rewrite stepped both forward.
+            gtk::gdk::Key::comma => step_the_line(&win, shift, true, held, fps, now_ms()),
+            gtk::gdk::Key::period => step_the_line(&win, shift, false, held, fps, now_ms()),
             gtk::gdk::Key::space => {
                 // Space is not a line step, so it answers the propagation directly rather than with a
                 // `Step`; handled means the focused widget never sees it.

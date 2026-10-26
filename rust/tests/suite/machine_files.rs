@@ -15,7 +15,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use naivepost::settings::{self, Conf, Paths, ProjectRef, Slots};
+use naivepost::settings::{self, Conf, Paths, ProjectRef};
 
 /// A throwaway config/data pair standing in for `$XDG_CONFIG_HOME` and `$XDG_DATA_HOME`.
 struct Dirs {
@@ -156,39 +156,23 @@ fn sec_01_project_and_files_7_machine_files_s1_llm_conf_is_bash_sourceable_and_0
 }
 
 #[test]
-fn sec_01_project_and_files_7_machine_files_s1_slots_absent_means_one() {
-    // 03-shell.md §6: the seven `*_SLOTS` keys, "absent = 1".
+fn sec_01_project_and_files_7_machine_files_s1_old_slot_counts_are_read_and_dropped() {
+    // Requests go one at a time per server (02 §1): the seven `*_SLOTS` keys an earlier build wrote are
+    // read and dropped, so a machine's file stops carrying them after its next save.
     let d = Dirs::new("slots");
-    assert_eq!(settings::read(&d.paths).unwrap().slots.llm, 1);
-
-    // A default machine gets no slot lines at all, so the file does not grow on every save.
-    settings::save(&d.paths, &Conf::default()).unwrap();
-    let written = fs::read_to_string(d.paths.conf_path()).unwrap();
-    assert!(!written.contains("_SLOTS="), "{written}");
-
-    // Set one and it is the only slot key written; read back, the others are still 1.
-    let mut conf = Conf::default();
-    conf.slots.tts = 4;
+    fs::create_dir_all(&d.paths.config_dir).unwrap();
+    fs::write(
+        d.paths.conf_path(),
+        "LLM_SERVER=\"http://x\"\nLLM_SLOTS=3\nAUDIOCPP_TTS_SLOTS=4\n",
+    )
+    .unwrap();
+    let conf = settings::read(&d.paths).unwrap();
+    assert_eq!(conf.server, "http://x");
     settings::save(&d.paths, &conf).unwrap();
     let written = fs::read_to_string(d.paths.conf_path()).unwrap();
-    assert!(written.contains("AUDIOCPP_TTS_SLOTS=4"), "{written}");
-    assert_eq!(written.matches("_SLOTS=").count(), 1, "{written}");
-
-    let back = settings::read(&d.paths).unwrap();
-    assert_eq!(back.slots.tts, 4);
-    assert_eq!(back.slots.llm, 1);
-    for key in [
-        "LLM_SLOTS",
-        "AUDIOCPP_ASR_SLOTS",
-        "AUDIOCPP_DIAR_SLOTS",
-        "AUDIOCPP_ALIGN_SLOTS",
-        "AUDIOCPP_SEP_SLOTS",
-        "SD_SLOTS",
-    ] {
-        assert!(
-            Slots::KEY_NAMES.contains(&key),
-            "{key} is not a slot settings key"
-        );
+    assert!(!written.contains("_SLOTS="), "{written}");
+    for key in settings::RETIRED_SLOT_KEYS {
+        assert!(key.ends_with("_SLOTS"), "{key} is one of the old slot keys");
     }
 
     fs::remove_dir_all(&d.root).unwrap();
@@ -401,14 +385,15 @@ fn sec_01_project_and_files_7_machine_files_s4_prompt_saved_only_when_it_differs
     assert!(!settings::write_prompt(&d.paths, "narrate.rephrase", shipped, shipped).unwrap());
     assert_eq!(walk(&d.root), Vec::<String>::new());
 
-    // An actual edit lands in `<key>.txt` and wins over the shipped text.
+    // An actual edit still lands in `<key>.txt`, but no longer steers a request: a profile's section for the
+    // step is the one place a prompt is configured (§03-shell §5b).
     assert!(
         settings::write_prompt(&d.paths, "narrate.rephrase", "terse, no preamble", shipped)
             .unwrap()
     );
     assert_eq!(
         settings::prompt_text(&d.paths, "narrate.rephrase", shipped).unwrap(),
-        "terse, no preamble"
+        shipped
     );
     assert_eq!(
         fs::read_to_string(d.paths.prompt_file("narrate.rephrase")).unwrap(),

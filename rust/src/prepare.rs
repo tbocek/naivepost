@@ -1,13 +1,10 @@
 //! The left-hand frame controls and the two readouts of the Prepare page
 //! (§04-prepare#1-screen).
 //!
-//! Freq is `P.project.frameInterval`: how often a frame goes to the describe model,
-//! counted from each scene change. It no longer sets extraction — frames come out on
-//! the fixed `P.eng.frameGridSeconds` grid restarted at every scene change (F1.6), so
-//! the Cut timeline has a picture down to its deepest zoom, and Freq only decides
-//! which of those frames the model sees (F1.7). That distinction is the whole reason
-//! the two constants below are separate numbers: changing Freq moves what the model is
-//! shown and must never move what is on disk.
+//! There is no Freq control any more: frames come out on the fixed `P.eng.frameGridSeconds` grid (F1.6), the
+//! text gate (F1.6 S6) decides where the screen's text changed, and describe (F1.7) sends each change's first
+//! frame and one every heartbeat between. The prototype's Freq set both what was extracted and what the model
+//! saw; a 1 s Freq sent a slide that stayed up three minutes about 180 times.
 //!
 //! There is no Style control and no frame-size control in this rewrite. What the
 //! prototype's Style dropdown chose is carried by `P.policy.markingPass` and
@@ -21,29 +18,20 @@ use std::time::SystemTime;
 use crate::{
     exchanges,
     layout::Tree,
-    project::{self, Project, Source},
+    project::{Project, Source},
     roles,
 };
 
-/// The Freq stops (§1: 0.25, 0.5, 1s, 2s, 3s, 4s, 5s). `P.project.frameInterval`, whose
-/// own bounds are [`project::INTERVAL_MIN`] and [`project::INTERVAL_MAX`].
-pub const FREQ_STOPS: [f64; 7] = [0.25, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0];
+/// The step the cut-stage asks and the upload's pictures name frames at: one a second, on the extraction grid.
+/// Fixed: Freq, which once set it, is gone (the text gate decides what describe sees).
+pub const MODEL_FRAME_STEP: f64 = 1.0;
 
-/// What a project with no opinion sends: one frame to the model a second.
-pub const FREQ_DEFAULT: f64 = 1.0;
-
-/// The extraction grid, `P.eng.frameGridSeconds` — fixed, and independent of Freq.
+/// The extraction grid, `P.eng.frameGridSeconds`.
 pub const EXTRACTION_GRID: f64 = 0.25;
 
 /// Transcript lines per fixer request, `P.machine.fixBlockLines`: the divisor behind
 /// the "L lines → K fixer" half of the Inputs readout.
 pub const FIX_BLOCK_LINES: usize = 25;
-
-/// Language's tooltip (§1). The prototype's warning is kept because it is the reason
-/// the control exists at all, and "Empty means en" because an empty box is not a
-/// missing setting.
-pub const LANGUAGE_TIP: &str = "The language the recording is spoken in \u{2014} the wrong one \
-transcribes into gibberish. Empty means en.";
 
 /// The Outputs label beside the folder button (§1).
 pub const OUTPUTS_LABEL: &str = "Prepare:";
@@ -102,57 +90,6 @@ pub fn outputs_readout(count: usize, bytes: u64, newest_minutes: Option<u64>) ->
         None => String::new(),
     };
     (label, tooltip)
-}
-
-/// Freq as a stop prints it: a fraction of a second as the bare number, a second and up
-/// with its unit.
-pub fn freq_label(secs: f64) -> String {
-    if secs < 1.0 {
-        return format!("{secs}");
-    }
-    if secs == secs.trunc() {
-        return format!("{}s", secs as i64);
-    }
-    format!("{secs}s")
-}
-
-/// Whether this is one of the stops. Freq is a choice, not a number box: an unlisted
-/// interval would be sent to the model as a claim about frames that were never picked.
-pub fn freq_is_stop(secs: f64) -> bool {
-    FREQ_STOPS.contains(&secs)
-}
-
-/// Set Freq, refusing anything off the list and leaving the project untouched then.
-pub fn set_freq(project: &mut Project, secs: f64) -> bool {
-    if !freq_is_stop(secs) {
-        return false;
-    }
-    project.interval = secs;
-    true
-}
-
-/// The stop `steps` places along [`FREQ_STOPS`] from `secs`, for the `—`/`+` buttons beside Freq (§4's
-/// badge **8**, §04 §1's picture). Walking off either end stays on that end stop — the prototype's
-/// stepper never left the stop list either (`go/main.go`'s `freqPick::set` clamps to first/last), so a
-/// person at 5s pressing `+` gets no surprise rather than an interval nothing can describe with.
-/// A value that is not a stop steps nowhere: there is no place on the list to count from.
-pub fn freq_step(secs: f64, steps: i32) -> f64 {
-    let Some(at) = FREQ_STOPS.iter().position(|stop| *stop == secs) else {
-        return secs;
-    };
-    let last = FREQ_STOPS.len() - 1;
-    // One signed walk, then clamped: `i32` arithmetic keeps this off the underflow a usize would hit at
-    // the bottom of the list.
-    let moved = (at as i32 + steps).clamp(0, last as i32) as usize;
-    FREQ_STOPS[moved]
-}
-
-/// What the Language box shows when it is empty: the language that will actually be used.
-pub fn language_label(code: &str) -> String {
-    if code.trim().is_empty() {
-        return project::Project::default().language;
-    }
-    code.to_string()
 }
 
 /// What Prepare has read so far, counted over the whole session.

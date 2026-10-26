@@ -146,6 +146,10 @@ fn f2_12_s7_the_preview_shows_the_card_and_holds_the_footage() {
         // The line on the card: a card frame lands on the panel and the held sentence is printed.
         ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 31.0 });
         let shown = ui::cut_picture::refresh(&window);
+        // The card renders and its frame decodes on workers (§03-shell §1): the panel shows it when they land.
+        assert!(ui::background::settle_for_test(
+            std::time::Duration::from_secs(60)
+        ));
         settle();
         let frame = ui::cut_picture::frame_shown_for_test();
         RAN_SPLICED.store(shown && shown_is_the_card(&sting), Ordering::SeqCst);
@@ -169,6 +173,9 @@ fn f2_12_s7_the_preview_shows_the_card_and_holds_the_footage() {
         // The line back on footage: the card answers nothing, and the card's frame is no longer what is up.
         ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 60.0 });
         ui::cut_picture::refresh(&window);
+        assert!(ui::background::settle_for_test(
+            std::time::Duration::from_secs(60)
+        ));
         settle();
         let after = ui::cut_picture::frame_shown_for_test();
         RAN_FOOTAGE.store(!shown_is_the_card(&sting), Ordering::SeqCst);

@@ -8,14 +8,13 @@
 //! this file decides whether a service is healthy; it asks, times, records, and hands the answer to
 //! the function that already owns the sentence.
 //!
-//! The typed value wins over the saved one (§5: "each Test reads what is TYPED"; the file lags the
-//! keyboard by [`checks::CONF_SAVE_WAIT`]), but the key does not: keys are read from the settings
-//! file, because echoing a credential back out of a widget to put it on the wire would be a
-//! different security story from reading the 0600 file the user saved it in.
+//! What is typed wins over what is saved (§5: "each Test reads what is TYPED"; the file lags the
+//! keyboard by [`checks::CONF_SAVE_WAIT`]): the dialog runs every probe inside [`with_typed`], with all
+//! its boxes laid over the saved settings, so a row reads the Server box, the API key and the model id as
+//! they stand, not only its own box. A key typed there goes on the wire only as the Bearer header of the
+//! request it was typed for.
 
-use std::rc::Rc;
-
-use crate::checks::{self, SdCaps, SdProbe};
+use crate::checks::{self, SdProbe};
 use crate::services::{self, Endpoint, Kind, Server};
 use crate::settings::Conf;
 use crate::settings_probe_rows;
@@ -27,8 +26,10 @@ use crate::ui::settings::Provider;
 /// hard-coded HTTP branch in the dialog would send a test's LLM row to port 8731 and replace its
 /// verdict with a connection error.
 pub fn live_over(fallback: Provider) -> Provider {
-    Rc::new(move |key: &str, typed: &str| match key {
-        "llm" | "llm-vision" | "tts" | "asr" | "diar" | "sep" | "aligner" => probe(key, typed),
+    std::sync::Arc::new(move |key: &str, typed: &str| match key {
+        "llm" | "llm-vision" | "decision" | "tts" | "asr" | "diar" | "sep" | "aligner" => {
+            probe(key, typed)
+        }
         "ffmpeg" => settings_probe_rows::ffmpeg_row(typed),
         "firefox" => settings_probe_rows::firefox_row(typed),
         // §9's list job. Not the fallback's to answer: a real session pressing Fetch models has to get
@@ -88,23 +89,35 @@ pub fn probe(key: &str, typed: &str) -> Result<String, String> {
     let conf = current_conf();
     // No project open means nowhere to write `requests.tsv`; the probe still runs, since a
     // down server is worth knowing about before a project exists. The timings just go unrecorded.
-    let tree = crate::layout::Tree::new(crate::startup::session_dir(
-        &std::env::current_dir().unwrap_or_default(),
-    ))
-    .ok();
+    let tree = crate::layout::Tree::new(crate::startup::open_dir()).ok();
 
     match key {
-        "llm" => {
-            // §5: ONE completion, `max_tokens` 16, thinking forced off, at [`checks::LLM_TEST_SECONDS`].
-            // `GET /v1/models` is NOT this row's test — it backs only Fetch models and sd.cpp's fallback
-            // ([`checks::LIST_MODELS_LLM_USES`]) — because a server that lists a model and then answers
-            // nothing is exactly what the row has to catch.
-            let ask = settings_probe_rows::chat_ask(&conf, typed);
-            settings_probe_rows::llm_row(&conf, &ask)
+        "llm" | "llm-vision" => {
+            // The row's own box is a MODEL id (the Model row; the Vision row, empty for "the model above"),
+            // never an address: it names the model asked, and the Server box names where.
+            let mut conf = conf;
+            if !typed.trim().is_empty() {
+                conf.model = typed.trim().to_string();
+            }
+            let ask = settings_probe_rows::chat_ask(&conf);
+            if key == "llm" {
+                // §5: ONE completion, `max_tokens` 16, thinking forced off, at [`checks::LLM_TEST_SECONDS`].
+                // `GET /v1/models` is NOT this row's test — it backs only Fetch models and sd.cpp's fallback
+                // ([`checks::LIST_MODELS_LLM_USES`]) — because a server that lists a model and then answers
+                // nothing is exactly what the row has to catch.
+                settings_probe_rows::llm_row(&conf, &ask)
+            } else {
+                settings_probe_rows::vision_row(&conf, &ask)
+            }
         }
-        "llm-vision" => {
-            let ask = settings_probe_rows::chat_ask(&conf, typed);
-            settings_probe_rows::vision_row(&conf, &ask)
+        "decision" => {
+            // The Decision box names the model; empty, the gate asks the Model box's ([`Conf::decider`]).
+            let mut conf = conf;
+            conf.decision_model = typed.trim().to_string();
+            conf.model = conf.decider();
+            let ask = settings_probe_rows::chat_ask(&conf);
+            let paths = crate::settings::from_environment();
+            crate::text_gate_call::probe(&conf, paths.as_ref(), &ask)
         }
         "tts" | "asr" | "diar" | "sep" => {
             let models = settings_probe_rows::audio_catalogue(&conf, typed)?;
@@ -151,10 +164,7 @@ pub fn probe(key: &str, typed: &str) -> Result<String, String> {
                 "capabilities",
                 None,
             ) {
-                Ok(body) => {
-                    let caps = sd_caps(&body);
-                    Ok(checks::sd_verdict(Ok(&caps))?)
-                }
+                Ok(body) => checks::sd_verdict(Ok(&checks::sd_caps(&body)?)),
                 Err(_) => {
                     // The two failures are fixed differently, so tell them apart rather than
                     // reporting one word for both: an OpenAI-shaped tenant answers /v1/models and
@@ -278,7 +288,14 @@ fn ask_job(
             crate::server_leg::send_budget(server, endpoint, kind, job, body, budget, &cancelled)
         }
     };
-    reply.map(|reply| reply.body)
+    let reply = reply?;
+    // A non-2xx is the server's refusal, said with its own words: handed on as a body it read as a reply with
+    // nothing in it, and a row reported "answered without judge_text" for a model that never answered at all.
+    if !reply.ok() {
+        let said: String = reply.body.trim().chars().take(300).collect();
+        return Err(format!("{model} answered {}: {said}", reply.status));
+    }
+    Ok(reply.body)
 }
 
 /// End-of-run housekeeping: unload every audio model, quietly, off-thread, best-effort.
@@ -308,10 +325,7 @@ pub fn fire_unload(kind: Kind) {
             url: services::server_url(&conf.audio_server).unwrap_or_else(services::audio_default),
             key: conf.audio_key.clone(),
         };
-        let tree = crate::layout::Tree::new(crate::startup::session_dir(
-            &std::env::current_dir().unwrap_or_default(),
-        ))
-        .ok();
+        let tree = crate::layout::Tree::new(crate::startup::open_dir()).ok();
         // Best-effort: the result chooses a log line and nothing else. No `?`, no retry, no wait.
         match get(
             &tree,
@@ -321,8 +335,8 @@ pub fn fire_unload(kind: Kind) {
             "unload",
             None,
         ) {
-            Ok(_) => crate::ui::run_close::report_unload("models unloaded"),
-            Err(why) => crate::ui::run_close::report_unload(&format!("unload skipped: {why}")),
+            Ok(_) => crate::ui::window::note_unload("models unloaded"),
+            Err(why) => crate::ui::window::note_unload(&format!("unload skipped: {why}")),
         };
         crate::cancel_leg::leg_finished();
     });
@@ -350,9 +364,26 @@ pub fn drain_unload(budget: std::time::Duration) -> crate::cancel_leg::StoppedLe
     }
 }
 
-/// The settings as they are ON DISK right now — re-read per request, which is what makes a change
-/// land on the next call rather than the next launch (§1).
+thread_local! {
+    /// The dialog's boxes as typed, while one of its probes runs ([`with_typed`]).
+    static TYPED: std::cell::RefCell<Option<Conf>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Run `probe` with `typed` as the settings it reads: the dialog's boxes laid over the saved file.
+pub fn with_typed<T>(typed: Conf, probe: impl FnOnce() -> T) -> T {
+    let before = TYPED.with(|slot| slot.replace(Some(typed)));
+    let answer = probe();
+    TYPED.with(|slot| *slot.borrow_mut() = before);
+    answer
+}
+
+/// The settings a probe reads: what the dialog has typed while it asks ([`with_typed`]), else the file
+/// as it is ON DISK right now, re-read per request, which is what makes a change land on the next call
+/// rather than the next launch (§1).
 fn current_conf() -> Conf {
+    if let Some(typed) = TYPED.with(|slot| slot.borrow().clone()) {
+        return typed;
+    }
     crate::settings::from_environment()
         .and_then(|paths| crate::settings::read(&paths).ok())
         .unwrap_or_default()
@@ -371,27 +402,5 @@ fn image_at(conf: &Conf, typed: &str) -> Endpoint {
     Endpoint {
         url: services::server_url(typed).unwrap_or_else(services::image_default),
         key: conf.sd_key.clone(),
-    }
-}
-
-/// The weights sd-server names, out of its capabilities reply.
-fn sd_caps(body: &str) -> SdCaps {
-    #[derive(serde::Deserialize)]
-    struct Caps {
-        #[serde(default)]
-        weights: String,
-        #[serde(default)]
-        model: String,
-    }
-    let parsed = serde_json::from_str::<Caps>(body).unwrap_or(Caps {
-        weights: String::new(),
-        model: String::new(),
-    });
-    SdCaps {
-        weights: if parsed.weights.is_empty() {
-            parsed.model
-        } else {
-            parsed.weights
-        },
     }
 }

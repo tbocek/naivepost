@@ -13,6 +13,10 @@ use gtk4::prelude::*;
 
 use crate::narrate_screen;
 
+/// The slider's floor in px: −6..+6 semitones over at least this, about 12 px a semitone, so a hand can set it.
+/// The first rewrite left it at its natural width, a knob with no track to drag along.
+pub const PITCH_SLIDER_MIN_PX: i32 = 140;
+
 /// The labelled row: `pitch:` · the slider · the current shift. `value` is the page's stored shift, so the
 /// control and `narrate/pitch.txt` agree from the first paint rather than after the first move.
 pub fn build_row(value: f64) -> gtk::Box {
@@ -32,6 +36,7 @@ pub fn build_row(value: f64) -> gtk::Box {
     );
     pitch.set_round_digits(1);
     pitch.set_widget_name("pitch-slider");
+    pitch.set_size_request(PITCH_SLIDER_MIN_PX, -1);
     pitch.set_tooltip_text(Some(&narrate_screen::pitch_tip()));
     pitch.set_value(narrate_screen::clamp_pitch(value));
     row.append(&pitch);

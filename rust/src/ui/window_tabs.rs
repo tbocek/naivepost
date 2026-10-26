@@ -28,6 +28,71 @@ pub fn keep_labels_whole(switcher: &adw::ViewSwitcher) {
     }
 }
 
+/// The tab row's look (§1 badge **5**): the four tabs as one joined group, a frame round the group and a
+/// line between neighbours, the shown tab shaded darker. A locked tab keeps libadwaita's dimmed label. The
+/// first rewrite drew libadwaita's flat switcher: four loose words with only the shown one shaded.
+pub fn style_as_joined(switcher: &adw::ViewSwitcher) {
+    switcher.add_css_class(JOINED_CLASS);
+    // A group of buttons sitting in the bar, not a strip the bar's height tall.
+    switcher.set_valign(gtk::Align::Center);
+    static LOADED: std::sync::Once = std::sync::Once::new();
+    LOADED.call_once(|| {
+        let Some(display) = gtk::gdk::Display::default() else {
+            return;
+        };
+        let provider = gtk::CssProvider::new();
+        provider.load_from_string(JOINED_CSS);
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    });
+}
+
+/// The class [`style_as_joined`] puts on the switcher, which its CSS is scoped to.
+pub const JOINED_CLASS: &str = "naivepost-tabs";
+
+/// One frame round the group; neighbours share a 1 px line; the ends keep the frame's rounding; the shown tab
+/// is shaded, a hovered one lightly. The switcher's own padding and the buttons' own shadow are taken off, so
+/// the shading meets the one frame line: with them, the shown tab drew a second outline just inside the frame.
+const JOINED_CSS: &str = "
+viewswitcher.naivepost-tabs {
+  border: 1px solid alpha(currentColor, 0.18);
+  border-radius: 8px;
+  background: alpha(currentColor, 0.03);
+  padding: 0;
+  border-spacing: 0;
+}
+viewswitcher.naivepost-tabs > button {
+  margin: 0;
+  box-shadow: none;
+  outline: none;
+  min-height: 30px;
+  padding: 2px 12px;
+  border-radius: 0;
+  border: none;
+  border-left: 1px solid alpha(currentColor, 0.18);
+  background: transparent;
+}
+viewswitcher.naivepost-tabs > button:first-child {
+  border-left: none;
+  border-radius: 7px 0 0 7px;
+}
+viewswitcher.naivepost-tabs > button:last-child {
+  border-radius: 0 7px 7px 0;
+}
+viewswitcher.naivepost-tabs > button box {
+  border-spacing: 6px;
+}
+viewswitcher.naivepost-tabs > button:hover:not(:checked) {
+  background: alpha(currentColor, 0.06);
+}
+viewswitcher.naivepost-tabs > button:checked {
+  background: alpha(currentColor, 0.14);
+}
+";
+
 /// Every label under `root` — a switcher button holds its label inside a box, not directly.
 fn labels_of(root: &gtk::Widget) -> Vec<gtk::Label> {
     let mut out = Vec::new();

@@ -53,13 +53,9 @@ fn two_takes() -> Vec<Word> {
     words
 }
 
-/// A reply that repairs the seam by taking take-a's last two words off BEFORE: one stretch, at the
-/// join, which is the shape §F1.10 accepts. Written as the prose answer `judge` reads back, and stored
-/// wrapped in the same envelope a live ask stores.
-/// The reply stored in `cache/llm/textedit`, which is what `judge` reads back: the chat envelope, whose
-/// `content` is the prose answer `parse_joined` parses. Wrapped once, here, because the live door stores
-/// exactly this and a double-wrap would answer "no `joined` in the answer".
-const REPAIRED: &str = r#"{"joined":"one two three four five eight nine ten eleven"}"#;
+/// A reply that repairs the seam by taking take-a's last two words off BEFORE: one stretch, at the join,
+/// quoted the way §3.5 answers. Stored as the answer text, which is what the live door files and `judge` reads.
+const REPAIRED: &str = r#"{"drop_before":"six seven","drop_after":""}"#;
 
 /// The scenario: a private `XDG_CONFIG_HOME` (so the real `~/.config/naivepost` is never read or
 /// written), a project folder whose `cache/llm` starts empty, and the seam's windows read off the
@@ -100,7 +96,6 @@ impl Scene {
         unsafe { std::env::set_var("XDG_CONFIG_HOME", &config) };
 
         let mut project = Project {
-            interval: 1.0,
             context: "A lecture about Ethereum.".to_string(),
             ..Project::default()
         };
@@ -127,17 +122,18 @@ impl Scene {
     /// agree on what was shown.
     fn ask(&self, k: usize, kept: &[bool]) -> naivepost::join_ask::Answered {
         let n = self.seams.len();
-        let before = naivepost::join_ask::window_before(&self.words(), kept, self.seams[0]);
-        let after = naivepost::join_ask::window_after(&self.words(), kept, self.seams[0]);
+        let (wide, before, after) = self.windows(kept);
         naivepost::join_ask::ask_at(
             &self.tree,
             &self.conf,
             &self.project.context,
             k,
             n,
+            &wide,
             &before,
             &after,
             0,
+            None,
             &|| false,
         )
     }
@@ -146,11 +142,10 @@ impl Scene {
     /// pass hashes through (both fold `seam_retries::ask_slot` over the system text).
     fn parts(&self, k: usize, kept: &[bool]) -> Vec<serde_json::Value> {
         let n = self.seams.len();
-        let before = naivepost::join_ask::window_before(&self.words(), kept, self.seams[0]);
-        let after = naivepost::join_ask::window_after(&self.words(), kept, self.seams[0]);
+        let (wide, before, after) = self.windows(kept);
         naivepost::join_ask::seam_parts(
             &self.system(),
-            &self.user(k, n, &before, &after),
+            &self.user(k, n, &wide, &before, &after),
             &self.conf.model,
             0,
         )
@@ -184,18 +179,25 @@ impl Scene {
         )
     }
 
-    fn user(&self, k: usize, n: usize, before: &[String], after: &[String]) -> String {
-        let material = format!(
-            "JOIN {k} of {n}.\n\nBEFORE (the end of the take that was interrupted):\n{}\n\n\
-             AFTER (the beginning of the take that follows):\n{}\n\n\
-             Answer {{\"joined\":\"...\"}} and nothing else: these {b} words and then these {a}, in \
-             that order, with the stretch at the join left out.",
-            before.join(" "),
-            after.join(" "),
-            b = before.len(),
-            a = after.len(),
+    /// The seam's three views through the pass's own public doors, so the ask, the cache key and the pass agree
+    /// on what was shown: the one seam's AFTER runs to the end of the list.
+    fn windows(&self, kept: &[bool]) -> (String, Vec<String>, Vec<String>) {
+        let words = self.words();
+        let seam = self.seams[0];
+        let before = naivepost::join_ask::window_before(&words, kept, seam);
+        let after = naivepost::join_ask::window_after(&words, kept, seam, words.len());
+        let wide = naivepost::joins::wide_view(
+            &words,
+            kept,
+            seam,
+            &self.seams,
+            naivepost::join_ask::WIDE_WORDS,
         );
-        naivepost::prompt_assembly::user_message(&self.project.context, "textedit", &material)
+        (wide, before, after)
+    }
+
+    fn user(&self, k: usize, n: usize, wide: &str, before: &[String], after: &[String]) -> String {
+        naivepost::joins::request(&self.project.context, k, n, wide, before, after, None)
     }
 
     fn wording(&self, key: &str) -> String {
@@ -254,7 +256,27 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_s
 
     // The same door with the whole pass over it: planted answer, then the pass's own lines.
     scene.plant(1, &kept, REPAIRED);
-    let pass = naivepost::join_ask::run_seams(&scene.tree, &scene.project, &words, &scene.times);
+    // Each join says itself before it is asked: a pass of thinking asks takes minutes, and the status line
+    // and bar follow these reports (§04-prepare F1.10) instead of standing still.
+    let mut reports: Vec<(f64, String)> = Vec::new();
+    let pass = naivepost::join_ask::run_seams(
+        &scene.tree,
+        &scene.project,
+        &words,
+        &scene.times,
+        &mut |within, words| reports.push((within, words.to_string())),
+    );
+    let n = scene.seams.len();
+    assert_eq!(
+        reports,
+        (0..n)
+            .map(|index| (
+                index as f64 / n as f64,
+                format!("repairing join {} of {n}", index + 1)
+            ))
+            .collect::<Vec<_>>(),
+        "one report per join, before its ask"
+    );
     let applied = pass
         .logs
         .iter()
@@ -326,7 +348,13 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_s
     );
     // The pass over a word list whose only seam has its BEFORE side empty: neither line is spoken.
     let empty_times: Vec<(f64, f64)> = vec![];
-    let pass = naivepost::join_ask::run_seams(&scene.tree, &scene.project, &words, &empty_times);
+    let pass = naivepost::join_ask::run_seams(
+        &scene.tree,
+        &scene.project,
+        &words,
+        &empty_times,
+        &mut |_, _| {},
+    );
     assert_eq!(pass.removed, 0, "nothing was removed");
     assert!(
         !pass
@@ -343,7 +371,13 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_joins_s
     let kept2: Vec<bool> = vec![true; words2.len()];
     scene2.plant(1, &kept2, REPAIRED);
     let times2 = scene2.times.clone();
-    let repaired = naivepost::join_ask::run_seams(&scene2.tree, &scene2.project, &words2, &times2);
+    let repaired = naivepost::join_ask::run_seams(
+        &scene2.tree,
+        &scene2.project,
+        &words2,
+        &times2,
+        &mut |_, _| {},
+    );
     let summary_at = repaired
         .logs
         .iter()

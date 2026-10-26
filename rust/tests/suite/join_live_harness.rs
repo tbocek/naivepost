@@ -234,7 +234,6 @@ pub fn fixture(tag: &str) -> Fixture {
     seed_words(&tree, "take-a", &TAKE_A);
     seed_words(&tree, "take-b", &TAKE_B);
     let mut project = Project::default();
-    project.interval = 1.0;
     project.context = "A lecture about Ethereum.".to_string();
     project.sources = vec![
         footage("project:sources/take-a.mkv"),
@@ -295,5 +294,5 @@ pub fn clip(body: &str) -> String {
 
 /// Run the pass the same way the ▶ handler does: one call, gated on the joins pass.
 pub fn press(tree: &Tree, project: &Project) -> Vec<String> {
-    naivepost::joins::press_joins(tree, project, MarkingPass::Joins)
+    naivepost::joins::press_joins(tree, project, MarkingPass::Joins, &mut |_, _| {})
 }
