@@ -487,6 +487,15 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s3_the_rest_is_read_through_tools(
 
     for job in &llm_jobs {
         let offered = tools::offered(*job);
+        if *job == roles::Job::Joins {
+            // §3.5: the text edit reads nothing. Its join goes out in three views (wide, close, BEFORE/AFTER)
+            // and it answers in one reply; offered tools beside that, the 27B answered nothing usable.
+            assert!(
+                offered.is_empty(),
+                "the text edit is offered no tool: {offered:?}"
+            );
+            continue;
+        }
         assert!(
             offered.contains(&Tool::GetEvents),
             "{job:?} cannot read events: {offered:?}"

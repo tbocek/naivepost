@@ -57,10 +57,16 @@ pub fn set_session_recordings(recordings: &[crate::timeline::Recording]) {
                 .push(Rc::new(RefCell::new(recordings.to_vec())))
         }),
     }
-    SESSION_DECLARED.with(|flags| match flags.borrow().last() {
-        Some(flag) => flag.set(true),
-        None => flags.borrow_mut().push(std::cell::Cell::new(true)),
+    // The borrow of the list ends before the push: matched on directly, `flags.borrow()` lived through the arms
+    // and the `None` arm's `borrow_mut` panicked "already borrowed" whenever no window had declared a slot yet.
+    let declared = SESSION_DECLARED.with(|flags| {
+        flags.borrow().last().map(|flag| {
+            flag.set(true);
+        })
     });
+    if declared.is_none() {
+        SESSION_DECLARED.with(|flags| flags.borrow_mut().push(std::cell::Cell::new(true)));
+    }
 }
 
 pub(crate) fn push_session_recordings(recordings: Vec<crate::timeline::Recording>) {
@@ -291,6 +297,12 @@ pub fn press_fold_gap(window: &adw::ApplicationWindow, index: usize) -> Option<S
     let Some(gap) = folded_gap_at(window, index) else {
         return None;
     };
+    press_fold_at(window, gap)
+}
+
+/// F2.11 S1: fold or open one gap, named by its seconds -- the door the band's own −/+ badge presses
+/// (`cut_band_marks`), which reads the gap off the badge it drew rather than off a numbered button.
+pub fn press_fold_at(window: &adw::ApplicationWindow, gap: (f64, f64)) -> Option<String> {
     let mut cut_ = newest_review_cut();
     let said = cut_fold::toggle_fold(&mut cut_, gap);
     seed_review_cut(window, &cut_);
@@ -344,7 +356,7 @@ pub fn press_fold_all(window: &adw::ApplicationWindow) -> String {
 /// with no tree (nothing saved yet) keeps its folds in memory only — there is no file to write into.
 pub(crate) fn save_folds(cut_: &Cut) {
     // §7's one writer: a fold toggle lands in `cut/cut.json` through `cut_save`, the same door every edit uses.
-    let _ = crate::cut_save::write_cut(cut_);
+    crate::ui::window_logs::save_cut_or_say(cut_);
 }
 
 /// F2.11 S2 (`An emptied bottom row stays until its \u{2715}`): the row cross's seam. Whether the row

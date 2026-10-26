@@ -170,22 +170,27 @@ fn figure() -> cut::Cut {
 /// The rows a shot must bring into view: `camera-row-1` and `camera-row-2`, by name.
 pub const SHOT_ROWS: [&str; 2] = ["camera-row-1", "camera-row-2"];
 
-/// A row's top edge in the window's own coordinates, or `None` when no widget carries that name.
-///
-/// TEMPORARILY instrumented for this round's layout work: it also prints the row's own height and the heights
-/// reported up its ancestor chain, because a row whose top sits above the painted frame can only be explained
-/// by something ABOVE it in the page being taller than the window (or by an unmapped native answering 0).
-/// The numbers go to stderr so the recipe's own stdout lines stay as they were.
+/// A camera row's top edge in the window's own coordinates (`camera-row-<n>`, counted from 1), or `None` when the
+/// band has no such row. §1 puts the rows ON the band, so the answer is the band's own top plus where its painter
+/// lays row `n` out: the same arithmetic a press on the band reads.
 pub fn row_top(window: &adw::ApplicationWindow, name: &str) -> Option<i32> {
-    let widget = find_widget_by_name(window.upcast_ref(), name)?;
-    let native = widget.native()?;
+    let row: usize = name
+        .strip_prefix("camera-row-")?
+        .parse::<usize>()
+        .ok()?
+        .checked_sub(1)?;
+    let scene = crate::ui::cut_view::band_scene_for(window);
+    if row >= scene.row_count.max(1) {
+        return None;
+    }
+    let band = find_widget_by_name(window.upcast_ref(), "track-band")?;
+    let native = band.native()?;
     // The window's own coordinates: `translate_coordinates` into the native is the walk GTK documents for
     // "where in the painted surface is this widget", and the frame `write_png` captures IS that surface.
     #[allow(deprecated)] // the shot's own walk; gtk 4.12's replacement needs a surface node
-    let y = widget
-        .translate_coordinates(&native, 0.0, 0.0)
-        .map(|(_, y)| y as i32);
-    y
+    let (_, band_top) = band.translate_coordinates(&native, 0.0, 0.0)?;
+    let rows = crate::ui::cut_tracks::rows_for_press(&scene);
+    Some((band_top + rows.pictures + row as f64 * rows.row_h) as i32)
 }
 
 /// The page's own scroll, driven through its `gtk::Adjustment`: the shell wraps every page in
@@ -311,9 +316,9 @@ pub fn shot_covers(window: &adw::ApplicationWindow, shot_top: i32, shot_height: 
 /// the shot passed while being wrong. A row scrolled above the top of the window is out of the picture exactly
 /// as one below its bottom is.
 fn row_place(window: &adw::ApplicationWindow, name: &str) -> Option<(i32, bool)> {
-    let widget = find_widget_by_name(window.upcast_ref(), name)?;
+    let band = find_widget_by_name(window.upcast_ref(), "track-band")?;
     let top = row_top(window, name)?;
-    let painted = top >= 0 && top < window.height() && widget.height() > 0;
+    let painted = top >= 0 && top < window.height() && band.height() > 0;
     Some((top, painted))
 }
 

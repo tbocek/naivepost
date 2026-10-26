@@ -315,8 +315,11 @@ fn pin_session(tag: &str) -> (PathBuf, Tree) {
         // diarizer — so the press costs only the vision and fix asks this test is about. The decode is a
         // REAL (silent) wav: §F1.11 measures the envelope from it for real, and placeholder bytes would
         // stop the row before the fixer was ever asked.
-        std::fs::write(tree.voice16k_wav(lane), silent_wav_bytes(LINES as f64))
-            .expect("the decoded audio");
+        std::fs::write(
+            tree.voice16k_wav(lane),
+            crate::common::silent_wav_bytes(LINES as f64),
+        )
+        .expect("the decoded audio");
         std::fs::write(tree.words_json(lane), words_doc(false).expect("words.json"))
             .expect("the ASR answer");
         std::fs::write(
@@ -332,7 +335,9 @@ fn pin_session(tag: &str) -> (PathBuf, Tree) {
         .expect("the diarizer's answer");
         let frames = tree.frames_dir(lane);
         std::fs::create_dir_all(&frames).expect("the frames folder");
-        for at in [0.0, 1.0, 2.0, 3.0] {
+        // One heartbeat apart, so describe sends every one of them (one frame per heartbeat in a scene).
+        let beat = naivepost::text_gate::HEARTBEAT_S;
+        for at in [0.0, beat, 2.0 * beat, 3.0 * beat] {
             std::fs::write(frames.join(format!("{}.jpg", frame_name(at))), b"jpeg")
                 .expect("the frame");
         }
@@ -411,27 +416,6 @@ fn f1_8_s7_pressing_play_writes_session_txt_and_offsets() {
     assert!(RAN_FILES.load(Ordering::SeqCst), "the file check never ran");
 }
 
-/// A minimal mono 16 kHz `pcm_s16le` wav of `seconds` of silence: what a real decode leaves in
-/// `voice16k.wav`, and what §F1.11's envelope reader needs to find there.
-fn silent_wav_bytes(seconds: f64) -> Vec<u8> {
-    let data = vec![0u8; (seconds * 16_000.0) as usize * 2];
-    let mut out: Vec<u8> = Vec::new();
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&((36 + data.len()) as u32).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    out.extend_from_slice(&1u16.to_le_bytes()); // one channel
-    out.extend_from_slice(&16_000u32.to_le_bytes());
-    out.extend_from_slice(&32_000u32.to_le_bytes()); // bytes per second
-    out.extend_from_slice(&2u16.to_le_bytes()); // block align
-    out.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
-    out.extend_from_slice(&data);
-    out
-}
-
 /// The press's own work, read off disk through the same doors `tests/suite/f1_8_fix_session.rs` reads
 /// through: the placement file, the merged timeline carrying both sources, and the text Cut reads.
 fn check_the_press_writes_the_session_files(app: &adw::Application, _llm: &FakeLlm) {
@@ -446,7 +430,6 @@ fn check_the_press_writes_the_session_files(app: &adw::Application, _llm: &FakeL
     );
 
     let model = Project {
-        interval: 1.0,
         sources: vec![
             recording(&format!("project:sources/{VIDEO}"), true),
             recording(&format!("project:sources/{AUDIO}"), false),
@@ -461,6 +444,11 @@ fn check_the_press_writes_the_session_files(app: &adw::Application, _llm: &FakeL
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_clicked();
+    // Prepare's ▶ hands its walk to a worker (§03-shell §1); its lines and ending land on the poll.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     let logs = ui::window_logs();
     assert!(
         logs.iter()
@@ -485,10 +473,15 @@ fn check_the_press_writes_the_session_files(app: &adw::Application, _llm: &FakeL
 
     // S5's file: rows from BOTH recordings and the deck's two picture events, sorted by start.
     let timeline = textfmt::read_session(&tree.session_tsv()).expect("session.tsv is readable");
-    assert!(
-        timeline.len() >= LINES * 2,
-        "both recordings' words are on it: {timeline:?}"
-    );
+    // Both recordings are heard (F1.3 S0, the video too), so each one's words are rows of the timeline.
+    for lane in [DECK, MIC] {
+        assert!(
+            timeline
+                .iter()
+                .any(|row| row.source == lane && row.who != "EVENT" && !row.text.is_empty()),
+            "{lane}'s words are on it: {timeline:?}"
+        );
+    }
     let sources: Vec<&str> = timeline.iter().map(|row| row.source.as_str()).collect();
     assert!(
         sources.contains(&DECK) && sources.contains(&MIC),
@@ -513,7 +506,7 @@ fn check_the_press_writes_the_session_files(app: &adw::Application, _llm: &FakeL
         "session.txt has to be the whole text"
     );
     assert!(
-        session_txt.contains("S1:") && session_txt.contains("EVENT:"),
+        session_txt.contains("SPEAKER_00:") && session_txt.contains("EVENT:"),
         "who said it is on every line: {session_txt}"
     );
 

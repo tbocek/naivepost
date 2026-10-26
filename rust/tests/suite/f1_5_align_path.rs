@@ -463,7 +463,11 @@ fn stubs(tag: &str, duration: &str, silences: &[(f64, f64)]) -> PathBuf {
     // The decode's output is a REAL (silent) wav rather than a copy of the input: this stub has no audio
     // to decode, and §F1.11's envelope reader parses `voice16k.wav` for real, so placeholder bytes would
     // stop the row with "not a RIFF/WAVE file" before any aligner was asked.
-    std::fs::write(dir.join("silence.wav"), silent_wav_bytes(20.0)).expect("the stub's silence");
+    std::fs::write(
+        dir.join("silence.wav"),
+        crate::common::silent_wav_bytes(20.0),
+    )
+    .expect("the stub's silence");
     common::write_script(
         &ffmpeg,
         format!(
@@ -478,27 +482,6 @@ fn stubs(tag: &str, duration: &str, silences: &[(f64, f64)]) -> PathBuf {
             .expect("the stub runs");
     }
     dir
-}
-
-/// A minimal mono 16 kHz `pcm_s16le` wav of `seconds` of silence: a real RIFF header and zeroed data,
-/// which is what a real decode leaves in `voice16k.wav` and what §F1.11's envelope reader needs.
-fn silent_wav_bytes(seconds: f64) -> Vec<u8> {
-    let data = vec![0u8; (seconds * 16_000.0) as usize * 2];
-    let mut out: Vec<u8> = Vec::new();
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&((36 + data.len()) as u32).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    out.extend_from_slice(&1u16.to_le_bytes()); // one channel
-    out.extend_from_slice(&16_000u32.to_le_bytes());
-    out.extend_from_slice(&32_000u32.to_le_bytes()); // bytes per second
-    out.extend_from_slice(&2u16.to_le_bytes()); // block align
-    out.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
-    out.extend_from_slice(&data);
-    out
 }
 
 /// The fake audio.cpp: §1's three management/task endpoints, answered per path, and every task answer

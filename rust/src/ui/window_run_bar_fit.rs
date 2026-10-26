@@ -1,9 +1,8 @@
 //! §03-shell.md §1's run-bar row, made to FIT at the window's minimum size.
 //!
-//! §1 counts four badges in that row — **10** ▶, **11** "I'm feeling lucky", **12** ⏹, **13** the progress
-//! bar — and then the readouts at its right end, and says that at 1240×900 "every control a page names is on
+//! §1 counts three badges in that row — ▶, ⏹, the progress bar — and then the readouts at its right end, and says that at 1240×900 "every control a page names is on
 //! screen at once". Nothing else belongs in the row: F0.7 has no policy form for a gear to open (badge 6's ⓘ
-//! is a tooltip) and F3.9-F3.11 are jobs of the run after the cut, so `run-controls-inner` holds exactly ▶ / 🎲 / ⏹.
+//! is a tooltip) and F3.9-F3.11 are jobs of the run after the cut, so `run-controls-inner` holds exactly ▶ / ⏹.
 //!
 //! What is left of fitting is one number, and where that number is ASKED. A `gtk::ScrolledWindow` measures
 //! MINIMUM 0 whatever it holds, so GTK happily allocates `run-controls` less than its own buttons and scrolls

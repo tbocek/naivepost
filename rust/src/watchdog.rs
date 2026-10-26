@@ -12,9 +12,9 @@
 //!   It is a THREAD and not another glib timer because the thing being watched is the main context: a
 //!   stalled GUI thread cannot time its own stall.
 //!
-//! The prototype was Go, so "every goroutine's stack" was a runtime dump. Rust has no such call and this
-//! app has one GUI thread, so the equivalent is the one backtrace worth having — captured on the watcher
-//! thread, where it still names the process that hung ([`stacks`]).
+//! The prototype was Go, so "every goroutine's stack" was a runtime dump. Rust has no such call: a thread
+//! can only backtrace itself, and the watcher's own stack names no hang. So [`stacks`] reads every thread
+//! from outside: `/proc` for each thread's name, state and kernel wait, `eu-stack` for the frames.
 //!
 //! §10 lists the pair only inside its prose row ("… hang watchdog 200 ms / 3 s …", spec/10-parameters.md
 //! §4) and gives neither a `P.` id, so both take the bare `machine.` prefix here — the same choice
@@ -80,10 +80,106 @@ pub fn dump_body(silent: Duration, pid: u32, stacks: &str) -> String {
     )
 }
 
-/// The stacks a dump carries. Captured on the watcher thread: the hung thread cannot report on itself,
-/// and this process has one GUI thread, so this is the whole of the prototype's "every goroutine".
+/// The stacks a dump carries: EVERY thread of this process, the GTK thread first among equals.
+///
+/// Rust can only backtrace the thread it runs on, and this runs on the watcher: the first port dumped
+/// that one (`thread_start` → `call_once`, the same five lines every time), which named no hang at all.
+/// So the stacks are read from OUTSIDE: a line per thread from `/proc` (its name, its state and the kernel
+/// call it is waiting in, which alone tells a socket read from a lock from a busy loop), then, where
+/// elfutils' `eu-stack` is installed, every thread's frames as the debugger sees them.
 pub fn stacks() -> String {
-    std::backtrace::Backtrace::force_capture().to_string()
+    let pid = std::process::id();
+    let mut out = threads_from_proc(pid);
+    match eu_stack(pid) {
+        Ok(frames) => out.push_str(&frames),
+        Err(why) => out.push_str(&format!("(no frames: {why})\n")),
+    }
+    out
+}
+
+/// One line per thread: `tid <n> (<name>) <state> waiting in <wchan>`, the GTK thread (the main thread,
+/// whose tid is the pid) marked.
+fn threads_from_proc(pid: u32) -> String {
+    let task = format!("/proc/{pid}/task");
+    let Ok(entries) = std::fs::read_dir(&task) else {
+        return format!("(no thread list: {task} is not readable)\n");
+    };
+    let mut tids: Vec<u32> = entries
+        .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+        .collect();
+    tids.sort_unstable();
+    let read = |tid: u32, file: &str| {
+        std::fs::read_to_string(format!("{task}/{tid}/{file}"))
+            .map(|text| text.trim().to_string())
+            .unwrap_or_default()
+    };
+    let mut out = String::new();
+    for tid in tids {
+        // `stat` is `<tid> (<comm>) <state> …`; the comm may hold spaces, so the state is read after the
+        // LAST closing parenthesis.
+        let stat = read(tid, "stat");
+        let state = stat
+            .rsplit_once(") ")
+            .and_then(|(_, rest)| rest.split_whitespace().next())
+            .unwrap_or("?");
+        let wchan = match read(tid, "wchan") {
+            w if w.is_empty() || w == "0" => "user space".to_string(),
+            w => w,
+        };
+        let gtk = if tid == pid { " <- the gtk thread" } else { "" };
+        out.push_str(&format!(
+            "tid {tid} ({}) {state} waiting in {wchan}{gtk}\n",
+            read(tid, "comm")
+        ));
+    }
+    out
+}
+
+/// How long `eu-stack` may take before the dump goes out without its frames.
+const EU_STACK_WAIT: Duration = Duration::from_secs(10);
+
+/// Every thread's frames, from elfutils' `eu-stack -p`. Yama's default ptrace scope lets only an ANCESTOR
+/// attach, and `eu-stack` is this process's child, so the process names any tracer allowed for the length
+/// of this one call (`PR_SET_PTRACER`) and takes it back after.
+fn eu_stack(pid: u32) -> Result<String, String> {
+    // SAFETY: prctl with integer arguments only changes this process's own ptrace permission.
+    unsafe { libc::prctl(libc::PR_SET_PTRACER, libc::PR_SET_PTRACER_ANY, 0, 0, 0) };
+    let frames = run_eu_stack(pid);
+    // SAFETY: as above; 0 takes the permission back.
+    unsafe { libc::prctl(libc::PR_SET_PTRACER, 0, 0, 0, 0) };
+    frames
+}
+
+fn run_eu_stack(pid: u32) -> Result<String, String> {
+    let mut child = crate::subprocess::spawn_piped("eu-stack", &["-p", &pid.to_string()])
+        .map_err(|why| format!("eu-stack (elfutils) did not start: {why}"))?;
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if started.elapsed() < EU_STACK_WAIT => {
+                std::thread::sleep(Duration::from_millis(50))
+            }
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "eu-stack did not finish in {}s",
+                    EU_STACK_WAIT.as_secs()
+                ));
+            }
+            Err(why) => return Err(format!("eu-stack: {why}")),
+        }
+    }
+    let out = child.wait_with_output().map_err(|why| why.to_string())?;
+    let frames = String::from_utf8_lossy(&out.stdout).into_owned();
+    if frames.trim().is_empty() {
+        return Err(format!(
+            "eu-stack printed nothing: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(frames)
 }
 
 /// Mark one heartbeat: the GUI thread turned at `now_ms`. Called by the timer [`arm`] stands, and by a

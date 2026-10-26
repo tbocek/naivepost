@@ -84,7 +84,7 @@ pub fn run_task(task: &Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     // today (the transcription dial resolves it the same way).
     let paths = crate::settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
-    let session = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let session = crate::startup::open_dir();
     let tree = Tree::new(&session).map_err(|_| {
         format!(
             "{}: not a project folder to split a recording in",

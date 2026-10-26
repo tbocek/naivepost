@@ -11,8 +11,6 @@
 //! whole-reply rejection and §S3's skips without a socket. Both run through the one private body, so they
 //! cannot drift apart.
 
-use adw::prelude::*;
-
 use crate::policy;
 use crate::tools::clips::Clips;
 use crate::ui::window;
@@ -25,7 +23,18 @@ use crate::ui::window;
 /// they answer. Each round TELEPHONES through `ask_effects` below — §F3.11's second round is a fresh ask, not the
 /// same rejected reply handed to the rules twice.
 pub fn run_effects_pass(window: &adw::ApplicationWindow) -> String {
-    place_effects_reply(window, &|round, batch| ask_effects(window, batch, round))
+    let inputs = window::pass_inputs(window);
+    let cut_ = window::newest_review_cut();
+    let out = walk_effects(&inputs, &cut_);
+    window::land_pass(window, &out);
+    out.said
+}
+
+/// The decorations pass over `cut_`, asking for real, with nothing read off the window: what a worker runs.
+pub fn walk_effects(inputs: &window::PassInputs, cut_: &crate::cut::Cut) -> window::PassOut {
+    walk_effects_with(inputs, cut_, &|round, batch| {
+        ask_effects(inputs, cut_, batch, round)
+    })
 }
 
 /// F3.11 S2/S3/S5 with a scripted reply: the same route the pass takes, minus the telephone. A test feeds the
@@ -35,18 +44,24 @@ pub fn run_effects_pass_with_reply(
     window: &adw::ApplicationWindow,
     calls: &[crate::cut_effects_pass::Call],
 ) -> String {
-    place_effects_reply(window, &|_, _| calls.to_vec())
+    let inputs = window::pass_inputs(window);
+    let out = walk_effects_with(&inputs, &window::newest_review_cut(), &|_, _| {
+        calls.to_vec()
+    });
+    window::land_pass(window, &out);
+    out.said
 }
 
 /// F3.11 S1's leg: the ask over the batch this pass just built, for this round of it. Returns no calls when
 /// there is nothing to ask about or nowhere to ask it — the shape `cut_speeds_pass::ask_speeds` keeps, so a
 /// missing project folder is said in the log rather than thrown.
 fn ask_effects(
-    window: &adw::ApplicationWindow,
+    inputs: &window::PassInputs,
+    cut_: &crate::cut::Cut,
     batch: &Clips,
     attempt: u32,
 ) -> Vec<crate::cut_effects_pass::Call> {
-    let Some(tree) = window::narrate_session_tree() else {
+    let Some(tree) = inputs.tree.as_ref() else {
         window::log_line("!!! effects: no project folder to ask from -- nothing asked");
         return Vec::new();
     };
@@ -56,7 +71,6 @@ fn ask_effects(
     // §9 (`the caption, speed and decoration briefs name no camera or lane`): the batch is
     // told in words which cameras filmed it and which recordings are heard, but only once
     // there is more than one of either to tell apart — see [`crate::effect_overlap::brief_lines`].
-    let cut_ = window::newest_review_cut();
     let mut rows: Vec<String> = cut_
         .segs
         .iter()
@@ -67,8 +81,8 @@ fn ask_effects(
     rows.dedup();
     let lanes: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
     let asked = crate::effects_ask::ask_named(
-        &tree,
-        &window::user_context(window),
+        tree,
+        &inputs.context,
         batch,
         &rates,
         &rows,
@@ -85,18 +99,19 @@ fn ask_effects(
 /// `ask` is the telephone: called once per round with the batch as it stands, so a retry asks again rather than
 /// re-reading an answer that was just rejected. The scripted door passes a closure that hands back the same
 /// calls every time, which is what lets a test exercise the two-round rule without a socket.
-fn place_effects_reply(
-    window: &adw::ApplicationWindow,
+fn walk_effects_with(
+    inputs: &window::PassInputs,
+    cut_: &crate::cut::Cut,
     ask: &dyn Fn(u32, &Clips) -> Vec<crate::cut_effects_pass::Call>,
-) -> String {
-    if !policy::pass_runs(&window::session_policy(window), policy::Pass::Decorations) {
-        let said = "decorations are off \u{2014} the context ruled them out".to_string();
-        if let Some(status_line) = window::find_status(window.upcast_ref()) {
-            status_line.set_text(&said);
-        }
-        return said;
+) -> window::PassOut {
+    if !policy::pass_runs(&inputs.policy, policy::Pass::Decorations) {
+        return window::PassOut {
+            said: "decorations are off \u{2014} the context ruled them out".to_string(),
+            cut: None,
+        };
     }
-    let mut cut_ = window::newest_review_cut();
+    let mut cut_ = cut_.clone();
+    let mut changed = false;
     // S1's batch: the visible segments, numbered from 1, with the captions already on the cut clamped onto
     // them (see [`decoration_batch`]). The rates come from the same batch, so the brief and the refusal rules
     // read one picture of the cut rather than two that can disagree.
@@ -150,9 +165,7 @@ fn place_effects_reply(
             } else {
                 placed_count = Some(effects.len());
                 cut_.fx.extend(effects.iter().cloned());
-                window::save_insert_cut(&cut_);
-                window::record_edit(window, &cut_);
-                window::refresh_effects_lane(window);
+                changed = true;
                 crate::cut_effects_pass::placed(effects.len())
             }
         }
@@ -181,11 +194,11 @@ fn place_effects_reply(
             ));
         }
     }
-    if let Some(status_line) = window::find_status(window.upcast_ref()) {
-        status_line.set_text(&said);
-    }
     window::log_line(&said);
-    said
+    window::PassOut {
+        said,
+        cut: changed.then_some(cut_),
+    }
 }
 
 /// F3.11 S1: the clips the decorations pass asks about — the VISIBLE SEGMENTS of the cut, numbered from 1 in

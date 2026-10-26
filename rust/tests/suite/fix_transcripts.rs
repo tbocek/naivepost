@@ -115,10 +115,48 @@ fn f1_8_s1_offsets_tsv_is_written_before_any_block_goes_out() {
         "lecture\tcrowd\t-10.00\n"
     );
 
-    // Nothing to pair: the file is still written, empty, so a reader never mistakes absence for zero.
+    // Nothing to pair: no file, and the one the run before left is gone (§3: a file exists only when it says
+    // something; a 0-byte one looked like finished work).
     let audio_only = [source(OTHER, "crowd.wav", 0.0, 60.0, false)];
     assert_eq!(fix::write_offsets(&tree, &audio_only).unwrap(), 0);
-    assert_eq!(std::fs::read_to_string(tree.offsets_tsv()).unwrap(), "");
+    assert!(!tree.offsets_tsv().exists(), "no pairs, no offsets.tsv");
+}
+
+/// §3 Data written: a session where nothing was heard writes no 0-byte transcript, subtitles, timeline or
+/// session text, and removes the empty ones an earlier run left. 07-news (videos only, never transcribed)
+/// ended with every one of them at 0 bytes.
+#[test]
+fn sec_04_prepare_3_data_written_nothing_heard_writes_no_empty_files() {
+    let tree = tree("nothing-heard");
+    let stale = [
+        tree.transcript_fixed_tsv(BASE),
+        tree.subtitles_srt(BASE),
+        tree.session_tsv(),
+        tree.session_txt(),
+        tree.offsets_tsv(),
+    ];
+    for file in &stale {
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, "").unwrap();
+    }
+    let sources = [source(BASE, "lecture.mkv", 0.0, 60.0, true)];
+    let outcome = fix::run(
+        &tree,
+        &sources,
+        "",
+        MarkingPass::None,
+        |_| panic!("nothing heard, nothing to ask"),
+        || Ok(Vec::new()),
+    )
+    .unwrap();
+    for file in &stale {
+        assert!(!file.exists(), "{} is not left at 0 bytes", file.display());
+    }
+    assert!(
+        outcome.files.is_empty(),
+        "no file claimed: {:?}",
+        outcome.files
+    );
 }
 
 #[test]
@@ -807,8 +845,8 @@ fn f1_8_s7_a_run_places_fixes_merges_and_writes_every_file() {
     assert_eq!(outcome.rows, 3);
     assert_eq!(outcome.sources, 1);
     assert_eq!(outcome.steps, vec![fix::checkpoint(1, 1, BASE)]);
-    // S1's file is written before any block goes out, so the seconds a context names are real ones.
-    assert!(tree.offsets_tsv().exists());
+    // One video and no recording to pair it with: S1 has no row to write, so no offsets.tsv (§3).
+    assert!(!tree.offsets_tsv().exists());
     assert_eq!(
         textfmt::read_lines(&tree.transcript_fixed_tsv(BASE)).unwrap()[0].text,
         "number 0 about the widget"

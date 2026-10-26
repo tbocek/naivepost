@@ -37,7 +37,7 @@ use crate::ui::{cut_folds, cut_tracks, cut_view, window as ui};
 
 /// The band's geometry and pointer maths for one press, in one place so the widget handler and a test
 /// answer with the same numbers. Nothing here decides a scope or a snap — that is `cut_select`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Geometry {
     /// The band's pixels-per-second (`cut_view::strip_pps` on the placeholder strip, `cut_view::pps` on
     /// the painted band — each surface is measured at the zoom it is actually drawn at).
@@ -50,6 +50,9 @@ pub struct Geometry {
     pub bands: crate::cut_select::SurfaceBands,
     /// Rows the page draws, so `surface_at` knows where the last row ends.
     pub row_count: usize,
+    /// The tape as the painter lays it out (`cut_tracks::band_span`): the filmed runs at this zoom, folds and
+    /// the gaps between recordings taking no width. Seconds and pixels are converted through it.
+    pub span: timeline::Span,
 }
 
 impl Geometry {
@@ -58,26 +61,27 @@ impl Geometry {
     /// cut, so a press must too, or the rows shift under the pointer.
     pub fn of(window: &adw::ApplicationWindow) -> Self {
         let cut_ = ui::newest_review_cut();
-        let _ = window;
+        let scene = cut_view::band_scene_for(window);
         Geometry {
-            pps: cut_view::pps(),
-            origin: cut_view::origin(),
+            pps: scene.pps,
+            origin: scene.origin,
             gutter: cut_view::gutter_px(),
             bands: cut_tracks::bands_for(crate::fx_lane::row_count(&cut_.fx)),
             row_count: timeline::row_count(&cut_folds::page_recordings(), &cut_),
+            span: cut_tracks::band_span(&scene),
         }
     }
 
-    /// The session second a press x is at: past the gutter and the scroll, never negative. Same arithmetic
-    /// as `cut_line_press::press`, which is the point — a line click and a band drag must call the same
-    /// pixel the same second.
+    /// The session second a press x is at: the painter's own inverse (`cut_tracks::span_t_at`, the scroll
+    /// added back), never negative. The same door `cut_line_press::press` asks, which is the point: a line
+    /// click and a band drag must call the same pixel the same second.
     pub fn second_at(&self, x_px: f64) -> f64 {
-        ((x_px - self.gutter - self.origin) / self.pps).max(0.0)
+        cut_tracks::span_t_at(&self.span, x_px + self.origin)
     }
 
     /// A band's seconds as pixels inside the band, which is the space `part_at` measures grips in.
     pub fn px_of(&self, seconds: f64) -> f64 {
-        self.gutter + self.origin + seconds * self.pps
+        cut_tracks::span_x_of(&self.span, seconds) - self.origin
     }
 
     /// Which ground a press y was drawn on.
@@ -287,6 +291,14 @@ fn held_drag() -> Option<Drag> {
 /// S1/S2 at drag-begin: decide the scope or the grabbed part, and handle the effects lane there and once.
 /// Returns what it decided so a test can read the same answer the page acted on.
 pub fn begin(window: &adw::ApplicationWindow, x_px: f64, y_px: f64) -> Press {
+    // A press on one of the band's marks (a ✕, a fold badge, a sound switch, a lens) is that mark's, answered on
+    // release by `cut_band_marks::press_at`: it starts no selection and clears none.
+    let scene = crate::ui::cut_view::band_scene_for(window);
+    let rows = crate::ui::cut_tracks::rows_for_press(&scene);
+    if crate::ui::cut_band_marks::mark_at(&scene, rows, x_px, y_px).is_some() {
+        *current_drag().borrow_mut() = None;
+        return Press::Click;
+    }
     let geo = Geometry::of(window);
     let held = ui::selection(window);
     let press = press_at(&geo, x_px, y_px, held.as_ref());
@@ -395,12 +407,18 @@ pub fn attach(window: &adw::ApplicationWindow) {
     let gesture = gtk::GestureDrag::new();
     gesture.set_button(1);
     let win = window.clone();
+    // GTK hands `drag-update` the OFFSET from the press, not the pointer's place: the press point is kept so
+    // each update is asked at where the hand is now, in the band's own pixels.
+    let pressed: std::rc::Rc<std::cell::Cell<(f64, f64)>> = Default::default();
+    let at_press = pressed.clone();
     gesture.connect_drag_begin(move |_g, x, y| {
+        at_press.set((x, y));
         begin(&win, x, y);
     });
     let upd = window.clone();
-    gesture.connect_drag_update(move |_g, x, y| {
-        update(&upd, x, y);
+    gesture.connect_drag_update(move |_g, dx, dy| {
+        let (x, y) = pressed.get();
+        update(&upd, x + dx, y + dy);
     });
     let done = window.clone();
     gesture.connect_drag_end(move |_g, _x, _y| {

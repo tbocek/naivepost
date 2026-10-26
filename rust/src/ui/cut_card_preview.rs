@@ -234,8 +234,30 @@ pub fn show_card_frame(window: &adw::ApplicationWindow, cut_: &Cut, t: f64) -> O
     let kind = cut_insert::kind(&card.ins);
     let animated = svg_is_animated(Path::new(card.ins.split(['?']).next().unwrap_or_default()));
     let length = card.dur.max(card.e - card.s);
-    let mut log = |_: &str| {};
-    let rendered = render_card(FFMPEG, &card.ins, kind, animated, length, &dir, &mut log).ok()?;
+    // Rendered on a worker (§03-shell §1): ffmpeg takes seconds on a new card, and a line move never waits.
+    // Until the frames land the panel keeps what is up (an empty path says so to `cut_picture::refresh`).
+    let ins = card.ins.clone();
+    let render_dir = dir.clone();
+    let rendered = match crate::ui::cut_picture_cache::card_frames(&dir, move || {
+        render_card(
+            FFMPEG,
+            &ins,
+            kind,
+            animated,
+            length,
+            &render_dir,
+            &mut |_| {},
+        )
+    }) {
+        crate::ui::cut_picture_cache::Card::Ready(paths) => paths,
+        crate::ui::cut_picture_cache::Card::Coming => {
+            return Some(CardFrame {
+                path: PathBuf::new(),
+                held: card.is_insert(),
+            })
+        }
+        crate::ui::cut_picture_cache::Card::Failed => return None,
+    };
     let rate = cut_insert::preview_fps(kind, animated).unwrap_or(1.0);
     let inside = if card.is_insert() {
         (t - card.s).clamp(0.0, card.dur)
@@ -254,9 +276,7 @@ pub fn show_card_frame(window: &adw::ApplicationWindow, cut_: &Cut, t: f64) -> O
         .iter()
         .find(|path| frame_second(path, rate) == Some(want))
         .cloned()?;
-    if !crate::ui::cut_picture::show_frame(window, Some(&path)) {
-        return None;
-    }
+    // `cut_picture::refresh` puts it on the panel; a frame that will not decode leaves the footage up there.
     Some(CardFrame {
         path,
         held: card.is_insert(),

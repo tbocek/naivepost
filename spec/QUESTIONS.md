@@ -43,30 +43,6 @@ Options:
 
 ---
 
-## F0.7 · This item did not pass its attempts. How should the rounds go on?
-
-Asked 2026-10-24 by codehalter v175 (2026-10-23, 9ef5bbd) while building F0.7 Derive the editing policy (new).
-
-The spec comes closest in `03-shell.md:163`:
-
-> F0.7 Derive the editing policy (new)
-
-What stopped the last attempt:
-
-```
-screens of items already done matched their pictures before and no longer do: §05-cut#1-screen's rust/shots/05-cut.png beside spec/img/05-cut.png: Tracks area: the spec picture shows a tall picture row filled with camera-frame thumbnails (with amber striped start/end edges) and a waveform audio strip directly beneath it; the render has no such picture/thumbnail row at all — below the selection band it shows only two flat lane rows (a grey/yellow lane with a thin blue strip and a 'mono' lane with a purple band), with no thumbnails and no waveform strip.; Below the tracks: the render leaves a large empty white band between the last lane row and the bottom run bar, whereas in the spec picture the track content (picture row, waveform strip, scrollbar) fills that vertical space down to the status line.; Bottom run bar (left of centre): the spec picture shows a '1 steps' dropdown button next to the blue play button; the render shows an 'I'm feeling lucky' button in that position instead.. Put each back the way its picture shows, without undoing this item's own work: those items are done and their screens must stay as they were
-```
-
-Options:
-
-1. Try again as the spec says. Example: right when the cause was elsewhere and is gone now, such as a build another item broke or a tool installed since: answer `1`, and the next /spec gives it fresh attempts
-2. Change what the spec asks. Example: edit the item's section in `spec/03-shell.md` (a smaller step, another format, a service left out) and answer `2`; the next /spec builds the new text
-3. Tell the rounds how to get past it. Example: answer `3: test the upload against a local fake server on port 8080` or `3: install libadwaita 1.5 in the Dockerfile first`, and every round of the item reads it
-
-**Answer:** 1. The attempts failed on the done-screen check of 05-cut, and that screen's render was not stable: the snapshot took its picture after a fixed 300 ms and read what earlier runs had left beside the launch, so the same code drew the form column scrolled in one run and at its top in the next. The snapshot now takes its picture at the screen's ready event, in a working directory of its own, and two renders of every screen are identical. Build the item again as the spec says.
-
----
-
 ## §06-effects#2-the-lane-and-the-preview · This item did not pass its attempts. How should the rounds go on?
 
 Asked 2026-10-24 by codehalter v175 (2026-10-23, 9ef5bbd) while building 2. The lane and the preview.
@@ -93,24 +69,24 @@ Options:
 
 ---
 
-## §07-narrate#1-screen · This item did not pass its attempts. How should the rounds go on?
+## §06-effects#2-the-lane-and-the-preview · This item did not pass its attempts. How should the rounds go on?
 
-Asked 2026-10-24 by codehalter v175 (2026-10-23, 9ef5bbd) while building 1. Screen.
+Asked 2026-10-24 by codehalter v177 (2026-10-24, c75be84) while building 2. The lane and the preview.
 
-The spec comes closest in `07-narrate.md:11`:
+The spec comes closest in `06-effects.md:28`:
 
-> 1. Screen
+> 2. The lane and the preview
 
 What stopped the last attempt:
 
 ```
-codehalter rendered the screen itself and an independent look put it beside the spec's picture: the arrangement differs. rust/shots/07-narrate.png beside spec/img/07-narrate.png: Right 'lines' column: each row's header-line action buttons (▶ speak, ↻ re-roll, ＋ add-below, 🗑 remove) that sit fully inside the window at the right end of each header in the picture are pushed off the right edge in the render, leaving only a thin clipped sliver of a box at the window border.; Right 'lines' column: the row text boxes overflow the window's right edge so their text is cut off mid-word (e.g. row 2 ends '...what a 51 percent', row 3 ends '...the archite', row 4 ends '...the pa'), whereas in the picture every line's text wraps inside the panel.; Left column: there is a large empty vertical band between the transport row (≈y460) and the voice picker (≈y620); in the picture the voice picker begins directly under the transport row with no such gap.. Fix each in the program, the way a user sees the screen: changing only how the snapshot stages it fixes nothing. One exception: where the picture shows something open over the window (a menu, a popover, a dialog), that is a surface of its own, and a render of the window alone does not contain it. The snapshot then draws the window first and the open surface on top of it, at the place it opens and at its own size; a render showing the menu alone, stretched over the whole window, is fixed in the snapshot
+codehalter rendered the screen itself and an independent look put it beside the spec's picture: the arrangement differs. rust/shots/06-lane.png beside spec/img/06-lane.png: Left edge, thumbnail row: the render draws a lane label that is clipped at the left edge — it reads 'ession-tape', with the first letter cut off / hidden behind the dark gutter column; the picture has no such clipped text at the left of the picture row.; Left gutter / rows: the picture shows round speaker sound switches at the lower-left of the rows (one at the far lower-left corner of the waveform strip and a second one partway along it at the start of the next recording's sound strip), but the render has only a single round speaker at the very bottom-left and lacks the per-row / per-lane sound switches in the gutter.; Bottom of the window: the render has a tall, empty lavender band labelled 'mic-lav mono' occupying roughly the bottom fifth of the window with no waveform or other content drawn in it, whereas in the picture the bottom region is filled by the waveform strip running to the bottom edge.. Fix each in the program, the way a user sees the screen: changing only how the snapshot stages it fixes nothing. One exception: where the picture shows something open over the window (a menu, a popover, a dialog), that is a surface of its own, and a render of the window alone does not contain it. The snapshot then draws the window first and the open surface on top of it, at the place it opens and at its own size; a render showing the menu alone, stretched over the whole window, is fixed in the snapshot
 ```
 
 Options:
 
 1. Try again as the spec says. Example: right when the cause was elsewhere and is gone now, such as a build another item broke or a tool installed since: answer `1`, and the next /spec gives it fresh attempts
-2. Change what the spec asks. Example: edit the item's section in `spec/07-narrate.md` (a smaller step, another format, a service left out) and answer `2`; the next /spec builds the new text
+2. Change what the spec asks. Example: edit the item's section in `spec/06-effects.md` (a smaller step, another format, a service left out) and answer `2`; the next /spec builds the new text
 3. Tell the rounds how to get past it. Example: answer `3: test the upload against a local fake server on port 8080` or `3: install libadwaita 1.5 in the Dockerfile first`, and every round of the item reads it
 
-**Answer:** 3: Two parts of the screen differ, and each is in the program. (a) The lines column: every line's header row ends with its ▶ speak, ↻ re-roll, + and 🗑 buttons inside the column, and the line's text box wraps its text within the column; the render pushes the buttons past the column's right edge and lets the text run out of it ("…the pa"). (b) The take band under the narrator row (badge 10, the voice reference's waveform with its time ruler) is missing: the snapshot reports "take band seeded = false", so it stages no voice reference; stage one through the same door the app uses, so the band is drawn.
+**Answer:** 3: The lane label is drawn whole ("session-tape"); it only reads as clipped because its dark text sits on a dark-blue frame, so give the label a light backing behind its text. The real gap: the tape row (the pictures and their waveform) needs its own sound switch in the gutter at its lower left, as the mic-lav lane has one. The 🔊 partway along the row in the picture, at the start of the next clip's sound strip, is the per-clip speaker badge on a clip boundary (05-cut.md Tracks), not part of this item.

@@ -30,36 +30,84 @@ pub struct CaptionBatch {
 #[allow(dead_code)]
 pub const SPEEDS_PASS_LABEL: &str = "\u{23e9} Speeds";
 
+/// What the three passes read off the window before they run, so their walks need nothing else from it and can
+/// run on a worker (§03-shell §1, "The window thread never waits"): the policy whose switches gate them, the User
+/// Context their briefs carry, the project folder they ask from, and the sources the captions' words come from.
+#[derive(Debug, Clone)]
+pub struct PassInputs {
+    pub policy: crate::project::Policy,
+    pub context: String,
+    pub tree: Option<crate::layout::Tree>,
+    pub sources: Vec<String>,
+}
+
+/// Read [`PassInputs`] off the window, on the window thread.
+pub fn pass_inputs(window: &adw::ApplicationWindow) -> PassInputs {
+    PassInputs {
+        policy: ui::session_policy(window),
+        context: ui::user_context(window),
+        tree: ui::narrate_session_tree(),
+        sources: ui::session_sources(window),
+    }
+}
+
+/// Where a pass's walk ended: the sentence for the status line, and the cut to write when it placed something.
+#[derive(Debug, Clone)]
+pub struct PassOut {
+    pub said: String,
+    pub cut: Option<crate::cut::Cut>,
+}
+
+/// Land one pass's walk on the window: the cut written and recorded as its own undo step (one ↶ takes the whole
+/// pass back), the effects lane redrawn, the sentence on the status line.
+pub fn land_pass(window: &adw::ApplicationWindow, out: &PassOut) {
+    if let Some(cut_) = &out.cut {
+        ui::save_insert_cut(cut_);
+        ui::record_edit(window, cut_);
+        refresh_effects_lane(window);
+    }
+    if let Some(status_line) = ui::find_status(window.upcast_ref()) {
+        status_line.set_text(&out.said);
+    }
+}
+
 /// F3.9 S1–S6: run the captions pass over this window's newest cut and say what happened.
 ///
 /// Deliberately rule-free: every decision lives in [`crate::cut_captions`] (`batches`, `place`, `retries`,
 /// `skipped`). This seam only reads the page, feeds the rules, and writes what they answer. Accepted captions go
 /// through `ui::record_edit` and NEVER `seed_review_cut`, so one ↶ takes the whole pass back exactly as every other
 /// Apply path does; a batch whose reply was rejected twice logs `cut_captions::skipped` and the run carries on,
-/// because captions are worth having and not worth failing a run over.
+/// because captions are worth having and not worth failing a run over. Read, walk and land in one go: the
+/// suggest run walks it on a worker instead ([`walk_captions`]).
 pub fn run_captions_pass(window: &adw::ApplicationWindow) -> String {
-    if !policy::pass_runs(&ui::session_policy(window), policy::Pass::Captions) {
-        let said = "captions are off \u{2014} the context ruled them out".to_string();
-        if let Some(status_line) = ui::find_status(window.upcast_ref()) {
-            status_line.set_text(&said);
-        }
-        return said;
+    let inputs = pass_inputs(window);
+    let out = walk_captions(&inputs, &ui::newest_review_cut());
+    land_pass(window, &out);
+    out.said
+}
+
+/// The captions pass over `cut_`, asking for real, with nothing read off the window: what a worker runs.
+pub fn walk_captions(inputs: &PassInputs, cut_: &crate::cut::Cut) -> PassOut {
+    if !policy::pass_runs(&inputs.policy, policy::Pass::Captions) {
+        return PassOut {
+            said: "captions are off \u{2014} the context ruled them out".to_string(),
+            cut: None,
+        };
     }
     // The clips the pass asks about are the KEPT runs of the cut, numbered from 1 in play order: the model is
     // shown one clip at a time and cannot know where it sits in the session, which is why it answers in offsets
     // and this module turns those into seconds (`spec/00-principles.md`).
-    let runs = cut_play::kept_runs(&ui::review_cut_segs(window));
+    let runs = cut_play::kept_runs(&cut_.segs);
     if runs.is_empty() {
-        let said = "nothing kept to caption".to_string();
-        if let Some(status_line) = ui::find_status(window.upcast_ref()) {
-            status_line.set_text(&said);
-        }
-        return said;
+        return PassOut {
+            said: "nothing kept to caption".to_string(),
+            cut: None,
+        };
     }
     let ranges = crate::cut_captions::batches(runs.len());
     let mut placed_total = 0usize;
     let mut skipped_ranges: Vec<String> = Vec::new();
-    let mut cut_ = ui::newest_review_cut();
+    let mut cut_ = cut_.clone();
     for (first, last) in ranges {
         let count = (last - first + 1) as usize;
         let clips: Vec<(u32, f64)> = runs
@@ -73,13 +121,7 @@ pub fn run_captions_pass(window: &adw::ApplicationWindow) -> String {
         // One attempt, then the retry `retries` allows, then give up on THIS batch only.
         let mut accepted: Option<Vec<crate::cut::Fx>> = None;
         for runs_so_far in 1..=2u32 {
-            let reply = ask_captions(
-                window,
-                &ui::user_context(window),
-                &clips,
-                &runs,
-                runs_so_far,
-            );
+            let reply = ask_captions(inputs, &clips, &runs, runs_so_far);
             match crate::cut_captions::place(&clips, &reply) {
                 crate::cut_captions::Reply::Accepted(fx) => {
                     accepted = Some(fx);
@@ -102,11 +144,7 @@ pub fn run_captions_pass(window: &adw::ApplicationWindow) -> String {
             None => skipped_ranges.push(format!("{first}\u{2013}{last}")),
         }
     }
-    if placed_total > 0 || !skipped_ranges.is_empty() {
-        ui::save_insert_cut(&cut_);
-        ui::record_edit(window, &cut_);
-        refresh_effects_lane(window);
-    }
+    let changed = placed_total > 0 || !skipped_ranges.is_empty();
     let mut said = format!("{} caption(s) placed", placed_total);
     for range in skipped_ranges {
         // §F3.9's own sentence, verbatim, once per batch that would not answer.
@@ -116,12 +154,12 @@ pub fn run_captions_pass(window: &adw::ApplicationWindow) -> String {
         said.push_str(" \u{2014} ");
         said.push_str(&line);
     }
-    if let Some(status_line) = ui::find_status(window.upcast_ref()) {
-        status_line.set_text(&said);
+    PassOut {
+        said,
+        cut: changed.then_some(cut_),
     }
-    ui::log_line(&said);
-    said
 }
+
 /// F3.9 S2/S3: ask one batch of clips of the model, over HTTP at the address the settings hold
 /// (re-read per call). `captions_ask::ask` returns the captions it asked for as clip-relative calls,
 /// which `cut_captions::place` then lets §3.7's `add_caption` tool judge. The word lines are read off
@@ -130,21 +168,20 @@ pub fn run_captions_pass(window: &adw::ApplicationWindow) -> String {
 /// is logged where it happened (§00-principles: name the reason) and answers with no calls, leaving this
 /// batch to its own retry/skip rule.
 fn ask_captions(
-    window: &adw::ApplicationWindow,
-    context: &str,
+    inputs: &PassInputs,
     clips: &[(u32, f64)],
     runs: &[(f64, f64)],
     attempt: u32,
 ) -> Vec<crate::cut_captions::Call> {
-    let Some(tree) = ui::narrate_session_tree() else {
+    let Some(tree) = inputs.tree.as_ref() else {
         ui::log_line("!!! captions: no project folder to read words from -- nothing asked");
         return Vec::new();
     };
-    let (words, times) = hand_edit::session_words(&tree, &ui::session_sources(window));
+    let (words, times) = hand_edit::session_words(tree, &inputs.sources);
     let offsets = crate::captions_ask::offsets_in_clips(runs, &words, &times);
     let asked = crate::captions_ask::ask(
-        &tree,
-        context,
+        tree,
+        &inputs.context,
         clips,
         &offsets,
         attempt,

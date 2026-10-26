@@ -1,10 +1,8 @@
 //! §03-shell.md §5 — the Settings dialog's own statements, as this item's tests.
 //!
-//! F0.13's rounds already pin the Test buttons (`settings_widgets.rs`, `settings_tests.rs`) and the
-//! Slots spin's existence and range (`f0_13_slots_widgets.rs`). What is pinned here is §5 as a section:
-//! the no-Save write beat with its 600 ms constant and its close line, the ⓘ that explains each section's
-//! server (the sentence §5 adds and nothing else in the program had), the slot counts the request doors
-//! actually hold, and a request parking behind a busy model at the number the dialog wrote.
+//! F0.13's rounds already pin the Test buttons (`settings_widgets.rs`, `settings_tests.rs`). What is pinned
+//! here is §5 as a section: the no-Save write beat with its 600 ms constant and its close line, the ⓘ that
+//! explains each section's server, the dialog's layout, its keys, its width and its close.
 //!
 //! The conf lives in a throwaway `$XDG_CONFIG_HOME` named for this binary and pid, so no check reads
 //! another run's leftovers and none writes the real `$HOME`.
@@ -14,7 +12,6 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::time::Duration;
 
 use crate::common;
@@ -24,7 +21,7 @@ use gtk4 as gtk;
 use naivepost::checks;
 use naivepost::ui;
 use naivepost::ui::settings::Provider;
-use naivepost::{machine_store, services, settings, slot_gate};
+use naivepost::{machine_store, settings};
 
 const ITEM: &str = "sec_03_shell_5_settings_dialog";
 
@@ -163,281 +160,7 @@ fn sec_03_shell_5_settings_dialog_s2_every_section_info_says_what_its_server_mus
 }
 
 // ---------------------------------------------------------------------------
-// s3 — "a Slots spin button, 1 to 16, default 1" / absent = 1.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn sec_03_shell_5_settings_dialog_s3_seven_model_counts_default_to_one_within_1_to_16() {
-    // The seven boxes §5 lists: the LLM model, each audio.cpp model and the image model.
-    assert_eq!(
-        machine_store::SLOT_KEYS,
-        ["llm", "tts", "asr", "diar", "sep", "aligner", "sd"],
-        "{ITEM} s3: one count per model §5 names, and one per model it does not"
-    );
-    assert_eq!(
-        (machine_store::SLOT_MIN, machine_store::SLOT_MAX),
-        (1, 16),
-        "§5: 1 to 16"
-    );
-
-    let defaults = settings::Slots::default();
-    assert_eq!(
-        (
-            defaults.llm,
-            defaults.asr,
-            defaults.diar,
-            defaults.align,
-            defaults.tts,
-            defaults.sep,
-            defaults.sd
-        ),
-        (1, 1, 1, 1, 1, 1, 1),
-        "{ITEM} s3: every count defaults to 1"
-    );
-    // A conf that never wrote one answers 1 through the read path the dialog seeds itself from (§6).
-    let bare = settings::Conf::default();
-    for key in machine_store::SLOT_KEYS {
-        assert_eq!(
-            machine_store::slot_of_key(&bare, key),
-            1,
-            "{ITEM} s3: absent = 1 for {key}, read the way the spin is seeded"
-        );
-    }
-    // And a number beyond the span is brought inside it on the way IN, which is what makes the spin's
-    // ceiling a rule rather than a widget property: 99 typed becomes 16 stored, 0 becomes 1.
-    let mut conf = settings::Conf::default();
-    machine_store::set_field(&mut conf, &machine_store::slot_key("tts"), "99");
-    assert_eq!(
-        conf.slots.tts, 16,
-        "{ITEM} s3: above the ceiling lands on it"
-    );
-    machine_store::set_field(&mut conf, &machine_store::slot_key("tts"), "0");
-    assert_eq!(conf.slots.tts, 1, "{ITEM} s3: below the floor lands on it");
-}
-
-// ---------------------------------------------------------------------------
-// s4 — "Respected by every request the app makes to that model."
-// ---------------------------------------------------------------------------
-
-#[test]
-fn sec_03_shell_5_settings_dialog_s4_the_number_written_is_the_number_the_doors_hold() {
-    let root = pin_config_home("s4");
-    let paths = settings::Paths {
-        config_dir: root.join("cfg").join("naivepost"),
-        data_dir: root.join("data"),
-    };
-    std::fs::create_dir_all(&paths.config_dir).unwrap();
-    // Written the way the dialog writes it: through the store, under the keys §6 names, with the beat
-    // armed because that is what a keystroke does. A slot at its default of 1 is deliberately left out --
-    // §6 keeps defaults out of the file, and s3 already shows an absent count reads back as 1 -- so every
-    // number below had to have been set.
-    let mut store = machine_store::Store::open(&paths).expect("store");
-    store.touched(Duration::from_millis(0));
-    store
-        .on_close(&[
-            (machine_store::slot_key("llm"), "3".to_string()),
-            (machine_store::slot_key("asr"), "2".to_string()),
-            (machine_store::slot_key("diar"), "4".to_string()),
-            (machine_store::slot_key("tts"), "5".to_string()),
-            (machine_store::slot_key("sep"), "6".to_string()),
-            (machine_store::slot_key("aligner"), "7".to_string()),
-            (machine_store::slot_key("sd"), "8".to_string()),
-        ])
-        .expect("the write lands");
-    let conf = settings::read(&paths).expect("the conf reads back");
-    assert_eq!(
-        conf.slots.llm, 3,
-        "{ITEM} s4: the file itself carries what was written -- the store's keys must be the ones §6 names"
-    );
-
-    // The accessors the dial paths call — not a copy of their arithmetic.
-    assert_eq!(
-        services::llm_slots(&conf),
-        3,
-        "{ITEM} s4: the chat leg holds LLM_SLOTS"
-    );
-    assert_eq!(
-        services::slots_for(&conf, services::AudioTask::Asr),
-        2,
-        "asr"
-    );
-    assert_eq!(
-        services::slots_for(&conf, services::AudioTask::Diar),
-        4,
-        "diar"
-    );
-    assert_eq!(
-        services::slots_for(&conf, services::AudioTask::Tts),
-        5,
-        "tts"
-    );
-    assert_eq!(
-        services::slots_for(&conf, services::AudioTask::Sep),
-        6,
-        "sep"
-    );
-    assert_eq!(
-        services::slots_for(&conf, services::AudioTask::Align),
-        7,
-        "align"
-    );
-    assert_eq!(
-        services::image_slots(&conf),
-        8,
-        "{ITEM} s4: the drawing leg holds SD_SLOTS"
-    );
-    // The task WORDS the pipeline passes agree with the enum, so one spin drives both spellings.
-    for (word, task) in [
-        ("asr", services::AudioTask::Asr),
-        ("diarize", services::AudioTask::Diar),
-        ("tts", services::AudioTask::Tts),
-        ("separate", services::AudioTask::Sep),
-        ("align", services::AudioTask::Align),
-    ] {
-        assert_eq!(
-            slot_gate::slots_for_task(&conf, word),
-            services::slots_for(&conf, task),
-            "{ITEM} s4: the word {word:?} answers the same field as its task"
-        );
-    }
-    let _ = std::fs::remove_dir_all(&root);
-}
-
-// ---------------------------------------------------------------------------
-// s5 — "a request that finds every slot taken waits its turn."
-// ---------------------------------------------------------------------------
-
-/// Where the second ask got to: still queued (it never went out), or through with how long it waited.
-#[derive(Debug)]
-enum Ask {
-    Through(f64),
-}
-
-/// How long a queued ask gets before the test calls it parked. A queue is a normal state, so this is
-/// generous; it is a deadline for a failure message, not a pause the test sits through on purpose.
-const WAIVE: Duration = Duration::from_secs(20);
-
-#[test]
-fn sec_03_shell_5_settings_dialog_s5_a_request_waits_its_turn_when_every_slot_is_taken() {
-    // A model whose count came from the dialog's spin (see s4 for the round trip): ONE slot.
-    let url = format!("http://127.0.0.1:{}", free_port());
-    let model = "wait-its-turn-model";
-    let slots = 1;
-    let never = || false;
-
-    // A free gate hands the slot straight over and reports no wait. Measured, so "no wait" is a tiny
-    // number rather than an exact zero a scheduler could miss.
-    let first =
-        slot_gate::hold(&url, model, slots, "describe", &never).expect("a free slot is taken");
-    assert!(
-        first.1 < 0.05,
-        "{ITEM} s5: a slot free on arrival means effectively no wait: {}",
-        first.1
-    );
-    assert_eq!(
-        slot_gate::holders(&url, model).len(),
-        1,
-        "and the holder is listed while held"
-    );
-
-    let (tx, rx) = std::sync::mpsc::channel::<Ask>();
-    std::thread::spawn({
-        let url = url.clone();
-        let model = model.to_string();
-        move || match slot_gate::hold(&url, &model, slots, "publish", &never) {
-            Ok((held, waited)) => {
-                // The guard must outlive the answer, or the release lands before the assert reads it.
-                std::mem::forget(held);
-                let _ = tx.send(Ask::Through(waited));
-            }
-            // ⏹ ended the wait rather than the queue handing over: that is not "went out", and the
-            // assertion after the release would rather see it than a phantom wait time.
-            Err(slot_gate::Wait::Cancelled) => {}
-        }
-    });
-    assert!(
-        rx.recv_timeout(WAIVE).is_err(),
-        "{ITEM} s5: with every slot busy the ask has not gone out"
-    );
-
-    // Give the slot back: the waiter takes it, first come first served, and carries the time it spent.
-    drop(first.0);
-    let waited = wait_recv(&rx);
-    assert!(
-        waited > 0.0,
-        "{ITEM} s5: the wait is measured, not swallowed: {waited}"
-    );
-    assert!(
-        slot_gate::holders(&url, model)
-            .iter()
-            .any(|h| h.starts_with("publish")),
-        "{ITEM} s5: the waiter is now the holder"
-    );
-
-    // ⏹ ends a queued wait rather than making it finish first. The cancellation is the ask's own local stop
-    // flag -- the same shape every real caller passes: `llm_retry_leg`, `audio_task`, `speak_leg` and
-    // `produce_upload_draw` each hand `hold` a closure over their run's cancel state, and `hold` consults
-    // it on every pass of its wait loop. Local here on purpose: the process-wide switch belongs to
-    // `runqueue`, and pressing it from one test would stop the legs of every test running alongside.
-    //
-    // It needs a slot of its OWN. This gate is process-global and keyed by (server, model), so an ask here
-    // for a model another test is using queues behind THAT test's holder -- one nobody here ever drops --
-    // and no ⏹ could end that wait within any budget. A dedicated model makes "every slot busy" mean
-    // "busy with this test's own holder", which is exactly what §4 says ⏹ may interrupt.
-    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let held_flag = Arc::clone(&stop);
-    let stop_flag = move || held_flag.load(Ordering::SeqCst);
-    let stopper = format!("{model}-stop");
-    let held_alone = slot_gate::hold(&url, &stopper, 1, "produce", &never)
-        .expect("a fresh model's only slot is free");
-    let (ctx, crx) = std::sync::mpsc::channel::<bool>();
-    std::thread::spawn({
-        let url = url.clone();
-        let stopper = stopper.clone();
-        move || match slot_gate::hold(&url, &stopper, 1, "narrate", &stop_flag) {
-            Ok((held, _)) => {
-                std::mem::forget(held);
-                let _ = ctx.send(false);
-            }
-            Err(slot_gate::Wait::Cancelled) => {
-                let _ = ctx.send(true);
-            }
-        }
-    });
-    // Nothing can hand this ask its slot -- the guard above is alive and it is the model's only slot -- so
-    // the ask sits in the queue; the answer below is awaited on its channel, bounded, so a wait that could
-    // not be cancelled fails here instead of hanging.
-    stop.store(true, Ordering::SeqCst);
-    let cancelled = crx
-        .recv_timeout(WAIVE)
-        .unwrap_or_else(|_| panic!("{ITEM} s5: ⏹ left the queued wait sitting there"));
-    drop(held_alone.0);
-    assert!(
-        cancelled,
-        "{ITEM} s5: ⏹ ends a queued wait; the request never went out"
-    );
-}
-
-/// Read the asker's answer, bounded: a queued request is a normal state, so this waits on the condition
-/// (an answer arriving) but only as far as `WAIVE` -- a thread that died without answering fails here
-/// instead of hanging the suite.
-fn wait_recv(rx: &std::sync::mpsc::Receiver<Ask>) -> f64 {
-    match rx.recv_timeout(WAIVE) {
-        Ok(Ask::Through(waited)) => waited,
-        Err(_) => panic!("{ITEM} s5: the queued ask never took the slot it was handed"),
-    }
-}
-
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .expect("a loopback port")
-        .local_addr()
-        .expect("an address")
-        .port()
-}
-
-// ---------------------------------------------------------------------------
-// The widget half: the header's Settings button, the ⓘ controls, a spin's number.
+// The widget half: the header's Settings button, the ⓘ controls, the layout.
 // ---------------------------------------------------------------------------
 
 fn widgets_round() {
@@ -453,8 +176,6 @@ fn widgets_round() {
             RAN_OPEN.store(true, Ordering::SeqCst);
             check_every_section_has_its_info_button(app);
             RAN_INFO.store(true, Ordering::SeqCst);
-            check_a_spin_written_here_is_the_number_the_door_holds(app);
-            RAN_SPIN.store(true, Ordering::SeqCst);
             // §5's layout statements, all measured off the one open dialog.
             let window = open_window(app);
             ui::open_settings(&window, silent());
@@ -463,14 +184,18 @@ fn widgets_round() {
             RAN_DIVIDER.store(true, Ordering::SeqCst);
             check_the_field_labels_are_right_aligned(&window);
             RAN_LABELS.store(true, Ordering::SeqCst);
-            check_the_spin_sits_between_box_and_badge(&window);
-            RAN_BETWEEN.store(true, Ordering::SeqCst);
             check_the_badges_and_tests_share_one_column(&window);
             RAN_COLUMN.store(true, Ordering::SeqCst);
             check_the_writing_last_line_uses_its_columns(&window);
             RAN_FETCH_ROW.store(true, Ordering::SeqCst);
             check_test_all_is_bottom_right_and_the_log_is_last(&window);
             RAN_TEST_ALL.store(true, Ordering::SeqCst);
+            check_every_server_has_its_key_and_the_dialog_is_wide(&window);
+            RAN_KEYS.store(true, Ordering::SeqCst);
+            check_the_close_button_and_escape_close_it(&window);
+            RAN_CLOSE.store(true, Ordering::SeqCst);
+            ui::open_settings(&window, silent());
+            lay_out();
             // §5's Drawing row, over the wire: the same dialog, but answering from the provider a real
             // session installs (`window_policy.rs` passes exactly this one when the gear is pressed).
             close_dialog();
@@ -494,13 +219,13 @@ fn widgets_round() {
 
 static RAN_OPEN: AtomicBool = AtomicBool::new(false);
 static RAN_INFO: AtomicBool = AtomicBool::new(false);
-static RAN_SPIN: AtomicBool = AtomicBool::new(false);
 static RAN_DIVIDER: AtomicBool = AtomicBool::new(false);
 static RAN_LABELS: AtomicBool = AtomicBool::new(false);
-static RAN_BETWEEN: AtomicBool = AtomicBool::new(false);
 static RAN_COLUMN: AtomicBool = AtomicBool::new(false);
 static RAN_FETCH_ROW: AtomicBool = AtomicBool::new(false);
 static RAN_TEST_ALL: AtomicBool = AtomicBool::new(false);
+static RAN_KEYS: AtomicBool = AtomicBool::new(false);
+static RAN_CLOSE: AtomicBool = AtomicBool::new(false);
 
 /// A conf with a model id, written into this round's throwaway config home before the live dialog opens.
 /// §5 refuses a completion with no model id, and the dialog seeds its boxes from the file, so it has to
@@ -600,9 +325,9 @@ fn pin_config_home(tag: &str) -> PathBuf {
     root
 }
 
-/// A provider that answers nothing: these checks press the gear and the spins, and neither needs a server.
+/// A provider that answers nothing: these checks press the gear and read the layout, and neither needs a server.
 fn silent() -> Provider {
-    std::rc::Rc::new(|key, _| Err(format!("{ITEM}: nothing to probe ({key})")))
+    std::sync::Arc::new(|key, _| Err(format!("{ITEM}: nothing to probe ({key})")))
 }
 
 fn open_window(app: &adw::Application) -> adw::ApplicationWindow {
@@ -794,7 +519,8 @@ fn settings_button(window: &adw::ApplicationWindow) -> gtk::Button {
         .unwrap_or_else(|| panic!("{ITEM}: the header has no settings-button"))
 }
 
-/// §5's ⓘ: one per section, in the heading's own row, carrying the paragraph as its tooltip.
+/// §5's ⓘ: one per section, in the heading's own row, carrying the paragraph as its tooltip, and opening it
+/// in a popover when clicked.
 fn check_every_section_has_its_info_button(app: &adw::Application) {
     let window = open_window(app);
     ui::open_settings(&window, silent());
@@ -805,8 +531,8 @@ fn check_every_section_has_its_info_button(app: &adw::Application) {
     for (key, title) in naivepost::ui::settings_info::SECTIONS {
         let info = in_dialog(&format!("settings-info-{key}"))
             .unwrap_or_else(|| panic!("{ITEM} s2: no settings-info-{key} on the dialog"))
-            .downcast::<gtk::Button>()
-            .unwrap_or_else(|_| panic!("{ITEM} s2: settings-info-{key} is not a button"));
+            .downcast::<gtk::MenuButton>()
+            .unwrap_or_else(|_| panic!("{ITEM} s2: settings-info-{key} is not a menu button"));
         let want = naivepost::ui::settings_info::explanation(key).expect("the section's text");
         let got = info
             .tooltip_text()
@@ -820,6 +546,25 @@ fn check_every_section_has_its_info_button(app: &adw::Application) {
             got.chars().count() > 120,
             "{ITEM} s2: {key}'s ⓘ is at length"
         );
+        // A click opens the same paragraph: a tooltip alone answered a click with nothing.
+        info.popup();
+        common::settle();
+        let shown = info.popover().expect("the ⓘ has its popover");
+        assert!(
+            shown.is_visible(),
+            "{ITEM} s2: clicking the {key} ⓘ shows its explanation"
+        );
+        let words = shown
+            .child()
+            .and_then(|child| child.downcast::<gtk::Label>().ok())
+            .map(|label| label.text().to_string())
+            .unwrap_or_default();
+        assert_eq!(
+            words, want,
+            "{ITEM} s2: the popover holds the {key} explanation"
+        );
+        info.popdown();
+        common::settle();
 
         // In the heading's row: the box named for the section holds both the title and the ⓘ.
         let head = in_dialog(&format!("settings-section-{key}"))
@@ -859,28 +604,6 @@ fn holds_text(root: &gtk::Widget, text: &str) -> bool {
         })
 }
 
-/// The spin's number, set through the widget, is the number the request side asks the gate for.
-fn check_a_spin_written_here_is_the_number_the_door_holds(app: &adw::Application) {
-    let window = open_window(app);
-    ui::open_settings(&window, silent());
-    let spin = in_dialog("slots-tts")
-        .unwrap_or_else(|| panic!("{ITEM} s4: no slots-tts spin"))
-        .downcast::<gtk::SpinButton>()
-        .expect("slots-tts is a spin button");
-    spin.set_value(3.0);
-    settle();
-    close_dialog();
-
-    let paths = settings::from_environment().expect("{ITEM}: the pinned config home resolves");
-    let conf = settings::read(&paths).expect("the conf reads back after close");
-    assert_eq!(
-        services::slots_for(&conf, services::AudioTask::Tts),
-        3,
-        "{ITEM} s4: the TTS spin's 3 is what the speech leg will hold"
-    );
-    window.close();
-}
-
 #[test]
 fn sec_03_shell_5_settings_dialog_s1_the_settings_button_opens_the_dialog_that_saves_on_close() {
     common::pin_private_cwd();
@@ -899,16 +622,6 @@ fn sec_03_shell_5_settings_dialog_s2_every_section_carries_an_info_button_that_e
     assert!(
         RAN_INFO.load(Ordering::SeqCst),
         "{ITEM} s2: the ⓘ check never ran"
-    );
-}
-
-#[test]
-fn sec_03_shell_5_settings_dialog_s4_a_spin_written_in_the_dialog_is_the_number_the_door_holds() {
-    common::pin_private_cwd();
-    widgets_round();
-    assert!(
-        RAN_SPIN.load(Ordering::SeqCst),
-        "{ITEM} s4: the spin check never ran"
     );
 }
 
@@ -1007,59 +720,12 @@ fn sec_03_shell_5_settings_dialog_s6_the_field_labels_are_right_aligned() {
     );
 }
 
-/// §5's Slots spin goes "right after every model box, between the box and its ✓/✗ badge", and the
-/// Test button after the badge — all four on one line.
-fn check_the_spin_sits_between_box_and_badge(window: &adw::ApplicationWindow) {
-    let _ = window;
-    for key in naivepost::machine_store::SLOT_KEYS {
-        let entry = bounds(
-            need(&format!("entry-{key}")).upcast_ref(),
-            &format!("entry-{key}"),
-        );
-        let spin = bounds(
-            need(&format!("slots-{key}")).upcast_ref(),
-            &format!("slots-{key}"),
-        );
-        let badge = bounds(
-            need(&format!("badge-{key}")).upcast_ref(),
-            &format!("badge-{key}"),
-        );
-        let test = bounds(
-            need(&format!("test-{key}-button")).upcast_ref(),
-            &format!("test-{key}-button"),
-        );
-        assert!(
-            entry.x() + entry.width() <= spin.x() + 1.0
-                && spin.x() + spin.width() <= badge.x() + 1.0
-                && badge.x() + badge.width() <= test.x() + 1.0,
-            "{ITEM} s6: {key}'s order is not box → spin → badge → Test ({entry:?} {spin:?} {badge:?} {test:?})"
-        );
-        for (what, other) in [("spin", spin), ("badge", badge), ("test", test)] {
-            assert!(
-                (centre(&other) - centre(&entry)).abs() <= 6.0,
-                "{ITEM} s6: {key}'s {what} is not on the same line as its box"
-            );
-        }
-    }
-}
-
-#[test]
-fn sec_03_shell_5_settings_dialog_s6_the_slots_spin_sits_between_the_box_and_its_badge() {
-    common::pin_private_cwd();
-    widgets_round();
-    assert!(
-        RAN_BETWEEN.load(Ordering::SeqCst),
-        "{ITEM} s6: the spin-order check never ran"
-    );
-}
-
-/// One grid, so a row without a spin still lands its badge and its Test button where a row with one
-/// does — otherwise the marks would step sideways down the dialog.
+/// One grid, so every row lands its badge and its Test button in the same two columns — otherwise the marks
+/// would step sideways down the dialog.
 fn check_the_badges_and_tests_share_one_column(window: &adw::ApplicationWindow) {
     let _ = window;
     for prefix in ["badge", "test"] {
-        // `llm-vision`, `ffmpeg` and `firefox` have no spin; the others do — both kinds must land on
-        // the same x, which is what makes §5's five columns one set of columns.
+        // Every kind of row lands on the same x, which is what makes §5's five columns one set of columns.
         let keys = ["llm", "llm-vision", "ffmpeg", "firefox", "audio", "sd"];
         let xs: Vec<f32> = keys
             .iter()
@@ -1072,8 +738,6 @@ fn check_the_badges_and_tests_share_one_column(window: &adw::ApplicationWindow) 
                 bounds(need(&name).upcast_ref(), &name).x()
             })
             .collect();
-        // Rows without a spin (`llm-vision`, `ffmpeg`, `firefox`) must land on the same x as the spin
-        // rows, which is what makes the column one column rather than two.
         let left = xs.iter().cloned().fold(f32::MAX, f32::min);
         for (key, x) in keys.iter().zip(&xs) {
             assert!(
@@ -1122,6 +786,16 @@ fn check_the_writing_last_line_uses_its_columns(window: &adw::ApplicationWindow)
         (use_button.x() - test_x).abs() <= 1.0,
         "{ITEM} s6: Use is not in the Test column ({use_button:?} vs Test at {test_x})"
     );
+    // Every box is one line tall: a section's server box sits beside the heading and its entry row, and when
+    // those two lines shared the server row alone the box stretched to twice its height.
+    let line = bounds(need("entry-llm").upcast_ref(), "entry-llm").height();
+    for name in ["entry-server", "entry-audio", "entry-sd"] {
+        let h = bounds(need(name).upcast_ref(), name).height();
+        assert!(
+            (h - line).abs() <= 1.0,
+            "{ITEM} s6: {name} is {h} px tall where a box is {line} px"
+        );
+    }
 }
 
 #[test]
@@ -1168,6 +842,35 @@ fn check_test_all_is_bottom_right_and_the_log_is_last(window: &adw::ApplicationW
         !expander_widget.is_expanded(),
         "{ITEM} s6: §5 opens the dialog's log collapsed"
     );
+    // Ten lines tall however many it holds: a Test All that writes thirty lines scrolls the log, it does
+    // not stretch it (the first version grew a line per verdict and pushed the sections up).
+    expander_widget.set_expanded(true);
+    let view = need("settings-log")
+        .downcast::<gtk::TextView>()
+        .expect("{ITEM} s6: settings-log is a TextView");
+    let scroller = need("settings-log-scroller");
+    common::wait_until("the opened log is laid out", || scroller.height() > 0);
+    let empty = bounds(&scroller, "settings-log-scroller empty").height();
+    let lines: Vec<String> = (1..=40).map(|n| format!("settings: line {n}")).collect();
+    view.buffer().set_text(&lines.join("\n"));
+    // Laid out once the forty lines are measured: the view's own scroll range then runs past one page.
+    common::wait_until("the forty lines are measured", || {
+        view.vadjustment()
+            .is_some_and(|adj| adj.upper() > adj.page_size() * 2.0)
+    });
+    let full = bounds(&scroller, "settings-log-scroller full").height();
+    let ten = ui::settings::log_lines_px(&view) as f32;
+    assert_eq!(
+        full, empty,
+        "{ITEM} s6: the log grew from {empty} to {full} px with 40 lines"
+    );
+    assert!(
+        (full - ten).abs() <= 2.0,
+        "{ITEM} s6: the log is {full} px, ten lines are {ten} px"
+    );
+    view.buffer().set_text("");
+    expander_widget.set_expanded(false);
+    lay_out();
     // Last: the root box's final child is the expander.
     let root = expander
         .parent()
@@ -1187,6 +890,105 @@ fn sec_03_shell_5_settings_dialog_s6_test_all_is_at_the_bottom_right_and_the_log
     assert!(
         RAN_TEST_ALL.load(Ordering::SeqCst),
         "{ITEM} s6: the Test All / log check never ran"
+    );
+}
+
+/// §5 (inventory §D): each server has an API key box under it, masked like a password and stored in its
+/// own setting, and the dialog opens 960 wide.
+fn check_every_server_has_its_key_and_the_dialog_is_wide(window: &adw::ApplicationWindow) {
+    for (key, stored) in [
+        ("llm-key", "the writing key"),
+        ("audio-key", "the audio key"),
+        ("sd-key", "the drawing key"),
+    ] {
+        let entry = ui::settings::entry(window, key)
+            .unwrap_or_else(|| panic!("{ITEM} s6: no API key box for {stored}"));
+        assert!(
+            !entry.property::<bool>("visibility"),
+            "{ITEM} s6: {stored} is masked"
+        );
+        let mut conf = naivepost::settings::Conf::default();
+        assert!(
+            naivepost::machine_store::set_field(&mut conf, key, "secret-1"),
+            "{ITEM} s6: {stored} is stored"
+        );
+        let read = naivepost::machine_store::field_of(key).expect("a stored field");
+        assert_eq!(read(&conf), "secret-1", "{ITEM} s6: {stored} reads back");
+    }
+    // …and the dialog itself takes every one of them as typed, the Server box included: a Test reads
+    // them, and the 600 ms beat writes them back.
+    for key in ["server", "llm-key", "audio-key", "sd-key"] {
+        assert!(
+            ui::settings::typed_values().iter().any(|(k, _)| k == key),
+            "{ITEM} s6: the {key} box is one the dialog reads and writes"
+        );
+    }
+    assert_eq!(
+        ui::settings::open_settings_window()
+            .expect("the dialog is open")
+            .default_width(),
+        ui::settings::DIALOG_WIDTH_PX,
+        "{ITEM} s6: the dialog opens {} wide",
+        ui::settings::DIALOG_WIDTH_PX
+    );
+}
+
+/// §5's picture: a title bar with its close button; and Esc closes the dialog as that button does.
+fn check_the_close_button_and_escape_close_it(_window: &adw::ApplicationWindow) {
+    let dialog = ui::settings::open_settings_window().expect("{ITEM} s6: the dialog is open");
+    let header = in_dialog("settings-header")
+        .and_then(|w| w.downcast::<adw::HeaderBar>().ok())
+        .unwrap_or_else(|| panic!("{ITEM} s6: the dialog has no title bar"));
+    assert!(
+        header.shows_end_title_buttons(),
+        "{ITEM} s6: the title bar carries the close button"
+    );
+    // Esc, through the dialog's own shortcut: the same close request the close button sends.
+    let escape = dialog
+        .observe_controllers()
+        .iter::<glib::Object>()
+        .flatten()
+        .filter_map(|c| c.downcast::<gtk::ShortcutController>().ok())
+        .find(|c| c.name().as_deref() == Some("settings-escape"))
+        .unwrap_or_else(|| panic!("{ITEM} s6: no Esc shortcut on the dialog"));
+    let shortcut = escape
+        .item(0)
+        .and_then(|item| item.downcast::<gtk::Shortcut>().ok())
+        .expect("the Esc shortcut");
+    assert_eq!(
+        shortcut
+            .trigger()
+            .map(|t| t.to_str().to_string())
+            .as_deref(),
+        Some("Escape"),
+        "{ITEM} s6: the shortcut is Esc"
+    );
+    shortcut.action().expect("the shortcut's action").activate(
+        gtk::ShortcutActionFlags::empty(),
+        &dialog,
+        None,
+    );
+    settle();
+    assert!(!dialog.is_visible(), "{ITEM} s6: Esc closed the dialog");
+}
+
+#[test]
+fn sec_03_shell_5_settings_dialog_s6_the_close_button_and_escape_close_the_dialog() {
+    common::pin_private_cwd();
+    widgets_round();
+    assert!(
+        RAN_CLOSE.load(Ordering::SeqCst),
+        "{ITEM} s6: the close check never ran"
+    );
+}
+
+#[test]
+fn sec_03_shell_5_settings_dialog_s6_every_server_has_its_api_key_and_the_dialog_opens_wide() {
+    common::pin_private_cwd();
+    widgets_round();
+    assert!(
+        RAN_KEYS.load(Ordering::SeqCst),
+        "{ITEM} s6: the API key check never ran"
     );
 }
 
@@ -1211,6 +1013,7 @@ fn press_sd(window: &adw::ApplicationWindow, url: &str) -> (String, String) {
         .expect("{ITEM} s7: the Drawing row has its value box")
         .set_text(url);
     test.emit_clicked();
+    crate::common::settle();
     let badge = ui::badge(window, "sd").expect("{ITEM} s7: the Drawing row has a badge-sd");
     (
         badge.text().to_string(),
@@ -1223,7 +1026,7 @@ fn press_sd(window: &adw::ApplicationWindow, url: &str) -> (String, String) {
 fn check_the_drawing_row_tests_sd_server(window: &adw::ApplicationWindow) {
     let server = Live::start(&[(
         "/sdcpp/v1/capabilities",
-        r#"{"weights":"sd-v1.safetensors","modes":["txt2img","img2img"]}"#,
+        r#"{"model":{"name":"sd-v1.gguf","path":"/mnt/models/sd-v1.gguf","stem":"sd-v1"},"supported_modes":["img_gen"]}"#,
     )]);
     let before = ui::window_logs().len();
     let (mark, verdict) = press_sd(window, &server.url());
@@ -1237,7 +1040,7 @@ fn check_the_drawing_row_tests_sd_server(window: &adw::ApplicationWindow) {
         "{ITEM} s7: loaded weights mark \u{2713}, got {verdict:?}"
     );
     assert!(
-        verdict.contains("sd-v1.safetensors is loaded and can draw"),
+        verdict.contains("sd-v1 is loaded and can draw"),
         "{ITEM} s7: the verdict names the weights the server reported: {verdict}"
     );
     // §5 mirrors each test into the main log as "settings: …", naming this row.
@@ -1309,19 +1112,16 @@ fn sec_03_shell_5_settings_dialog_s7_an_openai_shaped_port_is_called_out_as_not_
     );
 }
 
-/// §5's column order on the Drawing row too: box, Slots spin, ✓/✗ badge, Test — the Test button sits in
-/// the Test column after the badge, not beside the box.
+/// §5's column order on the Drawing row too: box, ✓/✗ badge, Test — the Test button sits in the Test column
+/// after the badge, not beside the box.
 fn check_the_drawing_test_button_follows_its_badge(_window: &adw::ApplicationWindow) {
     // Read off the open dialog itself (`need` walks it), which is the one this round just opened live.
     let entry = bounds(need("entry-sd").upcast_ref(), "entry-sd");
-    let spin = bounds(need("slots-sd").upcast_ref(), "slots-sd");
     let badge = bounds(need("badge-sd").upcast_ref(), "badge-sd");
     let test = bounds(need("test-sd-button").upcast_ref(), "test-sd-button");
     assert!(
-        entry.x() + entry.width() <= spin.x() + 1.0
-            && spin.x() + spin.width() <= badge.x() + 1.0
-            && badge.x() + badge.width() <= test.x() + 1.0,
-        "{ITEM} s7: the Drawing row is not box \u{2192} spin \u{2192} badge \u{2192} Test ({entry:?} {spin:?} {badge:?} {test:?})"
+        entry.x() + entry.width() <= badge.x() + 1.0 && badge.x() + badge.width() <= test.x() + 1.0,
+        "{ITEM} s7: the Drawing row is not box \u{2192} badge \u{2192} Test ({entry:?} {badge:?} {test:?})"
     );
     assert!(
         (centre(&test) - centre(&entry)).abs() <= 6.0,
@@ -1330,7 +1130,7 @@ fn check_the_drawing_test_button_follows_its_badge(_window: &adw::ApplicationWin
 }
 
 #[test]
-fn sec_03_shell_5_settings_dialog_s7_the_drawing_test_button_sits_after_the_slots_spin() {
+fn sec_03_shell_5_settings_dialog_s7_the_drawing_test_button_sits_after_its_badge() {
     common::pin_private_cwd();
     live_round();
     assert!(

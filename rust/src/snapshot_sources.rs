@@ -114,7 +114,7 @@ pub fn staged() -> Project {
         sources.push(Source {
             path: format!("project:sources/{TWO_STREAM_NAME}"),
             footage: true,
-            narrator: 0,
+            narrator: 1,
             sepvoice: false,
             // Both streams ticked: §4's face reads "<on>/<total>", and one stream in of two is a row that
             // hears half its own audio — not what a freshly added file looks like.
@@ -125,14 +125,12 @@ pub fn staged() -> Project {
     sources.push(Source {
         path: "project:sources/mic-lav.wav".to_string(),
         footage: false,
-        narrator: 0,
+        narrator: 1,
         sepvoice: true,
         tracks: vec![0],
     });
     Project {
         sources,
-        interval: 1.0,
-        language: "en".to_string(),
         ..Default::default()
     }
 }

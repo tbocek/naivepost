@@ -103,7 +103,7 @@ fn f1_7_s0_an_every_frame_folder_is_refused() {
     );
     assert_eq!(
         describe::every_frame_refusal("lecture"),
-        "lecture was extracted as every-frame; describe needs a fixed interval -- rerun Prepare with e.g. 1s"
+        "lecture was extracted as every-frame; describe needs the 250 ms grid -- rerun Prepare"
     );
     // What F1.6 writes for any Freq coarser than the grid has wider gaps, so it is NOT refused.
     let picked = describe::pick_frames(&[4.0], 12.0, 0.25, 1.0);
@@ -164,7 +164,7 @@ fn f1_7_s1_the_scale_plan_hits_896_wide_into_llmframes() {
     // a file point at the same instant.
     let names: Vec<String> = [1.0, 0.0]
         .iter()
-        .map(|at| describe::scaled_name(*at))
+        .map(|at| describe::scaled_name(0.0, *at))
         .collect();
     assert_eq!(names.len(), 2, "one scaled copy per frame: {joined}");
     // The stage sorts before it scales (`describe_scale::ensure` takes the frames in the order
@@ -174,7 +174,7 @@ fn f1_7_s1_the_scale_plan_hits_896_wide_into_llmframes() {
     ordered.sort();
     assert_eq!(
         ordered[0],
-        describe::scaled_name(0.0),
+        describe::scaled_name(0.0, 0.0),
         "the earlier stamp sorts first: {names:?}"
     );
     // Where they land is the layout's own answer, so this stage cannot invent another folder.

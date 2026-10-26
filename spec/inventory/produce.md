@@ -21,7 +21,7 @@ Encoder settings heading "Transcode" ("How the finished video is encoded, and wh
 | Audio | 128, 192, 256, 320 | 128 | audio bitrate in kbit/s |
 | Subtitles | burned in, track in file, none in the video | none | what the VIDEO carries… An .srt is written beside the video either way — one per language ticked… |
 | Translate | menu of ticks: English, German, French (the session's own language hidden) | none | Also write the subtitles in these languages, translated… |
-| Game audio | 0..1 step 0.02 | 0.22 | how loud the original game audio sits under the narration (hidden when narration is off) |
+| Game audio | 0..1 step 0.02 | 0.22 | how loud the original game audio sits under the narration (drawn on the Narrate page, at the top of its left column; stored here) |
 | Quality (CRF) | 14..34, mark 24 | 24 | quality: lower is better and bigger (18–24 is the usual range; 24 is the default, marked) |
 | Frame timing | tick "peak rate (VFR)" | off | Treat the frame rate above as a ceiling… |
 | Channels | tick "mono" | off | Mix the finished audio down to a single channel… |

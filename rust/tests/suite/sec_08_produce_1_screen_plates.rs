@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::project::TextMark;
+use naivepost::project::TitleBox;
 use naivepost::shell::Page;
 use naivepost::ui;
 use naivepost::ui::produce_paint::layout_marks;
@@ -46,26 +47,18 @@ fn mark(cx: f64, cy: f64, wf: f64, hf: f64) -> TextMark {
     }
 }
 
-/// The title band: one box across the top, inset from both edges, and NOTHING when there is no title to print.
+/// The title band: the box the render prints the title into (§A: "the title box defaults to {0.5, 0.25, 1,
+/// 0.4}"), and NOTHING when there is no title to print.
 #[test]
 fn sec_08_produce_1_screen_s7_the_title_band_is_one_inset_box_only_while_a_title_prints() {
     let (w, h) = (400.0, 200.0);
-    let boxes = layout_marks(&[], "a title", true, w, h);
+    let band = TitleBox::default();
+    let boxes = layout_marks(&[], "a title", true, &band, w, h);
     assert_eq!(boxes.len(), 1, "{ITEM} s7: a title prints exactly one band");
     let (x, y, bw, bh, text) = boxes[0].clone();
     assert!(
-        near(y, h * 0.06),
-        "{ITEM} s7: band top {} != {}",
-        y,
-        h * 0.06
-    );
-    assert!(
-        near(bw, w - 2.0 * (w * 0.06)),
-        "{ITEM} s7: band width {bw} is not inset on both sides"
-    );
-    assert!(
-        bh > 0.0 && x > 0.0,
-        "{ITEM} s7: band {x},{y} {bw}x{bh} is not a box inside the plate"
+        near(x, 0.0) && near(bw, w) && near(y, h * 0.05) && near(bh, h * 0.4),
+        "{ITEM} s7: band {x},{y} {bw}x{bh} is not the default title box across the upper part"
     );
     assert_eq!(
         text, "a title",
@@ -73,11 +66,11 @@ fn sec_08_produce_1_screen_s7_the_title_band_is_one_inset_box_only_while_a_title
     );
 
     assert!(
-        layout_marks(&[], "a title", false, w, h).is_empty(),
+        layout_marks(&[], "a title", false, &band, w, h).is_empty(),
         "{ITEM} s7: a retitle must not repaint the picture, so no band once the title has printed"
     );
     assert!(
-        layout_marks(&[], "", true, w, h).is_empty(),
+        layout_marks(&[], "", true, &band, w, h).is_empty(),
         "{ITEM} s7: an empty title prints no band"
     );
     RAN_BAND.store(true, Ordering::SeqCst);
@@ -91,6 +84,7 @@ fn sec_08_produce_1_screen_s7_a_mark_keeps_its_centre_and_stays_inside_the_plate
         std::slice::from_ref(&mark(0.5, 0.25, 0.5, 0.2)),
         "",
         false,
+        &TitleBox::default(),
         w,
         h,
     );
@@ -115,6 +109,7 @@ fn sec_08_produce_1_screen_s7_a_mark_keeps_its_centre_and_stays_inside_the_plate
         std::slice::from_ref(&mark(0.95, 0.5, 0.5, 0.2)),
         "",
         false,
+        &TitleBox::default(),
         w,
         h,
     )[0]
@@ -157,17 +152,18 @@ fn with_mark(texts: Vec<TextMark>, frames: Vec<String>) -> ui::produce_page::Pro
     }
 }
 
-/// §A's Inputs readout (item **15**) and the Outputs count beside it. The two counts the SESSION owns —
-/// lines still owed a take, and whether `publish.json` exists — are written into this run's own session
-/// folder first, so the row can only have read them from disk (`produce_screen_widgets` pins that override;
-/// here they are made true rather than assumed). Outputs is a count only ("61 files, 220 MB").
+/// §1's Inputs readout (item **15**) and the Outputs count beside it, on the window's bottom bar. Every count
+/// is a fact about the session's files, written into this run's own session folder first, so the row can only
+/// have read them from disk: a cut of seven clips, one of two narration lines owed a take, no `publish.json`,
+/// and three files in `produce/`. Outputs is a count only ("61 files, 220 MB"). The bar is repainted through
+/// the door Open uses (`paint_readouts_for`).
 fn check_inputs_and_outputs_readouts(_app: &adw::Application) {
     let root = std::env::temp_dir().join(format!("np-produce-readouts-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("own temp root");
     std::env::set_current_dir(&root).expect("cwd moved to this check's own folder");
-    let tree = naivepost::layout::Tree::new(naivepost::startup::session_dir(&root))
-        .expect("the session folder is a project tree");
+    let dir = naivepost::startup::session_dir(&root);
+    let tree = naivepost::layout::Tree::new(&dir).expect("the session folder is a project tree");
     let line = |s: f64, e: f64, text: &str| naivepost::narration::Entry {
         s,
         e,
@@ -188,62 +184,72 @@ fn check_inputs_and_outputs_readouts(_app: &adw::Application) {
         .expect("a path for a spoken line");
     std::fs::create_dir_all(spoken.parent().unwrap()).unwrap();
     std::fs::write(&spoken, vec![3u8; 64]).unwrap();
+    let segs = (0..7)
+        .map(|i| naivepost::cut::Seg {
+            s: i as f64 * 40.0,
+            e: i as f64 * 40.0 + if i == 6 { 38.0 } else { 36.0 },
+            ..Default::default()
+        })
+        .collect();
+    naivepost::cut::save(
+        &naivepost::cut::Cut {
+            segs,
+            ..Default::default()
+        },
+        &tree,
+    )
+    .expect("cut.json written");
     let window = produce_window(_app);
-    let label_of = |name: &str| {
+    let model = naivepost::project::load(&common::fixture_dir()).expect("the fixture loads");
+    let bar = |model: &naivepost::project::Project, name: &str| {
+        ui::window::paint_readouts_for(&window, model, &dir);
+        crate::common::settle_workers();
         naivepost::ui::produce_page::widget_in(&window, name)
             .and_then(|w| w.downcast::<gtk::Label>().ok())
-            .unwrap_or_else(|| panic!("{ITEM}: no {name} label on the page"))
+            .unwrap_or_else(|| panic!("{ITEM}: no {name} on the bottom bar"))
             .text()
             .to_string()
     };
-    // A cut of seven clips, four lines still owed a take, no upload text yet.
-    publish(
-        ui::produce_page::ProduceState {
-            clips: 7,
-            seconds: 254.0,
-            to_speak: 9,
-            publish_written: false,
-            out_files: 61,
-            out_bytes: 220 * 1024 * 1024,
-            ..Default::default()
-        },
-        &window,
-    );
     assert_eq!(
-        label_of("produce-inputs"),
-        naivepost::produce_screen::inputs_line(7, 254.0, false, 1, false),
+        bar(&model, "inputs-readout"),
+        format!(
+            "Inputs: {}",
+            naivepost::produce_screen::inputs_line(7, 254.0, false, 1, false)
+        ),
         "{ITEM}: item 15 spells the counts §A words — clips, length, lines owed, no upload text"
     );
     assert_eq!(
-        label_of("produce-outputs"),
-        naivepost::produce_screen::outputs_summary(61, 220 * 1024 * 1024),
-        "{ITEM}: the Outputs part is a COUNT only, size included"
-    );
-    // Narration off swaps the clause; with no cut at all the row says so instead of counting zeros.
-    publish(
-        ui::produce_page::ProduceState {
-            clips: 7,
-            seconds: 254.0,
-            narration_off: true,
-            out_files: 0,
-            ..Default::default()
-        },
-        &window,
-    );
-    assert_eq!(
-        label_of("produce-inputs"),
-        naivepost::produce_screen::inputs_line(7, 254.0, true, 0, false),
-        "{ITEM}: narration off reads “no narration”, not a speak count"
-    );
-    assert_eq!(
-        label_of("produce-outputs"),
+        bar(&model, "outputs-readout"),
         "0 files",
         "{ITEM}: nothing written yet says so plainly"
     );
-    publish(ui::produce_page::ProduceState::default(), &window);
+    // Three files in produce/, 2 MiB and a little: the count and the size, nothing else.
+    let produce = dir.join("produce");
+    std::fs::create_dir_all(produce.join("clips")).unwrap();
+    std::fs::write(produce.join("final.mp4"), vec![0u8; 2 * 1024 * 1024]).unwrap();
+    std::fs::write(produce.join("final.srt"), b"1\n").unwrap();
+    std::fs::write(produce.join("clips").join("c1.mp4"), vec![0u8; 10]).unwrap();
     assert_eq!(
-        label_of("produce-inputs"),
-        naivepost::produce_screen::NO_CUT_LINE,
+        bar(&model, "outputs-readout"),
+        naivepost::produce_screen::outputs_summary(3, 2 * 1024 * 1024 + 2 + 10),
+        "{ITEM}: the Outputs part is a COUNT only, size included"
+    );
+    // A narration with no words swaps the clause (there is no switch, §07 §1); with no cut at all the row
+    // says so instead of counting zeros.
+    naivepost::narration::save(&naivepost::narration::Narration::default(), &tree)
+        .expect("an empty narration");
+    assert_eq!(
+        bar(&model, "inputs-readout"),
+        format!(
+            "Inputs: {}",
+            naivepost::produce_screen::inputs_line(7, 254.0, true, 0, false)
+        ),
+        "{ITEM}: a narration with no words reads “no narration”, not a speak count"
+    );
+    std::fs::remove_file(tree.cut_json()).expect("cut.json removed");
+    assert_eq!(
+        bar(&model, "inputs-readout"),
+        format!("Inputs: {}", naivepost::produce_screen::NO_CUT_LINE),
         "{ITEM}: no cut yet — the row says where to build one"
     );
     RAN_READOUTS.store(true, Ordering::SeqCst);

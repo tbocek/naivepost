@@ -468,7 +468,10 @@ fn p_machine_promptmaxchars_s4_a_caller_s_own_size_is_kept_and_a_plain_body_is_m
     };
     let filled = naivepost::server_leg::fill_sizes(
         with_size,
-        Some(r#"{"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}"#),
+        Some(
+            r#"{"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}"#
+                .as_bytes(),
+        ),
     );
     assert_eq!(
         filled.sent_bytes,
@@ -477,7 +480,7 @@ fn p_machine_promptmaxchars_s4_a_caller_s_own_size_is_kept_and_a_plain_body_is_m
     );
     let plain = naivepost::server_leg::fill_sizes(
         Request::default(),
-        Some(r#"{"model":"asr","request":{"path":"/uploads/c00.wav"}}"#),
+        Some(r#"{"model":"asr","request":{"path":"/uploads/c00.wav"}}"#.as_bytes()),
     );
     assert_eq!(
         plain.sent_bytes.map(|v| v as usize),

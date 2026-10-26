@@ -121,7 +121,7 @@ pub fn seek_preview(
             window,
             &format!(
                 "{} \u{2014} no session to preview",
-                narrate_screen::clock_line(s.session, s.cut_at, s.length)
+                crate::ui::narrate_page::clock_text(&s)
             ),
         );
     };
@@ -150,8 +150,5 @@ pub fn seek_preview(
     }
     let s = crate::ui::narrate_page::read_state();
     crate::ui::narrate_page::refresh(window);
-    crate::ui::narrate_page::say(
-        window,
-        &narrate_screen::clock_line(s.session, s.cut_at, s.length),
-    )
+    crate::ui::narrate_page::say(window, &crate::ui::narrate_page::clock_text(&s))
 }

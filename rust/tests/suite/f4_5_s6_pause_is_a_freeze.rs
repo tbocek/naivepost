@@ -92,6 +92,9 @@ fn reap(pids: &Pids) {
 #[test]
 fn f4_5_s6_pause_freezes_both_players_and_a_thaw_walks_them_on() {
     common::pin_private_cwd();
+    // A NAMED picture program: the freeze under test is the process one (`SIGSTOP`), which the built-in pipeline,
+    // used when no program is named, has no part in.
+    std::env::set_var("NAIVEPOST_PICTURE_PLAYER", "fake-picture-player");
     let session = session("freeze");
     let cut = leg::cut_of(
         vec![

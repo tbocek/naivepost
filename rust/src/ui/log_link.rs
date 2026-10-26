@@ -146,7 +146,7 @@ const LINK_COLOUR: &str = "#1c71d8";
 /// stored): Save as (F0.10) moves the session mid-session, and either moment freezing the answer would
 /// leave the link pointing at a folder that no longer exists.
 fn session_now() -> std::path::PathBuf {
-    crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
+    crate::startup::open_dir()
 }
 
 /// Make `view`'s link line clickable, opening it through [`open`].
@@ -194,6 +194,44 @@ pub fn install_with(view: &gtk::TextView, open: Opener) {
         }
     });
     view.add_controller(keys);
+    // A click on a link line opens it too (§1 "every path the log names is a link to it", §7's page line):
+    // the first rewrite opened links from Enter alone, so a person clicking the blue line got nothing. One
+    // primary-button click on the line, released where it was pressed; a drag that selects text is not one.
+    let click = gtk::GestureClick::new();
+    click.set_button(gtk::gdk::BUTTON_PRIMARY);
+    let click_view = view.clone();
+    click.connect_released(move |gesture, n_press, x, y| {
+        if n_press != 1 {
+            return;
+        }
+        let buffer = click_view.buffer();
+        if buffer.has_selection() {
+            return;
+        }
+        let (bx, by) =
+            click_view.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
+        let Some(at) = click_view.iter_at_location(bx, by) else {
+            return;
+        };
+        let held = std::rc::Rc::clone(&open);
+        if activate_line(&click_view, at.line(), &|uri| held(uri)).is_some() {
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+        }
+    });
+    view.add_controller(click);
+}
+
+/// Where on `view` a click lands on `line` (the middle of its first character), in the view's own
+/// coordinates: what a test needs to drive the click gesture at a real line.
+pub fn line_point_for_test(view: &gtk::TextView, line: i32) -> Option<(f64, f64)> {
+    let iter = view.buffer().iter_at_line(line)?;
+    let rect = view.iter_location(&iter);
+    let (wx, wy) = view.buffer_to_window_coords(
+        gtk::TextWindowType::Widget,
+        rect.x() + 2,
+        rect.y() + rect.height() / 2,
+    );
+    Some((f64::from(wx), f64::from(wy)))
 }
 
 /// Open a log line, and report what was opened.
@@ -221,7 +259,13 @@ pub fn activate_line(
     let table = buffer.tag_table();
     let tag = table.lookup(LINK_TAG)?;
     let start = buffer.iter_at_line(line)?;
-    if !start.has_tag(&tag) {
+    // A link anywhere on the line: §7's page line is tagged whole, but a named path only over the path, and a
+    // path in mid-line (`wrote /…/prepare`) starts untagged. The first rewrite asked only the line's first
+    // character, so such a link never opened, by Enter or by click.
+    let mut toggle = start.clone();
+    let linked =
+        start.has_tag(&tag) || (toggle.forward_to_tag_toggle(Some(&tag)) && toggle.line() == line);
+    if !linked {
         return None;
     }
     // Read the line as DRAWN (no `>>> ` marker, §1) and put the marker back before asking §7's rule:
@@ -268,6 +312,27 @@ fn restore_mark(drawn: &str) -> String {
 /// Never panics and never propagates into the call that logged the line (§7: "recording never fails the
 /// call"): failures come back as `Err` and the handler turns them into a log line.
 pub fn open(uri: &str) -> Result<(), String> {
+    // A local file or folder goes through GTK's FILE launcher (the URI launcher is for web pages, and a
+    // `file://` folder handed to it through the desktop portal opened nothing and said nothing). A launch the
+    // desktop refuses lands in the completion with an error: then the named fallback, and if that fails too, a
+    // log line. The first rewrite ignored the completion, so a refused launch was silent.
+    if let Ok((path, _)) = glib::filename_from_uri(uri) {
+        let owned = uri.to_string();
+        gtk::FileLauncher::new(Some(&gio::File::for_path(&path))).launch(
+            None as Option<&gtk::Window>,
+            None as Option<&gio::Cancellable>,
+            move |result| {
+                if let Err(why) = result {
+                    if let Err(fallback) = open_fallback(&owned) {
+                        super::window::log_line(&format!(
+                            "!!! could not open {owned}: {why}; {fallback}"
+                        ));
+                    }
+                }
+            },
+        );
+        return Ok(());
+    }
     let launcher = gtk::UriLauncher::new(uri);
     // The completion is a no-op on purpose: §1 asks for the page to be opened, not for the browser's
     // verdict, and a desktop portal reports success late or not at all. A launcher that cannot even
@@ -277,7 +342,18 @@ pub fn open(uri: &str) -> Result<(), String> {
         launcher.launch(
             None as Option<&gtk::Window>,
             None as Option<&gio::Cancellable>,
-            |_result| {},
+            {
+                let owned = uri.to_string();
+                move |result| {
+                    if let Err(why) = result {
+                        if let Err(fallback) = open_fallback(&owned) {
+                            super::window::log_line(&format!(
+                                "!!! could not open {owned}: {why}; {fallback}"
+                            ));
+                        }
+                    }
+                }
+            },
         );
     }));
     if started.is_ok() {
@@ -286,9 +362,28 @@ pub fn open(uri: &str) -> Result<(), String> {
     open_fallback(uri)
 }
 
-/// §1's named fallback, run the way every other subprocess here is run: logged as a shell would take it,
-/// before it runs.
+/// §1's named fallback, logged as a shell would take it before it runs. Spawned and not waited on: the press is
+/// on the window thread, which never waits (§03-shell §1), and the file manager outlives the call anyway.
 fn open_fallback(uri: &str) -> Result<(), String> {
-    let path = uri.strip_prefix("file://").unwrap_or(uri);
-    crate::subprocess::run("xdg-open", &[path], super::window::log_line).map(|_| ())
+    // The path itself, decoded (a folder with a space in its name is `%20` in its URI).
+    let decoded = glib::filename_from_uri(uri)
+        .map(|(path, _)| path.display().to_string())
+        .unwrap_or_else(|_| uri.to_string());
+    let path = decoded.as_str();
+    super::window::log_line(&crate::subprocess::log_line("xdg-open", &[path]));
+    let mut child = std::process::Command::new("xdg-open")
+        .arg(path)
+        .stdin(std::process::Stdio::null())
+        .spawn()
+        .map_err(|err| {
+            format!(
+                "{} failed: {err}",
+                crate::subprocess::shown("xdg-open", &[path])
+            )
+        })?;
+    // Reaped on a thread of its own, so no zombie is left behind.
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }

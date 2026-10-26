@@ -46,11 +46,19 @@ fn word_seconds(tree: &Tree, source: &str) -> Vec<f64> {
 /// to trim to contributes NO run at all — §S2a builds the cut from what was said, so silent footage is
 /// simply not part of it.
 ///
-/// The spans come from the CUT (`timeline::kept_footage_recordings`), not from the session's take list:
-/// §S2a builds the cut from the footage the page keeps, and a run that is only on the tape but already
-/// dropped from the cut would put seconds back in that nobody asked for.
+/// The spans are the page's TAPE, every filmed recording under its own name and on the session clock
+/// (`cut_folds::page_recordings`), because §S2a builds the cut from "every filmed run". The first rewrite took
+/// them from the cut on screen instead, named `cam<N>`: a project with no cut yet had no runs, and a recording's
+/// words, filed under its own name, were never found under `cam<N>`, so every words cut came out "0 segments"
+/// (07-news, 2026-10-26). The cut's own spans stand in only where no tape is published (a page not built yet).
+/// A suggestion is refused while hand edits stand (§F2.14 S1), so a run dropped by hand cannot come back here.
 pub fn runs_of(tree: &Tree, cut: &Cut) -> Vec<SpokenRun> {
-    let recordings = crate::timeline::kept_footage_recordings(cut);
+    let tape = crate::ui::page_recordings();
+    let recordings = if tape.is_empty() {
+        crate::timeline::kept_footage_recordings(cut)
+    } else {
+        tape
+    };
     let mut runs = Vec::new();
     for span in crate::timeline::filmed_runs(&recordings) {
         let Some(rec) = recordings

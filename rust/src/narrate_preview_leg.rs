@@ -97,11 +97,42 @@ pub struct Preview {
     /// The take this session refused. Kept live here so the row's own ▶ and a lap of the cut read
     /// ONE answer, per S2's "sticky per wav".
     failed: Failed,
-    picture: Option<Child>,
+    picture: Option<Picture>,
     voice: Option<Child>,
     /// The gain the live bed process was last asked for. `None` until something is cued; a tick whose answer
     /// equals it spawns nothing at all (the stamp [`crate::play_back::set_volume`] keeps for the Cut page).
     bed_gain: Option<f64>,
+}
+
+/// The picture's player: a process (a picture program named in Settings or `NAIVEPOST_PICTURE_PLAYER`), or the
+/// built-in pipeline ([`crate::play_built_in`]) whose frames the page's own preview shows.
+pub enum Picture {
+    Process(Child),
+    /// `start` is the session second of the file's first second, so the player's position reads as a session
+    /// second (at the flat rate).
+    BuiltIn {
+        start: f64,
+    },
+}
+
+impl Picture {
+    fn pid(&self) -> Option<u32> {
+        match self {
+            Picture::Process(child) => Some(child.id()),
+            Picture::BuiltIn { .. } => None,
+        }
+    }
+}
+
+thread_local! {
+    /// The built-in pipeline is the Narrate preview's picture right now (the page shows its frames).
+    static BUILT_IN_SHOWN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Is the Narrate preview's picture the built-in pipeline's right now? The page reads this to show the
+/// pipeline's frames instead of the extracted still.
+pub fn picture_built_in() -> bool {
+    BUILT_IN_SHOWN.with(|cell| cell.get())
 }
 
 impl Default for Preview {
@@ -220,7 +251,16 @@ impl Preview {
     pub fn stop(&mut self) -> (narrate_preview::Stopped, Vec<u32>) {
         // Take both children out FIRST so neither can be signalled twice: a killed `Child` dropped
         // without being reaped stays a zombie, and "is this pid dead?" would read a zombie as alive.
-        let picture = self.picture.take();
+        let picture = match self.picture.take() {
+            Some(Picture::Process(child)) => Some(child),
+            Some(Picture::BuiltIn { .. }) => {
+                // The built-in pipeline stays on its frame: the page goes back to its still on the next paint.
+                crate::play_built_in::pause();
+                BUILT_IN_SHOWN.with(|cell| cell.set(false));
+                None
+            }
+            None => None,
+        };
         let voice = self.voice.take();
         let pids: Vec<u32> = [picture.as_ref(), voice.as_ref()]
             .into_iter()
@@ -228,9 +268,14 @@ impl Preview {
             .map(Child::id)
             .collect();
         let actually = crate::stop_legs::signal(&pids);
-        for mut child in picture.into_iter().chain(voice) {
-            let _ = child.wait();
-        }
+        // Reaped on a thread: a child that ignores SIGTERM lives until the KILL half a second later, and
+        // this is called on the window thread, which never waits (§03-shell §1).
+        let reaped: Vec<Child> = picture.into_iter().chain(voice).collect();
+        std::thread::spawn(move || {
+            for mut child in reaped {
+                let _ = child.wait();
+            }
+        });
         self.paused = false;
         self.waiting = None;
         self.speaking = None;
@@ -255,10 +300,10 @@ impl Preview {
 
     /// The pids ⏹ still has to reach. Empty once both have been killed.
     pub fn children(&self) -> Vec<u32> {
-        [&self.picture, &self.voice]
-            .into_iter()
-            .flatten()
-            .map(Child::id)
+        self.picture
+            .iter()
+            .filter_map(Picture::pid)
+            .chain(self.voice.iter().map(Child::id))
             .collect()
     }
 
@@ -270,7 +315,8 @@ impl Preview {
     /// asking about it here would stop the preview for a take that simply finished first.
     pub fn picture_finished(&mut self) -> bool {
         match self.picture.as_mut() {
-            Some(child) => matches!(child.try_wait(), Ok(Some(_))),
+            Some(Picture::Process(child)) => matches!(child.try_wait(), Ok(Some(_))),
+            Some(Picture::BuiltIn { .. }) => crate::play_built_in::ended(),
             // No picture at all is no answer: a preview whose picture never spawned is reported by the press
             // that tried, not ended by a later beat.
             None => false,
@@ -309,6 +355,13 @@ impl Preview {
             self.waiting = None;
         }
         narrate_preview_media::signal_pids(&self.children(), hold);
+        if matches!(self.picture, Some(Picture::BuiltIn { .. })) {
+            if hold {
+                crate::play_built_in::pause();
+            } else {
+                crate::play_built_in::resume();
+            }
+        }
         hold || was
     }
 
@@ -329,6 +382,38 @@ impl Preview {
         changed
     }
 
+    /// Where the built-in picture stands, as a session second, while it plays: the tick starts from there so the
+    /// line cannot drift from the picture. `None` for a process picture, a held one, or none.
+    pub fn picture_second(&self) -> Option<f64> {
+        match self.picture {
+            Some(Picture::BuiltIn { start }) if !self.paused && crate::play_built_in::playing() => {
+                crate::play_built_in::position().map(|local| start + local)
+            }
+            _ => None,
+        }
+    }
+
+    /// The line moved to `at` (a skip over a dropped stretch, a resume after a take): the built-in picture goes
+    /// there when it stands elsewhere, playing or held as the preview is. A process picture is re-cued by its
+    /// own doors.
+    pub fn follow(&mut self, at: f64, tree: &crate::layout::Tree, cut: &Cut) {
+        let Some(Picture::BuiltIn { start }) = self.picture else {
+            return;
+        };
+        let there = crate::play_built_in::position()
+            .is_some_and(|local| (start + local - at).abs() < FOLLOW_TOLERANCE_S);
+        let file = narrate_preview_media::cue_files(tree, cut, at)
+            .into_iter()
+            .next();
+        if there && file.as_deref() == crate::play_built_in::file().as_deref() {
+            return;
+        }
+        let gain = self.bed_gain.unwrap_or(1.0);
+        if let Ok((picture, _)) = built_in(tree, cut, at, gain, self.paused) {
+            self.picture = Some(picture);
+        }
+    }
+
     /// S3: the bed's level lives in its command line (`--volume=`), so a new answer needs a new process.
     /// Kill this preview's own bed and cue it again at `gain` over `at`, keeping whatever hold the
     /// preview is under. Answers the argv before and after so the log can name the number that changed;
@@ -342,6 +427,12 @@ impl Preview {
         spawn: &mut Spawn,
     ) -> Option<(Vec<String>, Vec<String>)> {
         self.picture.as_ref()?;
+        // The built-in pipeline has a live volume to ask: nothing is re-cued.
+        if matches!(self.picture, Some(Picture::BuiltIn { .. })) {
+            self.bed_gain = Some(gain);
+            crate::play_built_in::set_volume(gain.clamp(0.0, 1.0));
+            return None;
+        }
         // The player clamps its own `--volume=`, so the log has to show what it was really handed rather
         // than the unclamped product of duck × mix.
         let before = narrate_preview_media::bed_argv(
@@ -354,8 +445,8 @@ impl Preview {
         self.picture = None;
         self.bed_gain = Some(gain);
         let program = PICTURE_PROGRAM.with(|name| name.borrow().clone());
-        let (child, cue) = player(&program, tree, cut, at, gain, self.paused, spawn).ok()?;
-        self.picture = Some(child);
+        let (picture, cue) = player(&program, tree, cut, at, gain, self.paused, spawn).ok()?;
+        self.picture = Some(picture);
         Some((before, cue.args))
     }
 }
@@ -498,7 +589,6 @@ pub fn step(
     cut: &Cut,
     entries: &[Entry],
     now: f64,
-    no_narration: bool,
     spawn: &mut Spawn,
 ) -> Stepped {
     // §6 (`Preview`) before anything else: a picture that ran to its own end ENDS the narration too. Left
@@ -518,7 +608,7 @@ pub fn step(
         // panic. A slot left holding two dead players is what the caller's `Stepped::Paused` branch ends.
         return Stepped::Paused;
     }
-    let takes = take_states(tree, entries, &preview.failed, no_narration);
+    let takes = take_states(tree, entries, &preview.failed);
     match narrate_preview::tick(now, &cut.segs, entries, &takes, preview.speaking) {
         narrate_preview::Tick::SkipTo(at) => {
             let rate = narrate_preview::seek_rate(&cut.fx, at);
@@ -573,7 +663,6 @@ pub fn tick_loop(
     at: f64,
     game_volume: f64,
     volume: f64,
-    no_narration: bool,
     spawn: &mut Spawn,
 ) -> Stepped {
     RUNNING.with(|slot| {
@@ -586,7 +675,7 @@ pub fn tick_loop(
             });
         }
         let preview = held.as_mut().expect("just filled");
-        step(preview, tree, cut, entries, at, no_narration, spawn)
+        step(preview, tree, cut, entries, at, spawn)
     })
 }
 
@@ -611,11 +700,6 @@ pub trait PreviewPage {
     fn game_volume(&self) -> f64;
     /// The shared preview volume (the `narrate-volume` slider).
     fn volume(&self) -> f64;
-    /// Whether this project's narration is switched off (§F4.8). The tick asks it of the page rather
-    /// than re-reading `naivepost.json` every beat; the page already keeps the tick's own state.
-    fn no_narration(&self) -> bool {
-        false
-    }
     /// Print one sentence on the status line.
     fn say(&self, said: &str);
     /// The preview ended on its own (the tick walked off the last clip) rather than through a press:
@@ -629,7 +713,7 @@ pub trait PreviewPage {
 ///
 /// Every beat it asks [`narrate_preview::tick`] through [`step`] and acts on the answer: the line
 /// moves, a take that arrived is put on the voice player, a missing one pauses the picture and dials
-/// the real speech server ([`synthesize_line`]), and a stop ends both players. It no-ops whenever the
+/// the real speech server on a worker ([`ask_for_take`]), and a stop ends both players. It no-ops whenever the
 /// preview is not running, so the timer costs one boolean read while the person is writing lines
 /// rather than watching a cut.
 pub fn start_tick(page: Rc<dyn PreviewPage>) {
@@ -645,7 +729,10 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
             };
             let cut = page.cut();
             let entries = page.entries();
-            let from = page.head();
+            // The built-in picture says where it is (F4.5 S2's "the tick follows playback"); otherwise the line's own.
+            let from = RUNNING
+                .with(|slot| slot.borrow().as_ref().and_then(Preview::picture_second))
+                .unwrap_or_else(|| page.head());
             let game_volume = page.game_volume();
             let volume = page.volume();
             // S3: read the three numbers for THIS second once, through the leg's own reader, so the
@@ -698,10 +785,7 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
                 match waiting {
                     Some(line) => match entries.get(line) {
                         Some(entry) => {
-                            let (said, at) =
-                                synthesize_line(&tree, entry, line, volume, &mut spawn_player);
-                            page.set_head(at);
-                            page.say(&said);
+                            ask_for_take(page.clone(), &tree, entry, line);
                             Stepped::Same
                         }
                         None => {
@@ -719,7 +803,6 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
                             at,
                             game_volume,
                             volume,
-                            page.no_narration(),
                             &mut spawn_player,
                         );
                         if let Stepped::Moved { at, rate: _ } = stepped {
@@ -736,8 +819,17 @@ pub fn start_tick(page: Rc<dyn PreviewPage>) {
             // saying so would speak over whatever press just happened (an audition's "spoken \u{2014} <take>",
             // for one); a page whose `playing` was left up from an earlier flow has nothing for ⏹ to have
             // stopped either.
-            let ends_a_preview =
-                matches!(stepped, Stepped::Paused) && was_running && !running_children().is_empty();
+            // The line may have jumped (a dropped stretch skipped, a take's resume): the built-in picture goes
+            // with it.
+            let head = page.head();
+            RUNNING.with(|slot| {
+                if let Some(preview) = slot.borrow_mut().as_mut() {
+                    preview.follow(head, &tree, &cut);
+                }
+            });
+            let ends_a_preview = matches!(stepped, Stepped::Paused)
+                && was_running
+                && (!running_children().is_empty() || picture_built_in());
             if let Some(said) = stepped_said(&stepped)
                 .filter(|_| !matches!(stepped, Stepped::Paused) || ends_a_preview)
             {
@@ -790,17 +882,11 @@ fn clear_waiting() {
 /// server refused and then some older run left on disk must still read as refused for this session, or
 /// S2's sticky branch is unreachable.
 ///
-/// `no_narration` is the project's flag, and the question "may this line be spoken" goes through
-/// [`crate::narrate_off::lines_to_speak`] rather than a local test of its own: §5's captions-only clause
-/// and F4.8 name that seam as the ONE answer, so a preview over a narration that is switched off offers
-/// no line at all instead of pausing to synthesize wavs nobody will hear.
-pub fn take_states(
-    tree: &crate::layout::Tree,
-    entries: &[Entry],
-    failed: &Failed,
-    no_narration: bool,
-) -> Vec<Take> {
-    let speakable = crate::narrate_off::lines_to_speak(no_narration, entries);
+/// The question "may this line be spoken" goes through [`crate::narration::lines_to_speak`] rather than a
+/// local test of its own: a blank line is a deliberate silence, so the preview offers it no take instead of
+/// pausing to synthesize a wav nobody will hear.
+pub fn take_states(tree: &crate::layout::Tree, entries: &[Entry], failed: &Failed) -> Vec<Take> {
+    let speakable = crate::narration::lines_to_speak(entries);
     entries
         .iter()
         .map(|entry| {
@@ -908,21 +994,61 @@ fn ducked_voice(game_volume: f64) -> f64 {
     voice_gain(game_volume)
 }
 
-/// The argv one player is asked for: the file, the offset to start at, and the gain to play it at.
-/// Shared by both players so the picture's seek and the voice's start are the same three numbers in
-/// the same order, and one test can read the shape once.
-pub fn player_args(file: &str, offset: f64, gain: f64) -> Vec<String> {
-    vec![
-        file.to_string(),
-        format!("start={offset:.3}"),
-        format!("gain={gain:.3}"),
-    ]
+/// The voice's own argv: `file` from `offset` seconds at `gain`, in the language of the voice player
+/// ([`voice_program`], read per call like every player setting): see [`audio_argv`].
+pub fn voice_args(file: &str, offset: f64, gain: f64) -> Vec<String> {
+    audio_argv(&voice_program(), file, offset, None, gain)
 }
 
-/// The voice's own argv — the same three arguments as the picture's, named for the voice so a log
-/// line reads as the file it belongs to.
-pub fn voice_args(file: &str, offset: f64, gain: f64) -> Vec<String> {
-    player_args(file, offset, gain)
+/// Whether `program` is ffplay, which takes ffmpeg's own flags; anything else is spoken to as `gst-play-1.0`
+/// (the default, [`VOICE_PLAYER`]).
+fn speaks_ffplay(program: &str) -> bool {
+    std::path::Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("ffplay"))
+}
+
+/// Whether the voice player ends a span by itself: ffplay takes a duration (`-t`), `gst-play-1.0` has none, so
+/// a span played on it is ended by the caller's own clock.
+pub fn voice_player_bounds_spans() -> bool {
+    speaks_ffplay(&voice_program())
+}
+
+/// One sound file on a voice player, from `from` seconds, up to `to` where the player can be told an end, at
+/// `gain` (0..1), with no window of its own and no keyboard. Every voice the Narrate page plays (a line, the
+/// preview's voice, a sample, the take band's spans) is spoken through here, in the language of the program
+/// asked: the first rewrite handed `gst-play-1.0` (the default player) ffplay's `-nodisp -autoexit -ss -t` for a
+/// sample and a take, which it refuses ("Unknown option -nodisp"), so neither made a sound; and `start=… gain=…`
+/// for a line, which it read as two more file names, so a line always played from its top at full level.
+pub fn audio_argv(program: &str, file: &str, from: f64, to: Option<f64>, gain: f64) -> Vec<String> {
+    let gain = gain.clamp(0.0, 1.0);
+    if speaks_ffplay(program) {
+        let mut args: Vec<String> = vec![
+            "-nodisp".into(),
+            "-autoexit".into(),
+            "-loglevel".into(),
+            "quiet".into(),
+            "-volume".into(),
+            format!("{}", (gain * 100.0).round() as i64),
+            "-ss".into(),
+            format!("{from:.3}"),
+        ];
+        if let Some(to) = to.filter(|to| to.is_finite()) {
+            args.extend(["-t".into(), format!("{:.3}", (to - from).max(0.0))]);
+        }
+        args.extend(["-i".into(), file.to_string()]);
+        return args;
+    }
+    vec![
+        "--no-position".into(),
+        "--no-interactive".into(),
+        "--videosink=fakesink".into(),
+        format!("--volume={gain:.3}"),
+        "-s".into(),
+        format!("{from:.3}"),
+        file.to_string(),
+    ]
 }
 
 /// Spawn the picture through the seam, over the cut's OWN footage files at the level S3 says.
@@ -941,7 +1067,10 @@ fn player(
     gain: f64,
     hold: bool,
     spawn: &mut Spawn,
-) -> Result<(Child, narrate_preview_media::Cue), String> {
+) -> Result<(Picture, narrate_preview_media::Cue), String> {
+    if uses_built_in(program) {
+        return built_in(tree, cut, offset, gain, hold);
+    }
     // A running preview's cue is never the still-frame one: §6 reserves that for an audition over a clip with
     // no footage, which has no footage to cue at all.
     narrate_preview_media::cue_picture(
@@ -957,6 +1086,51 @@ fn player(
         },
         spawn,
     )
+    .map(|(child, cue)| (Picture::Process(child), cue))
+}
+
+/// How near the built-in picture's own second must be to the line's to count as standing there: two ticks.
+const FOLLOW_TOLERANCE_S: f64 = 0.25;
+
+/// Does the picture play through the built-in pipeline? Whenever no picture program is NAMED (the setting or
+/// `NAIVEPOST_PICTURE_PLAYER` left at the default) and GStreamer has its pieces; a named program is a person, or
+/// a test, asking for an outside player.
+fn uses_built_in(program: &str) -> bool {
+    program == PICTURE_PLAYER && crate::play_built_in::available()
+}
+
+/// Does this machine's picture play through the built-in pipeline (see [`uses_built_in`])? A page asks before
+/// freezing a process for a still: with the built-in picture the page's preview already shows the still frame.
+pub fn picture_is_built_in() -> bool {
+    uses_built_in(&picture_program())
+}
+
+/// Cue the built-in pipeline on the recording the cut shows at `at`, at that second of its file, playing or held,
+/// at the bed's `gain`. The page shows its frames from here on (see [`picture_built_in`]).
+fn built_in(
+    tree: &crate::layout::Tree,
+    cut: &Cut,
+    at: f64,
+    gain: f64,
+    hold: bool,
+) -> Result<(Picture, narrate_preview_media::Cue), String> {
+    let file = narrate_preview_media::cue_files(tree, cut, at)
+        .into_iter()
+        .next()
+        .ok_or_else(|| narrate_preview::NO_RECORDING_AT_START.to_string())?;
+    let local = narrate_preview_media::footage_second(cut, at);
+    crate::play_built_in::cue(&file, local, !hold, &|line| {
+        crate::ui::window::log_line(line)
+    })?;
+    crate::play_built_in::set_volume(gain.clamp(0.0, 1.0));
+    BUILT_IN_SHOWN.with(|cell| cell.set(true));
+    Ok((
+        Picture::BuiltIn { start: at - local },
+        narrate_preview_media::Cue {
+            args: Vec::new(),
+            pid: 0,
+        },
+    ))
 }
 
 /// Cue a STILL frame at `at` — §6's "a line auditioned from its own ▶ over a clip with no footage … speaks
@@ -1070,8 +1244,16 @@ pub fn seek(
         let mut held = slot.borrow_mut();
         // No preview yet: this seek makes the still, so the slot stays empty and nothing is left running.
         let Some(preview) = held.as_mut() else {
-            let gain = narrate_preview_media::bed_gain(cut, snapped, false, 1.0, 1.0);
-            let _ = player(&picture_program(), tree, cut, snapped, gain, true, spawn);
+            // The built-in picture needs no player for a still: the page shows the extracted frame at the line.
+            if !uses_built_in(&picture_program()) {
+                let gain = narrate_preview_media::bed_gain(cut, snapped, false, 1.0, 1.0);
+                if let Err(why) = player(&picture_program(), tree, cut, snapped, gain, true, spawn)
+                {
+                    crate::ui::window::log_line(&format!(
+                        "!!! the picture player could not start -- {why}"
+                    ));
+                }
+            }
             return;
         };
         let was_held = preview.paused;
@@ -1083,7 +1265,7 @@ pub fn seek(
             preview.game_volume,
             preview.volume,
         );
-        if let Ok((child, _cue)) = player(
+        if let Ok((picture, _cue)) = player(
             &picture_program(),
             tree,
             cut,
@@ -1092,7 +1274,7 @@ pub fn seek(
             was_held,
             spawn,
         ) {
-            preview.picture = Some(child);
+            preview.picture = Some(picture);
             // A seek is a fresh cue: the stamp follows it, or the next tick would read the duck it just
             // replaced as "already applied".
             preview.bed_gain = Some(gain);
@@ -1188,61 +1370,93 @@ pub fn heard_at(cut: &Cut, at: f64, line_speaking: bool, game_volume: f64) -> He
     }
 }
 
-/// S2's wait, run for real: synthesize the line over the same wire the row's ▶ uses
-/// ([`crate::speak_leg::speak`], which re-reads the Settings per call) and report where the picture
-/// goes. Returns the sentence for the status line and the second to resume at.
-///
-/// This is what makes S2's "synthesizing line N" / "line N ready" real: the string is said before the
-/// dial and the resume second comes from the rules module, so a page that prints one without the other
-/// cannot happen from here.
-pub fn synthesize_line(
-    tree: &crate::layout::Tree,
-    entry: &Entry,
-    line: usize,
-    volume: f64,
-    spawn: &mut Spawn,
-) -> (String, f64) {
+thread_local! {
+    /// The line whose take a worker is dialling for the preview, so the tick, which keeps beating while the
+    /// picture waits, asks for it once.
+    static ASKING: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+/// S2's pause for a missing take: dial the real speech server for `line` on a worker (§03-shell §1, "The
+/// window thread never waits"; the first rewrite dialled inside the tick, so the window froze for every
+/// missing take). The tick keeps beating with the picture paused on the wait; when the take lands, the
+/// voice player picks the line up from its start, or a refusal is made sticky and the picture plays on mute.
+fn ask_for_take(page: Rc<dyn PreviewPage>, tree: &crate::layout::Tree, entry: &Entry, line: usize) {
+    if ASKING.with(|asking| asking.get()) == Some(line) {
+        return;
+    }
+    ASKING.with(|asking| asking.set(Some(line)));
     let key = take_key(entry);
     let seed = narration::tts_seed(&key);
-    let language = crate::project::load(tree.dir())
-        .map(|project| project.language)
-        .unwrap_or_default();
     let starting = narrate_preview::synthesizing(line);
-    let outcome = crate::speak_leg::speak(tree, &entry.text, &entry.emotion, seed, &key, &language);
+    page.say(&starting);
     let line_start = entry.s + entry.at;
-    match outcome {
-        narrate_tts::Outcome::Take(wav) => RUNNING.with(|slot| {
-            let mut held = slot.borrow_mut();
-            if let Some(preview) = held.as_mut() {
+    let (text, emotion) = (entry.text.clone(), entry.emotion.clone());
+    let (worker_tree, worker_key) = (tree.clone(), key.clone());
+    crate::ui::background::run(
+        "preview take",
+        move || {
+            let language = crate::project::load(worker_tree.dir())
+                .map(|project| project.policy.language.value)
+                .unwrap_or_default();
+            crate::speak_leg::speak(&worker_tree, &text, &emotion, seed, &worker_key, &language)
+        },
+        move |outcome| {
+            ASKING.with(|asking| asking.set(None));
+            if let Some((said, at)) = land_take(
+                line,
+                line_start,
+                &key,
+                outcome,
+                &starting,
+                &mut spawn_player,
+            ) {
+                page.set_head(at);
+                page.say(&said);
+            }
+        },
+    );
+}
+
+/// A take for `line` landed: the preview still waiting on that line resumes with it (or, refused, plays on
+/// mute with the refusal sticky). `None` when nothing waits on it any more: the preview was stopped or moved
+/// on while the take was out, and the take is simply filed.
+fn land_take(
+    line: usize,
+    line_start: f64,
+    key: &str,
+    outcome: narrate_tts::Outcome,
+    starting: &str,
+    spawn: &mut Spawn,
+) -> Option<(String, f64)> {
+    RUNNING.with(|slot| {
+        let mut held = slot.borrow_mut();
+        let preview = held.as_mut()?;
+        if preview.waiting_line() != Some(line) {
+            return None;
+        }
+        Some(match outcome {
+            narrate_tts::Outcome::Take(wav) => {
                 let at = preview.resume_spoken(line, line_start, &wav.to_string_lossy(), spawn);
-                return (
+                (
                     format!(
                         "{} \u{2014} {}",
                         starting,
                         narrate_preview::line_ready(line)
                     ),
                     at,
-                );
+                )
             }
-            (narrate_preview::line_ready(line), line_start)
-        }),
-        narrate_tts::Outcome::Refused(why) => {
-            let at = RUNNING.with(|slot| {
-                let mut held = slot.borrow_mut();
-                match held.as_mut() {
-                    Some(preview) => preview.resume_failed(&key),
-                    None => narrate_preview::resume_after_synthesis(line_start, line_start, false),
-                }
-            });
-            let said = format!(
-                "{} \u{b7} {}",
-                narrate_preview::failed_playing_on(line),
-                why
-            );
-            let _ = volume;
-            (said, at)
-        }
-    }
+            narrate_tts::Outcome::Refused(why) => {
+                let at = preview.resume_failed(key);
+                let said = format!(
+                    "{} \u{b7} {}",
+                    narrate_preview::failed_playing_on(line),
+                    why
+                );
+                (said, at)
+            }
+        })
+    })
 }
 
 /// The cut this leg needs: the page holds segments rather than a whole `Cut`, so one place builds it.

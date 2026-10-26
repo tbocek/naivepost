@@ -15,12 +15,12 @@ A project is a folder ending in `.naivepost`. The folder **is** the output folde
   sources/                           copies of added files (when "copy into project" is on); <name>.part while a copy is in flight
   stems/                             voice-separation products: <base>.split-voice.wav, <base>.split-novoice.wav|.mkv
   prepare/
-    inputs/meta.env                  INTERVAL, SCALE always; VIDEO_FILE, VIDEO_BASE when there is footage; AUDIO_FILE, AUDIO_BASE when narrator 1 resolves
+    inputs/meta.env                  INTERVAL (the 0.25 s extraction grid), SCALE always; VIDEO_FILE, VIDEO_BASE when there is footage; AUDIO_FILE, AUDIO_BASE when narrator 1 resolves
     inputs/<source>/                 voice16k.wav, transcript.txt, transcript.tsv, transcript.srt,
                                      words.json, asrchunks.json, words.aligned.json, turns.json
                                      (scratch while running: asr/c00.wav… chunks, kept on failure, removed on success; diar/ s.wav, a00.wav…, anchor.list, anchor.wav, seg.wav, cc.list, win.wav)
-    inputs/frames/<source>/          <YYYY-MM-DD_HH-MM-SS.mmm>.jpg on the 250 ms grid restarted at each scene change;
-                                     scenes.tsv (time, score); .frames marker   (prototype: <YYYY-MM-DD_HH-MM-SS[-n]>.jpg per interval, .interval)
+    inputs/frames/<source>/          <YYYY-MM-DD_HH-MM-SS.mmm>.jpg on the 250 ms grid restarted at each scene change, named by the real instant (the recording's file-name stamp plus the second into it; first rewrite: session seconds printed as 1970-01-01_…, renamed in place on the next run);
+                                     scenes.tsv (time, score); .frames marker   (prototype: <YYYY-MM-DD_HH-MM-SS[-n]>.jpg per interval, .interval; whole-second names still read)
     describe/<source>/events.tsv     one row per frame; state.txt; .llmframes/ (the frames sent, scaled to P.machine.describeFrameWidth)
     transcript/<source>/             transcript.fixed.tsv | commentary.fixed.tsv; subtitles.srt for video sources only
     transcript/session.tsv           the merged timeline (machine copy)
@@ -53,9 +53,6 @@ Paths written into any project file follow one rule: inside the project → `pro
 ```json
 {
   "sources": [{"path": "project:sources/a.mkv", "footage": true, "narrator": 1, "sepvoice": false, "tracks": [0, 1]}],
-  "interval": 1.0,
-  "language": "en",
-  "no_narration": false,
   "reference_sources": false,
   "vid_dir": "…", "aud_dir": "…",
   "context": "The weekly blockchain lecture …",
@@ -67,20 +64,21 @@ Paths written into any project file follow one rule: inside the project → `pro
 
 | key | meaning | default |
 |---|---|---|
-| sources | in order; `footage` only on video; `narrator` 1..N (exclusive); `sepvoice` is a wish cleared when granted; `tracks` = audio stream indices in the session (empty = first) | [] |
-| interval | Freq: seconds between the frames sent to the describe model, counted from each scene change; 0.25 to 5; always written (prototype: the extraction interval, 0 = every frame) | 1.0 |
+| sources | in order; `footage` only on video; `narrator` 0..N, the voice that speaks in the recording, shared by every recording of that voice (an audio recording with one is a narrator microphone, [03 §4](03-shell.md#4-sources-list-lives-on-prepare-specified-here-because-the-shell-snapshots-it)); new rows start at 1; `sepvoice` is a wish cleared when granted; `tracks` = audio stream indices in the session (empty = first) | [] |
+| interval | gone with Freq: ignored on load, never written (first rewrite: Freq, seconds between the frames sent to the describe model, 0.25 to 5; prototype: the extraction interval, 0 = every frame) | |
 | frame_scale | prototype only: the Frame size preset; ignored on load, never written (frames are stored at the video's own size, [F1.7](04-prepare.md#f17-describe-per-footage-source-chunks-of-pmachinedescribeframesperreq--4) S1) | — |
 | run_steps | prototype only: the chain's ticked pages; ignored on load, never written (the run bar has no step picker, [03 §2](03-shell.md#2-the-run-bar)) | — |
-| language | ASR language code | en |
-| no_narration | narration off | false |
+| language | prototype and first rewrite only: the Language box's code; read once into P.policy.language (unless the file's policy holds a language of its own, said in the log), never written at the top level | — |
+| no_narration | gone: there is no narration switch ([07 §1](07-narrate.md#1-screen)); ignored on load, never written (first rewrite: the Narration tick, narration off) | |
 | reference_sources | inverted on purpose: absent = copy sources in | false |
 | vid_dir / aud_dir | last chooser folders | root/input_video, root/input_audio |
-| context | the User Context, verbatim | "" |
+| context | the User Context, verbatim; with a profile, the template filled in (rebuilt on every field change) | "" |
+| profile | new: the profile this project's context is made from and its own values, `{"name": "News show", "values": {"title": "…", "episode": "6"}}` ([03 F0.14](03-shell.md#f014-profiles)); absent = free-text context | absent |
 | policy | new, not in the prototype: the editing policy ([`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults)) with a `source` per field (user / model / default) | defaults |
-| produce | encoder settings ([`08-produce.md` §2](08-produce.md#2-flows)); `out_file` is never stored | defaults |
+| produce | encoder settings ([`08-produce.md` §2](08-produce.md#2-flows)), each option spelled as §A lists it (`"resolution": "original"`; the first rewrite wrote `Original`, which its own reader did not know, so the choice was lost on the next open; that spelling is still read); `out_file` is never stored | defaults |
 | publish | upload text and thumbnail state ([§5](#5-producepublishpublishjson)) | absent |
 
-Legacy keys read and migrated once, never written: `videos`, `audios` (first recording → narrator 1), `in_dir`, `out_dir`, `*_hints` (folded into the prompts with their historical lead-ins), `prompts` (adopted where the machine has none); `style` ("read" → P.policy.markingPass joins and cutMode words, "" → retakes and model, as a `source: default` the context can still override); inside `publish`: `base` (an index, turned into the frames list) and `title_off` (the old spelling of "not printed"). An old `pitch` key is ignored (the field is gone).
+Legacy keys read and migrated once, never written: `videos`, `audios` (first recording → narrator 1), `in_dir`, `out_dir`, `*_hints` (folded into the prompts with their historical lead-ins), `prompts` (adopted where the machine has none); `style` ("read" → P.policy.markingPass joins and cutMode words, "" → retakes and model, as a `source: default` the context can still override); `language` (→ P.policy.language, as a `source: user` the context can still override); inside `publish`: `base` (an index, turned into the frames list) and `title_off` (the old spelling of "not printed"). An old `pitch` key is ignored (the field is gone).
 
 Autosave: the project is marshalled every 2 s, written only when the bytes differ from the last write, and flushed on window close. No "unsaved changes" prompt.
 

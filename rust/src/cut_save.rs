@@ -14,7 +14,7 @@
 //! the drag loop and would leave the file holding whichever edge the pointer happened to be over when it stalled.
 
 use crate::cut::{self, Cut};
-use crate::{layout, startup};
+use crate::layout;
 
 thread_local! {
     /// Is a drag in flight, so `cut.json` must NOT be written? §7's mid-drag rule lives HERE rather than at
@@ -31,7 +31,7 @@ pub fn write_cut(cut_: &Cut) -> Result<(), String> {
     if gesture_in_flight() {
         return Ok(());
     }
-    let dir = startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let dir = crate::startup::open_dir();
     let tree = layout::Tree::new(&dir).map_err(|err| err.to_string())?;
     cut::save(cut_, &tree)
 }
@@ -52,7 +52,7 @@ pub fn write_cut_at(cut_: &Cut, tree: &layout::Tree) -> Result<(), String> {
 /// predicate over a `Tree`; this is the version that knows where the tree is, and it finds that out the same way
 /// [`write_cut`] does rather than being told.
 pub fn exists() -> bool {
-    let dir = startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let dir = crate::startup::open_dir();
     match layout::Tree::new(&dir) {
         Ok(tree) => cut::exists(&tree),
         Err(_) => false,

@@ -4,8 +4,7 @@
 //! how a row is written and read back. This module owns the *numbers* that go into those columns —
 //! how long a request queued behind the gate (§4), how long until the first byte came back, how long
 //! it was on the wire in all, how much of that was thinking — plus the cache row that has no time at
-//! all, the per-service summary a run ends with, and the wait-against-wire ratio the slot counts are
-//! chosen by.
+//! all, the per-service summary a run ends with, and the share of time spent waiting for a server.
 //!
 //! Nothing here reads a clock or opens a socket. Every timestamp arrives as an argument from the
 //! caller's HTTP layer, which is what makes the whole thing testable without sleeping and keeps one
@@ -31,7 +30,7 @@ pub const OUTSIDE_SERVICES: [Service; 4] =
 /// recorded and the arithmetic below is all there is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Timer {
-    /// Milliseconds spent waiting for a slot before going out. Zero means never queued.
+    /// Milliseconds spent waiting its turn before going out. Zero means never queued.
     wait_ms: i64,
     /// When the request went out, in the caller's epoch milliseconds.
     sent_ms: i64,
@@ -75,7 +74,7 @@ impl Timer {
         self.thinking_ms = Some(ms.max(0));
     }
 
-    /// Milliseconds waiting for a slot.
+    /// Milliseconds waiting its turn.
     pub fn wait_ms(&self) -> i64 {
         self.wait_ms
     }
@@ -248,7 +247,7 @@ pub struct ServiceTally {
     pub count: usize,
     /// Seconds on the wire across those rows. Cache rows add nothing — they were never on the wire.
     pub on_wire_s: f64,
-    /// Seconds spent waiting for a slot.
+    /// Seconds spent waiting its turn.
     pub wait_s: f64,
     /// How many of the rows were served from the cache.
     pub cached: usize,
@@ -326,12 +325,12 @@ fn spell(seconds: f64) -> String {
 
 /// The line a run ends with, one clause per service that was used.
 ///
-/// §10 spells it: `>>> requests: llm 57 in 2h 13m on the wire, 4m waiting for a slot; audio 38 in
+/// §10 spells it: `>>> requests: llm 57 in 2h 13m on the wire, 4m waiting its turn; audio 38 in
 /// 6m 10s; web 3 in 12s`. Note which parts are said once and which repeat: "on the wire" rides only
 /// on the first clause of the sentence — repeating it per service would triple the words for no
 /// added information — while each service does carry its own count and its own duration. The waiting
 /// clause appears only where there was some waiting, because a service nobody queued behind has
-/// nothing to say about slots and printing `0s waiting for a slot` everywhere buries the one number
+/// nothing to say about waiting and printing `0s waiting its turn` everywhere buries the one number
 /// that matters.
 ///
 /// Nothing outside was used → `">>> requests: none"`: a run that sent no request anywhere should
@@ -349,7 +348,7 @@ pub fn summary_line(tallies: &[ServiceTally]) -> String {
             let tail = if index == 0 { " on the wire" } else { "" };
             let mut line = format!("{name} {} in {}{tail}", tally.count, spell(tally.on_wire_s));
             if tally.wait_s > 0.0 {
-                line.push_str(&format!(", {} waiting for a slot", spell(tally.wait_s)));
+                line.push_str(&format!(", {} waiting its turn", spell(tally.wait_s)));
             }
             line
         })
@@ -357,29 +356,18 @@ pub fn summary_line(tallies: &[ServiceTally]) -> String {
     format!(">>> requests: {}", parts.join("; "))
 }
 
-/// The share of a service's time that went on waiting for a slot rather than working.
+/// The share of a service's time that went on waiting for its server rather than working.
 ///
 /// `wait / (wait + on_wire)`. `None` when both are zero: with no time spent either way there is
 /// nothing to judge, and reporting `0.0` would read as "no waiting" rather than "no data".
 ///
-/// This is the number §10 says the slot counts are chosen by — the comparison is here, the threshold
-/// is not. The spec names the ratio and the decision but gives no figure, and inventing one under a
-/// `P.*` id would catalogue a value the spec never set. Keeping the threshold out means there is only
-/// ever one place it can live once someone picks it.
+/// §10 reports it per service: how much of a run went on requests waiting their turn.
 pub fn wait_share(tally: &ServiceTally) -> Option<f64> {
     let total = tally.wait_s + tally.on_wire_s;
     if total <= 0.0 {
         return None;
     }
     Some(tally.wait_s / total)
-}
-
-/// Whether a wait share crosses the threshold the caller considers worth another slot for.
-///
-/// Strictly greater: a share exactly at the threshold is advice, not a demand. See
-/// [`wait_share`] for why the number arrives as an argument.
-pub fn wants_more_slots(share: f64, threshold: f64) -> bool {
-    share > threshold
 }
 
 /// File the line a cache hit owes §10: "A reply served from the cache is a line too, marked as such

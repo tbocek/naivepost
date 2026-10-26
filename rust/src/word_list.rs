@@ -411,7 +411,7 @@ pub fn row(project: &crate::project::Project) -> Option<crate::run_stages::Task>
 /// off the environment exactly as `fix_call::run_task` and `fix_session::run_placement` read it, so a
 /// test that moves the process gets THIS session and not the launcher's.
 pub fn run_task(_task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
-    let session = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let session = crate::startup::open_dir();
     let tree = crate::layout::Tree::new(&session).map_err(|_| {
         format!(
             "{}: not a project folder to write a word list into",
@@ -438,7 +438,7 @@ pub fn list(
     sources: &[(String, Vec<Token>)],
     mut envelopes: impl FnMut(&str, f64, f64) -> Option<i32>,
     mut transcripts: impl FnMut(&str) -> Option<String>,
-    mut fixed: impl FnMut(&str, f64, f64) -> Option<Vec<String>>,
+    mut fixed: impl FnMut(&str, f64, f64) -> Option<(f64, Vec<String>)>,
 ) -> (Vec<Word>, Vec<String>) {
     let mut all: Vec<Word> = Vec::new();
     let mut logs = Vec::new();
@@ -452,10 +452,13 @@ pub fn list(
         // asked for at its first word, so a line never covers the same word twice.
         let mut at = 0usize;
         while at < mine.len() {
-            let Some(line) = fixed(source, mine[at].start, mine[at].end) else {
+            let Some((end, line)) = fixed(source, mine[at].start, mine[at].end) else {
                 break;
             };
-            let end = mine[at].end;
+            // The window ends where the LINE ends. The first rewrite ended it at its first word's end, so
+            // every window was one word, the rest of the line was hung on it as "what the words did not
+            // say", and each word of the session list carried its whole sentence (the join model was shown
+            // one sentence eighteen times over).
             let span = mine[at..]
                 .iter()
                 .position(|word| (word.start + word.end) / 2.0 > end + 0.01)
@@ -480,7 +483,7 @@ pub fn build_session(
     sources: &[(String, Vec<Token>)],
     envelopes: impl FnMut(&str, f64, f64) -> Option<i32>,
     transcripts: impl FnMut(&str) -> Option<String>,
-    fixed: impl FnMut(&str, f64, f64) -> Option<Vec<String>>,
+    fixed: impl FnMut(&str, f64, f64) -> Option<(f64, Vec<String>)>,
     tree: &crate::layout::Tree,
 ) -> Result<(Vec<Word>, Vec<String>), String> {
     let (words, logs) = list(sources, envelopes, transcripts, fixed);
@@ -620,7 +623,8 @@ fn gather(
 ) -> Result<Vec<(String, Vec<Token>)>, String> {
     let hz = crate::transcribe::SAMPLE_RATE as f64;
     let mut out: Vec<(String, Vec<Token>)> = Vec::new();
-    for source in &project.sources {
+    // On the session clock: a seam is a change of recording in THIS order, and BEFORE has to be the earlier.
+    for source in crate::fix_session::in_clock_order(project) {
         let lane = lane_of(source);
         // The aligner's times first: they are what a cut point is measured against, and gluing off
         // them keeps the list agreeing with the edges F1.11 will place. ASR's own samples are the
@@ -716,7 +720,7 @@ fn fixed_spelling(
     lane: &str,
     start: f64,
     end: f64,
-) -> Option<Vec<String>> {
+) -> Option<(f64, Vec<String>)> {
     let paths = [
         tree.transcript_fixed_tsv(lane),
         tree.commentary_fixed_tsv(lane),
@@ -729,7 +733,10 @@ fn fixed_spelling(
             .into_iter()
             .find(|line| line.start <= start + 0.001 && line.end >= end - 0.001)
         {
-            return Some(line.text.split_whitespace().map(str::to_string).collect());
+            return Some((
+                line.end,
+                line.text.split_whitespace().map(str::to_string).collect(),
+            ));
         }
     }
     None

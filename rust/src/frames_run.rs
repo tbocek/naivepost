@@ -59,7 +59,7 @@ pub fn stage(project: &Project) -> run_stages::Stage {
 pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
     let paths = settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
-    let session = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let session = crate::startup::open_dir();
     let tree = Tree::new(&session)
         .map_err(|_| format!("{}: not a project folder to frame into", session.display()))?;
     let source = task
@@ -118,6 +118,12 @@ pub fn stage_pass(
             frames::GRID,
             frames::SCENE_THRESHOLD,
         ));
+        let renamed = rename_session_named(tree, lane, session_zero(tree))?;
+        if renamed > 0 {
+            log(&format!(
+                ">>> [{lane}] {renamed} frame(s) renamed from session seconds to the recording's own date and time"
+            ));
+        }
         return Ok(frames::Outcome {
             skipped: true,
             ..Default::default()
@@ -136,6 +142,8 @@ pub fn stage_pass(
     sweep.extend(frames::scene_pass_plan(frames::SCENE_THRESHOLD));
     let owned: Vec<&str> = sweep.iter().map(String::as_str).collect();
     let scores = subprocess::run(&ffmpeg, &owned, &mut *log)?;
+    // The grid runs to the last picture the sweep saw, not to the end of the sound.
+    let duration = frames::picture_end(duration, &frames::parse_scores(&scores));
     // How many chunks the plan will make, so each one's progress line can say `i/n` like `frames::run`
     // records it — the door logs those lines itself (in front of the ffmpeg calls they stand for), so it
     // has to know the denominator the same way the rule does.
@@ -181,7 +189,7 @@ pub fn stage_pass(
                 chunk_total.load(std::sync::atomic::Ordering::SeqCst),
             );
             extract_chunk(
-                &ffmpeg, &input, lane, seconds, &dir, start, cpus, &step, log,
+                &ffmpeg, &input, lane, seconds, &dir, start, duration, cpus, &step, log,
             )
         },
     )?;
@@ -205,10 +213,69 @@ fn clock_start(tree: &Tree, index: usize) -> f64 {
         .iter()
         .map(|source| source.path.rsplit('/').next().unwrap_or(&source.path))
         .collect();
-    crate::fix_transcripts::placement(&names)
-        .into_iter()
-        .nth(index)
-        .unwrap_or(0.0)
+    // The recording's own instant: the session's zero plus where the row sits on the session clock. The
+    // first rewrite named frames by the offset alone, so every folder read `1970-01-01_00-…`.
+    let clock = crate::clock::clock(&names);
+    if index >= names.len() {
+        return clock.zero;
+    }
+    clock.zero + clock.offset(index)
+}
+
+/// The session's zero (the earliest recording's stamp), for a reader turning frame names back into session
+/// seconds ([`crate::clock::frame_session_seconds`]). 0 when the project cannot be read or nothing is stamped.
+pub fn session_zero(tree: &Tree) -> f64 {
+    let Ok(project) = crate::project::load(tree.dir()) else {
+        return 0.0;
+    };
+    let names: Vec<&str> = project
+        .sources
+        .iter()
+        .map(|source| source.path.rsplit('/').next().unwrap_or(&source.path))
+        .collect();
+    crate::clock::clock(&names).zero
+}
+
+/// A folder the first rewrite extracted carries session seconds printed as 1970 dates: renamed in place to the
+/// recording's real instants (session second plus the session's zero), its scaled copies with it, so a resumed
+/// run does not re-extract and every reader still finds the same pictures. Answers how many were renamed.
+fn rename_session_named(tree: &Tree, lane: &str, zero: f64) -> Result<usize, String> {
+    if zero < crate::clock::SESSION_NAMED_BEFORE {
+        return Ok(0);
+    }
+    let mut renamed = 0usize;
+    for (dir, shift) in [
+        (tree.frames_dir(lane), zero),
+        (tree.llm_frames_dir(lane), f64::NAN),
+    ] {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        // The scaled copies are named from their folder's first picture (`describe::scaled_name`), which is the
+        // stored folder's first instant once that folder is renamed.
+        let shift = if shift.is_nan() {
+            crate::describe_scale::name_base(tree, lane)
+        } else {
+            shift
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some(stem) = name.strip_suffix(".jpg") else {
+                continue;
+            };
+            let Some(at) = crate::clock::read_frame(stem) else {
+                continue;
+            };
+            if at >= crate::clock::SESSION_NAMED_BEFORE {
+                continue;
+            }
+            let to = dir.join(format!("{}.jpg", crate::clock::frame_name(at + shift)));
+            std::fs::rename(entry.path(), &to)
+                .map_err(|why| format!("{}: {why}", entry.path().display()))?;
+            renamed += 1;
+        }
+    }
+    Ok(renamed)
 }
 
 /// One chunk's worth of frames, extracted for real: `frames::extract_plan`'s command per frame, each
@@ -228,6 +295,7 @@ fn extract_chunk(
     seconds: &[f64],
     dir: &Path,
     start: f64,
+    end: f64,
     cpus: usize,
     chunk_step: &str,
     log: &mut impl FnMut(&str),
@@ -264,6 +332,7 @@ fn extract_chunk(
         let share = pairs.chunks(pairs.len().div_ceil(threads.max(1)));
         for group in share {
             let ffmpeg = ffmpeg.to_string();
+            let lane_name = lane.to_string();
             let group: Vec<(&Vec<String>, String)> = group
                 .iter()
                 .map(|(plan, out)| (*plan, (*out).clone()))
@@ -292,10 +361,25 @@ fn extract_chunk(
                             // the file's existence is the only proof the frame exists.
                             if Path::new(&out).exists() {
                                 count += 1;
+                            } else if near_the_end(&plan, end) {
+                                // Past the last picture by less than a second (a video stream that stops a
+                                // frame short of the sweep's last score): no picture there, said, not failed.
+                                lines.push(format!(
+                                    ">>> [{lane_name}] no picture at the very end ({}) -- skipped",
+                                    Path::new(&out)
+                                        .file_name()
+                                        .map(|name| name.to_string_lossy().to_string())
+                                        .unwrap_or_default()
+                                ));
                             } else {
                                 failure = Some(format!("{out}: ffmpeg wrote no frame"));
                                 break;
                             }
+                        }
+                        Err(_) if near_the_end(&plan, end) => {
+                            lines.push(format!(
+                                ">>> [{lane_name}] no picture at the very end -- skipped"
+                            ));
                         }
                         Err(why) => {
                             failure = Some(why);
@@ -333,4 +417,15 @@ fn extract_chunk(
 /// and `scenes.tsv`, named here so the door's own path rule is readable beside the calls that use it.
 pub fn frames_dir(tree: &Tree, lane: &str) -> PathBuf {
     tree.frames_dir(lane)
+}
+
+/// Whether this extraction asks for a second within the last second of the take (`-ss <s>` in its argv
+/// against `end`, the take's picture end): the only place a missing picture is the video's own short end
+/// rather than a broken extraction.
+fn near_the_end(plan: &[String], end: f64) -> bool {
+    plan.iter()
+        .position(|arg| arg == "-ss")
+        .and_then(|at| plan.get(at + 1))
+        .and_then(|second| second.parse::<f64>().ok())
+        .is_some_and(|second| second + 1.0 >= end)
 }

@@ -374,3 +374,26 @@ fn sec_01_project_and_files_8_session_clock_s6_frames_are_named_by_their_exact_s
     assert_eq!(frame_name(base + 0.999), "2026-08-08_19-55-15.999");
     assert_eq!(frame_name(base + 0.9996), "2026-08-08_19-55-16.000");
 }
+
+/// §01 §1's frame names, read back: a frame is named by its real instant, so the session second it stands for is
+/// that instant less the session's zero; a name from the first rewrite (session seconds printed as a 1970 date)
+/// already counts session seconds and is read as it is.
+#[test]
+fn sec_01_project_and_files_1_layout_a_frame_name_reads_back_as_a_session_second() {
+    let names = ["2026-10-25 10-28-46.mkv", "2026-10-25 10-35-44.mkv"];
+    let zero = naivepost::clock::clock(&names).zero;
+    // 10-35-44 is 6 min 58 s into the session; its frame 3.25 s in is session second 421.25.
+    let real = naivepost::clock::frame_name(zero + 421.25);
+    assert_eq!(real, "2026-10-25_10-35-47.250");
+    assert_eq!(
+        naivepost::clock::frame_session_seconds(&real, zero),
+        Some(421.25)
+    );
+    let first_rewrite = naivepost::clock::frame_name(421.25);
+    assert_eq!(first_rewrite, "1970-01-01_00-07-01.250");
+    assert_eq!(
+        naivepost::clock::frame_session_seconds(&first_rewrite, zero),
+        Some(421.25),
+        "a 1970 name already counts session seconds"
+    );
+}

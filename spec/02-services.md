@@ -8,7 +8,7 @@
 
 ## 1. The four servers
 
-Every request to any of them — and every web search and page read — is timed and written to the project's `requests.tsv` (new; [09 §10](09-llm-and-tools.md#10-every-request-timed-new)); each model is given at most its Settings slot count of requests at once ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)).
+Every request to any of them — and every web search and page read — is timed and written to the project's `requests.tsv` (new; [09 §10](09-llm-and-tools.md#10-every-request-timed-new)); each server is given one of this app's requests at a time, and requests to different servers run side by side: a narration speaking on audio.cpp while the LLM writes a title, never two LLM jobs at once ([09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63)).
 
 | what | default | serves | API |
 |---|---|---|---|
@@ -17,7 +17,7 @@ Every request to any of them — and every web search and page read — is timed
 | sd.cpp (sd-server) | `http://127.0.0.1:1234` (or `SD_SERVER` below the settings box) | the thumbnail when one is drawn | `GET /sdcpp/v1/capabilities`, `POST /sdcpp/v1/img_gen` → job id, `GET /sdcpp/v1/jobs/{id}`, `POST /sdcpp/v1/jobs/{id}/cancel` |
 | ffmpeg / ffprobe | on PATH (or a configured path; ffprobe from the same folder) | frames, waveforms, cuts, encodes | subprocesses |
 
-An empty server box means the loopback default. A host with no scheme is read as `https://host`. Keys are sent as `Authorization: Bearer …` only when non-empty. The settings file is re-read per request (each URL, key and model id), so a settings change lands on the next request; the LLM server has no env override.
+An empty server box means the loopback default. A host with no scheme is read as `https://host`. Keys are sent as `Authorization: Bearer …` only when non-empty. Every JSON body is sent with `Content-Type: application/json` (the upload's raw body is the one body that is not JSON): the llama.cpp router reads an unlabelled body anyway, but a proxy in front of a model (FastAPI) answers 400 "Input should be a valid dictionary" to the same bytes. An upload's body is the file's own bytes, byte for byte (first rewrite: the file went through a lossy UTF-8 copy, every non-UTF-8 byte became three, and audio.cpp answered 500 "invalid WAV RIFF header" to an ASR chunk 1.9 times its size). The settings file is re-read per request (each URL, key and model id), so a settings change lands on the next request; the LLM server has no env override.
 
 Audio model ids (settings, with defaults): ASR `nemotron-asr`, diarization `sortformer-diar`, TTS `index-tts2`, separation `bs-roformer`, aligner: none by default (any model declared task `align`, preferring `qwen3-aligner`). A missing model is reported with a compiled-in install hint ("the weights install with: docker compose exec audio python3 tools/model_manager_v2.py install <package> --models-root models", package per shipped default: nemotron_asr_q8_0, sortformer_diar_4spk_v1_q8_0, bs_roformer_q8_0) — offered only when the configured id is the shipped default; for a hand-picked id the weights would be a guess. Compiled-in defaults: the four model ids, the aligner preference and the dev-box voices path; no call leaves the machine unless a box points elsewhere. An aligner is chosen by task, not id: the Settings verdict names which of several the run tries first.
 
@@ -44,7 +44,7 @@ Uploads, task runs and the sd.cpp submit/poll ride the run's cancel context, so 
 
 ## 3. Tool catalogue (rewrite directive B)
 
-**Prototype:** of everything below only `web_search` and `web_read` exist, offered to the cut, the narration and the upload text; every other job answers with one JSON reply, parsed and re-asked on failure ([`09-llm-and-tools.md` §2](09-llm-and-tools.md#2-tool-protocol-f61)). The rest is the rewrite. Tools are offered per job. Each result is a short JSON object; problems come back as `{"error": "<one sentence the model can act on>"}` and never end the flow. Numbers the model must not compute are always identifiers from the request (line, clip, frame numbers; offsets as stamped).
+**Prototype:** of everything below only `web_search` and `web_read` exist, offered to the cut, the narration and the upload text; every other job answers with one JSON reply, parsed and re-asked on failure ([`09-llm-and-tools.md` §2](09-llm-and-tools.md#2-tool-protocol-f61)). The rest is the rewrite. Tools are offered per job, each WITH its arguments as a JSON schema (`parameters`: the args of its table below, typed — line, clip and frame numbers integers, seconds and rates numbers, `calm`/`changed` booleans, `side`/`kind`/`pos` their listed words — and every arg without `?` required). A llama.cpp server builds its reply grammar from that schema, and a tool offered by name alone is answered with `{}`: the first rewrite offered names only, so every call reached its executor with no arguments (probed 2026-10-25). Each result is a short JSON object; problems come back as `{"error": "<one sentence the model can act on>"}` and never end the flow. Numbers the model must not compute are always identifiers from the request (line, clip, frame numbers; offsets as stamped).
 
 ### 3.1 Shared
 
@@ -94,13 +94,9 @@ Times and speakers are not arguments: the tool cannot change them — the enforc
 
 ### 3.5 Text edit (per join)
 
-| tool | args | result |
-|---|---|---|
-| `drop_words` | `side` (before/after), `count` | ok with the exact words that would go and the sentence left reading across the join; error when the stretch does not touch the join, `count` runs past what was shown, or it would lose more than P.machine.seamMaxWords or P.machine.seamCeil |
-| `keep_join` | – | nothing removed here (a whole answer) |
-| `get_words` | `side`, `count` | more words than the brief's P.machine.seamReachWords, on either side |
+No tools. One reply, the words that go, quoted: `{"drop_before":"<the last words of BEFORE, copied exactly, or empty>","drop_after":"<the first words of AFTER, or empty>"}`. The app matches each quote bare against the end of BEFORE and the start of AFTER and refuses a quote that does not match, a removal over P.machine.seamMaxWords, or one over P.machine.seamCeil of the words shown; the counts it finds go through the same ceilings a hand edit's do ([`04-prepare.md` F1.10](04-prepare.md#f110-repair-the-joins)).
 
-Prototype: the model returned the joined text; the app derived the counts by matching backwards. With tools the counts are stated directly; the app still re-derives the deleted stretch to check it is one stretch at the join.
+First rewrite: `drop_words(side, count)`, `keep_join`, `get_words` offered as tools while the prompt asked for the joined text; the model, told two things, answered nothing usable at 125 of 127 asks on 07-news (2026-10-26), and with a consistent tool prompt it still scored below the quoted answer (15/18 against 17/18). Prototype: the model returned the joined text and the app derived the counts by matching backwards.
 
 ### 3.6 Cut (model-chosen)
 
@@ -139,7 +135,7 @@ Prototype: the model returned the joined text; the app derived the counts by mat
 |---|---|---|
 | `set_title` | `text` | ok with the words as printed across the picture and the size they take — or the warning they will overflow the band (over seven words) |
 | `set_description` | `text` | ok |
-| `pick_frame` | `clip`, `offset` | ok with **the frame actually taken and how far it is from the moment asked for** (frames exist only every P.project.frameInterval seconds; the prototype takes the nearest at any distance), and a note that a picked frame means nothing is drawn |
+| `pick_frame` | `clip`, `offset` | ok with **the frame actually taken and how far it is from the moment asked for** (frames are offered one a second, `prepare::MODEL_FRAME_STEP`, out of the 250 ms grid; first rewrite: every P.project.frameInterval seconds; the prototype takes the nearest at any distance), and a note that a picked frame means nothing is drawn |
 | `set_thumbnail_instruction` | `text`, `negative?` | ok; error when a frame was already picked — instead of the prototype silently clearing one with the other |
 | `get_frames` | `clip`, `at?` | the candidate frames, so the picture is chosen by looking, not position — the prototype picks the middles of three equal bands and shows the writer none |
 
@@ -161,6 +157,14 @@ Prototype: the model returned the joined text; the app derived the counts by mat
 
 The model reads the User Context and sets only the fields it speaks to ("clips under 2 s", "about 12 minutes", "keep the swearing"); every other field keeps its default. The pipeline fields are among them: markingPass ("I read from a script, stumbled and started again" → joins; "a gaming session, cut out the dead stretches" → retakes), cutMode, captionsPass, speedPass, decorationsPass. They decide which flows and jobs run at all. The form shows the `because`.
 
+### 3.12 Text gate (per pair of frames, F1.6 S6)
+
+| tool | args | result |
+|---|---|---|
+| `judge_text` | `changed` (true/false), `what` (one short line) | the verdict is the answer; no result is sent back |
+
+Asked of the decision model (Settings → Decision; empty, the main model) with two frames, FIRST and SECOND, and the [textgate](prompts/textgate.md) prompt. One call per question; an answer without `judge_text`, or a `changed` that is not true or false, is a failed judge (the gate keeps the pixel pass's change). The tool belongs to no job, like §3.11's.
+
 ## 4. Degraded modes
 
 - No aligner: cut points come off the waveform ("clean wherever there is a silence to cut in, and unable to cut between two words of one breath").
@@ -172,7 +176,8 @@ The model reads the User Context and sets only the fields it speaks to ("clips u
 
 ## 5. Details confirmed against the code (verification pass)
 
-- **Request bodies.** `/v1/tasks/run`: ASR `{"audio","language"}`, diarization `{"audio"}`, alignment `{"audio","text","language"}` — `audio` is always the server-side path an upload returned, never local. `/v1/audio/speech`: `{"model","input","voice_ref","language","options"}` with `voice_ref` the uploaded path of `narrate/voice_ref.wav` (re-uploaded before every line: a remembered path dies with a server restart), `options` the emotion vector plus `seed`, `language` = P.policy.ttsLanguage (the project language, as ASR and alignment send; prototype: hard-coded "en"). `img_gen`: `prompt`, `negative_prompt?`, `width?`, `height?`, `seed` (always), `ref_images` (data URLs — an edit model is conditioned on references, not `init_image`), `auto_resize_ref_image` (always), `output_format?`; everything else deliberately left to the server's start-up flags.
+- **Request bodies.** `/v1/tasks/run`: ASR `{"audio","language"}`, diarization `{"audio"}`, alignment `{"audio","text","language"}` — `audio` is always the server-side path an upload returned, never local. `/v1/audio/speech`: `{"model","input","voice_ref","language","options"}` with `voice_ref` the uploaded path of `narrate/voice_ref.wav` (re-uploaded before every line: a remembered path dies with a server restart), `options` the emotion vector plus `seed`, `language` = P.policy.ttsLanguage (P.policy.language, as ASR and alignment send; prototype: hard-coded "en"). `img_gen`: `prompt`, `negative_prompt?`, `width?`, `height?`, `seed` (always), `ref_images` (data URLs — an edit model is conditioned on references, not `init_image`), `auto_resize_ref_image` (always), `output_format?`; everything else deliberately left to the server's start-up flags.
+- **Diarization reply.** The turns list is read under `speaker_turns` (audio.cpp's nemotron diarizer), `turns`, `speakers` or `diarization`, each turn `start_sample`/`end_sample` (seconds and milliseconds also read) and `speaker_id`: a number, or a name ending in one (`speaker_0` is voice 0, transcribed SPEAKER_00), any other name hashed to a number (first rewrite: `speaker_turns` unknown, so a good answer failed the run with "no speaker turns in it").
 - **sd.cpp waits.** Capabilities 15 s; submit 60 s; each poll 30 s at a 1 s interval; cancel 10 s.
 - **Settings tests** (ten buttons and "Test All", each with its own verdict): LLM — one completion, `max_tokens` 16, thinking forced off, 60 s; LLM vision — a generated 48 px red square as a data URL, 120 s, passes only if the reply contains "red"; TTS endpoint — `/health` (15 s) then the catalogue, looking for family `index_tts2` or task `clon`; TTS model, ASR, diarization, separation — one id each against `/v1/models`, checking the declared task; aligner — by task, never by id (a box could only disagree with the server); ffmpeg — `LookPath`, `ffprobe` beside it, then `-filters`/`-encoders` against `rubberband, subtitles, loudnorm, atempo, amix, adelay, alimiter` and `libx264, libx265, aac, libopus`; firefox — `--version`, then a real headless search. `GET /v1/models` on the LLM backs only "Fetch models" (the id has no default and must be one the server lists) and the sd.cpp fallback probe.
 - **No Save in Settings.** The file is written 600 ms after the last keystroke and again on close if a write is owed; a save resets the cached TTS model id and the "already listening on" note.

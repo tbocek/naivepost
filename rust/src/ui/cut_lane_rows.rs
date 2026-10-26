@@ -69,8 +69,6 @@ fn install_lane_css_once() {
     css.push_str(".fx-kill-target { background: none; border: none; box-shadow: none; outline: none; padding: 0; min-width: 0; min-height: 0; }\n");
     css.push_str(&super::cut_debt_tail::css());
     css.push_str(&super::cut_preview_frame::css());
-    // F0.4 S2: the gears' turning rule, installed with the rest so one provider carries both.
-    css.push_str(&super::lucky_run::gears_css());
 
     let provider = gtk::CssProvider::new();
     provider.load_from_string(&css);
@@ -224,7 +222,9 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
             // can never disagree about whether this bar has room for one.
             let kill_name = format!("fx-remove-{}", bar.index);
             if fx_band::kill_open(width) {
-                let kill = ensure_kill_target(&bar_widget, &kill_name, |slot| {
+                let win_kill = window.clone();
+                let index = bar.index;
+                let kill = ensure_kill_target(&bar_widget, &kill_name, move |slot| {
                     // The cross a person SEES is `cut_lane_paint`'s ink; this button is the hit target centred
                     // over that glyph and draws nothing of its own (empty label, no frame, transparent CSS class),
                     // so the page and the cairo snapshot can never show two different crosses. Both are gated by
@@ -236,26 +236,27 @@ pub fn refresh_effects_lane(window: &adw::ApplicationWindow) {
                     mark.set_has_frame(false);
                     mark.set_can_target(true);
                     mark.set_size_request(fx_band::KILL_MIN_PX as i32, slot);
+                    // Wired here, when the button is made, and never again: the refresh finds this same button
+                    // every time, and connecting on each refresh (the first rewrite) stacked one more removal
+                    // on a single press for every repaint since the page opened.
+                    mark.connect_clicked(move |_| {
+                        // F2.7 ✕ badges: the effect's cross is the `effect` badge, so it fires through the one
+                        // badge door; the door forwards to `remove_effect_at`, whose sentence the fold rounds
+                        // already pin, and prints it.
+                        let said = crate::ui::cut_verb_press::press_badge(
+                            &win_kill,
+                            crate::cut_verbs::Badge::Effect,
+                            index,
+                        );
+                        if let Some(status_line) = ui::find_status(win_kill.upcast_ref()) {
+                            status_line.set_text(&said);
+                        }
+                    });
                     mark
                 });
                 kill.set_tooltip_text(Some(
                     "remove this effect \u{2014} \u{21b6} Undo takes it back",
                 ));
-                let win_kill = window.clone();
-                let index = bar.index;
-                kill.connect_clicked(move |_| {
-                    // F2.7 ✕ badges: the effect's cross is the `effect` badge, so it fires through the one
-                    // badge door; the door forwards to `remove_effect_at`, whose sentence the fold rounds
-                    // already pin, and prints it.
-                    let said = crate::ui::cut_verb_press::press_badge(
-                        &win_kill,
-                        crate::cut_verbs::Badge::Effect,
-                        index,
-                    );
-                    if let Some(status_line) = ui::find_status(win_kill.upcast_ref()) {
-                        status_line.set_text(&said);
-                    }
-                });
             } else if let Some(existing) = bar_widget
                 .first_child()
                 .and_then(|node| walk_named(node, &kill_name))
@@ -488,7 +489,7 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
     // real values arrive with the rounds that own them; this fills the rows so none is blank.
     let cut_ = crate::cut::Cut::default();
     let rows = cut_screen::idle_readouts(
-        cut_screen::THUMB_AT_OPEN,
+        crate::ui::cut_tracks::thumb_px(),
         cut_screen::ASPECT_DEFAULT,
         0.0,
         None,

@@ -34,6 +34,11 @@ struct Stage {
 }
 
 impl Stage {
+    /// The staged project folder: what the live tick hands the lane door (`ui::line_root`).
+    fn project(&self) -> PathBuf {
+        naivepost::startup::session_dir(&self.root)
+    }
+
     fn new(tag: &str, files: &[&str]) -> Self {
         let root =
             std::env::temp_dir().join(format!("naivepost-f25-lane-{}-{tag}", std::process::id()));
@@ -163,7 +168,7 @@ fn f2_5_s3_a_heard_lane_gets_its_own_pipeline_at_its_own_second() {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mic = lane("mic.wav");
     // The resolution rule first: `project:` means the session folder, and only a real file is a pipeline.
-    let found = lane_hear::lane_file(&stage.root, &mic);
+    let found = lane_hear::lane_file(&stage.project(), &mic);
     assert_eq!(
         found.as_deref(),
         Some(stage.file("mic.wav").as_path()),
@@ -184,7 +189,7 @@ fn f2_5_s3_a_heard_lane_gets_its_own_pipeline_at_its_own_second() {
     lane_hear::apply_for_test(
         &mix,
         std::slice::from_ref(&mic),
-        &stage.root,
+        &stage.project(),
         0.8,
         &|_| {},
         stage.player(),
@@ -267,7 +272,7 @@ fn f2_5_s3_a_silenced_lane_is_never_started_whatever_the_gain() {
     lane_hear::apply_for_test(
         &mix,
         &lanes,
-        &stage.root,
+        &stage.project(),
         naivepost::cut_hear::MAX_GAIN,
         &|_| {},
         stage.player(),
@@ -500,7 +505,7 @@ fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
     lane_hear::tick_for_test(
         &mix,
         std::slice::from_ref(&mic),
-        &stage.root,
+        &stage.project(),
         38.1,
         &|_| {},
         stage.player(),
@@ -516,7 +521,7 @@ fn f2_5_s1_the_tick_drives_the_mix_for_the_second_the_line_reached() {
     // `apply_with` logs the named failure and starts nothing, which is §F2.5 S1's own contract about a lane that
     // drops out. Asking again through the same door the tick uses costs nothing when the first one worked (the pid
     // is already there, so no second ask happens) and rides out a busy machine when it did not.
-    let file = lane_hear::lane_file(&stage.root, &mic)
+    let file = lane_hear::lane_file(&stage.project(), &mic)
         .expect("the staged recording resolves for the lane");
     let text = file.display().to_string();
     common::wait_until("the tick to start the lane's player", || {
@@ -576,7 +581,7 @@ fn f2_5_s1_the_preview_tick_hands_its_mix_to_the_lane_leg() {
         }),
         said: std::cell::RefCell::new(Vec::new()),
         mix: std::cell::RefCell::new(Some(mix)),
-        root: Some(stage.root.clone()),
+        root: Some(stage.project()),
     };
     cut_record_tick::step(&page, &[(0.0, 120.0)], 0.1);
     assert_eq!(page.playhead(), Some(38.1), "the line walked one tick");
@@ -646,7 +651,7 @@ fn f2_5_s3_a_lane_whose_file_vanished_is_not_a_pipeline() {
     let stage = Stage::new("s3-gone", &[]);
     let ghost = lane("ghost-mic.wav");
     assert_eq!(
-        lane_hear::lane_file(&stage.root, &ghost),
+        lane_hear::lane_file(&stage.project(), &ghost),
         None,
         "{} is not on disk, so it cannot be handed to a player",
         stage.file("ghost-mic.wav").display()

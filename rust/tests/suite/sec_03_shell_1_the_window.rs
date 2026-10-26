@@ -227,13 +227,12 @@ fn s5_bottom_bar_order(app: &adw::Application) {
     );
     let controls =
         common::widget_in(&window, "run-controls-inner").expect("the run bar's controls");
-    // §2's order lives inside the scroller now: ▶ , I'm feeling lucky , ⏹ — and nothing else.
+    // §2's order lives inside the scroller now: ▶ , ⏹ — and nothing else (no "I'm feeling lucky").
     let control_names = child_names(&controls);
-    assert!(
-        position_of(&control_names, "play-button") < position_of(&control_names, "lucky-button")
-            && position_of(&control_names, "lucky-button")
-                < position_of(&control_names, "stop-button"),
-        "§2's run bar still reads ▶ , I'm feeling lucky , ⏹ inside its scroller: {control_names:?}"
+    assert_eq!(
+        control_names,
+        vec!["play-button", "stop-button"],
+        "§2's run bar reads ▶ , ⏹ inside its scroller"
     );
     let progress = position_of(&run_names, "run-progress");
     let readouts = position_of(&run_names, "readout-row");
@@ -790,8 +789,12 @@ fn s5b_outputs_folder_button_opens_the_pages_folder(app: &adw::Application) {
     // door for that (it moves the save target, the session tree and the readouts together). It needs the
     // project that was opened, so the fixture stands in as the thing opened.
     let model = naivepost::project::load(&fixture_dir()).expect("the snapshot fixture loads");
+    // A project folder for real (its `naivepost.json` written), and the window built ON it: the repaint after
+    // a switch asks that folder (`startup::open_dir`) whether there is a project, and a folder with no file
+    // answers no, which greys the button.
+    naivepost::project::save(&model, &session).expect("the project file");
     release_last_window();
-    let window = ui::build_window(app, &model, "Prepare");
+    let window = ui::window::build_window_at(app, &model, "Prepare", &session);
     window.present();
     hold_last_window(window.clone());
     settle();
@@ -863,7 +866,6 @@ fn s1b_bottom_half_is_on_screen_at_the_minimum(app: &adw::Application) {
     for name in [
         "run-bar",
         "play-button",
-        "lucky-button",
         "stop-button",
         "run-progress",
         "inputs-readout",
@@ -954,16 +956,17 @@ fn s1g_the_collapsed_bottom_half_is_exactly_the_run_row_plus_the_log_header(
     // §1's sentence counts the run bar's ROW and the expander's HEADER; what a `gtk::Box` adds around them
     // (spacing, the expander's own frame and toggle) is chrome of that same header row, so the tolerance is
     // one line of it — printed with every number when it disagrees.
-    let want = row_h + header_h;
+    let want = row_h + naivepost::ui::margins::BAR_GAP_PX as f64 + header_h;
     assert!(
         (h - want).abs() <= 20.0,
-        "§1: the collapsed bottom half is exactly the run-bar row + the log header: drawn {h} px vs {want} px (row {row_h}, header {header_h})"
+        "§1: the collapsed bottom half is exactly the run-bar row + the 8 px gap + the log header: drawn {h} px vs {want} px (row {row_h}, header {header_h})"
     );
-    // …and it ends where the window does: no empty band under the log header.
+    // …and it ends §1's 12 px margin above where the window does: no empty band under the log header.
     let (_ex, ey, _ew, eh) = shot("log-expander");
+    let margin = naivepost::ui::margins::BAR_EDGE_PX as f64;
     assert!(
-        (ey + eh - window.height() as f64).abs() <= 2.0,
-        "§1: no empty space under the collapsed log: expander ends at {:.0} in a {} tall window",
+        (ey + eh + margin - window.height() as f64).abs() <= 2.0,
+        "§1: no empty space under the collapsed log but its 12 px margin: expander ends at {:.0} in a {} tall window",
         ey + eh,
         window.height()
     );
@@ -998,13 +1001,17 @@ fn s1e_the_page_names_no_extra_heading_and_shows_its_controls(app: &adw::Applica
         if name.ends_with("tab-info-button-") || name.starts_with("tab-info-button-") {
             panic!("badge 6 is the header's ONE ⓘ; a per-page copy `{name}` is an extra control");
         }
-        if !name.is_empty() {
-            if let Some((_, y, h, _)) =
-                ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), name)
-            {
-                if h > 0.0 && y + h <= add_y - 1.0 {
-                    panic!("something drawn above \"Add source files…\": {name} at y {y}");
-                }
+    }
+    // Only what is DRAWN counts: a closed dropdown's popover keeps a stale two-pixel allocation above its
+    // button (the Profile picker's sits at the page's top edge), but it is not mapped and nobody sees it.
+    for shown in descendants_of(&scroll).iter().filter(|w| w.is_mapped()) {
+        if let Some(rect) = shown.compute_bounds(&window) {
+            let (y, h) = (f64::from(rect.y()), f64::from(rect.height()));
+            if h > 0.0 && y + h <= add_y - 1.0 {
+                panic!(
+                    "something drawn above \"Add source files…\": {} at y {y}",
+                    shown.widget_name()
+                );
             }
         }
     }
@@ -1056,51 +1063,25 @@ fn descendants_of(root: &gtk::Widget) -> Vec<gtk::Widget> {
     out
 }
 
-/// §4's Prepare row, in the order the spec leaves it after the rewrite: Freq (label + linked stepper),
-/// then Language. Frame size and Style are NOT here — §4 says both are "gone in the rewrite" (frames are
-/// stored at the video's own size; Style comes from the User Context through the policy), and
-/// `sec_03_shell_4_sources_list` asserts their absence by name, so this check asks for what survives and
-/// in which order rather than for the prototype picture's full list.
-fn s1f_the_frame_row_carries_every_control_the_inventory_lists(app: &adw::Application) {
+/// §4's Prepare row under the source list is gone in the rewrite. Frame size and Style went first (frames
+/// are stored at the video's own size; Style comes from the User Context through the policy), Language
+/// moved into the User Context, and Freq, the last control on it, went with the text gate (F1.6 S6).
+fn s1f_the_frame_row_is_gone(app: &adw::Application) {
     let window = window(app, "Prepare");
-    let row = common::widget_in(&window, "frame-controls").expect("§4's row under the source list");
-    let names = child_names(&row);
-    let want = ["freq-stepper", "language-entry"];
-    let held: Vec<&&str> = want
-        .iter()
-        .filter(|n| names.iter().any(|c| c == **n))
-        .collect();
-    assert_eq!(
-        held.len(),
-        want.len(),
-        "the row is missing controls: has {names:?}, wants {want:?}"
+    assert!(
+        common::widget_in(&window, "frame-controls").is_none(),
+        "no row of frame controls under the source list"
     );
-    for pair in want.windows(2) {
+    for gone in [
+        "freq-stepper",
+        "freq-control",
+        "language-entry",
+        "frame-scale-control",
+        "style-control",
+    ] {
         assert!(
-            position_of(&names, pair[0]) < position_of(&names, pair[1]),
-            "§4's row reads {} before {}: {names:?}",
-            pair[0],
-            pair[1]
-        );
-    }
-    for gone in ["frame-scale-control", "style-control"] {
-        assert!(
-            !names.iter().any(|n| n == gone),
-            "§4 drops {gone} in the rewrite, yet the row draws it: {names:?}"
-        );
-    }
-    // The label the inventory words ("Language") sits beside its control. Labels are plain unnamed
-    // `gtk::Label`s, so they are read by their text; Style's label is dropped with its control.
-    let texts: Vec<String> = row
-        .observe_children()
-        .iter::<glib::Object>()
-        .filter_map(Result::ok)
-        .filter_map(|o| o.downcast_ref::<gtk::Label>().map(|l| l.text().to_string()))
-        .collect();
-    for word in ["Freq", "Language"] {
-        assert!(
-            texts.iter().any(|t| t == word),
-            "the row must carry the label \"{word}\": {texts:?}"
+            common::widget_in(&window, gone).is_none(),
+            "§4 drops {gone} in the rewrite, yet the page draws it"
         );
     }
     window.close();
@@ -1125,7 +1106,7 @@ fn sec_03_shell_1_the_window_the_shell_draws_its_title_tabs_log_and_divider() {
             s1d_opening_and_closing_the_log_moves_the_page_height(app);
             s1g_the_collapsed_bottom_half_is_exactly_the_run_row_plus_the_log_header(app);
             s1e_the_page_names_no_extra_heading_and_shows_its_controls(app);
-            s1f_the_frame_row_carries_every_control_the_inventory_lists(app);
+            s1f_the_frame_row_is_gone(app);
             s2b_info_describes_the_shown_tab(app);
             s5b_outputs_folder_button_opens_the_pages_folder(app);
             s4_project_label_names_the_open_project(app);

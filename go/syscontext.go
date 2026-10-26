@@ -219,6 +219,8 @@ var sysSections = map[string]map[string]bool{
 	"narrate":   sysSet("THE ANSWER", "THE MATERIAL", "THE CLOCKS", "THE FOUR STEPS", sysJobsHead, "TOOLS", "NEVER INVENT"),
 	"translate": sysSet("THE ANSWER", sysJobsHead, "NEVER INVENT"),
 	"youtube":   sysSet("THE ANSWER", "THE MATERIAL", "THE CLOCKS", "THE FOUR STEPS", sysJobsHead, "TOOLS", "NEVER INVENT"),
+	// a part of the upload text's material, read into notes: no tools
+	"youtube-part": sysSet("THE ANSWER", "THE MATERIAL", "THE CLOCKS", sysJobsHead, "NEVER INVENT"),
 }
 
 func sysSet(heads ...string) map[string]bool {
@@ -243,7 +245,7 @@ func knownSection(head string) bool {
 var sysJobLabel = map[string]string{
 	"describe": "describe:", "fix": "transcript:", "cut": "cut:",
 	"textedit": "textedit:",
-	"narrate":  "narrate:", "youtube": "upload text:",
+	"narrate":  "narrate:", "youtube": "upload text:", "youtube-part": "upload text:",
 	"captions": "captions:", "speed": "speed:", "effects": "effects:",
 }
 

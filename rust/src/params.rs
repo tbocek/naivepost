@@ -612,10 +612,8 @@ fn engineering() -> Vec<Param> {
             llm_retry::RETRY_SECONDS.to_string(),
             "llm_retry::RETRY_SECONDS",
         ),
-        // §09 §4's liveness bounds and the gate's default. These three DO have rows of their own in §10, so they
-        // carry real `P.` ids (unlike the two above). One `P.machine.slots` row covers all seven models: each keeps
-        // its own count in `settings::Slots`, and one value per model is what makes two models on one GPU two
-        // slot counts rather than one shared number.
+        // §09 §4's liveness bounds. These two DO have rows of their own in §10, so they carry real `P.` ids
+        // (unlike the two above).
         param(
             "P.eng.llmStallMinutes",
             llm_liveness::STALL_MINUTES.to_string(),
@@ -625,11 +623,6 @@ fn engineering() -> Vec<Param> {
             "P.eng.llmWholeMinutes",
             llm_liveness::WHOLE_MINUTES.to_string(),
             "llm_liveness::WHOLE_MINUTES",
-        ),
-        param(
-            "P.machine.slots",
-            llm_liveness::DEFAULT_SLOTS.to_string(),
-            "llm_liveness::DEFAULT_SLOTS",
         ),
         // §09 §5: the most one request may carry. Spelled plain (no thousands separator), the way
         // P.eng.thumbnailJPEGMax spells its 2 MiB cap.
@@ -972,6 +965,32 @@ pub fn cut() -> Vec<Param> {
             ui::cut_colours::GUTTER_EDGE,
             "ui::cut_colours::GUTTER_EDGE",
         ),
+        colour(
+            "cut.colour.bandGround",
+            ui::cut_colours::BAND_GROUND,
+            "ui::cut_colours::BAND_GROUND",
+        ),
+        colour(
+            "cut.colour.keptEdge",
+            ui::cut_colours::KEPT_EDGE,
+            "ui::cut_colours::KEPT_EDGE",
+        ),
+        colour(
+            "cut.colour.filmGround",
+            ui::cut_colours::FILM_GROUND,
+            "ui::cut_colours::FILM_GROUND",
+        ),
+        colour("cut.colour.slate", ui::cut_colours::SLATE, "ui::cut_colours::SLATE"),
+        colour(
+            "cut.colour.joinWash",
+            ui::cut_colours::JOIN_WASH,
+            "ui::cut_colours::JOIN_WASH",
+        ),
+        colour(
+            "cut.colour.joinFrame",
+            ui::cut_colours::JOIN_FRAME,
+            "ui::cut_colours::JOIN_FRAME",
+        ),
         // Last on purpose: §6's own sentence ends with the colours and `cut_parameters_used` pins
         // `cut.colour.playhead` as the list's final row, so a new tint goes above it.
         colour(
@@ -1132,6 +1151,13 @@ pub fn effects() -> Vec<Param> {
             "P.policy.keepSwearing",
             project::Policy::default().keep_swearing.value.to_string(),
             "project::Policy::default — keep_swearing",
+        ),
+        // The language the recordings are spoken in: the speech recogniser's and the voice's. F0.7 reads it from
+        // the User Context; English when the context does not say.
+        param(
+            "P.policy.language",
+            project::Policy::default().language.value,
+            "project::Policy::default — language",
         ),
     ]
 }

@@ -461,7 +461,6 @@ fn sec_08_produce_5_rules_s3_a_run_leaves_an_up_to_date_video_alone() {
         sources: &[],
         aspect: "16:9",
         voice: "1",
-        no_narration: false,
         fx: &[],
         lanes: &[],
         shape: (1920, 1080),

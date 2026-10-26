@@ -58,6 +58,8 @@ fn scene(fx: Vec<Fx>) -> Scene {
             start: 0.0,
             end: 50.0,
         }],
+        recording_rows: Vec::new(),
+        marks: Default::default(),
         folds: Vec::new(),
         selection: None,
         watched_row: None,
@@ -131,7 +133,7 @@ fn row_with(
         Box::new((from.max(0)..to).rev())
     };
     for y in range {
-        for x in (10..WIDTH - 10).step_by(3) {
+        for x in 10..WIDTH - 10 {
             let got = rgb(data, *stride, x, y);
             // cairo's blend rounds each channel, so allow a couple of levels rather than an exact match.
             let near = (got.0 as i32 - want.0 as i32).abs() <= 3
@@ -325,14 +327,15 @@ fn sec_06_effects_2_the_lane_and_the_preview_s3_a_bar_the_floor_refuses_is_never
     let row_h = fx_lane::lane_height_px(1);
     let row_zero_end = cut_band_rows::lane_row_top_px(top, 1) as i32;
     let lane_end = (top + 2.0 * row_h) as i32;
-    let label_y = first_row_with(
-        &bytes,
-        fx_lane::bar_colour(EffectKind::Label, false),
-        EffectKind::Label,
-        top as i32,
-        lane_end,
-    )
-    .expect("the refused bar is still drawn");
+    // The label lies wholly under the zoom's seconds, so its ink is never on bare ground: it is found as what the
+    // lane gains when the label is added to the zoom alone, which is also what proves it is drawn at all.
+    let zoom_only = painted(&scene(vec![fx(EffectKind::Zoom, 1.0, 5.0)]));
+    let label_y = (top as i32..lane_end)
+        .find(|y| {
+            (10..WIDTH - 10)
+                .any(|x| rgb(&bytes.0, bytes.1, x, *y) != rgb(&zoom_only.0, zoom_only.1, x, *y))
+        })
+        .expect("the refused bar is still drawn");
     let zoom_y = first_row_with(
         &bytes,
         fx_lane::bar_colour(EffectKind::Zoom, false),

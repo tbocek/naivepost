@@ -10,8 +10,6 @@
 //! [`run_speeds_pass_with_reply`] hands the same calls back each round so a test can exercise §S4's retry and
 //! §S5's merge without a socket. Both run through the one private body, so they cannot drift apart.
 
-use adw::prelude::*;
-
 use crate::policy;
 use crate::ui::window;
 
@@ -24,7 +22,18 @@ use crate::ui::window;
 /// through `ask_speeds` below — §F3.10 S4's second round is a fresh ask, not the same reply handed to the rules
 /// twice.
 pub fn run_speeds_pass(window: &adw::ApplicationWindow) -> String {
-    place_speeds_reply(window, &|round, batch| ask_speeds(window, batch, round))
+    let inputs = window::pass_inputs(window);
+    let cut_ = window::newest_review_cut();
+    let out = walk_speeds(&inputs, &cut_);
+    window::land_pass(window, &out);
+    out.said
+}
+
+/// The speeds pass over `cut_`, asking for real, with nothing read off the window: what a worker runs.
+pub fn walk_speeds(inputs: &window::PassInputs, cut_: &crate::cut::Cut) -> window::PassOut {
+    walk_speeds_with(inputs, cut_, &|round, batch| {
+        ask_speeds(inputs, cut_, batch, round)
+    })
 }
 
 /// F3.10 S2/S4/S5 with a scripted reply: the same route the pass takes, minus the telephone. A test feeds the
@@ -33,18 +42,24 @@ pub fn run_speeds_pass_with_reply(
     window: &adw::ApplicationWindow,
     calls: &[crate::cut_speed_pass::Call],
 ) -> String {
-    place_speeds_reply(window, &|_, _| calls.to_vec())
+    let inputs = window::pass_inputs(window);
+    let out = walk_speeds_with(&inputs, &window::newest_review_cut(), &|_, _| {
+        calls.to_vec()
+    });
+    window::land_pass(window, &out);
+    out.said
 }
 
 /// F3.10 S1's leg: the ask over the batch this pass just built, for this round of it. Returns no calls when
 /// there is nothing to ask about or nowhere to ask it — the same shape `window::ask_captions` keeps, so a
 /// missing project folder is said in the log rather than thrown.
 fn ask_speeds(
-    window: &adw::ApplicationWindow,
+    inputs: &window::PassInputs,
+    cut_: &crate::cut::Cut,
     batch: &crate::tools::clips::Clips,
     attempt: u32,
 ) -> Vec<crate::cut_speed_pass::Call> {
-    let Some(tree) = window::narrate_session_tree() else {
+    let Some(tree) = inputs.tree.as_ref() else {
         window::log_line("!!! speed: no project folder to ask from -- nothing asked");
         return Vec::new();
     };
@@ -63,7 +78,6 @@ fn ask_speeds(
         .collect();
     // §9 (`the caption, speed and decoration briefs name no camera or lane`): named once
     // there is more than one row filming or more than one recording heard.
-    let cut_ = window::newest_review_cut();
     let mut rows: Vec<String> = cut_
         .segs
         .iter()
@@ -74,8 +88,8 @@ fn ask_speeds(
     rows.dedup();
     let lanes: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
     let asked = crate::speeds_ask::ask_named(
-        &tree,
-        &window::user_context(window),
+        tree,
+        &inputs.context,
         &clips,
         &captioned,
         &rows,
@@ -92,18 +106,19 @@ fn ask_speeds(
 /// `ask` is the telephone: called once per round with the batch as it stands, so a retry asks again rather than
 /// re-reading an answer that was just refused. The scripted door passes a closure that hands back the same
 /// calls every time, which is what lets a test exercise the two-round rule without a socket.
-fn place_speeds_reply(
-    window: &adw::ApplicationWindow,
+fn walk_speeds_with(
+    inputs: &window::PassInputs,
+    cut_: &crate::cut::Cut,
     ask: &dyn Fn(u32, &crate::tools::clips::Clips) -> Vec<crate::cut_speed_pass::Call>,
-) -> String {
-    if !policy::pass_runs(&window::session_policy(window), policy::Pass::Speeds) {
-        let said = "speeds are off \u{2014} the context ruled them out".to_string();
-        if let Some(status_line) = window::find_status(window.upcast_ref()) {
-            status_line.set_text(&said);
-        }
-        return said;
+) -> window::PassOut {
+    if !policy::pass_runs(&inputs.policy, policy::Pass::Speeds) {
+        return window::PassOut {
+            said: "speeds are off \u{2014} the context ruled them out".to_string(),
+            cut: None,
+        };
     }
-    let mut cut_ = window::newest_review_cut();
+    let mut cut_ = cut_.clone();
+    let mut changed = false;
     // The clips the pass asks about are the VISIBLE SEGMENTS of the cut, numbered from 1 in play order, each
     // carrying its own session start -- which is why this uses `Clips` triples rather than F3.9's
     // `(number, length)` sum. NOT `cut_play::kept_runs`: that helper MERGES touching segments into runs for
@@ -177,9 +192,7 @@ fn place_speeds_reply(
                 "nothing runs fast \u{2014} every clip plays at 1".to_string()
             } else {
                 cut_.fx.extend(effects.iter().cloned());
-                window::save_insert_cut(&cut_);
-                window::record_edit(window, &cut_);
-                window::refresh_effects_lane(window);
+                changed = true;
                 crate::cut_speed_pass::runs_fast(&batch, &effects, footage)
             }
         }
@@ -194,9 +207,9 @@ fn place_speeds_reply(
         said.push_str(&reason);
         window::log_line(&reason);
     }
-    if let Some(status_line) = window::find_status(window.upcast_ref()) {
-        status_line.set_text(&said);
-    }
     window::log_line(&said);
-    said
+    window::PassOut {
+        said,
+        cut: changed.then_some(cut_),
+    }
 }

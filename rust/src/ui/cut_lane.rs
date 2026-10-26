@@ -22,7 +22,46 @@ pub fn lane_for_footage_file(window: &adw::ApplicationWindow) -> String {
         return "no source is marked as footage \u{2014} Inputs says which files are tape"
             .to_string();
     };
-    let seconds = match probe_file_seconds(&file) {
+    let probed = probe_file_seconds(&file);
+    file_lane(window, &file, at, probed)
+}
+
+/// [`lane_for_footage_file`] with the probe on a worker (§03-shell §1): the same refusals at once, then the
+/// row filed, and its sentence on the status line, when ffprobe has answered.
+pub fn lane_for_footage_file_on_worker(window: &adw::ApplicationWindow) -> String {
+    let Some(at) = paste_line_opt(window) else {
+        return cut_copy::NO_LANE_LINE_YET.to_string();
+    };
+    let Some(file) = footage_source_path(window) else {
+        return "no source is marked as footage \u{2014} Inputs says which files are tape"
+            .to_string();
+    };
+    let held = window.clone();
+    let asked = file.clone();
+    crate::ui::background::run(
+        "lane-probe",
+        move || probe_file_seconds(&asked),
+        move |probed| {
+            let said = file_lane(&held, &file, at, probed);
+            if let Some(status) = window::find_status(gtk4::prelude::Cast::upcast_ref(&held)) {
+                status.set_text(&said);
+            }
+        },
+    );
+    format!(
+        "measuring {} \u{2026}",
+        source_base(&footage_source_path(window).unwrap_or_default())
+    )
+}
+
+/// File the footage file's row once its length is known: the half after the probe.
+fn file_lane(
+    window: &adw::ApplicationWindow,
+    file: &str,
+    at: f64,
+    probed: Result<f64, String>,
+) -> String {
+    let seconds = match probed {
         Ok(seconds) => seconds,
         Err(said) => {
             window::log_line(&said);
@@ -31,7 +70,7 @@ pub fn lane_for_footage_file(window: &adw::ApplicationWindow) -> String {
     };
     let mut cut_ = window::newest_review_cut();
     let taken: Vec<String> = cut_.lanes.iter().map(|lane| lane.name.clone()).collect();
-    let lane = crate::cut_lanes::lane_from(&file, at, seconds, &taken);
+    let lane = crate::cut_lanes::lane_from(file, at, seconds, &taken);
     let name = lane.name.clone();
     cut_.lanes.push(lane);
     // §7's one writer: ⇲ Lane is an act of the hand that ends here, so the line belongs on disk before the

@@ -42,9 +42,13 @@ pub fn run(
             crate::narrate_live::STEP
         )
     })?;
-    // Both wordings come from `prompt_text` with an empty fallback: that is what the Settings box shows
-    // when this machine holds no edit, and a missing file is not a reason to refuse the call.
-    let read_prompt = |key: &str| crate::settings::prompt_text(&paths, key, "").unwrap_or_default();
+    // Both wordings are the shipped prompt plus the profile's section for the step (`prompt_text`). The first
+    // rewrite passed an empty fallback here, so the narration went out with no narrate prompt and no house
+    // rules at all unless this machine held an edit.
+    let read_prompt = |key: &str| {
+        let shipped = crate::prompts::shipped_text(key).unwrap_or_default();
+        crate::settings::prompt_text(&paths, key, &shipped).unwrap_or(shipped)
+    };
     let request = crate::narrate_call::request_from_tree(
         tree,
         project,

@@ -206,11 +206,10 @@ pub fn row_spans(cut_: &Cut) -> Vec<crate::timeline::Recording> {
 }
 
 /// The rail row a gutter control belongs to, in px: one row pitch per row above it, measured with the same
-/// thumbnail height the band paints at (`cut_tracks::THUMB_DEFAULT_PX`, which is also what sized the band
-/// this page installed). Kept next to [`crate::ui::cut_tracks::ROWS_PITCH_PX`] so the switch and the row it
-/// mutes cannot drift apart.
+/// thumbnail height the band paints at (`cut_tracks::thumb_px`, which the 🖼 ladder moves), so the switch and
+/// the row it mutes cannot drift apart.
 fn gutter_row_top(row: usize) -> i32 {
-    crate::ui::cut_tracks::ROWS_PITCH_PX * (row as i32 + 1)
+    crate::ui::cut_tracks::rows_pitch_px() * (row as i32 + 1)
 }
 
 /// Rail-local lookup: the control already on `rail` for `name`, or None. Scoped to the rail rather than
@@ -376,7 +375,7 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
                     return;
                 }
                 if press_speaker_badge(&win, &badge_lane).is_none() {
-                    toggled.set_active(false);
+                    restate_face(toggled, false);
                 }
             });
             holder.append(&badge);
@@ -405,7 +404,10 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
                 // The switch's own face is the whole-cut answer, which `toggle_lane_all` just wrote;
                 // re-read it so a half-silenced row that went fully silent shows exactly that.
                 let fresh = newest_review_cut();
-                switch.set_active(cut_hear::lane_is_heard_anywhere(&fresh, &[lane.as_str()]));
+                restate_face(
+                    switch,
+                    cut_hear::lane_is_heard_anywhere(&fresh, &[lane.as_str()]),
+                );
             });
             // §B's gutter: the whole-cut switch lives in the band's 30 px rail, not in the row list, and it is
             // found rail-locally rather than by a name search — see [`rail_row_button`] for why.
@@ -426,6 +428,49 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
                 (None, Some(rail)) => rail.append(&gutter),
                 // A page built without a band keeps the switch beside its plate.
                 (None, None) => holder.append(&gutter),
+            }
+        }
+        // §05-cut §1's per-row sound switch: the gutter holds "per-lane and per-row sound switches", and a
+        // camera row's own sound (the scene's `mute`, S2) had none, so the row's sound could only be switched
+        // scene by scene. Round like a lane's, in the gutter at the row's sound strip; built once per row and
+        // re-stated after, as the lane switches are.
+        if let Some(layer) = crate::ui::cut_tracks::gutter_row_switches(window) {
+            let switch_name = format!("row-switch-{}", index + 1);
+            let heard = cut_hear::row_is_heard_anywhere(&cut_, row);
+            let y = crate::ui::cut_tracks::row_wave_top(window, index)
+                + (crate::ui::cut_tracks::ROW_WAVE_PX - ROW_SWITCH_PX) / 2.0;
+            match find_widget_by_name(layer.upcast_ref(), &switch_name)
+                .and_then(|found| found.downcast::<gtk::ToggleButton>().ok())
+            {
+                Some(existing) => {
+                    existing.set_active(heard);
+                    layer.move_(&existing, 2.0, y);
+                }
+                None => {
+                    let switch = gtk::ToggleButton::new();
+                    switch.set_widget_name(&switch_name);
+                    switch.set_label(SPEAKER_GLYPH);
+                    switch.add_css_class("round");
+                    switch.set_active(heard);
+                    let name = if base.is_empty() {
+                        plate.clone()
+                    } else {
+                        base.clone()
+                    };
+                    switch.set_tooltip_text(Some(&format!("{name}'s own sound for the whole cut")));
+                    let win = window.clone();
+                    switch.connect_toggled(move |switch| {
+                        if refreshing() {
+                            return;
+                        }
+                        press_row_switch(&win, row, &name);
+                        restate_face(
+                            switch,
+                            cut_hear::row_is_heard_anywhere(&newest_review_cut(), row),
+                        );
+                    });
+                    layer.put(&switch, 2.0, y);
+                }
             }
         }
         // F2.11 S2 (`An emptied bottom row stays until its \u{2715}`): the cross on the emptied bottom
@@ -628,6 +673,17 @@ fn refreshing() -> bool {
     CAMERA_REFRESH.with(|cell| cell.get())
 }
 
+/// Put a switch's face back to what the cut now says, inside the same guard a refresh holds, so the restate can
+/// never be taken for a person's press and fire the switch's handler again. (Today the press's own refresh has
+/// already restated the face under that guard, so this is defence for a press path that one day skips it.)
+fn restate_face(switch: &gtk::ToggleButton, active: bool) {
+    CAMERA_REFRESH.with(|cell| {
+        let was = cell.replace(true);
+        switch.set_active(active);
+        cell.set(was);
+    });
+}
+
 /// F2.10 S1 (`🔍 lens badge: which row its picture comes from`): the seam a SCENE's 🔍 forwards to.
 ///
 /// A press CYCLES to the next row that filmed the scene's whole span (see [`cut_cam::filming_rows`] for why
@@ -676,11 +732,69 @@ pub fn press_speaker_badge(window: &adw::ApplicationWindow, lane: &str) -> Optio
     Some(said)
 }
 
+/// F2.10 S2 for the scene's OWN sound: the speaker badge on the badge scene's wave strip, off or on for that
+/// scene (its `mute`, the property F2.5 S2 hushes the footage by). One undo step, said on the status line.
+pub fn press_scene_sound(window: &adw::ApplicationWindow) -> Option<String> {
+    let scene = badge_scene(window)?;
+    let mut cut_ = newest_review_cut();
+    let recordings = session_recordings(&cut_);
+    let rows = crate::timeline::rows_for(&recordings, &cut_);
+    let seg = cut_.segs.get_mut(scene).filter(|seg| seg.ins.is_empty())?;
+    seg.mute = !seg.mute;
+    let said = cut_hear::hush_status(
+        &cut_cam::row_name(seg.cam, &recordings, &rows),
+        !seg.mute,
+        seg.s,
+    );
+    record_edit(window, &cut_);
+    if let Some(status) = find_status(window.upcast_ref()) {
+        status.set_text(&said);
+    }
+    refresh_camera_rows(window);
+    Some(said)
+}
+
+/// F2.10 S1 from the band: the lens on row `row` shows the badge scene from that row (the prototype's
+/// `setSegCam`). A press on the lens already lit changes nothing.
+pub fn press_lens_row(window: &adw::ApplicationWindow, row: usize) -> Option<String> {
+    let scene = badge_scene(window)?;
+    let mut cut_ = newest_review_cut();
+    if cut_.segs.get(scene)?.cam == row as i32 {
+        return None;
+    }
+    let recordings = session_recordings(&cut_);
+    let rows = crate::timeline::rows_for(&recordings, &cut_);
+    let said = cut_cam::show_scene_from(&mut cut_, scene, row as i32, &recordings, &rows)?;
+    crate::ui::window::save_insert_cut(&cut_);
+    record_edit(window, &cut_);
+    if let Some(status) = find_status(window.upcast_ref()) {
+        status.set_text(&said);
+    }
+    refresh_camera_rows(window);
+    Some(said)
+}
+
 /// F2.10 S2 (`the gutter switch toggles a lane for the whole cut`): the seam the gutter forwards to.
 /// The switch stands for every recording sharing that lane's name, so `lanes` is that name once and
 /// `name` is what the status calls it — the same string, because today one switch speaks for one
 /// recording. [`cut_hear::toggle_lane_all`] answers even when there is nothing to change ("… is in no
 /// scene yet"), so this always has a sentence to print.
+/// §05-cut §1's per-row sound switch, pressed: the row's own sound off or on for the whole cut
+/// ([`cut_hear::toggle_row_all`]), one undo step, said on the status line.
+pub fn press_row_switch(window: &adw::ApplicationWindow, row: i32, name: &str) -> String {
+    let mut cut_ = newest_review_cut();
+    let said = cut_hear::toggle_row_all(&mut cut_, row, name);
+    record_edit(window, &cut_);
+    if let Some(status) = find_status(window.upcast_ref()) {
+        status.set_text(&said);
+    }
+    refresh_camera_rows(window);
+    said
+}
+
+/// A round gutter switch's height (`cut-gutter-col button.round`: 22 px).
+const ROW_SWITCH_PX: f64 = 22.0;
+
 pub fn press_gutter_switch(window: &adw::ApplicationWindow, lane: &str) -> String {
     let mut cut_ = newest_review_cut();
     let said = cut_hear::toggle_lane_all(&mut cut_, &[lane], lane);

@@ -6,7 +6,8 @@
 //! them is a rule misread rather than a fixture mistake.
 //!
 //! Step tests: `f1_10_s1_*` (the words a join pass may use) through `f1_10_s6_*` (both files
-//! written together). The wire — a real ▶ click reaching the pass — is `tests/suite/joins_widgets.rs`.
+//! written together). The run reaches the pass as the fix stage's merge row (`f1_8_fix_session`), never at the ▶ press
+//! (`f0_2_s4_the_press_asks_no_model`).
 
 use naivepost::edges::AlignedWord;
 use naivepost::hand_edit;
@@ -157,26 +158,35 @@ fn f1_10_s3_the_request_is_the_specs_message_for_one_join() {
         .iter()
         .map(|s| s.to_string())
         .collect();
-    let ask = joins::request("", 23, 57, &before, &after);
+    let wide = "die parallele Ausführung ermöglichen [CUT] was die Gas-Limits nachoben";
+    let ask = joins::request("", 23, 57, wide, &before, &after, None);
     assert!(
         ask.contains("JOIN 23 of 57."),
         "the join is numbered: {ask}"
     );
     assert!(
-        ask.contains("BEFORE (the end of the take that was interrupted):"),
+        ask.contains("WIDE VIEW (this join is at [CUT]") && ask.contains(wide),
+        "the wide view rides along, marked: {ask}"
+    );
+    assert!(
+        ask.contains("CLOSE TO THE CUT:\ndie parallele Ausführung ermöglichen [CUT] was die Gas-Limits nachoben"),
+        "the close-up shows the words either side of [CUT]: {ask}"
+    );
+    assert!(
+        ask.contains("BEFORE (the end of the take that was interrupted):\n...die parallele Ausführung ermöglichen"),
         "BEFORE is labelled as the spec labels it: {ask}"
     );
     assert!(
-        ask.contains("AFTER (the beginning of the take that follows):"),
+        ask.contains("AFTER (the whole take that follows, up to where the next one starts):\nwas die Gas-Limits nachoben"),
         "AFTER is labelled as the spec labels it: {ask}"
     );
     assert!(
-        ask.contains(r#"Answer {"joined":"..."} and nothing else"#),
+        ask.contains(r#"Answer {"drop_before":"...","drop_after":"..."} and nothing else"#),
         "the shape of the answer is stated: {ask}"
     );
     assert!(
-        ask.contains("these 4 words and then these 4"),
-        "counts given: {ask}"
+        !ask.contains("previous answer"),
+        "a first ask carries no refusal: {ask}"
     );
     // An empty User Context adds NO header over nothing.
     assert!(
@@ -185,11 +195,67 @@ fn f1_10_s3_the_request_is_the_specs_message_for_one_join() {
     );
 }
 
+/// The close-up is CLOSE_WORDS either side and BEFORE prints its last BEFORE_WORDS: the wide view carries the
+/// rest, and a long window is not printed whole three times over.
+#[test]
+fn f1_10_s3_the_close_up_and_before_are_cut_to_their_bounds() {
+    let before: Vec<String> = (0..40).map(|n| format!("b{n}")).collect();
+    let after: Vec<String> = (0..30).map(|n| format!("a{n}")).collect();
+    let ask = joins::request("", 1, 1, "wide", &before, &after, None);
+    let close = ask
+        .split("CLOSE TO THE CUT:\n")
+        .nth(1)
+        .and_then(|rest| rest.split("\n\n").next())
+        .expect("a close-up");
+    assert_eq!(
+        close,
+        format!(
+            "{} [CUT] {}",
+            before[40 - joins::CLOSE_WORDS..].join(" "),
+            after[..joins::CLOSE_WORDS].join(" ")
+        )
+    );
+    let shown_before = ask
+        .split("BEFORE (the end of the take that was interrupted):\n...")
+        .nth(1)
+        .and_then(|rest| rest.split("\n\n").next())
+        .expect("BEFORE");
+    assert_eq!(shown_before, before[40 - joins::BEFORE_WORDS..].join(" "));
+}
+
+/// A retry is told why its predecessor was refused, so it does not answer the same way again.
+#[test]
+fn f1_10_s3_a_retry_is_told_why_the_last_answer_was_refused() {
+    let before = split("alpha beta");
+    let after = split("gamma delta");
+    let ask = joins::request(
+        "",
+        3,
+        9,
+        "alpha beta [CUT] gamma delta",
+        &before,
+        &after,
+        Some("\"beta gamma\" is not how BEFORE ends -- quote its last words exactly as shown"),
+    );
+    assert!(
+        ask.ends_with("Your previous answer at this join was refused: \"beta gamma\" is not how BEFORE ends -- quote its last words exactly as shown. Answer again."),
+        "the refusal closes the ask: {ask}"
+    );
+}
+
 #[test]
 fn f1_10_s3_a_written_context_outranks_the_job_rules_in_the_same_message() {
     let before = vec!["alpha".to_string()];
     let after = vec!["beta".to_string()];
-    let ask = joins::request("Cut nothing before the demo.", 1, 1, &before, &after);
+    let ask = joins::request(
+        "Cut nothing before the demo.",
+        1,
+        1,
+        "alpha [CUT] beta",
+        &before,
+        &after,
+        None,
+    );
     assert!(
         ask.contains("USER CONTEXT"),
         "the header rides with a real context: {ask}"
@@ -201,6 +267,61 @@ fn f1_10_s3_a_written_context_outranks_the_job_rules_in_the_same_message() {
     assert!(
         ask.contains("JOIN 1 of 1."),
         "and the join still gets its own number: {ask}"
+    );
+}
+
+/// Three takes: a, a short abandoned b, then c that says it again.
+fn three_takes() -> Vec<Word> {
+    let mut words = run("take-a", &["one", "two", "three", "four"], 0.0);
+    words.extend(run("take-b", &["and", "five", "six"], 4.0));
+    words.extend(run("take-c", &["and", "five", "six", "seven"], 7.0));
+    words
+}
+
+/// AFTER is the take that follows and stops where the next one starts: past it lies the next join's stumble,
+/// which the model took for this one's and cut into the good take (07-news, 2026-10-26).
+#[test]
+fn f1_10_s3_after_stops_where_the_next_take_starts() {
+    let words = three_takes();
+    let seams = joins::seams(&words);
+    assert_eq!(seams, vec![4, 7], "two seams: a|b and b|c");
+    let kept = vec![true; words.len()];
+    let after = naivepost::join_ask::window_after(&words, &kept, seams[0], seams[1]);
+    assert_eq!(
+        strings(&after),
+        ["and", "five", "six"],
+        "take-b alone, not take-c"
+    );
+    let last = naivepost::join_ask::window_after(&words, &kept, seams[1], words.len());
+    assert_eq!(
+        strings(&last),
+        ["and", "five", "six", "seven"],
+        "the last join's AFTER runs to the end of the list"
+    );
+}
+
+/// The wide view puts [CUT] at this join and marks every other join, so the model does not take another
+/// join's stumble for its own.
+#[test]
+fn f1_10_s3_the_wide_view_marks_this_join_and_the_others() {
+    let words = three_takes();
+    let seams = joins::seams(&words);
+    let kept = vec![true; words.len()];
+    assert_eq!(
+        joins::wide_view(&words, &kept, seams[0], &seams, 60),
+        "one two three four [CUT] and five six [another take starts] and five six seven"
+    );
+    assert_eq!(
+        joins::wide_view(&words, &kept, seams[1], &seams, 60),
+        "one two three four [another take starts] and five six [CUT] and five six seven"
+    );
+    // Its reach counts standing words either side, and a word an earlier join took is not shown: with "six"
+    // gone, the two standing words before the second join are take-b's first two, whose start is a join.
+    let mut gone = kept.clone();
+    gone[6] = false;
+    assert_eq!(
+        joins::wide_view(&words, &gone, seams[1], &seams, 2),
+        "[another take starts] and five [CUT] and five"
     );
 }
 
@@ -222,14 +343,10 @@ fn f1_10_s3_the_bounds_are_the_parameter_rows_named_in_the_spec() {
     assert_eq!(joins::noise_words(), 2, "P.machine.seamNoiseWords");
 }
 
-// ---- S3: matching an answer back ----------------------------------------
+// ---- S3: reading the quoted answer ----------------------------------------
 
-/// The ETH join-23 shape: BEFORE ends mid-sentence, AFTER restarts it, and the answer runs the two
-/// together by leaving the tail of BEFORE out.
+/// The ETH join-23 shape: BEFORE ends mid-sentence, AFTER restarts it.
 fn eth_join23() -> (Vec<String>, Vec<String>) {
-    // BEFORE's shown tail is the abandoned attempt; AFTER starts with what was said again. The answer
-    // keeps BEFORE up to "ermöglichen" and all of AFTER, so the removal is the tail of BEFORE plus
-    // nothing from AFTER -- one stretch at the join.
     let before = split(
         "und Block-Level level Access Lists die parallele Ausführung ermöglichen und den Weg \
          zu einer Gas-Limit was die Gas-Limits nach oben setzen sollte",
@@ -242,37 +359,66 @@ fn split(text: &str) -> Vec<String> {
     text.split_whitespace().map(str::to_string).collect()
 }
 
+/// Built so the enum's field names stay visible in the assertion without repeating the type path.
+fn applied(before: usize, after: usize) -> joins::Outcome {
+    joins::Outcome::Applied { before, after }
+}
+
 #[test]
-fn f1_10_s3_an_answer_that_runs_the_two_parts_on_is_applied() {
+fn f1_10_s3_a_quote_of_befores_last_words_is_applied() {
     let (before, after) = eth_join23();
     let mut join = Join::new(&strings(&before), &strings(&after));
-    // The reply keeps BEFORE up to "ermöglichen" and all of AFTER: what went is the abandoned tail.
-    // The spec's own reply for join 23: BEFORE run on to where it repeats, then AFTER whole.
-    // Kept: BEFORE through "Gas-Limit" (the whole take, nothing dropped from its middle), then all of
-    // AFTER. The removal is the attempt that was said twice -- BEFORE's tail after "ermöglichen" --
-    // which sits right at the seam, so it is one stretch and not two.
-    let reply = r#"{"joined":"und Block-Level level Access Lists die parallele Ausführung ermöglichen und den Weg zu einer Gas-Limit Und die Native Account Abstraction für das übernächste version also"}"#;
+    let reply = r#"{"drop_before":"was die Gas-Limits nach oben setzen sollte","drop_after":""}"#;
     let outcome = joins::answer_join(&mut join, reply, &before, &after);
     assert_eq!(
         outcome,
-        Outcome_applied(7, 0),
-        "the removal is charged to BEFORE's tail, where the stumble is: {outcome:?}"
+        applied(7, 0),
+        "the quoted tail of BEFORE is what goes: {outcome:?}"
     );
     assert_eq!(outcome.removed(), 7, "the seven-word false start goes");
     assert!(outcome.usable(), "a used answer may be cached");
 }
 
-/// Built so the enum's field names stay visible in the assertion without repeating the type path.
-fn Outcome_applied(before: usize, after: usize) -> joins::Outcome {
-    joins::Outcome::Applied { before, after }
+/// The quote is compared bare: the case and the punctuation are the transcript's, not the word's, so a comma
+/// the model did not copy, or a capital it added, is no obstacle.
+#[test]
+fn f1_10_s3_a_quote_matches_whatever_its_case_and_punctuation() {
+    let before = split("Finma justified the exception with Bitcoin's long-term");
+    let after = split("With Bitcoin's long trading history, you could buy");
+    let mut join = Join::new(&strings(&before), &strings(&after));
+    let reply = r#"{"drop_before":"WITH bitcoin's long-term.","drop_after":""}"#;
+    assert_eq!(
+        joins::answer_join(&mut join, reply, &before, &after),
+        applied(3, 0)
+    );
+    // And on the AFTER side: its first words, punctuation dropped.
+    let mut join = Join::new(&strings(&before), &strings(&after));
+    let reply = r#"{"drop_before":"","drop_after":"with bitcoins long trading history"}"#;
+    assert_eq!(
+        joins::answer_join(&mut join, reply, &before, &after),
+        applied(0, 5)
+    );
+}
+
+/// Both sides at once is one stretch through the seam, and allowed.
+#[test]
+fn f1_10_s3_a_quote_from_each_side_is_one_stretch_through_the_join() {
+    let before = split("alpha beta gamma delta epsilon zeta");
+    let after = split("eta theta iota kappa lambda");
+    let mut join = Join::new(&strings(&before), &strings(&after));
+    let reply = r#"{"drop_before":"zeta","drop_after":"eta"}"#;
+    assert_eq!(
+        joins::answer_join(&mut join, reply, &before, &after),
+        applied(1, 1)
+    );
 }
 
 #[test]
-fn f1_10_s3_repeating_everything_shown_is_keep_join_not_a_refusal() {
+fn f1_10_s3_removing_nothing_is_keep_join_not_a_refusal() {
     let before = split("alpha beta gamma");
     let after = split("delta epsilon");
     let mut join = Join::new(&strings(&before), &strings(&after));
-    let reply = r#"{"joined":"alpha beta gamma delta epsilon"}"#;
+    let reply = r#"{"drop_before":"","drop_after":""}"#;
     let outcome = joins::answer_join(&mut join, reply, &before, &after);
     assert_eq!(
         outcome,
@@ -283,25 +429,31 @@ fn f1_10_s3_repeating_everything_shown_is_keep_join_not_a_refusal() {
     assert!(outcome.usable(), "keep_join is a usable answer and caches");
 }
 
+/// A quote that is not how BEFORE ends (words out of its middle) is refused with the sentence the retry is shown.
 #[test]
-fn f1_10_s3_two_stretches_left_out_is_refused() {
-    // The join-22 / join-52 case: the answer drops something near the join AND something further off,
-    // which is two cuts and not one splice.
+fn f1_10_s3_a_quote_that_is_not_how_before_ends_is_refused() {
     let before = split("bei Fusaka Das ist der aktuellste Release und wurde im Dezember aktiviert");
     let after = split("und wurde im Dezember aktiviert und führte dazu dass die Kosten");
     let mut join = Join::new(&strings(&before), &strings(&after));
-    // Keeps a piece of BEFORE's head, skips a middle stretch, then rejoins: two separate removals.
-    let reply =
-        r#"{"joined":"bei Fusaka Das ist der aktuellste Release und führte dazu dass die Kosten"}"#;
+    let reply = r#"{"drop_before":"der aktuellste Release","drop_after":""}"#;
     let outcome = joins::answer_join(&mut join, reply, &before, &after);
-    match &outcome {
-        joins::Outcome::Refused(reason) => assert!(
-            reason.contains("stretches") || reason.contains("short of the join"),
-            "the refusal says why: {reason}"
-        ),
-        other => panic!("two removals must not be applied: {other:?}"),
-    }
+    assert_eq!(
+        outcome,
+        joins::Outcome::Refused(
+            "\"der aktuellste Release\" is not how BEFORE ends -- quote its last words exactly as shown"
+                .to_string()
+        )
+    );
     assert!(!outcome.usable(), "a refusal is never cached");
+    let mut join = Join::new(&strings(&before), &strings(&after));
+    let reply = r#"{"drop_before":"","drop_after":"im Dezember"}"#;
+    assert_eq!(
+        joins::answer_join(&mut join, reply, &before, &after),
+        joins::Outcome::Refused(
+            "\"im Dezember\" is not how AFTER starts -- quote its first words exactly as shown"
+                .to_string()
+        )
+    );
 }
 
 #[test]
@@ -310,10 +462,11 @@ fn f1_10_s3_more_than_seamMaxWords_is_refused_with_the_tools_own_sentence() {
     let big_before: Vec<String> = (0..60).map(|n| format!("w{n}")).collect();
     let after = split("tail word");
     let mut join = Join::new(&strings(&big_before), &strings(&after));
-    // Keep only the last two words of BEFORE: 58 dropped, well past the bound.
-    let mut kept_words = vec![big_before[58].clone(), big_before[59].clone()];
-    kept_words.extend(after.iter().cloned());
-    let reply = format!(r#"{{"joined":"{}"}}"#, kept_words.join(" "));
+    // Quote all but the first two words of BEFORE: 58 go, well past the bound.
+    let reply = format!(
+        r#"{{"drop_before":"{}","drop_after":""}}"#,
+        big_before[2..].join(" ")
+    );
     let outcome = joins::answer_join(&mut join, &reply, &big_before, &after);
     match &outcome {
         joins::Outcome::Refused(reason) => assert!(
@@ -326,13 +479,12 @@ fn f1_10_s3_more_than_seamMaxWords_is_refused_with_the_tools_own_sentence() {
 
 #[test]
 fn f1_10_s3_more_than_seamCeil_of_the_shown_words_is_refused() {
-    // P.machine.seamCeil = 0.6 of what was SHOWN. Six shown, five wanted gone is 83 %.
+    // P.machine.seamCeil = 0.6 of what was SHOWN. Eight shown, five wanted gone is 62 %.
     let before = split("aa bb cc dd ee ff");
     let after = split("gg hh");
     let mut join = Join::new(&strings(&before), &strings(&after));
-    // Keep one word of BEFORE plus all of AFTER: five of eight shown go.
-    let reply = r#"{"joined":"ff gg hh"}"#;
-    let outcome = joins::answer_join(&mut join, &reply, &before, &after);
+    let reply = r#"{"drop_before":"bb cc dd ee ff","drop_after":""}"#;
+    let outcome = joins::answer_join(&mut join, reply, &before, &after);
     match &outcome {
         joins::Outcome::Refused(reason) => assert!(
             reason.contains('%') || reason.contains("two takes"),
@@ -343,58 +495,30 @@ fn f1_10_s3_more_than_seamCeil_of_the_shown_words_is_refused() {
 }
 
 #[test]
-fn f1_10_s3_a_stretch_past_the_snap_bound_is_refused_by_name() {
-    // P.machine.seamSnapWords = 3: within three words of the seam is still the seam; past it the
-    // stretch belongs to somebody else's sentence.
-    let before = split("one two three four five six seven eight nine ten");
-    let after = split("eleven twelve");
-    let _join = Join::new(&strings(&before), &strings(&after));
-    // Keep everything but the LAST two of BEFORE: that touches the seam and snaps fine.
-    let ok_reply = r#"{"joined":"one two three four five six seven eight nine ten eleven twelve"}"#;
-    let untouched = joins::answer_join(
-        &mut Join::new(&strings(&before), &strings(&after)),
-        ok_reply,
-        &before,
-        &after,
-    );
-    assert_eq!(
-        untouched,
-        joins::Outcome::Kept,
-        "repeating all is keep_join"
-    );
-
-    // The refusing shape: drop "seven eight nine ten"? No -- to STOP SHORT of the seam the kept head
-    // must resume before the end, so drop words from the middle and keep the last ones: leaving out
-    // "four five six" while keeping "seven eight nine ten" puts the gap four words off the seam, past
-    // the three-word snap, and must be refused.
-    let far_reply = r#"{"joined":"one two three seven eight nine ten eleven twelve"}"#;
-    let mut join = Join::new(&strings(&before), &strings(&after));
-    let outcome = joins::answer_join(&mut join, far_reply, &before, &after);
-    match &outcome {
-        joins::Outcome::Refused(reason) => assert!(
-            !reason.is_empty(),
-            "a stretch that misses the seam is refused with a reason"
-        ),
-        other => panic!("a removal stopping short of the seam must not apply: {other:?}"),
-    }
-}
-
-#[test]
 fn f1_10_s3_a_reply_that_is_not_the_answer_shape_is_refused() {
     let before = split("alpha beta");
     let after = split("gamma delta");
     let mut join = Join::new(&strings(&before), &strings(&after));
     let not_json = joins::answer_join(&mut join, "I think the join reads fine", &before, &after);
     assert!(
-        matches!(&not_json, joins::Outcome::Refused(r) if r.contains("joined")),
-        "no JSON means no joined field: {not_json:?}"
+        matches!(&not_json, joins::Outcome::Refused(r) if r.contains("drop_before")),
+        "no JSON means no quote: {not_json:?}"
     );
     let mut join = Join::new(&strings(&before), &strings(&after));
     let empty_object = joins::answer_join(&mut join, "{}", &before, &after);
     assert!(
-        matches!(&empty_object, joins::Outcome::Refused(r) if r.contains("joined")),
-        "an object without the field is refused the same way: {empty_object:?}"
+        matches!(&empty_object, joins::Outcome::Refused(r) if r.contains("drop_before")),
+        "an object without the fields is refused the same way: {empty_object:?}"
     );
+    // A fence around the object is tolerated.
+    let mut join = Join::new(&strings(&before), &strings(&after));
+    let fenced = joins::answer_join(
+        &mut join,
+        "```json\n{\"drop_before\":\"beta\",\"drop_after\":\"\"}\n```",
+        &before,
+        &after,
+    );
+    assert_eq!(fenced, applied(1, 0), "a fenced answer is still read");
     assert!(!not_json.usable() && !empty_object.usable());
 }
 
@@ -796,13 +920,32 @@ fn f1_10_s6_a_whole_take_transition_writes_the_longer_marker() {
 
 #[test]
 fn f1_10_s6_no_survivors_still_writes_both_files() {
-    // A pass that found nothing still owes both files: their presence is what tells Cut the question
-    // was asked, which is the same reason F1.9 writes an empty retakes.tsv.
+    // A pass that cut every word it had still owes both files: the marks say where the words went.
     let tree = temp_tree("empty");
-    joins::write_pair(&tree, &[], &[], &[], &[], &[]).expect("written");
+    let words = vec!["gone".to_string()];
+    let mark = naivepost::textfmt::Retake {
+        s: 0.0,
+        e: 1.0,
+        again: 1.0,
+        to: 1.0,
+        text: "gone".into(),
+        whole: String::new(),
+    };
+    joins::write_pair(
+        &tree,
+        &["a".to_string()],
+        &words,
+        &[false],
+        &[],
+        std::slice::from_ref(&mark),
+    )
+    .expect("written");
     assert!(tree.final_txt().exists());
     assert!(tree.retakes_tsv().exists());
     assert_eq!(std::fs::read_to_string(tree.final_txt()).unwrap(), "");
+    // Nothing heard at all is no answer to give: neither file, and none left over from before (§3).
+    joins::write_pair(&tree, &[], &[], &[], &[], &[]).expect("nothing to write");
+    assert!(!tree.final_txt().exists() && !tree.retakes_tsv().exists());
 }
 
 #[test]
@@ -826,21 +969,21 @@ fn f1_10_the_pass_is_gated_on_the_policy_naming_joins() {
     // Not the joins pass: contributes nothing at all, so one press never speaks for F1.9 too.
     let project = naivepost::project::Project::default();
     assert!(
-        joins::press_joins(&tree, &project, MarkingPass::Retakes).is_empty(),
+        joins::press_joins(&tree, &project, MarkingPass::Retakes, &mut |_, _| {}).is_empty(),
         "under the retakes pass the joins flow says nothing"
     );
     assert!(
-        joins::press_joins(&tree, &project, MarkingPass::None).is_empty(),
+        joins::press_joins(&tree, &project, MarkingPass::None, &mut |_, _| {}).is_empty(),
         "under no pass it says nothing either"
     );
-    // The joins pass on a session with no words at all: S1 answers and both files are still written.
-    let lines = joins::press_joins(&tree, &project, MarkingPass::Joins);
+    // The joins pass on a session with no words at all: S1 answers, and no 0-byte file is left behind (§3).
+    let lines = joins::press_joins(&tree, &project, MarkingPass::Joins, &mut |_, _| {});
     assert_eq!(
         lines,
         vec![">>> text edit: nothing to repair -- 0 joinable words, fewer than 4"],
         "S1 settles with no server"
     );
-    assert!(tree.final_txt().exists() && tree.retakes_tsv().exists());
+    assert!(!tree.final_txt().exists() && !tree.retakes_tsv().exists());
 }
 
 // ---- S3 over the wire: the tool loop this job is offered (F1.10 §3.2) ------
@@ -852,149 +995,47 @@ fn f1_10_the_pass_is_gated_on_the_policy_naming_joins() {
 // each. What is checked here is everything that does not need the env: the offer a job gets, and what
 // a tool reply comes to.
 
-/// The offer this job must send: its four tools by name. A job that is offered nothing can only answer
-/// in prose, which is the gap these cases exist to close (§3.2).
+/// §3.5: the text edit offers NO tools and thinks. Offered drop_words/keep_join beside a prompt that asked for
+/// text, the 27B answered nothing usable at 125 of 127 asks on 07-news; the quoted answer needs no tool.
 #[test]
-fn f1_10_s3_the_ask_offers_the_textedit_tools() {
-    let offered = naivepost::tools::offered(naivepost::roles::Job::Joins);
-    let names: Vec<&str> = offered.iter().map(|tool| tool.name()).collect();
-    for tool in ["drop_words", "keep_join", "get_words", "finish"] {
-        assert!(
-            names.contains(&tool),
-            "{tool} is offered to this job: {names:?}"
-        );
-    }
-    // And that offer reaches the wire: `join_ask` builds its body from THIS list, through the same
-    // `llm_request::body` every chat ask rides, so a body whose `tools` array names them is the proof
-    // the field is sent rather than dropped. Checked on the body the builder produces.
+fn f1_10_s3_the_ask_offers_no_tools_and_thinks() {
+    assert!(
+        naivepost::tools::offered(naivepost::roles::Job::Joins).is_empty(),
+        "no tools for the text edit"
+    );
     let body =
         naivepost::join_ask::body_for_test(&["one two three".to_string(), "four five".to_string()]);
     let value: serde_json::Value = serde_json::from_str(&body).expect("the ask body is JSON");
-    let tools = value
-        .get("tools")
-        .and_then(|v| v.as_array())
-        .expect("a tools array went out");
-    let sent: Vec<&str> = tools
-        .iter()
-        .filter_map(|t| t.pointer("/function/name").and_then(|n| n.as_str()))
-        .collect();
-    for tool in ["drop_words", "keep_join", "get_words", "finish"] {
-        assert!(sent.contains(&tool), "{tool} rode out in the ask: {sent:?}");
-    }
+    assert!(
+        value.get("tools").is_none(),
+        "no tools field went out: {body}"
+    );
     assert_eq!(
         value.get("enable_thinking").and_then(|v| v.as_bool()),
         Some(true),
-        "offering tools did not turn thinking off (§F1.10 says thinking ON per seam)"
+        "§F1.10 says thinking ON per seam"
     );
 }
 
-/// The anti-duplication pin: a `drop_words(side,count)` call and the `{"joined":"…"}` text that means
-/// the same thing must come to the same `Outcome`. If they ever disagree, one of the two paths has
-/// grown its own copy of a rule `Join` already owns.
+/// A quote longer than what was shown cannot be how BEFORE ends, and is refused rather than read as "all of it".
 #[test]
-fn f1_10_s3_a_drop_words_answer_applies_the_same_counts() {
-    // The two takes the live scenarios use, spelled out here so this file keeps needing no env: five
-    // words each, take-a ending "the network is live today" and take-b saying it again.
+fn f1_10_s3_a_quote_past_what_was_shown_is_refused() {
     const TAKE_A: [&str; 5] = ["the", "network", "is", "live", "today"];
     const TAKE_B: [&str; 5] = ["the", "network", "goes", "live", "now"];
     let before: Vec<String> = TAKE_A.iter().map(|w| w.to_string()).collect();
     let after: Vec<String> = TAKE_B.iter().map(|w| w.to_string()).collect();
-    // The tool way: 3 words off BEFORE, which is take-a's tail "is live today". `call_for_test` is the
-    // same door the live loop runs every call through, so this is the real dispatch, not a copy.
     let mut join = Join::new(TAKE_A.as_slice(), TAKE_B.as_slice());
-    let mut refusals: Vec<String> = Vec::new();
-    for name in ["drop_words", "finish"] {
-        let args = if name == "drop_words" {
-            serde_json::json!({ "side": "before", "count": 3 })
-        } else {
-            serde_json::json!({})
-        };
-        naivepost::join_ask::call_for_test(
-            &naivepost::exchanges::ToolCall {
-                name: name.to_string(),
-                args: args.to_string(),
-                result: String::new(),
-            },
-            &mut join,
-            &mut refusals,
-        );
-    }
-    let via_tool = naivepost::join_ask::outcome_for_test(&join);
-    assert_eq!(
-        via_tool,
-        joins::Outcome::Applied {
-            before: 3,
-            after: 0
-        },
-        "the tool's own counts: {refusals:?}"
-    );
+    let reply = r#"{"drop_before":"and so the network is live today","drop_after":""}"#;
+    let outcome = joins::answer_join(&mut join, reply, &before, &after);
     assert!(
-        refusals.is_empty(),
-        "three off a five-word side is legal: {refusals:?}"
-    );
-    // The prose way, over the same words: the answer that keeps take-a's first two words and all of
-    // take-b, which is the same repair said in the prototype's shape.
-    let kept = format!("{} {}", TAKE_A[..2].join(" "), TAKE_B.join(" "));
-    let mut prose = Join::new(TAKE_A.as_slice(), TAKE_B.as_slice());
-    let via_prose = joins::answer_join(
-        &mut prose,
-        &format!("{{\"joined\":\"{kept}\"}}"),
-        &before,
-        &after,
-    );
-    assert_eq!(
-        via_prose, via_tool,
-        "one rule, two shapes: the tool answer and the prose answer must agree"
-    );
-}
-
-/// A count the TOOL refuses (past what was shown) comes back as its own `{"error": …}` sentence and
-/// the join is refused with that same reason — not with a second sentence invented here, and not with
-/// the seam quietly repaired.
-#[test]
-fn f1_10_s3_a_tool_refusal_reaches_the_model_and_the_join_is_still_decided_by_the_rules() {
-    const TAKE_A: [&str; 5] = ["the", "network", "is", "live", "today"];
-    const TAKE_B: [&str; 5] = ["the", "network", "goes", "live", "now"];
-    // Five words shown on the BEFORE side; asking for nine is the tool's "only 5 were shown".
-    let mut join = Join::new(TAKE_A.as_slice(), TAKE_B.as_slice());
-    let mut refusals: Vec<String> = Vec::new();
-    naivepost::join_ask::call_for_test(
-        &naivepost::exchanges::ToolCall {
-            name: "drop_words".to_string(),
-            args: serde_json::json!({ "side": "before", "count": 9 }).to_string(),
-            result: String::new(),
-        },
-        &mut join,
-        &mut refusals,
+        matches!(&outcome, joins::Outcome::Refused(why) if why.contains("is not how BEFORE ends")),
+        "{outcome:?}"
     );
     assert_eq!(
         join.dropped_count(Side::Before),
         0,
-        "a refused drop takes nothing"
+        "a refused quote takes nothing"
     );
-    assert_eq!(
-        refusals.len(),
-        1,
-        "the refusal is kept for the model AND for the log"
-    );
-    let reason = refusals[0].clone();
-    assert!(
-        reason.contains("\"error\""),
-        "it is the tool's own error shape: {reason}"
-    );
-    assert!(
-        reason.contains("only 5 were shown"),
-        "the tool's sentence, unchanged: {reason}"
-    );
-    // And the JOIN's answer when that refusal is all the model ever offered: the tool's own reason,
-    // said as a refusal of the answer — "a refusal still keeps the stumble", so nothing goes and the
-    // reason on the log is the rule's sentence, not one invented here.
-    let outcome = naivepost::join_ask::tool_refusal_outcome(&refusals);
-    assert!(
-        matches!(&outcome, joins::Outcome::Refused(why) if why.contains("only 5 were shown")),
-        "the refusal reaches the join unchanged: {outcome:?}"
-    );
-    assert!(!outcome.usable(), "a refused answer is never cached");
 }
 
 /// The seam's own arithmetic belongs to `Join`, not to a copy of its rules: what one word off the

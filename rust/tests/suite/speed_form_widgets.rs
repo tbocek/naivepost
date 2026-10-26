@@ -34,6 +34,7 @@ static RAN_FIELDS: AtomicBool = AtomicBool::new(false);
 static RAN_STOP_APPLY: AtomicBool = AtomicBool::new(false);
 static RAN_RATE_GIVES_WAY: AtomicBool = AtomicBool::new(false);
 static RAN_STATUS_UNDO: AtomicBool = AtomicBool::new(false);
+static RAN_CANCEL: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
 
@@ -392,6 +393,27 @@ fn round(app: &adw::Application) {
         RAN_STATUS_UNDO.store(true, Ordering::SeqCst);
         window2.close();
     }
+
+    // --- Cancel through its own button: nothing placed, the form gone, said ---------------------
+    {
+        let window = cut_page(app, &Cut::default());
+        mark_band(&window, 30.0, 40.0);
+        click(&window, "effect-item-speed");
+        assert!(form_visible(&window), "the form is open to cancel");
+        click(&window, "speed-cancel-button");
+        assert!(
+            ui::review_cut_of(&window).fx.is_empty(),
+            "Cancel places no speed"
+        );
+        assert!(!form_visible(&window), "and closes the form");
+        assert_eq!(
+            status_text(&window),
+            "left as it was \u{2014} no speed placed",
+            "and says so"
+        );
+        RAN_CANCEL.store(true, Ordering::SeqCst);
+        window.close();
+    }
 }
 
 /// Trim a whole-number second the way the form prints it ("2", not "2.0").
@@ -445,6 +467,10 @@ fn f3_3_the_speed_form_is_wired_through_the_real_widgets() {
     assert!(
         RAN_RATE_GIVES_WAY.load(Ordering::SeqCst),
         "the S3 rate-gives-way check never ran"
+    );
+    assert!(
+        RAN_CANCEL.load(Ordering::SeqCst),
+        "the Cancel check never ran"
     );
     assert!(
         RAN_STATUS_UNDO.load(Ordering::SeqCst),

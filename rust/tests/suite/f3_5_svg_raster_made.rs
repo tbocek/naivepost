@@ -268,6 +268,10 @@ fn round(app: &adw::Application) {
             "the arm still names its drawing: {said}"
         );
         settle();
+        assert!(
+            naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+            "the workers answered"
+        );
         let out = tree.svg_raster_dir().join(fx_svg::raster_file_name(&file));
         assert!(
             out.exists(),
@@ -496,6 +500,10 @@ fn round(app: &adw::Application) {
         ui::window::clear_logs_for_test();
         ui::svg_chosen(&window, Some(&file));
         settle();
+        assert!(
+            naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+            "the raster worker answered"
+        );
         let first = ui::window_logs()
             .iter()
             .filter(|line| {

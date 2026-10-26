@@ -44,6 +44,76 @@ pub fn note_voice_for_session(id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The whole page as the opened project holds it (§07-narrate#1-screen): the cut's clips and the finished video's
+/// length, the lines in `narration.json`, the narrator slots Prepare tagged, the voices folder's recordings, the
+/// project's language and narration switch, what the recordings cover, the voice/pitch/takes off disk, and the
+/// tally the Inputs row reads. `line` is the window's red line; the page stands on it when it lies on a clip,
+/// else on the first clip.
+///
+/// The first port only ever filled this state from tests and the snapshot bench, so a live window's Narrate page
+/// showed "00:00/00:00", no voices and "the playhead is between clips" over a project with a cut.
+pub fn load_page(tree: &Tree, line: f64) -> NarrateState {
+    let project = crate::project::load(tree.dir()).ok();
+    let cut = crate::cut::load(tree).unwrap_or_default();
+    let narration = crate::narration::load(tree).unwrap_or_default();
+    let clips: Vec<crate::cut::Seg> = cut
+        .segs
+        .iter()
+        .filter(|seg| seg.e > seg.s)
+        .cloned()
+        .collect();
+    let session = if clips.iter().any(|seg| seg.s <= line && line < seg.e) {
+        line
+    } else {
+        clips.first().map(|seg| seg.s).unwrap_or(0.0)
+    };
+    let mut state = NarrateState {
+        entries: narration.entries.clone(),
+        segs: clips.clone(),
+        language: project
+            .as_ref()
+            .map(|project| project.policy.language.value.clone())
+            .unwrap_or_default(),
+        session,
+        cut_at: crate::cut_play::cut_time(&clips, session).unwrap_or(0.0),
+        length: crate::shell::cut_seconds(&cut),
+        clips: clips.len(),
+        has_cut: !clips.is_empty(),
+        narrators: project
+            .as_ref()
+            .map(|project| {
+                project
+                    .sources
+                    .iter()
+                    .map(|source| source.narrator as usize)
+                    .max()
+                    .unwrap_or(0)
+            })
+            .unwrap_or(0),
+        voice_files: crate::voices::list_wavs(&crate::ui::narrate_voices::voices_folder()),
+        voice: project_voice(tree),
+        covered_spans: crate::timeline::filmed_runs(&crate::ui::cut_folds::page_recordings()),
+        // Whether a line's clip is filmed is asked per line of `covered_spans` (`narrate_page::line_covered`);
+        // this flag only turns that answer off.
+        recording_covers_clip: true,
+        ..NarrateState::default()
+    };
+    state = seed_from_disk(tree, state);
+    crate::ui::narrate_inputs_tally::apply(&mut state, Some(tree));
+    state
+}
+
+/// The project's voice as both pages open on it: `voice.txt`; with none, the project's own narrator when
+/// Prepare tagged one (the prototype's `voiceID`), else no voice at all: a default nobody stored is not a choice
+/// to refuse, and Produce's stamp weighs the same answer Narrate shows.
+pub fn project_voice(tree: &Tree) -> String {
+    if tree.voice_txt().is_file() || take_recording_key(tree).is_some() {
+        narrate_data::read_voice(tree)
+    } else {
+        String::new()
+    }
+}
+
 /// What the page shows when it opens, seeded from the project's own files (§07-narrate#3-data): the voice
 /// row, the slider's shift and the take list come off disk rather than from defaults. Only a file that EXISTS
 /// is copied over, so a project that never touched the slider keeps what the flow published.

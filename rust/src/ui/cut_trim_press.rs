@@ -216,6 +216,26 @@ pub fn press_move_with_override(
     row_change: bool,
     d_seconds: f64,
 ) -> cut_trim::Gesture {
+    press_move_scaled(
+        window,
+        scope,
+        travel_px,
+        row_change,
+        d_seconds,
+        crate::ui::cut_view::strip_pps(),
+    )
+}
+
+/// [`press_move_with_override`] at a zoom of the caller's: the painted band measures S2's 8 px snap at its
+/// own pixels per second, not the placeholder strip's.
+pub(crate) fn press_move_scaled(
+    window: &adw::ApplicationWindow,
+    scope: MoveScope,
+    travel_px: f64,
+    row_change: bool,
+    d_seconds: f64,
+    pps: f64,
+) -> cut_trim::Gesture {
     let (recorders_band, wave_strip, on_border, hand_scene, press_second) = scope;
     // The scene seam only answers when this press took neither a band, nor a border, nor a selection the
     // press fell inside: the flowchart asks those questions BEFORE it asks about a scene. A band the press
@@ -237,6 +257,7 @@ pub fn press_move_with_override(
         travel_px,
         row_change,
         d_seconds,
+        pps,
     )
 }
 
@@ -247,9 +268,13 @@ fn press_move_core(
     travel_px: f64,
     row_change: bool,
     d_seconds: f64,
+    pps: f64,
 ) -> cut_trim::Gesture {
     let (recorders_band, wave_strip, on_border, scene, press_second) = scope;
-    let cut_ = window::newest_review_cut();
+    // The opening state, as `cut_trim::right_gesture` asks: the hold's travel is from the press.
+    let cut_ = MOVE_OPEN
+        .with(|cell| cell.borrow().clone())
+        .unwrap_or_else(window::newest_review_cut);
     let band = window::selection(window);
     let band_name = recorders_band
         .clone()
@@ -293,7 +318,7 @@ fn press_move_core(
         &cut_.segs,
         0.0,
         window::TRACK_REC_END,
-        crate::ui::cut_view::strip_pps(),
+        pps,
         &cut_.folds,
         &cut_.shift,
         &sources,
@@ -467,25 +492,42 @@ fn cached_peaks(base: &str) -> Option<Vec<u8>> {
     // frames through the same door. A project folder's inner `session.naivepost` is tried too, because that is
     // where the staging doors (`snapshot_lane::stage_envelope`) put a session's own cache.
     let shot = crate::ui::cut_picture::snapshot_frame_tree();
-    let from_launch = std::env::current_dir()
-        .ok()
-        .and_then(|root| crate::layout::Tree::new(crate::startup::session_dir(&root)).ok());
+    let from_launch = crate::layout::Tree::new(crate::startup::open_dir()).ok();
     let candidates = shot.iter().cloned().chain(from_launch).flat_map(|tree| {
         let inner = crate::layout::Tree::new(crate::startup::session_dir(tree.dir())).ok();
         std::iter::once(tree).chain(inner)
     });
     for tree in candidates {
-        let Ok(meta) = std::fs::metadata(tree.wave(base)) else {
+        let path = tree.wave(base);
+        let Ok(meta) = std::fs::metadata(&path) else {
             continue;
         };
-        if let Some(wave) = crate::wave::read(&tree, base, meta.len() as i64, 0)
+        // Held per file version: the strip paints on every move of the hand, and a stat is all a paint may cost
+        // (§03-shell §1). A rewritten cache (new size or time) is read again.
+        let stamp = (meta.len(), meta.modified().ok());
+        if let Some((at, held)) = PEAKS.with(|peaks| peaks.borrow().get(&path).cloned()) {
+            if at == stamp {
+                return held;
+            }
+        }
+        let held = crate::wave::read(&tree, base, meta.len() as i64, 0)
             .ok()
             .flatten()
-        {
-            return wave.chans.into_iter().next();
+            .and_then(|wave| wave.chans.into_iter().next());
+        PEAKS.with(|peaks| peaks.borrow_mut().insert(path, (stamp, held.clone())));
+        if held.is_some() {
+            return held;
         }
     }
     None
+}
+
+/// The envelope a wave cache file held, by file and version: see [`cached_peaks`].
+type HeldPeaks = ((u64, Option<std::time::SystemTime>), Option<Vec<u8>>);
+
+thread_local! {
+    static PEAKS: std::cell::RefCell<std::collections::HashMap<std::path::PathBuf, HeldPeaks>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
 // --- what the page holds between the press and the release ---------------------------------------------
@@ -494,6 +536,9 @@ thread_local! {
     /// Has this gesture's hold already spent its Undo step? One act of the hand is one step
     /// (`cut_trim::pushes_undo`), and a drag fires an update per mouse-move event. Reset at `drag-begin`.
     static MOVE_PUSHED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The cut as the hold's press found it, set at `drag-begin` and dropped at the release; `None` for a
+    /// door called with no hold open (one answer from the cut as it is now).
+    static MOVE_OPEN: std::cell::RefCell<Option<crate::cut::Cut>> = const { std::cell::RefCell::new(None) };
     /// The folds THIS drag opened, as the spans they were, so the release can refold exactly those and
     /// leave alone a fold the user had already opened.
     static DRAG_FOLDS: std::cell::RefCell<Vec<[f64; 2]>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -504,6 +549,9 @@ thread_local! {
 /// The move gesture's `drag-begin`: start the hold clean, so the first real move is the one that pushes.
 pub fn begin_move() {
     MOVE_PUSHED.with(|cell| cell.set(false));
+    // The cut as the press found it: every update of the hold measures its travel from THIS, not from the
+    // cut the last update left, or eight mouse-moves of one second each would slide eight seconds.
+    MOVE_OPEN.with(|cell| *cell.borrow_mut() = Some(window::newest_review_cut()));
     // §7: the file waits for the release. Every write between now and `end_move` is refused at the writer.
     crate::cut_save::begin_gesture();
     DRAG_FOLDS.with(|cell| cell.borrow_mut().clear());
@@ -545,6 +593,7 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
         row,
         open,
         dragged,
+        segs,
         ..
     } = gesture
     else {
@@ -552,6 +601,7 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
     };
     let mut cut_ = crate::ui::window::newest_review_cut();
     cut_.shift = shift.clone();
+    cut_.segs = segs.clone();
     if let Some(row) = row {
         // F2.10 (the Prototype paragraph): a drag pins ONLY the recording it took — [`cut_cam::pin_for_drag`]
         // — so `rows_for` re-runs and gives the overlap the drag made a row of its own. The prototype pinned
@@ -591,7 +641,7 @@ pub fn apply_gesture(window: &adw::ApplicationWindow, gesture: &cut_trim::Gestur
     // else does, and the FILE waits for the gesture's end on both paths — a write per mouse-move is I/O in the
     // drag loop, and the disk would hold whichever edge the pointer last passed.
     if already_pushed() {
-        crate::ui::window::seed_review_cut(window, &cut_);
+        crate::ui::window_history_zoom::amend_edit(window, &cut_);
     } else {
         crate::ui::window::record_edit(window, &cut_);
         MOVE_PUSHED.with(|cell| cell.set(true));
@@ -619,6 +669,7 @@ pub fn end_release() {
 /// first so a list that shifted under the unfolds lands where it was, and leave every other fold alone —
 /// a fold the user had already opened is not this drag's to close.
 pub fn end_move(window: &adw::ApplicationWindow) {
+    MOVE_OPEN.with(|cell| cell.borrow_mut().take());
     let opened =
         DRAG_FOLDS.with(|cell: &std::cell::RefCell<Vec<[f64; 2]>>| cell.borrow_mut().split_off(0));
     if opened.is_empty() {
@@ -728,10 +779,8 @@ pub fn press_border_move(
     if crate::ui::cut_hand::picking_up(first) {
         window::record_edit(window, &cut_);
     } else {
-        // Still writing the cut and still refreshing what reads it — only the history step is withheld.
-        window::seed_review_cut(window, &cut_);
-        window::refresh_history_buttons(window);
-        window::refresh_cut_readouts(window);
+        // Still writing the cut and still refreshing what reads it; no new step, the drag's own step amended.
+        crate::ui::window_history_zoom::amend_edit(window, &cut_);
     }
     // A trim is an edit either way, so cut.json gets it on both paths: a trim lost on reopen is a trim that
     // never happened.

@@ -291,16 +291,11 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s3_a_write_result_carries_what_the_
         &["the", "network", "is", "live", "today"],
         &["the", "network", "goes", "live", "now"],
     );
-    let mut refusals: Vec<String> = Vec::new();
-    let answer: Value = serde_json::from_str(&naivepost::join_ask::call_for_test(
-        &call(
-            "drop_words",
-            serde_json::json!({"side": "before", "count": 3}),
-        ),
-        &mut join,
-        &mut refusals,
-    ))
-    .expect("JSON");
+    // The joins answer by quoting what goes (§3.5) and the quoted counts go through this same rule, so its
+    // result is what the app made of the removal: called on the `Join` the answer is judged with.
+    let answer: Value =
+        serde_json::from_str(&join.drop_words(naivepost::tools::textedit::Side::Before, 3))
+            .expect("JSON");
     assert!(accepted(&answer), "the drop was accepted: {answer}");
     assert_eq!(
         answer["count"],
@@ -424,83 +419,5 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s2_a_read_call_is_answered_from_the
     assert!(
         lines.get("error").and_then(Value::as_str).is_some(),
         "an unanswerable read says so: {lines}"
-    );
-}
-
-/// s2: the joins read. §3.5's `get_words` answers with more of the seam than the brief showed, and
-/// §3.1's `get_context` with the User Context the job was asked under — both from the seam in hand.
-#[test]
-fn sec_12_decisions_5_gaps_this_audit_closed_s2_a_read_call_is_answered_from_the_app_joins_reads() {
-    let mut join = Join::new(&["the", "network", "is"], &["today"]);
-    let mut refusals: Vec<String> = Vec::new();
-    let words: Value = serde_json::from_str(&naivepost::join_ask::call_for_test(
-        &call(
-            "get_words",
-            serde_json::json!({"side": "before", "count": 3}),
-        ),
-        &mut join,
-        &mut refusals,
-    ))
-    .expect("JSON");
-    assert!(accepted(&words), "the read answered: {words}");
-    assert_eq!(
-        words["words"],
-        serde_json::json!(["the", "network", "is"]),
-        "the read names the seam's own words: {words}"
-    );
-    // A read is not an answer: it must not end the flow, so nothing was refused and nothing was kept.
-    assert!(refusals.is_empty(), "a read is not a refusal: {refusals:?}");
-    assert!(!join.kept(), "a read left the flow open");
-}
-
-/// §3.1's `get_context` is in EVERY job's offer (P.eng.contextEverywhere), so the joins loop has to be
-/// able to answer it. A read that answers nothing is §3's worst failure: the model stops trying.
-/// And a read the offer NAMES but a seam has nothing for must say so honestly: a join ask carries no
-/// pictures, so `get_frames` gets `tool_reads`' empty-batch sentence, not `run_one`'s claim that the
-/// tool is not one of this job's tools.
-#[test]
-fn sec_12_decisions_5_gaps_this_audit_closed_s2_a_read_call_is_answered_from_the_app_joins_get_context(
-) {
-    let before: Vec<String> = ["one", "two", "three"]
-        .iter()
-        .map(|w| w.to_string())
-        .collect();
-    let after: Vec<String> = ["four"].iter().map(|w| w.to_string()).collect();
-    let context = naivepost::join_ask::read_for_test(
-        &call("get_context", serde_json::json!({})),
-        "keep the pacing brisk",
-        &before,
-        &after,
-    )
-    .expect("a shared read is answered here, not passed through as a job tool");
-    let answer: Value = serde_json::from_str(&context).expect("JSON");
-    assert!(
-        answer.get("error").is_none(),
-        "a read the offer lists for this job is answered, not refused: {context}"
-    );
-    assert_eq!(
-        answer["job"],
-        serde_json::json!("joins"),
-        "the answer says which job it was read for: {answer}"
-    );
-
-    // The read the offer names but a seam has nothing for: refused in words, and named as the empty
-    // batch it is rather than as a tool this job does not have.
-    let frames = naivepost::join_ask::read_for_test(
-        &call("get_frames", serde_json::json!({"clip": 1})),
-        "keep the pacing brisk",
-        &before,
-        &after,
-    )
-    .expect("the read is answered here too");
-    let why: Value = serde_json::from_str(&frames).expect("JSON");
-    let said = why["error"].as_str().unwrap_or("");
-    assert!(
-        said.contains("no frames"),
-        "an empty frame batch says so: {frames}"
-    );
-    assert!(
-        !said.contains("not one of this job's tools"),
-        "a read the offer lists is never reported as an unknown tool: {frames}"
     );
 }

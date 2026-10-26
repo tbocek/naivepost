@@ -31,7 +31,6 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s1_the_added_tools_are_registered_a
         "get_frames",
         "speech_around",
         "flag_line",
-        "get_words",
         "cut_status",
         "list_emotions",
         "describe_insert",
@@ -49,6 +48,14 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s1_the_added_tools_are_registered_a
             "{name} is catalogued but offered to no job — the gap it closed is still open"
         );
     }
+    // `get_words` closed the text edit's "more of the seam" gap while that job had tools; §3.5 now shows the
+    // join wide in the request itself and offers no tool, so it is offered to nobody.
+    assert!(
+        all_jobs.iter().all(|j| !naivepost::tools::offered(*j)
+            .iter()
+            .any(|t| t.name() == "get_words")),
+        "get_words is offered to no job now"
+    );
     // And each addition row names something real.
     let rows = gaps::additions();
     assert_eq!(rows.len(), 8);
@@ -101,6 +108,11 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s2_add_effect_takes_a_box_and_repor
 fn sec_12_decisions_5_gaps_this_audit_closed_s3_every_job_names_reads_alongside_writes() {
     for job in gaps::all_covered_jobs() {
         let offered = naivepost::tools::offered(job);
+        if job == naivepost::roles::Job::Joins {
+            // §3.5: the text edit has no tools at all; its reads are the wide view in the request.
+            assert!(offered.is_empty(), "{offered:?}");
+            continue;
+        }
         assert!(
             gaps::job_names_reads(job),
             "{job:?} has {} tools and not one of them is a read: {:?}",

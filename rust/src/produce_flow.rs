@@ -190,8 +190,6 @@ pub struct Run {
     pub publish_written: bool,
     /// The voice in use, carried so the stamp question can be asked without going back to the page.
     pub voice: String,
-    /// §1's narration flag.
-    pub no_narration: bool,
 }
 
 impl Run {
@@ -235,7 +233,6 @@ pub fn snapshot(
         clips: cut.segs.len(),
         publish_written: publish.is_some(),
         sources: run::snapshot_sources(project),
-        no_narration: project.no_narration,
         cut,
         lines,
         settings,

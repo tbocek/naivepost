@@ -428,8 +428,24 @@ fn check_info_button_logs_the_setup_row(app: &adw::Application) {
     let window = ui::build_window(app, &project, "Prepare");
     window.present();
     settle();
-    ui::set_session_context(&window, "cut on the words, not the model");
+    // The Setup row's bill is said by the derivation a typed context sets off (F0.7's debounce), not by
+    // the ⓘ: that button is a tooltip and nothing else (F0.7 "There is no policy form"), so a press on it
+    // adds no line. The first version of this check pressed ⓘ and credited it with the debounce's line.
+    let before = ui::window_logs().len();
     button(&window, "tab-info-button").emit_by_name::<()>("clicked", &[]);
+    settle();
+    assert_eq!(
+        ui::window_logs().len(),
+        before,
+        "the ⓘ says nothing in the log: its whole job is its tooltip"
+    );
+    assert!(
+        button(&window, "tab-info-button")
+            .tooltip_text()
+            .is_some_and(|tip| !tip.is_empty()),
+        "and it carries the shown tab's help as its tooltip"
+    );
+    ui::set_session_context(&window, "cut on the words, not the model");
     wait_until("the Setup bill line reached the log", || {
         ui::window_logs()
             .iter()

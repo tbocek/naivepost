@@ -181,25 +181,19 @@ fn check_press_forwards(app: &adw::Application) {
         "an idle ▶ says what §2 makes it say"
     );
 
-    // Press 1: S3 + S4 — nothing was busy, so Prepare's step started. F0.5 S4 closes what a single-step
-    // press opens (running off, the audio unload handed over), so the ⏸ face is pinned while that run
-    // stands: the same open run ▶ leaves behind mid-step, stood up here through `start_run` because
-    // headless the whole step walks inside one click.
-    // Press 1: S3 + S4 — nothing was busy, so Prepare's step started. F0.5 S4 makes a finished
-    // single-step press close its own bookkeeping, and headless the whole step walks inside one click,
-    // so the ⏸ face is pinned over the run that is still standing: `start_run`, the call ▶ itself makes
-    // before it walks the step.
+    // Press 1: S3 + S4 — nothing was busy, so Prepare's step started. Its walk is on the run's worker
+    // (§03-shell §1), so the run stands open until the window takes the worker's answer, which it cannot
+    // before this check turns the main loop.
     play.emit_clicked();
-    stand_a_run_open(&window, &model);
+    assert_eq!(
+        ui::running_step(&window),
+        Some(run::Step::Prepare),
+        "press 1 opened Prepare's run"
+    );
     assert_eq!(
         ui::play_tooltip(&window).as_deref(),
         Some(run::PAUSE_TOOLTIP),
         "a run under way turns ▶ into ⏸"
-    );
-    assert_eq!(
-        ui::state(&window).status,
-        "frames 1/2: frame",
-        "F0.5 S2/§2: the queue's joined track line IS the status line while the run owns it"
     );
 
     // Press 2: S1 — the run is paused rather than restarted, and the bar has something to say.
@@ -218,27 +212,23 @@ fn check_press_forwards(app: &adw::Application) {
     // Press 3 resumes it.
     play.emit_clicked();
     assert_eq!(ui::state(&window).status, run::RESUMED);
-}
 
-/// Stand an open run on this window's bar, the way a step in progress has one: `runqueue::start_run`,
-/// the same call ▶ makes before it walks the step. Needed since F0.5 S4 made a finished single-step
-/// press close its own bookkeeping -- headless there is no half-finished step to observe otherwise.
-fn stand_a_run_open(window: &adw::ApplicationWindow, model: &naivepost::project::Project) {
-    let bar = ui::run_bar(window).expect("the window carries a run bar");
-    let queue = ui::run_queue(window).expect("the window carries a queue");
-    naivepost::runqueue::start_run(
-        &mut bar.borrow_mut(),
-        &mut queue.borrow_mut(),
-        &mut naivepost::exchanges::RunLog::new(),
-        naivepost::run::Step::Prepare,
-        naivepost::run::snapshot_sources(model),
+    // The walk goes on and ends; the run owned the status line, so its joined track line is what the
+    // close leaves there (F0.5 S2/§2).
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
     );
-    // Repaint the buttons from the bar the way ▶'s own tail does, so the face under test is the one the
-    // shell draws rather than a widget nobody refreshed.
-    if let (Some(play), Some(stop_)) = (ui::play_button(window), ui::stop_button(window)) {
-        play.set_tooltip_text(Some(naivepost::run::PAUSE_TOOLTIP));
-        stop_.set_sensitive(true);
-    }
+    assert_eq!(
+        ui::running_step(&window),
+        None,
+        "the run closed when it ended"
+    );
+    assert_eq!(
+        ui::state(&window).status,
+        "frames 1/2: framing lecture",
+        "F0.5 S2/§2: the queue's joined track line IS the status line the run leaves, naming the row that ran"
+    );
 }
 
 /// The flag above: a second `#[test]` on the same shared app, so a check that never ran cannot pass.
@@ -277,6 +267,11 @@ fn check_the_snapshot_names_the_live_sources(app: &adw::Application) {
     assert!(
         ui::add_files(&window, &[late]),
         "the late file becomes a row"
+    );
+    // The copy runs on a worker (§03-shell §1): its rows and sentence land on the window thread's poll.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+        "the copy landed"
     );
 
     ui::play_button(&window)
@@ -442,7 +437,6 @@ fn check_the_pause_toggle_says_both_readings(app: &adw::Application) {
         &ui::progress_bar(&window).expect("the run bar has a progress widget"),
         &ui::log_expander(&window).expect("the shell has a log expander"),
         &ui::log_view(&window).expect("the expander's child is the log body"),
-        None,
     );
     assert!(
         bar.borrow().running.is_none(),

@@ -1,13 +1,14 @@
 //! §08-produce#1-screen, the encoder settings: "laid out as label + control pairs in this order, left to
-//! right and then down, several to a line". This module builds those rows and decides where each pair lands,
-//! which is arithmetic over widths rather than a widget rule. Split out because `produce_page.rs` is at its
-//! size budget.
+//! right and then down, as many pairs to a line as the picture shows: three on each of the first two lines,
+//! two on each line after them; each label sits directly left of its own control, and no label or control
+//! overlaps another." Split out because `produce_page.rs` is at its size budget.
 //!
-//! The spec states no per-line count, so the grouping comes from `spec/img/08-produce.png`: three
-//! dropdown pairs on the first line, three on the second, then two each. That falls out of one budget
-//! rather than a hand-written table — see [`LINE_COLUMNS`] and [`slots_for`]. A budget of FOUR cells held
-//! only TWO dropdown pairs to a line (label + control is 2 cells), which is what the shot showed and what
-//! the picture does not: six cells is what makes a line hold three.
+//! Two grids, because the picture has two: the dropdown lines hold three pairs, and the lines after them two,
+//! whose second labels sit at their own x rather than under Codec's. Every pair owns a label column and a
+//! control column of its own; an earlier layout started each later label one cell back, inside the previous
+//! pair's control column, and GTK drew Codec's label over Container's dropdown and Translate's over the
+//! Subtitles dropdown. One size group gives every first label the same width, so the two grids' first
+//! columns line up as the picture's do.
 
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -15,216 +16,147 @@ use gtk4 as gtk;
 use crate::produce_screen as screen;
 use crate::ui::produce_page::{read_state, row_widget, ProduceState};
 
-/// Grid columns one line holds. TWO CELLS PER PAIR (label + control) × THREE pairs: that is what
-/// `spec/img/08-produce.png` draws inside its ~620 px right column — Container/Codec/Preset, then
-/// Resolution/Frame rate/Audio, then Subtitles/Translate, Quality (CRF)/Frame timing, Channels/Frame edges.
-///
-/// Four cells was HALF that: a dropdown pair costs 2 cells, so four cells fit two pairs and the page drew
-/// Container|Codec, Preset|Resolution, Frame rate|Audio — nothing like the picture. Six cells is the same
-/// grouping at the width the column actually has, and a fourth dropdown pair cannot squeeze onto a line
-/// because there is no room left for it.
-pub const LINE_COLUMNS: i32 = 6;
+/// The picture's lines, by §1's items: **11** the two dropdown lines, **12** Subtitles · Translate, **13**
+/// and **14** Quality beside Frame timing, then Channels and Frame edges. Item 12's "(· Game audio with
+/// narration on)" gets a line of its own under Subtitles: beside a Subtitles dropdown as wide as "none in the
+/// video" and the Translate menu, a slider ran past the column. A row the page does not show (Game audio with
+/// narration off) leaves its line out.
+const LINES: [&[&str]; 6] = [
+    &["Container", "Codec", "Preset"],
+    &["Resolution", "Frame rate", "Audio"],
+    &["Subtitles", "Translate"],
+    &["Game audio"],
+    &["Quality (CRF)", "Frame timing"],
+    &["Channels", "Frame edges"],
+];
 
-/// Slots one line holds — three, which is what `spec/img/08-produce.png` draws for the dropdown rows.
-pub const SLOTS_PER_LINE: i32 = 3;
+/// How many of [`LINES`] the first grid holds: the two dropdown lines.
+const DROPDOWN_LINES: usize = 2;
 
-/// Grid columns one slot of a line is worth: six cells over three slots.
-const PAIR_SLOTS: i32 = LINE_COLUMNS / SLOTS_PER_LINE;
-
-/// The grid column a pair's LABEL sits in: `slot * PAIR_SLOTS` out of the six cells a line holds, shifted
-/// back one cell for the pairs after the first. Their labels are right-aligned and shorter than the widest
-/// one ("Preset:" against "Frame rate:"), so each starts one cell earlier and its control gets that cell
-/// back — without it three dropdowns to a line measure ~57 px wider than the ~620 px column can give.
-pub fn label_column(slot: i32) -> i32 {
-    let slot = slot.clamp(0, SLOTS_PER_LINE - 1);
-    (slot * PAIR_SLOTS - if slot == 0 { 0 } else { 1 }).max(0)
-}
-
-/// Where a pair's control ENDS: the grid column after it, which is where the next slot's label begins
-/// (see [`label_column`]). A wide pair therefore reaches across the slot after its own, and a pair in the
-/// last slot runs to the grid's end.
-pub fn control_end(slot: i32) -> i32 {
-    ((slot + 1).min(SLOTS_PER_LINE)) * PAIR_SLOTS
-}
-
-/// Where the next pair goes: `(row, column)` in the grid, after taking `row`/`col` as they stand and
-/// wrapping to a fresh line when the pair would not fit. `col` is always a line start or a mid-line gap
-/// left by the pairs already placed, so one wrap test is enough — no pair is wider than a line.
-/// A wide pair (a slider, the Translate row) takes TWO of the three slots, so only one slot is left on its
-/// line; every other pair takes one.
-pub fn place_pair(at: (i32, i32), pair_row: &str) -> (i32, i32) {
-    let (row, col) = at;
-    if col + slots_for(pair_row) > SLOTS_PER_LINE {
-        (row + 1, 0)
-    } else {
-        (row, col)
-    }
-}
-
-/// How many of a line's slots a pair occupies: two for the wide rows, one for a dropdown or a tick. This is
-/// the only place that decides which rows are wide — `spec/img/08-produce.png` gives a slider, and the row of
-/// per-language ticks, about twice a dropdown's room.
-fn slots_for(row: &str) -> i32 {
-    match row {
-        "Game audio" | "Quality (CRF)" | "Translate" => 2,
-        _ => 1,
-    }
-}
-
-/// One pair attached: the label at `col`, the control beside it spanning the rest of the pair, and the
-/// cursor advanced past both. Every caller keeps its own widget names exactly as they were — this moves
-/// nothing but the coordinates.
-pub fn attach_pair<W: AsRef<gtk::Widget>, C: AsRef<gtk::Widget>>(
-    grid: &gtk::Grid,
-    at: &mut (i32, i32),
-    label: &W,
-    control: &C,
-    row: &str,
-) {
-    // The wrap decision belongs HERE: the caller hands over the cursor and gets it back advanced, so there
-    // is one place that decides whether a pair fits on the current line.
-    let started_line = at.0;
-    *at = place_pair(*at, row);
-    let (line, slot) = *at;
-    // Where the label goes and where the control stops: both follow from the slot, so a line's three pairs
-    // always fill it edge to edge — a wide pair ends where the NEXT slot would have begun, and a pair in the
-    // last slot runs to the grid's end, which is what makes a lone slider fill the row.
-    let label_at = label_column(slot);
-    // A label must not push its column wider than its word: see [`setting_label`].
-    label.as_ref().set_hexpand(false);
-    grid.attach(label.as_ref(), label_at, line, 1, 1);
-    grid.attach(
-        control.as_ref(),
-        label_at + 1,
-        line,
-        control_end(slot) - label_at - 1,
-        1,
-    );
-    at.1 = slot + slots_for(row);
-    // The line only moves when a pair wraps, and the caller's `row` follows `at.0`, so one attach never
-    // touches two grid lines.
-    debug_assert!(
-        line >= started_line,
-        "a pair never spans two grid lines: {row}"
-    );
-}
-
-/// Give every LABEL in the grid the same width — as much of it as the column can spare.
-///
-/// A `Grid` sizes a column from the widest cell in it, and with three pairs to a line inside a ~620 px
-/// column those natural widths are what overflowed it (Preset ended at 1292 px against a column ending at
-/// 1246): GTK hands an expanding control the slack FIRST and only then widens a label's column to its own
-/// word. Labels are the cheap cells — they can be shortened without losing anything a person needs — so each
-/// is pinned to [`LABEL_PX`] and the controls divide up everything left. Called by [`build_settings`] once
-/// every pair is attached, because only then does the grid hold all its labels.
-pub const LABEL_PX: i32 = 78;
-
-pub fn even_label_columns(grid: &gtk::Grid) {
-    let mut child = grid.first_child();
-    while let Some(node) = child {
-        if node.downcast_ref::<gtk::Label>().is_some() {
-            node.set_size_request(LABEL_PX, -1);
-        }
-        child = node.next_sibling();
-    }
-}
-
-/// The settings grid: one labelled control per row, drawn from `settings_rows_shown` so the
-/// Game-audio row is ABSENT when narration is off (§F4.8), each widget named by `row_widget`.
-/// Build the settings rows with the values the page currently holds already IN them. Doing it here, at
-/// creation, is what lets `refresh` rebuild the grid whole without a repaint ever landing on a control
-/// that shows a default instead of the state — and it needs no guard, because nothing is wired yet.
-pub(crate) fn build_settings(grid: &gtk::Grid, mut row: i32) -> i32 {
+/// Build the settings into `settings` with the values the page currently holds already IN them. Doing it
+/// here, at creation, is what lets `refresh` rebuild the rows whole without a repaint ever landing on a
+/// control that shows a default instead of the state, and it needs no guard, because nothing is wired yet.
+/// The rows come from `settings_rows_shown`, so the Game-audio row is ABSENT when narration is off
+/// (§F4.8), each control named by `row_widget`.
+pub(crate) fn build_settings(settings: &gtk::Box) {
     let s = read_state();
-    // The grid cursor: §1 lays the rows out as label + control PAIRS "left to right and then down, several
-    // to a line", so a line holds more than one pair and [`place_pair`] decides when one will not fit.
-    // `row` stays the line number; `at.1` is where the next pair's label goes on it.
-    let mut at = (row, 0);
-    for name in screen::settings_rows_shown(s.narration_off) {
-        let name: &str = name;
-        match name {
-            "Game audio" => {
-                let scale = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.02);
-                scale.set_widget_name(&row_widget("Game audio"));
-                scale.set_draw_value(false);
-                // No `hexpand`: the grid gives the slider its room by COLUMN SPAN (two slots), and a widget
-                // that also asks to expand takes every spare pixel on the line, which once pushed the grid
-                // past the column's edge.
-                scale.set_halign(gtk::Align::Fill);
-                scale.set_value(s.game_volume);
-                scale.set_tooltip_text(Some(screen::tooltip("Game audio")));
-                attach_pair(grid, &mut at, &setting_label("Game audio"), &scale, name);
-            }
-            "Quality (CRF)" => {
-                let scale = gtk::Scale::with_range(
-                    gtk::Orientation::Horizontal,
-                    screen::CRF_MIN as f64,
-                    screen::CRF_MAX as f64,
-                    1.0,
-                );
-                scale.set_widget_name(&row_widget("Quality (CRF)"));
-                scale.set_halign(gtk::Align::Fill);
-                scale.set_value(s.crf);
-                scale.set_tooltip_text(Some(screen::tooltip("Quality (CRF)")));
-                attach_pair(grid, &mut at, &setting_label("Quality (CRF)"), &scale, name);
-            }
-            "Frame timing" | "Channels" | "Frame edges" => {
-                // Three tick rows: the tick carries §A's own word, not the row's name.
-                let (tick_label, widget) = match name {
-                    "Frame timing" => (screen::VFR_TICK, "tick-peak-rate-vfr"),
-                    "Channels" => (screen::MONO_TICK, "tick-mono"),
-                    _ => (screen::EDGES_TICK, "tick-blurred"),
-                };
-                let tick = gtk::CheckButton::with_label(tick_label);
-                tick.set_widget_name(widget);
-                tick.set_active(match name {
-                    "Frame timing" => s.vfr,
-                    "Channels" => s.mono,
-                    _ => s.blurred_edges,
-                });
-                tick.set_tooltip_text(Some(screen::tooltip(name)));
-                attach_pair(grid, &mut at, &setting_label(name), &tick, name);
-            }
-            "Translate" => {
-                // One tick per offered language, built from `translate_options` so the session's own
-                // language never appears as a row at all.
-                let ticks = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                // The row is ONE `setting-*` control holding its per-language ticks, so counting the
-                // drawn `setting-*` names counts Translate as a row like every other one.
-                ticks.set_widget_name(&row_widget("Translate"));
-                for language in screen::translate_options(&s.session_language) {
-                    let tick = gtk::CheckButton::with_label(language);
-                    tick.set_widget_name(&format!("translate-tick-{language}"));
-                    tick.set_active(s.translate.iter().any(|t| t == language));
-                    tick.set_tooltip_text(Some(screen::tooltip("Translate")));
-                    ticks.append(&tick);
+    build_settings_from(settings, &s, &screen::settings_rows_shown());
+}
+
+/// The same rows, seeded from `s`, showing the rows in `shown`: the page's own grid, and the Profiles window's
+/// (§03-shell F0.14 S9), which shows every row and reads its values back with [`rows_from`].
+pub(crate) fn build_settings_from(settings: &gtk::Box, s: &ProduceState, shown: &[&str]) {
+    let first_labels = gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal);
+    let (dropdowns, rest) = LINES.split_at(DROPDOWN_LINES);
+    for lines in [dropdowns, rest] {
+        let grid = gtk::Grid::new();
+        grid.set_row_spacing(6);
+        grid.set_column_spacing(8);
+        // Numbered over the lines that hold a row, so a line the page does not show leaves no gap.
+        let lines = lines
+            .iter()
+            .map(|rows| rows.iter().filter(|row| shown.iter().any(|r| r == *row)));
+        for (line, rows) in lines
+            .filter(|rows| rows.clone().next().is_some())
+            .enumerate()
+        {
+            for (pair, name) in rows.enumerate() {
+                let pair = pair as i32;
+                let label = setting_label(name);
+                if pair == 0 {
+                    first_labels.add_widget(&label);
                 }
-                attach_pair(grid, &mut at, &setting_label("Translate"), &ticks, name);
-            }
-            other => {
-                let choices = screen::options(name).unwrap_or(&[]);
-                let picker = gtk::DropDown::from_strings(choices);
-                picker.set_widget_name(&row_widget(name));
-                // A `Grid` hands a line's extra width to whichever cells ask for it, so with three dropdowns
-                // on one line they each stretch and the line runs past the column (Preset ended at 1311 px
-                // against a column ending at 1246). The picture shows them at their own size instead.
-                picker.set_hexpand(false);
-                // And no wider than its widest option: an expanding dropdown takes whatever the line gives it.
-                picker.set_halign(gtk::Align::Start);
-                if let Some(at_choice) = screen::options(name)
-                    .and_then(|list| list.iter().position(|v| *v == held_choice(&s, name)))
-                {
-                    picker.set_selected(at_choice as u32);
+                // The gap between one pair and the next label is the label's own margin, so a control never
+                // ends where the next label's text begins.
+                if pair > 0 {
+                    label.set_margin_start(12);
                 }
-                picker.set_tooltip_text(Some(screen::tooltip(name)));
-                attach_pair(grid, &mut at, &setting_label(other), &picker, name);
+                grid.attach(&label, 2 * pair, line as i32, 1, 1);
+                grid.attach(&control(s, name), 2 * pair + 1, line as i32, 1, 1);
             }
         }
-        row = at.0;
+        settings.append(&grid);
     }
-    even_label_columns(grid);
-    // One past the last line the pairs used, which is what callers stack below the grid.
-    row + 1
+}
+
+/// One row's control, named by `row_widget` and seeded from the held state.
+fn control(s: &ProduceState, name: &str) -> gtk::Widget {
+    match name {
+        "Game audio" | "Quality (CRF)" => {
+            let (low, high, step, value) = if name == "Game audio" {
+                (0.0, 1.0, 0.02, s.game_volume)
+            } else {
+                (screen::CRF_MIN as f64, screen::CRF_MAX as f64, 1.0, s.crf)
+            };
+            let scale = gtk::Scale::with_range(gtk::Orientation::Horizontal, low, high, step);
+            scale.set_widget_name(&row_widget(name));
+            scale.set_draw_value(name == "Quality (CRF)");
+            scale.set_value_pos(gtk::PositionType::Right);
+            scale.set_size_request(140, -1);
+            scale.set_value(value);
+            scale.set_tooltip_text(Some(screen::tooltip(name)));
+            scale.upcast()
+        }
+        "Frame timing" | "Channels" | "Frame edges" => {
+            // Three tick rows: the tick carries §A's own word, not the row's name.
+            let (tick_label, widget, on) = match name {
+                "Frame timing" => (screen::VFR_TICK, "tick-peak-rate-vfr", s.vfr),
+                "Channels" => (screen::MONO_TICK, "tick-mono", s.mono),
+                _ => (screen::EDGES_TICK, "tick-blurred", s.blurred_edges),
+            };
+            let tick = gtk::CheckButton::with_label(tick_label);
+            tick.set_widget_name(widget);
+            tick.set_active(on);
+            tick.set_tooltip_text(Some(screen::tooltip(name)));
+            tick.upcast()
+        }
+        "Translate" => translate_menu(s).upcast(),
+        _ => {
+            let picker = gtk::DropDown::from_strings(screen::options(name).unwrap_or(&[]));
+            picker.set_widget_name(&row_widget(name));
+            // At its own size, as the picture draws the dropdowns: one that expands takes the line's slack.
+            picker.set_halign(gtk::Align::Start);
+            if let Some(at) = screen::options(name)
+                .and_then(|list| list.iter().position(|v| *v == held_choice(s, name)))
+            {
+                picker.set_selected(at as u32);
+            }
+            picker.set_tooltip_text(Some(screen::tooltip(name)));
+            picker.upcast()
+        }
+    }
+}
+
+/// §A's Translate: "menu of ticks", the picture's `Translate: English ⌄`. The button names the ticked
+/// languages, or "none"; its popover holds one `translate-tick-<language>` per offered language, built from
+/// `translate_options` so the session's own language is never offered.
+fn translate_menu(s: &ProduceState) -> gtk::MenuButton {
+    let menu = gtk::MenuButton::new();
+    menu.set_widget_name(&row_widget("Translate"));
+    menu.set_label(&translate_label(&s.translate));
+    menu.set_halign(gtk::Align::Start);
+    menu.set_tooltip_text(Some(screen::tooltip("Translate")));
+    let ticks = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    for language in screen::translate_options(&s.session_language) {
+        let tick = gtk::CheckButton::with_label(language);
+        tick.set_widget_name(&format!("translate-tick-{language}"));
+        tick.set_active(s.translate.iter().any(|t| t == language));
+        tick.set_tooltip_text(Some(screen::tooltip("Translate")));
+        ticks.append(&tick);
+    }
+    let popover = gtk::Popover::new();
+    popover.set_child(Some(&ticks));
+    menu.set_popover(Some(&popover));
+    menu
+}
+
+/// What the Translate button reads: the ticked languages in order, or "none".
+pub fn translate_label(ticked: &[String]) -> String {
+    if ticked.is_empty() {
+        "none".to_string()
+    } else {
+        ticked.join(", ")
+    }
 }
 
 /// The value the page holds for one dropdown row, so [`build_settings`] can seed the picker.
@@ -244,11 +176,116 @@ fn held_choice<'a>(s: &'a ProduceState, row: &str) -> &'a str {
 fn setting_label(text: &str) -> gtk::Label {
     let label = gtk::Label::new(Some(&format!("{text}:")));
     label.set_xalign(1.0);
-    // Three pairs to a line inside a ~620 px column leaves no room for the labels to push: a `Grid` gives an
-    // expanding control its EXTRA width first and only then widens the label's column to its natural width,
-    // so with three dropdowns asking to expand the grid ran past the column's edge (Preset ended at 1311 px
-    // against a column ending at 1246). A label that never asks to grow is what keeps the line inside.
-    label.set_hexpand(false);
     label.add_css_class("dim-label");
     label
+}
+
+/// The rows as a grid built by [`build_settings_from`] holds them now, in §A's order and spelled as a profile's
+/// `## produce` section spells them: what the Profiles window saves.
+pub(crate) fn rows_from(settings: &gtk::Widget) -> Vec<(String, String)> {
+    let find = |name: &str| find_in(settings, name);
+    screen::defaults()
+        .iter()
+        .filter_map(|(row, _)| {
+            let value = match *row {
+                "Frame timing" | "Channels" | "Frame edges" => {
+                    let tick = match *row {
+                        "Frame timing" => "tick-peak-rate-vfr",
+                        "Channels" => "tick-mono",
+                        _ => "tick-blurred",
+                    };
+                    let on = find(tick)?.downcast::<gtk::CheckButton>().ok()?.is_active();
+                    (if on { "on" } else { "off" }).to_string()
+                }
+                "Translate" => {
+                    // Only a grid that holds the Translate menu answers for it (the Narrate form has none).
+                    find(&row_widget(row))?;
+                    let ticked: Vec<&str> = screen::TRANSLATE_LANGUAGES
+                        .into_iter()
+                        .filter(|language| {
+                            find(&format!("translate-tick-{language}"))
+                                .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+                                .is_some_and(|tick| tick.is_active())
+                        })
+                        .collect();
+                    if ticked.is_empty() {
+                        "none".to_string()
+                    } else {
+                        ticked.join(", ")
+                    }
+                }
+                "Game audio" => format!(
+                    "{:.2}",
+                    find(&row_widget(row))?
+                        .downcast::<gtk::Scale>()
+                        .ok()?
+                        .value()
+                ),
+                "Quality (CRF)" => format!(
+                    "{:.0}",
+                    find(&row_widget(row))?
+                        .downcast::<gtk::Scale>()
+                        .ok()?
+                        .value()
+                ),
+                _ => find(&row_widget(row))?
+                    .downcast::<gtk::DropDown>()
+                    .ok()?
+                    .selected_item()?
+                    .downcast::<gtk::StringObject>()
+                    .ok()?
+                    .string()
+                    .to_string(),
+            };
+            Some((row.to_string(), value))
+        })
+        .collect()
+}
+
+fn find_in(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
+    if node.widget_name() == name {
+        return Some(node.clone());
+    }
+    let mut child = node.first_child();
+    while let Some(current) = child {
+        if let Some(found) = find_in(&current, name) {
+            return Some(found);
+        }
+        child = current.next_sibling();
+    }
+    // A popover (the Translate ticks) is not among a menu button's children until it opens.
+    node.downcast_ref::<gtk::MenuButton>()
+        .and_then(|menu| menu.popover())
+        .and_then(|popover| find_in(popover.upcast_ref(), name))
+}
+
+/// The same rows as flowing pairs, for the Profiles window (§03-shell F0.14 S9): each label with its control is
+/// one item, as many to a line as the width holds and stacking as it narrows, every item as wide as the widest
+/// so they line up in columns. The Produce page keeps its picture's fixed lines ([`build_settings_from`]).
+pub(crate) fn build_settings_flow(settings: &gtk::Box, s: &ProduceState, shown: &[&str]) {
+    let flow = gtk::FlowBox::new();
+    flow.set_widget_name("produce-flow");
+    flow.set_selection_mode(gtk::SelectionMode::None);
+    flow.set_homogeneous(true);
+    flow.set_min_children_per_line(1);
+    flow.set_max_children_per_line(6);
+    flow.set_row_spacing(6);
+    flow.set_column_spacing(18);
+    flow.set_hexpand(true);
+    let labels = gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal);
+    for name in shown {
+        let pair = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let label = setting_label(name);
+        labels.add_widget(&label);
+        pair.append(&label);
+        pair.append(&control(s, name));
+        flow.insert(&pair, -1);
+    }
+    // A pair is a form row, not something to select or activate.
+    let mut child = flow.first_child();
+    while let Some(current) = child {
+        current.set_focusable(false);
+        child = current.next_sibling();
+    }
+    settings.append(&flow);
 }

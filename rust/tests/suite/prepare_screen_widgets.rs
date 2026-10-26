@@ -361,25 +361,6 @@ fn check_readouts_and_reset(app: &adw::Application) {
         folder_button.is_sensitive(),
         "there IS a folder to open now"
     );
-
-    // ---- Freq through the widget reaches the field `set_freq` writes ----
-    let freq = find(&window, "freq-control")
-        .expect("Freq")
-        .downcast::<gtk::DropDown>()
-        .expect("dropdown");
-    assert_eq!(ui::session_freq(&window), 1.0, "the fixture opens at 1 s");
-    freq.set_selected(5); // FREQ_STOPS[5] == 4.0
-    settle();
-    assert_eq!(
-        ui::session_freq(&window),
-        naivepost::prepare::FREQ_STOPS[5],
-        "choosing a stop wrote Project::interval, the same field the logic test checks"
-    );
-    assert_eq!(
-        naivepost::prepare::EXTRACTION_GRID,
-        0.25,
-        "// P.eng.frameGridSeconds — moving Freq to 4 s must not touch the extraction grid"
-    );
 }
 
 /// §1's badges **2**, **3**, **4** and **5**: the row title, the picker in pipeline order, Reset only
@@ -439,33 +420,17 @@ fn check_the_bench_and_frame_controls(app: &adw::Application) {
         "pressing it wrote Source::sepvoice on the session the window holds"
     );
 
-    // **8** Freq's stops and Language's warning, both under the sources list.
-    let freq = find(&window, "freq-control")
-        .expect("the page has Freq")
-        .downcast::<gtk::DropDown>()
-        .expect("Freq is a dropdown of the stops");
-    let stops = strings(
-        freq.model()
-            .expect("Freq has its list of stops")
-            .upcast_ref(),
-    );
-    assert_eq!(stops.len(), naivepost::prepare::FREQ_STOPS.len());
-    assert_eq!(stops[2], "1s", "the default is 1 s and is shown as such");
-    assert!(freq.is_sensitive(), "Freq answers to the page");
-
-    let language = find(&window, "language-entry")
-        .expect("the page has Language")
-        .downcast::<gtk::Entry>()
-        .expect("Language is a text box");
-    assert_eq!(
-        language.tooltip_text().as_deref(),
-        Some(naivepost::prepare::LANGUAGE_TIP),
-        "§1's warning about the wrong ASR code"
+    // **8** No Freq under the sources list: the text gate (F1.6 S6) decides which frames describe sees.
+    assert!(
+        find(&window, "freq-control").is_none() && find(&window, "freq-stepper").is_none(),
+        "Freq is gone from Prepare"
     );
 
-    // Typing a language stores it on the session, not on the widget.
-    language.set_text("de");
-    assert_eq!(ui::bench_language(&window).as_deref(), Some("de"));
+    // No Language box: the User Context says the language and the policy holds it (P.policy.language).
+    assert!(
+        find(&window, "language-entry").is_none(),
+        "the language is said in the User Context, not typed into a box on Prepare"
+    );
 
     // **3** the picker: the prompt rows in pipeline order and nothing else — F0.7 has no policy form, so
     // the menu carries no non-prompt row. See `bench::picker_rows`.
@@ -774,22 +739,6 @@ fn settings_paths() -> naivepost::settings::Paths {
 
 fn find(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     ui::find_source_widget(window, name)
-}
-
-/// The strings a `StringList` holds, in order.
-fn strings(model: &glib::Object) -> Vec<String> {
-    let list = model
-        .downcast_ref::<gtk::StringList>()
-        .expect("a list of strings");
-    (0..list.n_items())
-        .map(|index| {
-            list.item(index)
-                .and_downcast::<gtk::StringObject>()
-                .expect("a string item")
-                .string()
-                .to_string()
-        })
-        .collect()
 }
 
 fn text_of(buffer: &gtk::TextBuffer) -> String {

@@ -187,11 +187,15 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
             return;
         }
         let row = picker.selected() as usize;
-        if let Some(option) = options(s.narrators, &s.voice_files).get(row) {
-            let id = option.id.clone();
-            if id != s.voice {
-                crate::ui::narrate_page::press_voice(&win, &id);
-            }
+        let offered = options(s.narrators, &s.voice_files);
+        // Compared as ROWS, not ids: the stored "own" voice is narrator 1's row, so a row GTK settles on by
+        // itself after the page loaded "own" is the same voice and no pick (an id compare pressed the seam
+        // and said "voice: narrator 1's" over a page nobody had touched).
+        if crate::narrate_rules::picker_row(&offered, &s.voice) == Some(row) {
+            return;
+        }
+        if let Some(option) = offered.get(row) {
+            crate::ui::narrate_page::press_voice(&win, &option.id.clone());
         }
     });
 }

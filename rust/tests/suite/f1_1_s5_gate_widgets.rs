@@ -1,10 +1,11 @@
 //! F1.1 S5 — the audio.cpp preflight reached through the real ▶ button.
 //!
 //! `tests/suite/f1_1_preflight.rs` proves the rule by calling `prepare_run::preflight` over a socket; this
-//! binary proves the WIRE: that a press on a Prepare page is refused at the screen, before the run
-//! bar opens, when the server the conf names does not answer. That path had no button test because
-//! every other ▶ binary (`press_prepare_widgets`, `describe_stage_widgets`, `joins_widgets`,
-//! `mark_retakes_widgets`) stands up a HEALTHY fake so its own stage lines can land — and a healthy
+//! binary proves the WIRE: that a press on a Prepare page is refused at the screen when the server the
+//! conf names does not answer. The preflight asks a server, so it runs on the run's worker with the bar
+//! open, and the refusal closes the bar again (§04-prepare F1.1 "Where it runs"). That path had no button test because
+//! every other ▶ binary (`press_prepare_widgets`, `describe_stage_widgets`,
+//! `f0_2_s4_the_press_asks_no_model`) stands up a HEALTHY fake so its own stage lines can land — and a healthy
 //! fake never reaches the refusal.
 //!
 //! A binary of its own for the same reason those files each have one: `XDG_CONFIG_HOME` belongs to the
@@ -109,6 +110,11 @@ fn check_the_press_is_refused_at_the_screen(app: &adw::Application, dead: &str) 
         "an idle ▶ says what §2 makes it say"
     );
     play.emit_clicked();
+    // Prepare's ▶ hands its walk to a worker (§03-shell §1); its lines and ending land on the poll.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
 
     // The sentence is `preflight_error`'s, aimed at the same facts the logic test asserts — not a
     // second wording invented for the row.
@@ -137,10 +143,17 @@ fn check_the_press_is_refused_at_the_screen(app: &adw::Application, dead: &str) 
         refused_at > opening,
         "the preflight answers after the inputs are logged, before any phase runs: {logs:?}"
     );
+    // §F1.1 "Where it runs": S5 asks a server, so it runs on the run's worker with the bar open, and its
+    // refusal closes that bar again with the sentence on the status line.
     assert_eq!(
         naivepost::ui::run_close::last_run_step_for_test(),
+        Some(run::Step::Prepare),
+        "the press opened the bar before the preflight was asked"
+    );
+    assert_eq!(
+        ui::running_step(&window),
         None,
-        "a refused preflight never opened a run, so ⏸ was never shown"
+        "and the refused preflight closed it again"
     );
     assert_eq!(
         ui::state(&window).status,

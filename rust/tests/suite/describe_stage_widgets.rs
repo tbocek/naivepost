@@ -67,6 +67,7 @@ fn seed_frames(tree: &Tree, lane: &str, seconds: &[f64], changes: &[f64]) {
 
 #[test]
 fn f1_7_wire_pressing_play_reaches_the_describe_stage() {
+    let _turn = crate::common::describe_flags_turn();
     static RAN_PLAN: AtomicBool = AtomicBool::new(false);
     static RAN_REFUSAL: AtomicBool = AtomicBool::new(false);
     static RAN_NOTHING: AtomicBool = AtomicBool::new(false);
@@ -104,19 +105,15 @@ fn f1_7_wire_pressing_play_reaches_the_describe_stage() {
 /// and request count the logic test computes for the same frames. P.machine.describeFramesPerReq
 fn check_plan_lands_through_the_button(app: &adw::Application) {
     let (_keep, tree) = pin_session("plan");
-    // A thinned folder: two pictures per second over eight seconds (one every 0.5 s), with a scene
-    // change at 4 s. At Freq 1.0 that is eight frames sent -- one per second, including the change's
-    // own first frame. The spacing is deliberately NOT one grid step: an evenly-spaced set is what an
-    // every-frame extraction looks like, and this check must not be refused for it.
-    let seconds: Vec<f64> = (0..16).map(|i| i as f64 * 0.5).collect();
-    seed_frames(&tree, "lecture", &seconds, &[4.0]);
+    // A thinned folder: one picture every 10 s over 160 s, with a scene change at 80 s. Describe sends each
+    // scene's first frame and one every heartbeat (20 s) after it, so eight frames go: 0, 20, 40, 60 and the
+    // change's own 80, 100, 120, 140. The spacing is deliberately NOT one grid step: an evenly-spaced set
+    // at the grid is what an every-frame extraction looks like, and this check must not be refused for it.
+    let seconds: Vec<f64> = (0..16).map(|i| i as f64 * 10.0).collect();
+    seed_frames(&tree, "lecture", &seconds, &[80.0]);
 
     let mut model = Project::default();
-    model.interval = 1.0;
-    // Two sources: the footage deck, and the microphone heard alongside it. A single-source project
-    // would be thinned by Freq down to one picture per grid step on a short take, which is exactly
-    // what an every-frame folder looks like; with a second source the deck keeps its own spacing and
-    // this check says something true.
+    // Two sources: the footage deck, and the microphone heard alongside it.
     model.sources = vec![
         footage("project:sources/lecture.mkv"),
         Source {
@@ -133,6 +130,11 @@ fn check_plan_lands_through_the_button(app: &adw::Application) {
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_clicked();
+    // Prepare's ▶ hands its walk to a worker (§03-shell §1); its lines and ending land on the poll.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
 
     let logs = ui::window_logs();
     // F0.5 S4 closes what a single-step press opens, so "the stage ran inside a run" is pinned by the
@@ -171,7 +173,6 @@ fn check_every_frame_refusal_lands_through_the_button(app: &adw::Application) {
     seed_frames(&tree, "rawcam", &seconds, &[]);
 
     let mut model = Project::default();
-    model.interval = 1.0;
     model.sources = vec![footage("project:sources/rawcam.mp4")];
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
@@ -179,11 +180,16 @@ fn check_every_frame_refusal_lands_through_the_button(app: &adw::Application) {
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_clicked();
+    // Prepare's ▶ hands its walk to a worker (§03-shell §1); its lines and ending land on the poll.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
 
     let logs = ui::window_logs();
     assert!(
         logs.iter().any(|line| line
-            == "rawcam was extracted as every-frame; describe needs a fixed interval -- rerun Prepare with e.g. 1s"),
+            == "rawcam was extracted as every-frame; describe needs the 250 ms grid -- rerun Prepare"),
         "the every-frame refusal reached the log through the button: {logs:?}"
     );
     assert!(
@@ -202,7 +208,6 @@ fn check_every_frame_refusal_lands_through_the_button(app: &adw::Application) {
 fn check_a_source_without_frames_is_reported_not_fatal(app: &adw::Application) {
     let (_keep, _tree) = pin_session("noframes");
     let mut model = Project::default();
-    model.interval = 1.0;
     model.sources = vec![footage("project:sources/gonedeck.mkv")];
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
@@ -210,6 +215,11 @@ fn check_a_source_without_frames_is_reported_not_fatal(app: &adw::Application) {
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_clicked();
+    // Prepare's ▶ hands its walk to a worker (§03-shell §1); its lines and ending land on the poll.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
 
     let logs = ui::window_logs();
     assert!(

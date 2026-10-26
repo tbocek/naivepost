@@ -1,6 +1,6 @@
 // §07-narrate#1-screen, the **Page** bullet: "split left and right by a draggable divider (opened with the left
 // column 560 px wide; extra window width goes to the right). Left column, split top and bottom by a second
-// draggable divider (opened with the upper part 420 px tall): above it, top to bottom, the Narration tick, the
+// draggable divider (opened with the upper part 420 px tall): above it, top to bottom, the game audio row, the
 // preview, the transport row; below it, the voice picker."
 //
 // All three checks measure the REAL page — a shell window on the Narrate tab, widgets found by name, geometry from
@@ -130,7 +130,7 @@ fn inside(window: &adw::ApplicationWindow, ancestor: &str, leaf: &str) -> bool {
     false
 }
 
-/// §A.1's second divider: a draggable vertical paned in the left column, opened at 420 px, with the tick, the
+/// §A.1's second divider: a draggable vertical paned in the left column, opened at 420 px, with the game audio row, the
 /// preview and the transport ABOVE it and the voice picker below.
 fn check_the_second_divider(app: &adw::Application) {
     let window = narrate_page(app, 1280);
@@ -169,7 +169,7 @@ fn check_the_second_divider(app: &adw::Application) {
         "the LOWER half is the paned's end child"
     );
     // §A.1's opening: the handle sits at the bottom of the upper half, just under the transport row. The page builds
-    // that opening from the rows it must clear (tick + gap + the 16:9 frame + gap + transport = 392) instead of
+    // that opening from the rows it must clear (game audio row + gap + the 16:9 frame + gap + transport = 392) instead of
     // typing 420, because a headless window never reaches 420 px of room for the left column; read off the widget
     // here so the shot and this test agree on one number rather than each trusting its own constant.
     let upper = bounds(&window, "narrate-upper");
@@ -188,25 +188,25 @@ fn check_the_second_divider(app: &adw::Application) {
         upper.height() > 300.0,
         "the upper half holds more than the preview alone"
     );
-    // Above it, top to bottom: the Narration tick, the preview, the transport row.
-    for name in ["narration-tick", "narrate-preview", "narrate-transport"] {
+    // Above it, top to bottom: the game audio row, the preview, the transport row.
+    for name in ["narrate-game-row", "narrate-preview", "narrate-transport"] {
         assert!(
             inside(&window, "narrate-upper", name),
             "`{name}` belongs ABOVE the second divider (§A.1)"
         );
     }
-    let tick = bounds(&window, "narration-tick");
+    let top = bounds(&window, "narrate-game-row");
     let frame = bounds(&window, "narrate-preview");
     let transport = bounds(&window, "narrate-transport");
     println!(
-        "above: tick y={:.1} frame y={:.1} transport y={:.1}",
-        tick.y(),
+        "above: game audio y={:.1} frame y={:.1} transport y={:.1}",
+        top.y(),
         frame.y(),
         transport.y()
     );
     assert!(
-        tick.y() < frame.y() && frame.y() < transport.y(),
-        "§A.1's order above the divider is tick, preview, transport: {tick:?} {frame:?} {transport:?}"
+        top.y() < frame.y() && frame.y() < transport.y(),
+        "§A.1's order above the divider is game audio, preview, transport: {top:?} {frame:?} {transport:?}"
     );
     // Below it: the voice picker (and what follows it down the column).
     for name in [

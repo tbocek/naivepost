@@ -118,12 +118,12 @@ pub fn build(
     // wrap), so it is a `TextView`: monospace by CSS class like its `Entry` predecessor, wrapped at word
     // boundaries, and two lines tall at rest so a long line wraps in place instead of running off the page.
     let text = gtk::TextView::new();
+    crate::ui::margins::text_box(&text);
     text.set_widget_name(&format!("line-text-{index}"));
     text.set_wrap_mode(gtk::WrapMode::Word);
     text.add_css_class("monospace");
+    text.add_css_class("line-text");
     text.set_size_request(-1, 2 * LINE_HEIGHT_PX);
-    text.set_top_margin(2);
-    text.set_bottom_margin(2);
     // A.5's box is where the words are typed, so it must take a caret and the keyboard focus — an `Entry`
     // did that by itself, a `TextView` needs saying.
     text.set_cursor_visible(true);

@@ -34,6 +34,12 @@ pub fn install(paint: Paint) {
 /// no page to tell — the state a headless logic test runs the attempt loop in — so the reading is simply
 /// dropped rather than failing the call.
 pub fn watch(progress: &Progress) {
+    // Suggest's model call runs on a worker (§03-shell §1); the paint reads the window, so it runs there.
+    if crate::ui::background::on_worker() {
+        let reading = progress.clone();
+        crate::ui::background::on_window_thread(move || watch(&reading));
+        return;
+    }
     let Some(window) = crate::ui::window::built_window() else {
         return;
     };

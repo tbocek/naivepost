@@ -67,7 +67,6 @@ fn state_at(session: f64) -> ui::NarrateState {
         playing: false,
         started: false,
         busy: false,
-        narration_off: false,
         language: String::new(),
         covered_spans: vec![],
     }

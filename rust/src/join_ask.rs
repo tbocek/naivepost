@@ -31,14 +31,10 @@ use crate::llm_cache;
 use crate::llm_request;
 use crate::project::Project;
 use crate::requests::{Request, Service};
-use crate::roles::Job;
 use crate::seam_retries::{self, Asking};
 use crate::services;
 use crate::settings::{self, Conf, Paths};
-use crate::tool_loop;
-use crate::tool_reads;
 use crate::tools::textedit::{Join, SEAM_REACH_WORDS};
-use crate::tools::{self, Tool};
 use crate::word_list::{self, Word};
 
 /// The shipped wording of one prompt key: the fenced ``` block of `spec/prompts/<key>.md`.
@@ -102,9 +98,11 @@ pub fn ask(
     user_context: &str,
     k: usize,
     n: usize,
+    wide: &str,
     before: &[String],
     after: &[String],
     attempt: u32,
+    refused: Option<&str>,
     cancelled: &dyn Fn() -> bool,
 ) -> Answered {
     let conf = match current_paths().as_ref().map(settings::read) {
@@ -128,9 +126,11 @@ pub fn ask(
         user_context,
         k,
         n,
+        wide,
         before,
         after,
         attempt,
+        refused,
         cancelled,
     )
 }
@@ -143,23 +143,20 @@ pub fn ask_at(
     user_context: &str,
     k: usize,
     n: usize,
+    wide: &str,
     before: &[String],
     after: &[String],
     attempt: u32,
+    refused: Option<&str>,
     cancelled: &dyn Fn() -> bool,
 ) -> Answered {
     let model = conf.model.clone();
     let system = join_system(user_context);
-    let user = joins::request(user_context, k, n, before, after);
+    let user = joins::request(user_context, k, n, wide, before, after, refused);
     let parts = seam_parts(&system, &user, &model, attempt);
     if let Some(cached) = llm_cache::read(tree, joins::STEP, &parts) {
         // §09 §10: the cached answer writes its own `cache` line, with no time on the wire; the row is
         // the record that this ask cost nothing, not a second count of the request that earned it.
-        //
-        // A cached TOOL answer is stored as the counts it came to, not as the calls: the round that
-        // ended a tool flow says only "I am done", so the drops themselves live in earlier rounds and
-        // a replay would have to re-dial them. Storing the outcome is what lets the next press cost no
-        // wire at all, and it is the same shape the prose path always stored — a reply this door reads.
         let outcome = judge(&cached, before, after);
         crate::request_timing::record_cached(tree, base_row(&model));
         return Answered {
@@ -172,7 +169,7 @@ pub fn ask_at(
     }
     // No model configured: asking again answers the same way, so this settles. Checked before the
     // loop dials, because a body cannot even be built without one.
-    if let Err(reason) = chat_body_with(&model, &messages0(&system, &user), None) {
+    if let Err(reason) = chat_body_with(&model, &messages0(&system, &user)) {
         return Answered {
             outcome: Outcome::Refused(reason.clone()),
             settled: true,
@@ -183,222 +180,56 @@ pub fn ask_at(
     }
     let base = base_row(&model);
     let endpoint = services::llm_endpoint(conf);
-    let messages = vec![
-        Message {
-            role: "system".to_string(),
-            parts: vec![Part::Text(system.clone())],
-        },
-        Message {
-            role: "user".to_string(),
-            parts: vec![Part::Text(user.clone())],
-        },
-    ];
-    // §3.2: this job has tools and they are offered. `drop_words`, `keep_join`, `get_words` and
-    // `finish` are `tools::offered(Job::Joins)` already and `Join` implements every one of them;
-    // what was missing was the loop that runs them, so the model could only ever answer in the
-    // prototype's prose shape. `None` here would be the bug, not a simplification.
-    let offered: Vec<Tool> = tools::offered(Job::Joins);
-    let mut join = Join::new(
-        &before.iter().map(String::as_str).collect::<Vec<&str>>(),
-        &after.iter().map(String::as_str).collect::<Vec<&str>>(),
-    );
-    // The body of the round that ENDED the flow — the pair this ask's cache entry stands for — and
-    // whether the wire itself failed, which is not a refusal and spends no retry (§seam_retries).
-    let mut final_body: Option<String> = None;
-    let mut wire_error: Option<String> = None;
-    // What the tool surface refused during the flow. A model that corrects itself is fine — the counts
-    // that survived are what count — but a flow that ended having only ever been refused has no answer,
-    // and `judge`'s prose path would otherwise read its empty content as "nothing left out".
-    let mut refusals: Vec<String> = Vec::new();
-    // Asks this seam has put on the wire, which is how S5 knows it is still on its FIRST round: the
-    // field is only worth re-sending without once, and only before anything was answered.
-    let mut rounds: u32 = 0;
-    // Every call the loop ran, in order. A tool flow's cache entry is written from these (see below):
-    // the round that ends the flow says only "I am done", so the drops live in the earlier rounds and
-    // neither the last body nor `refusals` (accepted calls are not refusals) records them.
-    let mut calls: Vec<String> = Vec::new();
-    // One reply read the way every chat job reads it, with the flow's own bookkeeping: the round that
-    // carries no calls (or the `finish` call) is the answer, whatever else the model wrote beside it.
-    let mut turn_of = |sent: &crate::server_leg::Sent| -> Result<tool_loop::Turn, String> {
-        let reply = llm_request::reply_from(&sent.content_type, &sent.body)
-            .map_err(|why| format!("{}: {why}", joins::STEP))?;
-        let finishing = reply
-            .tool_calls
-            .iter()
-            .any(|call| call.name == Tool::Finish.name());
-        if finishing || reply.tool_calls.is_empty() {
-            // A round that brings NO CALLS is the answer, whatever the model also wrote beside it; a
-            // round that brings calls is not, even when a thinking model slips its `"joined"` text in
-            // alongside them — those calls are what gets run, and running them and then letting the
-            // same round's prose decide too would drop the seam's words twice.
-            final_body = Some(sent.body.clone());
-        }
-        Ok(tool_loop::Turn {
-            content: reply.content.clone(),
-            calls: reply.tool_calls.clone(),
-            finish: finishing,
-        })
-    };
-    let mut ask = |conversation: &[Message], tools: &[Tool]| -> Result<tool_loop::Turn, String> {
-        // §2 S5: a server that already refused the `tools` field is asked without it, silently — the
-        // same memory every other tool job shares, so one refusal costs this seam's later asks nothing.
-        let offered = crate::llm_tools_offer::tools_for(&endpoint.url, tools);
-        let body = chat_body_with(&model, conversation, offered.as_deref())?.to_string();
-        let dial = || {
-            crate::llm_retry_leg::chat(
-                joins::STEP,
-                tree,
-                &base,
-                &endpoint,
-                &body,
-                cancelled,
-                &crate::ui::window::log_line,
-            )
-        };
-        let sent = match dial() {
-            Ok(sent) => {
-                rounds += 1;
-                sent
-            }
-            Err(why) => {
-                // S5's other half: a first-round error that reads as a refusal of the FIELD is honoured
-                // — said once, and the same ask goes out without the field. A dead server is not a
-                // refusal and stays a transport failure, which spends none of the seam's retries.
-                if offered.is_some()
-                    && rounds == 0
-                    && crate::llm_tools_offer::honour_refusal(&endpoint.url, &why, 1)
-                {
-                    crate::ui::window::log_line(&tool_loop::refused_log(joins::STEP, &why));
-                    rounds += 1;
-                    let bare = chat_body_with(&model, conversation, None)?.to_string();
-                    let again = crate::llm_retry_leg::chat(
-                        joins::STEP,
-                        tree,
-                        &base,
-                        &endpoint,
-                        &bare,
-                        cancelled,
-                        &crate::ui::window::log_line,
-                    )
-                    .inspect_err(|why| wire_error = Some(why.clone()))?;
-                    return turn_of(&again);
-                }
-                wire_error = Some(why.clone());
-                return Err(why);
-            }
-        };
-        turn_of(&sent)
-    };
-    let mut run_tool = |asked: &crate::exchanges::ToolCall| -> String {
-        // §3.1's shared reads first, answered from THIS join's two sides: a read must describe the seam
-        // the model is answering about. `get_words` is NOT taken here — it is this job's own read and is
-        // answered by `run_one` below, from the live `Join` rather than from a copy.
-        if let Some(answer) = read_answer(user_context, asked, before, after) {
-            return answer;
-        }
-        // An accepted `drop_words` is remembered in its answer form, which is what a later press reads
-        // out of the cache through the same `judge` door a prose answer goes through.
-        let answer = live_call(asked, &mut join, &mut refusals);
-        if asked.name == Tool::DropWords.name() && !tool_refused(&answer) {
-            let gone_before = join.dropped_count(crate::tools::textedit::Side::Before);
-            let gone_after = join.dropped_count(crate::tools::textedit::Side::After);
-            calls.push(drop_answer(before, after, gone_before, gone_after));
-        }
-        answer
-    };
-    let run = tool_loop::run(joins::STEP, messages, &offered, &mut ask, &mut run_tool);
-    let outcome = match run.outcome {
-        tool_loop::Outcome::Exhausted => Outcome::Refused(
-            "still calling tools after the round budget -- no answer from it".to_string(),
-        ),
-        tool_loop::Outcome::Finished { .. } => {
-            // The order matters and is the whole §3.2 rule: what the MODEL CALLED is the answer. A
-            // thinking server often puts its `"joined"` text in the same round as the `drop_words`
-            // call, and reading the prose as well would charge for the stretch twice (the dedupe then
-            // swallows the rest of the take). So: counts the tool accepted, else a refusal the tool
-            // gave, else the prose answer of a round that made no calls at all.
-            if join.kept()
-                || join.dropped_count(crate::tools::textedit::Side::Before)
-                    + join.dropped_count(crate::tools::textedit::Side::After)
-                    > 0
-            {
-                outcome_of(&join)
-            } else if !refusals.is_empty()
-                && final_body.as_deref().map(empty_answer).unwrap_or(true)
-            {
-                // The last reason the TOOL gave, quoted unchanged: the rule that refused it lives in
-                // `Join`, and a copy of its sentence here would be a second rule. Only when that last
-                // round carried no prose of its own — a model that says something instead of calling is
-                // answering, and `judge` below is the door that reads an answer.
-                tool_refusal_outcome(&refusals)
-            } else if let Some(body) = final_body.as_deref() {
-                judge(&answer_of("application/json", body), before, after)
-            } else {
-                Outcome::Refused("answered with nothing to read".to_string())
+    let body = match chat_body_with(&model, &messages0(&system, &user)) {
+        Ok(body) => body.to_string(),
+        Err(reason) => {
+            return Answered {
+                outcome: Outcome::Refused(reason),
+                settled: true,
+                reply: String::new(),
+                failed: true,
+                from_cache: false,
             }
         }
     };
-    // A transport failure is not a refusal of an answer: the join is not retried against a server that
-    // is not there, and nothing is cached.
-    if let Some(reason) = wire_error {
-        return Answered {
-            outcome: Outcome::Refused(reason),
-            settled: true,
-            reply: String::new(),
-            failed: true,
-            from_cache: false,
-        };
-    }
+    // §3.5: one ask, no tools: the answer is the quoted words, read in one place (`joins::answer_join`). The
+    // first rewrite offered drop_words/keep_join beside a prompt that asked for the joined text, and the model,
+    // told two things at once, answered nothing usable at 125 of 127 asks.
+    let sent = match crate::llm_retry_leg::chat(
+        joins::STEP,
+        tree,
+        &base,
+        &endpoint,
+        &body,
+        cancelled,
+        &crate::ui::window::log_line,
+    ) {
+        Ok(sent) => sent,
+        // A transport failure is not a refusal of an answer: the join is not retried against a server that
+        // is not there, and nothing is cached.
+        Err(reason) => {
+            return Answered {
+                outcome: Outcome::Refused(reason),
+                settled: true,
+                reply: String::new(),
+                failed: true,
+                from_cache: false,
+            }
+        }
+    };
+    let reply = answer_of(&sent.content_type, &sent.body);
+    let outcome = judge(&reply, before, after);
     if outcome.usable() {
-        // Cached only when usable (§F1.10): a refusal must go out again rather than be replayed from
-        // the slot it failed in. A PROSE flow stores the round that ended it, unchanged; a TOOL flow
-        // stores the answer its accepted calls came to, in that same prose shape, so one reader
-        // (`judge`, in the cache branch above) answers both and a re-press costs no socket at all.
-        let store_body = match calls.last() {
-            Some(answer) => Some(answer.clone()),
-            None => final_body.clone(),
-        };
-        if let Some(body) = store_body {
-            // §6: what is filed is an ANSWER — `{"joined":…}` for a prose round, `drop_answer`'s text for
-            // a tool round — because that is exactly what the cache branch hands `judge`. Wrapping it in a
-            // reply envelope here would bury it one layer below anything that reads it back: the wire's own
-            // envelope was already taken off by `turn_of`/`answer_of` before this point.
-            llm_cache::store(tree, joins::STEP, &parts, body.as_str());
-        }
+        // Cached only when usable (§F1.10): a refusal must go out again rather than be replayed from the slot
+        // it failed in. What is filed is the answer itself, which the cache branch above reads through `judge`.
+        llm_cache::store(tree, joins::STEP, &parts, reply.as_str());
     }
     Answered {
         outcome,
         settled: true,
-        reply: final_body.unwrap_or_default(),
+        reply,
         failed: false,
         from_cache: false,
-    }
-}
-
-/// The answer a set of accepted `drop_words` counts is worth, in the one shape this door reads back:
-/// the joined text, spelled as the words kept (everything shown, minus what went). Storing THAT rather
-/// than the raw calls is what lets a cached tool answer be read by `judge` with no second parser, and
-/// it is honest about what the flow decided — the drops, not the round that announced them.
-fn drop_answer(
-    before: &[String],
-    after: &[String],
-    before_gone: usize,
-    after_gone: usize,
-) -> String {
-    let mut kept: Vec<&str> = before
-        .iter()
-        .map(String::as_str)
-        .take(before.len().saturating_sub(before_gone))
-        .collect();
-    kept.extend(after.iter().map(String::as_str).skip(after_gone));
-    serde_json::json!({ "joined": kept.join(" ") }).to_string()
-}
-
-/// The name a side is answered under, the same one `Join` prints in its own tool replies.
-fn side_name(side: crate::tools::textedit::Side) -> &'static str {
-    match side {
-        crate::tools::textedit::Side::Before => "before",
-        crate::tools::textedit::Side::After => "after",
     }
 }
 
@@ -411,212 +242,11 @@ fn judge(reply: &str, before: &[String], after: &[String]) -> Outcome {
     joins::answer_join(&mut join, reply, before, after)
 }
 
-/// The join's answer when a tool flow ended with the TOOL refusing everything and the last round
-/// carried no prose of its own: the last reason, quoted unchanged. `Join` owns the rule that refused
-/// it, so copying a sentence here would be a second rule — this only picks which one to say.
-/// Public because the live path calls it and the test that pins the wording reaches it the same way.
-pub fn tool_refusal_outcome(refusals: &[String]) -> Outcome {
-    Outcome::Refused(
-        refusals
-            .last()
-            .map(|reason| refusal_reason(reason))
-            .unwrap_or_else(|| "answered with nothing to read".to_string()),
-    )
-}
-
-/// Whether a reply body carries no answer text at all — the shape of a plain `finish` call, which
-// means the model had nothing to say and the tool's own refusals are the whole of its answer.
-fn empty_answer(body: &str) -> bool {
-    answer_of("application/json", body).trim().is_empty()
-}
-
-/// The outcome a `Join` arrived at: `keep_join` wins, else the counts its accepted calls added up
-/// to, else nothing was dropped and the seam stands as it was (`Kept`).
-fn outcome_of(join: &Join) -> Outcome {
-    let before_gone = join.dropped_count(crate::tools::textedit::Side::Before);
-    let after_gone = join.dropped_count(crate::tools::textedit::Side::After);
-    if join.kept() {
-        Outcome::Kept
-    } else if before_gone + after_gone > 0 {
-        Outcome::Applied {
-            before: before_gone,
-            after: after_gone,
-        }
-    } else {
-        Outcome::Kept
-    }
-}
-
-/// Run one tool call through the SAME door the live loop uses. Named `_for_test` because nothing in
-/// the program reaches for it: the loop hands calls to its own closure, which wraps `run_one`.
-pub fn call_for_test(
-    asked: &crate::exchanges::ToolCall,
-    join: &mut Join,
-    refusals: &mut Vec<String>,
-) -> String {
-    live_call(asked, join, refusals)
-}
-
-/// Answer one shared read through the SAME door the live loop uses (`read_answer` runs before
-/// `live_call` there), so a test of the read and the loop cannot drift apart. `None` is the loop's
-/// own signal that the call is one of the job's tool calls rather than a shared read.
-pub fn read_for_test(
-    asked: &crate::exchanges::ToolCall,
-    user_context: &str,
-    before: &[String],
-    after: &[String],
-) -> Option<String> {
-    read_answer(user_context, asked, before, after)
-}
-
-/// The `Outcome` a `Join` arrived at, for the case that pins a tool answer against a prose answer.
-pub fn outcome_for_test(join: &Join) -> Outcome {
-    outcome_of(join)
-}
-
-/// The body a seam's ask would send, with this job's tools offered. The one thing a caller cannot get
-/// from the live path without a socket: it proves the offer and the thinking flag ride together.
+/// The body a seam's ask sends, for a test that pins its shape: thinking on, and no tools offered (§3.5).
 pub fn body_for_test(shown: &[String]) -> String {
-    let messages = messages0("system wording", &shown.join(" "));
-    let offered = tools::offered(Job::Joins);
-    chat_body_with("test-model", &messages, Some(&offered))
+    chat_body_with("test-model", &messages0("system wording", &shown.join(" ")))
         .map(|v| v.to_string())
         .unwrap_or_default()
-}
-
-/// The live loop's tool door: run one call, keep the refusal it produced if it produced one (the
-/// model still gets the tool's own `{"error": …}` text back — §3.2's correction loop — and the caller
-/// keeps the reason for the join's own refusal line). One pass over `run_one`, so an accepted drop is
-/// never counted twice.
-/// The shared reads for one join ask, answered from the two sides in hand.
-///
-/// §3.1 offers `get_context`, `get_lines`, `get_events` and `get_frames` to this job, and §3's rule is that
-/// a read gets an answer or an actionable error — never silence, which a model reads as a tool that does
-/// not exist. Only the two reads this job actually HAS are answered here: the seam's two sides are its
-/// lines, and a join ask carries no pictures and no event log, so `get_events` and `get_frames` come back
-/// as the honest refusal `tool_reads` gives an empty batch. (`get_frames` belongs to the passes that are
-/// shown frames — describe, the cut, and the §3.7 clip passes, which answer it from their own batch.)
-fn read_answer(
-    user_context: &str,
-    asked: &crate::exchanges::ToolCall,
-    before: &[String],
-    after: &[String],
-) -> Option<String> {
-    if !matches!(
-        asked.name.as_str(),
-        "get_context" | "get_lines" | "get_frames"
-    ) {
-        return None;
-    }
-    // The two sides of THIS seam, numbered the way the request numbered them: before first, then after,
-    // one shown run per row so `get_lines(from, to)` counts the words the brief displayed.
-    let lines: Vec<crate::textfmt::Line> = before
-        .iter()
-        .chain(after.iter())
-        .enumerate()
-        .map(|(index, text)| crate::textfmt::Line {
-            start: index as f64,
-            end: index as f64,
-            speaker: String::new(),
-            text: text.clone(),
-        })
-        .collect();
-    let ctx = tool_reads::Context {
-        user_context,
-        job: Job::Joins,
-        // §10 gives the text edit nothing the model may set: the seam bounds are the tool's own rules
-        // (`SEAM_MAX_WORDS`, `SEAM_CEIL`), not fields of `naivepost.json`, so there is nothing to name.
-        policy: &[],
-        lines: &lines,
-        events: &[],
-        frames: &[],
-    };
-    tool_reads::dispatch(&ctx, asked)
-}
-
-/// The join's two sides in `tool_reads`' numbering: every shown word of the before side, then of the
-/// after side, as one line each so `get_lines(from, to)` counts the way the brief showed them. Kept
-/// inside [`read_answer`] rather than passed in, so a read can never be answered about a seam other than
-/// the one this call is about.
-fn live_call(
-    asked: &crate::exchanges::ToolCall,
-    join: &mut Join,
-    refusals: &mut Vec<String>,
-) -> String {
-    let answer = run_one(asked, join);
-    if tool_refused(&answer) {
-        refusals.push(answer.clone());
-    }
-    answer
-}
-
-/// Whether a tool's answer is a refusal — a `{"error": …}` reply the model can act on. Same question
-/// `fix_call` asks of its tools, restated over one JSON read rather than reached into that module for:
-/// the shape is `tools::error`'s, which is this file's own business.
-fn tool_refused(answer: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(answer)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("error")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_string)
-        })
-        .is_some()
-}
-
-/// The reason a refusal gave, for putting in front of the model on the next try and for the log line.
-fn refusal_reason(answer: &str) -> String {
-    serde_json::from_str::<serde_json::Value>(answer)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("error")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_string)
-        })
-        .unwrap_or_default()
-}
-
-/// One tool call answered. The TOOL decides what a legal drop is — the snap bound, the ceilings, one
-/// stretch at the join — and its `{"error": …}` sentence goes back to the model, which is §3.2's
-/// refusal loop. Re-deciding any of it here would be a second copy of a rule `Join` already owns.
-fn run_one(asked: &crate::exchanges::ToolCall, join: &mut Join) -> String {
-    let args: serde_json::Value =
-        serde_json::from_str(&asked.args).unwrap_or_else(|_| serde_json::json!({}));
-    let side = |key: &str| match args.get(key).and_then(|v| v.as_str()) {
-        Some("before") => Some(crate::tools::textedit::Side::Before),
-        Some("after") => Some(crate::tools::textedit::Side::After),
-        _ => None,
-    };
-    let count = || {
-        args.get("count")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize)
-    };
-    match asked.name.as_str() {
-        "drop_words" => match (side("side"), count()) {
-            (Some(side), Some(count)) => join.drop_words(side, count),
-            _ => tools::error("drop_words needs \"side\" (\"before\" or \"after\") and \"count\""),
-        },
-        "keep_join" => join.keep_join(),
-        // §3.5's read: more words than the brief showed, for a seam that looked longer than the
-        // §3.5's read: more words than the brief showed, for a seam that looked longer than the
-        // extract. Reading is not an answer, so it never ends the flow.
-        "get_words" => match (side("side"), count()) {
-            (Some(side), Some(count)) => tools::ok(&serde_json::json!({
-                "side": side_name(side),
-                "words": join.get_words(side, count),
-            })),
-            _ => tools::error("get_words needs \"side\" (\"before\" or \"after\") and \"count\""),
-        },
-        "finish" => tools::ok(&serde_json::json!({
-            "finished": true,
-            "dropped_before": join.dropped_count(crate::tools::textedit::Side::Before),
-            "dropped_after": join.dropped_count(crate::tools::textedit::Side::After),
-        })),
-        other => tools::error(&format!("{other} is not one of this job's tools")),
-    }
 }
 
 /// SYSTEM for a join call: the house rules cut to textedit's sections, the job's own wording, and
@@ -633,13 +263,7 @@ fn join_system(context: &str) -> String {
     )
 }
 
-/// The chat body: thinking on (`joins::thinking_on`), with this job's tools offered when there are
-/// any. `None` for the tools means the same request minus the `tools` key — what §2 S5 resends to a
-/// server that refuses the field.
-/// [`chat_body_with`] over the two starting messages, with no tools offered: the shape a §2 S5 resend
-/// takes to a server that refuses the field. The live loop performs that resend itself (see `ask_at`),
-/// so nothing calls this — kept out rather than carried under an `allow(dead_code)` that would let the
-/// next reader believe it is the bare-body door.
+/// The two messages of a join ask: the system prompt and the request.
 fn messages0(system: &str, user: &str) -> Vec<Message> {
     vec![
         Message {
@@ -653,12 +277,8 @@ fn messages0(system: &str, user: &str) -> Vec<Message> {
     ]
 }
 
-/// [`chat_body`] over a conversation the tool loop has grown, with the offer it wants sent.
-fn chat_body_with(
-    model: &str,
-    conversation: &[Message],
-    offered: Option<&[Tool]>,
-) -> Result<serde_json::Value, String> {
+/// The chat body of a join ask: thinking on (§4, `joins::thinking_on`), streamed, and no tools offered (§3.5).
+fn chat_body_with(model: &str, conversation: &[Message]) -> Result<serde_json::Value, String> {
     // §4's "every call is streamed": the request ASKS for `stream`, and the reader routes on the RESPONSE's
     // content type (`llm_request::reply_from` / `is_event_stream`), so a server that answers plain JSON to a
     // streaming request is still read correctly. That is what lets a one-shot fake keep answering while the
@@ -669,7 +289,7 @@ fn chat_body_with(
         model,
         conversation,
         crate::prompts::mode_of("textedit"),
-        offered,
+        None,
         true,
     )
 }
@@ -744,7 +364,13 @@ pub struct Pass {
 /// later seam see a clean join: showing it what an earlier seam already removed made the
 /// one-stretch check count that stretch here and refuse an answer that was right (join 22 of the
 /// ETH lecture, fixed 2026-09-18).
-pub fn run_seams(tree: &Tree, project: &Project, words: &[Word], times: &[(f64, f64)]) -> Pass {
+pub fn run_seams(
+    tree: &Tree,
+    project: &Project,
+    words: &[Word],
+    times: &[(f64, f64)],
+    reached: &mut dyn FnMut(f64, &str),
+) -> Pass {
     let total = words.len();
     let mut kept = vec![true; total];
     // What was standing when the pass began, so the whole-take flag below can tell a word this pass
@@ -768,24 +394,40 @@ pub fn run_seams(tree: &Tree, project: &Project, words: &[Word], times: &[(f64, 
     let cancelled = cancel_leg::cancel_check_now();
     let mut applied = 0usize;
     let mut from_cache = 0usize;
+    // Joins whose every ask ended without a usable answer: kept as recorded, and said loudly at the end, since
+    // a pass that quietly kept every stumble reads exactly like one that found none.
+    let mut unanswered = 0usize;
     for (index, seam) in seams.iter().enumerate() {
         let k = index + 1;
+        // Each join is a thinking ask that can take minutes: say which one is asked, so the bar moves and the
+        // status names it, instead of standing still for the whole pass.
+        reached(
+            index as f64 / n as f64,
+            &format!("repairing join {k} of {n}"),
+        );
         let before = window_before(words, &kept, *seam);
-        let after = window_after(words, &kept, *seam);
+        // AFTER is the take that follows and stops where the next one starts: past it lies the NEXT join's
+        // stumble, which the model took for this one's and cut into the good take (07-news, 2026-10-26).
+        let until = seams.get(index + 1).copied().unwrap_or(words.len());
+        let after = window_after(words, &kept, *seam, until);
+        let wide = joins::wide_view(words, &kept, *seam, &seams, WIDE_WORDS);
         if before.is_empty() || after.is_empty() {
             // Nothing standing on one side: there is no join left to ask about here.
             continue;
         }
         let mut asking = Asking::start(retries);
+        let mut last_refusal: Option<String> = None;
         loop {
             let answered = ask(
                 tree,
                 &project.context,
                 k,
                 n,
+                &wide,
                 &before,
                 &after,
                 asking.attempt,
+                last_refusal.as_deref(),
                 &cancelled,
             );
             match answered.outcome {
@@ -813,6 +455,7 @@ pub fn run_seams(tree: &Tree, project: &Project, words: &[Word], times: &[(f64, 
                     if answered.failed {
                         pass.logs
                             .push(joins::refusal_line(k, &reason, "nothing removed there"));
+                        unanswered += 1;
                         break;
                     }
                     match asking.refused() {
@@ -823,12 +466,18 @@ pub fn run_seams(tree: &Tree, project: &Project, words: &[Word], times: &[(f64, 
                                 &reason,
                                 "nothing removed there",
                             ));
+                            unanswered += 1;
                             break;
                         }
                     }
+                    // The retry is told why, so it does not answer the same way again.
+                    last_refusal = Some(reason);
                 }
             }
         }
+    }
+    if unanswered > 0 {
+        pass.logs.push(unanswered_log(unanswered, n));
     }
     pass.by_seams = kept.iter().filter(|keep| !**keep).count();
     // The seconds actually spoken, which F1.11 asks for when it decides whether a retake's onset is
@@ -903,6 +552,15 @@ pub fn run_seams(tree: &Tree, project: &Project, words: &[Word], times: &[(f64, 
 /// "did I speak at all" check, have one thing to look for.
 pub const JOIN_PREFIX: &str = ">>> text edit:";
 
+/// How many standing words the wide view shows either side of a join: enough for the sentence a restart
+/// started in, and the one before it.
+pub const WIDE_WORDS: usize = 60;
+
+/// The pass's loud line when joins ended with no usable answer: they are kept as recorded, stumbles and all.
+pub fn unanswered_log(unanswered: usize, n: usize) -> String {
+    format!("!!! text edit: {unanswered} of {n} join(s) got no usable answer -- kept as recorded")
+}
+
 /// The `>>> text edit: join k of n: ...` line for an applied seam.
 pub fn applied_log(k: usize, n: usize, before: usize, after: usize) -> String {
     format!("{JOIN_PREFIX} join {k} of {n}: {before} word(s) off BEFORE, {after} off AFTER")
@@ -928,12 +586,14 @@ pub fn window_before(words: &[Word], kept: &[bool], seam: usize) -> Vec<String> 
     out
 }
 
-/// The AFTER window: the first [`SEAM_REACH_WORDS`] surviving words from the seam on.
-pub fn window_after(words: &[Word], kept: &[bool], seam: usize) -> Vec<String> {
+/// The AFTER window: the first [`SEAM_REACH_WORDS`] surviving words from the seam on, stopping at `until` (where
+/// the next take starts), so a window never runs on into the next join.
+pub fn window_after(words: &[Word], kept: &[bool], seam: usize, until: usize) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let start = seam.min(words.len());
+    let end = until.min(words.len());
     let mut index = start;
-    while index < words.len() && out.len() < SEAM_REACH_WORDS {
+    while index < end && out.len() < SEAM_REACH_WORDS {
         if kept.get(index).copied().unwrap_or(true) {
             out.push(words[index].written.clone());
         }

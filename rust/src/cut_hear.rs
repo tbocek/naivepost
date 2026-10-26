@@ -257,12 +257,6 @@ pub const VOLUME_DEFAULT: f64 = 1.0;
 /// tells a person why moving it changed nothing they rendered.
 pub const VOLUME_TIP: &str = "preview volume — the players only; nothing that is rendered, and the same setting wherever it is shown";
 
-/// F2.5 S6: the word beside the slider, so the trough is identifiable without hovering. The inventory
-/// asks for "icon + 0..100, 120 px, shared tooltip" (`spec/inventory/cut.md` §D item 2) and the
-/// prototype draws a speaker glyph there; this one spells the icon as a WORD because the headless
-/// container has no icon theme, where a themed icon renders as a blank box — a word always draws.
-pub const VOLUME_LABEL: &str = "preview volume";
-
 /// F2.5 S6: the slider's 0..100 held to what a gain means. Below nought is silence, not a phase flip,
 /// and above full travel is full travel.
 pub fn clamp_volume(v: f64) -> f64 {
@@ -476,6 +470,39 @@ pub fn lane_is_heard_anywhere(cut: &Cut, lanes: &[&str]) -> bool {
     cut.segs
         .iter()
         .any(|seg| seg.ins.is_empty() && lanes.iter().any(|lane| seg.hears(lane)))
+}
+
+/// §05-cut §1's per-row sound switch: does any kept scene shown from `row` still play that row's own footage
+/// sound? A camera row's own sound is the scene's `mute` property (S2), not a listed lane, so the row's switch
+/// reads it there. ON while one scene still plays it, as a lane's switch is.
+pub fn row_is_heard_anywhere(cut: &Cut, row: i32) -> bool {
+    cut.segs
+        .iter()
+        .any(|seg| seg.ins.is_empty() && seg.cam == row && footage_sound_heard(seg))
+}
+
+/// §05-cut §1's per-row sound switch, pressed: silence the footage's own sound in every kept scene shown from
+/// `row`, or bring it back, and say which happened. The same three answers as [`toggle_lane_all`]: nothing to
+/// cut with yet, then off or on with how many scenes moved. An insert is not shown from a row and keeps its own
+/// `mute`, which is its "play it silent" tick (F2.7).
+pub fn toggle_row_all(cut: &mut Cut, row: i32, name: &str) -> String {
+    let from_row = |seg: &Seg| seg.ins.is_empty() && seg.cam == row;
+    if !cut.segs.iter().any(from_row) {
+        return format!("{name} is in no scene yet \u{2014} cut something first");
+    }
+    let on = row_is_heard_anywhere(cut, row);
+    let mut changed = 0usize;
+    for seg in cut.segs.iter_mut().filter(|seg| from_row(seg)) {
+        if seg.mute != on {
+            seg.mute = on;
+            changed += 1;
+        }
+    }
+    if on {
+        format!("{name} sound off for the whole cut \u{2014} {changed} scene(s) changed")
+    } else {
+        format!("{name} sound is on for the whole cut \u{2014} every scene plays it ({changed} changed)")
+    }
 }
 
 /// F2.10 S2 (`the gutter switch toggles a lane for the whole cut`): silence these lanes in every scene that

@@ -12,7 +12,6 @@ use std::path::Path;
 use crate::add_sources::is_video;
 use crate::clock;
 use crate::project::{Project, Source};
-use crate::rescan;
 use crate::run::NARRATOR_SLOTS;
 
 /// The key to a row's four symbols, appended to each of their tooltips so the three the pointer is
@@ -185,34 +184,32 @@ pub fn toggle_footage(project: &mut Project, index: usize, on: bool) -> bool {
     true
 }
 
-/// The narrator button's cycle: the lowest free slot, and once it holds one (or all four are taken)
-/// back to nobody — "cycling free slots 1..N then none".
+/// The voice button's cycle: 1 → 2 → … → N → 1. There is no "no voice": every recording is somebody.
 ///
-/// Nobody else is moved to make room: a row that already holds a slot is somebody the user named. But
-/// a cycle can vacate slot 1, and slot 1 is auto-filled whenever unheld, so it is asked for here.
+/// Nobody else is moved to make room: a row that already holds a slot is somebody the user named. And a
+/// click that empties slot 1 leaves it empty: the auto-fill is for an add, a removal, a rescan or a load
+/// (§4), not for a person's own click. Refilling here handed slot 1 to another row behind the user's back,
+/// or straight back to the row just clicked, so the click did nothing.
 pub fn cycle_narrator(project: &mut Project, index: usize) -> u32 {
     let held = project
         .sources
         .get(index)
         .map(|source| source.narrator)
         .unwrap_or(0);
-    let next = if held != 0 {
-        0
+    // 1 → … → the last voice → 1. Not exclusive: the number says WHICH VOICE, and one person is usually
+    // every recording of a session, so many rows share 1. A 0 the load has not cleaned yet moves to 1.
+    let next = if held >= NARRATOR_SLOTS as u32 {
+        1
     } else {
-        (1..=NARRATOR_SLOTS as u32)
-            .find(|slot| slot_holder(project, *slot).is_none())
-            .unwrap_or(0)
+        held + 1
     };
     if let Some(source) = project.sources.get_mut(index) {
         source.narrator = next;
     }
-    if slot_holder(project, 1).is_none() {
-        rescan::fill_slot_1(project);
-    }
     next
 }
 
-/// Which row holds this narrator slot.
+/// The first row with this voice number.
 pub fn slot_holder(project: &Project, slot: u32) -> Option<usize> {
     project
         .sources
@@ -220,14 +217,25 @@ pub fn slot_holder(project: &Project, slot: u32) -> Option<usize> {
         .position(|source| source.narrator == slot && slot != 0)
 }
 
+/// A narrator MICROPHONE: a recording with a voice number that the video does not play (audio only), so its
+/// words are heard by the app and are not film: no seam into it is a seam in the cut, no retake is marked in
+/// it, and the transcript labels it as the commentary. A video with a voice number is only "voice N speaks
+/// here": its words are the film's. The first rewrite read every tagged row as a microphone, so a tagged
+/// camera recording's words were left out of the joins and the retake marking.
+pub fn is_narrator_mic(source: &Source) -> bool {
+    source.narrator != 0 && !source.footage
+}
+
 /// The tooltip §4 puts on the narrator button: what the row is now, and that a click moves it on. Slot
 /// 1 gets the extra sentence because it is the one that matters (F2.14 reads it as the narration's
 /// voice).
 pub fn slot_tip(slot: u32) -> String {
     match slot {
-        0 => "no narrator \u{2014} click to make this voice 1".into(),
-        1 => "the narration is spoken by this voice (1) \u{2014} click for the next slot".into(),
-        slot => format!("narrator slot {slot} \u{2014} click back to no narrator"),
+        0 | 1 => "voice 1: the narration is spoken in this voice \u{2014} click for voice 2".into(),
+        slot if slot >= NARRATOR_SLOTS as u32 => {
+            format!("voice {slot} \u{2014} click for voice 1")
+        }
+        slot => format!("voice {slot} \u{2014} click for voice {}", slot + 1),
     }
 }
 
@@ -240,9 +248,23 @@ pub fn warning(source: &Source) -> Option<&'static str> {
         .then_some(WARN_TIP)
 }
 
-/// The stored path of whoever speaks this slot — §5's lane naming and Produce's readouts both want it.
+/// The recording a voice is taken from: its dedicated microphone when it has one, else the first recording
+/// with that number (§5's lane naming, Narrate's voice and Produce's readouts all want one file).
 pub fn narrator_of(project: &Project, slot: u32) -> Option<&str> {
-    slot_holder(project, slot).map(|index| project.sources[index].path.as_str())
+    if slot == 0 {
+        return None;
+    }
+    project
+        .sources
+        .iter()
+        .find(|source| source.narrator == slot && !source.footage)
+        .or_else(|| {
+            project
+                .sources
+                .iter()
+                .find(|source| source.narrator == slot)
+        })
+        .map(|source| source.path.as_str())
 }
 
 /// 🗑 Remove from this session. The list *is* the session (spec/01 §1), so dropping a row is how a
@@ -253,11 +275,7 @@ pub fn remove(project: &mut Project, index: usize) -> Option<Source> {
     if index >= project.sources.len() {
         return None;
     }
-    let gone = project.sources.remove(index);
-    if slot_holder(project, 1).is_none() {
-        rescan::fill_slot_1(project);
-    }
-    Some(gone)
+    Some(project.sources.remove(index))
 }
 
 /// The status line after a row was removed: which file left the list, and how many are left in it.
@@ -301,26 +319,20 @@ pub fn clash_status(a: &str, b: &str) -> String {
     )
 }
 
-/// Clear what a hand-edited project cannot mean: two rows in one slot, a slot outside the range the
-/// narrator button can reach, or frames promised out of a file that has none. Each clearing is reported
-/// — silently losing a tag the user typed is worse than a line about it — and only then may slot 1 be
-/// auto-filled, because stripping a bad tag is one of the four moments §4 names (§4: "a load that
-/// stripped a bad tag"). A list that loads clean keeps whatever the user left in slot 1.
+/// Clear what a hand-edited project cannot mean: a voice past the last slot, or frames promised out of a file
+/// that has none, each reported. Several rows in one voice are fine: the number says which voice. A 0, the
+/// "no voice" older files could hold, is voice 1 now and goes unsaid: it is no mistake of the person's.
 pub fn clean_on_load(project: &mut Project, report: &mut Vec<String>) {
-    let mut stripped = false;
-    for index in 0..project.sources.len() {
-        // Read the slot before writing it: whether this row is the holder is a question about the
-        // whole list, and answering it while holding a `&mut` to one row is how this turns into a
-        // borrow checker argument.
-        let slot = project.sources[index].narrator;
-        if slot != 0 && (slot > NARRATOR_SLOTS as u32 || slot_holder(project, slot) != Some(index))
-        {
+    for source in &mut project.sources {
+        if source.narrator > NARRATOR_SLOTS as u32 {
             report.push(format!(
-                "{}: slot {slot} is taken -- untagged",
-                base_name(&project.sources[index].path)
+                "{}: voice {} is past the last one -- voice 1",
+                base_name(&source.path),
+                source.narrator
             ));
-            project.sources[index].narrator = 0;
-            stripped = true;
+            source.narrator = 1;
+        } else if source.narrator == 0 {
+            source.narrator = 1;
         }
     }
     for source in &mut project.sources {
@@ -330,32 +342,8 @@ pub fn clean_on_load(project: &mut Project, report: &mut Vec<String>) {
                 base_name(&source.path)
             ));
             source.footage = false;
-            stripped = true;
         }
     }
-    if stripped && slot_holder(project, 1).is_none() {
-        rescan::fill_slot_1(project);
-    }
-}
-
-/// Seat a narrator when a load left slot 1 unheld, and say who took it.
-///
-/// §4 wants slot 1 filled "whenever unheld", and one of its four moments is a load — but not every load
-/// strips a flag: `open_project::apply` drops the rows whose file has gone BEFORE [`clean_on_load`] runs,
-/// so when the dropped row was slot 1's holder nothing was stripped and the session would open with no
-/// narrator at all. A strip is therefore not the only door to the auto-fill; this is the other one.
-/// Silent while slot 1 is held, so a project that loads as written stays quiet (§4 keeps whatever the
-/// user left in slot 1).
-pub fn fill_after_load(project: &mut Project, report: &mut Vec<String>) -> Option<String> {
-    if slot_holder(project, 1).is_some() {
-        return None;
-    }
-    let seated = rescan::fill_slot_1(project)?;
-    report.push(format!(
-        "{} is the narrator now -- slot 1 was empty",
-        base_name(&seated)
-    ));
-    Some(seated)
 }
 
 /// The track popover's checks. The last ticked track cannot be unticked: a row with no track would
@@ -364,17 +352,31 @@ pub fn tick_track(project: &mut Project, index: usize, track: u32, on: bool) -> 
     let Some(source) = project.sources.get_mut(index) else {
         return false;
     };
-    if !on && source.tracks.len() == 1 && source.tracks.contains(&track) {
+    // An empty list is the first stream alone (01 §2), so a tick on such a row starts from that.
+    let mut ticked = ticked_tracks(source);
+    if !on && ticked.len() == 1 && ticked.contains(&track) {
         return false;
     }
-    source.tracks.retain(|held| *held != track);
+    ticked.retain(|held| *held != track);
     if on {
-        source.tracks.push(track);
+        ticked.push(track);
     }
     // Sorted and deduped, so the lane order follows the file's own stream order.
-    source.tracks.sort_unstable();
-    source.tracks.dedup();
+    ticked.sort_unstable();
+    ticked.dedup();
+    source.tracks = ticked;
     true
+}
+
+/// The audio streams a row hears, as 0-based stream indices (01 §2's `tracks`): what it lists, or the first
+/// stream alone when it lists none, which is how a project written before the menu existed reads. The first
+/// rewrite read an empty list as nothing ticked: a two-stream row showed "0/2" with both ticks off.
+pub fn ticked_tracks(source: &Source) -> Vec<u32> {
+    if source.tracks.is_empty() {
+        vec![0]
+    } else {
+        source.tracks.clone()
+    }
 }
 
 /// Whether the row's track button is dimmed: §4 dims it "while any track is out", and which streams
@@ -390,7 +392,7 @@ pub fn tracks_face(source: &Source, stream_count: usize) -> Option<String> {
     if stream_count < 2 {
         return None;
     }
-    Some(format!("{}/{}", source.tracks.len(), stream_count))
+    Some(format!("{}/{}", ticked_tracks(source).len(), stream_count))
 }
 
 /// Each ticked track becomes a lane, mixed like a separate recording (§4). Cut's §5 is the authority on

@@ -35,10 +35,14 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
 
     // Nothing selected at first: the cross is insensitive, so it cannot pretend there is something to
     // clear, and the readout shows the unclicked face rather than a zero-length span.
+    // §1's ✕ on the selection is a mark the band draws (badge 27); `clear-selection` stays in the tree, unseen,
+    // as the door it fires, and its sensitivity still says whether there is anything to clear.
     let cross = ui::clear_selection_button(&window).expect("the Cut page carries clear-selection");
     assert!(
-        cross.is_mapped(),
-        "the cross is drawn on the visible Cut page"
+        !ui::cut_band_marks::placed_on(&window)
+            .iter()
+            .any(|placed| placed.mark == ui::cut_band_marks::Mark::SelectionCross),
+        "no band, so the band draws no selection cross"
     );
     assert!(
         !cross.is_sensitive(),
@@ -57,25 +61,9 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
         "the empty readout is the module's own unclicked text"
     );
 
-    // The drag surface is really there and really carries a gesture.
-    let area = ui::select_surface(&window).expect("the Cut page carries select-surface");
-    println!(
-        "LAYOUT select-surface width={} height={} mapped={}",
-        area.width(),
-        area.height(),
-        area.is_mapped()
-    );
-    assert!(area.is_mapped(), "the drag surface is mapped");
-    assert!(
-        area.width() > 40,
-        "surface wide enough to drag on, got {} px",
-        area.width()
-    );
-    assert!(
-        area.height() >= 48,
-        "surface tall enough, got {} px",
-        area.height()
-    );
+    // The placeholder drag surface still carries its gesture (the painted band carries its own, F2.6 on the
+    // tape); it is driven here the toolkit's way.
+    ui::select_surface(&window).expect("the Cut page carries select-surface");
     let gesture = ui::selection_gesture(&window).expect("the surface carries a drag gesture");
 
     // Fire the drag the way the toolkit does. The handler converts x to session seconds at PPS, so a
@@ -119,7 +107,7 @@ fn check_a_real_drag_selects_and_the_cross_clears(app: &adw::Application) {
         "a band replaces the empty text"
     );
 
-    // And the cross woke up because there is now something to clear.
+    // And the cross woke up because there is now something to clear, on the band as well as on its door.
     assert!(cross.is_sensitive(), "holding a band makes the cross live");
 
     // S2: press the real cross.

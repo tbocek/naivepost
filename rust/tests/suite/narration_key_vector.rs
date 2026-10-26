@@ -155,7 +155,7 @@ fn run_round(app: &adw::Application) {
 
     let tree = session_tree();
     let mut project = Project::default();
-    project.language = "en".to_string();
+    project.policy.language.value = "en".to_string();
     project.sources.push(Source {
         path: "/media/take.mp4".into(),
         footage: true,
@@ -223,21 +223,19 @@ fn run_round(app: &adw::Application) {
         playing: false,
         started: false,
         busy: false,
-        narration_off: false,
         covered_spans: vec![],
-        language: "en".into(),
+        language: "en".to_string(),
     });
     ui::refresh(&window);
     settle();
 
     button(&window, "line-speak-0").emit_by_name::<()>("clicked", &[]);
+    // The dial runs on a worker (§03-shell §1); the take lands, and is heard, when it answers.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
-    for _ in 0..40 {
-        if vector_named.is_file() {
-            break;
-        }
-        settle();
-    }
 
     let said = status_text(&window);
     assert!(

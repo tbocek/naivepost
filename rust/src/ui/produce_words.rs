@@ -65,6 +65,7 @@ fn build(parent: &adw::ApplicationWindow, current: &str, with_remove: bool) -> a
     // words it was opened to change. Multi-line on purpose — §A's sentence says "Enter starts a new line",
     // and the box is sized for about three lines so a two-line title fits without scrolling.
     let view = gtk::TextView::new();
+    crate::ui::margins::text_box(&view);
     view.set_widget_name("words-dialog-entry");
     view.set_wrap_mode(gtk::WrapMode::Word);
     view.buffer().set_text(current);

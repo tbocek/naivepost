@@ -255,16 +255,17 @@ fn toggle_check(app: &adw::Application) -> Result<(), String> {
     Ok(())
 }
 
-/// The same press clear of every overlay box stays the framing question it was: no play, no pause.
+/// The same press clear of every overlay box is the same click (§06 F3.1 after S5, §05 F2.1 S2): it plays, and
+/// it frames nothing. The first rewrite kept it §F3.1's framing press, so it opened a zoom form and never played.
 fn clear_check(app: &adw::Application) -> Result<(), String> {
     let window = page_with_a_caption(app);
     // Top-left corner: outside the lower third, so nothing here belongs to F3.4 S5.
     press_the_panel(&window, (2.0, 2.0));
-    if ui::preview_player(&window).transport.playing {
-        return Err(
-            "a press clear of every overlay box started the preview \u{2014} it must stay §F3.1's"
-                .into(),
-        );
+    if !ui::preview_player(&window).transport.playing {
+        return Err("a press clear of every overlay box did not start the preview".into());
+    }
+    if ui::zoom_form_open().is_some() || ui::held_effect().is_some() {
+        return Err("a press clear of every overlay box framed a zoom; a click only plays".into());
     }
     Ok(())
 }

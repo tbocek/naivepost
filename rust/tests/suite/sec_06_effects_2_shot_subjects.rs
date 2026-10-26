@@ -318,6 +318,8 @@ fn probe_scene(cut: &Cut, width: i32) -> naivepost::ui::cut_tracks::Scene {
             start: 0.0,
             end: 400.0,
         }],
+        recording_rows: Vec::new(),
+        marks: Default::default(),
         folds: Vec::new(),
         selection: None,
         watched_row: None,
@@ -522,7 +524,8 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_lane_file_shows_a_wash_per_e
 
     // The negative half: at a second with NO effect the pixel is the plain ground. Without this a flat image of
     // one colour would satisfy every assert above.
-    let empty_x = (clear_second(&cut, width) * snapshot_lane::PPS) as i32;
+    let empty_x =
+        (naivepost::cut_screen::GUTTER_PX + clear_second(&cut, width) * snapshot_lane::PPS) as i32;
     let bare = pixel(&bytes, stride, empty_x, (geo.top + geo.row_h / 2.0) as i32);
     assert_eq!(
         bare, grounds[empty_x as usize],

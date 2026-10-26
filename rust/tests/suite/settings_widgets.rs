@@ -8,7 +8,6 @@
 //! press tested the *typed* value rather than the file behind it, which lags by
 //! [`naivepost::checks::CONF_SAVE_WAIT`].
 
-use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::common;
@@ -37,10 +36,13 @@ fn window_round() {
         RAN_ALL.store(true, Ordering::SeqCst);
         check_fetch_and_use(app);
         RAN_FETCH.store(true, Ordering::SeqCst);
+        check_a_running_test_leaves_the_window_live(app);
+        RAN_LIVE.store(true, Ordering::SeqCst);
     });
 }
 
 static RAN_TYPED: AtomicBool = AtomicBool::new(false);
+static RAN_LIVE: AtomicBool = AtomicBool::new(false);
 static RAN_FAILED: AtomicBool = AtomicBool::new(false);
 static RAN_ALL: AtomicBool = AtomicBool::new(false);
 static RAN_FETCH: AtomicBool = AtomicBool::new(false);
@@ -48,12 +50,12 @@ static RAN_FETCH: AtomicBool = AtomicBool::new(false);
 /// A provider whose every answer echoes what was typed, so a press that tested anything other than
 /// the box's own text shows up as a wrong verdict string.
 fn echoing() -> Provider {
-    Rc::new(|_key, typed| Ok(format!("{typed} answered")))
+    std::sync::Arc::new(|_key, typed| Ok(format!("{typed} answered")))
 }
 
 /// A provider that fails one chosen key and passes the rest.
 fn one_failure(fails: &'static str, reason: &'static str) -> Provider {
-    Rc::new(move |key, _| {
+    std::sync::Arc::new(move |key, _| {
         if key == fails {
             Err(reason.to_string())
         } else {
@@ -151,14 +153,16 @@ fn check_press_reads_the_typed_value(app: &adw::Application) {
     // installs its own provider this way rather than sharing one across all three.
     // The gear's own dialog is wired to the LIVE provider — a real session has one, and there is no
     // headless stand-in for a chooser — so a press on it now travels the wire instead of answering
-    // "nothing wired". What still has to be loud is that nothing came back: an empty box names no binary,
-    // so the row refuses with its own reason rather than showing a ✓ nobody probed for.
+    // "nothing wired". What still has to be loud is that nothing came back: a name PATH does not have
+    // names no binary, so the row refuses with its own reason rather than showing a ✓ nobody probed for.
+    // (An EMPTY box is `ffmpeg` on PATH, §5, which this machine may well have.)
     ui::entry(&window, "ffmpeg")
         .expect("the ffmpeg row has its value box")
-        .set_text("");
+        .set_text("no-such-ffmpeg-here");
     ui::test_button(&window, "ffmpeg")
         .expect("the ffmpeg row has a Test button")
         .emit_clicked();
+    crate::common::settle();
     let unwired = last_log();
     assert!(
         !unwired.contains("✓")
@@ -176,6 +180,7 @@ fn check_press_reads_the_typed_value(app: &adw::Application) {
     ui::test_button(&window, "ffmpeg")
         .expect("the ffmpeg row has a Test button")
         .emit_clicked();
+    crate::common::settle();
 
     let badge = ui::badge(&window, "ffmpeg").expect("the ffmpeg row has a badge");
     assert_eq!(
@@ -205,6 +210,7 @@ fn check_failure_keeps_its_reason(app: &adw::Application) {
     ui::test_button(&window, "ffmpeg")
         .expect("the ffmpeg row has a Test button")
         .emit_clicked();
+    crate::common::settle();
 
     let badge = ui::badge(&window, "ffmpeg").expect("the ffmpeg row has a badge");
     assert_eq!(
@@ -234,8 +240,9 @@ fn check_failure_keeps_its_reason(app: &adw::Application) {
     );
 }
 
-/// "Test All" through the widgets: six kinds, six lines, in order, and the rows after the failing
-/// one still carry their own \u{2713}.
+/// "Test All" through the widgets: every row with a Test button (§5: "Test All runs every test"), each line
+/// once. The rows run side by side, so the lines land in the order they finish, not the dialog's; and the rows
+/// that are not the failing one still carry their own \u{2713}.
 fn check_test_all_reports_every_kind(app: &adw::Application) {
     let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
     let window = ui::build_window(app, &model, "Prepare");
@@ -249,49 +256,64 @@ fn check_test_all_reports_every_kind(app: &adw::Application) {
     ui::test_button(&window, "all")
         .expect("the dialog has a Test All button")
         .emit_clicked();
+    crate::common::settle();
 
     let logs = ui::window_logs();
-    let mine: Vec<&str> = logs[before..].iter().map(String::as_str).collect();
-    assert_eq!(
-        mine.len(),
-        6,
-        "S13: Test All reports all six kinds, got {mine:?}"
-    );
+    // The verdicts only: the dialog's 600 ms save ("settings saved to …") can land while the Tests run.
+    let mine: Vec<&str> = logs[before..]
+        .iter()
+        .map(String::as_str)
+        .filter(|line| !line.contains("settings saved to"))
+        .collect();
     for line in &mine {
         assert!(
             line.starts_with(checks::LOG_PREFIX),
             "S13: every Test All line is mirrored under settings', got {line:?}"
         );
     }
-    let joined = mine.join("\n");
-    let order = [
+    let rows = [
         "LLM:",
         "LLM vision --",
+        "decision model:",
         "ffmpeg:",
         "firefox:",
         "audio.cpp:",
+        "TTS model:",
+        "ASR model:",
+        "diarization model:",
+        "separation model:",
+        "forced aligner:",
         "sd.cpp:",
     ];
-    let mut at = 0usize;
-    for marker in order {
-        let found = joined[at..]
-            .find(marker)
-            .unwrap_or_else(|| panic!("S13: {} missing or out of order in {joined:?}", marker));
-        at += found + marker.len();
+    assert_eq!(
+        mine.len(),
+        rows.len(),
+        "S13: Test All reports all twelve rows, got {mine:?}"
+    );
+    for row in rows {
+        assert_eq!(
+            mine.iter()
+                .filter(|line| line.starts_with(&format!("{} {row}", checks::LOG_PREFIX)))
+                .count(),
+            1,
+            "S13: {row} reported once in {mine:?}"
+        );
     }
     // The kinds AFTER the failing one carry their own marks, which is what shows nothing short-
     // circuited. Read as (key, badge text) pairs so a missing badge names its own row rather than
     // aborting inside a shared `expect`.
-    let marks: Vec<(String, String)> = ["llm", "ffmpeg", "firefox", "audio", "sd"]
-        .iter()
-        .map(|key| {
-            let text = ui::badge(&window, key)
-                .unwrap_or_else(|| panic!("S13: no badge-{key} on the dialog"))
-                .text()
-                .to_string();
-            ((*key).to_string(), text)
-        })
-        .collect();
+    let marks: Vec<(String, String)> = [
+        "llm", "ffmpeg", "firefox", "audio", "tts", "asr", "diar", "sep", "aligner", "sd",
+    ]
+    .iter()
+    .map(|key| {
+        let text = ui::badge(&window, key)
+            .unwrap_or_else(|| panic!("S13: no badge-{key} on the dialog"))
+            .text()
+            .to_string();
+        ((*key).to_string(), text)
+    })
+    .collect();
     let not_ok: Vec<&(String, String)> = marks
         .iter()
         .filter(|(_, text)| text != "\u{2713}")
@@ -356,7 +378,7 @@ fn check_fetch_and_use(app: &adw::Application) {
     window.present();
     // A canned `/v1/models` body, shaped as an OpenAI-compatible server answers it.
     let body = r#"{"data":[{"id":"qwen2.5vl:7b"},{"id":"llama3.2:3b"}]}"#.to_string();
-    let provider: Provider = Rc::new(move |key, _| match key {
+    let provider: Provider = std::sync::Arc::new(move |key, _| match key {
         settings::FETCH_KEY => Ok(body.clone()),
         _ => Ok(format!("{key} is fine")),
     });
@@ -411,7 +433,7 @@ fn check_fetch_and_use(app: &adw::Application) {
 
     // A refused fetch marks the cross and reaches the main log with the reason.
     let failing: Provider =
-        Rc::new(|_key, _| Err("connection refused on the typed address".to_string()));
+        std::sync::Arc::new(|_key, _| Err("connection refused on the typed address".to_string()));
     open_canned(&window, failing);
     settings_button_named(&window, "fetch-models-button").emit_clicked();
     settle();
@@ -424,5 +446,73 @@ fn check_fetch_and_use(app: &adw::Application) {
         last_log().contains("connection refused on the typed address"),
         "the reason is mirrored into the main log: {:?}",
         last_log()
+    );
+}
+
+/// §5's "shows a spinner then ✓/✗", and the window stays live meanwhile: a probe that has not answered yet
+/// (the provider holds its answer until this test releases it) leaves the press returned, the row's spinner
+/// turning, and the main loop running. The first port ran the probe inside the click, so the window froze until
+/// it answered and Test All froze it for minutes.
+fn check_a_running_test_leaves_the_window_live(app: &adw::Application) {
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let window = ui::build_window(app, &model, "Prepare");
+    window.present();
+    let release = std::sync::Arc::new(AtomicBool::new(false));
+    let held = std::sync::Arc::clone(&release);
+    open_canned(
+        &window,
+        std::sync::Arc::new(move |key, _| {
+            while !held.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            Ok(format!("{key} answered late"))
+        }),
+    );
+
+    let pressed = std::time::Instant::now();
+    ui::test_button(&window, "ffmpeg")
+        .expect("the ffmpeg row has a Test button")
+        .emit_clicked();
+    assert!(
+        pressed.elapsed() < std::time::Duration::from_secs(1),
+        "§5: the press returns before the probe answers"
+    );
+    // The loop still turns: a timer armed now fires while the probe is held.
+    let ticked = std::rc::Rc::new(std::cell::Cell::new(false));
+    let tick = std::rc::Rc::clone(&ticked);
+    glib::timeout_add_local_once(std::time::Duration::from_millis(30), move || tick.set(true));
+    let context = glib::MainContext::default();
+    let started = std::time::Instant::now();
+    while !ticked.get() && started.elapsed() < std::time::Duration::from_secs(5) {
+        context.iteration(false);
+    }
+    assert!(
+        ticked.get(),
+        "§5: the window keeps running while a Test is out"
+    );
+    let badge = ui::badge(&window, "ffmpeg").expect("the ffmpeg badge");
+    let spinner = badge
+        .prev_sibling()
+        .and_then(|w| w.downcast::<gtk::Spinner>().ok())
+        .expect("§5: the row has a spinner beside its badge");
+    assert!(
+        spinner.is_visible() && spinner.is_spinning(),
+        "§5: the spinner turns while the Test runs"
+    );
+    assert_eq!(badge.text().as_str(), "", "no verdict yet");
+
+    release.store(true, Ordering::SeqCst);
+    crate::common::settle();
+    assert_eq!(badge.text().as_str(), "\u{2713}", "then the verdict lands");
+    assert!(!spinner.is_visible(), "and the spinner goes");
+}
+
+#[test]
+fn f0_13_s11_a_running_test_shows_a_spinner_and_leaves_the_window_live() {
+    common::pin_private_cwd();
+    window_round();
+    assert!(
+        RAN_LIVE.load(Ordering::SeqCst),
+        "the live-window check never ran"
     );
 }

@@ -410,7 +410,11 @@ fn stubs(tag: &str, duration: &str, silences: &[(f64, f64)]) -> PathBuf {
     // The decode's output is made a REAL (silent) wav rather than a copy of the input: the stub has no
     // audio to decode, and §F1.11's envelope reader parses `voice16k.wav` for real, so placeholder bytes
     // would stop the row with "not a RIFF/WAVE file" instead of reaching the models.
-    std::fs::write(dir.join("silence.wav"), silent_wav_bytes(20.0)).expect("the stub's silence");
+    std::fs::write(
+        dir.join("silence.wav"),
+        crate::common::silent_wav_bytes(20.0),
+    )
+    .expect("the stub's silence");
     common::write_script(
         &ffmpeg,
         format!(
@@ -425,26 +429,6 @@ fn stubs(tag: &str, duration: &str, silences: &[(f64, f64)]) -> PathBuf {
             .expect("the stub runs");
     }
     dir
-}
-
-/// A minimal mono 16 kHz `pcm_s16le` wav of `seconds` of silence: a real RIFF header and zeroed data.
-fn silent_wav_bytes(seconds: f64) -> Vec<u8> {
-    let data = vec![0u8; (seconds * 16_000.0) as usize * 2];
-    let mut out: Vec<u8> = Vec::new();
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&((36 + data.len()) as u32).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    out.extend_from_slice(&1u16.to_le_bytes()); // one channel
-    out.extend_from_slice(&16_000u32.to_le_bytes());
-    out.extend_from_slice(&32_000u32.to_le_bytes()); // bytes per second
-    out.extend_from_slice(&2u16.to_le_bytes()); // block align
-    out.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&(data.len() as u32).to_le_bytes());
-    out.extend_from_slice(&data);
-    out
 }
 
 /// The stub's recorded calls, oldest first, one argv per line.
@@ -559,7 +543,17 @@ fn serve(mut stream: TcpStream, port: u16) -> Option<Seen> {
         .nth(1)
         .unwrap_or("/")
         .to_string();
-    let (code, payload) = route(port, &path, &text);
+    // audio.cpp reads an upload as a WAV and refuses one whose header does not hold up, in its own words. A
+    // lossy text copy of a WAV fails exactly here (every non-UTF-8 byte becomes three), so a run that sends
+    // anything but the chunk's own bytes stops the way it stopped against the real server.
+    let (code, payload) = if path.contains("/v1/ui/upload") && !well_formed_wav(&body) {
+        (
+            500,
+            r#"{"error":{"message":"invalid WAV RIFF header","type":"server_error"}}"#.to_string(),
+        )
+    } else {
+        route(port, &path, &text)
+    };
     let framed = format!(
         "HTTP/1.1 {code} Whatever\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
@@ -572,6 +566,15 @@ fn serve(mut stream: TcpStream, port: u16) -> Option<Seen> {
         filename,
         body: text,
     })
+}
+
+/// A RIFF/WAVE file whose RIFF size is its own length less the eight bytes before it: what a WAV reader checks
+/// first.
+fn well_formed_wav(bytes: &[u8]) -> bool {
+    bytes.len() >= 12
+        && &bytes[0..4] == b"RIFF"
+        && &bytes[8..12] == b"WAVE"
+        && u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as usize + 8 == bytes.len()
 }
 
 /// Which reply a request gets. The task kinds are told apart by the model id their envelope names —

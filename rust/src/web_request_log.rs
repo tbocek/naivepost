@@ -36,8 +36,7 @@ pub const KIND_READ: &str = "read";
 /// cache and exchange page: the working copy beside this process's root. `None` when that path is not a
 /// project folder at all, which is the case this module answers by writing nothing.
 pub fn session_tree() -> Option<Tree> {
-    let root = std::env::current_dir().unwrap_or_default();
-    Tree::new(crate::startup::session_dir(&root)).ok()
+    Tree::new(crate::startup::open_dir()).ok()
 }
 
 /// A web row carrying only what the caller knows, before the timing columns.

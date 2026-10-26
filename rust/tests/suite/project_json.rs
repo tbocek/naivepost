@@ -23,9 +23,7 @@ fn sec_01_project_and_files_2_naivepostjson_empty_file_holds_the_table_defaults(
     let p = project::load(t.dir()).expect("loads");
 
     assert!(p.sources.is_empty());
-    assert_eq!(p.interval, 1.0);
-    assert_eq!(p.language, "en");
-    assert!(!p.no_narration);
+    assert_eq!(p.policy.language.value, "en");
     // Inverted on purpose: absent = copy sources in.
     assert!(!p.reference_sources);
     assert_eq!(p.context, "");
@@ -71,14 +69,16 @@ fn sec_01_project_and_files_2_naivepostjson_round_trip_keeps_every_written_key()
             sepvoice: true,
             tracks: vec![0, 1],
         }],
-        interval: 0.5,
-        language: "de".to_string(),
-        no_narration: true,
         reference_sources: true,
         vid_dir: Some("clips".to_string()),
         aud_dir: Some("/srv/mic".to_string()),
         context: "The weekly blockchain lecture".to_string(),
         policy: project::Policy {
+            language: project::Field {
+                value: "de".to_string(),
+                origin: project::Origin::User,
+                because: None,
+            },
             marking_pass: project::Field {
                 value: project::MarkingPass::Joins,
                 origin: project::Origin::User,
@@ -131,15 +131,20 @@ fn sec_01_project_and_files_2_naivepostjson_round_trip_keeps_every_written_key()
             negative: "no words".to_string(),
             description: "the description".to_string(),
         }),
+        // F0.14: the profile this context is filled in from, and this project's own values.
+        profile: Some(project::ProfileUse {
+            name: "News show".to_string(),
+            values: [("title".to_string(), "In the News HS26#6".to_string())]
+                .into_iter()
+                .collect(),
+        }),
     };
 
     project::save(&p, t.dir()).unwrap();
     let text = read(&t);
     for key in [
         "\"sources\"",
-        "\"interval\"",
         "\"language\"",
-        "\"no_narration\"",
         "\"reference_sources\"",
         "\"vid_dir\"",
         "\"aud_dir\"",
@@ -159,20 +164,6 @@ fn sec_01_project_and_files_2_naivepostjson_round_trip_keeps_every_written_key()
     // A stored chooser folder resolves against the root; an absolute one does not.
     assert_eq!(got.vid_dir(&root), root.join("clips"));
     assert_eq!(got.aud_dir(&root), PathBuf::from("/srv/mic"));
-}
-
-#[test]
-fn sec_01_project_and_files_2_naivepostjson_interval_is_always_written_and_clamped() {
-    let (_root, t) = with_file("interval", "{}");
-    project::save(&project::Project::default(), t.dir()).unwrap();
-    assert!(read(&t).contains("\"interval\": 1.0"), "{}", read(&t));
-
-    for (written, want) in [(0.0, 0.25), (60.0, 5.0), (2.0, 2.0)] {
-        let (_root, t) = with_file("interval-clamp", &format!("{{\"interval\": {written}}}"));
-        assert_eq!(project::load(t.dir()).unwrap().interval, want, "{written}");
-    }
-    assert_eq!(project::INTERVAL_MIN, 0.25);
-    assert_eq!(project::INTERVAL_MAX, 5.0);
 }
 
 #[test]
@@ -263,4 +254,90 @@ fn sec_01_project_and_files_2_naivepostjson_chooser_folders_follow_the_path_rule
     p.aud_dir = Some("/srv/mics".to_string());
     assert_eq!(p.vid_dir(root), PathBuf::from("/data/naivepost/shots"));
     assert_eq!(p.aud_dir(root), PathBuf::from("/srv/mics"));
+}
+
+/// §2's `language`, from before it moved into the policy: an old file's top-level key lands in
+/// `policy.language` once, said in the load report, and is never written back at the top level. A file whose
+/// policy already holds a language keeps that one.
+#[test]
+fn sec_01_project_and_files_2_naivepostjson_an_old_top_level_language_moves_into_the_policy() {
+    let (_root, t) = with_file("language-moves", r#"{"language": "de"}"#);
+    let (p, report) = project::load_report(t.dir()).expect("loads");
+    assert_eq!(p.policy.language.value, "de", "the old box's code is kept");
+    assert!(
+        report.iter().any(|line| line.contains("language de moved")),
+        "and the move is said once: {report:?}"
+    );
+    project::save(&p, t.dir()).unwrap();
+    let written: serde_json::Value = serde_json::from_str(&read(&t)).unwrap();
+    assert!(
+        written.get("language").is_none(),
+        "no top-level language is written any more: {written}"
+    );
+    assert_eq!(written["policy"]["language"]["value"], "de");
+
+    let (_root, t) = with_file(
+        "language-kept",
+        r#"{"language": "de", "policy": {"language": {"value": "fr", "source": "model"}}}"#,
+    );
+    let (p, report) = project::load_report(t.dir()).expect("loads");
+    assert_eq!(
+        p.policy.language.value, "fr",
+        "the policy's own language wins over the old key"
+    );
+    assert!(
+        !report.iter().any(|line| line.contains("moved")),
+        "{report:?}"
+    );
+}
+
+/// §01 §2: `no_narration` (the first rewrite's Narration tick) is gone. An older file that still carries it
+/// loads as any other, and a save never writes it back: there is no narration switch (§07 §1).
+#[test]
+fn sec_01_project_and_files_2_naivepostjson_an_older_no_narration_is_ignored_and_never_written() {
+    let (root, t) = with_file(
+        "older-no-narration",
+        r#"{"no_narration": true, "context": "kept"}"#,
+    );
+    let p = project::load(t.dir()).expect("an older file still loads");
+    assert_eq!(p.context, "kept", "the rest of the file is read as before");
+    project::save(&p, t.dir()).unwrap();
+    let text = read(&t);
+    assert!(
+        !text.contains("no_narration"),
+        "the key is never written back: {text}"
+    );
+    std::fs::remove_dir_all(&root).ok();
+}
+
+/// §08 §A's Resolution option `original` is written as §A spells it and read back as itself, and a project the
+/// first rewrite saved with `Original` keeps its choice. That rewrite wrote `Original`, which the row reader did
+/// not know, so choosing "original" on the Produce page was lost the next time the project opened.
+#[test]
+fn sec_01_project_and_files_2_naivepostjson_resolution_original_survives_a_save_and_the_old_spelling(
+) {
+    let (_root, t) = with_file(
+        "resolution-old",
+        r#"{"sources":[],"produce":{"resolution":"Original"}}"#,
+    );
+    let old = project::load(t.dir()).expect("the old spelling loads");
+    assert_eq!(
+        old.produce.resolution,
+        project::Resolution::Original,
+        "a project saved with `Original` keeps its choice"
+    );
+    project::save(&old, t.dir()).expect("it saves");
+    let text = read(&t);
+    assert!(
+        text.contains(r#""resolution": "original""#),
+        "written as §A spells it: {text}"
+    );
+    assert_eq!(
+        project::load(t.dir())
+            .expect("it loads back")
+            .produce
+            .resolution,
+        project::Resolution::Original,
+        "and read back as itself"
+    );
 }

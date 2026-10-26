@@ -17,6 +17,8 @@ RUN apk add --no-cache \
         font-dejavu font-noto font-noto-emoji \
         adwaita-icon-theme hicolor-icon-theme librsvg \
         ffmpeg \
+        gstreamer-dev gst-plugins-base-dev gst-plugins-good gst-libav \
+        gst-plugins-rs-gtk4 gstreamer-tools \
         dconf gsettings-desktop-schemas
 
 RUN groupadd --gid 1000 dev \

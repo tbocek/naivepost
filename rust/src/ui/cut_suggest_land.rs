@@ -90,6 +90,10 @@ fn press_words(window: &adw::ApplicationWindow) -> String {
 /// The window's own ▶ press for the model mode (§S2b): ask, walk back, land, say what landed. The call
 /// itself lives in [`crate::ui::cut_suggest_model_run`]; this is the half that owns the write.
 ///
+/// The asks run on a worker (§03-shell §1, "The window thread never waits"): the press reads the page, opens the
+/// run's bar (so ⏹ reaches the call, and a second ▶ is the bar's), and returns; the cut lands when the model
+/// answered ([`land_model`]), then the passes after the cut ask on a worker of their own and land in turn.
+///
 /// Landing goes through [`land_spans`], the same door §S2a uses — recorder first, then the base moves,
 /// then `cut.json` — because F2.13's one-↶ promise is one rule for every suggestion, and a second
 /// landing path would be a second place to get that order wrong. The effects the walk-back clamped are
@@ -97,32 +101,86 @@ fn press_words(window: &adw::ApplicationWindow) -> String {
 /// §S3's log line names them separately (">>> …and N effect(s)"), so taking a suggestion back takes the
 /// scenes and their decorations with it without pretending the two were one arithmetic.
 fn press_model(window: &adw::ApplicationWindow, busy: bool) -> String {
-    let made = crate::ui::cut_suggest_model_run::press(window, busy);
+    let _ = busy;
+    let (tree, parts) = match crate::ui::cut_suggest_model_run::press_parts(window) {
+        Ok(got) => got,
+        Err(why) => return crate::ui::cut_suggest_model_run::blocked(why).said,
+    };
+    open_run(window);
+    let held = window.clone();
+    crate::ui::background::run(
+        "suggest",
+        move || crate::ui::cut_suggest_model_run::ask_on_worker(tree, parts),
+        move |made| land_model(&held, made),
+    );
+    String::new()
+}
+
+/// Open the window's run bar for Suggest's asks, the way `runqueue::start_run` opens every run: ⏸/⏹ show,
+/// ⏹ cancels the calls, and the closing line counts what this run sent.
+fn open_run(window: &adw::ApplicationWindow) {
+    let Some(bar) = crate::ui::window::WINDOW_BAR.with(|bars| bars.borrow().last().cloned()) else {
+        return;
+    };
+    let Some(queue) = crate::ui::window::WINDOW_QUEUE.with(|slots| slots.borrow().last().cloned())
+    else {
+        return;
+    };
+    let project = crate::ui::window::session_handle(window).borrow().clone();
+    crate::runqueue::start_run(
+        &mut bar.borrow_mut(),
+        &mut queue.borrow_mut(),
+        &mut crate::exchanges::RunLog::new(),
+        crate::run::Step::Suggest,
+        crate::run::snapshot_sources(&project),
+    );
+    crate::ui::run_close::note_started_run(&bar);
+    crate::run_stages::mirror_switches(&bar.borrow());
+}
+
+/// The model answered: land what it proposed, then hand the passes after the cut to a worker.
+fn land_model(window: &adw::ApplicationWindow, made: crate::ui::cut_suggest_model_run::Landed) {
     if !made.wrote {
-        // Nothing landed: §S2 S6's "no valid cut after 3 attempts", or a refusal the shell prints. The
-        // cut on screen stands exactly as it was, because a failed suggestion has no claim on it.
-        return made.said;
+        // Nothing landed: §S2 S6's "no valid cut after 3 attempts", or a refusal. The cut on screen stands
+        // exactly as it was, because a failed suggestion has no claim on it.
+        end_run(window, &made.said);
+        return;
     }
     land_spans(window, &made.segs);
     land_effect_pair(window, &made.applied);
     // §S2b's `M2` node: the cut landed, so now the passes that work over a cut are asked — captions, speeds,
-    // decorations, and only those the policy switched on. Their own sentences go to the log as they said them,
-    // then §S3's effect line counts what actually landed (the walk-back's clamped effects plus theirs).
-    let policy_ = crate::ui::session_policy(window);
-    let pass_lines = crate::cut_suggest_passes::run_after_cut(window, &policy_, |said| {
-        crate::ui::window::log_line(said)
-    });
-    for line in &pass_lines {
-        crate::ui::window::log_line(line);
+    // decorations, and only those the policy switched on. Each asks over the cut the one before it left; their
+    // sentences go to the log as they said them, then §S3's effect line counts what actually landed.
+    let inputs = crate::ui::window::pass_inputs(window);
+    if crate::cut_suggest_passes::order(&inputs.policy).is_empty() || crate::cancel_leg::cancelled()
+    {
+        end_run(window, &made.said);
+        return;
     }
-    // The status row takes the short sentence (`suggest::apply`'s own first log line); the long pair of
-    // `>>>` lines is already in the log, written by the module that computed them.
-    if !made.said.is_empty() {
+    let cut_ = crate::ui::window::newest_review_cut();
+    let held = window.clone();
+    crate::ui::background::run(
+        "suggest passes",
+        move || {
+            crate::cut_suggest_passes::walk_after_cut(&inputs, &cut_, crate::ui::window::log_line)
+        },
+        move |outs| {
+            for line in crate::cut_suggest_passes::land_after_cut(&held, &outs) {
+                crate::ui::window::log_line(&line);
+            }
+            end_run(&held, &made.said);
+        },
+    );
+}
+
+/// Close Suggest's run and put its sentence on the status line, the last word of the press.
+fn end_run(window: &adw::ApplicationWindow, said: &str) {
+    crate::ui::run_close::close_window_run();
+    if !said.is_empty() {
         if let Some(status) = crate::ui::window::find_status(window.upcast_ref()) {
-            status.set_text(&made.said);
+            status.set_text(said);
         }
     }
-    made.said
 }
 
 /// Lay the walk-back's effects on the cut that just landed, as its own edit: publish, record, move the
@@ -146,7 +204,9 @@ fn land_effect_pair(window: &adw::ApplicationWindow, answer: &Applied) {
         // §7's one writer, and the tree is `session_tree`'s OWN — written into that folder rather than into
         // whatever `current_dir()` happens to say, because a test points ▶ at a temp `.naivepost` of its own
         // (`set_session`) and the write must land where the refusal looked.
-        let _ = crate::cut_save::write_cut_at(&with_effects, &tree);
+        if let Err(why) = crate::cut_save::write_cut_at(&with_effects, &tree) {
+            crate::ui::window_logs::say_failure(&format!("!!! could not save the cut -- {why}"));
+        }
     }
 }
 
@@ -177,7 +237,7 @@ pub(crate) fn session_tree() -> Option<Option<crate::layout::Tree>> {
         .with(|slot| slot.borrow().clone())
         .or_else(crate::ui::window_line_step::last_session_tree)
         .or_else(|| {
-            let dir = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+            let dir = crate::startup::open_dir();
             crate::layout::Tree::new(&dir).ok().map(Some)
         })
 }
@@ -319,7 +379,9 @@ pub fn land_spans(window: &adw::ApplicationWindow, spans: &[(f64, f64)]) -> Cut 
         recorder(window, &landed);
     }
     if let Some(Some(tree)) = session_tree() {
-        let _ = crate::cut_save::write_cut_at(&landed, &tree);
+        if let Err(why) = crate::cut_save::write_cut_at(&landed, &tree) {
+            crate::ui::window_logs::say_failure(&format!("!!! could not save the cut -- {why}"));
+        }
     }
     landed
 }

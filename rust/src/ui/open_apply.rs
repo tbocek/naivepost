@@ -66,22 +66,18 @@ pub(crate) fn finish(applied: &Applied, project: &Project, status: &gtk::Label) 
     // `session.tsv` matching last night's byte for byte would skip a rebuild the new project actually needs.
     crate::ui::cut_rebuild::forget();
     crate::ui::cut_session::refresh_page_spans(&crate::ui::window::newest_review_cut());
-    // Then the two pages that own their own repaint, each reading the state it renders. The Narration tick
-    // is seeded from the opened project when its widgets are built, so an open has to hand the flag over
-    // explicitly here — both pages copy it into their own state rather than re-reading `naivepost.json`
-    // while they paint (§08 §A's Game-audio row and §15's "no narration" clause are one fact). The write
-    // is a no-op when the file already says what the opened project says, so this costs nothing on an open
-    // that changed nothing.
-    crate::ui::narrate_page::set_narration_off(&window, project.no_narration);
-    crate::ui::produce_page::note_narration_off(project.no_narration);
+    // Then the two pages that own their own repaint, each reading the state it renders.
     crate::ui::narrate_page::refresh(&window);
     crate::ui::produce_page::refresh(&window);
 
     // S4 "remember the project for this root", through the one door that writes the conf. A refusal
     // costs the memory and never the open, but it is said in the log rather than swallowed: without it
     // the next launch silently reopens whatever was remembered before.
+    // "This root" is the folder the app was launched from, the key F0.6 S2 looks the memory up by on the
+    // next launch; storing the opened folder as its own root made a memory no launch ever asks for.
     let file = crate::open_project::project_file_in(&applied.out);
-    match crate::ui::window::remember_opened(&applied.root, &file) {
+    let launch_root = std::env::current_dir().unwrap_or_default();
+    match crate::ui::window::remember_opened(&launch_root, &file) {
         Ok(remembered) => crate::ui::window::log_line(&format!(">>> opened {}", remembered.file)),
         Err(why) => {
             crate::ui::window::log_line(&format!("!!! could not remember this project -- {why}"))

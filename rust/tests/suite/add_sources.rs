@@ -318,69 +318,23 @@ fn f0_12_s3_footage_defaults_on_for_video_only() {
 }
 
 #[test]
-fn f0_12_s3_slot_1_goes_to_the_first_untagged_recording() {
-    // S3: somebody has to be the narrator, and a screen capture is the worse guess — it holds
-    // everyone at once. So the recording wins although the video was picked first.
-    let (root, dir, card) = workspace("s3-slot1");
+fn f0_12_s3_every_added_recording_starts_as_voice_1() {
+    // S3: a session is usually one person, so every recording added starts as voice 1, video and audio
+    // alike, and a row already in the list keeps what it had.
+    let (root, dir, card) = workspace("s3-voice1");
     let video = file(&card, "cam.mkv", 5);
     let audio = file(&card, "mic.wav", 5);
 
-    let mut project = Project::default();
+    let mut project = session(vec![row("keeper.wav", false, 2)]);
     let found = add_sources::add(&mut project, &root, &dir, &[video, audio], false).unwrap();
 
     assert_eq!((found.added, found.asked), (2, 2));
     assert_eq!(narrator_of(&project, "card/mic.wav"), Some(1));
-    assert_eq!(narrator_of(&project, "card/cam.mkv"), Some(0));
-
-    fs::remove_dir_all(&root).ok();
-}
-
-#[test]
-fn f0_12_s3_a_slot_the_user_left_untagged_stays_untagged() {
-    let (root, dir, card) = workspace("s3-guard");
-    // The session's own rows are root-relative strings, which is how a loaded list reads; adding to
-    // them does not re-read the disk — dropping what has gone is F0.11's job.
-    let audio = file(&card, "mic.wav", 5);
-    // S3's guard: slot 1 is given away only when nobody holds it. A row that already holds another
-    // slot is somebody the user named — moving them to narrator would re-cut the narration while
-    // silently freeing the slot they were in.
-    // Slot 1 held elsewhere: nothing is promoted, and the holder is untouched.
-    let mut held = session(vec![row("keeper.wav", false, 1)]);
-    add_sources::add(&mut held, &root, &dir, &[audio.clone()], false).unwrap();
-    assert_eq!(narrator_of(&held, "keeper.wav"), Some(1));
-    assert_eq!(narrator_of(&held, "card/mic.wav"), Some(0));
-
-    // A session the user left with nobody in slot 1 is not re-seated by a press that adds nothing.
-    // The rows are footage and one of them already holds slot 2, so this pins the guard alone: an
-    // untagged list comes back as they left it rather than being filled from the front.
-    let mut emptied = session(vec![row("keeper.mkv", true, 0), row("other.mkv", true, 2)]);
-    add_sources::add(
-        &mut emptied,
-        &root,
-        &dir,
-        &[file(&card, "notes.txt", 1)],
-        false,
-    )
-    .unwrap();
+    assert_eq!(narrator_of(&project, "card/cam.mkv"), Some(1));
     assert_eq!(
-        narrator_of(&emptied, "other.mkv"),
+        narrator_of(&project, "keeper.wav"),
         Some(2),
-        "its holder is untouched"
-    );
-    // Whether the untagged footage takes the empty slot is F0.11's rule, not this flow's: a press
-    // that adds nothing changes nothing here either way.
-
-    // And when a recording does arrive for an empty slot 1, the first untagged recording in list
-    // order takes it. Here the session's own row is that recording; `keeper` is a .mkv kept only for
-    // its sound so the new row cannot be mistaken for the winner by being second in line — see the
-    // next test for the case where the new row *is* the first untagged recording.
-    let mut open_slot = session(vec![row("keeper.mkv", false, 0)]);
-    add_sources::add(&mut open_slot, &root, &dir, &[audio], false).unwrap();
-    assert_eq!(narrator_of(&open_slot, "keeper.mkv"), Some(1));
-    assert_eq!(
-        narrator_of(&open_slot, "card/mic.wav"),
-        Some(0),
-        "asked in list order"
+        "a row already there is untouched"
     );
 
     fs::remove_dir_all(&root).ok();

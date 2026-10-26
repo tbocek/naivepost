@@ -87,7 +87,7 @@ pub fn slot_for_test(session: &Rc<RefCell<Project>>, dir: &Path) -> Rc<RefCell<T
 /// Always a path — §2's flush has to answer the question even before the folder exists, because
 /// writing it is what creates it.
 pub fn session_dir() -> PathBuf {
-    crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
+    crate::startup::open_dir()
 }
 
 /// A flow that just changed the session and wants it on disk NOW (F0.11's pruned list), written

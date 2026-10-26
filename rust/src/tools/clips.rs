@@ -74,8 +74,6 @@ pub struct Effect {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Clips {
     clips: Vec<Clip>,
-    /// Seconds between the frames this pass may ask for. P.project.frameInterval
-    frame_interval: f64,
 }
 
 impl Clips {
@@ -93,18 +91,12 @@ impl Clips {
                     effects: Vec::new(),
                 })
                 .collect(),
-            frame_interval: 1.0,
         }
     }
 
     /// The batch's clips.
     pub fn clips(&self) -> &[Clip] {
         &self.clips
-    }
-
-    /// Seconds between the frames `clip_frames` walks.
-    pub fn set_frame_interval(&mut self, seconds: f64) {
-        self.frame_interval = seconds;
     }
 
     /// `add_caption(clip, start, end, text)` — ok with the caption as placed, or an error naming what
@@ -255,13 +247,13 @@ impl Clips {
             return Vec::new();
         };
         let clip = &self.clips[at_index];
-        let count = (clip.length / self.frame_interval).floor() as usize + 1;
+        let count = (clip.length / crate::prepare::MODEL_FRAME_STEP).floor() as usize + 1;
         let frames: Vec<Frame> = (0..count)
             .map(|index| Frame {
                 clip: clip.n,
                 // The clip's own seconds, which is the space every other number here is in.
-                at: index as f64 * self.frame_interval,
-                start: clip.start + index as f64 * self.frame_interval,
+                at: index as f64 * crate::prepare::MODEL_FRAME_STEP,
+                start: clip.start + index as f64 * crate::prepare::MODEL_FRAME_STEP,
             })
             .collect();
         match at {

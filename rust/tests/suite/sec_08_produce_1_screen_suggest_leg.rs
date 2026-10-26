@@ -204,6 +204,11 @@ fn press_suggest(window: &adw::ApplicationWindow) -> String {
     let button = ui::line_step_button(window, "title-suggest")
         .expect("§1 item 8 drew a widget named `title-suggest`");
     button.emit_by_name::<()>("clicked", &[]);
+    // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
     ui::find_status(window.upcast_ref())
         .expect("the window has a status line")

@@ -180,7 +180,7 @@ pub enum Phase {
     Understand,
 }
 
-/// Where a phase sits on the bar, as fractions of the whole.
+/// Where a phase sits on the bar, as `(from, to)` fractions of the whole.
 ///
 /// Separation is zero-width when nobody asked for it, so the bar moves straight from 0 to ingest
 /// instead of crawling through an empty tenth of the run. That is the difference between a bar

@@ -15,10 +15,10 @@ use harness::*;
 #[test]
 fn f4_4_s3_the_reference_uploads_itself_for_every_line() {
     let fixture = fixture("s3");
-    write_reference(
-        &fixture,
-        b"RIFF fake reference, forty-odd bytes long, not empty",
-    );
+    // A real WAV, whose header holds bytes no UTF-8 text can carry: the leg once sent a lossy text copy of the
+    // reference, which an ASCII stand-in here could never show.
+    let reference = common::silent_wav_bytes(0.1);
+    write_reference(&fixture, &reference);
     let audio = FakeAudio::start(Script::healthy());
     point_at(&audio.url());
 
@@ -68,9 +68,9 @@ fn f4_4_s3_the_reference_uploads_itself_for_every_line() {
             "the raw body names the file it carries: {:?}",
             upload.headers
         );
-        assert!(
-            !upload.body.is_empty(),
-            "the body is the reference's bytes, not a path"
+        assert_eq!(
+            upload.body, reference,
+            "the body is the reference's own bytes, not a path and not a text copy"
         );
     }
     // And each line asked for speech after its own upload — the path used was the one that upload

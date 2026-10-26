@@ -246,6 +246,7 @@ pub fn frame_images(
 ) -> Vec<(f64, std::path::PathBuf)> {
     let mut out: Vec<(f64, std::path::PathBuf)> = Vec::new();
     let mut at = 0.0;
+    let zero = crate::frames_run::session_zero(tree);
     for seg in &run.cut.segs {
         let kept = output_length(seg);
         if !seg.ins.is_empty() {
@@ -254,7 +255,7 @@ pub fn frame_images(
         }
         for source in run.sources.footage.iter() {
             let dir = tree.frames_dir(&stem_of(source));
-            for (seconds, path) in crate::produce_upload_media::listed_frames(&dir) {
+            for (seconds, path) in crate::produce_upload_media::listed_frames(&dir, zero) {
                 if seconds >= seg.s && seconds < seg.e {
                     out.push((at + (seconds - seg.s), path));
                 }
@@ -454,6 +455,7 @@ fn string_field(value: &serde_json::Value, key: &str) -> Option<String> {
 fn extracted_frames(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -> Vec<f64> {
     let mut out = Vec::new();
     let mut at = 0.0;
+    let zero = crate::frames_run::session_zero(tree);
     for seg in &run.cut.segs {
         let kept = output_length(seg);
         if !seg.ins.is_empty() {
@@ -467,7 +469,13 @@ fn extracted_frames(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) 
             };
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                let Some(seconds) = frame_seconds(&name) else {
+                // The one naming rule (`clock::frame_session_seconds`): a frame is named by its real instant, read
+                // back as a session second against the session's zero. The copy that stood here read the time of
+                // day alone and dropped the date, which only matched a session that started at midnight.
+                let Some(seconds) = name
+                    .strip_suffix(".jpg")
+                    .and_then(|stem| crate::clock::frame_session_seconds(stem, zero))
+                else {
                     continue;
                 };
                 if seconds >= seg.s && seconds < seg.e {
@@ -479,25 +487,6 @@ fn extracted_frames(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) 
     }
     out.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     out
-}
-
-/// The seconds a frame file names. `frames::frame_file` writes `<YYYY-MM-DD_HH-MM-SS.mmm>.jpg` off the
-/// recording's own clock; the inverse reads those fields back rather than trusting a bare number, because
-/// the date part is not a duration and parsing it as one would put every frame in the wrong year.
-fn frame_seconds(name: &str) -> Option<f64> {
-    let stem = name.strip_suffix(".jpg")?;
-    let (date, rest) = stem.split_once('_')?;
-    let parts: Vec<&str> = rest.split('-').collect();
-    if parts.len() != 3 {
-        return None;
-    }
-    let hours: f64 = parts[0].parse().ok()?;
-    let minutes: f64 = parts[1].parse().ok()?;
-    let secs: f64 = parts[2].parse().ok()?;
-    // The date is calendar, not elapsed time; only the time-of-day field is meaningful as a recording
-    // offset, which is what the prototype's frame names carry for a session started at midnight.
-    let _ = date;
-    Some(hours * 3600.0 + minutes * 60.0 + secs)
 }
 
 /// The nearest extracted frame to a produced-clock moment (S3 / decision 32), through the ONE nearest rule
@@ -552,14 +541,34 @@ pub fn set_draw_picture_for_test(draw: DrawSlot, png: Vec<u8>) {
     DRAW.with(|cell| cell.replace(Some((draw, png))));
 }
 
+/// Unload a scripted draw: the real submit and poll legs stand again on this thread (a test that dials a fake
+/// sd.cpp over HTTP after another check scripted the draw).
+pub fn clear_draw_for_test() {
+    DRAW.with(|cell| cell.replace(None));
+}
+
 /// The scripted draw's picture, or `None` when no script is loaded and the real legs stand.
 fn scripted_png() -> Option<Vec<u8>> {
     DRAW.with(|cell| cell.borrow().as_ref().map(|(_, png)| png.clone()))
 }
 
-/// The scripted sd.cpp submit leg.
-pub type DrawSlot =
-    std::rc::Rc<dyn Fn(&serde_json::Value) -> Result<crate::produce_upload::DrawnJob, String>>;
+/// The scripted sd.cpp submit leg. `Arc` and `Send + Sync` for the same reason as
+/// [`crate::produce_translate::SpawnSlot`]: the words half runs on the run's worker.
+pub type DrawSlot = std::sync::Arc<
+    dyn Fn(&serde_json::Value) -> Result<crate::produce_upload::DrawnJob, String> + Send + Sync,
+>;
+
+/// The scripted draw loaded on this thread, to load again on a worker ([`load_draw`]).
+pub(crate) fn carried_draw() -> Option<(DrawSlot, Vec<u8>)> {
+    DRAW.with(|cell| cell.borrow().clone())
+}
+
+/// Load a carried scripted draw on this (worker) thread; `None` leaves the real legs standing.
+pub(crate) fn load_draw(carried: Option<(DrawSlot, Vec<u8>)>) {
+    if let Some((draw, png)) = carried {
+        set_draw_picture_for_test(draw, png);
+    }
+}
 
 /// The scripted draw leg: the script when one is loaded, otherwise the REAL submit at the address the
 /// settings name (§F5.6 S6). A server that is down answers `Err` naming it, which the walk turns into the
@@ -671,10 +680,7 @@ fn stored_title_band() -> TitleBox {
 
 /// The session's folder, resolved the way the page resolves everything else on this path.
 pub fn session_tree() -> crate::layout::Tree {
-    crate::layout::Tree::new(crate::startup::session_dir(
-        &std::env::current_dir().unwrap_or_default(),
-    ))
-    .unwrap_or_else(|_| {
+    crate::layout::Tree::new(crate::startup::open_dir()).unwrap_or_else(|_| {
         crate::layout::Tree::new(std::path::Path::new("session.naivepost")).unwrap()
     })
 }
@@ -703,7 +709,7 @@ pub fn upload_ask(
             starts: &starts,
             // Read at call time, from the session folder this tree names: Freq is a project field,
             // so a run that started before a Freq change still answers on the grid in force now.
-            interval: crate::project::frame_interval(tree.dir()),
+            interval: crate::prepare::MODEL_FRAME_STEP,
             lines: &rows,
         };
         let cancelled = || false;
@@ -802,6 +808,7 @@ pub fn legs(
         brief: Box::new(move || upload_brief((*clip_spans)())),
         ask_draw: draw_leg(),
         poll: poll_leg(),
+        save_picture: Box::new(save_drawn),
         // §S3: a press with no run in front of it still reads the record on disk, which is what "the page left
         // it" means for a door that snapshots nothing (↻ redraw and ↻ suggest build their own legs).
         print: print_leg(stored_title_band()),
@@ -913,11 +920,11 @@ pub fn report(out: &crate::produce_presses::Outcome) {
 /// off disk, not out of the render). The known-language list comes from the settings file's
 /// `subtitle_languages` (`code:tag:name`, 03-shell §6) so a track is offered under its proper name; with
 /// no settings file there is no list and `embed::tracks` names each track by its code instead.
-pub fn tag_page(settings: &crate::project::Produce) {
-    let tree = crate::layout::Tree::new(crate::startup::session_dir(
-        &std::env::current_dir().unwrap_or_default(),
-    ))
-    .unwrap_or_else(|_| {
+///
+/// `language` is the session's, taken at the press: the page is written on the run's worker, which holds no
+/// window session to read it from (§03-shell §1).
+pub fn tag_page(settings: &crate::project::Produce, language: &str) {
+    let tree = crate::layout::Tree::new(crate::startup::open_dir()).unwrap_or_else(|_| {
         crate::layout::Tree::new(std::path::Path::new("session.naivepost"))
             .expect("a session folder")
     });
@@ -931,7 +938,7 @@ pub fn tag_page(settings: &crate::project::Produce) {
         &tree,
         settings.container,
         settings.codec,
-        &crate::ui::window::live_project().language,
+        language,
         &known,
         &*crate::produce_tag_page::poster_through(spawn),
         crate::ui::window::log_line,

@@ -296,65 +296,6 @@ fn sec_04_prepare_1_screen_s_outputs_folder_is_what_was_counted() {
     );
 }
 
-/// Freq is a choice among seven stops, not a number box: an unlisted interval would be sent to
-/// the model as a claim about frames that were never picked.
-#[test]
-fn sec_04_prepare_1_screen_s_freq_is_a_stop_not_a_number_box() {
-    assert_eq!(
-        prepare::FREQ_STOPS,
-        [0.25, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0],
-        "§1 lists exactly these seven"
-    );
-    assert_eq!(prepare::FREQ_DEFAULT, 1.0, "default 1 s");
-
-    let mut project = Project::default();
-    let before = project.interval;
-    assert!(
-        !prepare::set_freq(&mut project, 0.75),
-        "an off-list interval is refused"
-    );
-    assert_eq!(
-        project.interval, before,
-        "and the project is left exactly as it was"
-    );
-
-    assert!(prepare::set_freq(&mut project, 0.25), "0.25 is a stop");
-    assert_eq!(project.interval, 0.25);
-    assert!(prepare::set_freq(&mut project, 5.0), "5 s is a stop");
-    assert_eq!(project.interval, 5.0);
-    assert_eq!(
-        prepare::freq_label(0.25),
-        "0.25",
-        "a fraction of a second prints bare"
-    );
-    assert_eq!(
-        prepare::freq_label(5.0),
-        "5s",
-        "a second and up carries its unit"
-    );
-}
-
-/// The reason Freq and the extraction grid are two numbers at all: changing what the model is
-/// shown must never move what is on disk.
-#[test]
-fn sec_04_prepare_1_screen_s_freq_change_never_moves_the_extraction_grid() {
-    // P.eng.frameGridSeconds = 0.25, fixed, restarted at every scene change (F1.6).
-    assert_eq!(prepare::EXTRACTION_GRID, 0.25, "// P.eng.frameGridSeconds");
-    let mut project = Project::default();
-    let grid_before = prepare::EXTRACTION_GRID;
-    assert!(prepare::set_freq(&mut project, 5.0));
-    assert_eq!(
-        prepare::EXTRACTION_GRID,
-        grid_before,
-        "Freq moved to 5 s and the grid stayed at 250 ms — the whole point of the split"
-    );
-    assert_ne!(
-        project.interval,
-        prepare::EXTRACTION_GRID,
-        "and the two are not aliases of one field"
-    );
-}
-
 /// What the rewrite took away: no Style control and no Frame size control on this page. Style is
 /// `P.policy.markingPass` + `P.policy.cutMode` off the User Context (F0.7); frames keep the
 /// video's own size and are scaled only on the way to the model (F1.7).
@@ -386,17 +327,9 @@ fn sec_04_prepare_1_screen_s_no_style_and_no_frame_size_control() {
     );
     assert_eq!(bench::ROWS[0].title, "User Context");
     assert!(bench::is_context(&bench::ROWS[0]));
-    // Language stays: it is a recording property, not a style.
-    assert!(
-        prepare::LANGUAGE_TIP.contains("gibberish") && prepare::LANGUAGE_TIP.contains("en"),
-        "Language keeps its warning and its default: {:?}",
-        prepare::LANGUAGE_TIP
-    );
-    assert_eq!(
-        prepare::language_label(""),
-        Project::default().language,
-        "an empty box shows the language that will actually be used"
-    );
+    // Language went the way Style did: the User Context says it and the policy holds it (P.policy.language),
+    // English when the context does not say.
+    assert_eq!(Project::default().policy.language.value, "en");
 }
 
 /// Nothing in the page's own module reaches outside the fixture-shaped paths: a source stored as

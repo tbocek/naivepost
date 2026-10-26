@@ -29,38 +29,34 @@ fn tape(seconds: f64) -> Vec<Recording> {
 #[test]
 fn sec_05_cut_1_screen_s9_the_scrollbar_thumb_is_geared_at_forty_px_per_screenful() {
     common::pin_private_cwd();
-    // §1: "thumb geared at high zoom so one screenful is always 40 px of drag". GTK moves the thumb
-    // across the bar's own length, so that travel is the thumb's length in BAR pixels — and that is what
-    // must be 40 px, at every zoom and every length.
+    // §1: "thumb geared at high zoom so one screenful is always 40 px of drag". The thumb is the view's share
+    // of the tape, as on any bar; GTK's own drag moves `total / bar` tape px per px, and once that would cross
+    // a screenful in under 40 px the drag is geared to `view / 40` per px instead.
     let view = 1200.0 - cut_view::gutter_px();
     let bar = 1200.0;
     for (seconds, pps) in [
-        (600.0, cut_screen_open()),
         (600.0, naivepost::cut_screen::ZOOM_MAX),
         (7200.0, naivepost::cut_screen::ZOOM_MAX),
-        (30.0, 12.0),
+        (7200.0, 12.0),
     ] {
         let total = cut_view::total_px(seconds, pps);
-        let thumb = cut_view::thumb_px(total, bar);
-        // The gear IS the thumb's length in bar pixels: crossing one screenful costs exactly that travel,
-        // so reading `thumb_px` back is the 40-px claim, with no identity helper to hide behind.
+        let per_px = cut_view::drag_gear(total, view, bar).unwrap_or_else(|| {
+            panic!("{seconds} s at {pps} px/s is high zoom: the drag is geared")
+        });
         assert!(
-            (thumb - cut_view::DRAG_PER_SCREENFUL_PX).abs() < 1e-9,
-            "{seconds} s at {pps} px/s: one screenful costs {thumb} px of drag, not 40"
-        );
-        // And the thumb is never longer than the bar nor thinner than GTK will draw.
-        let thumb = cut_view::thumb_px(total, bar);
-        assert!(
-            thumb <= bar && thumb > 0.0,
-            "thumb {thumb} longer than the bar"
-        );
-        // The fraction handed to GTK stays a real fraction of the timeline it scrolls.
-        let page = view * cut_view::thumb_geared(total, bar);
-        assert!(
-            page <= total.max(view),
-            "page {page} larger than the timeline {total}"
+            (view / per_px - cut_view::DRAG_PER_SCREENFUL_PX).abs() < 1e-9,
+            "{seconds} s at {pps} px/s: one screenful costs {} px of drag, not 40",
+            view / per_px
         );
     }
+    // A short session at the open zoom: GTK's own drag already costs more than 40 px a screenful, so the
+    // bar is left to GTK.
+    let total = cut_view::total_px(600.0, cut_screen_open());
+    assert_eq!(
+        cut_view::drag_gear(total, view, bar),
+        None,
+        "{total} px of tape on a {bar} px bar needs no gear"
+    );
     // The gear only bites once there IS more off screen: at the floor a whole session fits, so the bar
     // hides itself (§A) and its thumb fills the bar — which is the same rule read from the other side.
     let view_only = 1200.0;
@@ -73,9 +69,11 @@ fn sec_05_cut_1_screen_s9_the_scrollbar_thumb_is_geared_at_forty_px_per_screenfu
         (floor_total - (view_only + cut_view::gutter_px())).abs() < 1e-9,
         "at {floor_pps} px/s a ten-minute session is one surface of film plus the gutter: {floor_total}"
     );
+    // And at the floor the film exactly fills the view, so the session fits and the bar hides (§A: "hidden
+    // when everything fits"). The first rewrite weighed the gutter on one side only and left the bar up here.
     assert!(
-        !cut_view::fits(floor_total, view_only),
-        "which is why the floor is the last step and not already-fits: {floor_total} vs {view_only}"
+        cut_view::fits(floor_total, view_only),
+        "at the floor the whole session fits: {floor_total} px of tape (gutter included) over {view_only}"
     );
 }
 
@@ -104,8 +102,12 @@ fn sec_05_cut_1_screen_s9_a_scroll_stays_inside_the_timeline_at_both_ends() {
     common::pin_private_cwd();
     let view = 1200.0 - cut_view::gutter_px();
     let total = cut_view::total_px(600.0, 40.0);
-    // Past the right end: the last pixel is as far as the hand gets.
-    assert_eq!(cut_view::set_origin(total * 3.0, total, view), total - view);
+    // Past the right end: the last second's pixel is as far as the hand gets. `total` counts the pinned gutter
+    // in front of the film and `view` does not, so the film alone is what scrolls past the view.
+    assert_eq!(
+        cut_view::set_origin(total * 3.0, total, view),
+        total - cut_view::gutter_px() - view
+    );
     // Left of the gutter: it never had room to go there.
     assert_eq!(cut_view::set_origin(-500.0, total, view), 0.0);
     // A pan is an eighth of the view, wherever it starts.
@@ -160,28 +162,28 @@ fn sec_05_cut_1_screen_s9_zooming_around_the_cursor_keeps_that_second_under_it()
     cut_view::set_pps(4.0);
     cut_view::set_origin(0.0, cut_view::total_px(600.0, 4.0), view);
     let anchor = 400.0 + cut_view::gutter_px();
-    // The zoom's promise is about the PIXEL under the pointer: it stays put, so the second it holds
-    // stays put too — but only while nothing scrolled underneath it. A scroll that clamps at the timeline's
-    // start (here: origin already 0 and the zoom out would pull it negative) moves the band without
-    // moving the anchor, which is the clamp doing its job, not the zoom losing the cursor.
+    // The zoom's promise is about the PIXEL under the pointer: the second it holds stays under it, so a
+    // notch in at 400 px from the start scrolls the tape left by what the zoom grew under the pointer. (The
+    // first rewrite asserted the opposite: that a cursor inside the view scrolled nothing, which is the
+    // reversed scroll sign that jumped every wheel zoom back to 0:00.)
     let total = cut_view::total_px(600.0, cut_view::pps());
-    let origin_before = cut_view::origin();
+    let second_under = |pps: f64| (anchor - cut_view::gutter_px() + cut_view::origin()) / pps;
+    let before = second_under(cut_view::pps());
     let (pps_after, _) = cut_view::zoom_around(anchor, 1.25, &runs, total, view);
     assert!(
         pps_after > 4.0,
         "a notch in raised the zoom: {} -> {pps_after}",
         cut_view::pps()
     );
-    assert_eq!(
-        cut_view::origin(),
-        origin_before,
-        "and a cursor inside the view scrolled nothing"
+    assert!(
+        (second_under(pps_after) - before).abs() < 1e-6,
+        "and the second under the cursor stayed there: {before} -> {}",
+        second_under(pps_after)
     );
-    // Same gesture one step deeper, where there IS room to scroll: now the pixel and its second both hold.
+    // Same gesture one step deeper, from a scrolled view: the pixel and its second both hold.
     cut_view::set_pps(40.0);
     cut_view::set_origin(2000.0, cut_view::total_px(600.0, 40.0), view);
     let deep_total = cut_view::total_px(600.0, cut_view::pps());
-    let second_under = |pps: f64| (anchor - cut_view::gutter_px() - cut_view::origin()) / pps;
     let before = second_under(cut_view::pps());
     let (deeper, _) = cut_view::zoom_around(anchor, 1.25, &runs, deep_total, view);
     let after = second_under(deeper);

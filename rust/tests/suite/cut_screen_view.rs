@@ -176,10 +176,11 @@ fn sec_05_cut_1_screen_s5_the_wheel_zooms_around_the_cursor_and_pans_an_eighth()
         }
     }
 
-    // Zooming at the cursor keeps the second under it: what you were looking at stays there.
+    // Zooming at the cursor keeps the second under it: what you were looking at stays there. The anchor is a
+    // pixel of the view and the origin the scroll, so the second under it is (anchor + scroll) / pps.
     let (pps, origin) = cut_screen::zoom_around(4.0, cut_screen::ZOOM_STEP, 400.0, 100.0, 1.0);
-    let before = (400.0 - 100.0) / 4.0;
-    let after = (400.0 - origin) / pps;
+    let before = (400.0 + 100.0) / 4.0;
+    let after = (400.0 + origin) / pps;
     assert!((before - after).abs() < 1e-9, "{before} moved to {after}");
     assert!(pps > 4.0, "zooming in is more px per second");
 

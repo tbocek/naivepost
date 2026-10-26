@@ -51,8 +51,8 @@ const WIDGETS: [&str; 15] = [
     "encoder-settings", // **10** the thirteen rows in a scroller  sec_08_produce_1_screen S2
     "transcode-save",   // **11** ⤓ save video                sec_08_produce_1_screen S1
     "transcode-again",  // **12** ↻ encode again              sec_08_produce_1_screen S1
-    "produce-inputs",   // **13** Inputs readout              sec_08_produce_1_screen S4
-    "produce-outputs",  // **14** Outputs count + folder     sec_08_produce_1_screen S4
+    "inputs-readout",   // **13** Inputs readout, the bottom bar's  sec_08_produce_1_screen S4
+    "outputs-readout",  // **14** Outputs count, the bottom bar's   sec_08_produce_1_screen S4
 ];
 
 /// A widget somewhere in THIS window's tree, found from the window itself rather than from any global
@@ -62,6 +62,23 @@ fn click(window: &adw::ApplicationWindow, name: &str) {
     ui::line_step_button(window, name)
         .unwrap_or_else(|| panic!("the Produce page drew no {name}"))
         .emit_by_name::<()>("clicked", &[]);
+    settle();
+}
+
+/// Click ＋ Add image… or a slot's Change… and answer its image chooser the way its response does: the REAL
+/// chooser is raised (counted by its opener), then a picture is picked (`slot` None adds, `Some` changes).
+fn click_and_pick(window: &adw::ApplicationWindow, name: &str, slot: Option<usize>, tag: &str) {
+    let asked = ui::produce_choosers::asks_for_test("image");
+    click(window, name);
+    assert_eq!(
+        ui::produce_choosers::asks_for_test("image"),
+        asked + 1,
+        "{name} raised the image chooser"
+    );
+    let picked = std::env::temp_dir().join(format!("np-pick-{tag}-{}.png", std::process::id()));
+    naivepost::produce_upload_print::flat_png_for_test(&picked, 64, 36, 0.4)
+        .expect("a picture to pick");
+    ui::produce_choosers::answer_image(window, slot, &picked);
     settle();
 }
 
@@ -172,50 +189,19 @@ fn produce_round(_app: &adw::Application) {
     ui::produce_page::set_state(published());
     ui::produce_page::refresh(&window);
     let rows_with_narration = drawn_setting_rows(&window);
+    // Game audio is the narration's level and sits on the Narrate page (§07 §1), so this page draws twelve.
     assert!(
-        rows_with_narration.contains(&"setting-game-audio".to_string()),
-        "with narration on, the Game audio row is on the page"
+        !rows_with_narration.contains(&"setting-game-audio".to_string()),
+        "the Game audio row is not on the Produce page"
     );
     assert_eq!(
         rows_with_narration.len(),
-        13,
-        "§A's thirteen rows, each found by its control name: {rows_with_narration:?}"
-    );
-    // Narration off drops the game-volume row and nothing else (§F4.8: the value keeps, so the row
-    // returns where it was left). The flag moves through the door the app uses (`note_narration_off`), not
-    // by writing a project file into a folder another check is also reading — the page's rows and its Inputs
-    // clause are one fact, and this is the only place either of them is decided.
-    ui::produce_page::note_narration_off(true);
-    let mut off = published();
-    // Spelled through the door's own rule, not a literal: `note_narration_off` is what moves this flag now,
-    // so a block that handed `set_state` the opposite value would be testing its own mistake rather than
-    // the row (§F4.8 hides exactly this row behind exactly this flag).
-    off.narration_off = naivepost::narrate_off::game_volume_shown(false);
-    off.game_volume = 0.44;
-    ui::produce_page::set_state(off);
-    ui::produce_page::refresh(&window);
-    let rows_off = drawn_setting_rows(&window);
-    assert_eq!(
-        rows_off.len(),
-        naivepost::produce_screen::settings_rows_shown(true).len(),
-        "narration off leaves twelve rows: {rows_off:?}"
-    );
-    assert!(
-        !rows_off.contains(&"setting-game-audio".to_string()),
-        "and the row that is gone is the game-volume one"
-    );
-    // The value is untouched by hiding it, so un-hiding restores the slider where it was left.
-    let held = ui::produce_page::read_state();
-    assert!(
-        (held.game_volume - 0.44).abs() < 1e-9,
-        "hiding the row does not zero the number: it reads {}",
-        held.game_volume
+        12,
+        "§A's rows but Game audio, each found by its control name: {rows_with_narration:?}"
     );
     RAN_SETTINGS.store(true, Ordering::SeqCst);
     window.close();
     settle();
-    // Hand the flag back on, so a later block that counts on the slider being drawn still finds it.
-    ui::produce_page::note_narration_off(false);
     // --- (c) webm forces vp9 and drops the subtitle track ------------------------
     let window = produce_page(_app);
     ui::produce_page::set_state(published());
@@ -258,7 +244,7 @@ fn produce_round(_app: &adw::Application) {
         widget_in(&window, "publish-images-empty").is_some(),
         "§A: an empty images row prints its note where the slots go"
     );
-    click(&window, "add-image-button");
+    click_and_pick(&window, "add-image-button", None, "first");
     let added = ui::produce_page::read_state();
     assert_eq!(
         added.frames.len(),
@@ -288,7 +274,7 @@ fn produce_round(_app: &adw::Application) {
     one.frames = vec!["project:produce/publish/keep-me.jpg".to_string()];
     ui::produce_page::set_state(one);
     ui::produce_page::refresh(&window);
-    click(&window, "image-change-0");
+    click_and_pick(&window, "image-change-0", Some(0), "change");
     let after_change = ui::produce_page::read_state();
     assert_eq!(
         after_change.frames.len(),
@@ -585,7 +571,7 @@ fn produce_round(_app: &adw::Application) {
     );
     assert_eq!(after_repaint.title, typed.title, "refresh kept the title");
     // The guard came back clean: a button on another part of the page still answers.
-    click(&window, "add-image-button");
+    click_and_pick(&window, "add-image-button", None, "after-text");
     assert!(
         !ui::produce_page::read_state().frames.is_empty(),
         "the images row still works after the text wires ran"
@@ -613,13 +599,41 @@ fn empty_session_tree() -> naivepost::layout::Tree {
     naivepost::layout::Tree::new(dir).expect("the session folder is a project tree")
 }
 
-/// The Inputs readout's own text, as the label shows it.
+/// The Inputs readout's own text: §1 item 15 is the window's bottom bar, repainted here through the door
+/// Open uses, from the session beside the launch, for the fixture project.
 fn inputs_text(window: &adw::ApplicationWindow) -> String {
-    widget_in(window, "produce-inputs")
+    let model = naivepost::project::load(&fixture_dir()).expect("fixture loads");
+    let dir = naivepost::startup::session_dir(&std::env::current_dir().expect("cwd pinned"));
+    ui::window::paint_readouts_for(window, &model, &dir);
+    crate::common::settle_workers();
+    let text = widget_in(window, "inputs-readout")
         .and_then(|w| w.downcast::<gtk::Label>().ok())
-        .expect("§A's Inputs readout is on the page")
+        .expect("§1's Inputs readout is on the bottom bar")
         .text()
-        .to_string()
+        .to_string();
+    text.strip_prefix("Inputs: ").unwrap_or(&text).to_string()
+}
+
+/// A cut of seven clips, 4:14 together, in the session: the readout counts the cut on disk.
+fn seven_clip_cut(tree: &naivepost::layout::Tree) {
+    let segs = (0..7)
+        .map(|i| {
+            let s = i as f64 * 40.0;
+            naivepost::cut::Seg {
+                s,
+                e: s + if i == 6 { 38.0 } else { 36.0 },
+                ..Default::default()
+            }
+        })
+        .collect();
+    naivepost::cut::save(
+        &naivepost::cut::Cut {
+            segs,
+            ..Default::default()
+        },
+        tree,
+    )
+    .expect("cut.json written");
 }
 
 /// §15's Inputs readout, read off the SESSION rather than off a flow's memory. §A wants the row to say
@@ -628,6 +642,7 @@ fn inputs_text(window: &adw::ApplicationWindow) -> String {
 /// after a redraw even with three unwritten wavs in the folder.
 fn check_inputs_read_the_session(_app: &adw::Application) {
     let tree = empty_session_tree();
+    seven_clip_cut(&tree);
     // Three lines with words and no take anywhere near them: the prototype counts exactly these.
     let line = |s: f64, e: f64, text: &str| naivepost::narration::Entry {
         s,
@@ -710,14 +725,12 @@ fn check_inputs_read_the_session(_app: &adw::Application) {
     settle();
 }
 
-/// §1 item **12**: the Game audio row and the Inputs "no narration" clause are ONE fact about this
-/// project, published through the door the app uses (`produce_page::note_narration_off`, which the Narration
-/// tick and an Open both call). Off takes `setting-game-audio` away AND makes the readout say "no narration"
-/// — the same fact twice — while on brings the row back and lets the session's untaken lines show as
-/// "3 to speak". The page is deliberately handed a WRONG state first: a refresh that trusted what it was
-/// given would keep drawing last minute's rows.
+/// §1 item **15**: the Inputs "no narration" clause follows the narration the session holds, not a switch
+/// (there is none, §07 §1). Three lines with words and no takes read "3 to speak"; the same session with a
+/// narration of no words reads "no narration", and the page's rows are the same twelve either way.
 fn check_game_audio_follows_the_project(_app: &adw::Application) {
     let tree = empty_session_tree();
+    seven_clip_cut(&tree);
     // The readout's other two clauses are pinned too, so the sentence asserted below can only have come
     // from this project's flag: three lines with words and no takes anywhere make "3 to speak", and a
     // written `publish.json` keeps the "no upload text" clause off the line. (A neighbour check shares
@@ -746,63 +759,41 @@ fn check_game_audio_follows_the_project(_app: &adw::Application) {
     )
     .expect("publish.json written");
     let window = produce_page(_app);
-    // --- off: the door's answer is what the page draws, and a refresh cannot lose it --------------
-    // `set_state` replaces the whole state, so the flag the door published has to be carried over rather than
-    // dropped on the floor with `published()`'s default — and the assert below asks for it AFTER a refresh,
-    // which is where a repaint that rebuilt its rows from a stale copy used to lose it.
-    ui::produce_page::note_narration_off(true);
-    let mut state = published();
-    state.narration_off = naivepost::narrate_off::game_volume_shown(false);
-    ui::produce_page::set_state(state);
+    ui::produce_page::set_state(published());
+    ui::produce_page::refresh(&window);
+    assert_eq!(
+        drawn_setting_rows(&window).len(),
+        naivepost::produce_screen::settings_rows_shown().len(),
+        "the page draws its twelve rows"
+    );
+    assert!(
+        inputs_text(&window).contains("3 to speak"),
+        "three untaken lines with words are owed: {}",
+        inputs_text(&window)
+    );
+    assert!(
+        !inputs_text(&window).contains("no narration"),
+        "§A spells one clause or the other, never both: {}",
+        inputs_text(&window)
+    );
+    // The same session with a narration of no words: "no narration", and nothing to speak.
+    naivepost::narration::save(&naivepost::narration::Narration::default(), &tree)
+        .expect("an empty narration");
     ui::produce_page::refresh(&window);
     assert!(
-        ui::produce_page::read_state().narration_off,
-        "the door's answer survived a refresh, or nothing downstream can follow it"
-    );
-    let rows = drawn_setting_rows(&window);
-    assert!(
-        !rows.contains(&ui::produce_page::row_widget("Game audio")),
-        "a project with narration off gets no game-volume row (§A): {rows:?}"
-    );
-    assert_eq!(
-        rows.len(),
-        naivepost::produce_screen::settings_rows_shown(true).len(),
-        "and exactly the rows the rules module says to draw for narration off: {rows:?}"
-    );
-    assert!(
         inputs_text(&window).contains("no narration"),
-        "the readout and the row agree: {}",
+        "a narration with no words reads no narration: {}",
         inputs_text(&window)
     );
     assert!(
         !inputs_text(&window).contains("to speak"),
-        "§A spells one clause or the other, never both: {}",
+        "and owes nothing: {}",
         inputs_text(&window)
     );
-    // The other side: the same page, the same wrong state, the tick back on.
-    ui::produce_page::note_narration_off(false);
-    let mut back_state = published();
-    back_state.narration_off = naivepost::narrate_off::game_volume_shown(true);
-    ui::produce_page::set_state(back_state);
-    ui::produce_page::refresh(&window);
-    assert!(
-        !ui::produce_page::read_state().narration_off,
-        "and the door's answer back on survives a refresh too"
-    );
-    let back = drawn_setting_rows(&window);
-    assert!(
-        back.contains(&ui::produce_page::row_widget("Game audio")),
-        "narration back on brings its row back: {back:?}"
-    );
-    assert!(
-        !inputs_text(&window).contains("no narration"),
-        "and the readout stops saying it: {}",
-        inputs_text(&window)
-    );
-    assert!(
-        inputs_text(&window).contains("3 to speak"),
-        "with narration back on, the same three untaken lines are owed again: {}",
-        inputs_text(&window)
+    assert_eq!(
+        drawn_setting_rows(&window).len(),
+        naivepost::produce_screen::settings_rows_shown().len(),
+        "the rows do not change with it"
     );
     RAN_SESSION_OFF.store(true, Ordering::SeqCst);
     window.close();

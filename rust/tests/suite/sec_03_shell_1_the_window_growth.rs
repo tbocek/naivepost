@@ -141,18 +141,21 @@ fn check_the_preview_grows_with_the_room(app: &adw::Application) {
     window.close();
 }
 
-/// §1's collapsed band keeps its own height however tall the window gets, and it still ends at the window's
-/// bottom edge: the log's scroller is where a long log goes, so nothing empty opens under the run bar.
+/// §1's margin under the bottom bar: the band ends this far above the window's bottom edge.
+const MARGIN: f64 = naivepost::ui::margins::BAR_EDGE_PX as f64;
+
+/// §1's collapsed band keeps its own height however tall the window gets, and it still ends §1's 12 px margin
+/// above the window's bottom edge: the log's scroller is where a long log goes, so nothing empty opens under the run bar.
 fn check_the_bottom_band_keeps_its_own_height(app: &adw::Application) {
     let window = cut_window(app);
     let (_, _, _, small_band) = drawn(&window, "bottom-bar");
     lay_out(&window, BIG_W, BIG_H);
     // The divider settles on the new height through the same allocations: wait for the band to get there.
     wait_until(
-        "the collapsed band reached the window's bottom edge",
+        "the collapsed band reached the window's bottom margin",
         || {
             let (_, ey, _, eh) = drawn(&window, "log-expander");
-            (ey + eh - window.height() as f64).abs() <= 2.0
+            (ey + eh + MARGIN - window.height() as f64).abs() <= 2.0
         },
     );
     let (ex, ey, _, eh) = drawn(&window, "log-expander");
@@ -162,8 +165,8 @@ fn check_the_bottom_band_keeps_its_own_height(app: &adw::Application) {
     // headless WM adds decoration height), so "no empty space" is measured against the real edge.
     let win_h = window.height() as f64;
     assert!(
-        (ey + eh - win_h).abs() <= 2.0,
-        "\u{a7}1: with the log collapsed there is no empty space under the band: it ends at {:.0}+{:.0} in a {win_h:.0} px window", ey + eh, eh
+        (ey + eh + MARGIN - win_h).abs() <= 2.0,
+        "\u{a7}1: with the log collapsed there is no empty space under the band but its 12 px margin: it ends at {:.0}+{:.0} in a {win_h:.0} px window", ey + eh, eh
     );
     // The band did not grow with the window: what it gained over the minimum is GTK's own spacing around the
     // two rows \u00a71 counts, printed above rather than hidden.

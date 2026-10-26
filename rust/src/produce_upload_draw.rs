@@ -37,23 +37,23 @@ fn current_paths() -> Option<Paths> {
 }
 
 /// The drawing server as it stands right now: settings box, then `SD_SERVER`, then loopback.
-fn endpoint() -> Result<(Conf, services::Endpoint), String> {
+fn endpoint() -> Result<services::Endpoint, String> {
     let conf = match current_paths().as_ref().map(settings::read) {
         Some(Ok(conf)) => conf,
         Some(Err(reason)) => return Err(format!("settings could not be read: {reason}")),
         None => Conf::default(),
     };
-    let endpoint = services::image_endpoint(&conf, |key| std::env::var(key).ok());
-    Ok((conf, endpoint))
+    Ok(services::image_endpoint(&conf, |key| {
+        std::env::var(key).ok()
+    }))
 }
 
-/// One draw request, held to the drawing model's slot count and timed with the wait it spent waiting for one.
+/// One draw request, held to its server's one turn (§02 §1) and timed with the wait it spent for it.
 ///
-/// §4 lists the image model among the models that get a slot count, and sd.cpp is the one server this app
-/// asks repeatedly (a job every second while a picture draws), so an ungated draw is exactly the queue-in-the-
-/// server case §4 exists to prevent. The guard lives until `call_dialed` returns: the hold covers the call,
-/// not the caller's thinking. The measured wait goes into the row's `wait_s` (§10), which is how a slot count
-/// gets chosen from the log rather than guessed.
+/// sd.cpp is the one server this app asks repeatedly (a job every second while a picture draws), so an
+/// ungated draw is exactly the queue-in-the-server case §4 exists to prevent. The guard lives until
+/// `call_dialed` returns: the hold covers the call, not the caller's thinking. The measured wait goes into the
+/// row's `wait_s` (§10).
 #[allow(clippy::too_many_arguments)]
 fn dialed(
     tree: &Tree,
@@ -62,17 +62,11 @@ fn dialed(
     kind: Kind,
     job: Option<&str>,
     body: Option<&str>,
-    conf: &Conf,
     cancelled: &dyn Fn() -> bool,
 ) -> (crate::requests::Request, Result<server_leg::Sent, String>) {
     let step = base.step.as_str();
-    let held = crate::slot_gate::hold(
-        &endpoint.url,
-        "sd.cpp",
-        services::image_slots(conf),
-        step,
-        cancelled,
-    );
+    // §02 §1: one request at a time per server.
+    let held = crate::slot_gate::hold(&endpoint.url, step, cancelled);
     let (slot, waited) = match held {
         Ok(got) => got,
         // ⏹ landed while every drawing slot was busy. Nothing went out; the caller reports its own failure
@@ -94,7 +88,7 @@ fn dialed(
             endpoint,
             kind,
             job,
-            body,
+            body: body.map(str::as_bytes),
             filename: None,
             cancelled,
             // An image job has no silence bound of its own (§1 bounds it by kind); §4's watch is a chat rule.
@@ -114,16 +108,15 @@ fn dialed(
 /// kinds act on. The address comes from [`endpoint`] — §1's precedence, settings box then `SD_SERVER` then the
 /// loopback — re-read here, so a settings edit lands on the next request.
 pub fn submit(tree: &Tree, body: &serde_json::Value) -> Result<DrawnJob, String> {
-    let (conf, endpoint) = endpoint()?;
-    submit_with(tree, &endpoint, body, &conf)
+    let endpoint = endpoint()?;
+    submit_with(tree, &endpoint, body)
 }
 
-/// The submit itself: the slot hold, the row, the POST, the job id out of the answer.
+/// The submit itself: the server's turn, the row, the POST, the job id out of the answer.
 fn submit_with(
     tree: &Tree,
     endpoint: &services::Endpoint,
     body: &serde_json::Value,
-    conf: &Conf,
 ) -> Result<DrawnJob, String> {
     // sd.cpp has no model row of its own in the settings (§7 gives it a server and a key only), so the row
     // names the SERVER it went to rather than leaving the column blank.
@@ -137,7 +130,6 @@ fn submit_with(
         Kind::SubmitImage,
         None,
         Some(&sent_body),
-        conf,
         &|| false,
     );
     let sent = reply.map_err(|why| format!("the drawing server at {}: {why}", endpoint.url))?;
@@ -156,7 +148,7 @@ fn submit_with(
 /// One ask: `GET /sdcpp/v1/jobs/{id}`. The status word and how many jobs sit ahead are what §F5.6's log
 /// line prints, and `done` is what stops the loop.
 pub fn poll(tree: &Tree, job: &DrawnJob) -> Result<PollState, String> {
-    let (conf, endpoint) = endpoint()?;
+    let endpoint = endpoint()?;
     let base = server_leg::base_row(Server::Image, "sd.cpp", "job", "", STEP, "poll");
     let (_row, reply) = dialed(
         tree,
@@ -165,7 +157,6 @@ pub fn poll(tree: &Tree, job: &DrawnJob) -> Result<PollState, String> {
         Kind::PollImage,
         Some(&job.id),
         None,
-        &conf,
         &|| false,
     );
     let sent = reply.map_err(|why| format!("the drawing server at {}: {why}", endpoint.url))?;
@@ -227,7 +218,7 @@ where
 /// The cancel is sent on an always-false cancel check on purpose: it exists BECAUSE the run stopped, so
 /// gating it on the same flag would refuse the one request whose job is to serve that stop.
 pub fn cancel(tree: &Tree, job: &DrawnJob) -> Result<(), String> {
-    let (conf, endpoint) = endpoint()?;
+    let endpoint = endpoint()?;
     let base = server_leg::base_row(Server::Image, "sd.cpp", "job", "", STEP, "cancel");
     let (_row, reply) = dialed(
         tree,
@@ -236,7 +227,6 @@ pub fn cancel(tree: &Tree, job: &DrawnJob) -> Result<(), String> {
         Kind::CancelImage,
         Some(&job.id),
         None,
-        &conf,
         &|| false,
     );
     let sent = reply.map_err(|why| format!("the drawing server at {}: {why}", endpoint.url))?;

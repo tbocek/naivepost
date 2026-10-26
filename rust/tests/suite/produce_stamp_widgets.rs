@@ -165,7 +165,6 @@ fn current_stamp(tree: &Tree, settings: &Produce, segs: &[Seg]) -> String {
         },
         &project.sources,
         Some("1"),
-        project.no_narration,
         (1920, 1080),
     )
 }
@@ -186,6 +185,11 @@ fn press_play(window: &adw::ApplicationWindow) -> String {
     let button = ui::line_step_button(window, "play-button")
         .expect("the shell drew a play-button on the run bar");
     button.emit_by_name::<()>("clicked", &[]);
+    // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
     ui::find_status(window.upcast_ref())
         .expect("the window has a status line")
@@ -328,7 +332,6 @@ fn check_effect_makes_it_stale(root: &Path) {
             &with_zoom,
             &fixture_sources(),
             Some("1"),
-            false,
             (1920, 1080)
         ),
         stale,
@@ -355,9 +358,20 @@ fn check_effect_makes_it_stale(root: &Path) {
     );
     let dialog = naivepost::ui::produce_confirm::open_dialog()
         .expect("the stale render opened the overwrite dialog");
-    // Cancel leaves the standing video exactly as it was: the question was the whole answer.
+    // Enter answers the dialog's default response, and the encode has no undo: the default is Cancel, not the
+    // destructive Overwrite (the first rewrite made Overwrite the default, so Enter replaced the render).
+    let default = dialog
+        .default_response()
+        .expect("the dialog has a default response")
+        .to_string();
+    assert_eq!(
+        default,
+        naivepost::produce_flow::ANSWER_CANCEL,
+        "Enter on the overwrite question cancels"
+    );
+    // Cancel (here: the default, what Enter sends) leaves the standing video exactly as it was.
     let before = std::fs::read(&video).expect("the video is still there");
-    respond_to(&dialog, "cancel");
+    respond_to(&dialog, &default);
     settle();
     assert_eq!(
         std::fs::read(&video).expect("the video is still there"),

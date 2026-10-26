@@ -168,7 +168,8 @@ pub fn flush_owed(window: &adw::ApplicationWindow) -> Option<String> {
     match crate::narration::save(&record, &tree) {
         Ok(()) => Some("the line was written to narration.json".to_string()),
         Err(why) => {
-            crate::ui::window::log_line(&format!(
+            // Said on the status line too: a structure change's caller drops this function's answer.
+            crate::ui::window_logs::say_failure(&format!(
                 "!!! could not write {} -- {why}",
                 tree.narration_json().display()
             ));

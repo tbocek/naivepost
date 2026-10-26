@@ -25,9 +25,98 @@ pub fn install_draw(window: &adw::ApplicationWindow) {
 /// Ask `narrate-picture` to paint again: from `refresh`, and from the 100 ms tick so the frame the
 /// person sees walks with ▶ instead of freezing at the second the press made.
 pub fn repaint(window: &adw::ApplicationWindow) {
+    show_frame(window);
     if let Some(area) = picture_of(window) {
         area.queue_draw();
     }
+}
+
+thread_local! {
+    /// What `narrate-video` shows now: the built-in player's frames (`None`), or the still last put there.
+    static SHOWN: std::cell::RefCell<Option<Option<std::path::PathBuf>>> = const { std::cell::RefCell::new(None) };
+    /// A recheck is already set for a listing or a decode a worker has not answered yet.
+    static RECHECK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// How soon a picture still coming from a worker is looked for again.
+const RECHECK_MS: u64 = 100;
+
+/// Put the right frame on `narrate-video`: the built-in player's own while it is the preview's picture, else the
+/// frame Prepare extracted for the recording the cut shows at the page's second (the scene's camera, at that second
+/// of its file). Nothing extracted there leaves the dark plate.
+fn show_frame(window: &adw::ApplicationWindow) {
+    let Some(video) = video_of(window) else {
+        return;
+    };
+    if crate::narrate_preview_leg::picture_built_in() {
+        if SHOWN.with(|shown| shown.borrow().as_ref().is_some_and(Option::is_none)) {
+            return;
+        }
+        if let Some(paintable) = crate::play_built_in::paintable()
+            .and_then(|object| object.downcast::<gtk::gdk::Paintable>().ok())
+        {
+            video.set_paintable(Some(&paintable));
+            SHOWN.with(|shown| *shown.borrow_mut() = Some(None));
+        }
+        return;
+    }
+    // The folder listing and the decode are the Cut page's caches (`cut_picture_cache`): a worker lists and
+    // decodes, the picture already up stays up meanwhile, and a recheck shortly after picks the answer up
+    // (§03-shell §1, the window thread never waits).
+    let Some(still) = still_at(crate::ui::narrate_page::read_state().session) else {
+        recheck(window);
+        return;
+    };
+    if SHOWN.with(|shown| shown.borrow().as_ref() == Some(&still)) {
+        return;
+    }
+    let texture = match still.as_ref() {
+        None => None,
+        Some(path) => match crate::ui::cut_picture_cache::picture(path) {
+            crate::ui::cut_picture_cache::Decoded::Ready(held) => Some(held.texture),
+            crate::ui::cut_picture_cache::Decoded::Missing => None,
+            crate::ui::cut_picture_cache::Decoded::Coming => {
+                recheck(window);
+                return;
+            }
+        },
+    };
+    video.set_paintable(texture.as_ref());
+    SHOWN.with(|shown| *shown.borrow_mut() = Some(still));
+}
+
+/// Look again in a moment, once: what a worker was asked for will have landed or still be coming.
+fn recheck(window: &adw::ApplicationWindow) {
+    if RECHECK.with(|set| set.replace(true)) {
+        return;
+    }
+    let window = window.clone();
+    glib::timeout_add_local_once(std::time::Duration::from_millis(RECHECK_MS), move || {
+        RECHECK.with(|set| set.set(false));
+        show_frame(&window);
+    });
+}
+
+/// The extracted frame the cut shows at session second `at`: `Some(None)` when Prepare left none there, `None`
+/// while a worker is still listing the recording's frames.
+fn still_at(at: f64) -> Option<Option<std::path::PathBuf>> {
+    let Some(tree) = crate::ui::window::narrate_session_tree() else {
+        return Some(None);
+    };
+    let Some((base, local)) = crate::narrate_preview_media::shown_at(&current_cut(), at) else {
+        return Some(None);
+    };
+    let paths = crate::ui::cut_picture_cache::frames_or_coming(&tree, &base)?;
+    let zero = crate::ui::cut_tracks::first_second(&paths);
+    Some(crate::ui::cut_tracks::frame_near(&paths, zero + local))
+}
+
+/// This window's `narrate-video`.
+fn video_of(window: &adw::ApplicationWindow) -> Option<gtk::Picture> {
+    let content = window.content()?;
+    crate::ui::window::find_widget_by_name(&content, "narrate-video")?
+        .downcast()
+        .ok()
 }
 
 /// The frame for one paint: the page's published second, the page's own cut, and no held effect — the
@@ -70,11 +159,7 @@ fn paint(window: &adw::ApplicationWindow, cr: &cairo::Context, width: f64, heigh
     let fit = fit_size(window, width, height);
     let frame = frame_of(fit);
     let seen = picture::observe(&frame, None);
-    // The plate the frame sits on: same dark ground as the Cut page's surface, so a headless snapshot
-    // and a live window both show a picture rather than the window's grey.
-    cr.set_source_rgb(0.06, 0.07, 0.09);
-    cr.rectangle(0.0, 0.0, width, height);
-    let _ = cr.fill();
+    // Only what the cut lays over the footage: the footage itself is `narrate-video` under this surface.
     picture::paint(cr, &frame, &seen);
 }
 

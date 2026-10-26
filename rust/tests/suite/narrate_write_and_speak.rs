@@ -8,7 +8,6 @@ use naivepost::audit_gaps::silent_survives_entry_rewrite;
 use naivepost::cut::NO_CUT_YET;
 use naivepost::layout::Tree;
 use naivepost::narrate_data::keep_previous;
-use naivepost::narrate_off::refuse_run;
 use naivepost::narrate_rewrite::{log_line, why};
 use naivepost::narrate_run::{
     captions_only_done, failed_status, fold_written, plan_run, refuse, speak_line, speak_pass,
@@ -47,41 +46,30 @@ fn one_line() -> Narration {
     }
 }
 
-// --- S1: the four refusals, and the order they are asked in -------------------------------------
+// --- S1: the three refusals, and the order they are asked in ------------------------------------
 
 #[test]
 fn f4_1_s1_refusal_order() {
     // Busy beats everything: a second run would overwrite the first one's progress line.
     assert_eq!(
-        refuse(true, false, true, false).as_deref(),
+        refuse(true, false, false).as_deref(),
         Some(naivepost::run::PAUSING),
-        "busy must be checked before no-cut, narration-off and the missing timeline"
+        "busy must be checked before no-cut and the missing timeline"
     );
     // Not busy: no cut comes next.
     assert_eq!(
-        refuse(false, false, true, false).as_deref(),
+        refuse(false, false, false).as_deref(),
         Some(NO_CUT_YET),
         "byte-for-byte the Cut page's own sentence"
     );
-    // A cut stands: narration off next, ahead of the timeline check, because a video with no
-    // narration needs no transcript either.
+    // A cut stands, timeline missing: the last gate. There is no narration-off gate: the project has no
+    // narration switch (§07 §1).
     assert_eq!(
-        refuse(false, true, true, false).as_deref(),
-        refuse_run(true).as_deref(),
-        "the same sentence the tick's refusal uses, not a paraphrase of it"
-    );
-    assert_eq!(
-        refuse(false, true, true, false).as_deref(),
-        Some("this video has no narration \u{2014} tick Narration at the top of this page to write one"),
-        "U+2014 em dash, exactly as §F4.1 S1 spells it"
-    );
-    // Narration on, timeline missing: the last gate.
-    assert_eq!(
-        refuse(false, true, false, false).as_deref(),
+        refuse(false, true, false).as_deref(),
         Some(NO_SESSION_TIMELINE)
     );
     // Every gate open: nothing to say, and the run proceeds.
-    assert_eq!(refuse(false, true, false, true), None);
+    assert_eq!(refuse(false, true, true), None);
 }
 
 #[test]
@@ -565,8 +553,7 @@ fn f4_1_s6_speak_pass_counts() {
         ],
         silent: Vec::new(),
     };
-    // Only the middle clip's wav exists in the cache. `speak_pass` takes the lines the tick allows to
-    // speak (F4.8: `narrate_off::lines_to_speak`), so it is handed the record's entries.
+    // Only the middle clip's wav exists in the cache. `speak_pass` is handed the record's entries.
     let speaks = speak_pass("own", &record.entries, |entry| entry.s == 10.0);
     assert_eq!(
         speaks,

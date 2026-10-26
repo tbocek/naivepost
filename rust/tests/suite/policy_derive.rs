@@ -284,7 +284,7 @@ fn f0_7_s4_a_valid_proposal_stores_over_the_value_already_there() {
     );
 }
 
-// ---- the six fields a proposal may name ---------------------------------------
+// ---- the seven fields a proposal may name ---------------------------------------
 
 /// A markingPass field set by hand, built through the real type so this file never fakes the shape.
 fn project_field_joins_user() -> naivepost::project::Field<MarkingPass> {
@@ -296,7 +296,7 @@ fn project_field_joins_user() -> naivepost::project::Field<MarkingPass> {
 }
 
 #[test]
-fn f0_7_the_catalogue_is_exactly_the_six_settable_fields() {
+fn f0_7_the_catalogue_is_exactly_the_seven_settable_fields() {
     let rows = policy::derived_fields();
     let names: Vec<&str> = rows.iter().map(|row| row.field).collect();
     assert_eq!(
@@ -308,7 +308,9 @@ fn f0_7_the_catalogue_is_exactly_the_six_settable_fields() {
             "speedPass",
             "decorationsPass",
             // §12 entry 21: a number row, settable and shown like the rest.
-            "targetLengthSeconds"
+            "targetLengthSeconds",
+            // The language the recordings are spoken in, read from the User Context.
+            "language"
         ],
         "one list drives validation and what may be set, so nothing is settable-but-unsayable"
     );
@@ -322,7 +324,8 @@ fn f0_7_the_catalogue_is_exactly_the_six_settable_fields() {
             "P.policy.captionsPass",
             "P.policy.speedPass",
             "P.policy.decorationsPass",
-            "P.policy.targetLengthSeconds"
+            "P.policy.targetLengthSeconds",
+            "P.policy.language"
         ]
     );
     // And every row's value list matches what `apply` accepts — re-checking through apply, not by eye.
@@ -596,6 +599,7 @@ fn stamp_user(policy: &mut Policy, field: &str) {
         "speedPass" => policy.speed_pass.origin = Origin::User,
         "decorationsPass" => policy.decorations_pass.origin = Origin::User,
         "targetLengthSeconds" => policy.target_length_seconds.origin = Origin::User,
+        "language" => policy.language.origin = Origin::User,
         other => unreachable!("{other} is not a catalogue field"),
     }
 }
@@ -611,6 +615,10 @@ fn because_of(policy: &Policy, field: &str) -> Option<String> {
 /// A value this row accepts that is not the one its field now holds, taken from the row itself so a new
 /// spelling in the catalogue needs no change here.
 fn pick_a_value(row: &policy::CatalogueRow, held: &str) -> &'static str {
+    // The open-ended language row: German differs from the English default.
+    if row.field == "language" {
+        return "de";
+    }
     if row.values.is_empty() {
         // The number row: §10's "none" is 0, so fifteen minutes is a change whatever it held.
         return "900";
@@ -662,5 +670,57 @@ fn f0_7_tracker_a_never_derived_context_needs_a_derivation() {
     assert!(
         tracker.needs_derive("one take per slide"),
         "forget resets it"
+    );
+}
+
+/// `P.policy.language`: the language the recordings are spoken in comes from the User Context through F0.7,
+/// as Style does; there is no Language box on Prepare any more. A code is stored with its reason; anything that
+/// is not a lower-case language code is refused with a sentence the model can act on, and the policy keeps
+/// what it had. The field is offered to the model with the others.
+#[test]
+fn f0_7_s3_the_language_is_derived_from_the_context_as_a_code() {
+    let mut policy = Policy::default();
+    assert_eq!(
+        policy.language.value, "en",
+        "English when nothing says otherwise"
+    );
+    assert_eq!(
+        policy::apply(
+            &mut policy,
+            &proposal(
+                "language",
+                "de",
+                "the context says the lecture is held in German"
+            ),
+        ),
+        Applied::Set
+    );
+    let stored = stored(&policy, "language");
+    assert_eq!(stored["value"], "de", "{stored}");
+    assert_eq!(stored["source"], "model", "{stored}");
+    assert_eq!(
+        stored["because"], "the context says the lecture is held in German",
+        "{stored}"
+    );
+
+    for bad in ["German", "EN", "d", "deutsch"] {
+        match policy::apply(&mut policy, &proposal("language", bad, "")) {
+            Applied::Refused(say) => assert!(
+                say.contains(bad) && say.contains("two-letter code"),
+                "the refusal names the value and what to send: {say}"
+            ),
+            other => panic!("{bad} must be refused, got {other:?}"),
+        }
+    }
+    assert_eq!(
+        policy.language.value, "de",
+        "a refusal leaves the field as it was"
+    );
+
+    assert!(
+        policy::derived_fields()
+            .iter()
+            .any(|row| row.field == "language" && row.id == "P.policy.language"),
+        "the model is offered the field"
     );
 }

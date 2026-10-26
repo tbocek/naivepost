@@ -34,6 +34,7 @@ static RAN_NO_WORDS: AtomicBool = AtomicBool::new(false);
 static RAN_FLOOR: AtomicBool = AtomicBool::new(false);
 static RAN_APPLY_UNDO: AtomicBool = AtomicBool::new(false);
 static RAN_BOX: AtomicBool = AtomicBool::new(false);
+static RAN_BUTTONS_ONCE: AtomicBool = AtomicBool::new(false);
 
 /// Let the main context run what the widget emissions queued.
 
@@ -144,6 +145,45 @@ fn round(app: &adw::Application) {
     // dilated edge, preview = render) is RENDER arithmetic with nothing on screen to click, and is already
     // proven in tests/suite/cut_text_caption.rs `f3_4_s4_*`. Not re-proved here.
     f3_4_s5_a_moved_box_snaps_and_a_resized_edge_moves_one_axis_only(app);
+    f3_4_s3_the_form_buttons_answer_once_through_the_widgets(app);
+}
+
+/// §F3.4 S3 through the real buttons of a form a drag landed: ▸ Apply places ONE caption with Apply's own sentence
+/// (one ↶ takes it back), Cancel places nothing. The first rewrite wired these buttons twice on the drag path, so
+/// a click applied and then refused "no caption to apply" over its own sentence.
+fn f3_4_s3_the_form_buttons_answer_once_through_the_widgets(app: &adw::Application) {
+    let window = land_click_form(app, 30.0);
+    type_words(&window, "hello world");
+    click(&window, "text-apply-button");
+    assert_eq!(
+        ui::review_cut_of(&window).fx.len(),
+        1,
+        "one ▸ Apply, one caption"
+    );
+    assert_eq!(
+        status_text(&window),
+        fx_record::recorded_status(naivepost::cut::EffectKind::Text),
+        "the status is Apply's own sentence, not a second press's refusal over it"
+    );
+    click(&window, "undo-button");
+    assert!(
+        ui::review_cut_of(&window).fx.is_empty(),
+        "one ↶ takes it back: one record step"
+    );
+    window.close();
+    settle();
+
+    let window = land_click_form(app, 40.0);
+    type_words(&window, "never placed");
+    click(&window, "text-cancel-button");
+    assert!(
+        ui::review_cut_of(&window).fx.is_empty(),
+        "Cancel places nothing"
+    );
+    assert!(!form_visible(&window), "and closes the form");
+    RAN_BUTTONS_ONCE.store(true, Ordering::SeqCst);
+    window.close();
+    settle();
 }
 
 /// §F3.4 S1: the press arms, says so in the module's own words, draws NO form, and leaves the camera layer UP.
@@ -592,5 +632,9 @@ fn f3_4_the_caption_form_is_wired_through_the_real_widgets() {
     assert!(
         RAN_BOX.load(Ordering::SeqCst),
         "the S5 snap-and-resize check never ran"
+    );
+    assert!(
+        RAN_BUTTONS_ONCE.load(Ordering::SeqCst),
+        "the buttons-once check never ran"
     );
 }

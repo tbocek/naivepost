@@ -1,9 +1,13 @@
+/// §03-shell §1: the window thread never waits; work goes to a worker, answers come back on a poll.
+pub mod background;
 /// §04-prepare#6 — the bench mark and Reset, painted from what this machine holds. Split out of
 /// `window.rs`, which is past its size budget.
 pub mod bench_paint;
 /// §05-cut#1-screen — the Cut page's two drawing areas: the track band that paints every §1 mark, and the
 /// playhead's own layer. Split out of `window.rs`, which is past its size budget.
 pub mod cut_colours;
+/// §05-cut#1-screen "Pictures" — the film strip's pictures cut on the fly from the recording, cached in temp.
+pub mod cut_film_cache;
 /// §05-cut#7-rules bullet 1 — the page's ONE hand: one thread-local slot, so `cut_rules::pick_up`'s rule
 /// (`One thing held at a time`) binds across an edge, a clip and an effect instead of three independent slots.
 pub mod cut_hand;
@@ -22,9 +26,8 @@ pub mod log_paint;
 /// Which words in a log line name a path, and where each points: §1's "every path the log names is a link
 /// to it", as arithmetic with no widget and no session folder in sight. `log_link` marks and opens.
 pub mod log_paths;
-/// F0.4 §S2/§S6 — the driver that feeds [`crate::lucky`]'s chain real outcomes, and the CSS rule that
-/// makes the gears turn. Split out of `window.rs`, which is past its size budget.
-pub mod lucky_run;
+/// 03-shell §1's margins: the column-divider gap and the text-box inset every page uses.
+pub mod margins;
 /// §07-narrate#1-screen — the Narrate page's surface: its 22 widgets and their thin wires.
 pub mod narrate_page;
 /// §07-narrate#1-screen badge 13 — the pitch control as a labelled row (`pitch:` · slider · value).
@@ -35,6 +38,8 @@ pub mod narrate_row;
 pub mod new_apply;
 /// F0.9 Open a project — the window's own half of S4: refresh every page, remember this root, say it.
 pub mod open_apply;
+/// §08 items 1, 3, 6, 10: the image chooser and the two save dialogs, each answer through one door.
+pub mod produce_choosers;
 /// §08-produce#1-screen — the Produce page's surface: its 15 numbered widgets and their thin wires.
 pub mod produce_confirm;
 /// F5.4 §S3/§S7/§S9 — the Produce page's Translate row (its ticks, the state they write) and the
@@ -70,6 +75,12 @@ pub mod produce_words;
 /// §08-produce#1-screen item **7** — the thumbnail's text-overlay editor: its ✎ chips, dashed boxes and
 /// the drag that draws a box. Split out of `produce_page`, which is at its size budget.
 pub mod produce_words_press;
+/// §03-shell §1 for the Produce page: its run and its presses walk on a worker, the page carried over.
+pub mod produce_worker;
+/// §03-shell F0.14 — the profile row and form on Prepare's bench.
+pub mod profile_form;
+/// §03-shell F0.14 — the Profiles window, edit and view modes.
+pub mod profiles_dialog;
 /// F0.11 Rescan — the window's own half of S1–S3: name the drops, write the pruned list back, and
 /// refresh every tab from what the scan re-read.
 pub mod rescan_apply;
@@ -83,6 +94,8 @@ pub mod save_apply;
 pub mod settings;
 /// §03-shell#5 -- each Settings section's ⓘ: what that section's server is expected to speak.
 pub mod settings_info;
+/// §03-shell#5 -- the named server entries under the Writing, Audio and Drawing headings.
+pub mod settings_servers;
 pub mod settle;
 /// F0.1 §S2/§S4 and §2 — the narration autosave timer, the bar's idle pulse and the run line that goes
 /// to the status row. Split out of `window.rs`, which is at its size budget.
@@ -95,10 +108,15 @@ pub mod source_rows_refresh;
 /// `cache/waves`. Split out of `window.rs`, at its size budget.
 pub mod wave_snap;
 
+/// §05-cut#1-screen "Tracks" — the marks a hand presses on the band (each ✕, the fold badges, the gutter's switches,
+/// the scene's lens and speaker), drawn there and answered by a press there.
+pub mod cut_band_marks;
 /// F3.8 S1/S2/S3 — the effects-lane bar's own drag gesture: when a press is a click, when it picks the band
 /// up, and how far the hand may take it. Split out of `window.rs`, which is past its size budget.
 pub mod cut_band_press;
 pub mod cut_band_rows;
+/// F2.8 on the painted band: left drags a border, right drags a border or moves.
+mod cut_band_trim;
 /// F2.10 cameras and hearing: the page half of the flow, split out of `window.rs`. Its doors are
 /// re-exported below under the `ui::` names the tests and the shell already call.
 mod cut_cameras;
@@ -123,6 +141,8 @@ mod cut_lane_rows;
 /// past its size budget. See the module doc.
 pub mod cut_page_layout;
 pub mod cut_picture;
+/// §05-cut §1 Pictures under §03-shell §1: the frame listings, decoded frames and card renders the page paints from.
+pub mod cut_picture_cache;
 /// §05-cut#1-screen / §06-effects#2 — the band's PICTURE ROWS: which extracted frame stands where, the grid
 /// measured from the frame names, and who may decode. Split out because `cut_tracks` is at its size budget.
 pub mod cut_picture_rows;
@@ -170,6 +190,8 @@ pub mod cut_verb_press;
 /// §05-cut#1-screen badge **31** and the wheel's three gestures: the band's live zoom, its scroll
 /// position and the geared scrollbar. Split out of `window.rs`, which is past its size budget.
 pub mod cut_view;
+/// §05-cut#1-screen "Tracks" — each row's own sound as a strip under its pictures, read off the wave cache.
+pub mod cut_wave_rows;
 pub mod cut_zoom_hand;
 pub mod narrate_band;
 /// §07-narrate#1-screen (**Preview**): the wheel that steps a frame while the picture is paused.
@@ -289,6 +311,8 @@ mod narrate_lines;
 /// F4.7 (**Text**) — the row's text box: what a typed tag does to the line, and when it reaches disk.
 mod narrate_text;
 pub mod prepare_guard;
+/// §03-shell §1: the Prepare ▶ on a worker, from the derivation to the last stage.
+mod prepare_worker;
 /// §05-cut#8 bullet 2: the mute line, the stream-volume reset, and the reason each names. Split out of
 /// `window.rs`, which is past its size budget.
 pub mod preview_sound;
@@ -334,16 +358,16 @@ pub use settings::badge;
 // always had (they lived in `window.rs` until they moved to `cut_svg`).
 pub use cut_svg::{
     make_here, press_svg_apply, press_svg_cancel, press_svg_choose, press_svg_esc, press_svg_item,
-    raster_dir, raster_of, release_svg_arm_only, svg_armed, svg_chosen, svg_chosen_file,
-    svg_drag_ended, svg_drag_ended_with_source, svg_form_open, svg_raster_state, swap_svg_file,
+    raster_dir, raster_of, release_svg_arm_only, svg_armed, svg_chooser_asks_for_test, svg_chosen,
+    svg_chosen_file, svg_drag_ended, svg_drag_ended_with_source, svg_form_open, svg_raster_state,
+    swap_svg_file,
 };
 // §07-narrate#1-screen — the page's seams: the state it renders, the refresh that paints it, and one
 // function per press so a widget test can compare what the click printed with what the rule answered.
 pub use narrate_page::{
     press_back, press_forward, press_line_reroll, press_line_speak, press_narrate_add_line,
     press_narrate_play, press_pitch, press_sample_play, press_sample_reroll, press_sample_stop,
-    press_take_add, press_take_remove, press_voice, read_state, refresh, set_narration_off,
-    set_state, NarrateState,
+    press_take_add, press_take_remove, press_voice, read_state, refresh, set_state, NarrateState,
 };
 // F4.7's row edits live in their own file; re-exported here so `ui::press_line_*` resolves as before.
 pub use narrate_lines::{press_line_add_below, press_line_move, press_line_remove};
@@ -371,7 +395,6 @@ pub use window::add_chooser_shown_count;
 pub use window::add_files;
 pub use window::add_sources_button;
 pub use window::arrow_steps;
-pub use window::bench_language;
 pub use window::build_window;
 pub use window::copy_into_project;
 pub use window::derive_policy;
@@ -382,7 +405,6 @@ pub use window::line_position;
 pub use window::line_root;
 pub use window::line_step_button;
 pub use window::log_expander;
-pub use window::lucky_button;
 pub use window::main_window;
 pub use window::marking_pass;
 pub use window::move_line_and_save;
@@ -408,7 +430,6 @@ pub use window::reset_add_chooser_shown;
 pub use window::running_step;
 pub use window::save_button;
 pub use window::save_tooltip;
-pub use window::session_freq;
 pub use window::session_handle;
 pub use window::session_policy;
 pub use window::session_sources;
@@ -516,8 +537,9 @@ pub use window::press_effect_item;
 pub use window::press_zoom;
 pub use window::press_zoom_item;
 pub use window_insert::{
-    close_insert_form, insert_chosen, insert_chosen_with_length, insert_open, place_known,
-    press_insert, press_insert_apply, refresh_insert_button, visible_insert_form,
+    answer_logos, close_insert_form, insert_asks_for_test, insert_chosen,
+    insert_chosen_with_length, insert_open, logo_asks_for_test, place_known, press_insert,
+    press_insert_apply, refresh_insert_button, visible_insert_form,
 };
 // F3.9 Captions proposed by the model: the pass's seams — no control starts it (it is a job of the run after
 // the cut), so a test drives the door itself and reads the placed captions through the same cut state the logic

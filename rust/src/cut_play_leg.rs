@@ -313,11 +313,15 @@ pub fn start_cut_preview_tick(window: &adw::ApplicationWindow, page: Rc<dyn CutP
     glib::timeout_add_local(
         std::time::Duration::from_millis(crate::preview::TICK_MS),
         move || {
-            // Only ▶✂ drives this loop; every other preview mode leaves the line alone.
-            if !page.cut_only() {
+            // Only a PLAYING ▶✂ drives this loop: every other preview mode leaves the line alone, and so does a
+            // paused cut, whose line and picture stand where the pause left them.
+            if !page.cut_only() || !page.playing() {
                 return glib::ControlFlow::Continue;
             }
-            let from = page.playhead().unwrap_or(0.0);
+            let from = page
+                .player_second()
+                .or_else(|| page.playhead())
+                .unwrap_or(0.0);
             let cut_ = page.cut();
             let step = tick(&cut_, from, crate::preview::TICK_MS);
             page.set_playhead(step.head);
@@ -357,6 +361,11 @@ pub fn start_cut_preview_tick(window: &adw::ApplicationWindow, page: Rc<dyn CutP
 pub trait CutPreviewPage {
     /// Is this window's preview the plain cut (▶✂)? False for the recording and for a review.
     fn cut_only(&self) -> bool;
+    /// Is the preview's transport playing? A paused ▶✂ holds its line (S4's toggle), so the tick moves nothing.
+    /// Defaults to playing for a page that only drives the tick table.
+    fn playing(&self) -> bool {
+        true
+    }
     /// Where the line sits now, in session seconds.
     fn playhead(&self) -> Option<f64>;
     /// Move the line.
@@ -383,6 +392,11 @@ pub trait CutPreviewPage {
     /// gain goes to the player's volume, the way `cut_hear::Mix::gain` is handed about everywhere else.
     /// `at_secs` travels with it because the leg asks playbin's volume property AT a second (F3.6 S5).
     fn apply_gain(&self, gain: f64, at_secs: f64);
+    /// Where the player itself stands, as a session second, when it can say (the built-in player): the tick
+    /// starts from there, so the line cannot drift from the picture. `None` keeps the line's own second.
+    fn player_second(&self) -> Option<f64> {
+        None
+    }
 }
 
 /// The cut's rate for these seconds, as last handed to the player — so a re-cue costs one per rate CHANGE,

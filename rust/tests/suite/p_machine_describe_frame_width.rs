@@ -32,11 +32,10 @@ const LANE: &str = "lecture";
 /// The native width the source frames are made at: anything wider than 896, so "scaled" is visible
 /// as a difference rather than as ffmpeg agreeing with whatever it was asked for.
 const SOURCE_WIDTH: u32 = 1280;
-/// The interval the scenes space their frames on. `Project::default()`'s own (`P.project.frameInterval`):
-/// `describe::pick_frames` walks one frame every interval inside a scene and `is_every_frame` refuses a
-/// folder spaced at the extraction grid, so this is the one spacing that lets the stage reach the wire
-/// (the same reason `tests/suite/describe_call.rs` gives for its own scenes).
-const INTERVAL: f64 = 1.0;
+/// The step the scenes space their frames on: describe's heartbeat. `describe::pick_frames` walks one frame
+/// every heartbeat inside a scene and `is_every_frame` refuses a folder spaced at the extraction grid, so this
+/// is the one spacing that sends every planted frame (the same reason `tests/suite/describe_call.rs` gives).
+const INTERVAL: f64 = naivepost::text_gate::HEARTBEAT_S;
 
 /// The env and the working folder belong to the PROCESS and cargo runs these tests as threads of one
 /// process, so whoever moves them takes them one at a time.
@@ -277,7 +276,6 @@ impl Scene {
                 sepvoice: false,
                 tracks: vec![],
             }],
-            interval: INTERVAL,
             context: "a lecture on linear algebra".to_string(),
             ..Default::default()
         };
@@ -318,7 +316,6 @@ impl Scene {
                 sepvoice: false,
                 tracks: vec![],
             }],
-            interval: INTERVAL,
             context: "a lecture on linear algebra".to_string(),
             ..Default::default()
         };
@@ -363,7 +360,10 @@ fn walk(scene: &Scene, log: &mut impl FnMut(&str)) -> Result<usize, String> {
 
 /// The scaled copy's path for a second, as the stage names it.
 fn copy_path(tree: &Tree, at: f64) -> PathBuf {
-    tree.llm_frames_dir(LANE).join(describe::scaled_name(at))
+    tree.llm_frames_dir(LANE).join(describe::scaled_name(
+        naivepost::describe_scale::name_base(tree, LANE),
+        at,
+    ))
 }
 
 /// How many files `.llmframes/` holds.
@@ -444,6 +444,42 @@ fn p_machine_describeframewidth_s1_the_scaled_copies_are_made_at_the_catalogued_
         .expect("a second pass completes");
     assert_eq!(again, 0, "an existing copy is never made twice");
     assert_eq!(copy_count(&tree), 3, "and nothing extra was written");
+}
+
+/// s1, a LATER recording: its frames are named on the session clock from where it starts (F1.6 S4, `start + t`),
+/// so a take placed 219 s in holds `1970-01-01_00-03-39.000.jpg` onwards. The copies are still made: the first
+/// rewrite looked its frames up from the session's zero and refused every recording but the first.
+#[test]
+fn p_machine_describeframewidth_s1_a_later_recordings_frames_are_found_by_its_own_start() {
+    let fake = Fake::start(BY_SIZE.to_string());
+    let scene = Scene::new("s1-later", 0, &fake.url);
+    let tree = scene.tree();
+    let start = 219.0;
+    let dir = tree.frames_dir(LANE);
+    std::fs::create_dir_all(&dir).unwrap();
+    for at in seconds(3) {
+        write_real_frame(&dir, &format!("{}.jpg", frame_name(start + at)));
+    }
+    let taken = describe::frames_on_disk(&dir);
+    assert_eq!(
+        taken,
+        seconds(3),
+        "read back measured from the take's first picture"
+    );
+    let made = naivepost::describe_scale::ensure(
+        &tree,
+        &scene.leg_conf(),
+        LANE,
+        start,
+        &taken,
+        &mut |_| {},
+    )
+    .expect("the copies of a later recording are made");
+    assert_eq!(made, 3, "one copy per frame");
+    assert!(
+        taken.iter().all(|at| copy_path(&tree, *at).exists()),
+        "each where describe reads it"
+    );
 }
 
 /// s2: what reaches the model IS the scaled copy. Byte for byte: the `image_url` data URL of every

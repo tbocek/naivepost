@@ -80,6 +80,9 @@ func prepRows() []prepRow {
 		{"Translate", "translate", "The subtitle track in another language: the finished " +
 			"video's own lines, numbered, answered one for one with the times untouched. " +
 			"Which languages is chosen on the Produce page."},
+		{"Upload text, by parts", "youtube-part", "For a video too long to read at once: " +
+			"each part of 45 minutes, or 30 where 45 do not fit, is read on its own into notes (what it is " +
+			"about, its beats, pictures for a thumbnail), and the upload text is written from those."},
 		{"Upload text", "youtube", "Gets the cut and the narration — no images — and " +
 			"answers with the YouTube title, the thumbnail instruction and the description."},
 	}

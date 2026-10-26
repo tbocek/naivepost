@@ -18,7 +18,7 @@ use common::settle;
 
 #[path = "_sec_12_walk_back_fixture.rs"]
 mod walk_fixture;
-use walk_fixture::{base_cut, words_fixture};
+use walk_fixture::{base_cut, publish_tape, words_fixture};
 
 /// Entry 4 / S3, the WIRE: a real click on the Cut page's ▶ in the words mode, and the page left holding
 /// the walked cut with the walk's own line in the log. One scenario per binary (libadwaita initialises only
@@ -64,6 +64,7 @@ fn round(app: &adw::Application) {
         "the press below is the words arm's"
     );
     settle();
+    publish_tape();
 
     // THE CLICK. Everything after it is what the page was left with.
     ui::play_button(&window)

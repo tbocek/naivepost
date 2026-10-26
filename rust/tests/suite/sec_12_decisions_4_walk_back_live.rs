@@ -63,7 +63,7 @@ pub fn spoken_hole_walk() -> Walk {
 /// allows one `run_with_args` per process, so the two window scenarios are two binaries.
 #[path = "_sec_12_walk_back_fixture.rs"]
 mod walk_fixture;
-use walk_fixture::{base_cut, words_fixture};
+use walk_fixture::{base_cut, publish_tape, words_fixture};
 
 /// Entry 4 / S1: the walk-back as ONE function — hole closed because somebody talked in it, both edges
 /// snapped onto word edges, and an account that says both. Nothing here needs a window or a server.
@@ -169,6 +169,7 @@ fn door_round(app: &adw::Application) {
     let f = words_fixture("door");
     let project = f.project.clone();
     let base = base_cut();
+    publish_tape();
     let read = naivepost::cut_suggest_words_run::inputs(&f.tree, &project, &base);
     let plain = suggest::words_cut(&read.runs, &read.marks, &read.silences);
     // The fixture's own claim, checked against the walk's inputs rather than a guess: `close_holes` acts on
@@ -206,6 +207,8 @@ fn door_round(app: &adw::Application) {
     window.present();
     ui::seed_review_cut(&window, &base);
     cut_suggest_land::point_session_at(Some(f.tree.clone()));
+    settle();
+    publish_tape();
     let landed = naivepost::cut_suggest_words_run::run_words(&window, &f.tree, &project);
     settle();
     assert!(landed.wrote, "the words door wrote a cut: {landed:?}");

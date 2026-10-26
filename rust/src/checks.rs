@@ -580,12 +580,49 @@ pub fn audio_health_verdict(health_ms: u64, models: &[AudioModel]) -> Result<Str
     ))
 }
 
-/// The one thing the sd.cpp row reads out of `GET /sdcpp/v1/capabilities`: which weights the server
-/// has loaded. Everything else the reply carries (sizes, steps, samplers) is what a draw request may
-/// ask for, and this row only proves there is a model behind the port.
+/// The two things the sd.cpp row reads out of `GET /sdcpp/v1/capabilities`: which weights the server
+/// has loaded, and what it can generate. Everything else the reply carries (sizes, steps, samplers) is
+/// what a draw request may ask for, and this row only proves there is a model behind the port that draws.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SdCaps {
     pub weights: String,
+    /// `supported_modes` as sent; empty when the build reports none (an older sd-server).
+    pub modes: Vec<String>,
+}
+
+/// sd-server's capabilities reply, read the way it is sent: the weights are an OBJECT,
+/// `"model": {"name": "qwen-image-2.1-turbo-Q8_0.gguf", "path": "/mnt/models/…", "stem": "…"}`, named by its
+/// stem (the file without `.gguf`, what a person calls it), else its file name; the modes are
+/// `"supported_modes": ["img_gen"]`. A reply that is not that JSON is said to be so, with serde's reason:
+/// reading `model` as a string once failed on every real server and was swallowed into "names no weights".
+pub fn sd_caps(body: &str) -> Result<SdCaps, String> {
+    #[derive(serde::Deserialize, Default)]
+    struct Model {
+        #[serde(default)]
+        name: String,
+        #[serde(default)]
+        stem: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct Caps {
+        #[serde(default)]
+        model: Option<Model>,
+        #[serde(default)]
+        supported_modes: Vec<String>,
+    }
+    let caps: Caps = serde_json::from_str(body)
+        .map_err(|why| format!("it answered something that is not sd.cpp capabilities: {why}"))?;
+    let model = caps.model.unwrap_or_default();
+    let stem = model.stem.trim();
+    Ok(SdCaps {
+        weights: if stem.is_empty() {
+            model.name.trim()
+        } else {
+            stem
+        }
+        .to_string(),
+        modes: caps.supported_modes,
+    })
 }
 
 /// How the capabilities call failed, since the two failures are fixed differently.
@@ -605,6 +642,20 @@ pub enum SdProbe {
 /// comment records that `/v1/models` is this row's fallback probe).
 pub fn sd_verdict(capabilities: Result<&SdCaps, SdProbe>) -> Result<String, String> {
     match capabilities {
+        // A build that reports its modes has to list `img_gen`: a server started on a video model answers
+        // capabilities happily and then fails every draw. One that reports none is an older build, not a
+        // broken one, and the job says otherwise if it cannot.
+        Ok(caps)
+            if !caps.weights.trim().is_empty()
+                && !caps.modes.is_empty()
+                && !caps.modes.iter().any(|mode| mode == "img_gen") =>
+        {
+            Err(format!(
+                "{} is loaded, but this server cannot draw images -- it supports {}, not img_gen",
+                caps.weights.trim(),
+                caps.modes.join(", ")
+            ))
+        }
         Ok(caps) if !caps.weights.trim().is_empty() => {
             Ok(format!("{} is loaded and can draw", caps.weights.trim()))
         }

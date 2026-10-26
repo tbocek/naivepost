@@ -29,7 +29,9 @@ impl ShotOn {
             "ready" => Ok(ShotOn::Ready),
             _ => match arg.strip_prefix("open:") {
                 Some(name) if !name.is_empty() => Ok(ShotOn::Open(name.to_string())),
-                _ => Err(format!("--shot-on takes `ready` or `open:<widget name>`, not {arg:?}")),
+                _ => Err(format!(
+                    "--shot-on takes `ready` or `open:<widget name>`, not {arg:?}"
+                )),
             },
         }
     }
@@ -49,7 +51,10 @@ fn layout(root: &gtk::Widget) -> Vec<(String, [i32; 4])> {
             return;
         }
         if let Some(r) = widget.compute_bounds(root) {
-            out.push((widget.widget_name().to_string(), [r.x(), r.y(), r.width(), r.height()].map(|v| v.round() as i32)));
+            out.push((
+                widget.widget_name().to_string(),
+                [r.x(), r.y(), r.width(), r.height()].map(|v| v.round() as i32),
+            ));
         }
         let mut child = widget.first_child();
         while let Some(c) = child {
@@ -76,6 +81,9 @@ fn shown_by_name(root: &gtk::Widget, name: &str) -> bool {
     false
 }
 
+/// What is called with the picture's outcome: what triggered it, or why there is none.
+type Finish = Box<dyn FnOnce(Result<String, String>)>;
+
 /// Calls `shoot` when `painted`, and the other top levels in `also` (a menu staged in a window of its
 /// own), are settled as `on` says, then `finish` with what triggered the picture, or with why there is none.
 pub fn shoot_when_ready(
@@ -86,7 +94,9 @@ pub fn shoot_when_ready(
     finish: impl FnOnce(Result<String, String>) + 'static,
 ) {
     let Some(clock) = painted.frame_clock() else {
-        finish(Err("the widget to paint has no frame clock: it was never shown".to_string()));
+        finish(Err(
+            "the widget to paint has no frame clock: it was never shown".to_string(),
+        ));
         return;
     };
     struct State {
@@ -94,7 +104,7 @@ pub fn shoot_when_ready(
         seen: Option<Vec<(String, [i32; 4])>>,
         shooting: bool,
         shoot: Option<Box<dyn FnOnce()>>,
-        finish: Option<Box<dyn FnOnce(Result<String, String>)>>,
+        finish: Option<Finish>,
     }
     enum Next {
         Wait,
@@ -153,7 +163,9 @@ pub fn shoot_when_ready(
             } else {
                 let owed = crate::ui::settle::owed_shown();
                 let open_missing = match &on {
-                    ShotOn::Open(name) if !roots.iter().any(|root| shown_by_name(root, name)) => Some(name.clone()),
+                    ShotOn::Open(name) if !roots.iter().any(|root| shown_by_name(root, name)) => {
+                        Some(name.clone())
+                    }
                     _ => None,
                 };
                 if owed.is_empty() && open_missing.is_none() {
@@ -167,7 +179,11 @@ pub fn shoot_when_ready(
                     if let Some(name) = open_missing {
                         why.push(format!("`{name}` never shown"));
                     }
-                    Next::Finish(Err(format!("not {} after {frame} frames: {}", on.label(), why.join("; "))))
+                    Next::Finish(Err(format!(
+                        "not {} after {frame} frames: {}",
+                        on.label(),
+                        why.join("; ")
+                    )))
                 } else {
                     Next::Wait
                 }

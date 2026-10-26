@@ -45,8 +45,7 @@ pub(crate) fn start_shell(page: &str) -> Shell {
 /// what it has rather than fail to open, so nothing here errors out. Both the tab switch (S3-S5) and
 /// the first paint call this, so the row cannot disagree with itself between them.
 pub(crate) fn session_reads() -> (Option<layout::Tree>, Cut, Narration) {
-    let root = std::env::current_dir().unwrap_or_default();
-    let dir = startup::session_dir(&root);
+    let dir = startup::open_dir();
     let tree = if dir.join(crate::project::PROJECT_FILE).is_file() {
         layout::Tree::new(&dir).ok()
     } else {

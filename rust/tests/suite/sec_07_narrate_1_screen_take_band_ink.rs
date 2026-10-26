@@ -280,6 +280,18 @@ fn round(app: &adw::Application) {
             Err(why) => panic!("a staged envelope decodes instead of refusing: {why}"),
         };
         assert!(!peaks.is_empty(), "the cache holds peaks to draw");
+        // A draw func never decodes (§03-shell §1): the first paint asks a worker for the envelope and says
+        // the lane is still being read; the paint after the answer lands draws the wave.
+        let (first, fw, fh, _, _) =
+            ui::narrate_band::painted_pixels_for_test(500, lane_h).expect("the band painted");
+        assert!(
+            !any_blue(&first, fw, fh, ruler + 1),
+            "the paint that asks for the envelope draws no wave: it never decodes inside the draw func"
+        );
+        assert!(
+            naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+            "the envelope's worker answered"
+        );
         let (px, pw, ph, _, _) =
             ui::narrate_band::painted_pixels_for_test(500, lane_h).expect("the band painted");
         assert!(
@@ -311,9 +323,14 @@ fn round(app: &adw::Application) {
             "nothing is staged, so the walk refuses rather than answering with an empty wave"
         );
         // Painting is what turns that refusal into a log line: §1 gives the lane one public sentence, so the
-        // specifics have to go to the log or they exist nowhere (§00 failure-is-specific).
+        // specifics have to go to the log or they exist nowhere (§00 failure-is-specific). The paint asks a
+        // worker (§03-shell §1), and the reason is logged once, when its answer lands.
         let (px, pw, ph, _, _) =
             ui::narrate_band::painted_pixels_for_test(500, lane_h).expect("the band painted");
+        assert!(
+            naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+            "the envelope's worker answered"
+        );
         assert!(
             ui::window::window_logs()
                 .iter()

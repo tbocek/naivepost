@@ -119,7 +119,6 @@ fn run(tree: &Tree) -> naivepost::produce_flow::Run {
         clips: 2,
         publish_written: false,
         voice: "1".to_string(),
-        no_narration: false,
     }
 }
 

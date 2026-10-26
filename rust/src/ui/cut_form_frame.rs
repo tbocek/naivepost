@@ -22,6 +22,9 @@ pub const CLOSE_LABEL: &str = "\u{2715}";
 /// clicked it wants to know the page is already clean.
 pub const NOTHING_OPEN: &str = "nothing is open \u{2014} the timeline shows the idle readings";
 
+/// The box inside `cut-form-scroller` that holds the idle rows and every form holder.
+pub const BODY_NAME: &str = "cut-form-body";
+
 /// The §A column: pinned heading, then a scroller holding `body`, then a pinned footer. Appended in that
 /// order so GTK keeps the heading and the footer at their edges while the middle scrolls — which is the
 /// whole point of pinning them, and why the body goes inside a `gtk::Scroller` rather than straight into
@@ -66,7 +69,13 @@ pub fn frame_parts(body: &gtk::Widget) -> (gtk::Box, gtk::Box) {
     // either the idle rows or a form body, and the column's width is the page's, not the form's).
     scroller.set_policy(gtk::PolicyType::External, gtk::PolicyType::Automatic);
     scroller.set_vexpand(true);
-    scroller.set_child(Some(body));
+    // The scroller's one child is a box: the idle rows first, then (seated by `cut_page_layout::arrange`) the
+    // form holders, so an open form scrolls inside the column like the rows do instead of stacking under the
+    // scroller and pushing the pinned heading off the pane.
+    let scrolled = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    scrolled.set_widget_name(BODY_NAME);
+    scrolled.append(body);
+    scroller.set_child(Some(&scrolled));
     // §1's idle column STARTS with the readings, and a `gtk::ScrolledWindow` keeps whatever value its
     // adjustment last held: once anything scrolled this viewport (a form taller than the pane, or a window
     // squeezed down to §1's minimum), the column opened on its TAIL and the render showed only the last four
@@ -274,6 +283,10 @@ pub fn set_pinned(window: &adw::ApplicationWindow, heading: Option<&str>) -> boo
         Some(words) => {
             title.set_text(words);
             head.set_visible(true);
+            // §A's scroller holds EITHER the idle rows OR a form body. The form holders sit in this column
+            // under the readings, so a form opened with the eight rows still showing stacked both, the
+            // column outgrew its pane and the heading with its ✕ was painted above the window's top edge.
+            set_readings(window, false);
             if !insert_open {
                 if let Some(footer) = column_footer(window) {
                     // Only show a footer that actually holds something: a form that puts no buttons here (zoom,

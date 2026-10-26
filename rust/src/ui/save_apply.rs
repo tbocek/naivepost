@@ -21,26 +21,17 @@ use gtk4 as gtk;
 use crate::project::Project;
 use crate::save_as::{self, Saved};
 
-thread_local! {
-    /// The folder this window has open — what Save saves into and what a rename moves. Newest slot,
-    /// the rule every per-window piece here follows. `None` until a window seeds it, which is also
-    /// what makes [`open_dir`] an honest question rather than a guess from the working directory.
-    /// Recomputing it at each door instead of keeping a slot would leave a Save that renamed the
-    /// folder followed by an autosave that wrote into the path it just moved away from.
-    static OPEN_DIR: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
-}
-
-/// The folder the window believes is open, if it knows. Read back by the tests that ask whether a
-/// rename or a refusal moved it; inside the program the only reader is [`save_target`] below.
+/// The folder the window believes is open, if it knows: [`crate::startup::open_dir_if_set`], the one slot
+/// every step reads. Read back by the tests that ask whether a rename or a refusal moved it.
 pub fn open_dir() -> Option<PathBuf> {
-    OPEN_DIR.with(|slot| slot.borrow().clone())
+    crate::startup::open_dir_if_set()
 }
 
 /// Set what the window believes is open. Crate-visible rather than public: only the doors that take
 /// on a project (the first build, Open, a Save that renamed it) may answer this, so the slot cannot
 /// be pointed somewhere no flow went.
 pub(crate) fn set_open_dir(dir: &Path) {
-    OPEN_DIR.with(|slot| *slot.borrow_mut() = Some(dir.to_path_buf()));
+    crate::startup::set_open_dir(dir);
 }
 
 /// Take on a folder for the snapshot renderer only. `--snapshot` draws a window without going through
@@ -53,7 +44,7 @@ pub fn note_open_for_snapshot(dir: &Path) {
 /// Where Save goes when it has no folder of its own yet: the working copy beside the launch's
 /// directory. A fallback only -- every window `build_window` drew has already answered [`open_dir`].
 fn launch_session_dir() -> PathBuf {
-    crate::startup::session_dir(&std::env::current_dir().unwrap_or_default())
+    crate::startup::open_dir()
 }
 
 /// The folder to save into: the one this window took on, or the launch's working copy if no window
@@ -72,6 +63,7 @@ fn apply(saved: &Saved, status: &gtk::Label) {
         crate::ui::window::log_line(line);
     }
     set_open_dir(&saved.path);
+    crate::ui::window_line_step::rehome_window(&saved.path);
     status.set_text(&saved.status);
 }
 

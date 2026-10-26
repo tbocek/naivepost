@@ -20,7 +20,8 @@ flowchart LR
 ```
 
 - **Settings** (⚙): servers, models, ffmpeg, firefox; tested by [F0.13](03-shell.md#f013-tests).
-- **Run bar**: ▶ runs the visible step ([F0.2](03-shell.md#f02-press-)); "I'm feeling lucky" runs every step in order ([F0.4](03-shell.md#f04-run-every-step-im-feeling-lucky)); ⏸ parks between subprocesses.
+- **Profiles**: User Context templates with fields, filled in per project on Prepare ([F0.14](03-shell.md#f014-profiles)).
+- **Run bar**: ▶ runs the visible step ([F0.2](03-shell.md#f02-press-)); ⏸ parks between subprocesses.
 - **Every model call**: one gate, one exchange page, tools first ([F6.1](09-llm-and-tools.md#2-tool-protocol-f61)).
 
 ## 2. Tab states
@@ -29,7 +30,7 @@ flowchart LR
 |---|---|---|
 | Prepare | always | runs Prepare |
 | Cut | once a source is footage ("Add footage on the Prepare step first…") | Suggest, until the preview started; then the preview's transport until ⏹. Preview modes: recording ▶, cut ▶✂, review ▶✂✂ — one lit, one ⏸ |
-| Narrate | always; ▶ refuses without a cut; greyed when narration is off | write and speak, until the preview started |
+| Narrate | always; ▶ refuses without a cut (first rewrite: greyed when narration was off; there is no switch now) | write and speak, until the preview started |
 | Produce | always; ▶ refuses without a cut | render |
 
 ## 3. All flows
@@ -39,7 +40,6 @@ flowchart LR
 | [F0.1](03-shell.md#f01-switch-tab) | Switch tab | [03](03-shell.md) |
 | [F0.2](03-shell.md#f02-press-) | Press ▶ (run / pause / transport) | [03](03-shell.md) |
 | [F0.3](03-shell.md#f03-press-) | Press ⏹ | [03](03-shell.md) |
-| [F0.4](03-shell.md#f04-run-every-step-im-feeling-lucky) | Run every step (I'm feeling lucky) | [03](03-shell.md) |
 | [F0.5](03-shell.md#f05-a-runs-bookkeeping-every-step-uses-it) | A run's bookkeeping (progress, checkpoints) | [03](03-shell.md) |
 | [F0.6](03-shell.md#f06-open-at-start) | Open at start | [03](03-shell.md) |
 | [F0.7](03-shell.md#f07-derive-the-editing-policy-new) | Derive the editing policy from the context (new) | [03](03-shell.md) |
@@ -49,6 +49,7 @@ flowchart LR
 | [F0.11](03-shell.md#f011-rescan) | Rescan | [03](03-shell.md) |
 | [F0.12](03-shell.md#f012-add-sources-from-prepare) | Add sources | [03](03-shell.md) |
 | [F0.13](03-shell.md#f013-tests) | Settings tests | [03](03-shell.md) |
+| [F0.14](03-shell.md#f014-profiles) | Profiles: User Context templates with fields | [03](03-shell.md) |
 | [F1.1](04-prepare.md#f11--prepare) | ▶ Prepare | [04](04-prepare.md) |
 | [F1.2](04-prepare.md#f12-voice-separation-rows-with-) | Voice separation | [04](04-prepare.md) |
 | [F1.3](04-prepare.md#f13-per-source-audio--text--word-times--speakers--segments) | Per source: audio, ASR, alignment, diarization, segments | [04](04-prepare.md) |
@@ -95,7 +96,6 @@ flowchart LR
 | [F4.5](07-narrate.md#f45-preview-the-cut-with-narration) | Preview the cut with narration | [07](07-narrate.md) |
 | [F4.6](07-narrate.md#f46-choose-the-voice-and-build-the-reference) | Choose the voice and build the reference | [07](07-narrate.md) |
 | [F4.7](07-narrate.md#f47-edit-lines) | Edit lines | [07](07-narrate.md) |
-| [F4.8](07-narrate.md#f48-narration-off) | Narration off | [07](07-narrate.md) |
 | [F5.1](08-produce.md#f51--produce) | ▶ Produce | [08](08-produce.md) |
 | [F5.2](08-produce.md#f52-the-render) | The render | [08](08-produce.md) |
 | [F5.3](08-produce.md#f53-what-up-to-date-means) | What "up to date" means | [08](08-produce.md) |

@@ -95,10 +95,12 @@ pub fn pick_voice(id: &str, narrators: usize, voice_files: &[String], dir: &str)
     VoiceChoice::Refused(vanished_voice(id, dir))
 }
 
-/// Which narrator slot an id names; `None` for captions or a file name.
+/// Which narrator slot an id names; `None` for captions or a file name. One rule for the page, the band and
+/// the reference: [`crate::narrate_rules::narrator_slot`], where `own` IS slot 1 (this copy did not know it, so a
+/// project with no `voice.txt` showed Narrator 1 in the picker while the take band, asking here, found no
+/// recording and hid itself).
 pub fn narrator_slot(id: &str) -> Option<usize> {
-    let digits = id.strip_prefix("narrator")?;
-    digits.parse::<usize>().ok()
+    crate::narrate_rules::narrator_slot(id)
 }
 
 /// S1's refusal when a slot has no recording tagged on the Prepare step.

@@ -135,6 +135,10 @@ fn check_the_preview_shows_a_frame(app: &adw::Application) {
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 10.0 });
     naivepost::ui::cut_picture::refresh(&window);
     settle();
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+        "the workers answered"
+    );
 
     let shown = picture
         .paintable()
@@ -176,6 +180,10 @@ fn check_a_click_on_the_picture_toggles_play(app: &adw::Application) {
     ui::set_line_position(&window, naivepost::cut_line::LinePos { t: 0.0 });
     naivepost::ui::cut_picture::refresh(&window);
     settle();
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+        "the workers answered"
+    );
     assert!(
         !ui::preview_player(&window).transport.playing,
         "a fresh preview is not playing"

@@ -950,3 +950,25 @@ pub fn playhead_advance(held: bool, elapsed: f64, rate: f64) -> f64 {
         elapsed * rate
     }
 }
+
+/// F2.12 S4's Logo… picker: the picked image files added to a field's comma-separated items, each as a bare path
+/// (an item that is only its logo; "Name|path" is typed by hand for both). A file inside the project is written
+/// relative to it, without a `project:` prefix, because the card being drawn reads it, looking beside itself and
+/// then in the project folder; one outside is absolute, since a card is baked somewhere else entirely. What was
+/// typed before stays, in its order (the prototype's `pickLogos`).
+pub fn add_logos(existing: &str, picked: &[std::path::PathBuf], project: &Path) -> String {
+    let mut items: Vec<String> = existing
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .collect();
+    for path in picked {
+        let written = path
+            .strip_prefix(project)
+            .map(|inside| inside.display().to_string())
+            .unwrap_or_else(|_| path.display().to_string());
+        items.push(written);
+    }
+    items.join(", ")
+}

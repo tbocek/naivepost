@@ -33,7 +33,7 @@ fn paths() -> Option<settings::Paths> {
 /// would dial, rather than passing silently because nothing was configured.
 pub fn why_not(project: &Project) -> Option<String> {
     let paths = paths()?;
-    let dir = crate::startup::session_dir(&std::env::current_dir().unwrap_or_default());
+    let dir = crate::startup::open_dir();
     let tree = layout::Tree::new(&dir).ok();
     prepare_run::preflight(&paths, &tree, project)
 }

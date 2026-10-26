@@ -186,7 +186,6 @@ pub fn fixture(tag: &str) -> Fixture {
     write_transcript(&tree);
 
     let mut project = Project::default();
-    project.interval = 1.0;
     project.context = "A lecture about Ethereum.".to_string();
     project.sources = vec![Source {
         path: "project:sources/lecture.mkv".into(),

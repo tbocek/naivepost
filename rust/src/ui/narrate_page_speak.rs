@@ -21,6 +21,11 @@ use crate::ui::narrate_page::{self, NarrateState};
 ///
 /// The two volumes arrive from the page because they are read off its own sliders: a second rule for
 /// either would let an audition sound different from the preview it belongs to.
+///
+/// A take on disk is heard at once. A take to synthesize is dialled on a worker (§03-shell §1, "The window
+/// thread never waits"; the first rewrite held the window for the whole synthesis): the page is `busy` until
+/// it lands, which is what makes another row's ▶ say "still speaking", and the audition below runs only if
+/// nothing gave up on it in between (⏹ clears `busy`).
 pub(crate) fn speak_and_audition(
     window: &adw::ApplicationWindow,
     s: &NarrateState,
@@ -52,20 +57,83 @@ pub(crate) fn speak_and_audition(
     // speak English over a Polish recording. An unreadable project leaves the state's value (or
     // empty), and `narrate_tts::language` answers its fallback for empty alone.
     let language = crate::project::load(tree.dir())
-        .map(|project| project.language)
+        .map(|project| project.policy.language.value)
         .unwrap_or_else(|_| s.language.clone());
     // A take already on disk is REPLAYED, not synthesized again: the cache is the app's cost model, and a
     // second dial for bytes already filed would pay audio.cpp twice for one line.
     let cached = crate::narrate_tts::take_path(&tree, &key);
-    let outcome = if cached.is_file() {
-        crate::narrate_tts::Outcome::Take(cached)
-    } else {
-        crate::speak_leg::speak(&tree, &entry.text, &entry.emotion, seed, &key, &language)
-    };
+    if cached.is_file() {
+        let outcome = crate::narrate_tts::Outcome::Take(cached);
+        return hear(
+            window,
+            s,
+            entry,
+            from,
+            game_volume,
+            preview_volume,
+            &tree,
+            &key,
+            outcome,
+        );
+    }
+    narrate_page::mutate(|state| state.busy = true);
+    let (text, emotion) = (entry.text.clone(), entry.emotion.clone());
+    let (worker_tree, worker_key) = (tree.clone(), key.clone());
+    let held = window.clone();
+    let line_no = s
+        .entries
+        .iter()
+        .position(|row| row == entry)
+        .map_or(1, |index| index + 1);
+    let (s, entry) = (s.clone(), entry.clone());
+    crate::ui::background::run(
+        "speak a line",
+        move || {
+            crate::speak_leg::speak(&worker_tree, &text, &emotion, seed, &worker_key, &language)
+        },
+        move |outcome| {
+            // ⏹ gave up on it while it was out: the take is filed all the same, and nothing plays.
+            if !narrate_page::read_state().busy {
+                return;
+            }
+            narrate_page::mutate(|state| state.busy = false);
+            hear(
+                &held,
+                &s,
+                &entry,
+                from,
+                game_volume,
+                preview_volume,
+                &tree,
+                &key,
+                outcome,
+            );
+        },
+    );
+    narrate_page::say(
+        window,
+        &crate::narrate_details::speaking_line_status(line_no),
+    )
+}
+
+/// The take is in hand (or refused): file the refusal, or play the take from the line's lead-in with the
+/// bed under it. On the window thread, since it cues the page's players and paints its state.
+#[allow(clippy::too_many_arguments)] // the row's whole audition: page, state, line, start, two volumes, folder, key, take
+fn hear(
+    window: &adw::ApplicationWindow,
+    s: &NarrateState,
+    entry: &Entry,
+    from: f64,
+    game_volume: f64,
+    preview_volume: f64,
+    tree: &crate::layout::Tree,
+    key: &str,
+    outcome: crate::narrate_tts::Outcome,
+) -> String {
     if outcome.refused().is_some() {
         // Sticky per wav: a lap of the cut that reaches this line must run mute and say so again rather
         // than dial the server for a take that was already refused.
-        narrate_preview_leg::note_failed_wav(&key);
+        narrate_preview_leg::note_failed_wav(key);
         return narrate_page::say(window, &crate::narrate_tts::outcome_said(&outcome));
     }
     let wav = match &outcome {
@@ -76,15 +144,15 @@ pub(crate) fn speak_and_audition(
     // starts from its lead-in, carries on down the cut, and has sound equal to the render's — the clip
     // ducked by the game volume while the line speaks.
     let gain = narrate_preview_leg::voice_gain(game_volume);
-    if s.recording_covers_clip {
+    if narrate_page::line_covered(s, entry.s + entry.at) {
         // Bed first: the cut's OWN players from the lead-in, through the picture click's door, so the bed,
         // the hushes and the seek rate cannot disagree with a real preview (inventory C.4: the audition
         // carries on down the cut). `start_running` cues the PICTURE only — the take goes on its own player
         // below, because the page's tick never advances the head except on a skip, so waiting for it to
         // walk into the line would leave the audition silent.
-        let cut = crate::cut::load(&tree).unwrap_or_default();
+        let cut = crate::cut::load(tree).unwrap_or_default();
         match narrate_preview_leg::start_running(
-            &tree,
+            tree,
             &cut,
             &s.entries,
             from,
@@ -116,10 +184,13 @@ pub(crate) fn speak_and_audition(
     // "speaks against a still frame", so the picture is cued at the line's second and frozen there (see
     // [`narrate_preview_leg::still_frame`]) while the take plays beside it. Before this the bed was simply
     // absent, which left the person watching a page while a line spoke over nothing.
-    if !s.recording_covers_clip {
-        let cut = crate::cut::load(&tree).unwrap_or_default();
+    // The built-in picture needs no frozen process: the page's own preview shows the still frame at the line.
+    if !narrate_page::line_covered(s, entry.s + entry.at)
+        && !narrate_preview_leg::picture_is_built_in()
+    {
+        let cut = crate::cut::load(tree).unwrap_or_default();
         match narrate_preview_leg::still_frame(
-            &tree,
+            tree,
             &cut,
             from,
             narrate_preview_media::bed_gain(&cut, from, true, game_volume, preview_volume),

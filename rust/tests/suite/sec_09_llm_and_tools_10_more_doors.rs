@@ -435,18 +435,21 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s6_a_web_call_outside_an_open
         !startup::session_dir(&elsewhere).exists(),
         "the session this call will meet does not exist yet"
     );
-    // The browser is pointed at a page with no result markup: the ladder runs, finds nothing, and answers
-    // with §2's own sentence. What this scenario asks is where the ROW went.
-    let stub = stub_browser(
-        &scenario.root,
-        "<html><body><p>Nothing here at all.</p></body></html>",
+    // The real browser, the engine's address pointed at a local result page: the ladder runs and answers in
+    // §2's own words. What this scenario asks is where the ROW went.
+    let site = common::Site::start();
+    site.set(
+        "/search",
+        "<html><body><article data-testid=\"result\"><h2><a data-testid=\"result-title-a\" href=\"https://one.example/a\">One</a></h2></article></body></html>",
     );
+    unsafe { std::env::set_var("NAIVEPOST_SEARCH_URL", site.url("/search")) };
+    let browser = common::firefox();
     let call = naivepost::exchanges::ToolCall {
         name: "web_search".to_string(),
         args: r#"{"broad":"a","medium":"b","narrow":"c"}"#.to_string(),
         result: String::new(),
     };
-    let answer = naivepost::web_browser::dispatch("narrate", &stub.to_string_lossy(), &call)
+    let answer = naivepost::web_browser::dispatch("narrate", &browser.to_string_lossy(), &call)
         .expect("web_search is answered by the browser leg");
     assert!(
         answer.contains("No results") || answer.contains("Results for"),
@@ -476,26 +479,6 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s6_a_web_call_outside_an_open
         "the session the row went into is the one beside the working root"
     );
     drop(scenario);
-}
-
-/// The stub browser: prints whatever DOM the scenario asked for and ignores the URL, which is the point —
-/// the leg must not care what it was pointed at.
-fn stub_browser(dir: &std::path::Path, dom: &str) -> std::path::PathBuf {
-    let path = dir.join("fake-firefox.sh");
-    let dom_path = dir.join("dom.html");
-    std::fs::write(&dom_path, dom).expect("dom written");
-    common::write_script(
-        &path,
-        format!("#!/bin/sh\ncat \"{}\"\nexit 0\n", dom_path.display()),
-    )
-    .expect("stub written");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("stub executable");
-    }
-    path
 }
 
 /// The recorded door with a budget is what makes §9's bound and §10's row compatible: prove the pair

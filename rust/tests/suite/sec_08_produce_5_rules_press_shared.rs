@@ -82,7 +82,7 @@ fn write_words(tree: &Tree) {
 /// The spawner the walk is handed through the program's own seam: each command's output file appears on disk,
 /// so the run's "did it land" checks pass as they do with a real encoder.
 fn scripted_spawn() -> naivepost::produce_translate::SpawnSlot {
-    Rc::new(move |command: &naivepost::produce_exec::Command| {
+    std::sync::Arc::new(move |command: &naivepost::produce_exec::Command| {
         // `-o` names the output for the mux and the join; an encode's output is its last argument.
         let out = command
             .argv
@@ -146,6 +146,11 @@ fn press(container: &str, translate: &[&str]) -> Vec<String> {
     let button =
         ui::line_step_button(&window, "play-button").expect("the run bar drew a play-button");
     button.emit_by_name::<()>("clicked", &[]);
+    // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
     let logs = ui::window::window_logs();
     window.close();

@@ -56,12 +56,8 @@ pub fn rescan(project: &mut Project, root: &Path, dir: &Path, tree: Option<&Tree
     let logs: Vec<String> = gone_paths.iter().map(|path| dropped(path)).collect();
     project.sources = kept;
 
-    // S1's other half: only a slot 1 that *lost its holder* is re-filled. A list with nobody in
-    // slot 1 to begin with is one the user untagged, and it has to come back untagged.
-    let lost_slot_1 = gone.iter().any(|source| source.narrator == 1);
-    let reassigned = (lost_slot_1 && !gone_paths.is_empty())
-        .then(|| fill_slot_1(project))
-        .flatten();
+    // Voices are not exclusive any more, so a dropped row frees nothing to hand on.
+    let reassigned: Option<String> = None;
 
     // S2: the three refreshes. Cut and Narrate are re-read from disk, which is also what lets them
     // notice a file that was deleted — narration the page still shows after its folder went is the
@@ -94,26 +90,4 @@ pub fn rescan(project: &mut Project, root: &Path, dir: &Path, tree: Option<&Tree
 /// absolute source is asked the same question.
 fn is_there(root: &Path, dir: &Path, written: &str) -> bool {
     layout::resolve(root, dir, written).exists()
-}
-
-/// Slot 1 to the first surviving untagged recording, footage only if none is left: a screen capture
-/// holds everyone at once, so a dedicated microphone is the better guess at the narrator. A row that
-/// already holds a slot is never moved — it is somebody the user named, and casting them as the
-/// narrator would re-cut the narration while silently freeing the slot they were in.
-///
-/// Shared with F0.12 S3 (an arriving row), §4's auto-fill after an add, a removal, a rescan that
-/// dropped a row, or a load that stripped a bad tag: one rule for "who is the narrator", asked at four
-/// moments.
-pub(crate) fn fill_slot_1(project: &mut Project) -> Option<String> {
-    for prefer_recording in [true, false] {
-        if let Some(source) = project
-            .sources
-            .iter_mut()
-            .find(|source| source.narrator == 0 && source.footage != prefer_recording)
-        {
-            source.narrator = 1;
-            return Some(source.path.clone());
-        }
-    }
-    None
 }

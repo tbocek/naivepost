@@ -175,6 +175,7 @@ fn press_rescan(window: &adw::ApplicationWindow) {
 }
 
 fn inputs_text(window: &adw::ApplicationWindow) -> String {
+    common::settle_workers();
     ui::inputs_readout(window)
         .expect("the bottom row carries the Inputs readout")
         .text()
@@ -394,8 +395,8 @@ fn check_pruned_list_written_back(app: &adw::Application) {
     .ok();
 }
 
-/// S1's other half through the button: slot 1 lost its holder, so the survivor takes it AND the
-/// re-assignment is what lands on disk.
+/// S1's other half through the button: the row on voice 1 is dropped, and what lands on disk is the pruned
+/// list with the survivor as it was (voices are shared, so nothing is handed on).
 fn check_slot_1_persisted(app: &adw::Application) {
     let dir = session_folder("f11-slot1");
     fs::create_dir_all(dir.join("sources")).expect("sources/");
@@ -419,14 +420,11 @@ fn check_slot_1_persisted(app: &adw::Application) {
     press_rescan(&window);
 
     let saved = project::load(&dir).expect("the session file reads back");
-    let holder = saved
-        .sources
-        .iter()
-        .find(|source| source.narrator == 1)
-        .expect("slot 1 has a holder again");
-    assert_eq!(
-        holder.path, "project:sources/mic.wav",
-        "the survivor took slot 1"
+    // Voices are not exclusive: a dropped row frees nothing, and the survivor keeps the number it had.
+    assert!(
+        saved.sources.iter().all(|source| source.narrator == 0),
+        "nobody was moved into the dropped row's voice: {:?}",
+        saved.sources
     );
     assert_eq!(
         saved.sources.len(),

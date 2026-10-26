@@ -1,8 +1,10 @@
-//! F2.1's media leg: the process that actually plays the recording.
+//! F2.1's media leg: the player that actually plays the recording.
 //!
-//! Naivepost draws no frames of its own (§0 "the app does the arithmetic"): ▶ hands the session's footage
-//! files to a real player and stops it again. This module is that hand — a subprocess, not a library, so
-//! nothing new is linked and the pipeline is the box's own GStreamer.
+//! Naivepost draws no frames of its own (§0 "the app does the arithmetic"): ▶ hands the session's footage to a
+//! real player and stops it again. Two players answer to the doors here ([`running`], [`halt`], [`set_volume`]):
+//! the built-in one ([`crate::play_built_in`]), which plays inside the preview and is what ▶ uses whenever no
+//! program is named, and the subprocess below, which plays a NAMED program (`NAIVEPOST_PLAYER`) in a process of
+//! its own.
 //!
 //! # Which program
 //!
@@ -60,9 +62,9 @@ pub fn command_for(files: &[String], at_secs: f64) -> Vec<String> {
 /// Start the player over `files` at `at_secs` and remember its pid. A failure is returned, never swallowed:
 /// the caller logs it where the press's other lines go.
 pub fn cue(files: &[String], at_secs: f64, log: &dyn Fn(&str)) -> Result<u32, String> {
-    halt(); // one player at a time: a second cue replaces the run nobody paused instead of doubling sound
-            // A fresh process has never heard this player's last volume ask, so the stamp starts blank; otherwise an
-            // apply that looks "already done" would be skipped and the new run would play at the old loudness.
+    halt_process(); // one player at a time: a second cue replaces the run nobody paused instead of doubling sound
+                    // A fresh process has never heard this player's last volume ask, so the stamp starts blank; otherwise an
+                    // apply that looks "already done" would be skipped and the new run would play at the old loudness.
     if let Ok(mut stamp) = applied_volume().lock() {
         *stamp = None;
     }
@@ -106,8 +108,19 @@ pub fn playing_pid() -> Option<u32> {
     *held().lock().expect("the player slot")
 }
 
-/// Stop the player. Answers whether there was one to stop.
+/// Is ▶'s player playing: the subprocess this leg started, or the built-in one ([`crate::play_built_in`])?
+pub fn running() -> bool {
+    playing_pid().is_some() || crate::play_built_in::playing()
+}
+
+/// Stop the player — the subprocess, and pause the built-in one on its frame. Answers whether there was one.
 pub fn halt() -> bool {
+    let paused = crate::play_built_in::pause();
+    halt_process() || paused
+}
+
+/// Stop the subprocess. Answers whether there was one to stop.
+fn halt_process() -> bool {
     let mut slot = held().lock().expect("the player slot");
     match slot.take() {
         Some(pid) => {
@@ -138,6 +151,10 @@ fn applied_volume() -> &'static Mutex<Option<(f64, f64)>> {
 /// `Player::footage_muted` stays the flag the rest of the app reads; this is only how it reaches the box's
 /// player.
 pub fn set_volume(gain: f64, at_secs: f64) -> bool {
+    // The built-in player has a live property to ask, so it is asked and nothing is re-cued.
+    if crate::play_built_in::set_volume(gain) {
+        return true;
+    }
     let Some(files) = cued_files() else {
         return false;
     };

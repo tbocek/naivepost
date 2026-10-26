@@ -61,7 +61,7 @@ pub fn speak(
     let key = voice_ref::sample_key(voice, text);
     let seed = crate::narration::tts_seed(&key);
     let language = crate::project::load(tree.dir())
-        .map(|project| project.language)
+        .map(|project| project.policy.language.value)
         .unwrap_or_default();
     match crate::speak_leg::speak(tree, text, "", seed, &key, &language) {
         crate::narrate_tts::Outcome::Refused(why) => Err(why),
@@ -107,10 +107,7 @@ fn play(file: &std::path::Path) -> Result<String, String> {
 pub fn play_file(file: &std::path::Path) -> Result<String, String> {
     let player = narrate_preview_leg::voice_program();
     let path = file.to_string_lossy().into_owned();
-    let args: Vec<String> = ["-nodisp", "-autoexit", "-loglevel", "quiet", "-i", &path]
-        .iter()
-        .map(|a| a.to_string())
-        .collect();
+    let args = narrate_preview_leg::audio_argv(&player, &path, 0.0, None, 1.0);
     let child = narrate_preview_leg::spawn_player(&player, &args).map_err(|_| {
         format!(
             "{player} could not play the sample \u{2014} it is at {}",
@@ -122,6 +119,23 @@ pub fn play_file(file: &std::path::Path) -> Result<String, String> {
         .unwrap_or_else(|e| e.into_inner())
         .push(child);
     Ok(narrate_details::sample_playing_status().to_string())
+}
+
+/// §1 **8** ▶: play seconds `from`..`to` of a recording (its sound only), held with the sample players so ⏹ and
+/// a second ▶ reach it. The take band chains one of these per take (`narrate_page_take`).
+pub fn play_span(file: &std::path::Path, from: f64, to: f64) -> Result<(), String> {
+    let player = narrate_preview_leg::voice_program();
+    // An endless `to` (a recording whose length is unknown) plays to the file's own end; a player that takes
+    // no end is ended by the take band's own clock (`narrate_page_take::walk_on`).
+    let args =
+        narrate_preview_leg::audio_argv(&player, &file.to_string_lossy(), from, Some(to), 1.0);
+    let child = narrate_preview_leg::spawn_player(&player, &args)
+        .map_err(|_| format!("{player} could not play {}", file.display()))?;
+    PLAYERS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(child);
+    Ok(())
 }
 
 /// The sample players still alive. Held so ⏹ can reach them; each entry leaves when the player exits.

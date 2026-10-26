@@ -206,9 +206,9 @@ const UNUSED: &str = "http://unused.invalid";
 /// two copies must never drift.
 const SCENE_CONTEXT: &str = "a lecture on linear algebra";
 
-/// The describe interval the scenes space their frames on: `Project::default()`'s own, so the project
-/// file a scene writes and the frames folder it plants cannot disagree about the spacing (see `Scene::new`).
-const SCENE_INTERVAL: f64 = 1.0;
+/// The step the scenes space their frames on: describe's heartbeat, one frame every 20 s inside a scene, so
+/// every frame the stage picks is one the scene planted (see `Scene::new`).
+const SCENE_INTERVAL: f64 = naivepost::text_gate::HEARTBEAT_S;
 
 /// One footage source, its frames and scaled copies on disk, and its own settings folder pointing at
 /// its own fake LLM.
@@ -232,8 +232,8 @@ struct Scene {
 
 impl Scene {
     fn new(label: &str, frames: usize, llm_url: &str) -> Scene {
-        // Frames on the describe INTERVAL (P.project.frameInterval, 1.0 s here), not on the extraction
-        // grid: `describe::pick_frames` walks one frame every interval inside a scene, so a folder spaced
+        // Frames on describe's heartbeat (20 s), not on the extraction grid: `describe::pick_frames` walks one
+        // frame every heartbeat inside a scene, so a folder spaced
         // any finer than that is asked for pictures that were never written, and `describe_scale::ensure`
         // names the missing one and fails the stage before a request goes out -- which reads to a test as
         // "the fake was asked 0 times". `is_every_frame` wants the same spacing or it refuses the source
@@ -269,13 +269,6 @@ impl Scene {
             ..Default::default()
         };
         naivepost::project::save(&project, &session).expect("the session file");
-        // Same number the frames were spaced at, said to the project file `interval` is read back from, so
-        // the frames on disk and the interval the stage reads cannot drift apart.
-        assert!(
-            (project.interval - interval).abs() < 1e-9,
-            "the scene spaces its frames on its own interval: {}",
-            project.interval
-        );
         let lane = "lecture".to_string();
         // F1.6's output: the grid on the frames' own clock, plus F1.7's scaled copies beside them.
         let frames_dir = naivepost::layout::Tree::new(&session)
@@ -290,16 +283,13 @@ impl Scene {
             // `frames_on_disk` reads the seconds out of the names with `clock::read_frame` — whose
             // epoch is the one `clock::frame_name` writes from — and rebases them on the earliest
             // picture that exists, so a name at the epoch reads as 0.0 s and the rest follow on the
-            // grid. The `.llmframes/` copy has to carry the bare clock name because
-            // `describe::scaled_name` looks it up by exactly that.
+            // grid. The `.llmframes/` copy carries the stored frame's own name, because
+            // `describe::scaled_name` looks it up from the folder's first instant (`describe_scale::name_base`).
             let at = index as f64 * interval;
             let name = format!("{}.jpg", frame_name(at + epoch_seconds()));
             std::fs::write(frames_dir.join(&name), b"jpeg").expect("the frame");
-            std::fs::write(
-                llm_dir.join(format!("{}.jpg", frame_name(at))),
-                format!("scaled-{index}"),
-            )
-            .expect("the scaled copy");
+            std::fs::write(llm_dir.join(&name), format!("scaled-{index}"))
+                .expect("the scaled copy");
         }
         settings::save(&paths, &conf_at(llm_url)).expect("the conf");
         Scene {
@@ -776,10 +766,7 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
     // is what `Scene::enter` re-asserts on every entry (see its note).
     scene.point_at(&fake.url);
     assert_eq!(scene.frame_count(), 9, "the scene planted nine frames");
-    let project = naivepost::project::load(&scene.session()).expect("the session");
-    let frames: Vec<f64> = (0..9)
-        .map(|index| index as f64 * project.interval)
-        .collect();
+    let frames: Vec<f64> = (0..9).map(|index| index as f64 * SCENE_INTERVAL).collect();
     let chunks = describe::chunk_plan(&frames, FRAMES_PER_REQ);
     // Each ask's answer covers only the frames that ask carried: the fake reads its own reply when the
     // request arrives, so the size that reaches it is the size the stage chose.
@@ -1176,151 +1163,4 @@ fn sec_09_llm_and_tools_10_every_request_timed_new_s12_a_describe_cache_hit_file
         before_wire,
         "and the hit cost no wire row either"
     );
-}
-
-/// §09 §4's slot rule on this step's live path: describe's chunks do not depend on each other's
-/// answers, so at `P.machine.slots` = N the stage puts N of them on the wire AT ONCE instead of
-/// walking them one at a time. Proven on the WIRE: this fake answers a request only once three
-/// asks are on it, so a stage that asked its chunks serially would sit on its first chunk forever
-/// and the test would fail by never getting an answer — which is the whole point of the check.
-#[test]
-fn p_machine_slots_s_describe_sends_its_chunks_together_when_the_model_has_slots() {
-    let _guard = env_lock();
-    let fake = Trio::start();
-    let scene = Scene::new("slots-three", 12, &fake.url);
-    // THREE slots for the LLM — §03 §5's spin beside the model box — in the FILE the stage reads
-    // for its wave size and the leg re-reads per request (§1's re-read-per-request seam).
-    let mut conf = conf_at(&fake.url);
-    conf.slots.llm = 3;
-    settings::save(&scene.paths, &conf).expect("three slots saved");
-    scene.enter();
-    let mut log = Vec::new();
-    let outcome = scene.describe(&conf, &mut |line| log.push(line.to_string()));
-    Scene::leave();
-    let answered = outcome.expect("three chunks answered together");
-    assert_eq!(answered, 3, "twelve frames at four a call: {log:?}");
-    // The server held all three requests before it answered any: the asks genuinely overlapped.
-    assert!(
-        fake.three_at_once(),
-        "the stage asked its chunks one at a time, so the model's extra slots went unused"
-    );
-    assert_eq!(fake.asks_taken(), 3, "one request per chunk of four");
-    // Every chunk still reached the files, and `events.tsv` still reads in time order: the wave is
-    // about the wire, not about the resume marker's shape.
-    // Each frame's own second appears exactly once: no chunk lost its rows to the wave. (The
-    // rows' ORDER is not asserted — the last frame of the last scene snaps onto the grid's last
-    // step, so the file's own order is the frame choice's business, not the wave's.)
-    let seconds: Vec<f64> = scene
-        .events()
-        .lines()
-        .filter(|line| !line.is_empty())
-        .filter_map(|row| row.split('\t').next().and_then(|head| head.parse().ok()))
-        .collect();
-    let mut repeated = seconds.clone();
-    repeated.sort_by(|a, b| a.partial_cmp(b).expect("every row's start is a number"));
-    repeated.dedup();
-    assert_eq!(
-        repeated.len(),
-        seconds.len(),
-        "one row per frame, none written twice by the wave: {seconds:?}"
-    );
-}
-
-/// A loopback LLM that answers NOTHING until three requests sit on it, then answers each with a
-/// `record_event` per frame the ask actually carried. A stage with one request on the wire cannot
-/// be answered by it, which is what makes the test above a proof rather than a hope.
-struct Trio {
-    url: String,
-    peers: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    answered: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-}
-
-impl Trio {
-    fn start() -> Trio {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
-        let port = listener.local_addr().expect("a local address").port();
-        let peers = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let answered = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let (peers_serve, answered_serve) = (peers.clone(), answered.clone());
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(stream) = stream else { continue };
-                let (peers, answered) = (peers_serve.clone(), answered_serve.clone());
-                std::thread::spawn(move || {
-                    let mut stream = stream;
-                    peers.fetch_add(1, Ordering::SeqCst);
-                    let ask = read_ask(&mut stream);
-                    // Wait for two more asks to arrive, or give up after 20 s so a serial stage
-                    // fails with a message instead of hanging the suite.
-                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
-                    loop {
-                        if peers.load(Ordering::SeqCst) >= 3 || std::time::Instant::now() > deadline
-                        {
-                            break;
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(5));
-                    }
-                    answered.fetch_add(1, Ordering::SeqCst);
-                    let frames = String::from_utf8_lossy(&ask)
-                        .matches("\"image_url\"")
-                        .count()
-                        .max(1);
-                    let framed = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                        events_answer(frames).len(),
-                        events_answer(frames)
-                    );
-                    let _ = stream.write_all(framed.as_bytes());
-                    let _ = stream.flush();
-                    let _ = stream.shutdown(std::net::Shutdown::Both);
-                });
-            }
-        });
-        Trio {
-            url: format!("http://127.0.0.1:{port}"),
-            peers,
-            answered,
-        }
-    }
-
-    /// Did three requests ever sit on this server at the same time?
-    fn three_at_once(&self) -> bool {
-        self.peers.load(Ordering::SeqCst) >= 3 && self.answered.load(Ordering::SeqCst) >= 3
-    }
-
-    fn asks_taken(&self) -> usize {
-        self.answered.load(Ordering::SeqCst)
-    }
-}
-
-/// Read one chat request off a connection so the fake can answer it by size: the headers, then the
-/// body, the same way [`serve`] does for the ordinary fake.
-fn read_ask(stream: &mut TcpStream) -> Vec<u8> {
-    let mut reader = match stream.try_clone() {
-        Ok(clone) => std::io::BufReader::new(clone),
-        Err(_) => return Vec::new(),
-    };
-    let mut line = String::new();
-    let _ = reader.read_line(&mut line);
-    let mut length = 0usize;
-    loop {
-        let mut header = String::new();
-        if reader.read_line(&mut header).unwrap_or(0) == 0 || header.trim().is_empty() {
-            break;
-        }
-        if header.to_ascii_lowercase().starts_with("content-length:") {
-            length = header
-                .split(':')
-                .nth(1)
-                .unwrap_or("0")
-                .trim()
-                .parse()
-                .unwrap_or(0);
-        }
-    }
-    let mut body = vec![0u8; length];
-    if length > 0 {
-        let _ = reader.read_exact(&mut body);
-    }
-    body
 }

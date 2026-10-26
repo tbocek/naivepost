@@ -62,6 +62,9 @@ pub struct Legs {
     pub ask_draw: AskDraw,
     /// One poll of a draw job, repeated until it reports done.
     pub poll: Box<upload::Poll>,
+    /// Put the drawn picture's bytes on disk as the plain picture (§F5.6 S6), the same leg the run's words half
+    /// saves through. Without it the reprint after a redraw had nothing to print onto.
+    pub save_picture: Box<upload::SavePicture>,
     /// Print one pass of words onto the picture. Costs a decode, never a GPU run.
     pub print: Box<upload::PrintWords>,
     /// The model leg: the brief in, the raw reply out. One call for a re-word, none anywhere else.
@@ -181,18 +184,29 @@ pub fn press_redraw_thumbnail(
     };
     out.sd_calls = 1;
     out.calls.push("draw".to_string());
-    loop {
+    let png = loop {
         match (legs.poll)(&job) {
             Ok(state) => {
                 log(&upload::poll_line(&state.status, state.ahead));
                 if state.done {
                     out.calls.push("poll".to_string());
-                    break;
+                    break state.png;
                 }
             }
             Err(why) => return fail(out, "the thumbnail", &why, legs),
         }
+    };
+    // The drawn bytes land as the plain picture the reprint prints onto, as in the run's words half (§F5.6 S6).
+    // The first rewrite went straight to the reprint: with a real sd.cpp it always failed on "nothing has been
+    // drawn to print onto" (a scripted draw had laid the file itself, so no test saw it).
+    if png.is_empty() {
+        let why = format!("the drawing server finished job {} with no image", job.id);
+        return fail(out, "the thumbnail", &why, legs);
     }
+    if let Err(why) = (legs.save_picture)(&job, &png) {
+        return fail(out, "the thumbnail", &why, legs);
+    }
+    out.calls.push("picture".to_string());
 
     // Then the words go back over the fresh picture — a reprint costs a decode, never a GPU run.
     if let Err(why) = print_words(legs, &mut out) {

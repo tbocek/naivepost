@@ -90,13 +90,13 @@ pub struct CatalogueRow {
     pub values: &'static [&'static str],
 }
 
-/// The six fields F0.7 derives, in the order the log says them.
+/// The seven fields F0.7 derives, in the order the log says them.
 ///
 /// This is the list S3 validates against, so "known field" and "a field the derivation may set" are
 /// one fact: a field cannot be settable-but-unsayable. `hands_off::pipeline_fields`
 /// describes the same three-way choice from the other side (what the model must not decide per request);
 /// this is the writable face of it, spelled per field because validation needs each field's range.
-pub fn derived_fields() -> [CatalogueRow; 6] {
+pub fn derived_fields() -> [CatalogueRow; 7] {
     [
         // P.policy.markingPass — picks F1.9 / F1.10 / no marking pass in Prepare.
         CatalogueRow {
@@ -136,7 +136,21 @@ pub fn derived_fields() -> [CatalogueRow; 6] {
             id: "P.policy.targetLengthSeconds",
             values: &[],
         },
+        // P.policy.language — the language the recordings are spoken in, as its code. Open-ended, so no
+        // `values`: `apply` checks the shape of a language code instead. It was a box on Prepare in the first
+        // port; the User Context says it now, as it says what Style used to.
+        CatalogueRow {
+            field: "language",
+            id: "P.policy.language",
+            values: &[],
+        },
     ]
+}
+
+/// A language code as the speech recogniser and the voice take it: two or three lower-case letters
+/// ("en", "de", "yue"), the ISO 639 shape.
+fn is_language_code(code: &str) -> bool {
+    (2..=3).contains(&code.len()) && code.chars().all(|c| c.is_ascii_lowercase())
 }
 
 /// The two spellings a switch accepts. `true`/`false` as well as `on`/`off` because JSON booleans reach
@@ -210,7 +224,20 @@ pub fn apply(policy: &mut Policy, proposal: &Proposal) -> Applied {
                 ))
             }
         },
-        // Unreachable: `lookup` returned this row from the same five arms. Reaching it would mean the
+        "language" if is_language_code(&proposal.value) => {
+            policy.language = Field {
+                value: proposal.value.clone(),
+                origin: Origin::Model,
+                because,
+            }
+        }
+        "language" => {
+            return Applied::Refused(format!(
+                "{} is not a language code for {} \u{2014} send its two-letter code, lower case: en, de, fr",
+                proposal.value, row.field
+            ))
+        }
+        // Unreachable: `lookup` returned this row from the same catalogue. Reaching it would mean the
         // catalogue and this match drifted apart, which is a bug in this file, not a user error.
         _ => unreachable!("catalogue row {} has no writer", row.field),
     }
@@ -594,6 +621,7 @@ pub fn stored_word(policy: &Policy, field: &str) -> String {
         "speedPass" => pass_word(policy.speed_pass.value).to_string(),
         "decorationsPass" => pass_word(policy.decorations_pass.value).to_string(),
         "targetLengthSeconds" => format!("{}", policy.target_length_seconds.value),
+        "language" => policy.language.value.clone(),
         // A name outside the catalogue has no stored shape to print; an empty value is a visible gap in the
         // line rather than a crash, and `derived_log` can only ever be handed a catalogue field.
         _ => String::new(),

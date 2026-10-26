@@ -182,26 +182,14 @@ fn stops_a_run(app: &adw::Application) {
         "with no run and no preview, ⏹ is not sensitive"
     );
 
+    // ▶ opens Prepare's run and hands its walk to the run's worker (§03-shell §1): the run stands open
+    // until the window takes the worker's answer, which it cannot before this check turns the main loop.
     play.emit_clicked();
     assert_eq!(
-        ui::state(&window).status,
-        "frames 1/2: frame",
-        "F0.5 S2/§2: the run owns the status line, and what it puts there is its track line"
+        ui::running_step(&window),
+        Some(run::Step::Prepare),
+        "the press opened Prepare's run"
     );
-    // F0.5 S4 closes a single-step press's own bookkeeping, so the ⏹ sensitivity is pinned over a run
-    // that is still standing -- `start_run`, the call ▶ makes before it walks the step.
-    if let (Some(bar), Some(queue)) = (ui::run_bar(&window), ui::run_queue(&window)) {
-        naivepost::runqueue::start_run(
-            &mut bar.borrow_mut(),
-            &mut queue.borrow_mut(),
-            &mut naivepost::exchanges::RunLog::new(),
-            naivepost::run::Step::Prepare,
-            naivepost::run::snapshot_sources(&model),
-        );
-        if let Some(stop) = ui::stop_button(&window) {
-            stop.set_sensitive(true);
-        }
-    }
     assert!(
         stop.is_sensitive(),
         "S3: with a run under way ⏹ must be sensitive"
@@ -213,11 +201,22 @@ fn stops_a_run(app: &adw::Application) {
         run::STOPPING,
         "one press of ⏹ brings the run down and says so"
     );
-    // ▶ keeps the ⏸ face after the stop: `press_stop` marks the run stopped but leaves `running` in
-    // place — clearing it is the stopping flow's own job once it has unwound (F0.5), so `controls`
-    // still sees a run and keeps both buttons' faces as busy. Asserted as-is rather than as an
-    // "idle face" claim; F0.5's teardown lives on the step's own finish (`run::RunBar::finish`), not
-    // on the ⏹ press, which only sets the flag.
+    // ⏹ only marks the run stopped (and cancels its calls, kills its children); the walk ends at its next
+    // checkpoint and the run is closed by the press's own ending when the worker answers (F0.5 S4).
+    assert_eq!(
+        ui::running_step(&window),
+        Some(run::Step::Prepare),
+        "the stop is said at once; the run unwinds on the worker"
+    );
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
+    assert_eq!(
+        ui::running_step(&window),
+        None,
+        "the run closed once its walk had unwound"
+    );
     window.close();
 }
 

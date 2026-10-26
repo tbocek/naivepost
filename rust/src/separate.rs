@@ -376,14 +376,14 @@ fn stems_folder(path: &Path) -> String {
 }
 
 /// S7: the row becomes two — everything else where the file was, and the voice as a track of its
-/// own. The rest keeps 🎥 footage (a video's picture went with it, sound muxed back), the voice takes
-/// the 🎤 slot, and both have their wish cleared so a second ▶ does not split a voice off a voice.
+/// own. The rest keeps 🎥 footage (a video's picture went with it, sound muxed back), both keep the
+/// row's voice (there is no "no voice" to give the rest), and both have their wish cleared so a second ▶ does not split a voice off a voice.
 pub fn split_rows(project: &mut Project, index: usize, rest: &str, voice: &str) {
     let held = project.sources.remove(index);
     let rest_row = Source {
         path: rest.to_string(),
         footage: held.footage,
-        narrator: 0,
+        narrator: held.narrator,
         sepvoice: false,
         tracks: vec![],
     };

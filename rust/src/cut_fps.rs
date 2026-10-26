@@ -130,7 +130,7 @@ fn ask(file: &Path) -> f64 {
 fn footage_file(window: &adw::ApplicationWindow) -> Option<PathBuf> {
     let written = crate::ui::cut_lane::footage_source_path(window)?;
     let root = std::env::current_dir().unwrap_or_default();
-    let project_dir = crate::startup::session_dir(&root);
+    let project_dir = crate::startup::open_dir();
     let path = crate::layout::resolve(&root, &project_dir, &written);
     path.is_file().then_some(path)
 }

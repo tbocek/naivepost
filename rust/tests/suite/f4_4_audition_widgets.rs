@@ -63,8 +63,8 @@ fn lead_in() -> f64 {
     (entry().at - naivepost::narrate_screen::AUDITION_LEAD_SECONDS).max(0.0)
 }
 
-/// One player spawn as the recorder logged it. The voice's argv is `player_args`'s own shape
-/// (`<file> start=<s> gain=<g>`); the picture's is the real player's flags (`--volume=<g> … -s <t> <files…>`,
+/// One player spawn as the recorder logged it. The voice's argv is the voice player's own flags
+/// (`audio_argv`: `--volume=<g> -s <s> <file>` for the default `gst-play-1.0`); the picture's is the real player's flags (`--volume=<g> … -s <t> <files…>`,
 /// [`crate::narrate_preview_media::bed_argv`]), so each key is read under either spelling.
 fn arg_of(line: &str, key: &str) -> f64 {
     let long = key.to_string();
@@ -88,6 +88,13 @@ fn arg_of(line: &str, key: &str) -> f64 {
         }
     });
     let value = found.or_else(|| {
+        // `--volume=0.400` carries its value in the word; `-s 0.000` in the word after it.
+        if short.ends_with('=') {
+            return words
+                .iter()
+                .find(|w| w.starts_with(short))
+                .map(|w| w.trim_start_matches(short).to_string());
+        }
         words
             .iter()
             .position(|w| *w == short)
@@ -218,7 +225,14 @@ fn run_round(app: &adw::Application) {
 
     let tree = session_tree();
     let mut project = Project {
-        language: "pl".into(),
+        policy: naivepost::project::Policy {
+            language: naivepost::project::Field {
+                value: "pl".to_string(),
+                origin: Default::default(),
+                because: None,
+            },
+            ..Default::default()
+        },
         ..Default::default()
     };
     project.produce.game_volume = GAME_VOLUME;
@@ -288,9 +302,8 @@ fn run_round(app: &adw::Application) {
         playing: false,
         started: false,
         busy: false,
-        narration_off: false,
         covered_spans: vec![],
-        language: "pl".into(),
+        language: "pl".to_string(),
     });
     ui::refresh(&window);
     settle();
@@ -301,13 +314,11 @@ fn run_round(app: &adw::Application) {
     let voices_before_first = tagged(&log, "voice").len();
     let pictures_before_first = tagged(&log, "picture").len();
     button.emit_by_name::<()>("clicked", &[]);
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
-    for _ in 0..40 {
-        if expected.is_file() {
-            break;
-        }
-        settle();
-    }
     let status_after_first = status_text(&window);
     let bytes_after_first = std::fs::read(&expected).expect("the first press filed the take");
     let speech_after_first = audio

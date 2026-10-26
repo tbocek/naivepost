@@ -570,3 +570,51 @@ fn f1_6_s5_the_marker_is_written_last_and_the_pass_says_what_it_made() {
         .is_none());
     assert!(!tree.frames_marker(SOURCE).exists());
 }
+
+/// S2 through REAL ffmpeg: the scene pass's command, run on a clip with one hard cut, is a command ffmpeg accepts
+/// and its scores find the cut. The stubbed walk cannot see a malformed argv; the first rewrite's lacked its output
+/// (`-f null` with no `-`), so every real Prepare failed at the first recording.
+#[test]
+fn f1_6_s2_the_scene_pass_runs_on_real_ffmpeg_and_finds_a_cut() {
+    let dir = crate::common::temp_dir_tagged("scene-pass-real");
+    std::fs::create_dir_all(&dir).unwrap();
+    let clip = dir.join("cut.mkv");
+    // Two seconds of one colour, then two of another: one cut at 2 s.
+    let made = std::process::Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:s=320x180:d=2:r=25",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=320x180:d=2:r=25",
+            "-filter_complex",
+            "[0][1]concat=n=2:v=1:a=0",
+        ])
+        .arg(&clip)
+        .status()
+        .expect("ffmpeg runs");
+    assert!(made.success(), "the clip was written");
+    let mut argv: Vec<String> = vec!["-i".into(), clip.display().to_string()];
+    argv.extend(frames::scene_pass_plan(SCENE_THRESHOLD));
+    let out = std::process::Command::new("ffmpeg")
+        .args(&argv)
+        .output()
+        .expect("ffmpeg runs");
+    assert!(
+        out.status.success(),
+        "ffmpeg accepts the scene pass: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let scores = frames::parse_scores(&String::from_utf8_lossy(&out.stdout));
+    let changes = frames::scene_changes(&scores, SCENE_THRESHOLD, frames::SCENE_MIN_GAP);
+    assert!(
+        changes.iter().any(|change| (change.time - 2.0).abs() < 0.3),
+        "the cut at 2 s is found: {changes:?}"
+    );
+}

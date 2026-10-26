@@ -86,7 +86,6 @@ struct Case {
     sources: Vec<project::Source>,
     aspect: String,
     voice: String,
-    no_narration: bool,
     fx: Vec<naivepost::cut::Fx>,
     lanes: Vec<naivepost::cut::Lane>,
     shape: (i32, i32),
@@ -105,7 +104,6 @@ impl Case {
             sources: vec![source("media/talk.mkv", true)],
             aspect: "16:9".to_string(),
             voice: "1".to_string(),
-            no_narration: false,
             fx: Vec::new(),
             lanes: Vec::new(),
             shape: (1920, 1080),
@@ -125,7 +123,6 @@ impl Case {
             sources: &self.sources,
             aspect: &self.aspect,
             voice: &self.voice,
-            no_narration: self.no_narration,
             fx: &self.fx,
             lanes: &self.lanes,
             shape: self.shape,
@@ -395,14 +392,8 @@ fn f5_3_s6_aspect_voice_and_the_narration_flag() {
     assert_ne!(other.stamp(), base.stamp());
     assert_eq!(changed(&base, &other), vec!["voice"]);
 
-    // The flag on its own: with narration off no line is spoken, and the lines must not be able to hold the
-    // video up to date behind the tick.
-    let mut quiet = base.clone();
-    quiet.no_narration = true;
-    assert_ne!(quiet.stamp(), base.stamp());
-    assert_eq!(changed(&base, &quiet), vec!["narration"]);
-
-    // The flag is a group of its own: with it on, an edit that moves only the lines still names only them.
+    // A narration's lines are their own group: an edit that moves only the lines names only them. (There is
+    // no narration switch any more, §07 §1; its group stays a constant so old stamps still match.)
     let mut longer = base.clone();
     longer.lines[0].text = "longer than before".to_string();
     assert_eq!(changed(&base, &longer), vec!["lines"]);
@@ -603,6 +594,13 @@ fn f5_3_s11_the_stamp_is_ten_named_parts_not_one_blob() {
         ]
     );
     assert!(parts.iter().all(|(_, hash)| hash.len() == 16), "{parts:?}");
+    // The narration group is the constant every narrated project hashed while the first rewrite had its
+    // narration switch ("on"): kept, so a video rendered before the switch went still reads up to date.
+    let narration = parts
+        .iter()
+        .find(|(name, _)| *name == "narration")
+        .map(|(_, hash)| hash.clone());
+    assert_eq!(narration, Some(stamp::hash_text("on")));
 
     // One edit names exactly one group — the reason the groups are hashed apart.
     let wider = base.clone().with_settings(|s| s.crf = 30);

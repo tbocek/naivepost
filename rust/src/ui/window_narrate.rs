@@ -18,7 +18,6 @@ use crate::cut;
 use crate::layout;
 use crate::narrate_data;
 use crate::narrate_details;
-use crate::narrate_off::{self};
 use crate::narrate_run::{
     self, JOBS, JOB_NARRATION, JOB_SPEAKING, SPEAKING_STATUS, STAGE_THINKING,
 };
@@ -38,18 +37,18 @@ use crate::ui::window as ui;
 // `narrate_run`. The narration call itself arrives through a closure for the same reason
 // `run_captions_pass_with_reply` exists — a test drives the real route with a scripted answer.
 
-/// S1 alone: does this press of ▶ get refused, and with which sentence? Reads three of the four gates
+/// S1 alone: does this press of ▶ get refused, and with which sentence? Reads two of the three gates
 /// off the project folder; busy comes from the run bar rather than the project, so it is asked through
 /// [`narrate_bar_busy`] and handed to [`narrate_run::refuse`], which owns the order.
-pub fn refuse_narrate_run(project: &Project) -> Option<String> {
-    refuse_narrate_run_with_busy(project, narrate_bar_busy())
+pub fn refuse_narrate_run() -> Option<String> {
+    refuse_narrate_run_with_busy(narrate_bar_busy())
 }
 
-/// The same four gates with `busy` handed in. Needed because the shell's ▶ forwards HERE, after
+/// The same three gates with `busy` handed in. Needed because the shell's ▶ forwards HERE, after
 /// `runqueue::start_run` has already put this press's own run in the bar: reading that as "a run is
 /// under way" would refuse the press with S1's PAUSING sentence for the run it just opened. The
 /// handler's pre-press check (`narrate_asked` above) is where busy is honestly answered.
-pub fn refuse_narrate_run_with_busy(project: &Project, busy: bool) -> Option<String> {
+pub fn refuse_narrate_run_with_busy(busy: bool) -> Option<String> {
     let tree = narrate_session_tree();
     let has_cut = tree
         .as_ref()
@@ -58,7 +57,7 @@ pub fn refuse_narrate_run_with_busy(project: &Project, busy: bool) -> Option<Str
     let has_timeline = tree
         .as_ref()
         .is_some_and(|tree| tree.session_tsv().is_file());
-    narrate_run::refuse(busy, has_cut, project.no_narration, has_timeline)
+    narrate_run::refuse(busy, has_cut, has_timeline)
 }
 
 /// Whether this window's run bar counts as busy — the same question [`run::controls`] answers when it
@@ -85,46 +84,68 @@ pub fn narrate_session_tree() -> Option<layout::Tree> {
     crate::narrate_preview_media::session_tree()
 }
 
+/// What the narration call is, handed to the run's worker: it gets the session's folder, the clips, and a
+/// way to say how far its streamed answer has got (§F4.2), and answers the written lines. `Send` because it
+/// runs on the worker (§03-shell §1, "The window thread never waits").
+pub(crate) type NarrateReply = Box<
+    dyn FnMut(
+            &layout::Tree,
+            &[(f64, f64)],
+            &dyn Fn(u32, usize),
+        ) -> Result<Vec<narrate_run::Written>, String>
+        + Send,
+>;
+
 /// F4.1 S1–S7 on this window. With no scripted reply this is the LIVE path: ▶ telephones the address
-/// the Settings hold through `narrate_live`, over real HTTP, three attempts at most (§F4.2).
+/// the Settings hold through `narrate_live`, over real HTTP, three attempts at most (§F4.2). What can wait
+/// (the call, the save, the speaking pass) runs on a worker; this returns once the run is handed over, with
+/// the sentence of a refusal, or empty when the run goes on (its ending lands on the status line).
 pub fn press_narrate_run(window: &adw::ApplicationWindow) -> String {
     // The scripted reply lives in a thread-local so the shell's own ▶ can reach it too: the real
     // button's handler calls THIS function, and a test that wants the written-and-spoken case drives
-    // the button rather than the seam. Empty means "ask for real", which is what the app does.
+    // the button rather than the seam. Empty means "ask for real", which is what the app does. Both are
+    // read HERE, on the window thread, and travel to the worker as values.
     let reply = NARRATE_SCRIPT.with(|cell| cell.borrow().clone());
-    let slow = SLOW_NARRATE_SCRIPT.with(|cell| cell.borrow().is_some());
-    if reply.is_empty() && !slow {
-        return run_narrate_on(window, live_narrate_reply);
+    let slow = SLOW_NARRATE_SCRIPT.with(|cell| cell.borrow().clone());
+    if reply.is_empty() || slow.is_some() {
+        let project = live_project();
+        return run_narrate_on(
+            window,
+            Box::new(move |tree, bounds, progress| {
+                live_narrate_reply(tree, &project, slow.clone(), bounds, progress)
+            }),
+        );
     }
-    if slow {
-        // The slow script is read inside `live_narrate_reply`, which sleeps and re-reads the cancel
-        // switch per clip so a ⏹ press can land between two of them.
-        return run_narrate_on(window, live_narrate_reply);
-    }
-    run_narrate_on(window, move |_tree, clips| {
-        Ok(reply
-            .iter()
-            .filter_map(|(clip, at, text, emotion)| {
-                let (start, end) = *clips.get((*clip as usize).checked_sub(1)?)?;
-                Some(narrate_run::Written {
-                    start,
-                    end,
-                    at: *at,
-                    text: text.clone(),
-                    emotion: emotion.clone(),
+    run_narrate_on(
+        window,
+        Box::new(move |_tree, clips, _progress| {
+            Ok(reply
+                .iter()
+                .filter_map(|(clip, at, text, emotion)| {
+                    let (start, end) = *clips.get((*clip as usize).checked_sub(1)?)?;
+                    Some(narrate_run::Written {
+                        start,
+                        end,
+                        at: *at,
+                        text: text.clone(),
+                        emotion: emotion.clone(),
+                    })
                 })
-            })
-            .collect())
-    })
+                .collect())
+        }),
+    )
 }
 
 /// The live narration leg: with no scripted reply, ▶ comes here (§F4.2's call over real HTTP). All the
-/// gathering and driving lives in `narrate_ask`, so this file stays a shell.
+/// gathering and driving lives in `narrate_ask`, so this file stays a shell. Runs on the worker: the
+/// project and the slow script are handed in, and the streamed progress goes out through `progress`.
 pub(crate) fn live_narrate_reply(
     tree: &layout::Tree,
+    project: &Project,
+    slow: SlowScript,
     bounds: &[(f64, f64)],
+    progress: &dyn Fn(u32, usize),
 ) -> Result<Vec<narrate_run::Written>, String> {
-    let slow = SLOW_NARRATE_SCRIPT.with(|cell| cell.borrow().clone());
     if let Some((reply, per_clip)) = slow {
         // A scripted answer that closes one clip at a time, so ⏹ pressed while the model is still
         // "thinking" is seen by the next answer instead of landing after the run already ended.
@@ -147,10 +168,9 @@ pub(crate) fn live_narrate_reply(
         }
         return Ok(written);
     }
-    crate::narrate_ask::run(tree, &live_project(), bounds, &mut |written, total| {
-        // §F4.2's streaming progress onto the shell's bar: the door has no window of its own, so the
-        // stage is painted on the newest window this thread holds — the same accessor the ▶ handler uses.
-        show_narrate_progress(&ui::main_window(), written, total as usize);
+    crate::narrate_ask::run(tree, project, bounds, &mut |written, total| {
+        // §F4.2's streaming progress onto the shell's bar, painted by the window thread when it lands.
+        progress(written, total as usize)
     })
 }
 
@@ -200,39 +220,43 @@ pub fn narrate_script_loaded() -> bool {
         || SLOW_NARRATE_SCRIPT.with(|cell| cell.borrow().is_some())
 }
 
-/// F4.1's body for THIS window and the live session's project. Both doors — the seam above and the
-/// shell's ▶ — come through here, so the two cannot drift apart.
-pub(crate) fn run_narrate_on<FReply>(window: &adw::ApplicationWindow, reply: FReply) -> String
-where
-    FReply: FnMut(&layout::Tree, &[(f64, f64)]) -> Result<Vec<narrate_run::Written>, String>,
-{
+/// F4.1's body for THIS window and the live session's project. Both doors (the seam above and the
+/// shell's ▶) come through here, so the two cannot drift apart. The run's ending is applied when its
+/// worker answers ([`run_narrate_with`]); what this returns is a refusal's sentence, or empty.
+pub(crate) fn run_narrate_on(window: &adw::ApplicationWindow, reply: NarrateReply) -> String {
     let project = live_project();
     // A bar already holding a run means the press arriving here opened it (the shell's ▶ forwards
     // after `start_run`), so it must not be read as "busy" — see `refuse_narrate_run_with_busy`.
     let opened_by_this_press = bar_is_running();
     let reason = if opened_by_this_press {
-        refuse_narrate_run_with_busy(&project, false)
+        refuse_narrate_run_with_busy(false)
     } else {
-        refuse_narrate_run(&project)
+        refuse_narrate_run()
     };
     if let Some(reason) = reason {
+        // The shell's ▶ opened a run for this press and leaves its closing to this flow.
+        if opened_by_this_press {
+            clear_narrate_bar();
+            repaint_play_button(window);
+        }
         say_on_status(window, &reason);
         return reason;
     }
     // A press that came through `run::RunBar::press` opened a run before arriving here; nothing
-    // headless streams to close it, so this call closes it at its own end. Three writes follow the
-    // close, because the handler paints from the bar AFTER this returns and `end_run` leaves both
+    // headless streams to close it, so the run closes it at its own end. Three writes follow the
+    // close, because the handler paints from the bar AFTER the press returned and `end_run` leaves both
     // `running` and `status` empty: put the sentence back on the label, repaint ▶ from the idle bar,
     // and redraw the progress area so the stage the run painted is not wiped by that later paint.
-    let said = run_narrate_with(window, &project, reply);
-    if opened_by_this_press {
-        clear_narrate_bar();
-        set_status_line(window, &said);
-        repaint_play_button(window);
-    } else {
-        set_status_line(window, &said);
-    }
-    said
+    let held = window.clone();
+    run_narrate_with(window, &project, reply, move |said: String| {
+        if opened_by_this_press {
+            clear_narrate_bar();
+        }
+        set_status_line(&held, &said);
+        if opened_by_this_press {
+            repaint_play_button(&held);
+        }
+    })
 }
 
 /// Repaint ▶ and ⏹ from the bar's current state after a narrate run closed it, so neither button is
@@ -283,19 +307,49 @@ pub(crate) fn live_project() -> Project {
         .unwrap_or_default()
 }
 
+/// What the run's worker reports while it runs, applied on the window thread in order.
+enum NarrateNote {
+    /// §F4.2's streamed progress: clips closed so far, out of how many.
+    Streaming(u32, usize),
+    /// S4 landed: the record as saved, how many lines were written, out of how many clips.
+    Written(Narration, usize, usize),
+    /// S6 opens: how many lines the speaking pass walks.
+    Speaking(usize),
+}
+
+/// How the worker's part ended: the sentence for the status line, and whether the speaking job has to be
+/// closed on the bar (it was opened at the start, and every ending after S5 must find it finished).
+struct NarrateEnd {
+    said: String,
+    close_speaking: bool,
+}
+
+impl NarrateEnd {
+    fn said(said: String) -> Self {
+        NarrateEnd {
+            said,
+            close_speaking: false,
+        }
+    }
+}
+
 /// The shared body of both doors. Private so they cannot drift apart. Steps land in §F4.1's order, and
 /// each one's wording comes from `narrate_run`, never from a string written here.
-pub(crate) fn run_narrate_with<FReply>(
+///
+/// S1 to S3 run here, on the window thread: they read the window (the half-typed rows) and paint the bar.
+/// The call, the save and the speaking pass run on a worker (§03-shell §1, "The window thread never
+/// waits"); what they report lands through [`NarrateNote`], and `finish` gets the ending's sentence once it
+/// is on the status line. The first rewrite ran the whole pass inside the ▶ handler.
+pub(crate) fn run_narrate_with(
     window: &adw::ApplicationWindow,
     project: &Project,
-    mut reply: FReply,
-) -> String
-where
-    FReply: FnMut(&layout::Tree, &[(f64, f64)]) -> Result<Vec<narrate_run::Written>, String>,
-{
+    mut reply: NarrateReply,
+    finish: impl FnOnce(String) + 'static,
+) -> String {
     let Some(tree) = narrate_session_tree() else {
         let said = narrate_run::failed_status("narration");
         say_on_status(window, &said);
+        finish(said.clone());
         return said;
     };
     let cut_ = cut::load(&tree).unwrap_or_default();
@@ -313,6 +367,7 @@ where
             ui::log_line(&format!("!!! narrate: {why}"));
             let said = narrate_run::failed_status("narration");
             say_on_status(window, &said);
+            finish(said.clone());
             return said;
         }
     };
@@ -332,12 +387,13 @@ where
 
     // S2: pull half-typed rows into the record. The previous generation is NOT copied here — that waits
     // until a valid reply is in hand (see the save below), so a failed call cannot discard a good file.
-    let mut record = pull_half_typed(window, &existing);
+    let record = pull_half_typed(window, &existing);
     // S3: save the project, open the two jobs, and put the reason on the log BEFORE the call goes out.
     if let Err(error) = crate::project::save(project, tree.dir()) {
         ui::log_line(&format!("!!! could not save the project -- {error}"));
         let said = narrate_run::failed_status("narration");
         say_on_status(window, &said);
+        finish(said.clone());
         return said;
     }
     ui::log_line(&plan.log);
@@ -368,154 +424,190 @@ where
     // until the first clip closes").
     set_narrate_stage(window, STAGE_THINKING, true);
 
-    let written = match reply(&tree, &plan.clips) {
+    let clips = plan.clips.clone();
+    let captions_only = plan.captions_only;
+    let on_note = {
+        let window = window.clone();
+        move |note: NarrateNote| match note {
+            NarrateNote::Streaming(written, of) => show_narrate_progress(&window, written, of),
+            NarrateNote::Written(record, written, of) => {
+                // S6's half-way fact the ⏹ handler can ask for: whether this run's first job closed, i.e.
+                // whether lines were written before the stop (§F4.1 S7).
+                NARRATE_WROTE.set(written > 0);
+                // The lines written are the page's rows now: published and drawn at once, not only on the next
+                // tab switch (the first rewrite updated the held narration alone, so ▶ looked like it wrote
+                // nothing until the page was rebuilt).
+                crate::ui::narrate_page::publish_lines(record.entries.clone());
+                if let Some(held) = ui::HELD_NARRATION.with(|held| held.borrow().last().cloned()) {
+                    *held.borrow_mut() = record;
+                }
+                crate::ui::narrate_page::refresh(&window);
+                // The bar's stage follows the clips as they close; the final count lands in one step.
+                set_narrate_stage(&window, &narrate_run::writing(written, of), false);
+                let stage_queue = live_stage_queue(&window);
+                stage_queue.borrow_mut().done(0, 1.0);
+                NARRATE_QUEUE.with(|queue| *queue.borrow_mut() = stage_queue.borrow().clone());
+            }
+            NarrateNote::Speaking(lines) => {
+                say_on_status(&window, SPEAKING_STATUS);
+                live_stage_queue(&window)
+                    .borrow_mut()
+                    .push(1, lines.max(1), "line");
+            }
+        }
+    };
+    let done = {
+        let window = window.clone();
+        move |end: NarrateEnd| {
+            if end.close_speaking {
+                // Track 1 owns the second half of the phase (`phase(0.0, 0.5)`), so closing at full share
+                // fills the bar; left open, it sits on `speaking 2/2` after a run that ended.
+                let stage_queue = live_stage_queue(&window);
+                stage_queue.borrow_mut().done(1, 1.0);
+                NARRATE_QUEUE.with(|queue| *queue.borrow_mut() = stage_queue.borrow().clone());
+            }
+            say_on_status(&window, &end.said);
+            finish(end.said);
+        }
+    };
+    crate::ui::background::run_with_notes(
+        "narrate",
+        move |note: &dyn Fn(NarrateNote)| {
+            // The run's `llm/` page is this thread's (§7 keeps one per thread).
+            crate::exchange_leg::note_run_started();
+            let end = narrate_on_worker(
+                &tree,
+                record,
+                &mut reply,
+                &clips,
+                captions_only,
+                &voice,
+                note,
+            );
+            crate::exchange_leg::note_run_ended();
+            end
+        },
+        on_note,
+        done,
+    );
+    String::new()
+}
+
+/// S4 to S7 on the run's worker: the call, the save, the speaking pass. Reads no window state: what it
+/// needs arrives as values, and what the window must show leaves as [`NarrateNote`]s.
+#[allow(clippy::too_many_arguments)] // the run's whole hand-over: folder, record, call, clips, flag, voice, notes
+fn narrate_on_worker(
+    tree: &layout::Tree,
+    record: Narration,
+    reply: &mut NarrateReply,
+    clips: &[(f64, f64)],
+    captions_only: bool,
+    voice: &str,
+    note: &dyn Fn(NarrateNote),
+) -> NarrateEnd {
+    let written = match reply(tree, clips, &|written, of| {
+        note(NarrateNote::Streaming(written, of))
+    }) {
         Ok(lines) => lines,
         Err(error) => {
             ui::log_line(&format!("!!! narrate: the call failed -- {error}"));
             // ⏹ caught the call in flight: the ending names the stage, not a generic failure (§S7).
-            let said = if crate::cancel_leg::cancelled() {
+            return NarrateEnd::said(if crate::cancel_leg::cancelled() {
                 narrate_run::stopped_status(JOB_NARRATION)
             } else {
                 narrate_run::failed_status("narration")
-            };
-            say_on_status(window, &said);
-            return said;
+            });
         }
     };
     // ⏹ landed while the model was answering: nothing is saved and nothing is spoken (§S7's
     // "<stage> stopped" — the stage is still `narration`, the speaking job has not opened).
     if crate::cancel_leg::cancelled() {
-        let said = narrate_run::stopped_status(JOB_NARRATION);
-        say_on_status(window, &said);
-        return said;
+        return NarrateEnd::said(narrate_run::stopped_status(JOB_NARRATION));
     }
-    // S6's half-way fact the ⏹ handler can ask for: whether this run's first job closed, i.e. whether
-    // lines were written before the stop. `narration stopped` and `speaking stopped` differ by exactly
-    // this, and the generic `stopping…` cannot tell them apart (§F4.1 S7).
-    NARRATE_WROTE.set(!written.is_empty());
     if written.is_empty() {
         // No line came back: nothing is saved, nothing is spoken, and the run says so plainly.
-        let said = narrate_run::Outcome::NothingWritten.status();
-        say_on_status(window, &said);
-        return said;
+        return NarrateEnd::said(narrate_run::Outcome::NothingWritten.status());
     }
 
     // S4: fold the written lines in (the silent list survives inside `fold_written`), save, publish.
-    record = narrate_run::fold_written(&record, &written);
+    let record = narrate_run::fold_written(&record, &written);
     // The copy of what was there goes to `narrate/narration.prev.json` only now that a valid reply is in
     // hand (§07-narrate#3-data: it is the PREVIOUS generation). A call that failed, answered nothing or was
     // stopped never reaches here, so it cannot throw away a good file on the way to producing nothing.
-    if let Err(why) = narrate_data::keep_previous(&tree) {
+    if let Err(why) = narrate_data::keep_previous(tree) {
         ui::log_line(&format!(
             "!!! could not keep the previous narration -- {why}"
         ));
-        let said = narrate_run::failed_status("narration");
-        say_on_status(window, &said);
-        return said;
+        return NarrateEnd::said(narrate_run::failed_status("narration"));
     }
     if tree.narration_prev_json().is_file() {
         ui::log_line(&narrate_details::previous_kept_log(
             &tree.narration_prev_json().display().to_string(),
         ));
     }
-    if let Err(error) = narration::save(&record, &tree) {
+    if let Err(error) = narration::save(&record, tree) {
         ui::log_line(&format!("!!! could not write narration.json -- {error}"));
-        let said = narrate_run::failed_status("narration");
-        say_on_status(window, &said);
-        return said;
+        return NarrateEnd::said(narrate_run::failed_status("narration"));
     }
-    if let Some(held) = ui::HELD_NARRATION.with(|held| held.borrow().last().cloned()) {
-        *held.borrow_mut() = record.clone();
-    }
-    // The bar's stage follows the clips as they close; headless they all arrive with the one reply, so
-    // this is the final count in one step.
-    set_narrate_stage(
-        window,
-        &narrate_run::writing(written.len(), plan.clips.len()),
-        false,
-    );
     ui::log_line(&narrate_run::written_log(written.len()));
-    // This run's own queue — the window's when a shell is open (see `run_narrate_with`), so the bar,
-    // the timer and the stage painter all read the fraction this run advances.
-    let stage_queue = live_stage_queue(window);
-    stage_queue.borrow_mut().done(0, 1.0);
-    NARRATE_QUEUE.with(|queue| *queue.borrow_mut() = stage_queue.borrow().clone());
+    note(NarrateNote::Written(
+        record.clone(),
+        written.len(),
+        clips.len(),
+    ));
 
-    // S5: a captions-only voice stops here — the lines exist and nothing is spoken.
-    if plan.captions_only {
-        // §6 (`a captions-only voice still opens and closes the "speaking 2/2" job so the bar finishes`):
-        // the job was opened above with `job(1, JOB_SPEAKING, …)`, so it has to be CLOSED here even though
-        // no line will ever be synthesized. Left open, the bar sits on `speaking 2/2` forever after a run
-        // that finished perfectly well. Track 1 owns the second half of the phase (`phase(0.0, 0.5)`), so
-        // closing it at full share is what fills the bar.
-        stage_queue.borrow_mut().done(1, 1.0);
-        NARRATE_QUEUE.with(|queue| *queue.borrow_mut() = stage_queue.borrow().clone());
-        let said = narrate_run::captions_only_done(written.len());
-        say_on_status(window, &said);
-        return said;
+    // S5: a captions-only voice stops here: the lines exist and nothing is spoken. The speaking job was
+    // opened with the run, so it is closed even though no line will ever be synthesized (§6).
+    if captions_only {
+        return NarrateEnd {
+            said: narrate_run::captions_only_done(written.len()),
+            close_speaking: true,
+        };
     }
 
     // S6: the speaking pass, over the real wire. `narrate_run` decides WHICH lines get synthesized
     // (blank is a deliberate silence, a take already in narrate/tts/ costs nothing); this half asks
     // audio.cpp for each of them through `speak_leg::speak`, the same door the row's ▶ and the
     // preview's walk use — so "N line(s) spoken" can never be reported for lines nobody dialled.
-    say_on_status(window, SPEAKING_STATUS);
-    // F4.8: the lines this pass may speak come through `narrate_off::lines_to_speak`, the one seam the
-    // tick owns — with narration off it answers empty, so nothing is synthesized behind the tick's back,
-    // and a blank line stays a deliberate silence that is never spoken.
-    let to_speak = narrate_off::lines_to_speak(live_project().no_narration, &record.entries);
-    live_stage_queue(window)
-        .borrow_mut()
-        .push(1, to_speak.len().max(1), "line");
+    let to_speak = crate::narration::lines_to_speak(&record.entries);
+    note(NarrateNote::Speaking(to_speak.len()));
     let language = crate::project::load(tree.dir())
-        .map(|opened| opened.language)
+        .map(|opened| opened.policy.language.value)
         .unwrap_or_default();
     let run = narrate_speak::speak_lines(
         &to_speak,
         |entry| {
-            let key = narration::key_for(entry, Some(&voice));
+            let key = narration::key_for(entry, Some(voice));
             tree.tts_wav(&narration::tts_file(&key)).is_file()
         },
-        |entry| narrate_speak::dial_line(&tree, &voice, &language, entry),
+        |entry| narrate_speak::dial_line(tree, voice, &language, entry),
     );
+    for line in run
+        .lines
+        .iter()
+        .filter_map(|line| narrate_speak::refused(line))
+    {
+        ui::log_line(&format!("!!! narrate: {line}"));
+    }
     // ⏹ cut the pass short between two lines: the summary says what got done, and the ending names the
     // stage that stopped rather than claiming a finished narration (§S7).
     if run.stopped {
-        for line in run
-            .lines
-            .iter()
-            .filter_map(|line| narrate_speak::refused(line))
-        {
-            ui::log_line(&format!("!!! narrate: {line}"));
-        }
         ui::log_line(&narrate_speak::stopped_speaking_log(&run));
-        // Same close as the finished pass: a stopped speaking job is still a closed one, or the bar keeps
-        // counting `speaking 2/2` after ⏹ ended it.
-        live_stage_queue(window).borrow_mut().done(1, 1.0);
-        let said = narrate_run::stopped_status(JOB_SPEAKING);
-        say_on_status(window, &said);
-        return said;
+        return NarrateEnd {
+            said: narrate_run::stopped_status(JOB_SPEAKING),
+            close_speaking: true,
+        };
     }
-    let (lines, spoken, cached) = (run.lines, run.spoken, run.cached);
-    // A refusal names the model and its reason where it failed and the run carries on with the rest
-    // (§Failure-is-specific), so each sentence reaches the log and the tally still closes the job.
-    for line in lines.iter().filter_map(|line| narrate_speak::refused(line)) {
-        ui::log_line(&format!("!!! narrate: {line}"));
-    }
-    ui::log_line(&narrate_run::spoken_log(spoken, cached));
-    // The speaking job closes the bar: `job(1, JOB_SPEAKING, 2, JOBS)` opened it at the start of the run,
-    // and every ending below (spoken, stopped) must find the queue finished or the bar keeps counting a
-    // job that is over. Track 1 owns the second half of the phase, so closing at full share fills the bar.
-    live_stage_queue(window).borrow_mut().done(1, 1.0);
-
+    ui::log_line(&narrate_run::spoken_log(run.spoken, run.cached));
     // S7: the ending goes on the STATUS LINE, which is where the prototype never put it.
-    let said = narrate_run::Outcome::Spoken {
-        written: written.len(),
-        spoken,
+    NarrateEnd {
+        said: narrate_run::Outcome::Spoken {
+            written: written.len(),
+            spoken: run.spoken,
+        }
+        .status(),
+        close_speaking: true,
     }
-    .status();
-    say_on_status(window, &said);
-    said
 }
 
 /// S2: read the row boxes back into the record, so a half-typed line that was never committed still

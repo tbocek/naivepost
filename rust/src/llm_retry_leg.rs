@@ -347,27 +347,19 @@ pub fn dial(
         if cancelled() {
             return Err(Failure::Stopped);
         }
-        // §02 §1's slot rule, on the LLM's own door: at most `LLM_SLOTS` of this model's requests on the
-        // wire at once. The wait is written into the row's wait column (§09 §10), which is how a slot
-        // count gets chosen from the log rather than guessed.
-        let slots = crate::settings::from_environment()
-            .and_then(|paths| crate::settings::read(&paths).ok())
-            .map(|conf| crate::services::llm_slots(&conf))
-            .unwrap_or(1);
-        let (slot, waited) =
-            match crate::slot_gate::hold(&endpoint.url, &base.model, slots, step, cancelled) {
-                Ok(got) => got,
-                // ⏹ landed while every slot was busy. Nothing went out, so no patience applies — the same answer
-                // as the check above, reached from inside the wait instead of before it.
-                Err(crate::slot_gate::Wait::Cancelled) => return Err(Failure::Stopped),
-            };
+        // §02 §1, on the LLM's own door: one request at a time per server. The wait is written into the
+        // row's wait column (§09 §10).
+        let (slot, waited) = match crate::slot_gate::hold(&endpoint.url, step, cancelled) {
+            Ok(got) => got,
+            // ⏹ landed while every slot was busy. Nothing went out, so no patience applies — the same answer
+            // as the check above, reached from inside the wait instead of before it.
+            Err(crate::slot_gate::Wait::Cancelled) => return Err(Failure::Stopped),
+        };
         // The prototype's queue line, kept: a step that queued behind ANOTHER step's call says who had it.
         // Its own earlier call is silence — `slot_gate::waited_log`'s caller decides that, because only the
         // holder list can tell the two apart.
         if waited > 0.0 {
-            if let Some(other) =
-                other_holder(step, &crate::slot_gate::holders(&endpoint.url, &base.model))
-            {
+            if let Some(other) = other_holder(step, &crate::slot_gate::holders(&endpoint.url)) {
                 log(&crate::slot_gate::waited_log(step, &other));
             }
         }
@@ -385,7 +377,7 @@ pub fn dial(
                 endpoint,
                 kind: Kind::Chat,
                 job: None,
-                body: Some(body),
+                body: Some(body.as_bytes()),
                 filename: None,
                 cancelled,
                 // §4: every chat call is streamed, so the stall rule holds for all of them — the same decision that

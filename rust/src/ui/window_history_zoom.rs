@@ -224,26 +224,43 @@ pub(crate) fn record_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
     refresh_cut_readouts(window);
 }
 
+/// A held drag's later move: the cut is written and published like any edit, and the step the drag's first
+/// move took is amended to it ([`cut::History::amend`]), so the drag stays one Undo step that redoes to its end.
+pub(crate) fn amend_edit(window: &adw::ApplicationWindow, cut_: &cut::Cut) {
+    crate::ui::window::seed_review_cut(window, cut_);
+    cut_history(window).borrow_mut().amend(cut_);
+    refresh_history_buttons(window);
+    refresh_cut_readouts(window);
+}
+
 /// − / + (§1 item 22): one step of the zoom ladder over THIS page's view, its floor where the whole
 /// session fits (`cut_view::floor_pps`) rather than the placeholder strip's constant, so a session of any
 /// length stops at “all of it on screen”.
 pub fn press_zoom(window: &adw::ApplicationWindow, inward: bool) -> String {
-    // The ladder's floor is the strip's DECLARED fit (§A), not the full-page band's and not the width GTK
-    // happened to allocate it: `strip_pps` clamps over `view_px(STRIP_WIDTH)`, so a floor worked out over
-    // the realized allocation (which the Cut page's paned stretches across the column) would be a number
-    // nothing else agrees with — − would stop there while the strip still showed the tape from its first
-    // second. Same surface both ways, asked of the constant the strip was built with.
-    let _ = window;
-    let width = f64::from(crate::ui::window::STRIP_WIDTH);
+    // The band the person looks at, measured the way the wheel measures it (`wheel_gestures_view`), so the
+    // buttons and the wheel step one scale over one floor. The first rewrite measured the floor over the old
+    // 480 px placeholder strip, and wrote the result into a second number nothing painted with.
+    let view = crate::ui::cut_view::wheel_gestures_view(window);
+    let runs = crate::timeline::filmed_runs(&page_recordings());
+    let filmed: f64 = runs.iter().map(|(start, end)| end - start).sum();
+    let before = crate::ui::cut_view::pps();
     let (next, _) = crate::ui::cut_view::zoom_step(
         inward,
-        &crate::timeline::filmed_runs(&page_recordings()),
-        crate::ui::cut_view::extents(width).0,
-        crate::ui::cut_view::view_px(width),
+        &runs,
+        crate::ui::cut_view::total_px(filmed, before),
+        view,
     );
-    set_preview_pps(next);
-    repaint_scrollbar(window);
-    let said = format!("zoom {:.1} px a second", next);
+    crate::ui::cut_view::repaint_page(window);
+    let said = if (next - before).abs() > 1e-9 {
+        format!("zoom {:.1} px a second", next)
+    } else if inward {
+        format!("zoom {:.1} px a second -- as close as it goes", next)
+    } else {
+        format!(
+            "zoom {:.1} px a second -- the whole session is on screen",
+            next
+        )
+    };
     ui::log_line(&said);
     said
 }
@@ -272,16 +289,6 @@ pub(crate) fn wire_wheel_gestures(window: &adw::ApplicationWindow) {
         },
     );
 }
-thread_local! {
-    /// The page's pixels-per-second. Seeded at the placeholder strip's zoom so the toolbar's −/+ start
-    /// from where the page actually draws; F2.10/F2.11 move the real tracks onto this same number.
-    static PREVIEW_PPS: std::cell::RefCell<f64> = const { std::cell::RefCell::new(0.0) };
-}
-
-pub(crate) fn set_preview_pps(pps: f64) {
-    PREVIEW_PPS.with(|cell| *cell.borrow_mut() = pps);
-}
-
 /// Wire the four history buttons and the two zoom buttons. Same shape as the verb wiring: find by name,
 //  click forwards to the seam, the status line gets the sentence, and the sensitivity is refreshed
 /// from the rule rather than remembered.
@@ -352,33 +359,36 @@ fn ladder_number(cell: &gtk::Widget) -> Option<gtk::Label> {
     None
 }
 
-thread_local! {
-    /// The page's thumbnail height in px. Seeded at `THUMB_AT_OPEN` because that is what the form
-    /// column drew, so the first click steps from the number on screen rather than from zero.
-    static THUMB_PX: std::cell::RefCell<u32> = const { std::cell::RefCell::new(0) };
-}
-
-/// 🖼− / 🖼+ (§A): one third of a step, clamped 40..160 by `cut_screen::thumb_down`/`thumb_up`, and
-/// the `cut-readout-thumbnails` label is repainted from the new number so the readout can never drift
-/// from the control that owns it. Returns the new height.
-pub fn press_thumb(_window: &adw::ApplicationWindow, bigger: bool) -> u32 {
-    let now = THUMB_PX.with(|cell| {
-        let held = *cell.borrow();
-        let next = if bigger {
-            cut_screen::thumb_up(held.max(cut_screen::THUMB_AT_OPEN))
-        } else {
-            cut_screen::thumb_down(held.max(cut_screen::THUMB_AT_OPEN))
-        };
-        *cell.borrow_mut() = next;
-        next
-    });
+/// 🖼− / 🖼+ (§A): one third of a step, clamped 40..160 by `cut_screen::thumb_down`/`thumb_up`. The size is the
+/// band's (`cut_tracks::thumb_px`): every picture row is drawn, fitted and pressed at it, so a press re-fits the
+/// band, repaints it and re-places the gutter's row switches, and the readout repaints from the same number. At
+/// either end the status line says the ladder can go no further. Returns the new height.
+pub fn press_thumb(window: &adw::ApplicationWindow, bigger: bool) -> u32 {
+    let held = crate::ui::cut_tracks::thumb_px();
+    let next = if bigger {
+        cut_screen::thumb_up(held)
+    } else {
+        cut_screen::thumb_down(held)
+    };
+    crate::ui::cut_tracks::set_thumb_px(next);
+    let now = crate::ui::cut_tracks::thumb_px();
     if let Some(label) = ui::find_widget_by_name(
-        _window.upcast_ref(),
+        window.upcast_ref(),
         &cut_screen::readout_widget("Thumbnails"),
     )
     .and_then(|w| w.downcast::<gtk::Label>().ok())
     {
         label.set_text(&format!("{now} px"));
+    }
+    crate::ui::cut_view::repaint_page(window);
+    crate::ui::cut_cameras::refresh_camera_rows(window);
+    let said = match (now == held, bigger) {
+        (true, true) => format!("thumbnails at their largest, {now} px"),
+        (true, false) => format!("thumbnails at their smallest, {now} px"),
+        (false, _) => format!("thumbnails {now} px"),
+    };
+    if let Some(status_line) = ui::find_status(window.upcast_ref()) {
+        status_line.set_text(&said);
     }
     now
 }
@@ -656,6 +666,11 @@ pub fn press_zoom_apply(window: &adw::ApplicationWindow) -> String {
     if let Some(holder) = zoom_form_box(window) {
         holder.set_visible(false);
     }
+    // The form is gone, so the pinned heading goes with it (or names whatever else is still open).
+    crate::ui::cut_form_frame::set_pinned(
+        window,
+        crate::ui::cut_form_frame::open_form_title(window).as_deref(),
+    );
     fx_zoom::placed_status(effect.t, effect.stay)
 }
 
@@ -676,6 +691,10 @@ pub fn press_zoom_cancel(window: &adw::ApplicationWindow) -> String {
     if let Some(holder) = zoom_form_box(window) {
         holder.set_visible(false);
     }
+    crate::ui::cut_form_frame::set_pinned(
+        window,
+        crate::ui::cut_form_frame::open_form_title(window).as_deref(),
+    );
     "left as it was \u{2014} no zoom placed".to_string()
 }
 

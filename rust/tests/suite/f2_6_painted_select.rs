@@ -55,6 +55,16 @@ fn geometry(rows: usize) -> Geometry {
             wave_height: 0.0,
         },
         row_count: rows,
+        // One filmed run of 1000 s from 0: no gap and no fold, so a pixel is linear in its second.
+        span: naivepost::timeline::Span::new(
+            vec![naivepost::timeline::Cell {
+                start: 0.0,
+                end: 1000.0,
+                folded: false,
+            }],
+            8.0,
+            60.0,
+        ),
     }
 }
 
@@ -119,11 +129,13 @@ fn one_cam_cut() -> Cut {
 fn s1_the_band_geometry_reads_the_zoom_it_is_painted_at() {
     let geo = geometry(2);
 
-    // second_at: (x - gutter - origin) / pps. At x = 140 that is (140-60-20)/8 = 7.5 s; left of the
-    // tape's start there is no negative second, so a press in the gutter clamps to 0.
+    // second_at: (x - gutter + origin) / pps, the tape being drawn translated by -origin. At x = 140 that is
+    // (140-60+20)/8 = 12.5 s (the first rewrite subtracted the scroll and read 7.5 s, five seconds short of
+    // where the ink is); left of the tape's start there is no negative second, so a press in the gutter
+    // clamps to 0.
     assert!(
-        (geo.second_at(140.0) - 7.5).abs() < 1e-9,
-        "x 140 px is 7.5 s at this scroll and zoom"
+        (geo.second_at(140.0) - 12.5).abs() < 1e-9,
+        "x 140 px is 12.5 s at this scroll and zoom"
     );
     assert_eq!(
         geo.second_at(30.0),
@@ -185,7 +197,7 @@ fn s1_the_band_geometry_reads_the_zoom_it_is_painted_at() {
         "a session with no rows has no ground to name"
     );
 
-    // part_of: the band is 10..30 s, i.e. 160..320 px here (gutter 60 + origin 20 + s*8). A press within
+    // part_of: the band is 10..30 s, i.e. 120..280 px here (gutter 60 - origin 20 + s*8). A press within
     // GRIP_PX of an end resizes it, the middle moves it, and anything else starts a new selection instead.
     let band = cut_select::Selection {
         start: 10.0,
@@ -303,9 +315,10 @@ fn s1_and_s2_the_real_band_drag_draws_from_where_it_landed() {
             // Land at 20 s (x = px_of(20)), then drag out to 40 s. A band drawn from 0 would be 0..40;
             // the spec asks for what was DRAWN, so the answer is 20..40.
             let (x_from, x_to) = (geo.px_of(20.0), geo.px_of(40.0));
+            // GTK's drag signals carry the OFFSET from the press after `drag-begin`.
             gesture.emit_by_name::<()>("drag-begin", &[&x_from, &row_y]);
-            gesture.emit_by_name::<()>("drag-update", &[&x_to, &row_y]);
-            gesture.emit_by_name::<()>("drag-end", &[&x_to, &row_y]);
+            gesture.emit_by_name::<()>("drag-update", &[&(x_to - x_from), &0.0f64]);
+            gesture.emit_by_name::<()>("drag-end", &[&(x_to - x_from), &0.0f64]);
             settle();
 
             let band = ui::selection(&window).expect("the drag drew a band");
@@ -347,7 +360,7 @@ fn s1_and_s2_the_real_band_drag_draws_from_where_it_landed() {
             let mid = geo.px_of(band.start + len / 2.0);
             let moved_to = geo.px_of(band.start + len / 2.0 + 8.0);
             gesture.emit_by_name::<()>("drag-begin", &[&mid, &row_y]);
-            gesture.emit_by_name::<()>("drag-update", &[&moved_to, &row_y]);
+            gesture.emit_by_name::<()>("drag-update", &[&(moved_to - mid), &0.0f64]);
             settle();
             let moved = ui::selection(&window).expect("the band is still there");
             println!("BAND moved = {}..{}", moved.start, moved.end);
@@ -365,7 +378,13 @@ fn s1_and_s2_the_real_band_drag_draws_from_where_it_landed() {
             // S2: grab the END and drag it in: the start does not move.
             let before = ui::selection(&window).expect("band");
             gesture.emit_by_name::<()>("drag-begin", &[&geo.px_of(before.end - 1.0), &row_y]);
-            gesture.emit_by_name::<()>("drag-update", &[&geo.px_of(before.end - 6.0), &row_y]);
+            gesture.emit_by_name::<()>(
+                "drag-update",
+                &[
+                    &(geo.px_of(before.end - 6.0) - geo.px_of(before.end - 1.0)),
+                    &0.0f64,
+                ],
+            );
             settle();
             let resized = ui::selection(&window).expect("band");
             println!("BAND resized = {}..{}", resized.start, resized.end);
@@ -389,8 +408,8 @@ fn s1_and_s2_the_real_band_drag_draws_from_where_it_landed() {
             // A press under the drag slop draws NOTHING at all: F2.4's line press owns a click, and two
             // claims on one press is how a click both places a line and draws a band.
             gesture.emit_by_name::<()>("drag-begin", &[&x_from, &row_y]);
-            gesture.emit_by_name::<()>("drag-update", &[&(x_from + 1.0), &row_y]);
-            gesture.emit_by_name::<()>("drag-end", &[&(x_from + 1.0), &row_y]);
+            gesture.emit_by_name::<()>("drag-update", &[&1.0f64, &0.0f64]);
+            gesture.emit_by_name::<()>("drag-end", &[&1.0f64, &0.0f64]);
             settle();
             assert!(
                 ui::selection(&window).is_none(),

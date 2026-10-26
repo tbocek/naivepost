@@ -30,10 +30,9 @@ use naivepost::tools::describe::{Batch, Event};
 /// The lane every scene here uses: the stem of the one footage row's name, which names `events.tsv`
 /// and `state.txt`.
 const LANE: &str = "lecture";
-/// The interval the scenes space their frames on — `P.project.frameInterval`, the spacing
-/// `describe::pick_frames` walks and `is_every_frame` accepts (as in
-/// `tests/suite/p_machine_describe_frame_width.rs`).
-const INTERVAL: f64 = 1.0;
+/// The step the scenes space their frames on: describe's heartbeat, the spacing `describe::pick_frames`
+/// walks and `is_every_frame` accepts (as in `tests/suite/p_machine_describe_frame_width.rs`).
+const INTERVAL: f64 = naivepost::text_gate::HEARTBEAT_S;
 /// §6's forced opening line, spelled once in the program. Named through the constant AND pinned as
 /// bytes here, so a reword fails somewhere rather than moving silently.
 const CALM: &str = "Calm; same view.";
@@ -341,7 +340,6 @@ impl Scene {
                 sepvoice: false,
                 tracks: vec![],
             }],
-            interval: INTERVAL,
             context: "a lecture on linear algebra".to_string(),
             ..Default::default()
         };

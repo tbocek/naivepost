@@ -11,7 +11,6 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
 use crate::produce_subtitles as subs;
 
@@ -40,8 +39,10 @@ thread_local! {
     static SPAWN: RefCell<Option<SpawnSlot>> = const { RefCell::new(None) };
 }
 
-/// The scripted-spawner shape. `Rc` because a `dyn Fn` is unsized and cannot sit in a `Cell` directly.
-pub type SpawnSlot = Rc<dyn Fn(&crate::produce_exec::Command) -> Result<(), String>>;
+/// The scripted-spawner shape. `Arc` and `Send + Sync` because a run is walked on a worker (§03-shell §1):
+/// the press takes the slot loaded on the window thread and loads it again on the run's own thread.
+pub type SpawnSlot =
+    std::sync::Arc<dyn Fn(&crate::produce_exec::Command) -> Result<(), String> + Send + Sync>;
 
 /// Load a scripted spawner for the next render on this thread.
 pub fn set_spawn_for_test(spawn: SpawnSlot) {

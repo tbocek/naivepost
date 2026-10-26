@@ -107,8 +107,8 @@ impl OpenFailure {
 /// `root` and `out` are filled before the project is read (S3's ordering rule): the output folder is
 /// the project folder itself (§01 §1 — the folder *is* the output folder), so settling them first
 /// means a later failure still leaves the shell pointing at the right place rather than mid-switch.
-/// `project` carries everything the apply list names — sources, `interval`, `language`, prompts,
-/// `context`, `policy`, the narration flag (`no_narration`), the reference flag
+/// `project` carries everything the apply list names — sources, `language`, prompts,
+/// `context`, `policy`, the reference flag
 /// (`reference_sources`), the hints folded into the prompts by [`project::load_report`], `produce`
 /// and `publish` — as one value the pages read, rather than field by field here.
 #[derive(Debug, Clone, PartialEq)]
@@ -178,7 +178,6 @@ pub fn apply(dir: &Path, exists: impl Fn(&Path) -> bool) -> Result<Applied, Open
     // …and the same auto-fill for the load that dropped slot 1's holder instead of stripping a tag: the
     // rows above were already dropped as missing, so a strip may never have happened and slot 1 can still
     // be empty. One door again, so the seatings cannot disagree about who is the narrator.
-    crate::sources::fill_after_load(&mut project, &mut lines);
 
     Ok(Applied {
         root,
@@ -240,7 +239,7 @@ pub struct Migration {
 /// What this root should remember as its last-open project.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Remembered {
-    /// The session folder — the `PROJECT_<n>_ROOT` half.
+    /// The folder the app was launched from (F0.6 S2 keys its memory by it) — the `PROJECT_<n>_ROOT` half.
     pub root: String,
     /// The project file inside it — the `PROJECT_<n>_FILE` half.
     pub file: String,

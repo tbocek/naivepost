@@ -24,9 +24,8 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s1_the_audio_jobs_a
         assert!(!job::web_tools(which), "{which:?}");
     }
 
-    // Each names the audio model it needs, and the four are distinct: two models on one server
-    // are two slot counts (§1), so a job that asked for the wrong one would queue behind work it
-    // never did.
+    // Each names the audio model it needs, and the four are distinct: a job that asked for the wrong
+    // one would get the wrong model's answer.
     use naivepost::services::AudioTask;
     assert_eq!(job::audio_task(job::Job::Asr), Some(AudioTask::Asr));
     assert_eq!(job::audio_task(job::Job::Align), Some(AudioTask::Align));

@@ -19,17 +19,16 @@ use gtk4 as gtk;
 use crate::ui::cut_picture_rows as picture_rows;
 /// The band's picture rows live in their own file (this one is at its size budget); `paint_at` calls them and the
 /// doors below stay re-exported so every existing caller (`params.rs`, the §05/§06 checks) keeps its path.
-pub use crate::ui::cut_picture_rows::{
-    allow_frame_decoding, batch_of, first_second, frame_step_seconds, path_x, THUMB_BATCH,
-};
-use crate::{clock, cut, cut_fold, cut_screen, cut_trim, fx_lane, layout, timeline, tools};
+pub use crate::ui::cut_picture_rows::{allow_frame_decoding, first_second, THUMB_BATCH};
+use crate::{clock, cut, cut_screen, cut_trim, fx_lane, layout, timeline, tools};
 
 /// The band's tints come from [`cut_colours`], catalogued by `params::cut()` under `cut.colour.*`: §6 lists
 /// "colours" among the values a tuning pass may move, so no drawing helper holds one of its own any more.
 use crate::ui::cut_colours::{
-    EDGE_AMBER, GROUND, GUTTER_EDGE, GUTTER_GROUND, INSERT_VIOLET, JOIN_WASH, KEPT_BORDER,
-    KEPT_TINT, LANE_BORDER, LANE_GROUND, MARK_IN_GREEN, MARK_OUT_RED, OVER_EATEN, PLAYHEAD_RGB,
-    RULER_INK, SELECTION_BLUE, WATCH_OUTLINE,
+    BAND_GROUND, EDGE_AMBER, GROUND, GUTTER_EDGE, GUTTER_GROUND, INSERT_VIOLET, JOIN_FRAME,
+    JOIN_WASH, KEPT_BORDER, KEPT_EDGE, KEPT_TINT, KEPT_TINT_ALPHA, LANE_BORDER, LANE_GROUND,
+    MARK_IN_GREEN, MARK_OUT_RED, OVER_EATEN, PLAYHEAD_RGB, RULER_INK, SELECTION_BLUE,
+    WATCH_OUTLINE,
 };
 /// §1's playhead width: "2 px line on its own layer". Its colour is [`PLAYHEAD_RGB`].
 pub const PLAYHEAD_PX: f64 = 2.0;
@@ -53,9 +52,32 @@ const FLAG_PX: f64 = 10.0;
 /// Below that the glyph would be most of the mark and there is nothing to press.
 pub const CROSS_MIN_PX: f64 = 50.0;
 
-/// One picture-row pitch: the row's own height plus the 4 px §A puts between rows. Public because the
-/// gutter rail places its switches with it — a switch that guesses the pitch lands on the wrong row.
+/// One picture-row pitch at the open size: the row's own height plus the 4 px §A puts between rows. The live
+/// pitch is [`rows_pitch_px`], which follows the 🖼− / 🖼+ ladder.
 pub const ROWS_PITCH_PX: i32 = (THUMB_DEFAULT_PX as i32) + (PICTURE_ROW_EXTRA_PX as i32);
+
+thread_local! {
+    /// The page's thumbnail height, §A's 🖼− / 🖼+ (40..160 px): the height of every picture row's film on the
+    /// band. Kept for the session, not saved (the spec stores it nowhere). The first rewrite's ladder wrote a
+    /// number nothing read, so the buttons changed their own label and no picture.
+    static THUMB_PX: std::cell::Cell<u32> = const { std::cell::Cell::new(THUMB_DEFAULT_PX) };
+}
+
+/// The thumbnail height the band is painted, fitted and pressed at right now.
+pub fn thumb_px() -> u32 {
+    THUMB_PX.with(std::cell::Cell::get)
+}
+
+/// Set the thumbnail height, kept inside §A's 40..160.
+pub fn set_thumb_px(px: u32) {
+    THUMB_PX.with(|cell| cell.set(px.clamp(cut_screen::THUMB_MIN, cut_screen::THUMB_MAX)));
+}
+
+/// The live picture-row pitch: the gutter rail places its switches with it, so a switch lands on the row it
+/// stands for at any thumbnail size.
+pub fn rows_pitch_px() -> i32 {
+    thumb_px() as i32 + PICTURE_ROW_EXTRA_PX as i32
+}
 
 /// §A's tick ladder: `0.2 0.5 1 2 5 10 30 60 120 300 600 s`, the FIRST one whose spacing at this zoom is at
 /// least 70 px apart — a label every 30 px would be a grey bar, and every 700 px a ruler with no marks.
@@ -86,6 +108,10 @@ pub struct Scene {
     pub fx: Vec<cut::Fx>,
     /// The takes, so filmed runs / amber edges / name plates all agree with the fold half of the page.
     pub recordings: Vec<timeline::Recording>,
+    /// The row each of `recordings` is drawn on (`timeline::rows_for`, the colouring every other part of the
+    /// page uses), in `recordings`' order. Empty when the builder had no cut to colour with: every recording is
+    /// then on row 0. One camera's files filmed one after another share a row; they are not one row each.
+    pub recording_rows: Vec<usize>,
     /// The fold list: a view, not an edit (§B).
     pub folds: Vec<[f64; 2]>,
     /// The selection band, if one is drawn.
@@ -105,20 +131,21 @@ pub struct Scene {
     /// Thumbnails the band can show, keyed by the recording's base name. Decoded elsewhere (the page
     /// decodes once per row height and hands the paths in); an absent entry draws no pictures.
     pub thumbs: Vec<(String, Vec<std::path::PathBuf>)>,
+    /// The marks a hand can press on the band, and what each says (`cut_band_marks`).
+    pub marks: crate::ui::cut_band_marks::BandMarks,
     /// The red line's second (§1's badge 30). It lives here rather than in a second thread-local because the
     /// playhead's own layer must ask the SAME scene the band asks, or the two layers disagree about where
     /// the line is whenever the page scrolls or zooms.
     pub line: f64,
 }
 
-/// Where one second of the tape is DRAWN, in the band's own pixels: `x_of(t) - x_of(0)`.
+/// Where one second of the tape is DRAWN, in the band's own pixels: `x_of(t)`, after the 30 px gutter, unscrolled.
 ///
-/// This is the painter's single seconds→x door. It deliberately starts at the tape's own first pixel rather
-/// than at the span's gutter and ignores scroll, exactly as every `draw_*` helper below already did when the
-/// answer was plain `t * pps` — §A measures the gutter INSIDE the timeline (`cut_view::view_px` subtracts it
-/// from a window width), so the painter's surface starts where the tape does and the caller owns the 30 px.
-/// What it adds over that multiplication is the FOLD: a folded cell carries no width (§B), so a dropped
-/// stretch that has been folded away draws nothing and its neighbours close up around the seam.
+/// This is the painter's single seconds→x door, and the press side's arithmetic (`gutter + t·pps − origin`) is
+/// its inverse with no fold. §B: "the gutter is the first 30 px of timeline space", so second 0 stands at x = 30;
+/// the first port subtracted the gutter here, which drew the tape's first 30 px under the gutter and put every
+/// mark 30 px left of where a press found it. What it adds over the multiplication is the FOLD: a folded cell
+/// carries no width (§B), so a folded stretch draws nothing and its neighbours close up around the seam.
 pub fn band_x(scene: &Scene, t: f64) -> f64 {
     let span = band_span(scene);
     // Past the last filmed second the seconds still run linearly: a selection or an in/out mark may reach
@@ -130,7 +157,51 @@ pub fn band_x(scene: &Scene, t: f64) -> f64 {
         .filter(|cell| !cell.folded)
         .map(|cell| cell.end)
         .fold(0.0_f64, f64::max);
-    span.x_of(t.min(last)) + (t - last).max(0.0) * scene.pps - span.x_of(0.0)
+    span.x_of(t.min(last)) + (t - last).max(0.0) * scene.pps
+}
+
+/// The second a press at `x_px` in the band's own pixels lands on: [`band_x`] inverted, the scroll added back
+/// (the tape is drawn translated by `-origin`), through the folds and the unfilmed gaps between recordings
+/// (neither takes any width), and past the last filmed second extrapolated as [`band_x`] extrapolates. Every
+/// press on the band asks this one door. The first rewrite measured presses as `(x - gutter - origin) / pps`:
+/// the scroll with its sign reversed, and no gap or fold, so once the band was scrolled (or a session had two
+/// recordings with time between them) a click put the line seconds away from where the person clicked.
+pub fn band_t_at(scene: &Scene, x_px: f64) -> f64 {
+    span_t_at(&band_span(scene), x_px + scene.origin)
+}
+
+/// [`timeline::Span::t_at`] past the end extrapolated at the span's zoom, the inverse of [`band_x`]'s tail;
+/// a span with nothing filmed reads linearly after the gutter. `x` is unscrolled.
+pub fn span_t_at(span: &timeline::Span, x: f64) -> f64 {
+    let pps = span.pps.max(f64::EPSILON);
+    let last = span
+        .cells
+        .iter()
+        .filter(|cell| !cell.folded)
+        .map(|cell| cell.end)
+        .reduce(f64::max);
+    let Some(last) = last else {
+        return ((x - span.gutter_px) / pps).max(0.0);
+    };
+    let total = span.total_px();
+    if x >= total {
+        return last + (x - total) / pps;
+    }
+    span.t_at(x).max(0.0)
+}
+
+/// [`band_x`] on a span already built: the inverse of [`span_t_at`], unscrolled.
+pub fn span_x_of(span: &timeline::Span, t: f64) -> f64 {
+    let last = span
+        .cells
+        .iter()
+        .filter(|cell| !cell.folded)
+        .map(|cell| cell.end)
+        .fold(0.0_f64, f64::max);
+    if span.cells.iter().all(|cell| cell.folded) {
+        return span.gutter_px + t * span.pps;
+    }
+    span.x_of(t.min(last)) + (t - last).max(0.0) * span.pps
 }
 
 /// The band's laid-out span: the filmed runs cut at this scene's folds, at its zoom, after the gutter
@@ -180,6 +251,11 @@ pub fn band_span_px(scene: &Scene, from: f64, to: f64) -> (f64, f64) {
 
 impl Scene {
     /// The painted seconds: everything filmed, so a dropped stretch still takes its place in the band.
+    /// The row recording `index` is drawn on (0 when the scene was built without a colouring).
+    pub(crate) fn row_of(&self, index: usize) -> usize {
+        self.recording_rows.get(index).copied().unwrap_or(0)
+    }
+
     pub(crate) fn runs(&self) -> Vec<(f64, f64)> {
         timeline::filmed_runs(&self.recordings)
     }
@@ -212,6 +288,8 @@ pub fn scene_of(
         segs: segs.to_vec(),
         fx: fx.to_vec(),
         recordings: recordings.to_vec(),
+        recording_rows: Vec::new(),
+        marks: Default::default(),
         folds: folds.to_vec(),
         selection,
         watched_row,
@@ -233,7 +311,7 @@ pub fn scene_from(
     watched_row: Option<usize>,
     line: f64,
 ) -> Scene {
-    scene_of(
+    let mut scene = scene_of(
         &cut_.segs,
         &cut_.fx,
         &cut_.folds,
@@ -246,7 +324,18 @@ pub fn scene_from(
         crate::ui::cut_view::pps(),
         crate::ui::cut_view::origin(),
         line,
-    )
+    );
+    scene.recording_rows = timeline::rows_for(recordings, cut_);
+    scene.marks = crate::ui::cut_band_marks::marks_for(
+        cut_,
+        recordings,
+        &scene.recording_rows,
+        scene.row_count,
+        line,
+        crate::ui::window::held_segment().as_ref(),
+    );
+    scene.marks.whole = crate::ui::cut_band_marks::whole_takes();
+    scene
 }
 
 /// The band's laid-out height for THIS window: the same sum the painter lays its rows out by, asked of the scene
@@ -297,9 +386,10 @@ pub fn install(
     // Moved into the draw closure, which must be `'static`: the frames are Prepare's output, listed per
     // recording when the page asks for its scene — a folder with none draws no pictures, which is §1's
     // answer rather than black.
+    // Listed on a worker and held per folder version (`cut_picture_cache`, §03-shell §1): a paint never lists.
     let thumb_for = move |base: &str| {
         tree()
-            .map(|tree| frame_paths(&tree, base))
+            .map(|tree| crate::ui::cut_picture_cache::frames_of(&tree, base))
             .unwrap_or_default()
     };
     // The frames are Prepare's output, listed per recording when the page asks for its scene.
@@ -313,18 +403,12 @@ pub fn install(
         held
     };
     let band = build(
-        band_height_px(&with_thumbs(), THUMB_DEFAULT_PX).ceil() as i32,
+        band_height_px(&with_thumbs(), thumb_px()).ceil() as i32,
         // The MINIMUM, not the width: `build` makes the band expand, so this is only what it never shrinks
         // under (a window that has never been laid out, which is every headless test).
         BAND_WIDTH_PX,
     );
-    attach(
-        &band.surface,
-        &band.playhead,
-        &band.layers,
-        with_thumbs,
-        THUMB_DEFAULT_PX,
-    );
+    attach(&band.surface, &band.playhead, &band.layers, with_thumbs);
     // §1's band grows with every row an edit adds; the page's own redraw doors find these surfaces again
     // through [`band_of`], so nothing has to be remembered here.
     // §1's tape also WIDENS with the page: the surface's draw is clipped to its allocation, so the first frame
@@ -363,7 +447,7 @@ pub const BAND_WIDTH_PX: i32 = 480;
 /// The height the band's own scene needs, in px. `install` hands this to `build` once, before the page has
 /// any cut, and every later row comes from [`fit_band_height`].
 pub fn band_height_for(scene: &Scene) -> i32 {
-    band_height_px(scene, THUMB_DEFAULT_PX).ceil() as i32
+    band_height_px(scene, thumb_px()).ceil() as i32
 }
 
 /// The band's height when NOTHING has been cut yet and nothing has been fitted to a scene: what [`build`]
@@ -389,6 +473,8 @@ pub fn idle_scene(count: usize) -> Scene {
         segs: Vec::new(),
         fx: Vec::new(),
         recordings: Vec::new(),
+        recording_rows: Vec::new(),
+        marks: Default::default(),
         folds: Vec::new(),
         selection: None,
         watched_row: None,
@@ -414,7 +500,6 @@ pub fn attach(
     playhead: &gtk::DrawingArea,
     layers: &gtk::Overlay,
     scene: impl Fn() -> Scene + Clone + 'static,
-    thumb_px: u32,
 ) {
     let for_band = scene.clone();
     // Cloned in: a draw callback is `'static` and so cannot borrow the caller's widgets.
@@ -428,13 +513,14 @@ pub fn attach(
             &held,
             width.max(1) as f64,
             height.max(1) as f64,
-            thumb_px,
+            // Read at every draw: the 🖼 ladder changes it while the band stands.
+            thumb_px(),
         );
     });
     let for_head = scene.clone();
     playhead.set_draw_func(move |_, cr, _width, height| {
         let held = for_head();
-        paint_playhead(cr, held.pps, held.origin, held.line, height.max(1) as f64);
+        paint_playhead(cr, playhead_x(&held), height.max(1) as f64);
     });
 }
 
@@ -456,6 +542,8 @@ pub struct Band {
 pub fn build(height: i32, width: i32) -> Band {
     let surface = gtk::DrawingArea::new();
     surface.set_widget_name("track-band");
+    // Repainted when the picture row's worker lands a batch of decoded thumbnails.
+    picture_rows::note_band(&surface);
     // §1's ruler, bars, wave strips and plates run the PAGE's width, not a 480 px stub: the band expands into
     // whatever the paned gives it and fills it. `FILL` rather than `START` is what makes the expansion real — a
     // `START`-aligned area keeps its minimum request, so GTK would never widen it and every draw below would
@@ -509,12 +597,31 @@ pub fn build(height: i32, width: i32) -> Band {
     layers.add_overlay(&badges);
     layers.add_overlay(&gutter_badges);
     layers.add_overlay(&gutter_switches);
+    // §1's per-row sound switches, each at its own row's sound strip. A `Fixed` of their own, because the
+    // rail above stacks its children, so a switch placed in it moves every control below it.
+    let gutter_rows = gtk::Fixed::new();
+    gutter_rows.set_widget_name("gutter-row-switches");
+    gutter_rows.set_halign(gtk::Align::Start);
+    gutter_rows.set_valign(gtk::Align::Start);
+    gutter_rows.add_css_class("cut-gutter-col");
+    layers.add_overlay(&gutter_rows);
     // §B's rail is dark ink, so its controls must not arrive wearing Adwaita's light button plate: over the
     // gutter each one is a flat glyph on the rail, which is how `spec/img/05-cut.png` draws badges 23/29.
     for column in [&gutter_badges, &gutter_switches] {
         column.add_css_class("cut-gutter-col");
     }
     install_gutter_css_once();
+    // The band draws its own marks and answers presses on them (`cut_band_marks`), as §1 and the prototype
+    // have it. These holders keep the named controls the page's doors and refreshes find, unseen: shown, they
+    // were grey button plates over the bars and the gutter.
+    for holder in [
+        badges.upcast_ref::<gtk::Widget>(),
+        gutter_badges.upcast_ref(),
+        gutter_switches.upcast_ref(),
+        gutter_rows.upcast_ref(),
+    ] {
+        holder.set_visible(false);
+    }
     Band {
         surface,
         playhead,
@@ -572,6 +679,20 @@ pub fn gutter_badges_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
 /// The rail this window's lane switches and row crosses live on, or None when the page has no band.
 pub fn gutter_switches_box(window: &adw::ApplicationWindow) -> Option<gtk::Box> {
     gutter_column(window, "gutter-switches")
+}
+
+/// The layer this window's per-row sound switches sit in, or None when the page has no band.
+pub fn gutter_row_switches(window: &adw::ApplicationWindow) -> Option<gtk::Fixed> {
+    let content = window.content()?;
+    crate::ui::window::find_widget_by_name(content.upcast_ref(), "gutter-row-switches")?
+        .downcast::<gtk::Fixed>()
+        .ok()
+}
+
+/// Where camera row `row`'s sound strip begins on this window's band, from the same rows the painter lays out,
+/// so a switch placed there sits on the strip it stands for.
+pub fn row_wave_top(window: &adw::ApplicationWindow, row: usize) -> f64 {
+    rows(&crate::ui::cut_view::band_scene_for(window), thumb_px()).wave_top(row)
 }
 
 /// The band this page shows: the two surfaces §1's stack is made of, found again through the window that
@@ -703,7 +824,7 @@ fn draw_lane_rows(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
         }
         cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
         cr.set_font_size(9.0);
-        ink(cr, (0.15, 0.15, 0.2));
+        ink(cr, (0.9, 0.9, 0.92));
         // Badge 2's plate: the name WITH its channel layout, from `Scene::lane_plates`.
         let plate = scene
             .lane_plates
@@ -724,24 +845,37 @@ pub fn paint(cr: &cairo::Context, scene: &Scene, width: f64, height: f64) {
 pub fn paint_at(cr: &cairo::Context, scene: &Scene, width: f64, height: f64, thumb_px: u32) {
     fill(cr, GROUND, 0.0, 0.0, width, height, 1.0);
     let rows = rows(scene, thumb_px);
+    // The tape is drawn scrolled: translated by `-origin`, the scroll the scrollbar, a zoom and a restored line
+    // set, and the same one a press (`cut_line_press::press`) and the playhead subtract. The band used to paint
+    // from 0:00 whatever the scroll, so a scrolled page moved its red line and its clicks while the tape stood
+    // still, and the picture rows (which skip what lies left of the scroll) drew nothing at all.
     // The tape's painted width: the surface's own, so the ruler's ground, the wave strips and the lane rows
-    // reach the page's right edge instead of stopping at a constant, and a clip that runs past it is cut there.
-    let tape = width.max(BAND_WIDTH_PX as f64);
+    // reach the page's right edge instead of stopping at a constant; in the tape's own (unscrolled) pixels its
+    // right edge is the scroll plus that width.
+    let tape = width.max(BAND_WIDTH_PX as f64) + scene.origin;
+    let _ = cr.save();
+    cr.translate(-scene.origin, 0.0);
     draw_ruler(cr, scene, tape);
-    draw_dropped_gaps(cr, scene, rows, tape);
+    draw_band_ground(cr, scene, rows, tape);
     draw_kept_bars(cr, scene, rows, tape);
     draw_effects_lane(cr, scene, rows, tape);
     picture_rows::draw_picture_rows(cr, scene, rows, tape);
-    draw_row_wave_strips(cr, scene, rows, tape);
-    draw_recording_edges(cr, scene, rows, tape);
+    crate::ui::cut_wave_rows::draw_row_waves(cr, scene, rows, tape);
+    draw_kept_tint(cr, scene, rows, tape);
     draw_join_washes(cr, scene, rows, tape);
+    draw_recording_edges(cr, scene, rows, tape);
     draw_watched_row(cr, scene, rows, tape);
     draw_selection(cr, scene, rows, tape);
     draw_insert_bands(cr, scene, rows, tape);
     draw_in_out_marks(cr, scene, rows, tape);
     draw_laid_pieces(cr, scene, rows, tape);
     draw_lane_rows(cr, scene, rows, tape);
+    crate::ui::cut_band_marks::paint_tape(cr, scene, rows);
+    let _ = cr.restore();
+    // Pinned: the gutter, its marks and the row plates stay at the band's left edge however far the tape is
+    // scrolled.
     draw_gutter(cr, rows, height);
+    crate::ui::cut_band_marks::paint_pinned(cr, scene, rows);
     draw_name_plates(cr, scene, rows);
 }
 
@@ -774,24 +908,14 @@ fn draw_gutter(cr: &cairo::Context, rows: Rows, height: f64) {
     let _ = cr.fill();
 }
 
-/// §1's badges 25/27: the white ✕ on a kept bar or on the selection. Two crossing strokes, centred in the
-/// 22 px band; only drawn where `CROSS_MIN_PX` of width exists, per §A.
-fn cross(cr: &cairo::Context, cx: f64, cy: f64, reach: f64) {
-    cr.set_source_rgb(1.0, 1.0, 1.0);
-    cr.set_line_width(1.6);
-    cr.move_to(cx - reach, cy - reach);
-    cr.line_to(cx + reach, cy + reach);
-    let _ = cr.stroke();
-    cr.move_to(cx + reach, cy - reach);
-    cr.line_to(cx - reach, cy + reach);
-    let _ = cr.stroke();
-}
-
 /// F2.9 S2: the pieces a sound paste laid over the kept footage, on the PAINTED band as well as on the
 /// window's placeholder strip. Same painter ([`crate::ui::cut_trim_press::paint_laid_pieces_in`]), this
 /// caller's row geometry, drawn last but for the name plates so the plate sits on the footage it was laid
 /// over. Without this the lay is invisible on the surface the Cut page actually shows.
 fn draw_laid_pieces(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
+    // That painter lays seconds out at `t · pps`; the tape starts after the gutter.
+    let _ = cr.save();
+    cr.translate(cut_screen::GUTTER_PX, 0.0);
     crate::ui::cut_trim_press::paint_laid_pieces_in(
         cr,
         tape,
@@ -803,6 +927,7 @@ fn draw_laid_pieces(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
         rows.pictures,
         rows.row_h,
     );
+    let _ = cr.restore();
 }
 
 /// The placeholder's open-at thumbnail height, used wherever a caller has not said otherwise.
@@ -833,7 +958,7 @@ impl Rows {
 /// from the fx row count and the row count rather than a whole `Scene`, so a press handler can ask it
 /// without building what it is only going to measure — and cannot disagree with what is drawn.
 pub fn bands_for(fx_rows: usize) -> crate::cut_select::SurfaceBands {
-    let held = rows_of(fx_rows, THUMB_DEFAULT_PX);
+    let held = rows_of(fx_rows, thumb_px());
     // One camera row is a picture band PLUS its own wave strip, exactly as §27 Tracks lays it out and as
     // `SurfaceBands` was designed: the row's PITCH (`held.row_h`) is unchanged, split into the picture half
     // above and the wave strip below ([`ROW_WAVE_PX`]), so `surface_at` bounds the rows by the same bottom
@@ -848,6 +973,11 @@ pub fn bands_for(fx_rows: usize) -> crate::cut_select::SurfaceBands {
         row_height: (held.row_h - ROW_WAVE_PX).max(0.0),
         wave_height: ROW_WAVE_PX.min(held.row_h),
     }
+}
+
+/// The rows a press on the live band is measured against: the band is painted at [`thumb_px`].
+pub(crate) fn rows_for_press(scene: &Scene) -> Rows {
+    rows(scene, thumb_px())
 }
 
 fn rows(scene: &Scene, thumb_px: u32) -> Rows {
@@ -872,9 +1002,17 @@ fn rows_of(fx_rows: usize, thumb_px: u32) -> Rows {
 /// width, so the ruler reaches the page's right edge and stops there rather than being inked off-surface.
 fn draw_ruler(cr: &cairo::Context, scene: &Scene, tape: f64) {
     let step = tick_step_seconds(scene.pps);
+    // Each tick at its second's PAINTED x (after the gutter, through the folds), so the ruler reads the tape
+    // under it; a tick inside a fold lands on the seam and is dropped rather than stacked there.
+    let mut last = f64::NEG_INFINITY;
     let marks: Vec<(f64, String)> = cut_trim::ruler_ticks(scene.tape_end(), scene.pps, step)
         .into_iter()
-        .filter(|(x, _)| *x >= 0.0 && *x <= tape)
+        .filter_map(|(x, label)| {
+            let painted = band_x(scene, x / scene.pps);
+            let fresh = painted > last + 1.0;
+            last = last.max(painted);
+            (fresh && painted <= tape).then_some((painted, label))
+        })
         .collect();
     ink(cr, RULER_INK);
     for (x, _) in &marks {
@@ -894,90 +1032,90 @@ fn labels(cr: &cairo::Context, ticks: &[(f64, String)]) {
     }
 }
 
-/// The dropped stretches inside filmed material, then their fold badges (§A puts the −/+ badges in the
-/// selection band, where the gap's badge is drawn after the gap itself).
-fn draw_dropped_gaps(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
-    for (from, to) in cut_fold::dropped_gaps(&scene.runs(), &scene.segs) {
-        // A folded gap has no pixels of its own (§B), so nothing is painted for it and no mid-gap ink either
-        // — the seam is what its + badge sits on. Asked BEFORE any fill so a fold draws nothing at all.
+/// The selection band's ground across each filmed run (the prototype's `bandGround`): the bars sit on it, the
+/// dropped gaps are what is left of it, and unfilmed time, which is never laid out, has none.
+fn draw_band_ground(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
+    for (from, to) in scene.runs() {
         let (x0, width) = band_span_px(scene, from, to);
-        if width <= 0.0 || x0 >= tape || x0 + width < 0.0 {
+        if x0 >= tape || x0 + width < 0.0 {
             continue;
         }
         fill(
             cr,
-            (0.88, 0.88, 0.88),
+            BAND_GROUND,
             x0,
             rows.selection,
             width,
             SELECTION_BAND_PX,
             1.0,
         );
-        // The badge: `cut_fold::badges` decides WHICH gap wears one and where its x lands on a laid-out
-        // span; here the mid-gap mark is that same middle, drawn as ink so a test can see it.
-        let x = band_x(scene, (from + to) / 2.0);
-        ink(cr, (0.35, 0.35, 0.4));
-        cr.rectangle(x - 1.0, rows.selection + 4.0, 3.0, SELECTION_BAND_PX - 8.0);
-        let _ = cr.fill();
     }
 }
 
-/// Green bar per kept scene (§1's badge 25), the placeholder's colour and borders so F2.8's grips stay
-/// where its tests press them. The boxes come from [`band_boxes`], i.e. through the folded span, so a fold
-/// elsewhere in the run slides every later bar left instead of leaving the row untouched.
+/// Green bar per kept scene (§1's badge 25), the prototype's way (`go/cut_selband.go`): translucent, the scene the
+/// badges are about (held, else under the line) a little fuller and taller than the rest, and a light grip at
+/// each end where a press takes it. The boxes come from [`band_boxes`], i.e. through the folded span. The ✕ is
+/// `cut_band_marks`', which also answers the press on it.
 fn draw_kept_bars(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
-    let drawn = band_boxes(scene);
-    // Kept scenes are CLIPPED to the tape, not skipped when they overhang it: a kept scene's bar has to reach
-    // the page's right edge (that is what a scrolled band looks like), and a box drawn past the surface is cut
-    // by cairo anyway — but a bar wholly off the left edge would leave its right border inked at x < 0, so
-    // the visible test runs before the box is handed to the border rule.
-    let boxes: Vec<cut_trim::Box_> = clip_boxes_shifted(&scene.segs, &scene.shift, scene.pps)
-        .into_iter()
-        .map(|b| cut_trim::Box_ {
-            x: drawn[b.index].0,
-            w: drawn[b.index].1,
-            index: b.index,
-            insert: b.insert,
-        })
-        .filter(|b| b.x < tape && b.x + b.w > 0.0)
-        .collect();
-    for b in &boxes {
-        if b.insert {
+    let current = scene.marks.hear.as_ref().map(|hear| hear.index);
+    for (index, (x, w)) in band_boxes(scene).into_iter().enumerate() {
+        if scene.segs[index].is_insert() || x >= tape || x + w < 0.0 {
             continue;
         }
+        let (inset, alpha) = if current == Some(index) {
+            (2.0, 0.5)
+        } else {
+            (4.0, 0.4)
+        };
         fill(
             cr,
             KEPT_TINT,
-            b.x,
-            rows.selection,
-            b.w.max(1.0),
-            SELECTION_BAND_PX,
-            1.0,
+            x,
+            rows.selection + inset,
+            w.max(1.0),
+            SELECTION_BAND_PX - 2.0 * inset,
+            alpha,
         );
+        for grip in [x, x + w] {
+            fill(
+                cr,
+                KEPT_BORDER,
+                grip - 1.5,
+                rows.selection,
+                3.0,
+                SELECTION_BAND_PX,
+                1.0,
+            );
+        }
     }
-    ink(cr, KEPT_BORDER);
-    for (x, _, _) in cut_trim::border_positions(&boxes) {
-        cr.rectangle(x - 0.5, rows.selection, 1.5, SELECTION_BAND_PX);
-        let _ = cr.fill();
-    }
-    for b in &boxes {
-        if b.insert || b.w < CROSS_MIN_PX {
+}
+
+/// The kept scenes over the pictures (`go/cut.go` 4154-4193): each scene's stretch of ITS row tinted green, its
+/// wave strip more faintly, and a green line down either side, so what the cut keeps reads off the pictures as
+/// well as off the bars.
+fn draw_kept_tint(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
+    let film = (rows.row_h - ROW_WAVE_PX).max(0.0);
+    for (index, (x, w)) in band_boxes(scene).into_iter().enumerate() {
+        let seg = &scene.segs[index];
+        if seg.is_insert() || x >= tape || x + w < 0.0 {
             continue;
         }
-        // §A puts the ✕ "only when ≥50 px wide", centred on the bar — the same mark the press geometry
-        // treats as the scene's badge, so what a test sees is what a click would take.
-        cross(
-            cr,
-            b.x + b.w / 2.0,
-            rows.selection + SELECTION_BAND_PX / 2.0,
-            4.0,
-        );
+        let top = rows.pictures + seg.cam.max(0) as f64 * rows.row_h;
+        fill(cr, KEPT_TINT, x, top, w, film, KEPT_TINT_ALPHA);
+        fill(cr, KEPT_TINT, x, top + film, w, ROW_WAVE_PX, 0.16);
+        for edge in [x, x + w] {
+            fill(cr, KEPT_EDGE, edge - 1.0, top, 2.0, rows.row_h, 1.0);
+        }
     }
 }
 
 /// The effects lane: one row per overlapping group, each bar in its kind's colour.
 fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
-    for bar in fx_lane::lane_layout(&scene.fx) {
+    // A bar under the span floor reserves no row (§2), so it shares one with a bar that does; painted after
+    // the row's owners it stays visible instead of vanishing under the bar that covers its seconds.
+    let mut bars = fx_lane::lane_layout(&scene.fx);
+    bars.sort_by_key(|bar| !bar.reserves_a_row);
+    for bar in bars {
         let (from, to) = scene.fx[bar.index].spans();
         let y = crate::ui::cut_band_rows::lane_row_top_px(rows.effects, bar.row);
         let (x0, width) = band_span_px(scene, from, to);
@@ -1015,78 +1153,72 @@ fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
     cr.set_dash(&[], 0.0);
 }
 
-/// §27 Tracks: "each row's first audio track as a strip below it". One plate per recorded row, in the
-/// lower third of that row ([`Rows::wave_top`]), inked from `cache/waves/<base>.wave` through the same
-/// painter the placeholder strip uses (`cut_trim_press::paint_row_wave`) so the two surfaces cannot show
-/// different answers for one recording. This is also what makes the wave strip a PRESS target: the band
-/// reserves the space in [`bands_for`] and this inks it, so a y down there reads `Surface::WaveStrip` over
-/// ink rather than over an empty grey row.
-fn draw_row_wave_strips(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
-    let w = tape;
-    for (index, recording) in scene.recordings.iter().enumerate() {
-        crate::ui::cut_trim_press::paint_row_wave(
-            cr,
-            w,
-            recording,
-            scene.pps,
-            rows.wave_top(index),
-            rows.pictures + (index + 1) as f64 * rows.row_h,
-        );
-    }
-}
-
-/// Amber striped edges where a recording starts and ends (§1).
+/// Amber striped edges where a recording starts and ends (§1), on its own row's pictures: a solid line on the
+/// edge and diagonals 5 px apart leaning into the recording (`go/cut.go` `srcEdgeMark`). The far end only where the
+/// recording is drawn wider than its two marks.
 fn draw_recording_edges(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
-    let height = rows.row_h * scene.row_count.max(1) as f64;
-    for run in scene.runs() {
-        // Both edges through the folded span: a fold inside a run moves its far edge with everything else.
-        for x in [band_x(scene, run.0), (band_x(scene, run.1) - 3.0).max(0.0)] {
-            if x < 0.0 || x > tape {
-                continue;
-            }
-            for stripe in 0..3i32 {
-                fill(
-                    cr,
-                    EDGE_AMBER,
-                    x + stripe as f64,
-                    rows.pictures,
-                    1.0,
-                    height,
-                    1.0,
-                );
-            }
-        }
-    }
-}
-
-/// The two washes §1 names over the picture. They are WASHES, so alpha rather than a solid block — but each
-/// is asked for only once, and by its own rule: the yellow marks stretches the join pass removed whole
-/// (`cut_play_leg::dimmed`, the dropped gaps), and the rose lies under a SPEED effect and nothing else.
-/// Asking the dropped-gap list for the yellow twice painted it a second time in the same place, and a second
-/// 0.5 alpha over footage ground is what made one hole read as a bright band across the row.
-fn draw_join_washes(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
-    let height = (rows.row_h * scene.row_count.max(1) as f64).max(rows.row_h);
-    for (from, to) in crate::cut_play_leg::dimmed(
-        &cut::Cut {
-            segs: scene.segs.clone(),
-            ..Default::default()
-        },
-        &scene.runs(),
-    ) {
-        let (x0, width) = band_span_px(scene, from, to);
-        if x0 >= tape || x0 + width < 0.0 {
+    let film = (rows.row_h - ROW_WAVE_PX).max(1.0);
+    for (index, recording) in scene.recordings.iter().enumerate() {
+        let top = rows.pictures + scene.row_of(index) as f64 * rows.row_h;
+        let (x0, x1) = (
+            band_x(scene, recording.start) + 1.0,
+            band_x(scene, recording.end) - 1.0,
+        );
+        if x1 < 0.0 || x0 > tape {
             continue;
         }
-        fill(
-            cr,
-            JOIN_WASH,
-            x0,
-            rows.pictures,
-            width.max(1.0),
-            height,
-            0.5,
-        );
+        edge_mark(cr, x0, 1.0, top, film, x1 - x0);
+        if x1 - x0 > 3.0 {
+            edge_mark(cr, x1, -1.0, top, film, x1 - x0);
+        }
     }
+}
+
+/// One striped edge at `x`, leaning `dir` (+1 into a start, -1 into an end), at most 9 px or half the room.
+fn edge_mark(cr: &cairo::Context, x: f64, dir: f64, top: f64, h: f64, room: f64) {
+    let w = (room / 2.0).clamp(1.0, 9.0);
+    let _ = cr.save();
+    cr.rectangle(x.min(x + dir * w), top, w, h);
+    cr.clip();
+    cr.set_source_rgba(EDGE_AMBER.0, EDGE_AMBER.1, EDGE_AMBER.2, 0.7);
+    cr.set_line_width(1.5);
+    let mut dy = -w;
+    while dy < h {
+        cr.move_to(x, top + dy + w);
+        cr.line_to(x + dir * w, top + dy);
+        dy += 5.0;
+    }
+    let _ = cr.stroke();
+    let _ = cr.restore();
+    ink(cr, EDGE_AMBER);
+    cr.set_line_width(2.0);
+    cr.move_to(x, top);
+    cr.line_to(x, top + h);
+    let _ = cr.stroke();
+}
+
+/// The two washes §1 names over the picture. The yellow lies over a recording the join pass took out entire
+/// (`retakes.tsv`'s `whole` column, F1.10): "flagged for a look, not an error", so a wash and a frame round its
+/// pictures (`go/cut.go` `wholeTakeMark`). The first port washed every dropped stretch yellow, which put a bright
+/// block over each hole in the cut. The rose lies under a SPEED effect and nothing else.
+fn draw_join_washes(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
+    let film = (rows.row_h - ROW_WAVE_PX).max(1.0);
+    for (index, recording) in scene.recordings.iter().enumerate() {
+        if !scene.marks.whole.contains(&recording.base) {
+            continue;
+        }
+        let (x0, w) = band_span_px(scene, recording.start, recording.end);
+        if x0 >= tape || x0 + w < 0.0 || w <= 2.0 {
+            continue;
+        }
+        let top = rows.pictures + scene.row_of(index) as f64 * rows.row_h;
+        fill(cr, JOIN_WASH, x0, top, w, film, 0.3);
+        ink(cr, JOIN_FRAME);
+        cr.set_line_width(2.0);
+        cr.rectangle(x0 + 1.0, top + 1.0, w - 2.0, film - 2.0);
+        let _ = cr.stroke();
+    }
+    let height = (rows.row_h * scene.row_count.max(1) as f64).max(rows.row_h);
     let rose = fx_lane::bar_colour(crate::cut::EffectKind::Speed, false);
     for effect in &scene.fx {
         if effect.effect_kind() != Some(crate::cut::EffectKind::Speed) {
@@ -1110,17 +1242,19 @@ fn draw_watched_row(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     ink(cr, WATCH_OUTLINE);
     // The dashes run the TAPE's width, cut at its right end: the row a click set the preview to watch is
     // outlined wherever there is tape to outline, not across empty ground past the last filmed second.
-    let span = (scene.tape_end() * scene.pps).min(tape).max(0.0) as i64;
-    for step in (0..span).step_by(10) {
-        if step % 20 < 12 {
-            cr.rectangle(step as f64, y, 10.0, 2.0);
-            cr.rectangle(step as f64, y + rows.row_h - 2.0, 10.0, 2.0);
-        }
+    let from = band_x(scene, scene.runs().first().map(|run| run.0).unwrap_or(0.0));
+    let to = band_x(scene, scene.tape_end()).min(tape);
+    let mut x = from;
+    while x < to {
+        cr.rectangle(x, y, 12.0_f64.min(to - x), 2.0);
+        cr.rectangle(x, y + rows.row_h - 2.0, 12.0_f64.min(to - x), 2.0);
+        x += 20.0;
     }
     let _ = cr.fill();
 }
 
-/// The selection: blue with its ends (§1's badge 27). The ✕ is a button in the page, not ink here.
+/// The selection: blue in the band with its ends, and a blue wash over the pictures it spans (§1's badge 27,
+/// `spec/img/05-cut.png`). Its ✕ is `cut_band_marks`'.
 fn draw_selection(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     let Some((from, to)) = scene.selection else {
         return;
@@ -1136,20 +1270,21 @@ fn draw_selection(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
         rows.selection,
         width.max(1.0),
         SELECTION_BAND_PX,
-        0.45,
+        0.6,
+    );
+    fill(
+        cr,
+        SELECTION_BLUE,
+        x0,
+        rows.pictures,
+        width.max(1.0),
+        rows.row_h * scene.row_count.max(1) as f64,
+        0.35,
     );
     ink(cr, SELECTION_BLUE);
     for x in [x0, band_x(scene, to)] {
         cr.rectangle(x - 1.0, rows.selection, 2.5, SELECTION_BAND_PX);
         let _ = cr.fill();
-    }
-    if width >= CROSS_MIN_PX {
-        cross(
-            cr,
-            x0 + width / 2.0,
-            rows.selection + SELECTION_BAND_PX / 2.0,
-            4.0,
-        );
     }
 }
 
@@ -1286,17 +1421,58 @@ fn draw_in_out_marks(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
 fn draw_name_plates(cr: &cairo::Context, scene: &Scene, rows: Rows) {
     cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
     cr.set_font_size(9.0);
-    ink(cr, (0.15, 0.15, 0.2));
     // Past the gutter, not at x = 2: §1 puts the plate ON the row ("pinned name plate per row"), while the gutter's
     // first 30 px carry the fold-all badge and the sound switches. Inked at 2 the name ran under the rail and read as
     // clipped letters — the dark rail is painted AFTER this pass, so it ate whatever landed inside its width.
-    for (index, recording) in scene.recordings.iter().enumerate() {
-        let y = rows.pictures + index as f64 * rows.row_h + 10.0;
-        for word in plates(scene, recording) {
-            text_at(cr, cut_screen::GUTTER_PX + 2.0, y, &word);
+    // Each line on a light backing of its own: dark ink straight on the thumbnails read as clipped letters
+    // wherever a dark frame sat under the first ones ("ession-tape" over a dark-blue frame). And one line
+    // under the other: both had been inked at the same y, so a plate with a correction printed over itself.
+    // One plate per ROW (§1's "pinned name plate per row"), naming the recording the row shows at the view's left
+    // edge (the first on the row still in view at the scroll), so a scrolled band names what is under the plate.
+    // One plate per recording at `index × row height` put a camera's second file a row lower than the tape it is
+    // on, and the rest of a ten-file session off the band, so only the first file was ever named.
+    let rows_drawn = (0..scene.recordings.len())
+        .map(|index| scene.row_of(index) + 1)
+        .max()
+        .unwrap_or(0);
+    for row in 0..rows_drawn {
+        let on_row: Vec<&timeline::Recording> = scene
+            .recordings
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| scene.row_of(*index) == row)
+            .map(|(_, recording)| recording)
+            .collect();
+        let mut on_row = on_row;
+        on_row.sort_by(|a, b| {
+            a.start
+                .partial_cmp(&b.start)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let Some(recording) = on_row
+            .iter()
+            .find(|recording| band_x(scene, recording.end) > scene.origin)
+            .or(on_row.last())
+        else {
+            continue;
+        };
+        let top = rows.pictures + row as f64 * rows.row_h;
+        for (line, word) in plates(scene, recording).iter().enumerate() {
+            let y = top + 10.0 + line as f64 * PLATE_LINE_PX;
+            let x = cut_screen::GUTTER_PX + 2.0;
+            if let Ok(extent) = cr.text_extents(word) {
+                cr.set_source_rgba(0.0, 0.0, 0.0, 0.55);
+                cr.rectangle(x - 2.0, y - 9.0, extent.x_advance() + 4.0, PLATE_LINE_PX);
+                let _ = cr.fill();
+            }
+            ink(cr, (0.95, 0.95, 0.95));
+            text_at(cr, x, y, word);
         }
     }
 }
+
+/// One name-plate line's height: the 9 px font and the backing's margin.
+const PLATE_LINE_PX: f64 = 11.0;
 
 /// Ink a string at a point; cairo returns a result nobody can act on from a paint pass.
 fn text_at(cr: &cairo::Context, x: f64, y: f64, text: &str) {
@@ -1317,9 +1493,15 @@ pub fn plates(scene: &Scene, recording: &timeline::Recording) -> Vec<String> {
     out
 }
 
-/// The red line, on its OWN surface: 2 px across the whole height, at the second the preview says.
-pub fn paint_playhead(cr: &cairo::Context, pps: f64, origin: f64, t: f64, height: f64) {
-    let x = t * pps - origin;
+/// Where the red line stands on the band's surface: its second through the same span the tape is painted by
+/// ([`band_x`]: after the gutter, through the folds), less the scroll. The line used to be `t · pps − origin`,
+/// which put it left of the picture it names by the gutter and by every fold before it.
+pub fn playhead_x(scene: &Scene) -> f64 {
+    band_x(scene, scene.line) - scene.origin
+}
+
+/// The red line, on its OWN surface: 2 px across the whole height, at `x` ([`playhead_x`]).
+pub fn paint_playhead(cr: &cairo::Context, x: f64, height: f64) {
     cr.set_source_rgb(PLAYHEAD_RGB.0, PLAYHEAD_RGB.1, PLAYHEAD_RGB.2);
     cr.rectangle(x, 0.0, PLAYHEAD_PX, height);
     let _ = cr.fill();
@@ -1330,6 +1512,7 @@ pub fn paint_playhead(cr: &cairo::Context, pps: f64, origin: f64, t: f64, height
 /// missing folder answers empty, which draws no pictures rather than inventing black (§1's prototype note).
 pub fn frame_paths(tree: &layout::Tree, base: &str) -> Vec<std::path::PathBuf> {
     let dir = tree.frames_dir(base);
+    crate::ui::cut_picture_cache::note_listed_here();
     let mut out: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
         .map(|entries| {
             entries
@@ -1383,16 +1566,18 @@ pub fn frame_paths(tree: &layout::Tree, base: &str) -> Vec<std::path::PathBuf> {
 /// when the view starts ahead of every frame. `clock::frame_name` stamps the files, so comparing the
 /// formatted stamp against a floor is what makes "nearest" mean "not from the future".
 pub fn frame_near(paths: &[std::path::PathBuf], at: f64) -> Option<std::path::PathBuf> {
-    let want = clock::frame_name(at.floor());
+    // The last frame whose instant is at or before `at`, so a shown frame is never one that has not happened yet.
+    // Compared as instants (`clock::read_frame`, both name shapes), not as file names: a name carries `.jpg`
+    // after its stamp, so `…48.000.jpg` sorted after a wanted `…48.000` and was passed over, and the wanted
+    // second was floored, so every lookup landed a frame early.
+    let instant = |path: &std::path::PathBuf| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .and_then(clock::read_frame)
+    };
     paths
         .iter()
-        // The names sort as strings and carry the stamp, so "at or before" is a byte compare against the
-        // wanted stamp — which is what keeps a shown frame from being one that has not happened yet.
-        .rfind(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.as_bytes() <= want.as_bytes())
-        })
+        .rfind(|path| instant(path).is_some_and(|stamp| stamp <= at + 1e-6))
         .or_else(|| paths.first())
         .cloned()
 }

@@ -14,7 +14,6 @@ use crate::narration::{self, Entry};
 use crate::prepare;
 use crate::project::Project;
 use crate::publish;
-use crate::tools::mm_ss;
 /// The four tabs, in the order the pipeline runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -130,10 +129,6 @@ pub fn lock(page: Page, project: &Project) -> Option<&'static str> {
 pub enum Move {
     /// A tab was clicked. The only door that can bounce (S2).
     Click,
-    /// A run moved to the page ("I'm feeling lucky" walks the pipeline). A run has already decided
-    /// this page is its business, so a lock does not send it elsewhere — its own ▶ says why it
-    /// cannot proceed, which is the honest place for that.
-    Run,
     /// The page's prerequisites vanished while it was open: switch silently to Prepare (§1).
     Vanished,
 }
@@ -468,9 +463,8 @@ impl Shell {
             // §7 §1's FULL line, not a short summary of it: "N clip(s) · mm:ss[ · ⚠ N clip(s) unwritten,
             // N line(s) off the cut][ · no timeline]", or its no-cut sentence. The counts come from the same
             // files ▶ reads (`narrate_inputs_tally`), so the bottom bar and the page cannot disagree.
-            // §1 spells no narration-off variant of this row — narration off simply means nothing was written,
-            // which is what "N clip(s) unwritten" already says — so the old `no_narration` special case is
-            // gone rather than a fourth wording nobody specified.
+            // There is no narration switch (§1): a narration nobody wrote is "N clip(s) unwritten", which the
+            // row already says.
             Page::Narrate => {
                 let tally = crate::ui::narrate_inputs_tally::from_session(
                     tree,
@@ -486,17 +480,25 @@ impl Shell {
                     tally.has_cut,
                 )
             }
-            // "N clip(s) · mm:ss[ · no narration][ · no upload text]" (§8-produce.md §1).
+            // §08-produce §1's row, "N clip(s) · mm:ss[ · no narration | · N to speak][ · no upload text]",
+            // or its no-cut sentence. The lines owed and the upload text are counted from the session's files
+            // by the same function the page uses, so the bar and the page cannot disagree.
             Page::Produce => {
-                let spoken = !project.no_narration && !narration.entries.is_empty();
-                let mut line = format!("{} clip(s) · {}", cut.segs.len(), mm_ss(cut_seconds(cut)));
-                if !spoken {
-                    line.push_str(" · no narration");
-                }
-                if project.publish.is_none() {
-                    line.push_str(" · no upload text");
-                }
-                line
+                let counts = match tree {
+                    Some(tree) => crate::ui::produce_page::session_counts(tree),
+                    None => crate::ui::produce_page::SessionCounts {
+                        owed: 0,
+                        narrated: false,
+                        publish_written: project.publish.is_some(),
+                    },
+                };
+                crate::produce_screen::inputs_line(
+                    cut.segs.len(),
+                    cut_seconds(cut),
+                    !counts.narrated,
+                    counts.owed,
+                    counts.publish_written,
+                )
             }
         }
     }
@@ -520,6 +522,19 @@ impl Shell {
                 let state = crate::ui::narrate_page::read_state();
                 let tip = crate::ui::narrate_inputs::tooltip(tree, &state);
                 (!tip.is_empty()).then_some(tip)
+            }
+            // §08-produce §1: what will be spoken first, which recordings are mixed, the voice, and whether
+            // `publish.json` exists. The first three are what the page's flows published.
+            Page::Produce => {
+                let state = crate::ui::produce_page::read_state();
+                let written = tree.map_or(state.publish_written, crate::publish::is_written);
+                Some(crate::produce_screen::inputs_tooltip(
+                    &state.cut_line,
+                    (!state.first_spoken.is_empty()).then_some(state.first_spoken.as_str()),
+                    &state.mixed_recordings,
+                    (!state.voice.is_empty()).then_some(state.voice.as_str()),
+                    written,
+                ))
             }
             _ => None,
         }
@@ -563,6 +578,11 @@ impl Shell {
         // cache"), so its row names the three things instead of counting them.
         if self.page == Page::Narrate {
             return crate::narrate_screen::outputs_readout().to_string();
+        }
+        // §08-produce §1: "count only (\"61 files, 220 MB\")".
+        if self.page == Page::Produce {
+            let (files, bytes) = files_and_bytes(&self.output_dir(tree));
+            return crate::produce_screen::outputs_summary(files, bytes);
         }
         format!("{} file(s)", count_files(&self.output_dir(tree)))
     }
@@ -613,6 +633,22 @@ pub fn cut_seconds(cut: &cut::Cut) -> f64 {
 
 /// Files under `dir`, counting recursively and missing nothing quietly: a folder that is not there
 /// has no output yet, which is zero rather than an error.
+/// How many files are under `dir`, and their bytes together.
+fn files_and_bytes(dir: &Path) -> (usize, u64) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return (0, 0);
+    };
+    entries.flatten().fold((0, 0), |(files, bytes), entry| {
+        let path = entry.path();
+        if path.is_dir() {
+            let (more, size) = files_and_bytes(&path);
+            (files + more, bytes + size)
+        } else {
+            (files + 1, bytes + entry.metadata().map_or(0, |m| m.len()))
+        }
+    })
+}
+
 fn count_files(dir: &Path) -> usize {
     let Ok(entries) = fs::read_dir(dir) else {
         return 0;

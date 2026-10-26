@@ -203,24 +203,50 @@ pub fn frame_name(seconds: f64) -> String {
     format!("{y:04}-{mo:02}-{d:02}_{h:02}-{mi:02}-{s:02}.{millis:03}")
 }
 
-/// The instant a frame name claims — [`frame_name`]'s inverse, for that one spelling. A name
-/// from before frames were timestamped (`f000001.jpg`) reports `None` and is left to sort by
-/// name.
+/// Below this instant (2001-09-09) a frame name is read as SESSION seconds printed as a date: the first rewrite
+/// named frames that way, so its folders run from `1970-01-01_00-00-00`. Real names are past it.
+pub const SESSION_NAMED_BEFORE: f64 = 1.0e9;
+
+/// The session second a frame name stands for, given the session's zero ([`Clock::zero`]): a real name is its
+/// instant less the zero, and a name from before [`SESSION_NAMED_BEFORE`] already counts session seconds.
+pub fn frame_session_seconds(name: &str, zero: f64) -> Option<f64> {
+    let at = read_frame(name)?;
+    Some(if at < SESSION_NAMED_BEFORE {
+        at
+    } else {
+        at - zero
+    })
+}
+
+/// The instant a frame name claims — [`frame_name`]'s inverse. Two spellings: today's `…_HH-MM-SS.mmm` and the
+/// whole-second `…_HH-MM-SS` an extraction of one frame a second wrote (a project made before the 250 ms grid,
+/// whose frames the Cut page must still find). A name from before frames were timestamped (`f000001.jpg`)
+/// reports `None` and is left to sort by name.
 pub fn read_frame(name: &str) -> Option<f64> {
     let b = name.as_bytes();
     let digit = |i: usize| b.get(i).is_some_and(u8::is_ascii_digit);
     // The fixed shape first, so nothing below can run off the end.
-    if b.len() < 23
+    if b.len() < 19
         || b[4] != b'-'
         || b[7] != b'-'
         || b[10] != b'_'
         || b[13] != b'-'
         || b[16] != b'-'
-        || b[19] != b'.'
-        || ![0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18, 20, 21, 22]
+        || ![0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18]
             .iter()
             .all(|i| digit(*i))
     {
+        return None;
+    }
+    // Milliseconds when the name carries them; a whole-second name ends, or goes on to its extension, after
+    // the seconds.
+    // A digit after the dot is a millisecond field, and then it is exactly three digits ("…15.00" is not a name
+    // this clock writes); anything else after the dot is the extension of a whole-second name.
+    let millis_given = b.get(19) == Some(&b'.') && digit(20);
+    if millis_given && !(digit(21) && digit(22) && !digit(23)) {
+        return None;
+    }
+    if !millis_given && b.len() > 19 && b[19] != b'.' {
         return None;
     }
     let num = |s: &str| s.parse::<i64>().ok();
@@ -230,7 +256,11 @@ pub fn read_frame(name: &str) -> Option<f64> {
     let hour = num(str::from_utf8(&b[11..13]).ok()?)?;
     let min = num(str::from_utf8(&b[14..16]).ok()?)?;
     let sec = num(str::from_utf8(&b[17..19]).ok()?)?;
-    let millis = num(str::from_utf8(&b[20..23]).ok()?)?;
+    let millis = if millis_given {
+        num(str::from_utf8(&b[20..23]).ok()?)?
+    } else {
+        0
+    };
     if !valid(year, month, day, hour, min, sec) || !(0..=999).contains(&millis) {
         return None;
     }

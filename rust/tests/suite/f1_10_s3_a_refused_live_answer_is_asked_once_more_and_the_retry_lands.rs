@@ -12,8 +12,7 @@ mod harness;
 use harness::*;
 #[path = "joined_answer.rs"]
 mod joined_answer;
-use joined_answer::answer;
-use joined_answer::{finish, raw};
+use joined_answer::{answer, chat};
 
 #[test]
 fn f1_10_s3_a_refused_live_answer_is_asked_once_more_and_the_retry_lands() {
@@ -22,22 +21,35 @@ fn f1_10_s3_a_refused_live_answer_is_asked_once_more_and_the_retry_lands() {
     use naivepost::tools::textedit::Join;
 
     let fixture = fixture("retry");
-    // Ask #1 goes over the wire and is refused: "today" sits inside the removal with a kept word on
-    // either side, which is two stretches, not one at the join. The refusal is followed by the
-    // `finish` that ends a tool round (the loop runs with tools offered now, §3.2), and the fake
-    // answers every further ask with the refusal — so the retry really is a second ask.
-    let refused = raw("the today the network goes live now");
-    point_at(&{
-        let llm = FakeLlm::start(vec![finish(), refused]);
-        // Keep the fake alive for the whole scenario so the ask has somewhere to go.
-        let url = llm.url();
-        std::mem::forget(llm);
-        url
-    });
+    // Ask #1 goes over the wire and is refused: "network goes" is not how BEFORE ends. The fake answers every
+    // ask the same, so the retry really is a second ask, and it carries the reason the first was refused.
+    let llm = FakeLlm::start(vec![chat("network goes", "")]);
+    point_at(&llm.url());
     let lines = press(&fixture.tree, &fixture.project);
     assert!(
         lines.iter().any(|line| line.contains("asking once more")),
         "the refusal says the join gets asked again: {lines:?}"
+    );
+    let first = llm.next_seen();
+    let second = llm.next_seen();
+    assert!(
+        !first.body.contains("previous answer"),
+        "the first ask carries no refusal"
+    );
+    assert!(
+        second.body.contains(
+            "Your previous answer at this join was refused: \\\"network goes\\\" is not how BEFORE ends"
+        ),
+        "the retry is told why: {}",
+        clip(&second.body)
+    );
+    // Both asks refused: the join is kept as recorded, and the pass says so loudly at the end.
+    assert!(
+        lines
+            .iter()
+            .any(|line| line
+                == "!!! text edit: 1 of 1 join(s) got no usable answer -- kept as recorded"),
+        "the unanswered join is said: {lines:?}"
     );
     // The retry is the second ask of the same seam, in its own slot, and this answer is one stretch
     // at the join: the seam ends repaired rather than refused.
@@ -49,14 +61,13 @@ fn f1_10_s3_a_refused_live_answer_is_asked_once_more_and_the_retry_lands() {
         naivepost::seam_retries::ask_slot("base", 1),
         "the retry keys elsewhere than the refusal it is retrying"
     );
-    let kept = format!("{} {}", TAKE_A[..2].join(" "), TAKE_B.join(" "));
     let mut join = Join::new(
         &TAKE_A.iter().map(|w| *w).collect::<Vec<&str>>(),
         &TAKE_B.iter().map(|w| *w).collect::<Vec<&str>>(),
     );
     let before: Vec<String> = TAKE_A.iter().map(|w| w.to_string()).collect();
     let after: Vec<String> = TAKE_B.iter().map(|w| w.to_string()).collect();
-    match joins::answer_join(&mut join, &answer(&kept), &before, &after) {
+    match joins::answer_join(&mut join, &answer("is live today", ""), &before, &after) {
         Outcome::Applied {
             before: gone,
             after: 0,

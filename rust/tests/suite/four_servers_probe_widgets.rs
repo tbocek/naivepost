@@ -207,11 +207,12 @@ fn check_llm_row_answers_live(window: &adw::ApplicationWindow) {
         ),
     ]);
 
-    // The LLM row's Test reads the value typed under its own key (`typed("llm")`) as the ADDRESS, so the
-    // fake's loopback URL goes in that box — the same route `type_and_test` takes for the audio and sd rows.
-    // An id still has to exist for the request to name: with an empty Model box §5 refuses before dialling,
-    // so the conf carries one and the dialog is opened over it (see [`install_conf`]).
-    type_and_test(window, "llm", &server.url());
+    // The address goes in the SERVER box and the Model box keeps its id (§5: "a model row's box holds a model
+    // id, never an address"): the Model row's Test asks the typed Server box. This test had typed the URL into
+    // the Model box, which is what sent a real model id out as a host ("invalid uri character").
+    ui::entry(window, "server")
+        .expect("the Writing section has its Server box")
+        .set_text(&server.url());
     ui::test_button(window, "llm")
         .expect("the llm row has a Test button")
         .emit_clicked();
@@ -296,7 +297,7 @@ fn check_audio_row_needs_health_and_catalogue(window: &adw::ApplicationWindow) {
 fn check_sd_row_asks_capabilities(window: &adw::ApplicationWindow) {
     let server = Live::start(&[(
         "/sdcpp/v1/capabilities",
-        r#"{"weights":"sd-v1.safetensors","modes":["txt2img","img2img"]}"#,
+        r#"{"model":{"name":"sd-v1.gguf","path":"/mnt/models/sd-v1.gguf","stem":"sd-v1"},"supported_modes":["img_gen"]}"#,
     )]);
 
     type_and_test(window, "sd", &server.url());
@@ -315,10 +316,7 @@ fn check_sd_row_asks_capabilities(window: &adw::ApplicationWindow) {
         badge.text()
     );
     assert!(
-        badge
-            .tooltip_text()
-            .unwrap_or_default()
-            .contains("sd-v1.safetensors"),
+        badge.tooltip_text().unwrap_or_default().contains("sd-v1"),
         "the verdict names the weights the server reported, got {:?}",
         badge.tooltip_text()
     );

@@ -39,13 +39,18 @@ fn held() -> &'static Mutex<HashMap<String, u32>> {
     SLOT.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// The file behind a lane, resolved the one way this project resolves a path (`layout::resolve`, the
-/// session folder as the project — the shape `ui::cut_fps::footage_file` uses), and only if it is really
-/// there. A lane whose file vanished is not a pipeline: starting the player on a missing URI produces a
-/// process that errors out and holds a pid, which is worse than not starting it.
-pub fn lane_file(root: &Path, lane: &Lane) -> Option<PathBuf> {
-    let project = crate::startup::session_dir(root);
-    let path = crate::layout::resolve(root, &project, &lane.src);
+/// The file behind a lane, resolved the one way this project resolves a path (`layout::resolve`: a
+/// `project:` path under `project`, the open project's folder, anything else under the application root,
+/// the folder the app was launched from), and only if it is really there. A lane whose file vanished is not
+/// a pipeline: starting the player on a missing URI produces a process that errors out and holds a pid,
+/// which is worse than not starting it.
+///
+/// `project` IS the project folder (the live tick hands `ui::line_root`, the folder the window has open).
+/// The first port took it as the launch folder and looked for the project in `<it>/session.naivepost`, a
+/// folder inside the project that never exists.
+pub fn lane_file(project: &Path, lane: &Lane) -> Option<PathBuf> {
+    let root = std::env::current_dir().unwrap_or_default();
+    let path = crate::layout::resolve(&root, project, &lane.src);
     path.is_file().then_some(path)
 }
 

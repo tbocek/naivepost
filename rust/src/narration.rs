@@ -82,7 +82,8 @@ const OWN_VOICE: &str = "own";
 /// in one order, so a roll and a voice together read `25e0.85|2#aria|…`.
 fn key_body(entry: &Entry, voice: Option<&str>, emotion: &str) -> String {
     let mut body = format!("{}|{}", entry.text, emotion);
-    if let Some(voice) = voice.filter(|v| *v != OWN_VOICE) {
+    // `narrator1` is the first rewrite's spelling of slot 1, the same voice as `own`: the same key.
+    if let Some(voice) = voice.filter(|v| *v != OWN_VOICE && *v != "narrator1") {
         body = format!("{voice}|{body}");
     }
     if entry.roll > 0 {
@@ -212,6 +213,22 @@ pub fn tts_file(key: &str) -> String {
 pub fn tts_seed(key: &str) -> u32 {
     let digest = Sha1::digest(key.as_bytes());
     u32::from_be_bytes([digest[8], digest[9], digest[10], digest[11]])
+}
+
+/// The lines a voice speaks: every entry with words. A blank line is a deliberate silence and is never spoken.
+/// There is no narration switch (§07 §1): a project is narrated exactly when this is not empty, so the speaking
+/// pass, the preview and the render all read through here and none of them can disagree about it.
+pub fn lines_to_speak(entries: &[Entry]) -> Vec<Entry> {
+    entries
+        .iter()
+        .filter(|entry| !entry.text.trim().is_empty())
+        .cloned()
+        .collect()
+}
+
+/// Whether the narration has a line with words, i.e. whether this video is narrated at all.
+pub fn has_lines(entries: &[Entry]) -> bool {
+    entries.iter().any(|entry| !entry.text.trim().is_empty())
 }
 
 /// Read `narrate/narration.json`. A project that has never been narrated has no file,

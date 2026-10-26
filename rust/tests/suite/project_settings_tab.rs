@@ -1,16 +1,16 @@
 //! §10-parameters#3-project-settings-tab-controls — `spec/10-parameters.md` §3, checked
 //! against `naivepost::project_settings` and the owners of every value it names.
 //!
-//! §3 is one sentence listing twenty tab controls and their defaults, so what these tests
+//! §3 is one sentence listing the tab controls and their defaults, so what these tests
 //! pin is that the list and the code cannot drift: each control's default must come from
 //! the struct or constant that actually stores it (`Project::default`, `Produce::default`,
-//! `prepare::FREQ_STOPS`, `fx_aspect::SOURCE`, `publish.json`'s presence), never from a
-//! copy in the catalogue. The inversion of two of them (Narration ↔ `no_narration`,
-//! "Copy into project" ↔ `reference_sources`) is asserted explicitly, because a silent
-//! fix of what looks like a bug there would flip a project's behaviour.
+//! `fx_aspect::SOURCE`, `publish.json`'s presence), never from a
+//! copy in the catalogue. The inversion of one of them ("Copy into project" ↔
+//! `reference_sources`) is asserted explicitly, because a silent fix of what looks like a bug
+//! there would flip a project's behaviour.
 
 use naivepost::{
-    cut_screen, fx_aspect, params, prepare,
+    cut_screen, fx_aspect, params,
     project::{self, Produce},
     project_settings as ps, publish,
 };
@@ -44,92 +44,39 @@ fn temp_project(tag: &str) -> naivepost::layout::Tree {
     naivepost::layout::Tree::new(&proj).unwrap()
 }
 
-// ---- S1: Freq ------------------------------------------------------------------------
+// ---- S1: Freq is gone ----------------------------------------------------------------
 
 #[test]
-fn sec_10_parameters_3_project_settings_tab_controls_s1_freq_is_the_one_p_project_id() {
+fn sec_10_parameters_3_project_settings_tab_controls_s1_freq_is_gone() {
     assert_eq!(ITEM, "§10-parameters#3-project-settings-tab-controls");
-    // §3 spells exactly one id with a `P.` prefix, and §10 has no other `P.project.*` row
-    // — so this is the only id that answers to Family::Project.
-    assert_eq!(
-        params::family("P.project.frameInterval"),
-        params::Family::Project
-    );
-
-    // The seven stops §3 lists, read from prepare rather than retyped here.
-    let stops = row("P.project.frameInterval");
-    assert_eq!(
-        stops.spelled, "0.25, 0.5, 1, 2, 3, 4, 5",
-        "the stops §3 lists, in order"
-    );
-    assert_eq!(
-        stops.from, "prepare::FREQ_STOPS / FREQ_DEFAULT",
-        "one home for the numbers"
-    );
-    assert_eq!(prepare::FREQ_STOPS, [0.25, 0.5, 1.0, 2.0, 3.0, 4.0, 5.0]);
-    assert_eq!(ps::values_for("Freq").unwrap().len(), 7);
-
-    // The prototype's deeper stops are gone: 0 ("every frame") and 0.1 / 0.2 are not on
-    // the list, and a non-stop is refused by the setter rather than accepted silently.
+    // Freq went with the text gate (F1.6 S6): no tab control, no default, and its one `P.project` id,
+    // `P.project.frameInterval`, is no longer catalogued.
+    assert!(!ps::rows().contains(&"Freq"), "no Freq row");
+    assert!(ps::default_for("Freq").is_none(), "no Freq default");
+    assert!(ps::values_for("Freq").is_none(), "no Freq stops");
     assert!(
-        !prepare::freq_is_stop(0.0),
-        "0 was the prototype's 'every frame'; it is not a stop now"
+        ps::listed()
+            .iter()
+            .all(|r| r.id != "P.project.frameInterval"),
+        "P.project.frameInterval is not catalogued"
     );
-    assert!(!prepare::freq_is_stop(0.1));
-    assert!(!prepare::freq_is_stop(0.2));
-    assert!(!prepare::freq_is_stop(1.5), "between stops is not a choice");
-    assert!(prepare::freq_is_stop(0.25));
-    assert!(prepare::freq_is_stop(5.0));
-
-    // Default 1 s, printed the way the dropdown prints it.
-    assert_eq!(prepare::FREQ_DEFAULT, 1.0);
-    assert_eq!(default("Freq"), "1s");
-    assert_eq!(ps::stored_in("Freq"), "project.interval");
-    assert_eq!(project::Project::default().interval, prepare::FREQ_DEFAULT);
 }
 
 // ---- S2: language --------------------------------------------------------------------
 
 #[test]
-fn sec_10_parameters_3_project_settings_tab_controls_s2_language_defaults_to_en() {
+fn sec_10_parameters_3_project_settings_tab_controls_s2_language_is_the_policy_s_not_a_control() {
     assert_eq!(ITEM, "§10-parameters#3-project-settings-tab-controls");
-    assert_eq!(default("Language"), "en");
+    // The language is not a control any more: the User Context says it and F0.7 stores it in the policy.
+    assert!(
+        !ps::rows().contains(&"Language"),
+        "no Language row among the project controls: {:?}",
+        ps::rows()
+    );
     assert_eq!(
-        project::Project::default().language,
+        project::Project::default().policy.language.value,
         "en",
-        "same source, not a second 'en'"
-    );
-    assert_eq!(ps::stored_in("Language"), "project.language");
-    // A free entry: the ASR language is typed, not picked, so the tab has no list for it.
-    assert!(
-        ps::values_for("Language").is_none(),
-        "Language is an entry, not a dropdown"
-    );
-    // An empty box still means en when it is used.
-    assert_eq!(prepare::language_label(""), "en");
-}
-
-// ---- S3: narration on/off ------------------------------------------------------------
-
-#[test]
-fn sec_10_parameters_3_project_settings_tab_controls_s3_narration_on_is_stored_as_no_narration_off()
-{
-    assert_eq!(ITEM, "§10-parameters#3-project-settings-tab-controls");
-    // The tick reads ON while the field reads false: the file stores the negation (§01).
-    assert_eq!(default("Narration"), "on");
-    assert!(!project::Project::default().no_narration);
-    assert_eq!(
-        ps::stored_in("Narration"),
-        "project.no_narration (inverted)"
-    );
-    // A tick, so exactly two values, off first.
-    assert_eq!(ps::values_for("Narration").unwrap(), ["off", "on"]);
-    // And the inversion holds in both directions: turning narration off sets the flag.
-    let mut p = project::Project::default();
-    p.no_narration = true;
-    assert!(
-        p.no_narration,
-        "narration off is no_narration true, not narration false"
+        "English when the User Context does not say"
     );
 }
 
@@ -294,12 +241,10 @@ fn sec_10_parameters_3_project_settings_tab_controls_s8_aspect_default_is_source
 fn sec_10_parameters_3_project_settings_tab_controls_s9_the_rows_are_exactly_these_in_the_specs_order(
 ) {
     assert_eq!(ITEM, "§10-parameters#3-project-settings-tab-controls");
-    // Five project controls, then §A's thirteen encoder rows, then the publish state,
-    // then the aspect — the order §3's sentence gives them.
+    // Two project controls, then §A's thirteen encoder rows, then the publish state,
+    // then the aspect, the order §3's sentence gives them. No Narration row: there is no
+    // narration switch (§07 §1).
     let expected = [
-        "Freq",
-        "Language",
-        "Narration",
         "Copy into project",
         "User Context",
         "Container",
@@ -319,7 +264,7 @@ fn sec_10_parameters_3_project_settings_tab_controls_s9_the_rows_are_exactly_the
         "Aspect",
     ];
     assert_eq!(ps::rows(), expected);
-    assert_eq!(ps::rows().len(), 20);
+    assert_eq!(ps::rows().len(), 17);
 
     // One catalogue row per control, in the same order.
     let listed = ps::listed();
@@ -338,24 +283,16 @@ fn sec_10_parameters_3_project_settings_tab_controls_s9_the_rows_are_exactly_the
             r.id,
             r.from
         );
-        // Every id is either the one `P.project.` row §3 spells or a bare `project.` id.
+        // Every id is a bare `project.` id: §3 spells no `P.` id since Freq went.
         assert!(
-            r.id == "P.project.frameInterval" || r.id.starts_with("project."),
-            "{} is neither",
+            r.id.starts_with("project."),
+            "{} is not a project. id",
             r.id
         );
         let _ = index;
     }
 
-    // Exactly one row carries a `P.` id, and it is the one §3 spells. No further
-    // `P.project.*` ids were invented for rows §10 left nameless.
-    let dotted: Vec<&str> = listed
-        .iter()
-        .filter(|r| r.id.starts_with("P."))
-        .map(|r| r.id)
-        .collect();
-    assert_eq!(dotted, ["P.project.frameInterval"]);
-    // Which is why the bare ones report Family::Other, as every unrowed id in this
+    // No row carries a `P.` id, and none were invented for rows §10 left nameless. The bare ones report Family::Other, as every unrowed id in this
     // catalogue does, and why no bare id pretends to a family.
     for r in listed.iter().filter(|r| !r.id.starts_with("P.")) {
         assert_eq!(
@@ -365,10 +302,6 @@ fn sec_10_parameters_3_project_settings_tab_controls_s9_the_rows_are_exactly_the
             r.id
         );
     }
-    assert_eq!(
-        params::family("P.project.frameInterval"),
-        params::Family::Project
-    );
     // The three families §10's intro names are untouched by adding the fourth.
     assert_eq!(
         params::family("P.policy.markingPass"),

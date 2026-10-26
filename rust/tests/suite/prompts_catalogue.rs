@@ -49,8 +49,8 @@ impl Drop for Dirs {
 fn sec_10_parameters_4_prompts_s1_the_thirteen_keys_are_exactly_the_specs_list() {
     assert_eq!(ITEM, "§10-parameters#4-prompts");
     // §4 verbatim: "system, describe, fix, retake, textedit, cut, captions, speed, effects,
-    // narrate, translate, youtube (prompts/); new: policy." The first twelve are the shipped
-    // set; `policy` is the one this rewrite adds.
+    // narrate, translate, youtube (prompts/); new: policy, textgate." The first twelve are the shipped
+    // set; `policy` and `textgate` (F1.6 S6) are the ones this rewrite adds.
     assert_eq!(
         prompts::KEYS,
         [
@@ -67,6 +67,7 @@ fn sec_10_parameters_4_prompts_s1_the_thirteen_keys_are_exactly_the_specs_list()
             "translate",
             "youtube",
             "policy",
+            "textgate",
         ]
     );
     // The new row is known, and the file that shares `prompts/` but is not a prompt is not.
@@ -120,8 +121,8 @@ fn sec_10_parameters_4_prompts_s2_every_key_stores_as_a_per_machine_override() {
     );
     assert_eq!(
         settings::prompt_text(&d.paths, "policy", shipped).unwrap(),
-        "set markingPass from the context alone",
-        "this machine's wording wins over the shipped one"
+        shipped,
+        "a machine's file no longer steers the request: a profile's section does (§03-shell §5b)"
     );
     // Typing the shipped text back is how an edit is undone: `write_prompt` reports it stored
     // nothing, and the file on disk keeps the last real edit until Reset deletes it. The undo
@@ -172,9 +173,10 @@ fn sec_10_parameters_4_prompts_s3_thinking_is_on_for_exactly_the_four_named() {
             "speed",
             "effects",
             "translate",
-            "policy"
+            "policy",
+            "textgate"
         ],
-        "nine stay off — a tenth would have to be added to THINKING_ON on purpose"
+        "ten stay off — an eleventh would have to be added to THINKING_ON on purpose"
     );
     // F0.7 asks with thinking off, which is why `policy` is in the off list rather than missing.
     assert!(
@@ -300,9 +302,9 @@ fn sec_10_parameters_4_prompts_s6_the_bench_rows_are_the_twelve_in_order_and_pol
 
 // ---- S7: the flag reaches the wire, not just the catalogue ----------------------------------
 
-/// The twelve keys that are actually sent (every one but the `system` preamble), with what §4 says
+/// The thirteen keys that are actually sent (every one but the `system` preamble), with what §4 says
 /// about thinking for each. `policy` is included: F0.7 sends it, and §4 leaves it off.
-const LIVE_KEYS: [(&str, bool); 12] = [
+const LIVE_KEYS: [(&str, bool); 13] = [
     ("describe", false),
     ("fix", false),
     ("retake", false),
@@ -315,6 +317,7 @@ const LIVE_KEYS: [(&str, bool); 12] = [
     ("translate", false),
     ("youtube", true),
     ("policy", false),
+    ("textgate", false),
 ];
 
 /// S7: for every live prompt key, the chat body built through the app's one body door carries the

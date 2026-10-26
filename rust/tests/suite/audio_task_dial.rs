@@ -987,3 +987,28 @@ fn sec_02_services_1_the_four_servers_s1_a_separation_reply_names_both_stems() {
         "the refusal says which half is missing: {err}"
     );
 }
+
+/// §1's diarization reply as audio.cpp's nemotron diarizer sends it, verbatim from a 7-news run: the list is
+/// `speaker_turns` and each voice is named `speaker_N`. The first rewrite knew neither and failed Prepare with
+/// "no speaker turns in it" on this very answer.
+#[test]
+fn sec_02_services_1_the_four_servers_s1_the_nemotron_diarizer_reply_reads() {
+    let body = r#"{"speaker_turns":[{"confidence":0.997357,"end_sample":89280,"speaker_id":"speaker_0","start_sample":16640},{"confidence":0.984807,"end_sample":112160,"speaker_id":"speaker_0","start_sample":92640},{"confidence":0.998721,"end_sample":244320,"speaker_id":"speaker_0","start_sample":119360},{"confidence":0.992313,"end_sample":334080,"speaker_id":"speaker_1","start_sample":249760}],"timing":{"wall_ms":209.647}}"#;
+    let turns =
+        audio_task::diar_answer(&serde_json::from_str::<serde_json::Value>(body).expect("JSON"))
+            .expect("the turns read");
+    let read: Vec<(u64, u64, u32)> = turns
+        .iter()
+        .map(|turn| (turn.start_sample, turn.end_sample, turn.speaker_id))
+        .collect();
+    assert_eq!(
+        read,
+        [
+            (16640, 89280, 0),
+            (92640, 112160, 0),
+            (119360, 244320, 0),
+            (249760, 334080, 1)
+        ],
+        "speaker_N is voice N, so the transcript says SPEAKER_00 and SPEAKER_01"
+    );
+}

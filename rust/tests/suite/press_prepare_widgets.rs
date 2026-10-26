@@ -198,24 +198,6 @@ fn check_name_clash_refuses(app: &adw::Application) {
 /// S1 vs F0.2: while a run is open, the pause wins over Prepare's start. The session folder holds no
 /// project file, so press 1's S2 cannot rewrite anything that press 2 would then read — the only
 /// thing that changes between presses is the bar's own state.
-/// Stand an open run on the window's bar and repaint ▶/⏹ the way ▶'s own tail does, so a check about
-/// "a run under way" tests the state a mid-step press really leaves behind.
-fn stand_a_run_open(window: &adw::ApplicationWindow, model: &naivepost::project::Project) {
-    let bar = ui::run_bar(window).expect("the window carries a run bar");
-    let queue = ui::run_queue(window).expect("the window carries a queue");
-    naivepost::runqueue::start_run(
-        &mut bar.borrow_mut(),
-        &mut queue.borrow_mut(),
-        &mut naivepost::exchanges::RunLog::new(),
-        naivepost::run::Step::Prepare,
-        naivepost::run::snapshot_sources(model),
-    );
-    if let (Some(play), Some(stop_)) = (ui::play_button(window), ui::stop_button(window)) {
-        play.set_tooltip_text(Some(naivepost::run::PAUSE_TOOLTIP));
-        stop_.set_sensitive(true);
-    }
-}
-
 fn check_busy_prepare_pauses_first(app: &adw::Application) {
     let (_keep, _tree) = pin_session("busy");
     let model = with_sources(&["project:sources/lecture.mkv"]);
@@ -223,13 +205,12 @@ fn check_busy_prepare_pauses_first(app: &adw::Application) {
     window.present();
     let play = ui::play_button(&window).expect("the run bar has a ▶");
 
-    // Press 1: nothing busy, so the step started and the same button became ⏸. F0.5 S4 closes a
-    // single-step press's own bookkeeping (headless the whole step walks inside one click), so the run
-    // under way is stood up with `start_run`, the call ▶ itself makes before it walks the step.
+    // Press 1: nothing busy, so the step started and the same button became ⏸. The walk is on the run's
+    // worker (§03-shell §1) and the run stays open until the window takes its answer, which it cannot
+    // before this check turns the main loop again.
     play.emit_clicked();
-    stand_a_run_open(&window, &model);
     assert_eq!(
-        naivepost::ui::run_close::last_run_step_for_test(),
+        ui::running_step(&window),
         Some(run::Step::Prepare),
         "press 1 opened Prepare's run"
     );
@@ -266,6 +247,16 @@ fn check_busy_prepare_pauses_first(app: &adw::Application) {
         Some(run::Step::Prepare),
         "still the same run"
     );
+    // Let the run end before the next check builds its window.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
+    assert_eq!(
+        ui::running_step(&window),
+        None,
+        "the run closed when it ended"
+    );
 }
 
 /// S2 → S3 → S4 through the button: the project is saved first, the dead Describe middle is
@@ -288,6 +279,11 @@ fn check_start_clears_and_logs(app: &adw::Application) {
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_clicked();
+    // S2 onward run on the run's worker (§04-prepare F1.1 "Where it runs"); its lines land on the poll.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
 
     assert!(
         tree.dir().join("naivepost.json").exists(),

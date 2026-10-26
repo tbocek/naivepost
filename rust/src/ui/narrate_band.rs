@@ -78,14 +78,15 @@ pub fn attach(window: &adw::ApplicationWindow) {
         note_press(x);
         repaint(&begin_win);
     });
+    // GTK hands `drag-update` and `drag-end` the OFFSET from the press, so the pointer's x is the press plus it.
     let move_win = window.clone();
-    drag.connect_drag_update(move |_g, x, _y| {
-        note_motion(x);
+    drag.connect_drag_update(move |_g, dx, _y| {
+        note_motion(PRESS_X.with(|slot| slot.get()) + dx);
         repaint(&move_win);
     });
     let end_win = window.clone();
-    drag.connect_drag_end(move |_g, x, _y| {
-        finish_drag(&end_win, x);
+    drag.connect_drag_end(move |_g, dx, _y| {
+        finish_drag(&end_win, PRESS_X.with(|slot| slot.get()) + dx);
     });
     lane.add_controller(drag.clone());
     DRAG.with(|slot| *slot.borrow_mut() = Some(drag));
@@ -158,13 +159,18 @@ pub fn note_lane_size(window: &adw::ApplicationWindow) {
     if viewport <= 0.0 {
         return;
     }
-    let wanted = lane_width(zoom(), seconds, viewport) as i32;
+    // At fit the lane asks for its floor and fills what the column gives; zoomed in it asks for the whole
+    // recording at the zoom, and the scroller shows one view of it with a scrollbar. The scroller itself never
+    // asks for that width: the first rewrite set it as the scroller's minimum, so a zoom widened the window.
+    let wanted = if zoom() <= 1.0 {
+        LANE_MIN_PX as i32
+    } else {
+        lane_width(zoom(), seconds, viewport) as i32
+    };
     if lane.width_request() != wanted {
         lane.set_size_request(wanted, LANE_PX);
     }
-    if let Some(scroller) = scroller.downcast_ref::<gtk::ScrolledWindow>() {
-        scroller.set_min_content_width(wanted);
-    }
+    let _ = scroller;
 }
 
 /// The pointer's bar as [`paint`] lays it down (§1's "faint red bar under the pointer"): the same red as
@@ -175,7 +181,7 @@ pub const POINTER_COLOUR: (f64, f64, f64, f64) = (0.85, 0.25, 0.25, 0.35);
 /// The pointer's second x in lane px, or negative when it is off the band: §1's faint red bar follows the hand
 /// across the ruler and the lane, and nothing may draw it outside the widget it belongs to.
 fn note_pointer(x: f64) {
-    let inside = (0.0..=VIEW_WIDTH.with(|slot| slot.get())).contains(&x);
+    let inside = (0.0..=LANE_WIDTH.with(|slot| slot.get())).contains(&x);
     POINTER_X.with(|slot| slot.set(if inside { x } else { -1.0 }));
 }
 
@@ -275,8 +281,14 @@ thread_local! {
     static PRESS_X: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
     /// The pointer's x in lane px, or negative when it is off the band.
     static POINTER_X: std::cell::Cell<f64> = const { std::cell::Cell::new(-1.0) };
-    /// The lane's last allocated width, remembered so the wheel can pan before a repaint knows it.
+    /// The visible width of the band (the scroller's viewport), which px/s is measured against: the lane's own
+    /// painted width at fit, and kept from then while zoomed in, when the lane is wider than what shows.
     static VIEW_WIDTH: std::cell::Cell<f64> = const { std::cell::Cell::new(240.0) };
+    /// The lane's own painted width: the whole recording at the zoom, scrolled through by the scroller.
+    static LANE_WIDTH: std::cell::Cell<f64> = const { std::cell::Cell::new(240.0) };
+    /// The take walk's playhead, in seconds of the recording; negative while no walk plays. The red bar stays
+    /// where it was put: it is where ▶ starts, not where the sound is.
+    static WALK_HEAD: std::cell::Cell<f64> = const { std::cell::Cell::new(-1.0) };
     /// The recording's seconds, as last handed to the painter.
     static DURATION: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
 }
@@ -460,18 +472,57 @@ fn finish_drag(window: &adw::ApplicationWindow, x: f64) {
 
 /// Zoom by `steps` notches (positive = bigger), clamped so the view cannot leave the file.
 fn zoom_by(window: &adw::ApplicationWindow, steps: f64) {
-    let (duration, width) = size();
+    if zoom() <= 1.0 {
+        // Leaving fit: what shows now is the width every later zoom is measured against.
+        VIEW_WIDTH.with(|slot| slot.set(LANE_WIDTH.with(|lane| lane.get())));
+    }
+    let (duration, view) = size();
+    let before = band::px_per_second(zoom(), duration, view);
+    let adjustment = scroller_of(window).map(|scroller| scroller.hadjustment());
+    let scrolled = adjustment.as_ref().map_or(0.0, |a| a.value());
+    // The second under the pointer stays under it (the view's middle when the pointer is off the band).
+    let pointer = POINTER_X.with(|slot| slot.get());
+    let anchor = if pointer >= 0.0 {
+        pointer
+    } else {
+        scrolled + view / 2.0
+    };
+    let (second, on_screen) = (anchor / before.max(f64::EPSILON), anchor - scrolled);
     let zoom = band::zoom_step(zoom(), -steps);
     ZOOM.with(|slot| slot.set(zoom));
-    OFFSET.with(|slot| slot.set(band::clamp_view(offset(), zoom, duration, width)));
     fit_lane_to_view(window);
+    let after = band::px_per_second(zoom, duration, view);
+    if let Some(adjustment) = adjustment {
+        // After the relayout that gives the lane its new width, or the adjustment's range is still the old one.
+        glib::timeout_add_local_once(std::time::Duration::from_millis(30), move || {
+            adjustment.set_value(second * after - on_screen);
+        });
+    }
 }
 
 /// Pan the view by `delta` px (negative shows earlier seconds), clamped inside the recording.
 fn pan(window: &adw::ApplicationWindow, delta: f64) {
-    let (duration, width) = size();
-    OFFSET.with(|slot| slot.set(band::clamp_view(offset() + delta, zoom(), duration, width)));
-    fit_lane_to_view(window);
+    if let Some(scroller) = scroller_of(window) {
+        let adjustment = scroller.hadjustment();
+        adjustment.set_value(adjustment.value() + delta);
+    }
+}
+
+/// The band's scroller: zoomed in, it shows one view's width of the lane and scrolls through the rest.
+fn scroller_of(window: &adw::ApplicationWindow) -> Option<gtk::ScrolledWindow> {
+    crate::ui::window::find_widget_by_name(&window.content()?, "take-band-scroller")?
+        .downcast()
+        .ok()
+}
+
+/// Where the take walk's playhead stands (seconds of the recording), or none.
+pub fn set_walk_head(at: Option<f64>) {
+    WALK_HEAD.with(|slot| slot.set(at.unwrap_or(-1.0)));
+}
+
+/// The take walk's playhead, for a test: negative while no walk plays.
+pub fn walk_head() -> f64 {
+    WALK_HEAD.with(|slot| slot.get())
 }
 
 /// `(duration, width)` of the view as last painted.
@@ -627,12 +678,17 @@ fn stamp(path: &std::path::Path) -> Result<(i64, i64), String> {
 /// Paint one frame. Ink only: every position comes from [`band::paint_plan`]. The window is what a
 /// future per-window slot would read; today every slot here is per-thread like the page's other ones.
 pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
-    VIEW_WIDTH.with(|slot| slot.set(width));
+    // `width` is the LANE: at fit it is also what shows, zoomed in it is the whole recording at the zoom, and
+    // px/s is measured against what shows (`VIEW_WIDTH`), so the lane is exactly the recording's width.
+    LANE_WIDTH.with(|slot| slot.set(width));
+    if zoom() <= 1.0 {
+        VIEW_WIDTH.with(|slot| slot.set(width));
+    }
     let state = crate::ui::narrate_page::read_state();
     let seconds = painted_seconds();
     DURATION.with(|slot| slot.set(seconds.unwrap_or(0.0).max(0.1)));
-    let (duration, _) = size();
-    let pps = band::px_per_second(zoom(), duration, width);
+    let (duration, view) = size();
+    let pps = band::px_per_second(zoom(), duration, view);
     // Keep the lane as wide as the file it draws. GTK gives no size-allocate hook to hang this on and the
     // first fit runs while the scroller is still hidden (a hidden widget answers 0 px wide), so this is where
     // the real numbers first arrive: without it the lane kept its 240 px request and a 45 s recording fit
@@ -645,12 +701,9 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
     cr.rectangle(0.0, 0.0, width, height);
     let _ = cr.fill();
 
-    let peaks = envelope_attempt(&state);
-    // §00's "failure is specific and local": when the wave cannot be had, the reason goes to the log instead
-    // of being swallowed behind the band's one public sentence ("reading the recording…").
-    if let Err(why) = &peaks {
-        crate::ui::window::log_line(&format!("take band: {why}"));
-    }
+    // Read off the cache: a draw func never decodes (§03-shell §1). A miss asks a worker and the lane says
+    // "reading the recording…" until the peaks land and the band is drawn again.
+    let peaks = cached_envelope(&state);
     let mut plan = band::paint_plan(&BandPaint {
         duration,
         width,
@@ -670,6 +723,11 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
     });
     // `paint_plan` maps the red bar with the same helper this frame uses; keep them one number.
     plan.red_bar_px = band::second_to_px(red_bar_or(state.session), offset(), pps);
+    // The take walk's own playhead, where the sound is (§1 "playhead while ▶ walks").
+    let head = WALK_HEAD.with(|slot| slot.get());
+    if head >= 0.0 {
+        plan.playhead_px = Some(band::second_to_px(head, offset(), pps));
+    }
 
     // 1. The envelope, or the sentence that says it is not ready: §1's "reading the recording…"
     // while the envelope decodes. Drawn as vertical bars in the lane under the ruler.
@@ -791,15 +849,29 @@ fn envelope_attempt(
     if state.voice == screen::CAPTIONS {
         return Err("the voice is captions only".to_string());
     }
+    let sources = envelope_sources(&tree, &state.voice);
+    envelope_of(&tree, sources)
+}
+
+/// The files the lane may be drawn from, in the order they are tried: the recording the voice is cloned
+/// from, then the built reference.
+fn envelope_sources(tree: &crate::layout::Tree, voice: &str) -> Vec<std::path::PathBuf> {
     let mut sources: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(project) = crate::project::load(tree.dir()) {
         sources.extend(crate::narrate_band_face::recording_path(
-            &tree,
-            &project,
-            &state.voice,
+            tree, &project, voice,
         ));
     }
-    sources.push(crate::narrate_data::base_reference(&tree));
+    sources.push(crate::narrate_data::base_reference(tree));
+    sources
+}
+
+/// The peaks off the first source that gives them. Decodes and builds the wave cache when it has to, so it
+/// runs on a worker ([`cached_envelope`]), never inside a draw.
+fn envelope_of(
+    tree: &crate::layout::Tree,
+    sources: Vec<std::path::PathBuf>,
+) -> Result<(f64, Vec<u8>), String> {
     // One lane per SOURCE file, not one per voice slot: `wave_build` keys its cache by (lane, size, mtime),
     // so two different files sharing a lane name would each accept whichever cache was written first.
     let mut reasons = Vec::new();
@@ -809,7 +881,7 @@ fn envelope_attempt(
             continue;
         }
         let lane = format!("voice:{}", crate::narrate_data::take_base(&source));
-        match envelope(&tree, &lane, &source) {
+        match envelope(tree, &lane, &source) {
             Ok(peaks) => return Ok((PEAK_HZ, peaks)),
             Err(why) => reasons.push(why),
         }
@@ -821,10 +893,90 @@ fn envelope_attempt(
     })
 }
 
+/// What a cached envelope was read for: the session, the voice, and each source's size and mtime, so a new
+/// take, a new voice or a re-recorded file is read again and nothing else is.
+#[derive(Clone, PartialEq)]
+struct EnvelopeKey {
+    dir: std::path::PathBuf,
+    voice: String,
+    stamps: Vec<(std::path::PathBuf, Option<(i64, i64)>)>,
+}
+
+/// The peaks [`envelope_of`] answers.
+type Peaks = Result<(f64, Vec<u8>), String>;
+
+thread_local! {
+    /// The band's envelope as last read, keyed on what it was read from; `None` beside a key while a worker
+    /// is reading it.
+    static ENVELOPE: std::cell::RefCell<Option<(EnvelopeKey, Option<Peaks>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The envelope for this paint, off the cache. The first paint for a session, voice and set of files asks a
+/// worker to decode and measure (the first rewrite did it inside the draw func: seconds to minutes of a frozen
+/// window on a long recording, and again on every paint while it kept failing). Until the answer lands this
+/// says the lane is still being read; a failure is logged once, when it lands, with its reason (§00's "failure
+/// is specific and local").
+fn cached_envelope(state: &crate::ui::narrate_page::NarrateState) -> Peaks {
+    let tree = crate::ui::window::narrate_session_tree().ok_or("no session folder open")?;
+    if state.voice == screen::CAPTIONS {
+        return Err("the voice is captions only".to_string());
+    }
+    let sources = envelope_sources(&tree, &state.voice);
+    let key = EnvelopeKey {
+        dir: tree.dir().to_path_buf(),
+        voice: state.voice.clone(),
+        stamps: sources
+            .iter()
+            .map(|source| (source.clone(), stamp(source).ok()))
+            .collect(),
+    };
+    let held = ENVELOPE.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .filter(|(read_for, _)| *read_for == key)
+            .map(|(_, peaks)| peaks.clone())
+    });
+    match held {
+        Some(Some(peaks)) => return peaks,
+        Some(None) => return Err(READING.to_string()),
+        None => {}
+    }
+    ENVELOPE.with(|slot| *slot.borrow_mut() = Some((key.clone(), None)));
+    crate::ui::background::run(
+        "take band envelope",
+        move || envelope_of(&tree, sources),
+        move |peaks: Peaks| {
+            if let Err(why) = &peaks {
+                crate::ui::window::log_line(&format!("take band: {why}"));
+            }
+            let current = ENVELOPE.with(|slot| {
+                let mut slot = slot.borrow_mut();
+                match slot.as_mut() {
+                    Some((read_for, answer)) if *read_for == key => {
+                        *answer = Some(peaks);
+                        true
+                    }
+                    _ => false,
+                }
+            });
+            if current {
+                if let Some(lane) = lane_of(&crate::ui::window::main_window()) {
+                    lane.queue_draw();
+                }
+            }
+        },
+    );
+    Err(READING.to_string())
+}
+
+/// Why a lane has no peaks yet while its worker reads them.
+const READING: &str = "still reading the recording";
+
 /// Vertical peak bars across the visible window, blue over the ground.
 fn draw_envelope(cr: &cairo::Context, peaks: &[u8], width: f64, lane_top: f64, lane_h: f64) {
-    let (duration, _) = size();
-    let pps = band::px_per_second(zoom(), duration, width);
+    let (duration, view) = size();
+    let pps = band::px_per_second(zoom(), duration, view);
     let visible = band::visible_peaks(PEAK_HZ, peaks, offset(), pps, width);
     cr.set_source_rgb(0.35, 0.6, 0.9);
     let step = 1.0_f64.max(2.0_f64.min(pps / PEAK_HZ.max(1.0)));

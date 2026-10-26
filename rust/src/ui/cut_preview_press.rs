@@ -76,8 +76,8 @@ fn text_box_under(
 }
 /// §F3.4 S5 (`On the preview a box moves … and resizes`): the release that edits a PLACED caption. Returns `None`
 /// for every press that is not this one's — anything armed (the arm owns the press), a held effect (F3.8's grip owns
-/// it), or travel under `fx_zoom::DRAG_MIN_PX` on either axis, which is the click [`play_toggle_on_press`] already
-/// answers. Otherwise the record whose box the press landed on is moved (interior) or resized (within
+/// it), or travel under `fx_zoom::DRAG_MIN_PX` on either axis (a release inside GTK's drag threshold is the click
+/// [`play_toggle_on_click`] answers). Otherwise the record whose box the press landed on is moved (interior) or resized (within
 /// `fx_text::EDGE_GRIP_PX` of an edge) through `ui::nudge_text_box` / `ui::drag_text_edge`, which write the history
 /// step, so one ↶ takes this gesture back.
 pub fn box_edit_on_release(
@@ -96,8 +96,8 @@ pub fn box_edit_on_release(
     // The travel floor is `fx_zoom::DRAG_MIN_PX` — §F3.1's "below this a press is a click, not a box" — asked on
     // EACH axis, and deliberately the SAME door that flow uses: a caption edit travels on one axis only (drag an
     // edge, or slide a caption straight up), so requiring both axes to move would refuse the very gesture §S5 asks
-    // for. A release under it on either axis was a press, and a press with nothing armed or held is §S5's play/pause
-    // toggle (`play_toggle_on_press`, reached earlier in the same release) — one gesture cannot mean both.
+    // for. A release under it on either axis moves nothing; one that also stayed inside GTK's drag threshold is a
+    // click, §S5's play/pause toggle (`play_toggle_on_click`, reached later in the same release).
     let (dx, dy) = (to.0 - from.0, to.1 - from.1);
     if !fx_zoom::travel_one_axis(dx.abs(), dy.abs()) {
         return None;
@@ -187,39 +187,34 @@ fn box_of(effect: &crate::cut::Fx, kind: EffectKind, fit: (f64, f64)) -> (f64, f
     .to_px(fit.0, fit.1)
 }
 
-/// §S5's toggle, performed: the same door the picture's own ▶ uses, so a click on a caption and a click on the
-/// picture move ONE transport. Returns the sentence for the status row — which reads differently when the click
-/// started play and when it paused, because "toggles" is the rule and a person needs to know which way it went.
+/// The click on the picture, performed (§05-cut F2.1 S2, §06 F3.1 after S5, F3.4 S5): a press and release that
+/// never passed GTK's drag threshold plays or pauses, WHATEVER is placed under it, a caption, a drawing or a zoom's
+/// box. The same door the picture's own button uses, so every click on the preview moves ONE transport. Returns the
+/// sentence for the status row, which reads differently when the click started play and when it paused, because
+/// "toggles" is the rule and a person needs to know which way it went.
 ///
-/// `at` is the second the red line stands on (which overlay boxes are live is asked at that second), `fit` the
-/// fitted picture the painter measures against, `at_px` the press in those same px. `Some` only when this press is
-/// F3.4 S5's: nothing armed (`zoom_armed`/`text_armed`/`svg_armed` all down), nothing held, and the point inside an
-/// overlay's box. Everything else returns `None` so the caller falls through to the framing flow unchanged.
-pub fn play_toggle_on_press(
-    win: &adw::ApplicationWindow,
-    at: f64,
-    fit: (f64, f64),
-    at_px: (f64, f64),
-) -> Option<String> {
+/// `None` while anything is armed or held: the arm owns the press then, and so does F3.8's grip.
+///
+/// The first rewrite answered here only for a click inside an overlay's box; every other click went on to the
+/// zoom-framing press, so one click on a placed zoom started play AND took the zoom (or opened a zoom form).
+pub fn play_toggle_on_click(win: &adw::ApplicationWindow) -> Option<String> {
     if window::zoom_armed() || cut_text_hand::text_armed() || cut_svg::svg_armed() {
         return None;
     }
     if window::held_effect().is_some() {
         return None;
     }
-    let cut_ = window::review_cut_of(win);
-    overlay_under_pointer(&cut_, at, fit, at_px)?;
     // The picture's own button's door, with the page's filmed runs: nothing here decides how playback starts.
     let runs = timeline::filmed_runs(&crate::ui::page_recordings())
         .iter()
         .map(|(start, end)| (*start, *end))
         .collect::<Vec<_>>();
-    let said = window::press_play_recording(win, &runs);
+    let _said = window::press_play_recording(win, &runs);
+    crate::ui::cut_picture::refresh(win);
     // Which way it went comes from the transport AFTER the press, not from a guess before it. The face is the
     // playhead's own reading (§D), which is what every other status on this page quotes.
     let playing = window::preview_player(win).transport.playing;
     let shown = crate::preview::clock(window::preview_player(win).playhead);
-    let _ = said;
     Some(if playing {
         format!(
             "{shown} \u{b7} the red line, session time \u{2014} a click on the picture plays it"

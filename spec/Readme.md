@@ -22,8 +22,8 @@ Four tabs, left to right, in the order the work happens. Each has one **▶** th
 runs that step; **▶▶** beside it runs several in a row. The thumbnail and the
 upload text live on Produce, beside the render they belong to. Per tab, ▶ means
 ([§2](spec/11-flow-index.md)): Prepare runs Prepare; Cut runs Suggest until its
-preview is started, then drives that preview until ⏹; Narrate writes and speaks
-and greys out entirely when narration is off; Produce renders — and Narrate and
+preview is started, then drives that preview until ⏹; Narrate writes and speaks,
+always live (there is no narration switch); Produce renders — and Narrate and
 Produce refuse without a cut rather than being locked away.
 
 ### Prepare
@@ -60,7 +60,7 @@ Pressing ▶ then does, in order:
    of the footage on a fixed quarter-second grid that restarts at every scene
    change, so a new slide's first picture is always among them. The scene pass
    looks at four frames a second over the whole video; frames are kept at the
-   video's own size, and Freq only decides which of them the model sees.
+   video's own size, and the text check decides which of them the model sees.
 3. **Speech to text** — every source transcribed, with word-level times. A long
    recording is asked about in even pieces (60 s for the qwen3 family, 300 s
    otherwise), each cut moved to a silence where one is nearby, and an
@@ -87,7 +87,7 @@ Pressing ▶ then does, in order:
    carrying the words heard in those seconds and a rolling summary of what has
    happened so far, so the answer is *what is happening* rather than *what is in
    this picture*. What the model actually sees is not every picture on disk: each
-   scene's first frame, then one every Freq seconds until the next change, so a new
+   scene's first frame, then one every 20 seconds until the next change, so a new
    slide's opening picture is always in the batch even when it falls between two of
    them. Those copies are scaled to 896 px wide for sending while the frames the
    project keeps stay at the video's own size. A run that stopped mid-Describe
@@ -510,15 +510,12 @@ wrote nothing. While it runs the bar reads `writing N/M clips` and only ever mov
 forward, so a retry looks like work redone rather than undone; if all three attempts
 fail, nothing is written. The narration is never answered from the reply cache — the
 words are cheap to redo and the voice is the expensive part, so the synthesis cache is
-the cache. Untick **Narration** and everything that exists to carry one greys: the
-lines, the preview and the voice picker, while the tick itself stays pressable so
-you can turn it back on. The record is not touched — `narrate/narration.json` is
-left exactly as it is, takes and voice reference included — and Produce drops its
-game-volume slider (keeping the number, so the slider comes back where you left it)
-and renders without lines; an "I'm feeling lucky" run skips Narrate altogether.
-Ticking it back finds everything you had written.
+the cache. There is no narration switch: when a video needs a narration you work on
+this page, and when it does not you leave it alone. A video is narrated exactly when
+its narration has lines with words; Produce speaks those, and with none it renders
+without a voice and its Inputs say "no narration".
 
-The page itself splits into a working column and the lines. Top left: the **Narration** tick, the preview
+The page itself splits into a working column and the lines. Top left: the **Game audio** slider, the preview
 with its transport (back 3 s · ▶ · forward 3 s) and ＋ to start a line at this second, a slider on the
 cut's own clock with the readout `session · cut/length`, and the shared volume. Below it: the voice
 picker — *No audio — captions only*, then Narrator 1..4, then every `.wav` in the voices folder — with
@@ -550,9 +547,7 @@ edges — all here.
 
 **webm is its own answer**: picking it forces vp9 and turns "track in file"
 into "none in the video", and the page says so on the status line rather than
-changing your choice quietly. With **narration off** the Game audio slider
-leaves the settings list but keeps its value, so ticking narration back on
-finds it where you left it. The **images row** takes up to eight pictures:
+changing your choice quietly. The **images row** takes up to eight pictures:
 the first is the base the image model edits, the rest are references your
 instruction can name — a ninth is refused, never silently dropped. Each slot's
 **Change…** swaps that one picture for another file and leaves the slot where it
@@ -793,7 +788,8 @@ waveform; sd.cpp names its loaded weights, and a port answering only `/v1/models
 called out as not sd-server. The model list itself is `GET /v1/models` on a 15 s budget —
 faster than any completion, because a list loads no weights and a slow one means the address
 is wrong rather than the model being cold — and it fills the Model dropdown in the server's
-own order, where Use copies the picked id into Model only if that exact string was listed:
+own order, where Use copies the picked id into the model box entered last (Model, or Decision once the
+person has clicked into it) only if that exact string was listed:
 ids share prefixes between vision and text variants of one base name, so a partial match
 would write an id whose completions fail for a reason nobody can see. And what every model call leaves behind
 ([§7](spec/03-shell.md)): one HTML page per run under `llm/`, named
@@ -887,32 +883,30 @@ files… on Prepare ([F0.12](spec/03-shell.md)): refused while a run works, sinc
 a run of its own; offering audio and video only, and either copying each pick into the
 project's `sources/` — through a `.part` renamed at the end, so an interrupted copy never
 looks like a finished file, and skipping one that is already there at the same size — or
-referencing it where it lies. A video arrives as footage, the first untagged recording
-becomes the narrator only if nobody holds that slot, and the status counts what went in:
+referencing it where it lies. A video arrives as footage, every new row arrives as voice 1, and the status counts what went in:
 "added 2 source(s)", "added 1 of 3 — the rest were already in", "already in the session —
 nothing added". The copy counts on the run bar as it goes — the bar means how much of the import is
 on disk, so it moves with the bytes rather than with the rows — and each accepted file appears in the
 sources list straight away, beside the rows that were already there. And ⟳ Rescan, at the right end of the header bar
 ([F0.11](spec/03-shell.md)): every source whose
 file has gone is dropped from the session and named in the log by the path the row
-shows; narrator slot 1 goes to the first surviving recording, footage only if none
-is left, and only when its holder was the file that went — a slot you untagged
-yourself comes back untagged. The cut and narration are then re-read from disk, so
+shows; the rows left keep their voices, since a voice is shared and nobody's moves
+when another file goes. The cut and narration are then re-read from disk, so
 a file deleted since the last scan reads back empty rather than remembered, and the
 status says "rescanned". Those rows are the sources list (§4): one per source file,
 named by its file name and carrying the stored path as its tooltip. 🎥 footage is
 offered only where there are frames to take, and off means the file is only listened to;
-🎤 cycles the free narrator slots 1-4 and back to none, slot 1 being the voice the
-narration is spoken in and going to the first untagged recording, footage last, whenever
-nothing holds it; ⚠ marks a name with no timestamp in it, since such a file starts where
+🎤 cycles the voices 1-4 and back to 1, never to none: every recording is somebody, voice 1
+is the one the narration is spoken in, and every row starts there; ⚠ marks a name with no timestamp in it, since such a file starts where
 the session does; a file holding two or more audio streams gets a track menu whose face
 reads `<on>/<total>`, and the last ticked track cannot be unticked; ✂ is dead on a file
 that is already half of a split; 🗑 takes the row off the session and leaves the file on
 disk. Two files left with one name stop ▶ until one is renamed, and a project hand-edited
 into a contradiction — two rows in one slot, or footage promised out of an audio file — is
-cleaned as it loads, one log line per change. Language and the frame cadence (Freq) sit
-under the list and write straight through to the session; Style is not in this rewrite —
-the policy sets it from the User Context — and frames are kept at the video's own size.
+cleaned as it loads, one log line per change. Nothing sits under the list: there is no
+frame cadence to choose, since the text check decides which frames the model sees;
+Language and Style are not in this rewrite, the policy sets them from the User Context;
+and frames are kept at the video's own size.
 
 **The editing policy** ([F0.7](spec/03-shell.md)) is what replaces that missing Style
 dropdown, and you see it by pressing ⚙ on the bottom bar or ⓘ in the title bar.
@@ -1004,7 +998,7 @@ standing in for one, so it is dropped with a warning and does not by itself tip 
 refusal.
 
 What Prepare leaves behind is the whole record of one read: `prepare/inputs/meta.env` first, whose presence
-is what says the sources were read at all — `INTERVAL` (Freq) and `SCALE`, always `native` so frames keep
+is what says the sources were read at all — `INTERVAL` (the quarter-second grid the frames sit on) and `SCALE`, always `native` so frames keep
 the video's own size, plus the footage file with its base name and the same pair for narrator 1, each only
 when it resolves. Alongside it go that source's mono 16 kHz audio, its transcripts in three forms, its word
 times plain and aligned, its diarized turns, its scene list and `.frames` marker, its per-frame rows and

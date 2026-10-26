@@ -1,7 +1,7 @@
 //! §03-shell.md §1's bottom band — the run-bar row and the log expander under it, measured where they are
 //! actually DRAWN, and the one rule that decides how tall that band is.
 //!
-//! §1 puts eight badges under the page (**10**-**18**: ▶ run/pause, "I'm feeling lucky", ⏹, the progress
+//! §1 puts the badges under the page (▶ run/pause, ⏹, the progress
 //! bar, then in the same row the `Inputs:` readout, the Outputs folder button and the `Outputs:` count,
 //! and UNDER that row the log expander carrying the status line at its right end) and says the whole thing
 //! twice over: while the log is collapsed "the bottom half is exactly as tall as the run bar row plus the
@@ -33,8 +33,9 @@ pub fn height_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
         .map(|label| label.measure(gtk::Orientation::Vertical, -1).0)
         .unwrap_or_default();
     // ONE sum, not `row.max(header) + header`: §1 counts the run-bar row AND the header, so a header taller
-    // than the row used to be charged twice and left a blank strip under the band.
-    (row + header).max(1)
+    // than the row used to be charged twice and left a blank strip under the band. Plus the bar's own
+    // spacing (§1's margins: above, between and below the two rows), which `window_divider` puts on it.
+    (row + header + crate::ui::margins::BAR_SPACING_PX).max(1)
 }
 
 /// The band's ask for the log's CURRENT state: [`height_px`] while it is collapsed, [`band_px`] once it is
@@ -105,7 +106,8 @@ pub fn opened_px(divider: &gtk::Paned) -> Option<i32> {
     // ask DOWN (`snapshot.rs`), never by growing it. Both halves' minimums are re-read on the next allocation,
     // which the drains below let happen; no manual `size_allocate` (that shrinks a mapped top level ~40 px a
     // pass under xvfb).
-    bottom.set_size_request(-1, body);
+    // Less the bar's margins, which GTK adds outside the request (§1's 8 px above, 12 px below).
+    bottom.set_size_request(-1, body - crate::ui::margins::BAR_MARGINS_PX);
     let band = body;
     let reposition = |divider: &gtk::Paned| {
         divider.set_position(rest_position(divider.height(), band));

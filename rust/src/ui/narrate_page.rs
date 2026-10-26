@@ -2,9 +2,9 @@
 //! spec/inventory/narrate.md §A.1 says (horizontal paned: left = tick + preview + transport + voice
 //! picker + take band + sample + pitch; right = the lines column) and wired thin to the rules.
 //!
-//! No rule lives here. Every number, label and sentence comes from [`crate::narrate_screen`],
-//! [`crate::narrate_details`] or [`crate::narrate_off`]; a handler reads one widget, calls one rules
-//! function and prints what came back on the status line (spec/00-principles.md §5).
+//! No rule lives here. Every number, label and sentence comes from [`crate::narrate_screen`] or
+//! [`crate::narrate_details`]; a handler reads one widget, calls one rules function and prints what came
+//! back on the status line (spec/00-principles.md §5).
 //!
 //! WHY a state holder instead of reading the project: `Project`'s narration and cut sit behind
 //! `window.rs`'s private `session_reads()`, so the page renders a state the flow rounds publish into
@@ -17,7 +17,6 @@ use gtk4 as gtk;
 use crate::cut::Seg;
 use crate::narrate_details;
 use crate::narrate_edit;
-use crate::narrate_off;
 use crate::narrate_preview_leg::{self, PreviewPage};
 use crate::narrate_screen::{self, Audition, Fit};
 use crate::narration::Entry;
@@ -67,7 +66,6 @@ pub struct NarrateState {
     pub started: bool,
     /// A synthesis is running: it outranks the other refusals on the row's ▶.
     pub busy: bool,
-    pub narration_off: bool,
     /// The session spans a recording actually covers, published by the flow that read Prepare. F4.5 S1 asks
     /// these before cueing: a start landing off every span would report itself as playing over a black frame.
     /// Empty means "nothing was published", which `preview_covered` reads as full coverage so a page driven
@@ -97,7 +95,6 @@ thread_local! {
             playing: false,
             started: false,
             busy: false,
-            narration_off: false,
             covered_spans: Vec::new(),
             language: String::new(),
         }) };
@@ -139,7 +136,11 @@ fn install_page_css_once() {
     if PAGE_CSS_LOADED.with(|cell| cell.get()) {
         return;
     }
-    let css = ".narrate-plate { background-color: #1c1c1d; border: 1px solid #000000; }\n";
+    // A line's text box is framed (§1 badge 20, `spec/img/07-narrate.png`): unframed, a white box on the white
+    // lines column cannot be seen, and a fresh line looked like a row with nowhere to type.
+    let css = ".narrate-plate { background-color: #1c1c1d; border: 1px solid #000000; }\n\
+               #narrate-lines textview.line-text { border: 1px solid alpha(currentColor, 0.25); \
+               border-radius: 6px; padding: 4px; }\n";
     let provider = gtk::CssProvider::new();
     provider.load_from_string(css);
     gtk::style_context_add_provider_for_display(
@@ -212,26 +213,32 @@ pub fn build() -> gtk::Widget {
     vsplit.set_start_child(Some(&upper));
     vsplit.set_end_child(Some(&lower));
 
-    // **1** the Narration tick.
-    let tick = gtk::CheckButton::with_label(narrate_off::TICK_LABEL);
-    tick.set_widget_name("narration-tick");
-    tick.set_tooltip_text(Some(narrate_off::TICK_TIP));
-    // The widget's resting state comes from the project's flag, not from a literal: an older project
-    // saved with narration off opens UNTICKED (and greys on the first refresh) instead of drawing a
-    // checked box over a page whose state says `narration_off`.
-    tick.set_active(narrate_off::tick_checked(session_no_narration()));
-    upper.append(&tick);
+    // **1** the game audio level, at the top right of the column: how loud the recording plays under a spoken
+    // line, the narration's own number (it used to sit among Produce's encoder rows). There is no Narration
+    // tick: the page is always live, and a video is narrated when its narration has lines (§1; first rewrite:
+    // a tick here switched the narration off).
+    let top_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    spacer.set_hexpand(true);
+    top_row.append(&spacer);
+    let game_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    game_row.set_widget_name("narrate-game-row");
+    let game_label = gtk::Label::new(Some("Game audio:"));
+    game_label.add_css_class("dim-label");
+    let game = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.02);
+    game.set_widget_name("narrate-game-audio");
+    game.set_size_request(140, -1);
+    game.set_tooltip_text(Some(crate::produce_screen::tooltip("Game audio")));
+    game_row.append(&game_label);
+    game_row.append(&game);
+    top_row.append(&game_row);
+    upper.append(&top_row);
     // §1 (**22**): the row's bracketed halves ("⚠ N clip(s) unwritten, N line(s) off the cut", "· no
     // timeline") are arithmetic over the session files — a clip with no entry and not deliberately silent
     // waits to be written, a line on video the cut dropped is off it (§07 §B) — and a flow publishes the rows,
     // the cut and the voice but never that arithmetic. So the page derives it at the same moment it learns
     // what the project holds, through the same door (`narrate_seed::seed_from_disk` says what may overwrite
     // what a flow published), and a caller that published counts of its own keeps them.
-    if let Some(tree) = crate::ui::window::narrate_session_tree() {
-        let mut seeded = crate::ui::narrate_seed::seed_from_disk(&tree, read_state());
-        crate::ui::narrate_inputs_tally::fill_defaults(&mut seeded, Some(&tree));
-        set_state(seeded);
-    }
 
     // **2** the preview: one fixed 16:9 frame, the same pinned-height trick the Cut page's
     // `preview-panel` uses so GTK cannot collapse it against an expanding sibling.
@@ -269,7 +276,20 @@ pub fn build() -> gtk::Widget {
         press_preview_picture(&crate::ui::window::main_window());
     });
     picture.add_controller(picture_click);
-    preview.append(&picture);
+    // The frame itself (§1 badge 2, "finished frame"): a `Picture` under the painter, showing the extracted frame
+    // at the line or, while the preview plays, the built-in player's own frames (`narrate_picture`). The painter
+    // above it draws only what the cut lays over the footage (masks, stills, titles).
+    let video = gtk::Picture::new();
+    video.set_widget_name("narrate-video");
+    video.set_content_fit(gtk::ContentFit::Contain);
+    video.set_can_shrink(true);
+    video.set_size_request(PREVIEW_FRAME_W_PX, PREVIEW_FRAME_H_PX);
+    video.add_css_class("narrate-plate");
+    let stack = gtk::Overlay::new();
+    stack.set_child(Some(&video));
+    stack.add_overlay(&picture);
+    picture.remove_css_class("narrate-plate");
+    preview.append(&stack);
     upper.append(&preview);
 
     // **3** back 3 s · ▶ · forward 3 s, then **4** ＋ a line at this second.
@@ -476,13 +496,62 @@ fn scrub_is_being_painted() -> bool {
     SYNCING_SCRUB.with(std::cell::Cell::get)
 }
 
+/// §1's transport "▶/⏸": the play button wears ⏸ while the preview plays, sized for both faces so the swap
+/// never moves it. Painted by `refresh` and by every transport change (`publish_transport`).
+pub(crate) fn paint_play_face(window: &adw::ApplicationWindow, playing: bool) {
+    if let Some(play) = crate::ui::line_step_button(window, "narrate-play") {
+        crate::ui::cut_record_play::set_steady_label(
+            &play,
+            if playing { "\u{23f8}" } else { "\u{25b6}" },
+            &["\u{25b6}", "\u{23f8}"],
+        );
+    }
+}
+
+/// Everything that shows where the line is: the clock, the slider, the painted frame and the take band. The
+/// preview's tick and a row's cue both move the line without anything else on the page changing, so they repaint
+/// these and leave the rows alone (a rebuild under a click would take the focus out of the box clicked into).
+fn paint_head(window: &adw::ApplicationWindow) {
+    let s = read_state();
+    if let Some(clock) = label(window, "narrate-clock") {
+        clock.set_text(&clock_text(&s));
+    }
+    sync_scrub(window, &s);
+    // The painted frame walks with the line: the preview's crop, zoom and still are read at `session`, so the
+    // 100 ms tick is what makes the picture move.
+    crate::ui::narrate_picture::repaint(window);
+    crate::ui::narrate_band::repaint(window);
+}
+
+/// §1 badge 5's clock, "session · cut/length". The middle field is where `session` falls in the finished video,
+/// read off the page's clips at every paint. Kept as a second number beside `session`, it was walked only by the
+/// doors that remembered it (the tick, the 3 s buttons) and not by a row's cue, the slider or the wheel, so the
+/// clock read `00:12 · 00:00/00:20` with the line at 12 s on a cut kept whole. In a removed stretch the finished
+/// video's second is the kept length before the line; with no clips published the stored number stands.
+pub(crate) fn clock_text(s: &NarrateState) -> String {
+    let cut_at = if s.segs.is_empty() {
+        s.cut_at
+    } else {
+        crate::cut_play::cut_time(&s.segs, s.session).unwrap_or_else(|| {
+            s.segs
+                .iter()
+                .filter(|seg| seg.e > seg.s && seg.e <= s.session)
+                .map(|seg| seg.e - seg.s)
+                .sum()
+        })
+    };
+    narrate_screen::clock_line(s.session, cut_at, s.length)
+}
+
 /// Repaint the labels, the picker's rows and the line rows from the published state.
 pub fn refresh(window: &adw::ApplicationWindow) {
     install_page_css_once();
     let s = read_state();
     if let Some(clock) = label(window, "narrate-clock") {
-        clock.set_text(&narrate_screen::clock_line(s.session, s.cut_at, s.length));
+        clock.set_text(&clock_text(&s));
     }
+    paint_play_face(window, s.playing);
+    paint_game_audio(window);
     if let Some(band) = widget_in(window, "take-band") {
         band.set_tooltip_text(Some(narrate_screen::band_status(&s.takes)));
     }
@@ -506,10 +575,46 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     // Always re-wired: the rows are rebuilt whole on every refresh, so their handlers go with the old
     // ones. A guard on the count would leave a same-length refresh with dead buttons.
     wire_row_buttons(window);
-    apply_greys(window, s.narration_off);
+}
+
+thread_local! {
+    /// Set while [`draw_rows`] rebuilds the list. GTK selects a row on its own when the selected one is removed
+    /// under the keyboard focus, and F4.5 S5's jump belongs to a person's selection only: the first rewrite let
+    /// that self-selection through, so every refresh after a click on a line (a frame step, a seek) threw the
+    /// preview back to the FIRST line's lead-in.
+    static REBUILDING_ROWS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 fn draw_rows(window: &adw::ApplicationWindow, s: &NarrateState) {
+    let list = widget_in(window, "narrate-lines").and_then(|w| w.downcast::<gtk::ListBox>().ok());
+    // The person's selection and whether the keyboard was in the list, so the rebuilt rows carry both on.
+    let chosen = list
+        .as_ref()
+        .and_then(|list| list.selected_row())
+        .map(|row| row.widget_name());
+    let focused = list
+        .as_ref()
+        .is_some_and(|list| list.focus_child().is_some() || list.has_focus());
+    REBUILDING_ROWS.with(|cell| cell.set(true));
+    draw_rows_now(window, s);
+    if let (Some(list), Some(name)) = (list.as_ref(), chosen) {
+        let mut index = 0;
+        while let Some(row) = list.row_at_index(index) {
+            if row.widget_name() == name {
+                list.select_row(Some(&row));
+                if focused {
+                    row.grab_focus();
+                }
+                break;
+            }
+            index += 1;
+        }
+    }
+    // GTK settles the focus of a removed row later in the same turn of the loop; the guard stays up until then.
+    glib::idle_add_local_once(|| REBUILDING_ROWS.with(|cell| cell.set(false)));
+}
+
+fn draw_rows_now(window: &adw::ApplicationWindow, s: &NarrateState) {
     let Some(list) =
         widget_in(window, "narrate-lines").and_then(|w| w.downcast::<gtk::ListBox>().ok())
     else {
@@ -599,62 +704,6 @@ fn speech_for(tree: Option<&crate::layout::Tree>, entry: &Entry, voice: &str) ->
     }
 }
 
-/// This project's `no_narration` flag as the page reads it at build time. No project folder, or an
-/// unreadable one, reads as narrated: the same default [`crate::project::load`] gives a missing file.
-fn session_no_narration() -> bool {
-    crate::ui::window::narrate_session_tree()
-        .and_then(|tree| crate::project::load(tree.dir()).ok())
-        .map(|project| project.no_narration)
-        .unwrap_or(false)
-}
-
-/// §1 `Off greys lines, preview and voice picker`: exactly the three names the rules module lists,
-/// greyed by the fields of [`narrate_off::Greyed`] rather than by a local bool, so the page cannot
-/// grey something the rule did not name or miss one it did.
-fn apply_greys(window: &adw::ApplicationWindow, off: bool) {
-    // §2 lists the greying as a TAB state, so which page greys what is `tab_states`'s answer, not this
-    // page's guess: it routes to [`crate::narrate_off::greyed`] for Narrate and answers "nothing greys"
-    // for the other three, so a second rule cannot appear here.
-    let greyed = crate::tab_states::greyed(
-        crate::shell::Page::Narrate,
-        &crate::project::Project {
-            no_narration: off,
-            ..Default::default()
-        },
-    );
-    let targets = [
-        ("lines", greyed.lines, "narrate-lines"),
-        ("preview", greyed.preview, "narrate-preview"),
-        ("voice", greyed.voice, "voice-picker"),
-    ];
-    for (which, is_greyed, name) in targets {
-        assert!(
-            narrate_screen::off_greys().contains(&which),
-            "{which} greying off is not one of off_greys()'s three"
-        );
-        if let Some(widget) = widget_in(window, name) {
-            widget.set_sensitive(!is_greyed);
-        }
-    }
-    // The controls that only exist to serve a narration go with them.
-    for name in [
-        "narrate-add-line",
-        "take-band",
-        "take-add",
-        "take-remove",
-        "take-play",
-        "sample-sentence",
-        "sample-play",
-        "sample-stop",
-        "sample-reroll",
-        "pitch-slider",
-    ] {
-        if let Some(widget) = widget_in(window, name) {
-            widget.set_sensitive(!off);
-        }
-    }
-}
-
 pub(crate) fn widget_in(window: &adw::ApplicationWindow, name: &str) -> Option<gtk::Widget> {
     let content = window.content()?;
     crate::ui::window::find_widget_by_name(&content, name)
@@ -688,11 +737,15 @@ impl narrate_preview_leg::PreviewPage for PageDriver {
     }
 
     fn set_head(&self, at: f64) {
-        mutate(|s| s.session = at);
-        // The painted frame walks with the line: the preview's crop, zoom and still are read at
-        // `session`, so the 100 ms tick is what makes the picture move.
-        crate::ui::narrate_picture::repaint(&self.0);
-        crate::ui::narrate_band::repaint(&self.0);
+        mutate(|s| {
+            s.session = at;
+            // The clock's cut half follows the line (§1 badge 5, "session · cut/length").
+            if let Some(cut_at) = crate::cut_play::cut_time(&s.segs, at) {
+                s.cut_at = cut_at;
+            }
+        });
+        // The clock and the slider walk with the line while the preview plays, not only on a press.
+        paint_head(&self.0);
     }
 
     fn tree(&self) -> Option<crate::layout::Tree> {
@@ -728,12 +781,6 @@ impl narrate_preview_leg::PreviewPage for PageDriver {
 
     fn say(&self, said: &str) {
         say(&self.0, said);
-    }
-
-    /// The page's own copy of the project flag (§F4.8): published by `set_narration_off` and seeded from
-    /// the project at build, so the tick never opens `naivepost.json` on a beat.
-    fn no_narration(&self) -> bool {
-        read_state().narration_off
     }
 
     /// §5: the tick ended the preview itself (the picture walked past the last clip), with no ⏹ press to
@@ -855,6 +902,16 @@ pub fn press_narrate_add_line(window: &adw::ApplicationWindow) -> String {
     }
 }
 
+/// Does a recording cover second `at` of a line's clip (§1's "a clip no recording covers speaks alone")? Read off the
+/// filmed spans the page loaded; none published reads as covered, as the preview's own start check does.
+pub(crate) fn line_covered(s: &NarrateState, at: f64) -> bool {
+    s.recording_covers_clip
+        && (s.covered_spans.is_empty()
+            || s.covered_spans
+                .iter()
+                .any(|(from, to)| *from <= at && at < *to))
+}
+
 /// **16** ▶ speak this line: whichever of the six answers the row's own state gives.
 pub fn press_line_speak(window: &adw::ApplicationWindow, index: usize) -> String {
     let s = read_state();
@@ -879,7 +936,7 @@ pub fn press_line_speak(window: &adw::ApplicationWindow, index: usize) -> String
         prev_speaks_at,
         entry.at,
     );
-    let (case, said) = if s.recording_covers_clip {
+    let (case, said) = if line_covered(&s, entry.s + entry.at) {
         (case, said)
     } else {
         narrate_screen::audition_without_recording(case, index + 1)
@@ -968,47 +1025,6 @@ pub fn press_pitch(window: &adw::ApplicationWindow, delta: f64) -> String {
     say(window, &narrate_details::voice_line(&voice, pitch))
 }
 
-/// **1** the Narration tick. Off greys the three things `off_greys()` names and says which they were.
-///
-/// The write goes through [`narrate_off::set_off`], the module that owns the flag, so the tick lands
-/// in `naivepost.json` and survives a reload; F4.8's second node is that it never touches
-/// `narrate/narration.json`, which holds true because `set_off` writes the project file alone. With
-/// no project folder open there is nothing to persist to, so the page keeps its own copy and skips the
-/// write rather than inventing a path.
-pub fn set_narration_off(window: &adw::ApplicationWindow, off: bool) -> String {
-    if let Some(tree) = crate::ui::window::narrate_session_tree() {
-        if let Ok(mut project) = crate::project::load(tree.dir()) {
-            if let Err(why) = narrate_off::set_off(&mut project, &tree, off) {
-                return format!("could not save the narration setting \u{2014} {why}");
-            }
-        }
-    }
-    mutate(|s| s.narration_off = off);
-    // The Produce page keeps its own copy of the same switch, because §08 §A hides its Game-audio row
-    // behind it. Handing it over here is what keeps the two pages answering one fact: a tick moved on the
-    // Narrate page would otherwise leave Produce drawing the slider under a readout that says "no narration".
-    crate::ui::produce_page::note_narration_off(off);
-    // A preview that is already running keeps running unless this stops it: greying the panel only
-    // takes away the controls, so the app would go on playing a narration through greyed-out widgets —
-    // sound coming out of a page whose tick says there is no narration. The tick's answer is that the
-    // narration is off NOW, so the players go with it, through the same door ⏹ uses for its legs.
-    // `narration.json` is still not opened by any of this.
-    if off && read_state().playing {
-        let _ = crate::narrate_preview_leg::stop_running();
-        mutate(|state| state.playing = false);
-    }
-    apply_greys(window, off);
-    let said = if off {
-        format!(
-            "narration off \u{2014} {} greyed",
-            narrate_screen::off_greys().join(", ")
-        )
-    } else {
-        "narration on".to_string()
-    };
-    say(window, &said)
-}
-
 /// F4.6 S1: the voice picker's own seam — one choice, resolved against what Prepare tagged and what
 /// the voices folder holds, then persisted and reported. A refusal is printed verbatim and changes
 /// nothing at all: a half-switched voice would leave the page showing one voice while the next line is
@@ -1056,6 +1072,22 @@ pub(crate) fn voices_dir_label() -> String {
 /// every page: a click handler attached before the widget is inside the realized tree never fires.
 pub fn wire(window: &adw::ApplicationWindow) {
     let win = window.clone();
+    // The page is the opened project's: loaded here, once the window knows its own folder (during the build
+    // it does not yet, and the lookup answered the previous window's or the launch folder's project), and
+    // before the tick is wired so setting its state is not read as a person's press.
+    if let Some(tree) = crate::ui::window::narrate_session_tree() {
+        set_state(crate::ui::narrate_seed::load_page(
+            &tree,
+            crate::ui::window::line_position(window).t,
+        ));
+    }
+    // The pitch slider stands at the loaded shift, set before its handler is connected so this is no drag.
+    if let Some(pitch) =
+        widget_in(&win, "pitch-slider").and_then(|w| w.downcast::<gtk::Scale>().ok())
+    {
+        pitch.set_value(read_state().pitch);
+        crate::ui::narrate_pitch::show_value(&win, read_state().pitch);
+    }
     if let Some(button) = crate::ui::line_step_button(&win, "narrate-back-3s") {
         let w = win.clone();
         button.connect_clicked(move |_| {
@@ -1081,6 +1113,7 @@ pub fn wire(window: &adw::ApplicationWindow) {
         });
     }
     narrate_picker::wire(&win);
+    wire_game_audio(&win);
     // (**6**) the shared preview volume: a drag goes to the one property and nowhere else (F2.5 S6).
     narrate_volume::wire(&win);
     if let Some(button) = crate::ui::line_step_button(&win, "take-add") {
@@ -1126,15 +1159,6 @@ pub fn wire(window: &adw::ApplicationWindow) {
         let w = win.clone();
         button.connect_clicked(move |_| {
             press_sample_reroll(&w);
-        });
-    }
-    if let Some(tick) =
-        widget_in(&win, "narration-tick").and_then(|w| w.downcast::<gtk::CheckButton>().ok())
-    {
-        let w = win.clone();
-        tick.connect_toggled(move |t| {
-            // The tick is checked when there IS a narration, so unchecked means off.
-            set_narration_off(&w, !t.is_active());
         });
     }
     if let Some(pitch) =
@@ -1209,8 +1233,13 @@ pub fn wire(window: &adw::ApplicationWindow) {
     if let Some(list) =
         widget_in(&win, "narrate-lines").and_then(|w| w.downcast::<gtk::ListBox>().ok())
     {
-        list.connect_row_selected(|list, row| {
+        let w = win.clone();
+        list.connect_row_selected(move |list, row| {
             let Some(row) = row else { return };
+            // A selection the rebuild made by itself is no person's choice: the preview stays where it is.
+            if REBUILDING_ROWS.with(|cell| cell.get()) {
+                return;
+            }
             // The empty-state placeholder carries no entry, so it must not move the picture.
             if row.widget_name() == "narrate-lines-empty" {
                 return;
@@ -1228,6 +1257,9 @@ pub fn wire(window: &adw::ApplicationWindow) {
             let entries = read_state().entries;
             if let Some(at) = narrate_preview_leg::lead_in_of(&entries, index) {
                 mutate(|s| s.session = at);
+                // §1: the clock, the slider and the picture follow the line whether it moves by play, by a
+                // seek or by a row; this door moved the number alone, so a paused page kept its old clock.
+                paint_head(&w);
             }
         });
     }
@@ -1240,6 +1272,8 @@ pub fn wire(window: &adw::ApplicationWindow) {
     // And it starts out telling the truth: the slots default to `started: true`, which on the Narrate
     // page would hand the bar to a preview this window has never cued (§5's only-once-started clause).
     crate::ui::narrate_page_transport::publish_transport();
+    // The loaded project on the page: clock, picker, band, rows and greys.
+    refresh(&win);
 }
 
 /// The per-row buttons, wired for however many rows the page currently holds. Called after every refresh
@@ -1298,4 +1332,58 @@ fn wire_row_buttons(window: &adw::ApplicationWindow) {
             });
         }
     }
+}
+
+/// §1's game audio slider: the project's level on the slider, greyed while narration is off (there is no line to
+/// sit under) or while the project's profile sets it (changed in Profiles).
+pub(crate) fn paint_game_audio(window: &adw::ApplicationWindow) {
+    let Some(row) = widget_in(window, "narrate-game-row") else {
+        return;
+    };
+    let Some(scale) =
+        widget_in(window, "narrate-game-audio").and_then(|w| w.downcast::<gtk::Scale>().ok())
+    else {
+        return;
+    };
+    let level = crate::ui::window::narrate_session_tree()
+        .map(|tree| crate::narrate_preview_leg::game_volume_for(&tree))
+        .unwrap_or_else(|| crate::project::Produce::default().game_volume);
+    GAME_GUARD.with(|guard| guard.set(true));
+    if (scale.value() - level).abs() > 1e-9 {
+        scale.set_value(level);
+    }
+    GAME_GUARD.with(|guard| guard.set(false));
+    let set_by = crate::ui::profile_form::sets_row("Game audio");
+    row.set_sensitive(set_by.is_none());
+    row.set_tooltip_text(
+        set_by
+            .map(|name| format!("Set by the profile {name} \u{2014} change it in Profiles"))
+            .as_deref(),
+    );
+}
+
+/// The slider's wire: a hand's move is kept with the encoder settings; the page's own repaint is not a move.
+fn wire_game_audio(window: &adw::ApplicationWindow) {
+    let Some(scale) =
+        widget_in(window, "narrate-game-audio").and_then(|w| w.downcast::<gtk::Scale>().ok())
+    else {
+        return;
+    };
+    scale.connect_value_changed(|scale| {
+        if GAME_GUARD.with(|guard| guard.get()) {
+            return;
+        }
+        let value = scale.value();
+        crate::ui::produce_page::set_game_volume(value);
+        if let Some(session) =
+            crate::ui::window::SESSION.with(|slots| slots.borrow().last().cloned())
+        {
+            session.borrow_mut().produce.game_volume = value;
+        }
+    });
+}
+
+thread_local! {
+    /// Up while the page sets the game audio slider itself.
+    static GAME_GUARD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }

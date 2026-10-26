@@ -617,6 +617,18 @@ impl History {
         true
     }
 
+    /// The present step becomes `cut`, without a new step: a drag spends ONE step on its first move (§7's "one
+    /// Undo per drag") and every later move of the same hold lands here, so Undo goes back to before the drag
+    /// and Redo comes back to where the hand let go. The first rewrite left the present on the drag's first
+    /// tick, so a redo restored a border a few pixels into the drag instead of where it ended.
+    pub fn amend(&mut self, cut: &Cut) {
+        let now = Snapshot::of(cut);
+        match self.snapshots.get_mut(self.at) {
+            Some(present) => *present = now,
+            None => self.push_snapshot(now),
+        }
+    }
+
     /// The body of [`History::push`], working from an already-taken snapshot so `note_change` can compare
     /// the one copy it made instead of hashing the cut twice.
     ///

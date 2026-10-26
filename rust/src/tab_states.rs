@@ -10,17 +10,15 @@
 //! | when it opens | [`crate::shell::lock`] |
 //! | what ▶ runs | [`crate::run::step`] + [`crate::run::transport_for`] |
 //! | refuses without a cut | [`crate::cut::NO_CUT_YET`] / [`crate::cut::exists`] |
-//! | greyed when narration is off | [`crate::narrate_off::greyed`] |
 //! | the three preview modes | [`crate::cut_screen`] (`play_cut_lit`, `review_lit`) |
 //!
 //! Keeping the aggregation separate rather than folding it into `shell` or `run` is what lets a test
-//! ask "what does ▶ do on Narrate with no cut and narration off" without a window and without a
+//! ask "what does ▶ do on Narrate with no cut" without a window and without a
 //! filesystem — see [`play`].
 
 use crate::{
     cut,
     cut_screen::{self, Preview},
-    narrate_off,
     project::Project,
     run::{self, Step},
     shell::{self, Page},
@@ -43,12 +41,6 @@ pub enum Play {
     Refused,
 }
 
-/// §2's refusal sentence for Narrate with narration off. F4.8 spells it in a `String` because the
-/// module also builds refusals from project text; here it is one fixed sentence, so it lives as a
-/// constant rather than being leaked at every call.
-pub const NARRATION_OFF: &str =
-    "this video has no narration \u{2014} tick Narration at the top of this page to write one";
-
 /// Whether the tab opens, `None` meaning it does (§2's second column: "always" for three of them).
 ///
 /// Only Cut waits, and its reason is [`shell::CUT_LOCK`] — the sentence a click bounces with and a
@@ -64,29 +56,11 @@ pub fn opens(page: Page, project: &Project) -> Option<&'static str> {
 /// reads no filesystem and a test can set the state directly. Returns the play meaning and, for the
 /// two refusals, the sentence the status line shows; `(Play::Refused(..), reason)` pairs are kept
 /// together because the bar needs both and a caller must not pick its own words.
-pub fn play(
-    page: Page,
-    project: &Project,
-    has_cut: bool,
-    transport: run::Transport,
-) -> (Play, Option<&'static str>) {
+pub fn play(page: Page, has_cut: bool, transport: run::Transport) -> (Play, Option<&'static str>) {
     // Prepare: "runs Prepare", always. It owns no preview transport ([`run::transport_for`] is
     // None), so neither the cut nor a playing preview can take the button away from it.
     if page == Page::Prepare {
         return (Play::Step(run::step(page)), None);
-    }
-
-    // Narrate with narration off refuses before the missing-cut check. §2 lists the greying as the
-    // state and F4.8 stops the run at its own start with the sentence that names the way back; a
-    // video with no narration will never have a voiced cut either, so naming the tick beats naming
-    // a cut that would not be spoken anyway. (§2 does not order these two refusals.)
-    if page == Page::Narrate && project.no_narration {
-        assert_eq!(
-            Some(NARRATION_OFF.to_string()),
-            narrate_off::refuse_run(true),
-            "the constant here and F4.8's sentence must stay one sentence"
-        );
-        return (Play::Refused, Some(NARRATION_OFF));
     }
 
     // Narrate and Produce refuse without a cut while still opening: §1 keeps both tabs unlocked and
@@ -108,23 +82,6 @@ pub fn play(
     }
 
     (Play::Step(run::step(page)), None)
-}
-
-/// Which parts of the tab's page are greyed (§2: "greyed when narration is off").
-///
-/// Only Narrate greys, and only through [`narrate_off::greyed`] — whose `tick` field is always
-/// false, which is what keeps the tab escapable: turning narration back on must stay pressable on
-/// the page that greys everything else. The other three pages never grey.
-pub fn greyed(page: Page, project: &Project) -> narrate_off::Greyed {
-    match page {
-        Page::Narrate => narrate_off::greyed(project.no_narration),
-        Page::Prepare | Page::Cut | Page::Produce => narrate_off::Greyed {
-            lines: false,
-            preview: false,
-            voice: false,
-            tick: false,
-        },
-    }
 }
 
 /// §2's "one lit, one ⏸": the three Cut preview modes are recording ▶, cut ▶✂ and review ▶✂✂, and

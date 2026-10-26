@@ -236,8 +236,7 @@ fn sec_12_decisions_cut_and_effects_s14_add_effect_takes_a_box_and_reports_the_o
 
 #[test]
 fn sec_12_decisions_cut_and_effects_s14_get_frames_lets_the_pass_look_before_aiming() {
-    let mut batch = Clips::new(&[(1, 12.0, 10.0)]);
-    batch.set_frame_interval(1.0);
+    let batch = Clips::new(&[(1, 12.0, 10.0)]);
     let all = batch.clip_frames(1, None);
     assert_eq!(
         all.len(),

@@ -32,12 +32,17 @@ const HALF_TOLERANCE_PX: f32 = 40.0;
 /// label with its own control, small enough that rows on neighbouring grid lines never merge.
 const SAME_LINE_PX: f32 = 12.0;
 
+/// How far two encoder widgets may overlap in x before it is an overlap: whole pixels of GTK rounding, not a
+/// pair sitting on top of another.
+const OVERLAP_TOLERANCE_PX: f32 = 2.0;
+
 static RAN_SPLIT: AtomicBool = AtomicBool::new(false);
 static RAN_ORDER: AtomicBool = AtomicBool::new(false);
 static RAN_PAIRS: AtomicBool = AtomicBool::new(false);
 static RAN_FITS: AtomicBool = AtomicBool::new(false);
 static RAN_PICTURE: AtomicBool = AtomicBool::new(false);
 static RAN_READABLE: AtomicBool = AtomicBool::new(false);
+static RAN_NO_OVERLAP: AtomicBool = AtomicBool::new(false);
 
 fn produce_window(app: &adw::Application) -> adw::ApplicationWindow {
     let model = naivepost::project::load(&common::fixture_dir()).expect("the fixture loads");
@@ -367,7 +372,7 @@ fn encoder_lines(window: &adw::ApplicationWindow) -> Vec<Vec<(f32, f32, String)>
     let mut placed: Vec<(f32, f32, String)> = Vec::new();
     collect_controls(window, &grid, origin, &mut placed);
     assert!(
-        placed.len() >= naivepost::produce_screen::SETTINGS_ROWS.len(),
+        placed.len() >= naivepost::produce_screen::settings_rows_shown().len(),
         "{ITEM}: every settings row draws a named control: {}",
         placed.len()
     );
@@ -422,7 +427,7 @@ fn check_encoder_pairs_share_lines(window: &adw::ApplicationWindow) {
         .flat_map(|l| l.iter().map(|c| c.2.clone()))
         .collect();
     println!("read back: {read_back:?}");
-    let expected: Vec<String> = naivepost::produce_screen::SETTINGS_ROWS
+    let expected: Vec<String> = naivepost::produce_screen::settings_rows_shown()
         .iter()
         .map(|row| control_name(row))
         .collect();
@@ -495,7 +500,7 @@ fn check_encoder_lines_match_the_picture(window: &adw::ApplicationWindow) {
     let line_of = |name: &str| names.iter().position(|line| line.contains(&name));
     let subtitles = line_of("setting-subtitles").expect("{ITEM}: Subtitles drew a line");
     let quality = line_of("setting-quality--crf").expect("{ITEM}: Quality drew a line");
-    if naivepost::produce_screen::settings_rows_shown(false).contains(&"Game audio") {
+    if naivepost::produce_screen::settings_rows_shown().contains(&"Game audio") {
         let game =
             line_of("setting-game-audio").expect("{ITEM}: narration on means a Game audio line");
         assert!(
@@ -537,7 +542,6 @@ fn shot_like_state() -> ui::produce_page::ProduceState {
     state.game_volume = 0.22;
     state.crf = 24.0;
     state.blurred_edges = true;
-    state.narration_off = false;
     state
 }
 
@@ -621,6 +625,23 @@ fn check_shot_settings_are_readable(window: &adw::ApplicationWindow) {
     RAN_READABLE.store(true, Ordering::SeqCst);
 }
 
+/// The cells of the encoder settings, in attach order: `encoder-settings` holds one grid for the three-pair
+/// lines and one for the two-pair lines (§1: "three on each of the first two lines, two on each line after
+/// them"), and a grid's own children ARE its cells.
+fn grid_cells(settings: &gtk::Widget) -> Vec<gtk::Widget> {
+    let mut cells = Vec::new();
+    let mut grid = settings.first_child();
+    while let Some(g) = grid {
+        let mut cell = g.first_child();
+        while let Some(c) = cell {
+            cell = c.next_sibling();
+            cells.push(c);
+        }
+        grid = g.next_sibling();
+    }
+    cells
+}
+
 /// One cell of the grid: what it is, and where it sits inside `produce-right`'s own x-range.
 fn collect_cells(
     window: &adw::ApplicationWindow,
@@ -641,6 +662,104 @@ fn collect_cells(
     }
 }
 
+/// §A's other sentence about the encoder settings: "each label sits directly left of its own control, and no
+/// label or control overlaps another". The pairing half is already pinned by [`check_encoder_rows_fit_the_column`]
+/// and the grouping by [`check_encoder_lines_match_the_picture`]; what neither looks at is two DIFFERENT pairs on
+/// one line — a wide control (the Subtitles dropdown has to be as wide as "none in the video") reaching into the
+/// cell the next pair's label was placed in. So: every grid cell that takes part in a pair (the row labels plus
+/// every `setting-`/`tick-` control), grouped into lines by the same `SAME_LINE_PX` rule the other checks use,
+/// and no two of them overlapping in x.
+fn check_no_encoder_control_overlaps_another(window: &adw::ApplicationWindow) {
+    let grid = widget(window, "encoder-settings");
+    // (top, left, right, name) for every cell of a pair. A `Grid`'s children ARE the cells, so this walk is one
+    // level deep (the Translate menu is one control, its ticks in its popover).
+    let mut cells: Vec<(f32, f32, f32, String)> = Vec::new();
+    // The grids' OWN children are the cells — one level, no descent into a cell (the Translate menu is one
+    // control, and walking into its popover would add labels that belong to nothing).
+    for cell in grid_cells(&grid) {
+        let Some(b) = cell.compute_bounds(window.upcast_ref::<gtk::Widget>()) else {
+            continue;
+        };
+        let name = cell.widget_name();
+        let label = cell.downcast_ref::<gtk::Label>();
+        let shown = label.map(|l| l.text().to_string()).unwrap_or_default();
+        // A row's label is a `GtkLabel` whose text ends in ':' (§A words every row "Container:", "Frame
+        // timing:", …). Found by type and text, not by an empty name: GTK 4 answers an unnamed widget's name
+        // with its class name ("GtkLabel"), so an empty-name test found no label at all.
+        let is_control = name.starts_with("setting-") || name.starts_with("tick-");
+        let is_label = !is_control && label.is_some() && shown.ends_with(':');
+        if !(is_control || is_label) {
+            continue;
+        }
+        cells.push((
+            b.y(),
+            b.x(),
+            b.x() + b.width(),
+            if is_label {
+                format!("label {shown:?}")
+            } else {
+                name.to_string()
+            },
+        ));
+    }
+    // One control per §A row plus at least one label per row (the grid also carries the two headings that share
+    // a line with a pair, so labels are counted as they are found, not assumed).
+    let controls = cells
+        .iter()
+        .filter(|c| c.3.starts_with("setting-") || c.3.starts_with("tick-"))
+        .count();
+    let labels = cells.len() - controls;
+    assert!(
+        controls >= naivepost::produce_screen::settings_rows_shown().len() && labels >= 2,
+        "{ITEM}: every settings row draws a named control and its own label: {controls} controls, {labels} \
+         labels in {} cells",
+        cells.len()
+    );
+    // Lines, topmost first, by the file's own rule: a cell joins the current line when its top is within
+    // `SAME_LINE_PX` of that line's highest top.
+    let mut sorted = cells.clone();
+    sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    let mut lines: Vec<Vec<(f32, f32, f32, String)>> = Vec::new();
+    for cell in sorted {
+        match lines.last_mut() {
+            Some(line) => {
+                let line_top = line.iter().map(|c| c.0).fold(f32::NEG_INFINITY, f32::max);
+                if (cell.0 - line_top).abs() <= SAME_LINE_PX {
+                    line.push(cell);
+                } else {
+                    lines.push(vec![cell]);
+                }
+            }
+            None => lines.push(vec![cell]),
+        }
+    }
+    for (index, line) in lines.iter().enumerate() {
+        let names: Vec<&str> = line.iter().map(|c| c.3.as_str()).collect();
+        println!("OVERLAP line {}: {names:?}", index + 1);
+        for (i, a) in line.iter().enumerate() {
+            for b in line.iter().skip(i + 1) {
+                let clear = a.2 <= b.1 + OVERLAP_TOLERANCE_PX || b.2 <= a.1 + OVERLAP_TOLERANCE_PX;
+                assert!(
+                    clear,
+                    "{ITEM}: {} and {} overlap on one encoder line: {} spans {:.1}..{:.1} at y={:.1}, \
+                     {} spans {:.1}..{:.1} at y={:.1}",
+                    a.3,
+                    b.3,
+                    a.3,
+                    a.1,
+                    a.2,
+                    a.0,
+                    b.3,
+                    b.1,
+                    b.2,
+                    b.0
+                );
+            }
+        }
+    }
+    RAN_NO_OVERLAP.store(true, Ordering::SeqCst);
+}
+
 /// §A's settings must FIT their column. The grid used to ask for 760 px of width inside a ~596 px half,
 /// so the last items were cut at the right edge ("…Codec: h264 …P…", "Quality (CRF):" with no slider, and
 /// no Preset row at all) and the Title ↻ sat off-screen too. Every drawn control now has to land inside
@@ -652,7 +771,7 @@ fn check_encoder_rows_fit_the_column(window: &adw::ApplicationWindow) {
     let mut cells: Vec<(f32, f32, String)> = Vec::new();
     collect_cells(window, &grid, &mut cells);
     assert!(
-        cells.len() >= naivepost::produce_screen::SETTINGS_ROWS.len(),
+        cells.len() >= naivepost::produce_screen::settings_rows_shown().len(),
         "{ITEM}: every settings row draws a named control: {}",
         cells.len()
     );
@@ -661,11 +780,7 @@ fn check_encoder_rows_fit_the_column(window: &adw::ApplicationWindow) {
     // that control must start at or after the label's right edge (a label whose control starts to its LEFT
     // is one pair sitting on top of another).
     let mut pairs: Vec<(f32, f32, f32, String)> = Vec::new();
-    for node in grid.observe_children().iter::<glib::Object>() {
-        let Ok(obj) = node else { continue };
-        let Ok(cell) = obj.downcast::<gtk::Widget>() else {
-            continue;
-        };
+    for cell in grid_cells(&grid) {
         let Some(b) = cell.compute_bounds(window.upcast_ref::<gtk::Widget>()) else {
             continue;
         };
@@ -749,6 +864,11 @@ fn layout_round() {
         common::settle();
 
         let window = produce_window(app);
+        check_no_encoder_control_overlaps_another(&window);
+        window.close();
+        common::settle();
+
+        let window = produce_window(app);
         check_encoder_lines_match_the_picture(&window);
         window.close();
         common::settle();
@@ -822,5 +942,17 @@ fn sec_08_produce_1_screen_s1_encoder_settings_stay_readable_at_three_to_a_line(
     assert!(
         RAN_READABLE.load(Ordering::SeqCst),
         "{ITEM} s1: the readability check never ran"
+    );
+}
+
+/// §A: "each label sits directly left of its own control, and no label or control overlaps another" — the half
+/// about TWO PAIRS sharing a line, which no other check in this file looks at.
+#[test]
+fn sec_08_produce_1_screen_s1_no_encoder_control_overlaps_another() {
+    common::pin_private_cwd();
+    layout_round();
+    assert!(
+        RAN_NO_OVERLAP.load(Ordering::SeqCst),
+        "{ITEM} s1: the overlap check never ran"
     );
 }

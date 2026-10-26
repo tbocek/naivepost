@@ -217,6 +217,11 @@ fn answer_produce_dialog(response: &str) {
         naivepost::ui::produce_confirm::open_dialog().expect("S2 opened the overwrite dialog");
     dialog.response(response);
     settle();
+    // Overwrite starts the encode on a worker (§03-shell §1): its ending lands before anything is read.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the answer's worker answered"
+    );
     assert!(
         naivepost::ui::produce_confirm::open_dialog().is_none(),
         "and answering closes the dialog"
@@ -228,6 +233,11 @@ fn click_play(window: &adw::ApplicationWindow) -> String {
     ui::play_button(window)
         .expect("the run bar has a play-button")
         .emit_by_name::<()>("clicked", &[]);
+    // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     settle();
     status_text(window)
 }
@@ -249,7 +259,6 @@ fn stale_stamp(tree: &Tree) {
         sources: &project.sources,
         aspect: "",
         voice: "",
-        no_narration: project.no_narration,
         fx: &[],
         lanes: &[],
         shape: (1920, 1080),
@@ -341,6 +350,11 @@ fn run_round(app: &adw::Application) {
         ui::stop_button(&window)
             .expect("the run bar has a stop-button")
             .emit_by_name::<()>("clicked", &[]);
+        // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+        assert!(
+            naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+            "the press's worker answered"
+        );
         settle();
         RAN_RAN_THE_FLOW.store(true, Ordering::SeqCst);
         window.close();
@@ -364,14 +378,15 @@ fn run_round(app: &adw::Application) {
         // Seed the stamp with the hash THIS page will compute: settings from the page, cut from the page.
         let project = base_project();
         let settings = naivepost::project::Produce::default();
+        // The narration's voice as the page reads it: the video is voice 1, so it is that recording's.
+        let voice = naivepost::ui::narrate_seed::project_voice(&tree);
         let input = produce_stamp::Input {
             settings: &settings,
             segs: &cut.segs,
             lines: &[],
             sources: &project.sources,
             aspect: &cut.aspect,
-            voice: "",
-            no_narration: project.no_narration,
+            voice: &voice,
             // The page's own gate hashes the cut's effects and beds too; a seed that left them out would
             // never match and the press would ask to overwrite instead of skipping.
             fx: &cut.fx,
@@ -491,6 +506,11 @@ fn run_round(app: &adw::Application) {
         ui::stop_button(&window)
             .expect("the run bar has a stop-button")
             .emit_by_name::<()>("clicked", &[]);
+        // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+        assert!(
+            naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+            "the press's worker answered"
+        );
         settle();
         RAN_OVERWRITE.store(true, Ordering::SeqCst);
         window.close();
@@ -573,6 +593,11 @@ fn run_round(app: &adw::Application) {
         ui::stop_button(&window)
             .expect("the run bar has a stop-button")
             .emit_by_name::<()>("clicked", &[]);
+        // The press walks on a worker (§03-shell §1): its answer lands before anything is read.
+        assert!(
+            naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+            "the press's worker answered"
+        );
         settle();
         RAN_STOPPED.store(true, Ordering::SeqCst);
         window.close();

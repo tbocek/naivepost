@@ -69,7 +69,6 @@ fn ask(
     body: Option<&[u8]>,
 ) -> Result<server_leg::Sent, String> {
     let cancelled = crate::cancel_leg::cancel_check_now();
-    let text = body.map(|raw| String::from_utf8_lossy(raw).into_owned());
     server_leg::call_dialed(
         tree,
         base,
@@ -78,7 +77,8 @@ fn ask(
             endpoint,
             kind,
             job: None,
-            body: text.as_deref(),
+            // Raw bytes: the voice reference is a WAV, and a lossy text copy of it is not one.
+            body,
             filename,
             cancelled: &cancelled,
             liveness: None,
@@ -214,14 +214,11 @@ pub fn speech_call(
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_string();
-    // §4's slot rule on the voice model: a TTS line takes its model's slot BEFORE the socket opens and gives
-    // it back when the wav is in. Without this every synthesis joins a queue inside audio.cpp, where this app
-    // can neither see nor time it — and `wait_s` would stay empty for the one model that runs per sentence.
-    let slots = services::slots_for(&current_conf(), services::AudioTask::Tts);
+    // §02 §1 on the voice: a TTS line takes its server BEFORE the socket opens and gives it back when the wav
+    // is in. Without this every synthesis joins a queue inside audio.cpp, where this app can neither see nor
+    // time it — and `wait_s` would stay empty for the one model that runs per sentence.
     let (slot, waited) =
-        match crate::slot_gate::hold(&endpoint.url, &model, slots, "speech", &|| {
-            crate::cancel_leg::cancelled()
-        }) {
+        match crate::slot_gate::hold(&endpoint.url, "speech", &|| crate::cancel_leg::cancelled()) {
             Ok(got) => got,
             // ⏹ landed while every voice slot was busy: nothing went out, so this reads as the refusal at the top
             // of this function rather than as a server failure.
@@ -232,8 +229,7 @@ pub fn speech_call(
     let base = row("speech", &model);
     let attempt = crate::request_timing::next_attempt(None);
     let started_ms = epoch_ms();
-    // The wait is reported beside the call rather than folded into it (§10): a row whose `wait_s` is a real
-    // number is how a slot count gets chosen from the log instead of guessed.
+    // The wait is reported beside the call rather than folded into it (§10).
     let mut timer =
         crate::request_timing::Timer::queued((waited * 1000.0).round() as i64, started_ms);
     // One writer for the row, whichever way the dial ended: §09 §10 wants the request on file even
@@ -404,11 +400,8 @@ fn source_file_name(tree: &Tree) -> String {
 /// have a reference built and says so.
 fn narrator_source(tree: &Tree) -> Option<String> {
     let project = crate::project::load(tree.dir()).ok()?;
-    project
-        .sources
-        .iter()
-        .find(|source| source.narrator == 1)
-        .map(|source| source.path.clone())
+    // Voice 1's dedicated microphone when it has one, else its first recording (`sources::narrator_of`).
+    crate::sources::narrator_of(&project, 1).map(str::to_string)
 }
 
 /// Prepare keys everything per source by the file's own stem, not by its full path; that is what

@@ -12,7 +12,6 @@ use common::seg;
 use naivepost::cut::{Cut, Fx, Seg};
 use naivepost::cut_hear;
 use naivepost::narrate_data::{self, Take};
-use naivepost::narrate_off;
 use naivepost::narrate_preview as view;
 use naivepost::narrate_rules as rules;
 use naivepost::narrate_screen as page;
@@ -202,7 +201,7 @@ fn sec_07_narrate_5_rules_s4_empty_text_is_an_answer_not_a_blank() {
     assert!(!record.is_silent(30.0, 40.0));
 
     let spoken = line(10.0, 20.0, 0.0, "words");
-    let kept = narrate_off::lines_to_speak(false, &[blank.clone(), spoken.clone()]);
+    let kept = naivepost::narration::lines_to_speak(&[blank.clone(), spoken.clone()]);
     assert_eq!(kept, vec![spoken], "silence is never sent to the voice");
 }
 
@@ -362,11 +361,6 @@ fn sec_07_narrate_5_rules_s9_a_captions_only_voice_speaks_nothing() {
     assert!(rules::voice_is_captions(page::CAPTIONS));
     assert!(!rules::voice_is_captions("aria"));
 
-    // Two ways a video ends up with nothing spoken — F4.6's voice and F4.8's tick — and each answers on its own.
-    assert!(!rules::speaks_anything(page::CAPTIONS, false));
-    assert!(!rules::speaks_anything("aria", true));
-    assert!(rules::speaks_anything("aria", false));
-
     // The id is the first row of the picker, so nothing has to special-case the label.
     let options = page::voice_options(0, &[]);
     assert_eq!(options[0].id, page::CAPTIONS);
@@ -508,7 +502,8 @@ fn sec_07_narrate_5_rules_s13_a_voice_not_on_offer_leaves_the_picker_empty() {
 
     let options = page::voice_options(2, &["aria"]);
     let ids: Vec<&str> = options.iter().map(|option| option.id.as_str()).collect();
-    assert_eq!(ids, vec!["captions", "narrator1", "narrator2", "aria"]);
+    // Slot 1 is spelled `own` (inventory §voice ids, frozen); 2..4 are `narratorN`.
+    assert_eq!(ids, vec!["captions", "own", "narrator2", "aria"]);
 
     assert_eq!(rules::picker_row(&options, "aria"), Some(3));
     assert_eq!(rules::picker_row(&options, "narrator1"), Some(1));

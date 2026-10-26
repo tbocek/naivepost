@@ -174,6 +174,33 @@ fn f2_8_s1_ruler_ticks_are_whole_second_marks_laid_out_at_the_same_zoom() {
     );
 }
 
+/// F2.8 S1 zoomed in: a step under a second labels each tick with its tenth, so no two ticks read the same
+/// (the first rewrite printed `00:00 00:00 00:01 00:01` at a 0.5 s step), and a 0.2 s step stays on its own
+/// tenths however far it runs.
+#[test]
+fn f2_8_s1_sub_second_ticks_carry_their_tenth_and_never_repeat() {
+    let half: Vec<String> = trim::ruler_ticks(2.0, PPS, 0.5)
+        .into_iter()
+        .map(|(_, label)| label)
+        .collect();
+    assert_eq!(
+        half,
+        ["00:00.0", "00:00.5", "00:01.0", "00:01.5", "00:02.0"]
+    );
+    let fifth: Vec<String> = trim::ruler_ticks(60.0, PPS, 0.2)
+        .into_iter()
+        .map(|(_, label)| label)
+        .collect();
+    let mut unique = fifth.clone();
+    unique.dedup();
+    assert_eq!(unique.len(), fifth.len(), "no two ticks read the same");
+    assert_eq!(
+        fifth.last().map(String::as_str),
+        Some("01:00.0"),
+        "no drift"
+    );
+}
+
 /// F2.8 S1: the ruler stops at the recording's end — a mark with no footage under it asks a question
 /// nobody can answer — and a nonsense span, zoom or spacing answers with no ticks instead of looping.
 #[test]

@@ -72,6 +72,6 @@ fn spoken_entry(tree: &Tree, line: &crate::produce_exec::ToSpeak) -> Entry {
 /// for a session that truly names nothing.
 fn project_language(tree: &Tree) -> String {
     crate::project::load(tree.dir())
-        .map(|opened| opened.language)
+        .map(|opened| opened.policy.language.value)
         .unwrap_or_default()
 }

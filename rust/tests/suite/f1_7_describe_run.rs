@@ -117,6 +117,9 @@ impl Fake {
 /// One scene: a session whose project holds the given sources, frames planted on disk (and optionally
 /// pre-scaled copies), a settings folder whose conf names this scene's stub ffmpeg and this scene's
 /// fake LLM, and the recorded ffmpeg calls.
+/// Describe's heartbeat: the scenes plant one frame per heartbeat, so every planted frame is one describe sends.
+const HEARTBEAT: f64 = naivepost::text_gate::HEARTBEAT_S;
+
 struct Scene {
     root: PathBuf,
     /// The scene's own settings folder, kept so a test could re-point the conf if it needed to.
@@ -163,7 +166,6 @@ impl Scene {
                 sepvoice: false,
                 tracks: vec![],
             }],
-            interval: 1.0,
             context: "a lecture on linear algebra".to_string(),
             ..Default::default()
         };
@@ -355,7 +357,7 @@ fn stubs(tag: &str) -> PathBuf {
 #[test]
 fn f1_7_s1_the_frames_are_scaled_once_into_llmframes() {
     let fake = Fake::start(events_answer(FRAMES_PER_REQ));
-    let scene = Scene::new(1.0, 4, &fake.url);
+    let scene = Scene::new(HEARTBEAT, 4, &fake.url);
     let before = scene.copies().len();
     let (drive, log) = walk(&scene);
     assert!(
@@ -363,7 +365,12 @@ fn f1_7_s1_the_frames_are_scaled_once_into_llmframes() {
         "the row walked: {drive:?} / {log:?}"
     );
     let picked = naivepost::describe::frames_on_disk(&scene.tree.frames_dir(LANE));
-    let expected: Vec<String> = picked.iter().map(|at| describe::scaled_name(*at)).collect();
+    let expected: Vec<String> = picked
+        .iter()
+        .map(|at| {
+            describe::scaled_name(naivepost::describe_scale::name_base(&scene.tree, LANE), *at)
+        })
+        .collect();
     let copies = scene.copies();
     assert_eq!(before, 0, "nothing is pre-scaled by the test");
     assert_eq!(
@@ -396,7 +403,7 @@ fn f1_7_s1_the_frames_are_scaled_once_into_llmframes() {
 #[test]
 fn f1_7_s1_a_second_walk_scales_nothing_again() {
     let fake = Fake::start(events_answer(FRAMES_PER_REQ));
-    let scene = Scene::new(1.0, 4, &fake.url);
+    let scene = Scene::new(HEARTBEAT, 4, &fake.url);
     let (_first, _) = walk(&scene);
     fake.waited(1);
     let calls_after_first = scene.calls().len();
@@ -459,13 +466,13 @@ fn f1_7_s0_an_every_frame_folder_is_refused_and_costs_no_request() {
 #[test]
 fn f1_7_s1_a_frame_that_was_never_extracted_names_itself() {
     let fake = Fake::start(events_answer(1));
-    let scene = Scene::new(1.0, 4, &fake.url);
+    let scene = Scene::new(HEARTBEAT, 4, &fake.url);
     // Remove one STORED frame before anything runs: the leg must refuse that second by name rather than
     // scale three of four and stamp a batch whose pictures do not all exist.
     let gone = scene
         .tree
         .frames_dir(LANE)
-        .join(format!("{}.jpg", frame_name(2.0)));
+        .join(format!("{}.jpg", frame_name(2.0 * HEARTBEAT)));
     std::fs::remove_file(&gone).expect("one stored frame goes");
     let (drive, log) = walk(&scene);
     assert!(
@@ -481,7 +488,7 @@ fn f1_7_s1_a_frame_that_was_never_extracted_names_itself() {
     // grid the marker says was used, so a picture missing from the folder is an error, not a short batch.
     assert!(
         log.iter()
-            .any(|line| line.contains("no scaled frame") && line.contains("00-00-02.000")),
+            .any(|line| line.contains("no scaled frame") && line.contains("00-00-40.000")),
         "the refusal names the picture that is missing: {log:?}"
     );
 }
@@ -491,7 +498,7 @@ fn f1_7_s1_a_frame_that_was_never_extracted_names_itself() {
 #[test]
 fn f1_7_s1_an_alongside_recording_is_logged_with_its_offset() {
     let fake = Fake::start(events_answer(FRAMES_PER_REQ));
-    let mut scene = Scene::new(1.0, 4, &fake.url);
+    let mut scene = Scene::new(HEARTBEAT, 4, &fake.url);
     scene.with_audio("mic.wav");
     let (_drive, log) = walk(&scene);
     // The video starts at second nought, so the mic's placement IS its offset.
@@ -518,7 +525,7 @@ fn f1_7_s1_an_alongside_recording_is_logged_with_its_offset() {
 #[test]
 fn f1_7_s5_and_s6_the_answer_lands_as_one_row_per_frame_plus_the_state() {
     let fake = Fake::start(events_answer(FRAMES_PER_REQ));
-    let scene = Scene::new(1.0, 4, &fake.url);
+    let scene = Scene::new(HEARTBEAT, 4, &fake.url);
     let (_drive, log) = walk(&scene);
     let asks = fake.waited(1);
     assert_eq!(asks.len(), 1, "four frames fit one call: {log:?}");
@@ -574,7 +581,7 @@ fn f1_7_s5_and_s6_the_answer_lands_as_one_row_per_frame_plus_the_state() {
 #[test]
 fn f1_7_s2_a_chunk_already_in_events_tsv_is_not_asked_again() {
     let fake = Fake::start(events_answer(FRAMES_PER_REQ));
-    let scene = Scene::new(1.0, 8, &fake.url);
+    let scene = Scene::new(HEARTBEAT, 8, &fake.url);
     // Eight frames at four a call is two chunks; the first one's START is what marks it answered.
     scene.seed_event_row(0.0, "answered by an earlier run");
     let (_drive, log) = walk(&scene);
@@ -599,7 +606,7 @@ fn f1_7_s2_a_chunk_already_in_events_tsv_is_not_asked_again() {
 #[test]
 fn f1_7_s7_the_pass_ends_with_its_chunk_count() {
     let fake = Fake::start(events_answer(FRAMES_PER_REQ));
-    let scene = Scene::new(1.0, 9, &fake.url);
+    let scene = Scene::new(HEARTBEAT, 9, &fake.url);
     let (_drive, log) = walk(&scene);
     fake.waited(3);
     let said: Vec<&str> = log
@@ -629,7 +636,7 @@ fn f1_7_s7_the_pass_ends_with_its_chunk_count() {
 #[test]
 fn f1_7_s4_an_unchanged_run_answers_from_the_cache() {
     let fake = Fake::start(events_answer(FRAMES_PER_REQ));
-    let scene = Scene::new(1.0, 4, &fake.url);
+    let scene = Scene::new(HEARTBEAT, 4, &fake.url);
     let (_first, _) = walk(&scene);
     fake.waited(1);
     // Wipe the ANSWER files so the second walk cannot lean on S2's row-resume: what remains is the

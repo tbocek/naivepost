@@ -31,15 +31,14 @@ pub const SETTINGS_ROWS: [&str; 13] = [
     "Frame edges",
 ];
 
-/// F4.8: the encoder rows the page draws for one project. With narration off, `Game audio` is not one
-/// of them — there is no voice for the original to sit under, so its slider goes ([`crate::narrate_off`]
-/// owns that rule; this only applies it to the row list rather than restating why). The stored value is
-/// untouched, so ticking Narration back on brings the slider back where the person left it.
-pub fn settings_rows_shown(no_narration: bool) -> Vec<&'static str> {
+/// The encoder rows the Produce page draws: every stored row but `Game audio`, which is the narration's own level
+/// (how loud the recording plays under a spoken line) and so lives on the Narrate page (§07 §1). It is still
+/// stored with the encoder settings, which the render reads.
+pub fn settings_rows_shown() -> Vec<&'static str> {
     SETTINGS_ROWS
         .iter()
         .copied()
-        .filter(|row| *row != "Game audio" || crate::narrate_off::game_volume_shown(no_narration))
+        .filter(|row| *row != "Game audio")
         .collect()
 }
 
@@ -467,8 +466,9 @@ pub fn seed_title(publish: &mut Publish) -> bool {
 pub const NO_CUT_LINE: &str = crate::narrate_details::NO_CUT_LINE;
 
 /// The Inputs row: `N clip(s) · mm:ss`, then which of the two narration states applies — never both — then
-/// whether the upload text exists yet. `to_speak` counts the lines ▶ has to speak, which is what makes the
-/// wait legible before anything runs.
+/// whether the upload text exists yet. `no_narration` is the narration having no line with words (there is no
+/// switch, §07 §1); `to_speak` counts the lines ▶ has to speak, which is what makes the wait legible before
+/// anything runs.
 pub fn inputs_line(
     clips: usize,
     seconds: f64,

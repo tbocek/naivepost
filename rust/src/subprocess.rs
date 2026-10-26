@@ -88,6 +88,30 @@ pub fn run<F: FnMut(&str)>(program: &str, args: &[&str], mut log: F) -> Result<S
     Err(failure(program, args, &combined))
 }
 
+/// [`run`] for a child a run's ⏹ must be able to reach: its pid is on the run's child list
+/// ([`crate::run_stages::list_child`]) from the moment it exists until it is reaped. Same log line, same
+/// answers.
+pub fn run_listed<F: FnMut(&str)>(
+    program: &str,
+    args: &[&str],
+    mut log: F,
+) -> Result<String, String> {
+    log(&log_line(program, args));
+    let child = spawn_piped(program, args)
+        .map_err(|err| format!("{} failed: {err}", shown(program, args)))?;
+    let pid = child.id();
+    crate::run_stages::list_child(pid);
+    let out = child.wait_with_output();
+    crate::run_stages::unlist_child(pid);
+    let out = out.map_err(|err| format!("{} failed: {err}", shown(program, args)))?;
+    let mut combined = String::from_utf8_lossy(&out.stdout).into_owned();
+    combined.push_str(&String::from_utf8_lossy(&out.stderr));
+    if out.status.success() {
+        return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
+    }
+    Err(failure(program, args, &combined))
+}
+
 /// Spawn a tool with piped stdio and hand back the still-running child.
 ///
 /// [`run`] cannot serve a caller that must be able to stop what it started: `.output()` reaps the

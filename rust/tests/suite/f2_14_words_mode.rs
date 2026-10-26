@@ -373,3 +373,38 @@ fn window_round() {
 fn printed(window: &adw::ApplicationWindow) -> String {
     status_text(window)
 }
+
+/// §S2a on a fresh project, the user's case on 07-news (2026-10-26): stamped footage recordings, each one's words
+/// filed under its own name the way Prepare files them, the page's tape published, and NO cut yet. "Every filmed
+/// run trimmed to its words" gives one segment per spoken recording. The first rewrite read the runs from the cut
+/// on screen (empty here) and looked the words up under `cam<N>`, and answered "cut by the words: 0 segments".
+#[test]
+fn f2_14_s2a_a_fresh_project_cuts_by_the_words_of_every_filmed_recording() {
+    let (a, b) = ("2026-10-25 10-28-46", "2026-10-25 10-29-52");
+    let p = Project_::fresh("fresh-words")
+        .with_words(a, &[("first", 2.0), ("take", 20.0)])
+        .with_words(b, &[("second", 1.0), ("take", 30.0)]);
+    // The tape the Cut page publishes once it has measured its recordings: each under its own name, on the
+    // session clock (b starts 66 s after a, as their stamps say).
+    ui::set_session_recordings(&[
+        naivepost::timeline::Recording {
+            base: a.to_string(),
+            start: 0.0,
+            end: 60.0,
+        },
+        naivepost::timeline::Recording {
+            base: b.to_string(),
+            start: 66.0,
+            end: 120.0,
+        },
+    ]);
+    let read = words_run::inputs(&p.tree, &p.project, &Cut::default());
+    let made = naivepost::suggest::words_cut(&read.runs, &read.marks, &read.silences);
+    assert_eq!(
+        made.segs,
+        vec![(1.6, 20.4), (66.6, 96.4)],
+        "one segment per spoken recording, trimmed to its words: {}",
+        made.status
+    );
+    assert_eq!(made.status, "cut by the words: 2 segments");
+}

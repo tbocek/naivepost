@@ -13,7 +13,6 @@
 //! whole page off ([`crate::narrate_off`]).
 
 use crate::cut::NO_CUT_YET;
-use crate::narrate_off::refuse_run;
 use crate::narrate_rewrite::{clips_to_write, log_line, why};
 use crate::narrate_screen::CAPTIONS;
 use crate::narration::{Entry, Narration};
@@ -26,24 +25,15 @@ pub const NO_SESSION_TIMELINE: &str = "run Transcript first \u{2014} no session 
 /// S1: the first thing ▶ says when it will not run, or `None` when every gate is open.
 ///
 /// Order matters more than the set: busy is checked first because a second run started during the first
-/// would overwrite its progress line, narration-off before the timeline because a video with no
-/// narration needs no transcript either, and the missing timeline last since it is the only refusal that
-/// points at another page. Each sentence is the spec's own, em dash (U+2014) included; nothing is
+/// would overwrite its progress line, and the missing timeline last since it is the only refusal that
+/// points at another page. There is no narration-off refusal: the project has no narration switch (§07 §1). Each sentence is the spec's own, em dash (U+2014) included; nothing is
 /// composed here, so a reworded spec fails a test rather than quietly changing what the app says.
-pub fn refuse(
-    busy: bool,
-    has_cut: bool,
-    no_narration: bool,
-    has_session_timeline: bool,
-) -> Option<String> {
+pub fn refuse(busy: bool, has_cut: bool, has_session_timeline: bool) -> Option<String> {
     if busy {
         return Some(crate::run::PAUSING.to_string());
     }
     if !has_cut {
         return Some(NO_CUT_YET.to_string());
-    }
-    if let Some(said) = refuse_run(no_narration) {
-        return Some(said);
     }
     if !has_session_timeline {
         return Some(NO_SESSION_TIMELINE.to_string());

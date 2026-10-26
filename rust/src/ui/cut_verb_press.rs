@@ -94,6 +94,13 @@ pub fn press_delete_key(window: &adw::ApplicationWindow) -> cut_verbs::Outcome {
         &segs,
     );
     report_verb(window, &outcome);
+    // A clip ⌦ took out of the cut is no longer anything to hold: a second ⌦ must not answer for it again.
+    if matches!(outcome, cut_verbs::Outcome::Applied { .. })
+        && ui::held_effect().is_none()
+        && ui::held_segment().is_some()
+    {
+        crate::ui::cut_hand::clear_all();
+    }
     outcome
 }
 
@@ -175,9 +182,9 @@ pub fn report_verb(window: &adw::ApplicationWindow, outcome: &cut_verbs::Outcome
             keeps_selection,
             ..
         } => {
-            // Only a verb that produced segments rewrites the cut; ⌦ on a held card reports through the
-            // status and leaves the list to the round that owns removal of inserts.
-            if !segs.is_empty() {
+            // Only a verb that changed the segments rewrites the cut. Every verb answers the whole list it
+            // leaves, so an emptied cut (⌦ on the last scene) is a change like any other.
+            if *segs != ui::newest_review_cut().segs {
                 ui::set_review_segs(window, segs);
                 let now = ui::newest_review_cut();
                 // cut.json FIRST, then the history: every other door that edits the cut (`remove_effect_at`,

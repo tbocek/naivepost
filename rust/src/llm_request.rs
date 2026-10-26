@@ -178,9 +178,9 @@ pub fn body(
             .iter()
             .map(|tool| json!({
                 "type": "function",
-                // §2 owns each tool's parameter schema; §1 only asks that the offer is sent when there is one,
-                // so this carries the name the model calls and nothing invented about its arguments.
-                "function": { "name": tool.name() },
+                // The name the model calls and §3's arguments: without them a llama.cpp server's grammar
+                // allows only `{}` ([`Tool::parameters`]).
+                "function": { "name": tool.name(), "parameters": tool.parameters() },
             }))
             .collect::<Vec<Value>>());
     }

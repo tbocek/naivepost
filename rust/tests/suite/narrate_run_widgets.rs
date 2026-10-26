@@ -29,7 +29,6 @@ use naivepost::ui;
 use crate::common;
 use common::{fake_audio_server, hold_last_window, release_last_window, settle, status_text};
 
-static RAN_NO_NARRATION: AtomicBool = AtomicBool::new(false);
 static RAN_NO_TIMELINE: AtomicBool = AtomicBool::new(false);
 static RAN_NO_CUT: AtomicBool = AtomicBool::new(false);
 static RAN_WRITTEN_AND_SPOKEN: AtomicBool = AtomicBool::new(false);
@@ -38,6 +37,7 @@ static RAN_STAGE_SEQUENCE: AtomicBool = AtomicBool::new(false);
 static RAN_BLANK_LINE: AtomicBool = AtomicBool::new(false);
 static RAN_PULSED: AtomicBool = AtomicBool::new(false);
 static RAN_STOPPED: AtomicBool = AtomicBool::new(false);
+static RAN_ON_A_WORKER: AtomicBool = AtomicBool::new(false);
 
 static HALF: std::time::Duration = std::time::Duration::from_millis(600);
 static SHORT: std::time::Duration = std::time::Duration::from_millis(1);
@@ -50,12 +50,9 @@ fn session_tree() -> Tree {
 }
 
 /// A project with one footage source, so no tab is locked (`shell::lock`) and the cut has something to
-/// be laid out from. `no_narration` drives the F4.8 refusal.
-fn base_project(no_narration: bool) -> Project {
-    let mut project = Project {
-        no_narration,
-        ..Default::default()
-    };
+/// be laid out from.
+fn base_project() -> Project {
+    let mut project = Project::default();
     project.sources.push(Source {
         path: "/media/take.mp4".into(),
         footage: true,
@@ -155,7 +152,6 @@ fn narrate_window(
         playing: false,
         started: false,
         busy: false,
-        narration_off: project.no_narration,
         // F4.4's inputs, left at "nothing checked": this file drives the F4.1 run, not the speak flow.
         language: String::new(),
         // F4.5's coverage spans: unpublished, read as full coverage of the cut.
@@ -171,6 +167,11 @@ fn click_play(window: &adw::ApplicationWindow) -> String {
     ui::play_button(window)
         .expect("the run bar has a ▶")
         .emit_clicked();
+    // The run's call and speaking pass are a worker's (§03-shell §1); its ending lands on the status line.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+        "the press's worker answered"
+    );
     status_text(window)
 }
 
@@ -231,48 +232,10 @@ fn run_round(app: &adw::Application) {
     // silent pass. (A GTK window whose activate handler never returns leaves `app.run()` holding the
     // main loop; closing every window is what lets it quit.)
     eprintln!("f41-block 1 start");
-    // --- (1) narration off: refused, and NOTHING written --------------------------------------
-    {
-        // A cut stands: with none, the no-cut gate answers first and the narration-off sentence would
-        // never be seen. §F4.1 S1's order is what (2) and (3) pin; this block pins the wording.
-        let project = base_project(true);
-        let tree = seed(
-            &project,
-            &Cut {
-                segs: two_clips(),
-                ..Default::default()
-            },
-            true,
-        );
-        let window = narrate_window(app, &project, Vec::new());
-        let refused = ui::refuse_narrate_run(&project).expect("off means refused");
-        assert_eq!(
-            refused,
-            "this video has no narration \u{2014} tick Narration at the top of this page to write one",
-            "the F4.8 sentence, byte for byte"
-        );
-        let said = ui::press_narrate_run(&window);
-        assert_eq!(said, refused, "the door returns what it refused with");
-        assert_eq!(
-            status_text(&window),
-            refused,
-            "and puts it on the status line"
-        );
-        assert!(
-            !tree.narration_prev_json().exists(),
-            "a refusal writes no narration.prev.json"
-        );
-        assert!(
-            !tree.narration_json().exists(),
-            "a refusal writes no narration.json either"
-        );
-        RAN_NO_NARRATION.store(true, Ordering::SeqCst);
-    }
-
     eprintln!("f41-block 2 start");
     // --- (2) no session timeline -------------------------------------------------------------
     {
-        let project = base_project(false);
+        let project = base_project();
         seed(
             &project,
             &Cut {
@@ -291,7 +254,7 @@ fn run_round(app: &adw::Application) {
     eprintln!("f41-block 3 start");
     // --- (3) no cut --------------------------------------------------------------------------
     {
-        let project = base_project(false);
+        let project = base_project();
         seed(&project, &Cut::default(), true);
         let window = narrate_window(app, &project, Vec::new());
         let said = click_play(&window);
@@ -303,7 +266,7 @@ fn run_round(app: &adw::Application) {
     eprintln!("f41-block 4 start");
     // --- (4) everything present: written, prev kept, spoken -----------------------------------
     {
-        let project = base_project(false);
+        let project = base_project();
         let tree = seed(
             &project,
             &Cut {
@@ -393,7 +356,7 @@ fn run_round(app: &adw::Application) {
     eprintln!("f41-block 5 start");
     // --- (5) captions-only voice: written, none spoken ---------------------------------------
     {
-        let project = base_project(false);
+        let project = base_project();
         let tree = seed(
             &project,
             &Cut {
@@ -425,7 +388,7 @@ fn run_round(app: &adw::Application) {
     eprintln!("f41-block 6 start");
     // --- (6) the bar's stage sequence ran ----------------------------------------------------
     {
-        let project = base_project(false);
+        let project = base_project();
         let _tree = seed(
             &project,
             &Cut {
@@ -459,7 +422,7 @@ fn run_round(app: &adw::Application) {
     eprintln!("f41-block 8 start");
     // --- (8) S3's pulse: the bar moves while the model thinks, then shows the count -------------
     {
-        let project = base_project(false);
+        let project = base_project();
         let tree = seed(
             &project,
             &Cut {
@@ -511,9 +474,11 @@ fn run_round(app: &adw::Application) {
         );
         // And the timer is gone once there was a countable reading: `should_pulse` answers false at
         // the fraction the writing stage carries, so `arm_pulse`'s beat breaks itself.
-        let fraction = ui::run_queue(&window)
-            .expect("this window has a queue")
-            .borrow()
+        // The run closes its bar when its worker answers (§03-shell §1), and a close resets the queue; the
+        // needle keeps the fraction the queue earned, so that is where the countable reading is read.
+        let fraction = find_named(&window, "run-progress")
+            .and_then(|w| w.downcast::<gtk::ProgressBar>().ok())
+            .expect("the run bar has a progress widget")
             .fraction();
         assert!(
             fraction > 0.0,
@@ -553,7 +518,7 @@ fn run_round(app: &adw::Application) {
     eprintln!("f41-block 7 start");
     // --- (7) a blank written line counts as neither spoken nor cached ------------------------
     {
-        let project = base_project(false);
+        let project = base_project();
         let tree = seed(
             &project,
             &Cut {
@@ -599,7 +564,7 @@ fn run_round(app: &adw::Application) {
     eprintln!("f41-block 9 start");
     // --- (9) ⏹ mid-run names the stage it caught (S7's `<stage> stopped`) --------------------------
     {
-        let project = base_project(false);
+        let project = base_project();
         let tree = seed(
             &project,
             &Cut {
@@ -649,6 +614,67 @@ fn run_round(app: &adw::Application) {
         ui::set_narrate_script_slow(&[], SHORT);
         naivepost::cancel_leg::clear();
         RAN_STOPPED.store(true, Ordering::SeqCst);
+    }
+
+    eprintln!("f41-block 10 start");
+    // --- (10) F4.1 runs on a worker: ▶ returns while the model writes, and the real ⏹ reaches the run ---
+    // §07-narrate F4.1 "Where it runs" (§03-shell §1): the call and the speaking pass are the run's worker's,
+    // so the press is back before the first clip is answered, the bar shows the run, and ⏹ pressed on the
+    // window lands between two clips. The first rewrite ran the call inside the handler, so ⏹ could only be
+    // simulated from a side thread (block 9).
+    {
+        let project = base_project();
+        let tree = seed(
+            &project,
+            &Cut {
+                segs: two_clips(),
+                ..Default::default()
+            },
+            true,
+        );
+        let window = narrate_window(app, &project, Vec::new());
+        ui::set_narrate_script_slow(&[(1, 0.0, "one line", ""), (2, 0.0, "two line", "")], HALF);
+        ui::set_narrate_script(&[]);
+        naivepost::cancel_leg::clear();
+        let began = std::time::Instant::now();
+        ui::play_button(&window)
+            .expect("the run bar has a ▶")
+            .emit_clicked();
+        let took = began.elapsed();
+        assert!(
+            took < HALF,
+            "▶ came back before the model answered its first clip, took {took:?}"
+        );
+        assert_eq!(
+            ui::running_step(&window),
+            Some(naivepost::run::Step::Narrate),
+            "the run is open while its worker writes"
+        );
+        ui::stop_button(&window)
+            .expect("the run bar has a ⏹")
+            .emit_clicked();
+        assert!(
+            naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(120)),
+            "the run's worker answered"
+        );
+        assert_eq!(
+            status_text(&window),
+            "narration stopped",
+            "the window's own ⏹ reached the run and named the stage it caught"
+        );
+        assert!(
+            !tree.narration_json().is_file(),
+            "a run stopped before its first line wrote nothing to narration.json"
+        );
+        assert_eq!(
+            ui::running_step(&window),
+            None,
+            "and the run closed when its worker answered"
+        );
+        ui::set_narrate_script(&[]);
+        ui::set_narrate_script_slow(&[], SHORT);
+        naivepost::cancel_leg::clear();
+        RAN_ON_A_WORKER.store(true, Ordering::SeqCst);
     }
 
     // Block 11 used to live here: ▶ pressed over a real socket, watched through the run bar. It is gone
@@ -711,10 +737,6 @@ fn f4_1_run_bar_press_reaches_the_narrate_run() {
     });
 
     assert!(
-        RAN_NO_NARRATION.load(Ordering::SeqCst),
-        "the narration-off block never ran"
-    );
-    assert!(
         RAN_NO_TIMELINE.load(Ordering::SeqCst),
         "the no-timeline block never ran"
     );
@@ -745,5 +767,9 @@ fn f4_1_run_bar_press_reaches_the_narrate_run() {
     assert!(
         RAN_STOPPED.load(Ordering::SeqCst),
         "the stopped-mid-run block never ran"
+    );
+    assert!(
+        RAN_ON_A_WORKER.load(Ordering::SeqCst),
+        "the on-a-worker block never ran"
     );
 }

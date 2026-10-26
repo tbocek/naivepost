@@ -2,13 +2,12 @@
 //!
 //! The item's rules are about a WAIT, so every check here holds a real request on a real socket until it
 //! chooses to let it go, and asks a SECOND one in the middle: the waiting line, the ⏹ that ends a wait, the
-//! wait's number in `requests.tsv`, and one slot count per MODEL rather than per server. Nothing here
-//! drives `llm_liveness::Gate` directly — `tests/suite/llm_liveness_f6_3.rs` already pins those rules on the pure
-//! gate; these prove the wiring (`slot_gate::hold` from `llm_retry_leg`/`audio_task`, and the TTS and image
-//! doors §4 added counts for).
+//! wait's number in `requests.tsv`, and one request at a time per SERVER (02 §1). Nothing here drives
+//! `llm_liveness::Gate` directly — `tests/suite/llm_liveness_f6_3.rs` already pins those rules on the pure gate;
+//! these prove the wiring (`slot_gate::hold` from `llm_retry_leg`/`audio_task`, and the TTS and image doors).
 //!
-//! Process-wide on purpose, so each test keys its own model id and its own loopback port: the gate registry
-//! is one app's set of slots, and cargo runs these as threads of one binary.
+//! Process-wide on purpose, so each test has its own loopback port: the gate registry is one app's set of
+//! servers, and cargo runs these as threads of one binary.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -61,12 +60,12 @@ static SCENARIO: std::sync::OnceLock<Mutex<()>> = std::sync::OnceLock::new();
 struct Pin(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
 
 impl Scene {
-    fn new(label: &str, url: &str, asr: u32, tts: u32, sd: u32) -> Scene {
-        Self::new_with_sd(label, url, url, asr, tts, sd)
+    fn new(label: &str, url: &str) -> Scene {
+        Self::new_with_sd(label, url, url)
     }
 
     /// The same scenario with the DRAW box pointed somewhere of its own (two models, one machine).
-    fn new_with_sd(label: &str, url: &str, sd_url: &str, asr: u32, tts: u32, sd: u32) -> Scene {
+    fn new_with_sd(label: &str, url: &str, sd_url: &str) -> Scene {
         let root = std::env::temp_dir().join(format!(
             "np-f63gate-{label}-{}-{}",
             std::process::id(),
@@ -82,13 +81,8 @@ impl Scene {
             data_dir: root.join("data/naivepost"),
         };
         let mut conf = Conf::default();
-        // ONE fake server behind both boxes: §4's "two models on one server are two slot counts" can only
-        // be proven when the server is the same machine twice.
         conf.audio_server = url.to_string();
         conf.sd_server = sd_url.to_string();
-        conf.slots.asr = asr;
-        conf.slots.tts = tts;
-        conf.slots.sd = sd;
         settings::save(&paths, &conf).expect("the conf");
         Scene {
             paths,
@@ -477,13 +471,13 @@ fn draw_thread(scene: &Scene) -> std::thread::JoinHandle<(bool, String)> {
 fn f6_3_s2_a_waiting_step_says_the_line_once_and_first_come_first_served_holds() {
     pin_env();
     let (url, held, tally) = held_server(asr_answer);
-    let _pin = Scene::new("once", &url, 1, 1, 1).pin();
+    let _pin = Scene::new("once", &url).pin();
     let scene = &_pin;
     let model = "f63-once-asr";
 
     let first = dial_async(scene, "Prepare", model);
     assert!(on_the_wire(&held), "the first dial reached the server");
-    let holders = slot_gate::holders(&url, model);
+    let holders = slot_gate::holders(&url);
     assert_eq!(holders.len(), 1, "one slot, one holder: {holders:?}");
     let busy = holders[0].clone();
 
@@ -525,7 +519,7 @@ fn f6_3_s2_a_waiting_step_says_the_line_once_and_first_come_first_served_holds()
     let said: Vec<String> = second_done
         .logs
         .iter()
-        .filter(|line| line.contains("waiting for") && line.contains("slot(s) busy"))
+        .filter(|line| line.contains("waiting for") && line.contains("busy with"))
         .cloned()
         .collect();
     assert_eq!(
@@ -533,19 +527,16 @@ fn f6_3_s2_a_waiting_step_says_the_line_once_and_first_come_first_served_holds()
         1,
         "the line is said ONCE per queueing spell, not per poll: {said:?}"
     );
-    // §4's line names the STEP; the holder names inside the brackets carry the per-ask `#N` suffix
-    // `slot_gate::hold` adds (two asks of one step are distinct queue members), so what is pinned here is the
-    // part §4 fixes verbatim: the step word, "waiting for <model>", "all N slot(s) busy", and the named holder.
+    // §4's line names the STEP, the server it waits for and the holder; the holder carries the per-ask `#N`
+    // suffix `slot_gate::hold` adds (two asks of one step are distinct queue members).
     assert!(
         said[0].starts_with(">>> Marking")
-            && said[0].contains(&format!(
-                "waiting for {model} -- all 1 slot(s) busy ({busy})"
-            )),
-        "§4 spells the step, the model, the count and the holders: {}",
+            && said[0].contains(&format!("waiting for {url} -- busy with {busy}")),
+        "§4 spells the step, the server and the holder: {}",
         said[0]
     );
     wait_until(
-        || slot_gate::holders(&url, model).is_empty(),
+        || slot_gate::holders(&url).is_empty(),
         "both slots came back",
     );
 }
@@ -555,7 +546,7 @@ fn f6_3_s2_a_waiting_step_says_the_line_once_and_first_come_first_served_holds()
 fn f6_3_s2_the_wait_is_cancellable_by_stop() {
     pin_env();
     let (url, held, _tally) = held_server(asr_answer);
-    let _pin = Scene::new("stop", &url, 1, 1, 1).pin();
+    let _pin = Scene::new("stop", &url).pin();
     let scene = &_pin;
     let model = "f63-stop-asr";
 
@@ -584,7 +575,7 @@ fn f6_3_s2_the_wait_is_cancellable_by_stop() {
     held.release();
     let _ = first.join();
     wait_until(
-        || slot_gate::holders(&url, model).is_empty(),
+        || slot_gate::holders(&url).is_empty(),
         "the held slot came back with its call",
     );
 }
@@ -595,7 +586,7 @@ fn f6_3_s2_the_wait_is_cancellable_by_stop() {
 fn f6_3_s4_a_queued_step_names_the_step_it_waited_behind() {
     pin_env();
     let (url, held, tally) = held_server(asr_answer);
-    let _pin = Scene::new("names", &url, 1, 1, 1).pin();
+    let _pin = Scene::new("names", &url).pin();
     let scene = &_pin;
 
     // (a) behind ANOTHER step: the sentence, naming that step.
@@ -622,9 +613,8 @@ fn f6_3_s4_a_queued_step_names_the_step_it_waited_behind() {
         second_done
             .logs
             .iter()
-            // §4's wording names the step it queued behind; the LLM queue's own phrasing ("it was busy
-            // with <holder>") is what §5's prototype line spells, and the holder carries the gate's ask `#N`.
-            .any(|line| line.contains(">>> Marking") && line.contains("f63-names-other")),
+            // §4's line names the step it queued behind; the holder carries the gate's ask `#N`.
+            .any(|line| line.contains(">>> Marking") && line.contains("busy with Prepare")),
         "§4's prototype line names the step it queued behind: {:?}",
         second_done.logs
     );
@@ -637,7 +627,7 @@ fn f6_3_s4_a_queued_step_names_the_step_it_waited_behind() {
 fn f6_3_s4_a_step_behind_its_own_earlier_call_waits_silently() {
     pin_env();
     let (url2, held2, _tally2) = held_server(asr_answer);
-    let _pin2 = Scene::new("names-self", &url2, 1, 1, 1).pin();
+    let _pin2 = Scene::new("names-self", &url2).pin();
     let scene2 = &_pin2;
     let model_b = "f63-names-self";
     let one = dial_async(scene2, "Publish", model_b);
@@ -664,12 +654,12 @@ fn f6_3_s4_a_step_behind_its_own_earlier_call_waits_silently() {
     );
 }
 
-/// The wait is a number, in the column §10 gives it — the only way a slot count gets chosen from the log.
+/// The wait is a number, in the column §10 gives it.
 #[test]
 fn f6_3_s2_a_slot_wait_lands_in_the_requests_row() {
     pin_env();
     let (url, held, _tally) = held_server(asr_answer);
-    let _pin = Scene::new("row", &url, 1, 1, 1).pin();
+    let _pin = Scene::new("row", &url).pin();
     let scene = &_pin;
     let model = "f63-row-asr";
 
@@ -696,91 +686,76 @@ fn f6_3_s2_a_slot_wait_lands_in_the_requests_row() {
     assert!(secs > 0.0, "and it is a positive number: {row}");
 }
 
-/// Two models on one server are two slot counts: the TTS door and the image door are gated separately, so
-/// one busy voice does not hold up a thumbnail.
+/// One request at a time per server, and different servers side by side (02 §1): while the voice holds the
+/// audio server, a draw on the drawing server goes straight through, and an ASR request to the audio server
+/// waits its turn behind the voice like a second line does.
 #[test]
-fn f6_3_s3_the_image_and_tts_models_take_their_own_slots() {
+fn f6_3_s3_each_server_takes_one_request_and_servers_run_side_by_side() {
     pin_env();
     let (url, held, _tally) = held_server(|path| match path {
         p if p.contains("audio/speech") => speech_answer(p),
-        // The draw answers with a job id, so a submit that REACHES the wire succeeds: that is the point below.
-        p if p.contains("img_gen") => (
-            "application/json".to_string(),
-            br#"{"id":"job-f63"}"#.to_vec(),
-        ),
         other => asr_answer(other),
     });
-    // One fake behind BOTH boxes, and the scenario's conf points the DRAW box at it too, so the two slot
-    // counts under test really do belong to one machine: that is §4's rule, not a coincidence of two ports.
-    let _pin = Scene::new_with_sd("two-models", &url, &url, 1, 1, 1).pin();
+    let (image_url, image_held, _image_tally) = held_server(|_path| {
+        (
+            "application/json".to_string(),
+            br#"{"id":"job-f63"}"#.to_vec(),
+        )
+    });
+    let _pin = Scene::new_with_sd("two-servers", &url, &image_url).pin();
     let scene = &_pin;
-    let voice = "f63-tts-voice";
-    let image_url = url.clone();
 
-    // One speech call holds the only TTS slot.
-    let speaking = speak_thread(scene, voice, "one line", 1);
+    // One speech call holds the audio server.
+    let speaking = speak_thread(scene, "f63-tts-voice", "one line", 1);
     assert!(on_the_wire(&held), "the speech POST reached the server");
     assert_eq!(
-        slot_gate::holders(&url, voice).len(),
+        slot_gate::holders(&url).len(),
         1,
-        "the voice model holds its slot"
+        "the voice holds the audio server"
     );
 
-    // A second speech call waits ...
-    let second_speech = speak_thread(scene, voice, "another line", 2);
-    still_parked(
-        &second_speech,
-        "a second line for the same voice waits behind the first: the voice has ONE slot",
-    );
+    // A second line, and an ASR request to the SAME server, both wait: one request at a time per server.
+    let second_speech = speak_thread(scene, "f63-tts-voice", "another line", 2);
+    still_parked(&second_speech, "a second line waits behind the first");
+    let listening = dial_async(scene, "Prepare", "f63-asr");
+    still_parked(&listening, "an ASR request to the same server waits too");
 
-    // ... while a draw to the SAME server goes straight through: a different model, its own count. The voice
-    // keeps its slot the whole time — nothing is released until this dial has come back — so the only request
-    // the fake can be answering is the draw's.
+    // A draw on its OWN server goes straight through while the audio server is still held.
     let drew = draw_thread(scene);
-    // TWO permits, one per request that reached the fake before the draw returned: the speech POST still held
-    // by `on_the_wire` above, and the draw itself. Permits are a COUNT, not an assignment — each arriving
-    // request spends whichever permit is standing — so releasing only one leaves the other parked on the fake
-    // for its 30 s allowance timeout, and the draw looks like it was held by the voice when it never was.
-    held.release();
-    held.release();
-    // The wait is bounded to 5 s rather than the harness's 15: a draw that DOES end up waiting on the voice's
-    // slot (the failure this pins against) then reads as a fast, named failure instead of eating the budget.
+    image_held.release();
     assert!(
         wait_for(Duration::from_secs(5), || drew.is_finished()),
-        "the draw was not held by the voice's slot"
+        "the draw was not held by the audio server"
     );
     let (drew_ok, why) = drew.join().expect("the draw returned");
-    // What the door resolved its address from, printed with the failure: §1's order is the conf box, then
-    // `SD_SERVER`, then the loopback, so a 1234 here means the scenario pin did not reach the door.
-    let seen_sd = settings::read(&scene.paths)
-        .map(|conf| conf.sd_server)
-        .unwrap_or_else(|why| format!("<no conf: {why}>"));
     assert!(
         drew_ok,
-        "§4: two models on one server are two slot counts, so the draw is not held by the voice: {why} \
-         (conf {} sd_server={seen_sd}, fake={url}, SD_SERVER={:?})",
-        scene.paths.conf_path().display(),
-        std::env::var("SD_SERVER").ok()
+        "a draw on its own server is not held by the voice: {why}"
     );
     assert_eq!(
-        slot_gate::holders(&image_url, "sd.cpp").len(),
+        slot_gate::holders(&image_url).len(),
         0,
-        "and the draw gave its own slot straight back"
+        "the draw gave its server back"
     );
-    // Free the voice so the line queued behind it can go. TWO permits: the first is spent by the draw, which
-    // reached the fake while the voice was still held and is waiting on this side of the counter; the second
-    // answers the queued line itself.
-    held.release();
+
+    // The audio server's queue, first come first served: the first line, then the second, then the ASR.
     held.release();
     let (spoke_ok, _) = speaking.join().expect("speech ended");
     assert!(spoke_ok, "the first line was spoken");
+    held.release();
     wait_until(
         || second_speech.is_finished(),
-        "the queued line went in when the voice freed up",
+        "the second line went in next",
     );
     let (second_ok, second_logs) = second_speech.join().expect("second speech ended");
     assert!(
         second_ok,
         "the queued line was spoken after the wait: {second_logs:?}"
+    );
+    held.release();
+    wait_until(|| listening.is_finished(), "the ASR request went in last");
+    assert!(
+        listening.join().expect("asr ended").ok,
+        "the ASR request was answered"
     );
 }

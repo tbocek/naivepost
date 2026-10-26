@@ -700,7 +700,6 @@ fn base_state() -> ui::NarrateState {
         playing: false,
         started: false,
         busy: false,
-        narration_off: false,
         covered_spans: Vec::new(),
     }
 }

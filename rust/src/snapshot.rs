@@ -33,7 +33,7 @@ fn screen_page(screen: &str) -> Option<&'static str> {
         // No `spec/img/` picture of it; §S7 spells the words, this shows them in place.
         "04-prepared" => Some("Prepare"),
         // §2's own picture is the RUN BAR at rest: ▶ with "Run this step — or resume what is paused",
-        // ⏸ absent, and the gears still. It renders on Prepare because that is the page whose step ▶
+        // ⏸ absent. It renders on Prepare because that is the page whose step ▶
         // stands for when nothing is playing (§F0.2 S4 → F1.1).
         "03-runbar" | "03-runbar-busy" => Some("Prepare"),
         "04-prepare" | "04-prompt-picker" => Some("Prepare"),
@@ -329,8 +329,8 @@ pub fn run(
                 ui::press_zoom(&window, true);
             }
         }
-        // §2's own picture (`spec/img/03-runbar.svg`) is the run bar WITH WORK GOING ON: "the gears turn
-        // while a run computes", and ▶ has become ⏸ "Pause". No snapshot could show that face until now
+        // §2's own picture (`spec/img/03-runbar.svg`) is the run bar WITH WORK GOING ON: the progress bar
+        // has a fraction, and ▶ has become ⏸ "Pause". No snapshot could show that face until now
         // — `run()` drove nothing through `wire_play`, so every shot on disk was the idle one (proved by
         // `03-runbar` rendering byte-identical to `03-window`). Driven through the program's own doors,
         // the way `06-volume` opens its form, never by poking state:
@@ -643,7 +643,7 @@ pub fn run(
         crate::snapshot_effects::paint(&window, &dir, &out, &screen);
         crate::snapshot_preview::paint(&window, &dir, &out, &screen);
         crate::snapshot_narrate::stage(&window, &dir, &screen);
-        crate::snapshot_produce::paint(&window, &screen);
+        crate::snapshot_produce::paint(&window, &screen, &dir);
         // F2.7's three pictures stage their own subject too, through the doors the ＋ / | / － buttons fire
         // (see `snapshot_verbs`). Placed with the other self-staging screens rather than inline above:
         // `run` is past the size another staging block fits in.
@@ -704,8 +704,8 @@ pub fn run(
             // `wire_buttons` wires), with `checks::ffmpeg_verdict`'s own passing sentence rather than an
             // invented one: that is what the spec's picture shows ("the ✓ is a passed ffmpeg test").
             "03-settings" => {
-                // Painted from `pictured_conf` rather than the bare build: §5 gives every model box a
-                // Slots spin, and the picture has to show the two controls as different numbers.
+                // Painted from `pictured_conf` rather than the bare build: §5's picture is of a configured
+                // machine, with its ids in the boxes.
                 let shown = ui::settings::build_from(
                     None,
                     ui::settings::no_probe(),
@@ -814,7 +814,6 @@ pub fn run(
                     &ui::progress_bar(&window).expect("the shell carries a progress bar"),
                     &ui::log_expander(&window).expect("the shell carries the log expander"),
                     &view,
-                    None,
                 );
                 // §S7: the ending is the run's LAST word, which is why it goes back after that close —
                 // the close puts the queue's (now empty) line over the row. Same two lines the ▶ handler

@@ -107,22 +107,32 @@ answering something OpenAI-shaped is NOT sd-server -- the Test says so out loud,
 tenant squatting on 1234 otherwise reads as a server that merely has no capabilities. Only the \
 thumbnail depends on it: down, the render completes and the drawing half fails alone.";
 
-/// §5's ⓘ button for one section: the icon, its stable name, and the explanation as its tooltip.
+/// §5's ⓘ for one section: the icon, its stable name, and the explanation, which a click opens in a popover
+/// beside it and a hover shows as its tooltip. A tooltip alone answered a click with nothing at all.
 ///
 /// Named `settings-info-<key>` so a test and the snapshot find it the way they find every other control
 /// on this dialog. `None` for an unknown key: the caller then draws the heading alone, as it did before.
-pub fn info_button(section: &str) -> Option<gtk::Button> {
+pub fn info_button(section: &str) -> Option<gtk::MenuButton> {
     let text = explanation(section)?;
-    // A text glyph, not an icon name: see [`INFO_GLYPH`] about themes. Circled-letter glyphs render as
-    // squares on the fonts this container ships (observed in `shots/03-settings.png`), and the shell's
-    // own ⓘ is an icon for the same reason -- so this one borrows that icon rather than a codepoint.
-    let button = gtk::Button::from_icon_name(INFO_ICON);
+    // The app's own ⓘ icon: see [`INFO_ICON`] about themes and the circled-letter glyph.
+    let button = gtk::MenuButton::new();
+    button.set_icon_name(INFO_ICON);
     button.set_widget_name(&format!("settings-info-{section}"));
     button.set_tooltip_text(Some(text));
     button.set_valign(gtk::Align::Center);
     button.add_css_class("flat");
-    // The ⓘ is read, not pressed: its whole content is the tooltip, so a press must not look like a
-    // dead control. Sensitive stays true -- an insensitive button shows no tooltip at all.
+    let words = gtk::Label::new(Some(text));
+    words.set_widget_name(&format!("settings-info-text-{section}"));
+    words.set_wrap(true);
+    words.set_max_width_chars(60);
+    words.set_xalign(0.0);
+    words.set_margin_start(8);
+    words.set_margin_end(8);
+    words.set_margin_top(8);
+    words.set_margin_bottom(8);
+    let popover = gtk::Popover::new();
+    popover.set_child(Some(&words));
+    button.set_popover(Some(&popover));
     Some(button)
 }
 

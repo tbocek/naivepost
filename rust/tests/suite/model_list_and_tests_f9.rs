@@ -314,10 +314,12 @@ fn s1_fetch(app: &adw::Application) {
         "/v1/models" => r#"{"data":[{"id":"qwen2.5vl:7b"},{"id":"llama3.2:3b"}]}"#.to_string(),
         other => panic!("only the model list may be asked, saw {other}"),
     });
-    conf_pointing_at(&fake.url, "qwen2.5vl:7b");
+    // Saved: a closed port. Typed in the Server box: the fake. Fetch models lists from what is TYPED there
+    // (§5); it had read the Model box as the address.
+    conf_pointing_at(&closed_port_url(), "qwen2.5vl:7b");
     let window = build_shell(app);
     open_live(&window, settings::no_probe());
-    type_into("llm", &fake.url);
+    type_into("server", &fake.url);
     dialog_button("fetch-models-button").emit_by_name::<()>("clicked", &[]);
     settle();
 
@@ -351,7 +353,7 @@ fn s1_fetch(app: &adw::Application) {
     std::env::remove_var("XDG_DATA_HOME");
 }
 
-/// §9's second half of the list job: Use copies the chosen id into Model, and refuses anything the server
+/// §9's second half of the list job: Use copies the chosen id into Model (or Decision, once entered), and refuses anything the server
 /// did not list. Reached through the buttons, checked against the Model box the press writes.
 #[test]
 fn sec_09_llm_and_tools_9_model_list_and_tests_s2_use_copies_the_listed_id_into_model() {
@@ -370,7 +372,7 @@ fn s2_use(app: &adw::Application) {
     conf_pointing_at(&fake.url, "llama3.2:3b");
     let window = build_shell(app);
     open_live(&window, settings::no_probe());
-    type_into("llm", &fake.url);
+    type_into("server", &fake.url);
     // Nothing chosen yet: the dropdown starts on no selection, so this press has nothing to adopt and
     // `model_list::use_choice` refuses it (Use copies a LISTED id into Model, nothing else).
     dialog_button("use-model-button").emit_by_name::<()>("clicked", &[]);
@@ -416,6 +418,33 @@ fn s2_use(app: &adw::Application) {
     );
     assert_eq!(badge_mark(settings::USE_KEY), "\u{2713}");
     assert_eq!(badge_tip(settings::USE_KEY), "Model set to llama3.2:3b");
+
+    // Use fills the model box entered last: Decision, once the person has been in it.
+    let decision = settings::entry(&window, "decision").expect("the Decision box");
+    let entered = decision
+        .observe_controllers()
+        .iter::<glib::Object>()
+        .flatten()
+        .find_map(|c| c.downcast::<gtk::EventControllerFocus>().ok())
+        .expect("the Decision box notices being entered");
+    entered.emit_by_name::<()>("enter", &[]);
+    list.set_selected(0);
+    dialog_button("use-model-button").emit_by_name::<()>("clicked", &[]);
+    settle();
+    assert_eq!(
+        decision.text().as_str(),
+        "qwen2.5vl:7b",
+        "Use filled Decision"
+    );
+    assert_eq!(
+        settings::entry(&window, "llm")
+            .expect("the Model box")
+            .text()
+            .as_str(),
+        "llama3.2:3b",
+        "and left Model as it was"
+    );
+    assert_eq!(badge_tip(settings::USE_KEY), "Decision set to qwen2.5vl:7b");
     std::env::remove_var("XDG_CONFIG_HOME");
     std::env::remove_var("XDG_DATA_HOME");
 }
@@ -437,7 +466,7 @@ fn s3_down(app: &adw::Application) {
     conf_pointing_at(&dead, "some-model");
     let window = build_shell(app);
     open_live(&window, settings::no_probe());
-    type_into("llm", &dead);
+    type_into("server", &dead);
     dialog_button("fetch-models-button").emit_by_name::<()>("clicked", &[]);
     settle();
 
@@ -484,7 +513,7 @@ fn s4_empty(app: &adw::Application) {
     conf_pointing_at(&fake.url, "some-model");
     let window = build_shell(app);
     open_live(&window, settings::no_probe());
-    type_into("llm", &fake.url);
+    type_into("server", &fake.url);
     dialog_button("fetch-models-button").emit_by_name::<()>("clicked", &[]);
     settle();
 
@@ -528,7 +557,8 @@ fn s5_completion(app: &adw::Application) {
     conf_pointing_at(&fake.url, "qwen2.5vl:7b");
     let window = build_shell(app);
     open_live(&window, settings::no_probe());
-    type_into("llm", &fake.url);
+    // The address in the Server box, the id in the Model box (§5).
+    type_into("server", &fake.url);
     ui::test_button(&window, "llm")
         .expect("the LLM row has a Test button")
         .emit_by_name::<()>("clicked", &[]);
@@ -684,7 +714,7 @@ fn s7_blank(app: &adw::Application) {
     conf_pointing_at(&blank.url, "qwen2.5vl:7b");
     let window = build_shell(app);
     open_live(&window, settings::no_probe());
-    type_into("llm", &blank.url);
+    type_into("server", &blank.url);
     ui::test_button(&window, "llm")
         .expect("the LLM row has a Test button")
         .emit_by_name::<()>("clicked", &[]);

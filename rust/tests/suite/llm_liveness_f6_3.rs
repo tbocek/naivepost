@@ -18,7 +18,6 @@
 use naivepost::llm_liveness as live;
 use naivepost::params;
 use naivepost::produce_render as render;
-use naivepost::settings::Slots;
 
 const ITEM: &str = "F6.3";
 
@@ -322,7 +321,7 @@ fn f6_3_s2_a_busy_model_queues_the_next_step_and_says_so_once() {
     assert_eq!(
         second,
         live::Acquisition::Waiting {
-            log: ">>> narrate: waiting for llm -- all 1 slot(s) busy (publish)".to_string()
+            log: ">>> narrate: waiting for llm -- busy with publish".to_string()
         }
     );
     // Said once. A caller polls this every few seconds, so repeating it would bury the log in one fact.
@@ -391,85 +390,30 @@ fn f6_3_s2_a_busy_model_queues_the_next_step_and_says_so_once() {
 }
 
 #[test]
-fn f6_3_s2_every_model_has_its_own_count_and_the_default_is_one() {
-    assert!(item("slots per model").starts_with(ITEM), "{ITEM}");
-    // P.machine.slots: default 1, one count per model. All seven of §4's list — the LLM, each audio.cpp model and
-    // the image model — start at one request at a time.
-    let defaults = Slots::default();
-    for (name, count) in [
-        ("llm", defaults.llm),
-        ("asr", defaults.asr),
-        ("diar", defaults.diar),
-        ("align", defaults.align),
-        ("tts", defaults.tts),
-        ("sep", defaults.sep),
-        ("sd", defaults.sd),
-    ] {
-        assert_eq!(count, live::DEFAULT_SLOTS, "{name}");
-        assert_eq!(count, 1, "P.machine.slots default: {name}");
-    }
-
-    // Two models on one server are two slot counts (§5): a full LLM gate says nothing about the ASR gate. The
-    // Settings text says why that is not twice the hardware — "two models on one GPU share it however this is
-    // set" — so sharing a machine must not merge the counts, and here it cannot: they are separate gates.
-    let mut llm = live::Gate::new("llm", 2);
-    llm.acquire("publish");
-    llm.acquire("narrate");
+fn f6_3_s2_each_server_has_its_own_gate_of_one_turn() {
+    assert!(item("one turn per server").starts_with(ITEM), "{ITEM}");
+    // 02 §1: each server is given one of this app's requests at a time, and requests to different servers run
+    // side by side. A busy LLM server says nothing about the audio server: they are separate gates.
+    let mut llm = live::Gate::new("https://ai.example/upstream/llamacpp", 1);
+    assert_eq!(llm.acquire("publish"), live::Acquisition::Taken);
     assert!(
         matches!(llm.acquire("suggest"), live::Acquisition::Waiting { .. }),
-        "the LLM is full"
+        "the LLM server is busy"
     );
-    let mut asr = live::Gate::new("asr", 2);
+    let mut audio = live::Gate::new("https://ai.example/upstream/audiocpp", 1);
     assert_eq!(
-        asr.acquire("transcribe"),
+        audio.acquire("transcribe"),
         live::Acquisition::Taken,
-        "audio.cpp has its own slots"
+        "the audio server takes its own request meanwhile"
     );
 
-    // §5's spin range, 1 to 16: Settings keeps what was typed, so a caller clamps when it builds a gate. A stale
-    // conf of 0 would make a gate nothing can ever enter.
+    // The gate itself takes any count; a wild one is clamped, so a gate is never one nothing can enter.
     assert_eq!(live::clamped_slots(0), live::SLOTS_MIN);
     assert_eq!(live::clamped_slots(4), 4);
     assert_eq!(live::clamped_slots(live::SLOTS_MAX), live::SLOTS_MAX);
     assert_eq!(live::clamped_slots(40), live::SLOTS_MAX);
-    // A gate built from a wild count still admits someone.
     let mut zero = live::Gate::new("llm", 0);
     assert_eq!(zero.acquire("publish"), live::Acquisition::Taken);
-
-    // Two boxes pointing at one machine: worth a warning, never a merged count.
-    // One address, two boxes: worth the warning.
-    assert!(live::shares_a_server(
-        "http://127.0.0.1:8731",
-        "http://127.0.0.1:8731/v1"
-    ));
-    assert!(
-        !live::shares_a_server("llama:8080", "http://llama:8080/"),
-        "a bare host reads as https, which is a different address"
-    );
-    assert!(live::shares_a_server(
-        "https://llama:8080/",
-        "http://llama:8080".replace("http", "https").as_str()
-    ));
-    // Different host or port: not claimed as shared — and two ports on one machine are not either, because that
-    // would need DNS to know, and a warning that fires on every install teaches nobody to read it.
-    // Different hosts are not shared, and neither is one host on two ports — that is two servers by agreement.
-    assert!(!live::shares_a_server(
-        "http://llama:8080",
-        "http://audiocpp:8765"
-    ));
-    assert!(!live::shares_a_server(
-        "http://127.0.0.1:8731",
-        "http://127.0.0.1:8765"
-    ));
-    // The same host and port is, whatever path each box adds afterwards: one server wearing two prefixes.
-    assert!(live::shares_a_server(
-        "http://host:1234/sd",
-        "http://host:1234/v1"
-    ));
-    assert!(
-        !live::shares_a_server("", "http://host:80/sd"),
-        "an empty box is no server"
-    );
 }
 
 #[test]
@@ -582,9 +526,8 @@ fn f6_3_s3_independent_requests_may_use_every_slot_dependent_ones_never() {
 #[test]
 fn f6_3_s4_one_slot_reproduces_the_prototype_and_a_step_behind_itself_is_silent() {
     assert!(item("one at a time").starts_with(ITEM), "{ITEM}");
-    // The prototype held the LLM to one request at a time in code; P.machine.slots defaults to 1, so the shipped
-    // default is that behaviour with a knob on top of it.
-    let mut gate = live::Gate::new("llm", live::DEFAULT_SLOTS);
+    // The prototype held the LLM to one request at a time in code; the rewrite holds every server to that.
+    let mut gate = live::Gate::new("llm", 1);
     assert_eq!(gate.acquire("publish"), live::Acquisition::Taken);
     assert!(
         matches!(gate.acquire("narrate"), live::Acquisition::Waiting { .. }),
@@ -611,7 +554,7 @@ fn f6_3_s4_one_slot_reproduces_the_prototype_and_a_step_behind_itself_is_silent(
     };
     assert_eq!(
         log,
-        ">>> narrate: waiting for llm -- all 2 slot(s) busy (describe, fix)"
+        ">>> narrate: waiting for llm -- busy with describe, fix"
     );
 
     // Produce runs its translation after the encodes so the encoder never idles behind the gate — that ordering
@@ -643,10 +586,8 @@ fn f6_3_s5_the_three_numbers_are_catalogued_and_have_one_home() {
     assert_eq!(whole.from, "llm_liveness::WHOLE_MINUTES");
     assert_eq!(params::family("P.eng.llmWholeMinutes"), params::Family::Eng);
 
-    let slots = params::find("P.machine.slots").expect("catalogued");
-    assert_eq!(slots.spelled, "1");
-    assert_eq!(slots.from, "llm_liveness::DEFAULT_SLOTS");
-    assert_eq!(params::family("P.machine.slots"), params::Family::Machine);
+    // No per-model count is catalogued any more: requests go one at a time per server (02 §1).
+    assert!(params::find("P.machine.slots").is_none());
 
     // The module reads them by name: no second copy of either bound where a change would miss it.
     let source =

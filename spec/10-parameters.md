@@ -8,7 +8,7 @@ Every prototype constant, with meaning and proposed home ([`00-principles.md` §
 
 ## 1. Machine settings (Settings dialog / llm.conf)
 
-LLM server (empty = `http://127.0.0.1:8731`), LLM model, LLM key; audio.cpp server (8765), key, voices folder (/mnt/models/audiocpp/voices; Flatpak: data home), ASR model (nemotron-asr), diarization model (sortformer-diar), TTS model (index-tts2), separation model (bs-roformer), aligner (none → prefer qwen3-aligner); ffmpeg path (empty = PATH; ffprobe beside it); firefox path or "off"; sd.cpp server (1234), key; remembered last project per root. Proposed additions: subtitle languages list (en/eng/English, de/deu/German, fr/fra/French), P.machine.slots (new; one count per model — LLM, each audio.cpp model, image model — default 1: requests to that model on the wire at once, the rest wait their turn; [09 §4](09-llm-and-tools.md#4-liveness-and-the-gate-f63); prototype: the LLM fixed at one in code, the others unlimited), P.machine.describeFrameWidth (new; 896 — the width every frame is scaled to before it goes to the vision model, height by aspect: a 16:9 frame is 896×504. A setting of the model, not of the edit: Qwen-VL reads images in 28-px patches and 896 = 32 × 28, so a 16:9 frame is 576 patches with nothing padded; Gemma 3 rescales to 896×896 anyway; Claude, GPT and LLaVA resize or tile to their own sizes, and 896 wide sits inside what they take. Prototype: fixed in code, `scale=896:-2`), and two bounds (new): P.machine.promptMaxChars (120 000, most one request may carry, [`09-llm-and-tools.md` §5](09-llm-and-tools.md#5-context-budgets-new)) and P.machine.briefMaxChars (120 000, the upload brief).
+LLM server (empty = `http://127.0.0.1:8731`), LLM model, LLM key, decision model (new, `DECISION_MODEL`: a fast vision model on the same server for F1.6 S6's text gate; empty = the main model judges, the gate always runs); audio.cpp server (8765), key, voices folder (/mnt/models/audiocpp/voices; Flatpak: data home), ASR model (nemotron-asr), diarization model (sortformer-diar), TTS model (index-tts2), separation model (bs-roformer), aligner (none → prefer qwen3-aligner); ffmpeg path (empty = PATH; ffprobe beside it); firefox path or "off"; sd.cpp server (1234), key; remembered last project per root. Proposed additions: subtitle languages list (en/eng/English, de/deu/German, fr/fra/French), P.machine.describeFrameWidth (new; 896 — the width every frame is scaled to before it goes to the vision model, height by aspect: a 16:9 frame is 896×504. A setting of the model, not of the edit: Qwen-VL reads images in 28-px patches and 896 = 32 × 28, so a 16:9 frame is 576 patches with nothing padded; Gemma 3 rescales to 896×896 anyway; Claude, GPT and LLaVA resize or tile to their own sizes, and 896 wide sits inside what they take. Prototype: fixed in code, `scale=896:-2`), and two bounds (new): P.machine.promptMaxChars (120 000, most one request may carry, [`09-llm-and-tools.md` §5](09-llm-and-tools.md#5-context-budgets-new)) and P.machine.briefMaxChars (120 000, the upload brief).
 
 ### 1.1 Tuning values (llm.conf only, no dialog box)
 
@@ -70,6 +70,7 @@ What the finished video is like: lengths, silences, budgets, what runs. One row 
 | parameter | default | meaning | prototype constant |
 |---|---|---|---|
 | P.policy.targetLengthSeconds | 0 (none) | finished length the cut aims at | ctxLength regex over the context |
+| P.policy.language | en | the language the recordings are spoken in, as its code (two or three lower-case letters: en, de, fr): what ASR and alignment are told and what the voice speaks. Said in the User Context, set by F0.7 like every field here | the Language box on Prepare (`Project.Language`) |
 | P.policy.shortTargetSeconds | 60 | a target up to this is a format (footage window narrows to ×[0.6, 1.2]); above it a wish | shortTarget |
 | P.policy.minTakeSeconds | 2.0 | a shorter recording is a start/stop: written up as silence, no server asked | shortTake |
 | P.policy.minSceneSeconds | 1.0 | shortest stretch worth suggesting, keeping or copying | minSegLn |
@@ -88,7 +89,7 @@ What the finished video is like: lengths, silences, budgets, what runs. One row 
 | P.policy.narrationRewrite | off | ▶ on Narrate rewrites the lines that exist too; off: only clips without one get a line (new; prototype: always every line) |  |
 | P.policy.narrationMaxWords | 30 | per-clip word ceiling | narrBudget |
 | P.policy.narrationWordsPerSecond | 0.75 | words a clip second affords | narrBudget |
-| P.policy.ttsLanguage | project language | prototype hard-coded "en" |  |
+| P.policy.ttsLanguage | P.policy.language | prototype hard-coded "en" |  |
 | P.policy.narratorSlots | 4 |  | narratorSlots |
 | P.policy.gameVolume | 0.22 | game audio under the narration | GameVol |
 | P.policy.subtitleBreakSeconds | 0.6 | cue building: a pause that breaks a cue | subBreak |
@@ -107,11 +108,11 @@ What the finished video is like: lengths, silences, budgets, what runs. One row 
 
 ## 3. Project settings (tab controls)
 
-P.project.frameInterval (Freq: seconds between frames sent to the describe model, counted from each scene change; stops 0.25, 0.5, 1, 2, 3, 4, 5; default 1 — prototype: the extraction interval, stops 0, 0.1, 0.2, 0.5, 1 … 5), language (en), narration on/off, copy sources (on), the User Context; encoder settings (mp4, h264, CRF 24, slow (prototype: veryslow), 1080, 30 fps, 128 kbit/s, subtitles none, no languages, VFR off, mono off, blurred edges on); publish state; aspect (source).
+Copy sources (on) (Narration on/off is gone: there is no narration switch, [07 §1](07-narrate.md#1-screen); P.project.frameInterval is gone with Freq: describe sees the text gate's changes and a 20 s heartbeat; first rewrite: stops 0.25 to 5, default 1; prototype: the extraction interval, stops 0, 0.1, 0.2, 0.5, 1 … 5), the User Context; encoder settings (mp4, h264, CRF 24, slow (prototype: veryslow), 1080, 30 fps, 128 kbit/s, subtitles none, no languages, VFR off, mono off, blurred edges on); publish state; aspect (source).
 
 ## 4. Prompts
 
-system, describe, fix, retake, textedit, cut, captions, speed, effects, narrate, translate, youtube ([`prompts/`](prompts)); new: policy. Thinking on for textedit, cut, narrate, youtube; off elsewhere.
+system, describe, fix, retake, textedit, cut, captions, speed, effects, narrate, translate, youtube ([`prompts/`](prompts)); new: policy, [textgate](prompts/textgate.md) (F1.6 S6's judge, asked of the decision model). Thinking on for textedit, cut, narrate, youtube; off elsewhere. What a step sends is, for a project using a profile with a section for the step, that section in place of the shipped wording, else the shipped wording ([03 §5b](03-shell.md#5b-profiles-new)); per-machine prompt files are no longer read.
 
 ## 5. Engineering constants (fixed in code)
 

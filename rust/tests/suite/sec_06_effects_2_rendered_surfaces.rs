@@ -154,6 +154,8 @@ fn probe_scene(cut: &Cut, width: i32) -> Scene {
             start: 0.0,
             end: 400.0,
         }],
+        recording_rows: Vec::new(),
+        marks: Default::default(),
         folds: Vec::new(),
         selection: None,
         watched_row: None,
@@ -745,5 +747,54 @@ fn sec_06_effects_2_the_lane_and_the_preview_s2_the_staged_frame_states_crop_pla
             .any(|(_, kind, _)| *kind == EffectKind::Text),
         "the placed caption is not among the visible overlays: {:?}",
         listed.overlays
+    );
+}
+
+/// §2's "rect stroked white", on a panel wider than the picture: the panel's `GtkPicture` contains the footage and
+/// centres it, so the camera rect (here the whole frame: no zoom) has to be stroked around the CENTRED picture.
+/// Painted from the panel's corner it stood inside the picture as a white bar where the picture's width ended.
+#[test]
+fn sec_06_effects_2_the_lane_and_the_preview_the_camera_rect_sits_on_the_centred_picture() {
+    let panel = (846.0, 320.0);
+    let fit = cut_preview_frame::fit_size(1920.0, 1080.0, panel.0, panel.1);
+    let frame = cut_preview_frame::Frame {
+        cut: Cut::default(),
+        t: 0.0,
+        held: None,
+        drawing_box: false,
+        box_px: None,
+        playing: false,
+        camera_down: false,
+        fit,
+    };
+    let seen = cut_preview_frame::observe(&frame, None);
+    let mut surface =
+        cairo::ImageSurface::create(cairo::Format::ARgb32, panel.0 as i32, panel.1 as i32)
+            .expect("a surface");
+    {
+        let cr = cairo::Context::new(&surface).expect("a context");
+        cut_preview_frame::paint_in_panel(&cr, &frame, &seen, panel);
+    }
+    surface.flush();
+    let stride = surface.stride() as usize;
+    let data = surface.data().expect("pixels");
+    // White within a pixel of `x`: the stroke straddles the edge it is drawn on.
+    let white_at = |x: f64| {
+        let row = (panel.1 as usize / 2) * stride;
+        (x.floor() as usize - 1..=x.ceil() as usize).any(|px| {
+            let i = row + px.min(panel.0 as usize - 1) * 4;
+            data[i] > 200 && data[i + 1] > 200 && data[i + 2] > 200 && data[i + 3] > 200
+        })
+    };
+    let left = (panel.0 - fit.0) / 2.0;
+    let right = left + fit.0;
+    assert!(
+        white_at(left) && white_at(right),
+        "the rect is stroked on the picture's own edges, {left:.0} and {right:.0}"
+    );
+    assert!(
+        !white_at(fit.0),
+        "and not where the picture's width ends counted from the panel's corner ({:.0})",
+        fit.0
     );
 }

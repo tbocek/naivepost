@@ -1,13 +1,13 @@
-//! §02-services.md **§1 The four servers**, its first sentence: "each model is given at most its
-//! Settings slot count of requests at once ([09 §4](spec/09-llm-and-tools.md#4-liveness-and-the-gate-f63))".
+//! §02-services.md **§1 The four servers**, its first sentence: "each server is given one of this app's
+//! requests at a time; requests to different servers run side by side ([09 §4](spec/09-llm-and-tools.md#4-liveness-and-the-gate-f63))".
 //!
 //! Item id: `sec_02_services_1_the_four_servers`. These drive the real dial
 //! ([`naivepost::audio_task::dial`]) against a loopback server that holds the connection open until the
 //! test lets it go, so the gate is proven where §1 puts it — around the HTTP call — rather than on the
 //! gate alone. **s6** is this item's slot sentence.
 //!
-//! Each test uses its own model id and its own fake server, because the registry is process-wide by
-//! design (one app, one set of slots per model) and cargo runs these as threads of one binary.
+//! Each test uses its own fake server, because the registry is process-wide by design (one app, one gate
+//! per server) and cargo runs these as threads of one binary.
 
 use std::io::{BufRead, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -20,13 +20,13 @@ use naivepost::bodies::{self, ServerPath};
 use naivepost::settings::{self, Conf, Paths};
 use naivepost::slot_gate;
 
-/// A temp config folder pointing the audio box at a fake server, with the slot count §6 spells per task.
+/// A temp config folder pointing the audio box at a fake server.
 struct Dirs {
     paths: Paths,
 }
 
 impl Dirs {
-    fn new(label: &str, url: &str, asr_slots: u32) -> Self {
+    fn new(label: &str, url: &str) -> Self {
         let root = std::env::temp_dir().join(format!(
             "np-svcs6-{label}-{pid}-{n}",
             pid = std::process::id(),
@@ -39,7 +39,6 @@ impl Dirs {
         };
         let mut conf = Conf::default();
         conf.audio_server = url.to_string();
-        conf.slots.asr = asr_slots;
         settings::save(&paths, &conf).expect("the conf");
         Dirs { paths }
     }
@@ -204,7 +203,7 @@ fn dial_async(
 fn sec_02_services_1_the_four_servers_s6_one_slot_admits_one_request_at_a_time() {
     let (url, releaser) = held_server();
     pin_env();
-    let dirs = Box::leak(Box::new(Dirs::new("s6a", &url, 1)));
+    let dirs = Box::leak(Box::new(Dirs::new("s6a", &url)));
     let model = "gate-one-slot";
 
     let first = dial_async(dirs, "Prepare", model);
@@ -213,7 +212,7 @@ fn sec_02_services_1_the_four_servers_s6_one_slot_admits_one_request_at_a_time()
     wait_until(|| releaser.arrived(), "the first dial reached the server");
     // The gate is keyed by the URL the door resolved, which is the conf's box verbatim; `server_url`
     // trims a trailing slash, so compare against what the door itself sees.
-    let seen = slot_gate::holders(&url, model);
+    let seen = slot_gate::holders(&url);
     assert_eq!(seen.len(), 1);
 
     // A second ask arrives while the only slot is busy: it must not reach the wire.
@@ -239,47 +238,46 @@ fn sec_02_services_1_the_four_servers_s6_one_slot_admits_one_request_at_a_time()
         "the second succeeded after the wait"
     );
     assert!(
-        slot_gate::holders(&url, model).is_empty(),
+        slot_gate::holders(&url).is_empty(),
         "both slots came back: {:?}",
-        slot_gate::holders(&url, model)
+        slot_gate::holders(&url)
     );
 }
 
-/// Two slots admit two at once, and a third still waits — the count is what was configured, not one.
+/// One request at a time per SERVER, not per model: a second model on the same server still waits its turn.
 #[test]
-fn sec_02_services_1_the_four_servers_s6_two_slots_admit_two_at_once() {
+fn sec_02_services_1_the_four_servers_s6_two_models_on_one_server_take_turns() {
     let (url, releaser) = held_server();
     pin_env();
-    let dirs = Box::leak(Box::new(Dirs::new("s6b", &url, 2)));
-    let model = "gate-two-slots";
+    let dirs = Box::leak(Box::new(Dirs::new("s6b", &url)));
 
-    let first = dial_async(dirs, "Prepare", model);
-    let second = dial_async(dirs, "Marking", model);
-    wait_until(
-        || slot_gate::holders(&url, model).len() == 2,
-        "two slots hold two requests",
-    );
-    let third = dial_async(dirs, "Narrate", model);
+    let first = dial_async(dirs, "Prepare", "gate-asr-model");
+    wait_until(|| releaser.arrived(), "the first dial reached the server");
+    let second = dial_async(dirs, "Marking", "gate-other-model");
     std::thread::sleep(Duration::from_millis(120));
     assert!(
-        !third.is_finished(),
-        "the third request waits behind two busy slots"
+        !second.is_finished(),
+        "a request for another model on the same server waits behind the first"
+    );
+    assert_eq!(
+        slot_gate::holders(&url).len(),
+        1,
+        "one request on the server"
     );
 
     releaser.release();
     assert!(first.join().expect("first done"));
+    wait_until(|| second.is_finished(), "the server went to the waiter");
     assert!(second.join().expect("second done"));
-    wait_until(|| third.is_finished(), "the freed slot reached the waiter");
-    assert!(third.join().expect("third done"));
 }
 
-/// The wait is not swallowed: §09 §10 gives `requests.tsv` a "how long it waited for a slot" column
-/// precisely so slot counts can be chosen from it, so a row written after a wait carries a number.
+/// The wait is not swallowed: §09 §10 gives `requests.tsv` a "how long it waited for its server" column, so a
+/// row written after a wait carries a number.
 #[test]
 fn sec_02_services_1_the_four_servers_s6_a_row_written_after_a_wait_carries_the_wait() {
     let (url, releaser) = held_server();
     pin_env();
-    let dirs = Dirs::new("s6c", &url, 1);
+    let dirs = Dirs::new("s6c", &url);
     let project =
         std::env::temp_dir().join(format!("np-svcs6-proj-{}.naivepost", std::process::id()));
     let _ = std::fs::remove_dir_all(&project);
@@ -293,7 +291,7 @@ fn sec_02_services_1_the_four_servers_s6_a_row_written_after_a_wait_carries_the_
         move || dial_at(&paths, None, "Prepare", model)
     });
     wait_until(
-        || !slot_gate::holders(&url, model).is_empty(),
+        || !slot_gate::holders(&url).is_empty(),
         "the first dial holds the slot",
     );
     let waited = std::thread::spawn({

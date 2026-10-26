@@ -30,7 +30,8 @@ fn remember(dialog: Option<&adw::MessageDialog>) {
     OPEN_DIALOG.with(|held| *held.borrow_mut() = dialog.cloned());
 }
 
-/// §S2's confirmation end to end: ask about `video`, and run `on_yes` only if the answer is Overwrite.
+/// §S2's confirmation end to end: ask about `video`, and run `on_yes` only if the answer is Overwrite; any
+/// other answer goes to `on_no` with the question that was asked, so the press's open run can be closed.
 /// Returns the question that was said, so the press hands it back as its own answer. The closure is the
 /// encode, which lives on the page — this module owns asking, not producing.
 ///
@@ -40,17 +41,21 @@ pub fn confirm_then(
     parent: &adw::ApplicationWindow,
     video: &std::path::Path,
     on_yes: impl Fn() + 'static,
+    on_no: impl Fn(&str) + 'static,
 ) -> String {
     // `ask_overwrite` computes the same pair and puts both halves on screen: the body inside the dialog,
     // the question on the status line, and the body also in the log — the dialog closes on its answer and
     // the size-and-age line is the one thing a person wants back when they read the run afterwards.
     let (asked, _) = produce_flow::overwrite_asked(video);
     say(parent, &asked);
+    let question = asked.clone();
     ask_overwrite(parent, video, move |answer| {
         if produce_flow::overwrite_proceeds(answer) {
             on_yes();
+        } else {
+            // Anything else leaves the standing video alone: the question was the whole answer.
+            on_no(&question);
         }
-        // Anything else leaves the standing video alone: the question was the whole answer.
     });
     asked
 }
@@ -89,7 +94,9 @@ pub fn ask_overwrite(
         produce_flow::ANSWER_OVERWRITE,
         adw::ResponseAppearance::Destructive,
     );
-    dialog.set_default_response(Some(produce_flow::ANSWER_OVERWRITE));
+    // Enter answers the default, and the encode has no undo (the question says so): the default is Cancel. The
+    // first rewrite made the destructive Overwrite the default, so Enter replaced the render.
+    dialog.set_default_response(Some(produce_flow::ANSWER_CANCEL));
     remember(Some(&dialog));
     dialog.connect_response(None, move |dialog: &adw::MessageDialog, response| {
         remember(None);

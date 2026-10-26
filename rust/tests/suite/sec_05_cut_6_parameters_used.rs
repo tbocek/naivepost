@@ -114,39 +114,12 @@ fn sec_05_cut_6_parameters_used_s3_a_hole_counts_speech_up_to_the_pad_away() {
     );
 }
 
-/// `preview.thumbBatch` — how far one pass of the band looks into a row's frame list. Six at a time is what
-/// inventory §D says the loader hands back, and the window is a slice, so the tail is shorter and an index
-/// past the end is nothing rather than a panic in a draw.
+/// `preview.thumbBatch` — inventory §D's "decoded in a worker in batches of 6 at the row height": the live tape's
+/// worker takes up to this many waiting frames per batch, and the catalogue states the number it reads.
 #[test]
-fn sec_05_cut_6_parameters_used_s4_the_band_reads_six_frame_names_at_a_time() {
-    let batch = cut_tracks::THUMB_BATCH;
+fn sec_05_cut_6_parameters_used_s4_the_band_decodes_six_frames_a_batch() {
     assert_eq!(row("preview.thumbBatch"), "6");
-    assert_eq!(batch, 6);
-    let paths: Vec<std::path::PathBuf> = (0..14)
-        .map(|i| std::path::PathBuf::from(format!("f{i}.jpg")))
-        .collect();
-    assert_eq!(cut_tracks::batch_of(&paths, 0).len(), 6);
-    assert_eq!(cut_tracks::batch_of(&paths, 6).len(), 6);
-    assert_eq!(
-        cut_tracks::batch_of(&paths, 12).len(),
-        2,
-        "the last batch is the tail"
-    );
-    assert!(
-        cut_tracks::batch_of(&paths, 14).is_empty(),
-        "past the end is nothing"
-    );
-    assert!(cut_tracks::batch_of(&[], 0).is_empty());
-    // The window is a real window: the band's own picker finds the frame nearest a second inside it and not
-    // one the pass never looked at.
-    let stamped: Vec<std::path::PathBuf> = (0..20)
-        .map(|i| {
-            std::path::PathBuf::from(format!("frame_{}", naivepost::clock::frame_name(i as f64)))
-        })
-        .collect();
-    let window = cut_tracks::batch_of(&stamped, 4);
-    assert_eq!(window.len(), 6);
-    assert!(cut_tracks::frame_near(window, 6.0).is_some());
+    assert_eq!(cut_tracks::THUMB_BATCH, 6);
 }
 
 /// `P.eng.preloadLeadSeconds` on the arm cadence: the same three seconds decide both when a jump is worth
@@ -389,20 +362,18 @@ fn sec_05_cut_6_parameters_used_s8_the_catalogued_tints_are_the_ones_painted() {
             "{what}: painted {got:?}, catalogue says {want:?}"
         );
     };
+    let x_at = |t: f64| tracks::band_x(&scene, t).round() as i32;
     let y_selection = (naivepost::cut_trim::RULER_H + 6.0) as i32;
-    // The kept bar at x = 6 s (inside the 2..10 s scene, outside the 4..8 s selection). MEASURED from the
-    // pixel, the fact the row stands for is that the same rgba appears in three of §D's rows, so one row per
-    // surface would be three rows for one number: over the band's ground it lands here.
+    // The kept bar at 9 s: inside the 2..10 s scene, outside the 4..8 s selection, clear of the ✕ plated at the
+    // bar's middle and of its grips. A bar is laid translucent over the selection band's own ground.
     close(
-        at((6.0 * pps) as i32, y_selection),
-        KEEPING_OVER_GROUND,
+        at(x_at(9.0), y_selection),
+        over(colours::KEPT_TINT, 0.4, colours::BAND_GROUND),
         "the kept bar's green",
     );
-    // The selection's two ends are the marks themselves: the rule paints a one-pixel column of its own at
-    // each end, over whatever row they cross. Those are §D's `selection.in` green and `selection.out` red.
-    // The mark lines are inked across the whole band, so they can be read anywhere in the picture row; read them
-    // BELOW the row's pinned name plate, which is inked just under the row's top edge (the plate sits past the
-    // gutter now, i.e. right where a mark can fall, and its glyph ink is not the mark's colour).
+    // The selection's two ends are the marks themselves: the rule paints a column of its own at each end, over
+    // whatever row they cross. Those are §D's `selection.in` green and `selection.out` red. Read BELOW the row's
+    // pinned name plate, which is inked just under the row's top edge.
     let y_pictures = (naivepost::cut_trim::RULER_H
         + naivepost::cut_screen::SELECTION_BAND_PX
         + naivepost::fx_lane::lane_height_px(naivepost::fx_lane::row_count(&scene.fx))
@@ -416,52 +387,29 @@ fn sec_05_cut_6_parameters_used_s8_the_catalogued_tints_are_the_ones_painted() {
             .unwrap()
         + 4.0) as i32;
     close(
-        at((4.0 * pps) as i32, y_pictures),
-        over(colours::MARK_IN_GREEN, 1.0, colours::LANE_GROUND),
+        at(x_at(4.0) + 1, y_pictures),
+        over(colours::MARK_IN_GREEN, 1.0, colours::FILM_GROUND),
         "the in mark's green",
     );
     close(
-        at((8.0 * pps) as i32, y_pictures),
-        over(colours::MARK_OUT_RED, 1.0, colours::LANE_GROUND),
+        at(x_at(8.0) + 1, y_pictures),
+        over(colours::MARK_OUT_RED, 1.0, colours::FILM_GROUND),
         "the out mark's red",
     );
     close(
-        at((5.0 * pps) as i32, y_effects),
-        SPEED_WASH_ON_EFFECT_ROW,
+        at(x_at(5.0), y_effects),
+        over(
+            (0.92, 0.42, 0.6),
+            naivepost::fx_lane::WASH_ALPHA,
+            colours::GROUND,
+        ),
         "the speed's rose wash",
     );
-    // And away from every joint, stripe and wash, the picture row shows the lane's own grey plate: the row
-    // has a ground of its own, which is what every tint above is composited on.
+    // And away from every joint, stripe and wash, the picture row shows the recording's own ground: the row has
+    // a ground of its own, which is what every tint above is composited on.
     close(
-        at((19.0 * pps) as i32, y_pictures),
-        THUMB_PLACEHOLDER,
-        "the lane's grey plate, uninked",
+        at(x_at(11.0), y_pictures),
+        over(colours::FILM_GROUND, 1.0, colours::GROUND),
+        "the recording's film ground, uninked",
     );
 }
-
-/// The speed bar's rose as it lands on the effect lane, printed from the painted surface: §D writes
-/// rgba(0.92,0.42,0.6,0.15), and what arrives is stronger than that alpha over the lane's grey would give — the
-/// lane paints every kind through `cut_lane_paint::paint_bar`, which lays the colour at `fx_lane::bar_wash_alpha`
-/// (inventory/effects.md §A.2 spells one speed bar out as `fill RGBA(0.92,0.42,0.6,0.4)`), over the band ground.
-/// Recomputed here rather than hard-coded so the row follows the wash rule instead of a snapshot of it:
-/// 0.4 x (0.92,0.42,0.6) + 0.6 x GROUND(0.95,0.95,0.95) = (239,188,206).
-const SPEED_WASH_ON_EFFECT_ROW: (u8, u8, u8) = (
-    (0.92 * naivepost::fx_lane::WASH_ALPHA * 255.0
-        + 0.95 * (1.0 - naivepost::fx_lane::WASH_ALPHA) * 255.0) as u8,
-    (0.42 * naivepost::fx_lane::WASH_ALPHA * 255.0
-        + 0.95 * (1.0 - naivepost::fx_lane::WASH_ALPHA) * 255.0) as u8,
-    (0.6 * naivepost::fx_lane::WASH_ALPHA * 255.0
-        + 0.95 * (1.0 - naivepost::fx_lane::WASH_ALPHA) * 255.0) as u8,
-);
-
-/// The picture row's plate, read back from the painted surface. At 8 px/s a camera is far narrower than one
-/// thumbnail, so the thumbnails rule draws one placeholder box for it — §D's `thumbnail.placeholder`, which
-/// is why no §6 tint reaches this pixel and why every one of them fails to match its own rgba above: they are
-/// all composited on this.
-const THUMB_PLACEHOLDER: (u8, u8, u8) = (38, 179, 64);
-
-/// The pixel [`cut_colours::KEPT_TINT`] leaves on the band's ground: the inventory's rgba(0.2,0.8,0.3,0.3)
-/// composited at its OWN 0.3 over the near-white plate — §6 spells that one colour for three of §D's rows
-/// (`background.kept`, `thumbnail.placeholder`, `scene.placeholder`), so the row catalogues it and the pixel
-/// is what any of those three measures against. Printed from the painted surface, not typed from the spec.
-const KEEPING_OVER_GROUND: (u8, u8, u8) = (56, 169, 145);

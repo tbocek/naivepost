@@ -8,16 +8,15 @@
 //!   [`naivepost::narrate_rules::picker_row`] answers `None`, and the dropdown shows no row;
 //! * preview plays the cut and **sound equals the render's** — the tick's numbers come from the same
 //!   calls the render makes, and `bed_gain_ask` is what stops a beat that changed nothing from re-cuing;
-//! * captions-only / narration-off short-circuits **everything that speaks** — the preview asks
-//!   [`naivepost::narrate_off::lines_to_speak`] rather than testing the text itself, so a wav sitting on
-//!   disk in a project with the tick off is still not a take the picture will stop for.
+//! * captions-only short-circuits **everything that speaks** — the preview asks
+//!   [`naivepost::narration::lines_to_speak`] rather than testing the text itself, so a blank line is
+//!   never a take the picture will stop for.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use adw::prelude::*;
 use gtk4 as gtk;
 use naivepost::cut::{Cut, Seg};
-use naivepost::narrate_off;
 use naivepost::narrate_preview::{self, Failed, Take};
 use naivepost::narrate_preview_leg as leg;
 use naivepost::narrate_preview_media as media;
@@ -166,11 +165,10 @@ fn sec_07_narrate_5_rules_the_mix_reaches_the_bed_and_a_still_second_requeues_no
     );
 }
 
-/// §5 (`captions-only short-circuits everything that speaks`) + F4.8: the preview asks the ONE seam
-/// which lines may be spoken, so with the tick off a wav that really exists on disk is still not a take
-/// the picture would stop for, and a deliberately blank line is not either.
+/// §5 (`captions-only short-circuits everything that speaks`): the preview asks the ONE seam which lines
+/// may be spoken, so a deliberately blank line is never a take the picture would stop for.
 #[test]
-fn sec_07_narrate_5_rules_a_narration_that_is_off_offers_no_line_to_speak() {
+fn sec_07_narrate_5_rules_a_blank_line_offers_no_take() {
     let (_root, tree) = common::tree_in("rules-seams");
     let spoken = Entry {
         s: 0.0,
@@ -188,19 +186,14 @@ fn sec_07_narrate_5_rules_a_narration_that_is_off_offers_no_line_to_speak() {
     };
     let entries = vec![spoken.clone(), blank.clone()];
 
-    // The seam itself, in both states.
+    // The seam itself.
     assert_eq!(
-        narrate_off::lines_to_speak(true, &entries),
-        Vec::new(),
-        "narration off speaks nothing"
-    );
-    assert_eq!(
-        narrate_off::lines_to_speak(false, &entries),
+        naivepost::narration::lines_to_speak(&entries),
         vec![spoken.clone()],
         "a blank line is a deliberate silence, never a spoken one"
     );
 
-    // A real wav on disk for the line the seam excludes.
+    // A real wav on disk for the written line.
     let key = naivepost::narration::key_for(&spoken, Some(&leg::voice()));
     let wav = naivepost::narrate_tts::take_path(&tree, &key);
     std::fs::create_dir_all(wav.parent().expect("tts/ has a parent")).expect("tts/");
@@ -208,20 +201,9 @@ fn sec_07_narrate_5_rules_a_narration_that_is_off_offers_no_line_to_speak() {
     let failed = Failed::default();
 
     assert_eq!(
-        leg::take_states(&tree, &entries, &failed, false),
+        leg::take_states(&tree, &entries, &failed),
         vec![Take::Exists, Take::Missing],
-        "narration on: the written line's take exists, the blank one has none to look for"
-    );
-    assert_eq!(
-        leg::take_states(&tree, &entries, &failed, true),
-        vec![Take::Missing, Take::Missing],
-        "narration off must offer no line even though the wav is really on disk"
-    );
-    assert!(
-        leg::take_states(&tree, &entries, &failed, true)
-            .iter()
-            .all(|take| !matches!(take, Take::Exists)),
-        "not one Exists for a project whose narration is switched off"
+        "the written line's take exists, the blank one has none to look for"
     );
 }
 
@@ -291,7 +273,6 @@ fn state_with(voice: &str, narrators: usize, files: Vec<String>) -> ui::NarrateS
         playing: false,
         started: false,
         busy: false,
-        narration_off: false,
         language: String::new(),
         covered_spans: vec![],
     }
@@ -498,9 +479,22 @@ fn run_bar_follows_the_page(app: &adw::Application) {
         rules::bar_serves_the_preview(ui::preview_player(&window).transport),
         "once the preview started the bar answers for it"
     );
+    // §1's transport "▶/⏸": the page's own button says the same as the bar.
+    let face = || {
+        ui::line_step_button(&window, "narrate-play")
+            .and_then(|button| button.label())
+            .unwrap_or_default()
+            .to_string()
+    };
+    assert_eq!(
+        face(),
+        "\u{23f8}",
+        "the page's \u{25b6} wears \u{23f8} while the preview plays"
+    );
 
     naivepost::ui::narrate_page::press_preview_stop(&window);
     settle();
+    assert_eq!(face(), "\u{25b6}", "and \u{25b6} again once it stopped");
     let after = ui::preview_player(&window).transport;
     assert!(!after.playing, "⏹ stopped both players");
     assert!(

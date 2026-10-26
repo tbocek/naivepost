@@ -57,8 +57,10 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_the_names_are_the_spe
         "translate_line",
         // 3.11 policy derivation
         "set_policy",
+        // 3.12 text gate
+        "judge_text",
     ];
-    assert_eq!(names.len(), 35);
+    assert_eq!(names.len(), 36);
 
     // The array above and the enum describe the same set: no name twice, none missing.
     let all = names
@@ -97,6 +99,11 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_tools_are_offered_per
     for which in [Job::Asr, Job::Align, Job::Diarize, Job::Separate] {
         assert!(tools::offered(which).is_empty(), "{which:?} asks no tool");
     }
+    // §3.5: the text edit answers the words it removes, quoted, in one reply, and is offered no tool.
+    assert!(
+        tools::offered(Job::Joins).is_empty(),
+        "the text edit asks no tool"
+    );
 
     // Each section's own tools arrive on exactly one job (or, for §3.9's shared state, on the two
     // jobs whose table it is) and nowhere else.
@@ -108,9 +115,10 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_tools_are_offered_per
         (Tool::FlagLine, &[Job::CleanTranscript]),
         (Tool::MarkAbandoned, &[Job::Retakes]),
         (Tool::Unmark, &[Job::Retakes]),
-        (Tool::DropWords, &[Job::Joins]),
-        (Tool::KeepJoin, &[Job::Joins]),
-        (Tool::GetWords, &[Job::Joins]),
+        // The join rules' own names, kept for the `Join` that checks a quoted removal, offered to no job.
+        (Tool::DropWords, &[]),
+        (Tool::KeepJoin, &[]),
+        (Tool::GetWords, &[]),
         (Tool::AddSegment, &[Job::ModelCut]),
         (Tool::RemoveSegment, &[Job::ModelCut]),
         (Tool::SetSpeed, &[Job::ModelCut]),

@@ -362,6 +362,7 @@ fn f0_13_s8_audio_answers_with_its_health_its_catalogue_and_its_aligner() {
 fn f0_13_s9_sd_cpp_is_called_out_when_the_port_is_only_openai_shaped() {
     let caps = checks::SdCaps {
         weights: "flux".to_string(),
+        modes: vec!["img_gen".to_string()],
     };
     assert_eq!(
         checks::sd_verdict(Ok(&caps)).as_deref(),
@@ -370,6 +371,7 @@ fn f0_13_s9_sd_cpp_is_called_out_when_the_port_is_only_openai_shaped() {
 
     let blank = checks::SdCaps {
         weights: "   ".into(),
+        modes: Vec::new(),
     };
     assert!(checks::sd_verdict(Ok(&blank))
         .unwrap_err()
@@ -380,6 +382,43 @@ fn f0_13_s9_sd_cpp_is_called_out_when_the_port_is_only_openai_shaped() {
     assert!(openai.contains("not sd-server"), "{openai}");
     let dark = checks::sd_verdict(Err(checks::SdProbe::Unreachable)).unwrap_err();
     assert!(dark.contains("/sdcpp/v1/capabilities"), "{dark}");
+}
+
+/// S2: the weights are read out of the reply sd-server really sends: `model` is an OBJECT (name, path, stem),
+/// named by its stem, and `supported_modes` has to list `img_gen`. The body below is a live server's reply
+/// (2026-10-24), cut to the keys around the two this row reads. Read as a string, `model` failed to parse on
+/// every real server and the row said "names no weights" with the model loaded.
+#[test]
+fn f0_13_s9_sd_cpp_names_the_model_a_real_sd_server_reports() {
+    let live = r#"{"current_mode":"img_gen","limits":{"max_batch_count":8,"max_height":4096},"loras":[],
+        "model":{"name":"qwen-image-2.1-turbo-Q8_0.gguf","path":"/mnt/models/qwen-image-2.1-turbo-Q8_0.gguf",
+        "stem":"qwen-image-2.1-turbo-Q8_0"},"output_formats":["png","jpeg","webp"],"supported_modes":["img_gen"],
+        "upscale":false,"upscalers":[{"image_upscale":false,"model":false,"name":"None"}]}"#;
+    let caps = checks::sd_caps(live).expect("a real capabilities reply parses");
+    assert_eq!(
+        checks::sd_verdict(Ok(&caps)).as_deref(),
+        Ok("qwen-image-2.1-turbo-Q8_0 is loaded and can draw"),
+        "§5: the stem names the weights"
+    );
+
+    // No stem: the file name.
+    let named = checks::sd_caps(r#"{"model":{"name":"flux.gguf"}}"#).expect("parses");
+    assert_eq!(named.weights, "flux.gguf");
+    // An older build reports no modes: not a broken one, so it still passes.
+    assert!(checks::sd_verdict(Ok(&named)).is_ok());
+
+    // A server that cannot draw images says so, naming what it does support.
+    let video = checks::sd_caps(r#"{"model":{"stem":"wan2.2"},"supported_modes":["vid_gen"]}"#)
+        .expect("parses");
+    let refused = checks::sd_verdict(Ok(&video)).unwrap_err();
+    assert!(
+        refused.contains("cannot draw images") && refused.contains("vid_gen"),
+        "{refused}"
+    );
+
+    // Not capabilities at all: said so, not read as "no weights".
+    let garbage = checks::sd_caps("<html>proxy error</html>").unwrap_err();
+    assert!(garbage.contains("not sd.cpp capabilities"), "{garbage}");
 }
 
 /// "Test All": every row's own verdict, in the order the rows are on screen — nothing short-circuits,

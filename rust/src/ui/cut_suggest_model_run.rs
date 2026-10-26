@@ -114,7 +114,7 @@ const FRAMES_ANSWER_MAX: usize = 200;
 /// The request shows the model these same stamps, so a `get_frames` answer has to name them and not
 /// another grid: that interval is the only spacing a frame exists at.
 fn frames_of_footage(footage_end: f64) -> Vec<f64> {
-    let interval = crate::prepare::FREQ_DEFAULT.max(0.25);
+    let interval = crate::prepare::MODEL_FRAME_STEP;
     let mut at = 0.0;
     let mut out = Vec::new();
     while at < footage_end && out.len() < FRAMES_ANSWER_MAX {
@@ -802,19 +802,19 @@ pub use crate::ui::cut_suggest_land::session;
 /// What [`press`] reads off the window before anything is asked. `None` answers §S1's
 /// own sentence for the case §S1 could not see, and an unreadable settings file answers its reason
 /// rather than a dial to a guessed address (§02-services#1: settings are re-read per request).
-struct Press {
+pub(crate) struct Press {
     paths: Option<Paths>,
     project: Project,
     cut: crate::cut::Cut,
 }
 
 /// Why a press cannot ask, and whose sentence it is.
-enum Blocked {
+pub(crate) enum Blocked {
     NoSession,
     Settings(String),
 }
 
-fn press_parts(window: &adw::ApplicationWindow) -> Result<(Tree, Press), Blocked> {
+pub(crate) fn press_parts(window: &adw::ApplicationWindow) -> Result<(Tree, Press), Blocked> {
     let Some(tree) = session() else {
         return Err(Blocked::NoSession);
     };
@@ -832,7 +832,7 @@ fn press_parts(window: &adw::ApplicationWindow) -> Result<(Tree, Press), Blocked
     ))
 }
 
-fn blocked(why: Blocked) -> Landed {
+pub(crate) fn blocked(why: Blocked) -> Landed {
     match why {
         Blocked::NoSession => Landed::refused(suggest::NO_TIMELINE),
         Blocked::Settings(reason) => Landed::refused(&unreadable(&format!(
@@ -863,6 +863,20 @@ pub fn press(window: &adw::ApplicationWindow, busy: bool) -> Landed {
     };
     let mut ask = live_ask(&tree, &conf);
     finish(&tree, parts, &mut ask)
+}
+
+/// The ask half of [`press`], with what [`press_parts`] read off the window: what Suggest's worker runs
+/// (§03-shell §1). The run's `llm/` page is this thread's, so it is opened and closed around the ask.
+pub(crate) fn ask_on_worker(tree: Tree, parts: Press) -> Landed {
+    crate::exchange_leg::note_run_started();
+    let conf = match parts.paths.as_ref().map(settings::read) {
+        Some(Ok(conf)) => conf,
+        _ => settings::Conf::default(),
+    };
+    let mut ask = live_ask(&tree, &conf);
+    let landed = finish(&tree, parts, &mut ask);
+    crate::exchange_leg::note_run_ended();
+    landed
 }
 
 /// `P.policy.targetLengthSeconds` — the length this cut aims at, seconds; §10's default is 0 = none.

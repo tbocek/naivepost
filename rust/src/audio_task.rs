@@ -94,12 +94,13 @@ fn joined(words: &[Word]) -> String {
 
 /// Diarization's answer: speaker turns as samples.
 ///
-/// `turns | speakers | diarization` at either level, each entry read with [`turn`] and then sorted by
+/// `speaker_turns | turns | speakers | diarization` at either level (`speaker_turns` is what audio.cpp's
+/// nemotron diarizer sends; the first rewrite did not know it and failed the run on a good answer), each entry read with [`turn`] and then sorted by
 /// start, because placement anchors on order and a server that answers out of order would otherwise
 /// place against a scrambled timeline. An empty list is an honest answer: nobody spoke.
 pub fn diar_answer(body: &Value) -> Result<Vec<Turn>, String> {
     let reply = answer(body);
-    let list = ["turns", "speakers", "diarization"]
+    let list = ["speaker_turns", "turns", "speakers", "diarization"]
         .iter()
         .filter_map(|key| reply.get(*key).and_then(Value::as_array))
         .next()
@@ -115,8 +116,9 @@ pub fn diar_answer(body: &Value) -> Result<Vec<Turn>, String> {
 }
 
 /// One turn, its edges as samples (seconds and milliseconds also read: the shape varies per server)
-/// and its speaker as a number or a name hashed to one, since a diarizer that labels voices by name
-/// still has to answer in [`Turn`]'s terms.
+/// and its speaker as a number, a name ending in one (`speaker_0` is voice 0, so the transcript says
+/// SPEAKER_00), or another name hashed to one, since a diarizer that labels voices by name still has to
+/// answer in [`Turn`]'s terms.
 fn turn(entry: &Value) -> Option<Turn> {
     let start = sample(entry, &["start_sample", "start", "from"])?;
     let end = sample(entry, &["end_sample", "end", "to"])?;
@@ -125,9 +127,16 @@ fn turn(entry: &Value) -> Option<Turn> {
         .or_else(|| entry.get("speaker"))
         .map(|value| match value {
             Value::Number(number) => number.as_u64().unwrap_or_default() as u32,
-            Value::String(name) => name.bytes().fold(0u32, |hash, byte| {
-                hash.wrapping_mul(31).wrapping_add(byte as u32)
-            }),
+            Value::String(name) => {
+                let digits = name.len() - name.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+                name[name.len() - digits..]
+                    .parse::<u32>()
+                    .unwrap_or_else(|_| {
+                        name.bytes().fold(0u32, |hash, byte| {
+                            hash.wrapping_mul(31).wrapping_add(byte as u32)
+                        })
+                    })
+            }
             _ => 0,
         })
         .unwrap_or(0);
@@ -257,23 +266,20 @@ pub fn dial(
     let endpoint = services::endpoint_for(paths, Server::Audio, |name| std::env::var(name).ok());
     let envelope = envelope.to_string();
     let cancelled = crate::cancel_leg::cancel_check_now();
-    // §1: at most this model's Settings slot count of requests on the wire at once. Taken BEFORE the
-    // socket and released when the reply is in, so the wait sits outside the measured call and lands in
-    // the row's own wait column instead of inflating its time on the wire.
-    let conf = crate::settings::read(paths).unwrap_or_default();
-    let slots = crate::slot_gate::slots_for_task(&conf, ask.task);
-    let (slot, waited) =
-        match crate::slot_gate::hold(&endpoint.url, model, slots, ask.step, &cancelled) {
-            Ok(got) => got,
-            // ⏹ landed while every slot was busy: nothing went out, so this is the same refusal as the check
-            // above rather than a server problem.
-            Err(crate::slot_gate::Wait::Cancelled) => {
-                return Err(format!(
-                    "{}: cancelled while waiting for a {model} slot",
-                    ask.step
-                ))
-            }
-        };
+    // §1: one request at a time per server. Taken BEFORE the socket and released when the reply is in, so
+    // the wait sits outside the measured call and lands in the row's own wait column instead of inflating its
+    // time on the wire.
+    let (slot, waited) = match crate::slot_gate::hold(&endpoint.url, ask.step, &cancelled) {
+        Ok(got) => got,
+        // ⏹ landed while every slot was busy: nothing went out, so this is the same refusal as the check
+        // above rather than a server problem.
+        Err(crate::slot_gate::Wait::Cancelled) => {
+            return Err(format!(
+                "{}: cancelled while waiting for a {model} slot",
+                ask.step
+            ))
+        }
+    };
     // §4 holds the slot across the HTTP call only. `call_dialed` reads the reply inside its own call, so the
     // guard lives until it returns; dropping it here is the release.
     let _slot_hold = slot;
@@ -298,7 +304,7 @@ pub fn dial(
                     endpoint: &endpoint,
                     kind: Kind::RunTask,
                     job: None,
-                    body: Some(&envelope),
+                    body: Some(envelope.as_bytes()),
                     filename: None,
                     cancelled: &cancelled,
                     liveness: None,
@@ -905,7 +911,9 @@ pub fn upload_bytes(
 ) -> Result<ServerPath, String> {
     let endpoint = services::endpoint_for(paths, Server::Audio, |env| std::env::var(env).ok());
     let cancelled = crate::cancel_leg::cancel_check_now();
-    let payload = String::from_utf8_lossy(bytes).into_owned();
+    // The file goes up as its own bytes. It once went through `String::from_utf8_lossy`, which swaps every byte
+    // that is not UTF-8 for a three-byte U+FFFD: audio.cpp answered "invalid WAV RIFF header" to the result.
+    let payload = bytes;
     let base = server_leg::base_row(Server::Audio, "", Kind::Upload.method(), "", "upload", name);
     let reply = match tree {
         Some(tree) => {
@@ -917,7 +925,7 @@ pub fn upload_bytes(
                     endpoint: &endpoint,
                     kind: Kind::Upload,
                     job: None,
-                    body: Some(&payload),
+                    body: Some(payload),
                     filename: Some(name),
                     cancelled: &cancelled,
                     liveness: None,
@@ -934,7 +942,7 @@ pub fn upload_bytes(
             &endpoint,
             Kind::Upload,
             None,
-            Some(&payload),
+            Some(payload),
             Some(name),
             &cancelled,
         ),

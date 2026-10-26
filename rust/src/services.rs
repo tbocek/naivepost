@@ -473,7 +473,7 @@ pub fn ffprobe_for(configured_ffmpeg: &str, on_path: &str) -> String {
     }
 }
 
-/// Which audio job a request is for, and so which slot count governs it.
+/// Which audio job a request is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioTask {
     Asr,
@@ -481,29 +481,4 @@ pub enum AudioTask {
     Tts,
     Sep,
     Align,
-}
-
-/// How many requests this audio model may have on the wire at once (09 §4). Each model has its
-/// own count — two models on one server are two slot counts, since a GPU shared between them is
-/// not two GPUs — and absent means 1, which [`settings::Slots`] already spells out.
-pub fn slots_for(conf: &Conf, wanted: AudioTask) -> u32 {
-    match wanted {
-        AudioTask::Asr => conf.slots.asr,
-        AudioTask::Diar => conf.slots.diar,
-        AudioTask::Tts => conf.slots.tts,
-        AudioTask::Sep => conf.slots.sep,
-        AudioTask::Align => conf.slots.align,
-    }
-}
-
-/// The same for the writing model (`LLM_SLOTS`).
-pub fn llm_slots(conf: &Conf) -> u32 {
-    conf.slots.llm
-}
-
-/// The same for the drawing model (`SD_SLOTS`). sd.cpp has no model row of its own in Settings — one server,
-/// one model — so this is the count behind the spin beside its address, and the gate keys on it the way the
-/// audio tasks key on [`slots_for`]: one answer for the dialog and the gate, never two copies.
-pub fn image_slots(conf: &Conf) -> u32 {
-    conf.slots.sd
 }

@@ -241,7 +241,7 @@ pub fn stage_frame(dir: &Path, base: &str, second: f64) -> Option<std::path::Pat
 
 /// Stage this take's loudness envelope into `cache/waves/<base>.wave` the way the app itself does: write the
 /// decoded mono audio where `wave_build::ensure` looks for it, then let that door fold the peaks and write the
-/// cache (`wave_build::ensure` -> `wave::write`), which is also what stamps it against the reading. `draw_row_wave_strips`
+/// cache (`wave_build::ensure` -> `wave::write`), which is also what stamps it against the reading. `cut_wave_rows::draw_row_waves`
 /// -> `cut_trim_press::paint_row_wave` then reads that same cache back through `cached_peaks`; without it the strip
 /// draws a flat baseline. Nothing here paints — this only puts files where the painter already knows to look.
 ///
@@ -293,6 +293,8 @@ fn scene(cut: &Cut) -> Scene {
             start: 0.0,
             end: 400.0,
         }],
+        recording_rows: Vec::new(),
+        marks: Default::default(),
         folds: Vec::new(),
         selection: None,
         watched_row: None,

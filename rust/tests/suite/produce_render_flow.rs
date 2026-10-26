@@ -11,7 +11,6 @@
 use crate::common;
 use common::entry_at as entry;
 use naivepost::cut::{Fx, Lane, Seg};
-use naivepost::narrate_off;
 use naivepost::produce_render as r;
 use naivepost::project::{self, Codec, Container, Produce, Subtitles};
 use naivepost::render_fx;
@@ -91,14 +90,14 @@ fn f5_2_s2_captions_speak_nothing_otherwise_every_missing_line() {
     assert_eq!(r::speak_job(true, &lines, |_| false), r::Speak::Nothing);
 
     // A real voice: every line with words and no wav, in the record's order. An empty line is a deliberate
-    // silence and is never spoken — the same seam narrate_off::lines_to_speak applies.
+    // silence and is never spoken — the same seam narration::lines_to_speak applies.
     let spoken = vec!["the first line".to_string()];
     let answer = r::speak_job(false, &lines, |line| spoken.contains(&line.text));
     assert_eq!(
         answer,
         r::Speak::Missing(vec!["the third line".to_string()])
     );
-    assert_eq!(narrate_off::lines_to_speak(false, &lines).len(), 2);
+    assert_eq!(naivepost::narration::lines_to_speak(&lines).len(), 2);
 
     // Everything already spoken: an empty list rather than a Nothing that would skip the job's close.
     assert_eq!(

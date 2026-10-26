@@ -11,7 +11,6 @@ use gtk4 as gtk;
 use crate::layout;
 use crate::policy;
 use crate::project::Origin;
-use crate::startup;
 use crate::ui::settings;
 use crate::ui::window::SESSION;
 use crate::ui::window_doors::find_widget_by_name;
@@ -36,9 +35,16 @@ pub fn session_policy(window: &adw::ApplicationWindow) -> crate::project::Policy
 /// [`session_policy`] without needing a window handle: a flow that may run with no shell open (a tool call
 /// made headless) reads the live policy through this.
 pub fn live_session_policy() -> crate::project::Policy {
+    // A run's worker holds no window session: it reads the policy the run saved before its first stage
+    // (F1.1 S2), which is the one it runs under.
     SESSION
         .with(|slots| slots.borrow().last().cloned())
         .map(|project| project.borrow().policy.clone())
+        .or_else(|| {
+            crate::project::load(&crate::startup::open_dir())
+                .ok()
+                .map(|project| project.policy)
+        })
         .unwrap_or_default()
 }
 
@@ -215,16 +221,46 @@ pub fn derive_policy(window: &adw::ApplicationWindow) -> policy::Derived {
             ..policy::Derived::default()
         };
     };
-    let before = session.borrow().policy.clone();
-    let mut derived = {
-        let mut policy = session.borrow().policy.clone();
-        let out = match POLICY_SENDERS.with(|senders| senders.borrow().last().cloned()) {
-            Some(sender) => policy::derive(&mut policy, &context, &mut *sender.borrow_mut()),
-            None => policy::derive(&mut policy, &context, &mut live_policy_answer),
-        };
-        session.borrow_mut().policy = policy;
-        out
+    let mut policy = session.borrow().policy.clone();
+    let derived = match POLICY_SENDERS.with(|senders| senders.borrow().last().cloned()) {
+        Some(sender) => policy::derive(&mut policy, &context, &mut *sender.borrow_mut()),
+        None => policy::derive(&mut policy, &context, &mut live_policy_answer),
     };
+    finish_derivation(&session, policy, derived, &context)
+}
+
+/// Whether a test has put its own answerer in place of the policy model: that one answers at once, so the ▶ door
+/// derives on the window thread with it; the live model is asked on the run's worker ([`apply_derivation`]).
+pub(crate) fn answerer_installed() -> bool {
+    POLICY_SENDERS.with(|senders| !senders.borrow().is_empty())
+}
+
+/// The ▶ door's derivation, made on the run's worker and taken back here: the same second half
+/// [`derive_policy`] runs, and the same line the door says.
+pub(crate) fn apply_derivation(
+    policy: crate::project::Policy,
+    derived: policy::Derived,
+    context: &str,
+) {
+    let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
+        return;
+    };
+    let derived = finish_derivation(&session, policy, derived, context);
+    if !derived.used_defaults {
+        crate::ui::window::log_line(&format!("policy: {}", derived.status()));
+    }
+}
+
+/// The derivation's second half, on the GTK thread: the derived policy lands on the session, what it decided
+/// is said, the tracker remembers the context, and the marks a changed `markingPass` invalidates go.
+fn finish_derivation(
+    session: &Rc<RefCell<crate::project::Project>>,
+    policy: crate::project::Policy,
+    mut derived: policy::Derived,
+    context: &str,
+) -> policy::Derived {
+    let before = session.borrow().policy.clone();
+    session.borrow_mut().policy = policy;
     // §12 entry 21: the target-length read happened inside `policy::derive` (the one door every caller uses),
     // and its outcome is said here. A length that was read is said by `derived_log` below with its value and
     // reason; what this line adds is the gap — a length mentioned that could not be read, which must not pass
@@ -241,13 +277,13 @@ pub fn derive_policy(window: &adw::ApplicationWindow) -> policy::Derived {
     // Record even a defaults-only derivation: an empty context IS an answer, and remembering it is
     // what stops every ▶ from re-asking about a context nobody intends to fill.
     if let Some(tracker) = POLICY_TRACKERS.with(|trackers| trackers.borrow().last().cloned()) {
-        tracker.borrow_mut().mark_derived(&context);
+        tracker.borrow_mut().mark_derived(context);
     }
     // §03: a changed markingPass invalidates the marks, so Prepare re-runs its marking pass instead
     // of resuming off output made under a different pass.
     let dropped = policy::invalidated_marks(&before, &session.borrow().policy);
     if !dropped.is_empty() {
-        let dir = startup::session_dir(&std::env::current_dir().unwrap_or_default());
+        let dir = crate::startup::open_dir();
         if let Ok(tree) = layout::Tree::new(&dir) {
             for name in dropped {
                 let path = if name == "final.txt" {
@@ -281,16 +317,78 @@ pub(crate) fn schedule_policy_derive(window: &adw::ApplicationWindow) {
             std::time::Duration::from_millis(policy::DEBOUNCE_MS),
             move || {
                 POLICY_DEBOUNCE.with(|p| p.borrow_mut().clear());
-                let derived = derive_policy(&held);
-                if let Some(status) = find_widget_by_name(held.upcast_ref(), "status-line")
-                    .and_then(|w| w.downcast::<gtk::Label>().ok())
-                {
-                    status.set_text(&derived.status());
+                // A test's installed answer lives on this thread (`Rc`), so it is asked here; the live one
+                // dials a model, which takes seconds to minutes, and goes to a worker so the window keeps
+                // painting and taking keystrokes (the first rewrite asked on this thread and froze the window,
+                // "not responding", for as long as the model took).
+                if POLICY_SENDERS.with(|senders| senders.borrow().is_empty()) {
+                    derive_in_background(&held);
+                } else {
+                    let derived = derive_policy(&held);
+                    say_status(&held, &derived);
                 }
                 glib::ControlFlow::Break
             },
         );
         pending.borrow_mut().push(id);
+    });
+}
+
+fn say_status(window: &adw::ApplicationWindow, derived: &policy::Derived) {
+    if let Some(status) = find_widget_by_name(window.upcast_ref(), "status-line")
+        .and_then(|w| w.downcast::<gtk::Label>().ok())
+    {
+        status.set_text(&derived.status());
+    }
+}
+
+thread_local! {
+    /// The newest debounced derivation: an older one's answer is dropped when it lands, because the context it
+    /// was asked about is no longer the one on the page.
+    static DERIVE_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// F0.7's debounced derivation, its model call on a worker. The session's policy and context are read here;
+/// the worker derives and hands back the policy, the outcome and its own log lines; the answer lands only if
+/// it is still the newest and the context is still the one asked about.
+fn derive_in_background(window: &adw::ApplicationWindow) {
+    let context = user_context(window);
+    let Some(session) = SESSION.with(|slots| slots.borrow().last().cloned()) else {
+        return;
+    };
+    let policy = session.borrow().policy.clone();
+    let live = session_policy(window);
+    let generation = DERIVE_GENERATION.with(|newest| {
+        newest.set(newest.get() + 1);
+        newest.get()
+    });
+    let (tell, told) = std::sync::mpsc::channel();
+    let asked = context.clone();
+    std::thread::spawn(move || {
+        crate::policy_call::set_live_policy(&live);
+        let mut policy = policy;
+        let derived = policy::derive(&mut policy, &asked, &mut crate::policy_call::answer);
+        // What the leg said went to THIS thread's log sink; it travels back with the answer.
+        let said = super::window_logs::window_logs();
+        let _ = tell.send((policy, derived, said));
+    });
+    let held = window.clone();
+    glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+        match told.try_recv() {
+            Ok((policy, derived, said)) => {
+                for line in said {
+                    crate::ui::window::log_line(&line);
+                }
+                let newest = DERIVE_GENERATION.with(|newest| newest.get()) == generation;
+                if newest && user_context(&held) == context {
+                    let derived = finish_derivation(&session, policy, derived, &context);
+                    say_status(&held, &derived);
+                }
+                glib::ControlFlow::Break
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(_) => glib::ControlFlow::Break,
+        }
     });
 }
 

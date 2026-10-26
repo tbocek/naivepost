@@ -559,7 +559,6 @@ pub fn ask_at_over(
     let mut batch = clips.clone();
     // The frames a model may aim at are only this far apart: §3.7's `get_frames` walks the batch's
     // grid, and a default 1 s spread would name pictures this session never extracted.
-    batch.set_frame_interval(crate::project::frame_interval(tree.dir()));
     for line in crate::clip_rules_tools_leg::answer_calls(&reply.tool_calls, &mut batch) {
         crate::ui::window::log_line(&line);
     }

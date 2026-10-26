@@ -121,8 +121,8 @@ fn s2_a_band_click_moves_where_the_paste_goes_while_the_preview_is_parked() {
         gesture.emit_by_name::<()>("released", &[&1i32, &x, &y]);
         settle();
 
-        // (a) The press really moved the stored line, and the parked playhead is still sitting at 5.0 — the
-        // two disagree on purpose, which is the whole case.
+        // (a) The press really moved the stored line, and with it the preview's playhead: §1 has ONE red line,
+        // so a click that moves it re-seats the parked preview too.
         let placed = ui::line_position(&window).t;
         assert!(
             (placed - pressed_at).abs() < 0.2,
@@ -131,8 +131,8 @@ fn s2_a_band_click_moves_where_the_paste_goes_while_the_preview_is_parked() {
         );
         assert_eq!(
             ui::preview_player(&window).playhead,
-            Some(5.0),
-            "the parked preview still holds its old second — nothing re-sought it"
+            Some(placed),
+            "the preview's playhead is the line the click placed"
         );
 
         // (b) ⧉ Paste answers the CLICKED second, not the parked one.

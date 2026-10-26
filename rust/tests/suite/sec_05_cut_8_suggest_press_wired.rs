@@ -81,6 +81,11 @@ fn round(app: &adw::Application) {
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_by_name::<()>("clicked", &[]);
+    // Suggest asks on a worker (§03-shell §1, F2.14 "Where it runs"): the press lands when it answers.
+    assert!(
+        naivepost::ui::background::settle_for_test(std::time::Duration::from_secs(60)),
+        "the suggest workers answered"
+    );
     settle();
 
     // The request the program actually sent, read from the server's side: the SECOND ask is the one §8 changed,

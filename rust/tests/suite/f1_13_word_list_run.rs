@@ -363,12 +363,13 @@ fn f1_13_s7_the_walk_builds_the_list_from_the_files_the_stages_wrote() {
         .expect("readable")
         .expect("written");
     assert_eq!(list.len(), 4, "every aligned token made a word");
-    // The line is printed whole on the run's first word and the rest emptied (§F1.13 S4), which is what
-    // `joins` later matches its answer against — one row of text per line the fix pass answered.
+    // The fix pass spelled the line's four words as they were heard, so each word keeps its own (§F1.13 S4).
+    // The first rewrite checked only the first word, which carried the whole line: every word did, and the
+    // join model was shown each sentence once per word.
     assert_eq!(
-        words::written(&list)[0],
-        "hello world again here",
-        "the fix pass's spelling landed on the list"
+        words::written(&list),
+        ["hello", "world", "again", "here"],
+        "the fix pass's spelling landed on the list, one word each"
     );
     assert_eq!(
         list[0].match_word, "hello",

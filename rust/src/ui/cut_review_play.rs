@@ -23,7 +23,7 @@ pub const PLAY_LABEL: &str = crate::cut_screen::PLAY_GLYPH_REVIEW;
 /// §F2.3's one rule for the three buttons: "each wears ⏸ only while its own thing runs … exactly one is
 /// lit". So the pause face appears here ONLY while a review is the running preview, and ▶/▶✂ give theirs
 /// back at the same moment (each module reads the player rather than remembering).
-pub const PAUSE_LABEL: &str = "\u{23f8} Pause every cut";
+pub const PAUSE_LABEL: &str = "\u{23f8}\u{2702}\u{2702}";
 
 /// The review's own state: which join is being heard and whether the line has been seen inside its window.
 /// One slot per process because one preview plays at a time — the same reason [`crate::cut_play_back`]'s
@@ -66,10 +66,9 @@ pub fn answer_press(
         cut_review::Pressed::Started {
             status, seek_to, ..
         } => {
-            // The footage is the session's own files; a test names them through `cue_files` instead.
-            let files = ui::cut_record_play::files_for(window, &ui::cut_record_play::runs_now());
-            crate::ui::cut_cut_play::cue_files(
-                &files,
+            // The footage is the session's own files, through the same door ▶✂ starts its player by.
+            crate::ui::cut_cut_play::cue_running(
+                window,
                 seek_to.unwrap_or_else(|| playhead_of(window)),
             );
             begin(cut_review::start(cut_, playhead_of(window)));
@@ -78,12 +77,15 @@ pub fn answer_press(
         // S5: pausing ends the review, and says so with the module's own short line.
         cut_review::Pressed::PausedAndEnded { status } => {
             clear();
+            // The pause is the media's too, as ▶✂'s is (F2.2 S4): the first rewrite only cleared the page's
+            // state, so the face went back to ▶ while the video played on.
+            crate::ui::cut_cut_play::pause_media();
             status_line.set_text(status)
         }
         // S1: fewer than two clips, in `refused`'s own words.
         cut_review::Pressed::Refused(reason) => status_line.set_text(reason),
     }
-    paint(window);
+    crate::ui::cut_record_play::paint_transport(window);
 }
 
 /// This window's red line, or 0 for a page that has never been clicked.
@@ -108,11 +110,16 @@ pub fn paint(window: &adw::ApplicationWindow) {
             cut_only: player.cut_only,
             reviewing: player.reviewing,
         });
-    button.set_label(if ours_lit && player.transport.playing {
-        PAUSE_LABEL
-    } else {
-        PLAY_LABEL
-    });
+    crate::ui::cut_record_play::set_steady_label(
+        &button,
+        if ours_lit && player.transport.playing {
+            PAUSE_LABEL
+        } else {
+            PLAY_LABEL
+        },
+        &[PLAY_LABEL, PAUSE_LABEL],
+    );
+    crate::ui::cut_record_play::light_lit(window);
 }
 
 /// What one review tick did, so a test can assert the outcome without a window or a clock.
@@ -172,7 +179,10 @@ pub fn tick_once(window: &adw::ApplicationWindow) {
         return;
     };
     let cut_ = ui::review_cut_of(window);
-    let from = player.playhead.unwrap_or(0.0);
+    // The built-in player says where it is (F2.1 S4's "the line follows the player"); otherwise the line's own.
+    let from = crate::ui::cut_record_play::playing_second()
+        .or(player.playhead)
+        .unwrap_or(0.0);
     match step(&cut_, &mut review, from) {
         Outcome::Stay => {
             // Head may have moved even when the join did not; keep it and the review.
@@ -201,7 +211,7 @@ pub fn tick_once(window: &adw::ApplicationWindow) {
             );
             crate::ui::cut_cut_play::pause_media();
             say(window, &status);
-            paint(window);
+            crate::ui::cut_record_play::paint_transport(window);
         }
         Outcome::LineMoved { status } => {
             // S5's hand on the line ENDS the review. DECISION (the spec names the sentence, not the
@@ -218,7 +228,7 @@ pub fn tick_once(window: &adw::ApplicationWindow) {
                 },
             );
             say(window, status);
-            paint(window);
+            crate::ui::cut_record_play::paint_transport(window);
         }
         Outcome::NotReviewing => {}
     }

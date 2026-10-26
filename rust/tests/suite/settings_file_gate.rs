@@ -91,7 +91,7 @@ static LABELS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::
 
 /// The dialog's answer provider: nothing is probed here, only saved.
 fn echoing() -> ui_settings::Provider {
-    std::rc::Rc::new(|_key, typed| Ok(format!("{typed} answered")))
+    std::sync::Arc::new(|_key, typed| Ok(format!("{typed} answered")))
 }
 
 fn mode(path: &Path) -> u32 {

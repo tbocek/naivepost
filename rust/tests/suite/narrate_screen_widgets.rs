@@ -95,19 +95,6 @@ fn sec_07_narrate_1_screen_s2_the_clock_reads_two_places_and_the_outputs_name_th
     );
 }
 
-// --- S3: the Narration tick (§1's number 1) ---------------------------------------------------------------
-
-/// §07-narrate#1-screen — `Off greys lines, preview and voice picker; Produce renders as if there were no lines`.
-#[test]
-fn sec_07_narrate_1_screen_s3_narration_off_greys_exactly_three_things() {
-    // Greyed rather than removed, so nothing reflows under someone deciding.
-    assert_eq!(page::off_greys(), ["lines", "preview", "voice"]);
-
-    // The prototype's tooltip also promised the subtitle choices would go; §1 calls that stale (captions come from
-    // the transcript), so a fourth entry here would be the stale promise coming back.
-    assert_eq!(page::off_greys().len(), 3);
-}
-
 // --- S4: the text box, read and written (§1's number 20) ----------------------------------------------------
 
 /// §07-narrate#1-screen — `Text box: `[emotion] words`, `[top|center|bottom] words` for captions; may carry the
@@ -583,10 +570,7 @@ fn sec_07_narrate_1_screen_s11_the_take_band_keeps_takes_that_are_long_enough() 
 fn sec_07_narrate_1_screen_s12_the_voice_picker_offers_captions_then_narrators_then_files() {
     let options = page::voice_options(2, &["aria.wav", "ben.wav"]);
     let ids: Vec<&str> = options.iter().map(|option| option.id.as_str()).collect();
-    assert_eq!(
-        ids,
-        ["captions", "narrator1", "narrator2", "aria.wav", "ben.wav"]
-    );
+    assert_eq!(ids, ["captions", "own", "narrator2", "aria.wav", "ben.wav"]);
     assert_eq!(options[0].label, "No audio \u{2014} captions only");
     assert!(
         options[1].label.starts_with("Narrator 1 \u{2014} "),

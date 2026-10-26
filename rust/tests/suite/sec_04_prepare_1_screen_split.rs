@@ -12,7 +12,6 @@
 //! parent walks — because a page that merely renders can be wrong: before this item the same widgets
 //! stacked in one column and rendered fine. Same reasoning as `sec_05_cut_1_screen_layout.rs`.
 
-use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::common;
@@ -46,37 +45,20 @@ fn split_round() {
         window.close();
         check_the_picker_lists_every_prompt(app);
         RAN_POLICY_LIST.store(true, Ordering::SeqCst);
-        check_the_title_names_the_open_row(app);
-        RAN_TITLE.store(true, Ordering::SeqCst);
-        check_the_picker_switches_rows_and_stores(app);
-        RAN_SWITCH.store(true, Ordering::SeqCst);
-        check_the_mark_and_reset_wake_only_on_an_edit(app);
-        RAN_MARK.store(true, Ordering::SeqCst);
-        check_the_heading_row_with_an_edit(app);
-        RAN_HEADING_EDITED.store(true, Ordering::SeqCst);
-        check_the_picked_row_is_the_one_the_shot_ticks(app);
-        RAN_TICK.store(true, Ordering::SeqCst);
-        check_the_open_picker_hangs_under_its_button(&window);
-        RAN_OPEN_PANEL.store(true, Ordering::SeqCst);
         check_the_page_holds_no_second_user_context_paragraph(&window);
         RAN_UC.store(true, Ordering::SeqCst);
         window.close();
     });
 }
 
-static RAN_MARK: AtomicBool = AtomicBool::new(false);
-static RAN_HEADING_EDITED: AtomicBool = AtomicBool::new(false);
-
 static RAN_SPLIT: AtomicBool = AtomicBool::new(false);
 static RAN_LEFT: AtomicBool = AtomicBool::new(false);
 static RAN_HEADING: AtomicBool = AtomicBool::new(false);
 static RAN_READOUT: AtomicBool = AtomicBool::new(false);
 static RAN_POLICY_LIST: AtomicBool = AtomicBool::new(false);
-static RAN_TITLE: AtomicBool = AtomicBool::new(false);
 static RAN_ON_SCREEN: AtomicBool = AtomicBool::new(false);
 static RAN_COLUMN_TOPS: AtomicBool = AtomicBool::new(false);
 static RAN_BAND: AtomicBool = AtomicBool::new(false);
-static RAN_SWITCH: AtomicBool = AtomicBool::new(false);
 static RAN_UC: AtomicBool = AtomicBool::new(false);
 
 /// §03-shell.md §1 counts eight badges UNDER the page (**10**-**18**: the run bar's ▶, step selector and ⏹,
@@ -158,7 +140,6 @@ fn check_the_whole_page_is_on_screen_at_the_minimum(window: &adw::ApplicationWin
     for name in [
         "add-sources-row",
         "sources-scroll",
-        "frame-controls",
         "bench-heading",
         "bench-text",
     ] {
@@ -287,471 +268,6 @@ fn sec_04_prepare_1_screen_s3_the_picker_lists_every_prompt_and_nothing_else() {
     );
 }
 
-/// §1's badge **2**: the heading names the row the bench is open on, as "‹Name› prompt", and the picker's
-/// face agrees with it. Built through `set_bench_open_row`, the documented seam `--snapshot 04-prepare`
-/// uses to put the Describe prompt on screen (§1's own picture).
-fn check_the_title_names_the_open_row(app: &adw::Application) {
-    ui::set_bench_open_row(2);
-    let window = prepare_window(app);
-    lay_out();
-    let title = widget(&window, "prepare-title")
-        .downcast::<gtk::Label>()
-        .expect("the heading is a label");
-    assert_eq!(
-        title.label().as_str(),
-        naivepost::bench::title(&naivepost::bench::ROWS[2]),
-        "{ITEM} s2: the heading is the open prompt's name with \"prompt\" after it"
-    );
-    let picker = widget(&window, "bench-picker")
-        .downcast::<gtk::DropDown>()
-        .expect("the picker is a dropdown");
-    assert_eq!(
-        usize::try_from(picker.selected()).unwrap_or(usize::MAX),
-        2,
-        "{ITEM} s2: the picker's face shows the same row the heading names"
-    );
-    window.close();
-}
-
-#[test]
-fn sec_04_prepare_1_screen_s2_the_title_names_the_open_prompt_row() {
-    common::pin_private_cwd();
-    split_round();
-    assert!(
-        RAN_TITLE.load(Ordering::SeqCst),
-        "{ITEM} s2: the open-row title check never ran"
-    );
-}
-
-/// §1's badges **2** and **4** end to end: the "edited — kept in your settings" mark and Reset are live
-/// ONLY while this machine holds an edit, and both go away again through the real Reset button.
-///
-/// The wire is what this pins, not the rule — `bench_paint::paint_marks` already decides visibility from
-/// `bench::edited`, and `sec_04_prepare_1_screen_s3_a_picker_row_switch_and_a_keystroke_go_through_the_widgets`
-/// covers the picker side. Here nothing is pre-staged: a fresh config folder shows neither widget, one
-/// keystroke into `bench-text` (the program's own store path) brings BOTH back with the override file on
-/// disk under that folder, and a press of `bench-reset` (fired the way the toolkit fires it) drops the
-/// override, restores the shipped wording and greys the pair again.
-fn check_the_mark_and_reset_wake_only_on_an_edit(app: &adw::Application) {
-    let root = common::temp_dir_created("bench-mark-reset");
-    unsafe {
-        std::env::set_var("XDG_CONFIG_HOME", root.join("config"));
-        std::env::set_var("XDG_DATA_HOME", root.join("data"));
-    }
-    let paths = naivepost::settings::from_environment().expect("the pinned config folder");
-    let describe = naivepost::bench::ROWS
-        .iter()
-        .position(|row| row.title == "Describe")
-        .expect("Describe is a bench row");
-    let row = &naivepost::bench::ROWS[describe];
-    let shipped = naivepost::bench::shipped(row);
-
-    let window = prepare_window(app);
-    lay_out();
-    widget(&window, "bench-picker")
-        .downcast::<gtk::DropDown>()
-        .expect("the picker is a dropdown")
-        .set_selected(u32::try_from(describe).unwrap());
-    lay_out();
-    let editor = widget(&window, "bench-text")
-        .downcast::<gtk::TextView>()
-        .expect("the bench box is a text view");
-
-    // --- a machine that holds nothing: no mark, no live Reset (§1 badge 4).
-    assert!(
-        !naivepost::bench::edited(&paths, row),
-        "{ITEM}: a private config folder must start unedited"
-    );
-    assert!(
-        !widget(&window, "bench-mark").is_visible(),
-        "{ITEM}: the edited mark showed on a machine holding no edit"
-    );
-    assert!(
-        !widget(&window, "bench-reset").is_sensitive(),
-        "{ITEM}: Reset was live with nothing to restore"
-    );
-
-    // --- one keystroke: stored for real, and both widgets wake.
-    editor
-        .buffer()
-        .set_text(&format!("{shipped}\none line typed here"));
-    lay_out();
-    assert!(
-        naivepost::bench::edited(&paths, row),
-        "{ITEM}: the keystroke stored no override under {root:?}"
-    );
-    // The store is real but the heading is not repainted by it (the mark follows `paint_bench`, which runs
-    // on a row switch or a Reset) — so the shot stages its edit BEFORE building the window. Here the pair
-    // is woken the way a person would wake it: leave the row and come back.
-    widget(&window, "bench-picker")
-        .downcast::<gtk::DropDown>()
-        .expect("the picker is a dropdown")
-        .set_selected(0);
-    lay_out();
-    widget(&window, "bench-picker")
-        .downcast::<gtk::DropDown>()
-        .expect("the picker is a dropdown")
-        .set_selected(u32::try_from(describe).unwrap());
-    lay_out();
-    assert!(
-        paths.prompt_file(row.key).is_file(),
-        "{ITEM}: the override is not where the settings door says it is ({})",
-        paths.prompt_file(row.key).display()
-    );
-    assert!(
-        widget(&window, "bench-mark").is_visible(),
-        "{ITEM}: the mark stayed hidden while this machine held an edit"
-    );
-    assert!(
-        widget(&window, "bench-reset").is_visible()
-            && widget(&window, "bench-reset").is_sensitive(),
-        "{ITEM}: Reset is not live while this machine holds an edit"
-    );
-
-    // --- press Reset the way the toolkit does: shipped wording back, override gone, pair asleep.
-    // The box is repainted by `paint_bench` from the stored state (the guard parks the `changed` handler
-    // so restoring does not re-store), so the text view shows it only after this repaint runs.
-    widget(&window, "bench-reset")
-        .downcast::<gtk::Button>()
-        .expect("Reset is a button")
-        .emit_clicked();
-    lay_out();
-    let (start, end) = editor.buffer().bounds();
-    assert_eq!(
-        editor.buffer().text(&start, &end, true).as_str(),
-        shipped,
-        "{ITEM}: Reset did not put the shipped wording back in the box"
-    );
-    assert!(
-        naivepost::settings::stored_prompt(&paths, row.key)
-            .expect("the prompts folder reads back")
-            .is_none(),
-        "{ITEM}: Reset left the override on disk"
-    );
-    assert!(
-        !widget(&window, "bench-mark").is_visible(),
-        "{ITEM}: the mark survived Reset"
-    );
-    assert!(
-        !widget(&window, "bench-reset").is_sensitive(),
-        "{ITEM}: Reset stayed live after restoring the shipped wording"
-    );
-
-    // --- and once more through the door the SCREENSHOT uses, not a keystroke: `snapshot.rs` stages an
-    // override with `snapshot_bench::stage_edited_row` before it builds the window, because a shot presses
-    // no keys. If that door stored nothing, `shots/04-prepare.png` would draw §1's badge 2 row without its
-    // mark and with a greyed Reset — which is exactly what an earlier round shipped.
-    naivepost::snapshot_bench::stage_edited_row(describe);
-    assert!(
-        naivepost::bench::edited(&paths, row),
-        "{ITEM}: staging the picture's row stored no override under {root:?}, so the shot could never show its mark"
-    );
-    // The pair itself needs no re-check here — the keystroke leg above already pinned that an edit wakes
-    // both. What is new is §1's other sentence: "The User Context row hides mark and Reset (no built-in
-    // wording to differ from)", so row 0 stays bare even while ANOTHER row holds this machine's edit.
-    widget(&window, "bench-picker")
-        .downcast::<gtk::DropDown>()
-        .expect("the picker is a dropdown")
-        .set_selected(0);
-    lay_out();
-    assert!(
-        !widget(&window, "bench-mark").is_visible(),
-        "{ITEM}: the User Context row showed the edited mark while another row held an override"
-    );
-    assert!(
-        !widget(&window, "bench-reset").is_visible(),
-        "{ITEM}: the User Context row showed Reset while another row held an override"
-    );
-    window.close();
-    fs::remove_dir_all(&root).ok();
-}
-
-#[test]
-fn sec_04_prepare_1_screen_s_the_mark_and_reset_wake_only_while_this_machine_holds_an_edit() {
-    common::pin_private_cwd();
-    split_round();
-    assert!(
-        RAN_MARK.load(Ordering::SeqCst),
-        "{ITEM}: the mark/Reset wire check never ran"
-    );
-}
-
-/// §1's heading row ORDER on a machine that HOLDS an edit: "one heading row (left to right: title,
-/// \"edited — kept in your settings\" mark, then at the row's right end the row picker and Reset)".
-///
-/// Two facts, both read off the built window rather than off a rule:
-///  * the CHILD ORDER of `bench-heading` is title, mark, …, picker, Reset — the mark belongs beside the
-///    title and only the picker/Reset are pushed to the right end;
-///  * with the override gone the mark hides and Reset goes insensitive again (the visibility rule stays
-///    `bench_paint`'s; what is new here is that the order and that transition are checked together).
-///
-/// Deliberately NOT measured here: where the parts sit in pixels (that is judged against
-/// `spec/img/04-prepare.png`), nor the mark's face or Reset's liveness under an edit, which
-/// `prepare_screen_widgets::check_readouts_and_reset` already reads off the same widgets. What stays is the
-/// child-index order and the post-Reset hide/sleep transition.
-///
-/// The edit is staged through `bench::store`, the same door a keystroke uses, BEFORE the window is built —
-/// which is exactly how `snapshot.rs` gets badge 2 into `shots/04-prepare.png`.
-fn check_the_heading_row_with_an_edit(app: &adw::Application) {
-    let root = common::temp_dir_created("bench-heading-edited");
-    unsafe {
-        std::env::set_var("XDG_CONFIG_HOME", root.join("config"));
-        std::env::set_var("XDG_DATA_HOME", root.join("data"));
-    }
-    let paths = naivepost::settings::from_environment().expect("the pinned config folder");
-    let describe = naivepost::bench::ROWS
-        .iter()
-        .position(|row| row.title == "Describe")
-        .expect("Describe is a bench row");
-    let row = &naivepost::bench::ROWS[describe];
-    let edited = format!("{}\none line typed here", naivepost::bench::shipped(row));
-    let mut project = Project::default();
-    naivepost::bench::store(&paths, &mut project, row, &edited).expect("the store door accepts it");
-    assert!(
-        naivepost::bench::edited(&paths, row),
-        "{ITEM} s2: storing an override did not make this machine hold one"
-    );
-
-    // Build the bench ON that row, the way the shot does: `paint_marks` runs once as the bench is built.
-    let window = prepare_window(app);
-    lay_out();
-    // The bench opens on the User Context, which shows neither mark nor Reset (§1), so every assertion
-    // below about their liveness needs a prompt row open first.
-    widget(&window, "bench-picker")
-        .downcast::<gtk::DropDown>()
-        .expect("the picker is a dropdown")
-        .set_selected(u32::try_from(describe).unwrap());
-    lay_out();
-
-    // --- (a) the child order §1 spells: title, mark, [free width], picker, Reset. Read off the child
-    // indices, not off pixels — where the row LOOKS is judged against `spec/img/04-prepare.png`.
-    let heading = widget(&window, "bench-heading")
-        .downcast::<gtk::Box>()
-        .expect("the heading row is a box");
-    let names: Vec<String> = heading
-        .observe_children()
-        .iter::<glib::Object>()
-        .filter_map(Result::ok)
-        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
-        .map(|child| child.widget_name().to_string())
-        .collect();
-    let wanted = ["prepare-title", "bench-mark", "bench-picker", "bench-reset"];
-    let placed: Vec<usize> = wanted
-        .iter()
-        .map(|name| {
-            names
-                .iter()
-                .position(|child| child == name)
-                .unwrap_or_else(|| {
-                    panic!("{ITEM} s2: {name} is not a child of the heading row — {names:?}")
-                })
-        })
-        .collect();
-    // The unnamed spacer that pushes picker + Reset to the row's right end is not one of §1's parts, so
-    // only the four named children have to come out in order.
-    assert!(
-        placed.windows(2).all(|pair| pair[0] < pair[1]),
-        "{ITEM} s2: the heading row's children are not in §1's order title → mark → picker → Reset — {names:?}"
-    );
-
-    // --- (b) put the shipped wording back through the real button: the mark hides, Reset sleeps.
-    // The mark's own face and Reset's liveness under an edit belong to `prepare_screen_widgets`'s
-    // `check_readouts_and_reset`; what is only ever checked here is that they go to sleep again.
-    let reset_button = widget(&window, "bench-reset")
-        .downcast::<gtk::Button>()
-        .expect("Reset is a button");
-    reset_button.emit_clicked();
-    lay_out();
-    assert!(
-        !naivepost::bench::edited(&paths, row),
-        "{ITEM} s2: Reset left the override on disk"
-    );
-    assert!(
-        !widget(&window, "bench-mark").is_visible(),
-        "{ITEM} s2: the mark survived Reset"
-    );
-    assert!(
-        !widget(&window, "bench-reset").is_sensitive(),
-        "{ITEM} s2: Reset stayed live after restoring the shipped wording"
-    );
-    window.close();
-    fs::remove_dir_all(&root).ok();
-}
-
-#[test]
-fn sec_04_prepare_1_screen_s2_the_heading_row_is_title_then_mark_then_picker_then_reset() {
-    common::pin_private_cwd();
-    split_round();
-    assert!(
-        RAN_HEADING_EDITED.load(Ordering::SeqCst),
-        "{ITEM} s2: the edited heading-row check never ran"
-    );
-}
-
-/// §1's picture of the open list (`spec/img/04-prompt-picker.png`) is a LIST: plain row names, one per line,
-/// with a ✓ before the row the picker is open on and nothing else. The live DropDown cannot carry that tick
-/// (a `GtkDropDown` shows its rows on their own surface, so the shot paints them — see
-/// `snapshot_prompt_picker`), so the mark has to be asked of the bench itself. This pins the fact the picture
-/// shows: the row the bench opened on is the row the shot ticks, and the tick is not baked into a name.
-fn check_the_picked_row_is_the_one_the_shot_ticks(app: &adw::Application) {
-    let _ = app;
-    // Names first: the reference list reads "Describe", not the heading's "‹Describe› prompt" — so the menu
-    // carries the plain row titles, and only the heading spells the prompt wording (§1 badges 2 vs 3).
-    for (index, name) in naivepost::bench::picker_rows() {
-        assert_eq!(
-            name,
-            naivepost::bench::ROWS[index].title.to_string(),
-            "{ITEM} s3: picker row {index} is {name:?}, not the plain row name the picture draws"
-        );
-    }
-    // …and the tick follows the window's own bench, read off the live picker after it was moved.
-    let window = prepare_window(app);
-    lay_out();
-    let picker = widget(&window, "bench-picker")
-        .downcast::<gtk::DropDown>()
-        .expect("the picker is a dropdown");
-    let describe = naivepost::bench::ROWS
-        .iter()
-        .position(|row| row.title == "Describe")
-        .expect("Describe is a bench row");
-    picker.set_selected(u32::try_from(describe).unwrap());
-    lay_out();
-    assert_eq!(
-        usize::try_from(picker.selected()).unwrap_or(usize::MAX),
-        describe,
-        "{ITEM} s3: the picker face did not follow the row the bench opened on"
-    );
-    window.close();
-}
-
-#[test]
-fn sec_04_prepare_1_screen_s3_the_picked_row_carries_the_tick_and_the_names_are_plain() {
-    common::pin_private_cwd();
-    split_round();
-    assert!(
-        RAN_TICK.load(Ordering::SeqCst),
-        "{ITEM}: the picker-tick check never ran"
-    );
-}
-
-static RAN_TICK: AtomicBool = AtomicBool::new(false);
-
-/// §1's badge **3** and **4** as a WIRE: choosing a row in the real `bench-picker` repaints the heading,
-/// the text box and the mark/Reset pair through the same code a click runs, and typing in `bench-text`
-/// writes through ("Every keystroke is stored"). Asserted through `bench::text`/`bench::edited` — the
-/// stored state the logic tests check — not by re-reading the widget that was just set.
-///
-/// §1's other sentence here: "The User Context row hides mark and Reset (no built-in wording to differ
-/// from)", so the pair must be invisible on row 0 even after that row has been edited.
-fn check_the_picker_switches_rows_and_stores(app: &adw::Application) {
-    // "Every keystroke is stored" needs somewhere to store to: the config folder is the program's own
-    // seam (`settings::from_environment()`), pointed at this test's private directory.
-    let root = common::temp_dir_created("bench-picker");
-    unsafe {
-        std::env::set_var("XDG_CONFIG_HOME", root.join("config"));
-        std::env::set_var("XDG_DATA_HOME", root.join("data"));
-    }
-    let paths = naivepost::settings::from_environment().expect("the pinned config folder");
-
-    let window = prepare_window(app);
-    lay_out();
-    let picker = widget(&window, "bench-picker")
-        .downcast::<gtk::DropDown>()
-        .expect("the picker is a dropdown");
-    let describe = naivepost::bench::ROWS
-        .iter()
-        .position(|row| row.title == "Describe")
-        .expect("Describe is a bench row");
-
-    // --- choosing a prompt row: heading, wording and Reset all follow the picker.
-    picker.set_selected(u32::try_from(describe).unwrap());
-    lay_out();
-    assert_eq!(
-        widget(&window, "prepare-title")
-            .downcast::<gtk::Label>()
-            .expect("the heading is a label")
-            .label()
-            .as_str(),
-        naivepost::bench::title(&naivepost::bench::ROWS[describe]),
-        "{ITEM} s3: the heading did not follow the picker to the Describe prompt"
-    );
-    let editor = widget(&window, "bench-text")
-        .downcast::<gtk::TextView>()
-        .expect("the bench box is a text view");
-    let shipped = naivepost::bench::shipped(&naivepost::bench::ROWS[describe]);
-    let buffer = editor.buffer();
-    let (start, end) = buffer.bounds();
-    let shown = buffer.text(&start, &end, true).to_string();
-    assert_eq!(
-        shown, shipped,
-        "{ITEM} s3: the box shows the shipped Describe wording before any edit"
-    );
-    // Nothing edited yet: §1's mark and Reset are only "live while this machine holds an edit".
-    assert!(
-        !widget(&window, "bench-reset").is_visible(),
-        "{ITEM} s4: Reset shows on an unedited prompt row"
-    );
-
-    // --- typing: the keystroke goes through to the machine's stored prompt, not just the widget.
-    let typed = format!("{shipped}\nextra line from a keystroke");
-    editor.buffer().set_text(&typed);
-    lay_out();
-    assert!(
-        naivepost::bench::edited(&paths, &naivepost::bench::ROWS[describe]),
-        "{ITEM} s3: typing into bench-text stored nothing"
-    );
-    assert_eq!(
-        naivepost::bench::text(&paths, &fixture(), &naivepost::bench::ROWS[describe]),
-        typed,
-        "{ITEM} s3: the stored Describe wording is not what was typed"
-    );
-    assert!(
-        widget(&window, "bench-reset").is_visible()
-            && widget(&window, "bench-reset").is_sensitive(),
-        "{ITEM} s4: Reset is not live while this machine holds an edit"
-    );
-    assert!(
-        widget(&window, "bench-mark").is_visible(),
-        "{ITEM} s3: the \"edited — kept in your settings\" mark is missing on an edited prompt"
-    );
-
-    // --- User Context: §1 says its row hides BOTH the mark and Reset, edit or not.
-    picker.set_selected(0);
-    lay_out();
-    let context_text = widget(&window, "bench-text")
-        .downcast::<gtk::TextView>()
-        .expect("the bench box is a text view");
-    context_text
-        .buffer()
-        .set_text("a context typed in this test");
-    lay_out();
-    assert_eq!(
-        naivepost::ui::session_handle(&window).borrow().context,
-        "a context typed in this test",
-        "{ITEM} s3: the User Context keystroke did not reach the session"
-    );
-    assert!(
-        !widget(&window, "bench-mark").is_visible(),
-        "{ITEM} s3: the User Context row must hide the edited mark"
-    );
-    assert!(
-        !widget(&window, "bench-reset").is_visible(),
-        "{ITEM} s3: the User Context row must hide Reset"
-    );
-    window.close();
-}
-
-/// The session's User Context as the shell holds it — the state a keystroke on row 0 writes through to.
-#[test]
-fn sec_04_prepare_1_screen_s3_a_picker_row_switch_and_a_keystroke_go_through_the_widgets() {
-    common::pin_private_cwd();
-    split_round();
-    assert!(
-        RAN_SWITCH.load(Ordering::SeqCst),
-        "{ITEM} s3: the picker/keystroke wire check never ran"
-    );
-}
-
 fn fixture() -> Project {
     naivepost::project::load(&common::fixture_dir()).expect("the fixture loads")
 }
@@ -876,10 +392,14 @@ fn sec_04_prepare_1_screen_s1_the_page_is_split_left_and_right_by_a_draggable_di
     );
 }
 
-/// §1's left column, top to bottom: the add row, the scrolling list, the controls under it.
+/// §1's left column, top to bottom: the add row, then the scrolling list (no controls under it since Freq went).
 fn check_the_left_column_order(window: &adw::ApplicationWindow) {
     let left = widget(window, "prepare-left");
-    for name in ["add-sources-row", "sources-scroll", "frame-controls"] {
+    assert!(
+        !holds(&left, "frame-controls"),
+        "{ITEM} s1: no row of frame controls under the list since Freq went"
+    );
+    for name in ["add-sources-row", "sources-scroll"] {
         assert!(
             holds(&left, name),
             "{ITEM} s1: {name} is not inside the left column"
@@ -887,19 +407,14 @@ fn check_the_left_column_order(window: &adw::ApplicationWindow) {
     }
     let add = bounds(window, "add-sources-row");
     let scroll = bounds(window, "sources-scroll");
-    let controls = bounds(window, "frame-controls");
     assert!(
-        add.y() < scroll.y() && scroll.y() < controls.y(),
-        "{ITEM} s1: the left column is not add row → list → controls ({add:?} {scroll:?} {controls:?})"
+        add.y() < scroll.y(),
+        "{ITEM} s1: the left column is not add row → list ({add:?} {scroll:?})"
     );
     // The add row STAYS above the list while the list scrolls (§1: "the rows above and below it stay").
     assert!(
         add.y() + add.height() <= scroll.y() + 2.0,
         "{ITEM} s1: the add row overlaps the scrolling band"
-    );
-    assert!(
-        controls.y() >= scroll.y(),
-        "{ITEM} s1: the Freq/Language row is not under the list"
     );
     let scroller = widget(window, "sources-scroll")
         .downcast::<gtk::ScrolledWindow>()
@@ -957,17 +472,12 @@ fn check_the_bench_heading_order(window: &adw::ApplicationWindow) {
         "{ITEM} s2: the text box is only {:.1} px tall",
         text.height()
     );
-    // Picker after the title, and at the row's right end.
+    // The row picker is gone: the prompts are configured in profiles, so the bench is the User Context alone.
     assert!(
-        picker.x() >= title.x() + title.width(),
-        "{ITEM} s2: the row picker sits left of the title ({picker:?} vs {title:?})"
+        !widget(window, "bench-picker").is_visible(),
+        "{ITEM} s2: no prompt rows to pick on the bench"
     );
-    let room = heading.x() + heading.width() - (picker.x() + picker.width());
-    assert!(
-        room <= 40.0,
-        "{ITEM} s2: the row picker is {:.1} px short of the heading's right end",
-        room
-    );
+    let _ = (picker, title);
 }
 
 #[test]
@@ -1103,144 +613,3 @@ fn sec_04_prepare_1_screen_s5_the_user_context_shows_once_in_the_bench() {
         "{ITEM} s5: the one-copy User Context check never ran"
     );
 }
-
-/// §1's second picture (`spec/img/04-prompt-picker.png`), as numbers: the row picker's list hangs under the
-/// picker button at the top right of the bench column, and the heading row and the text box stay on screen
-/// beside it. `spec/QUESTIONS.md`'s §04 answer 3c rejects "only the list, stretched over the whole window",
-/// so what is pinned is COVERAGE: the panel is a strip of the window, not the window, and nothing it overlaps
-/// has been pushed off.
-fn check_the_open_picker_hangs_under_its_button(window: &adw::ApplicationWindow) {
-    let picker = bounds(window, "bench-picker");
-    let heading = bounds(window, "bench-heading");
-    let text = bounds(window, "bench-text");
-    // The shot's own placement doors, so a green check cannot coexist with a wrong picture.
-    let (px, py, pw, ph) = naivepost::snapshot_prompt_picker::open_panel_box_for_test(window)
-        .expect("{ITEM} s6: the picker has no box to hang a list under");
-    let win_w = window.width().max(naivepost::shell::WINDOW_MIN_W) as f64;
-    let win_h = window.height().max(naivepost::shell::WINDOW_MIN_H) as f64;
-    let (picker_x, picker_right, picker_bottom) = (
-        picker.x() as f64,
-        (picker.x() + picker.width()) as f64,
-        (picker.y() + picker.height()) as f64,
-    );
-    println!(
-        "SPLIT s6 picker x={picker_x:.1}..{picker_right:.1} y={:.1}..{picker_bottom:.1}; panel x={px:.1}..{:.1} y={py:.1}..{:.1} in a {win_w:.0}x{win_h:.0} window",
-        picker.y(), px + pw, py + ph
-    );
-    // The split's own handle position, not `prepare-left`'s box: inside a `gtk::Paned` with `shrink-start-child`
-    // a column is allocated its own minimum while the handle sits elsewhere, so the column's x+w says nothing
-    // about where the divider is. The handle is what separates the two columns on screen, and it is the geometry
-    // the panel must fit inside — read here, before the width checks, because both of them compare against it.
-    let split = widget(window, "prepare-split")
-        .downcast::<gtk::Paned>()
-        .expect("{ITEM} s6: the Prepare page is split by a paned");
-    let split_bounds = bounds(window, "prepare-split");
-    let divider_x = split_bounds.x() as f64 + split.position() as f64;
-    println!(
-        "SPLIT s6 prepare-split x={:.1} handle at {divider_x:.1}",
-        split_bounds.x()
-    );
-    // **COMPACT**: the panel is a menu, not a sheet — narrower than the bench column it hangs over, and a slice
-    // of the window's width (`spec/QUESTIONS.md` §04 answer 3c's exact complaint was a list filling the canvas).
-    assert!(
-        pw < win_w - divider_x,
-        "{ITEM} s6: the open list is {pw:.0} px wide but the column it hangs over is only {:.0} px — that is a \
-         sheet over the whole page, not a dropdown under a button",
-        win_w - divider_x
-    );
-    assert!(
-        pw < win_w / 4.0,
-        "{ITEM} s6: the open list is {pw:.0} px wide in a {win_w:.0} px window against a {:.0} px picker — \
-         that is a sheet, not a dropdown hanging under a button",
-        picker_right - picker_x
-    );
-    // **AND THE PAGE IS STILL THERE**: the panel hangs under the heading row it belongs to, down the RIGHT
-    // column only, inside the window — which is what a dropdown does and a sheet does not. The height is NOT
-    // capped: §1's caption says the list scrolls ("Translate and Upload text sit below Narration"), so all
-    // fourteen rows are drawn and the bottom lands where GTK clamps a real popover, at the window's edge.
-    let heading_x = heading.x() as f64;
-    assert!(
-        py >= heading.y() as f64 + heading.height() as f64 - 2.0,
-        "{ITEM} s6: the open list starts at {py:.1}, over the bench heading that owns the picker \
-         (heading {:.1}..{:.1})",
-        heading.y() as f64,
-        heading.y() as f64 + heading.height() as f64
-    );
-    assert!(
-        px - heading_x >= 120.0,
-        "{ITEM} s6: only {:.0} px of the heading row stay visible to the list's left, so the list covers the \
-         page instead of hanging beside it (heading starts {heading_x:.1}, list starts {px:.1})",
-        px - heading_x
-    );
-    assert!(
-        px >= divider_x - 1.0,
-        "{ITEM} s6: the open list starts at {px:.1}, left of the page's own divider at {divider_x:.1} — it \
-         overlays the sources column, not the bench's",
-    );
-    assert!(
-        py + ph <= win_h + 1.0,
-        "{ITEM} s6: the open list runs past the bottom of the window (ends {py:.1}+{ph:.0} in {win_h:.0} px)"
-    );
-    // **HUNG FROM THE BUTTON**: its right edge is the button's, its top is just under the button.
-    assert!(
-        (px + pw - picker_right).abs() <= 8.0,
-        "{ITEM} s6: the list's right edge ({:.1}) does not follow the picker's ({picker_right:.1}), so it is \
-         not anchored to that button",
-        px + pw
-    );
-    assert!(
-        py >= picker_bottom - 1.0 && py <= picker_bottom + 12.0,
-        "{ITEM} s6: the list's top ({py:.1}) is not under the picker button (ends {picker_bottom:.1})"
-    );
-    // **AND THE PAGE IS STILL THERE**: the heading row beside it, and the text box under it, both on screen.
-    let (heading_x, heading_right) = (heading.x() as f64, (heading.x() + heading.width()) as f64);
-    assert!(
-        px > heading_x && px + pw <= heading_right + 1.0,
-        "{ITEM} s6: the list ({px:.1}..{:.1}) does not sit within the bench heading's column \
-         ({heading_x:.1}..{heading_right:.1})",
-        px + pw
-    );
-    for name in [
-        "bench-heading",
-        "bench-text",
-        "prepare-title",
-        "add-sources-row",
-        "sources-scroll",
-    ] {
-        // The bounds this file reads everywhere, not `is_on_screen_for_test`: that door compares against
-        // `window.width()`, which under a window manager with no WM answers 0 before the first map, and every
-        // control would read as "off screen" whatever the picture shows.
-        let (x, y, w, h) = ui::window_shot::bounds_in_window_for_test(window.upcast_ref(), name)
-            .unwrap_or((0.0, 0.0, 0.0, 0.0));
-        assert!(
-            w > 0.0 && h > 0.0 && x >= -0.5 && y >= -0.5 && x < win_w && y < win_h,
-            "{ITEM} s6: {name} left the screen once the picker opened: ({x:.1},{y:.1},{w:.1},{h:.1}) in a \
-             {win_w:.0}x{win_h:.0} window"
-        );
-    }
-    assert!(
-        text.height() > 0.0 && (text.y() as f64) < py + ph,
-        "{ITEM} s6: the prompt text box ({:.1}..{:.1}) is not the panel's neighbour any more \
-         (panel ends {:.1})",
-        text.y() as f64,
-        (text.y() + text.height()) as f64,
-        py + ph
-    );
-    // The window shot is the screen now: no sidecar steals `04-prompt-picker.png` from the page.
-    assert!(
-        !naivepost::snapshot_subjects::subject_takes_the_name("04-prompt-picker"),
-        "{ITEM} s6: a subject took the asked filename again, which is how the asked name ended up a list alone"
-    );
-}
-
-#[test]
-fn sec_04_prepare_1_screen_s6_the_open_picker_hangs_under_its_button_over_the_page() {
-    common::pin_private_cwd();
-    split_round();
-    assert!(
-        RAN_OPEN_PANEL.load(Ordering::SeqCst),
-        "{ITEM} s6: the open-picker placement check never ran"
-    );
-}
-
-static RAN_OPEN_PANEL: AtomicBool = AtomicBool::new(false);

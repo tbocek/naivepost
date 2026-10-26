@@ -31,6 +31,12 @@ pub struct FakeLlm {
 
 impl FakeLlm {
     pub fn start(replies: Vec<String>) -> FakeLlm {
+        FakeLlm::start_slow(replies, std::time::Duration::ZERO)
+    }
+
+    /// [`FakeLlm::start`], each answer held back `delay` first: a model that takes its time, for the tests that
+    /// prove a press returns before the answer does (§03-shell §1).
+    pub fn start_slow(replies: Vec<String>, delay: std::time::Duration) -> FakeLlm {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
         let port = listener.local_addr().expect("a local address").port();
         let (sender, received) = mpsc::channel();
@@ -53,6 +59,7 @@ impl FakeLlm {
                             }
                         })
                         .unwrap_or_default();
+                    std::thread::sleep(delay);
                     if let Some(mut seen) = serve(stream, &reply) {
                         seen.reply = reply;
                         let _ = sender.send(seen);

@@ -6,8 +6,9 @@
 use crate::ui;
 use adw::prelude::*;
 
-/// Publish the shot's publish state onto `window`. Returns true when this module owned `screen`.
-pub(crate) fn paint(window: &adw::ApplicationWindow, screen: &str) -> bool {
+/// Publish the shot's publish state onto `window`, for the project in `dir`. Returns true when this module
+/// owned `screen`.
+pub(crate) fn paint(window: &adw::ApplicationWindow, screen: &str, dir: &std::path::Path) -> bool {
     if screen == "08-produce" {
         let mut state = ui::produce_page::read_state();
         state.frames = (1..=3)
@@ -21,12 +22,13 @@ no words, no logos."
         state.title = "Ethereum, one lecture at a time".into();
         state.thumb_title = state.title.clone();
         // One marked box, so the shot shows the text-overlay editor's ✎ chip rather than an
-        // empty chip row (§A: "press its ✎ to reword or remove it").
+        // empty chip row (§A: "press its ✎ to reword or remove it"). In the lower part of the picture:
+        // the upper part is the title's own box, {0.5, 0.25, 1, 0.4}, and a mark there prints over it.
         state.texts = vec![crate::project::TextMark {
             cx: 0.5,
-            cy: 0.25,
-            wf: 1.0,
-            hf: 0.4,
+            cy: 0.8,
+            wf: 0.7,
+            hf: 0.2,
             text: "one lecture at a time".into(),
         }];
         // §1 prints the title across the picture, so the shot's picture carries its words.
@@ -55,12 +57,6 @@ architecture behind them.
         // beside a bare label (the picture's line 3 shows Subtitles and Translate sharing a line).
         state.translate = vec!["German".into()];
         state.session_language = "English".into();
-        state.clips = 7;
-        state.seconds = 254.0;
-        state.to_speak = 5;
-        state.publish_written = true;
-        state.out_files = 9;
-        state.out_bytes = 41 * 1024 * 1024;
         ui::produce_page::set_state(state);
         // §1's opening size (the spec picture is 1272x992) and the shell's page band, opened to what §1's
         // minimum leaves the page — the same ask `snapshot.rs` makes for every page shot.
@@ -80,6 +76,11 @@ architecture behind them.
             .emit_clicked();
         crate::snapshot_face::pump_context(16);
         ui::produce_page::refresh(window);
+        // §1's **15** is the bottom bar's readout, read off the project the way Open reads it
+        // (`paint_readouts_for`). The shot's project has no narration lines, so it reads "no narration".
+        if let Ok(project) = crate::project::load(dir) {
+            ui::window::paint_readouts_for(window, &project, dir);
+        }
         crate::snapshot_face::pump_context(16);
         return true;
     }

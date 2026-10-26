@@ -77,33 +77,27 @@ fn button(window: &adw::ApplicationWindow, name: &str) -> gtk::Button {
 fn check_the_floor_is_the_fit(app: &adw::Application) {
     let window = cut_page(app);
     let zoom_out = button(&window, "zoom-out-button");
-    // The strip's own view: what the page measures its floor against.
-    // The strip's own view, which is what the ladder's floor is worked out from: `strip_pps`
-    // (the door the placeholder's paint and press geometry read) clamps at `view_px(window::STRIP_WIDTH)`
-    // whatever GTK has laid out, and §A's "all of it on screen" for a session that fits this 480 px strip
-    // is exactly that fit.
-    let view = ui::cut_view::view_px(f64::from(ui::window::STRIP_WIDTH));
+    // The band's own view, which is what the ladder's floor is worked out over (`press_zoom` measures the band
+    // as the wheel does, `wheel_gestures_view`): §A's "all of it on screen" is on the band the person sees.
+    let view = ui::cut_view::wheel_gestures_view(&window);
     let want = timeline::floor_pps(&timeline::filmed_runs(&tape()), view);
     assert_ne!(
         want,
         ui::window::TRACK_STRIP_PPS,
         "this tape's fit is not the open zoom: {want}"
     );
-    // One surface both ways: the ladder floors at the strip's DECLARED width (`press_zoom` passes
-    // `STRIP_WIDTH`, not the allocation GTK gave the strip once §05-cut#1's paned let it fill the column),
-    // so this check works its fit out from that same declared 480. Asking the window for its realized
-    // width instead would compare the rule against a surface no door in the program uses.
-    assert_eq!(
-        view,
-        ui::cut_view::view_px(f64::from(ui::window::STRIP_WIDTH)),
-        "the ladder's floor is measured over the strip this check works its fit out from"
-    );
-
+    // In first: this two-minute tape's fit is above the open zoom, and − never widens a band already showing
+    // the whole session, so the walk down to the floor starts from deeper in.
+    let zoom_in = button(&window, "zoom-in-button");
+    for _ in 0..6 {
+        zoom_in.emit_by_name::<()>("clicked", &[]);
+        settle();
+    }
     for _ in 0..40 {
         zoom_out.emit_by_name::<()>("clicked", &[]);
         settle();
     }
-    let stopped = ui::window::strip_pps();
+    let stopped = ui::cut_view::band_scene_for(&window).pps;
     assert!(
         (stopped - want).abs() < 1e-6,
         "− bottoms out at the filmed-length fit {want}, not at {stopped}"
