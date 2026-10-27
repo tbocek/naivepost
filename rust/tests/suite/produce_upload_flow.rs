@@ -639,14 +639,17 @@ fn f5_6_s6_an_empty_instruction_is_refused_with_the_spec_own_sentence() {
     assert!(up::NO_INSTRUCTION.starts_with("nothing to tell the image model"));
     assert!(up::NO_INSTRUCTION.contains("write an edit instruction first"));
     assert!(up::NO_INSTRUCTION.ends_with("suggests one)"));
-    // And the walk refuses rather than sending an empty prompt.
+    // With no instruction the walk never sends an empty prompt: the first image of the row (here the three taken
+    // from the cut) is the thumbnail as it is, and sd.cpp is not asked. The sentence above is for a session that
+    // has no image to take either.
     let rec = Recorder::new();
     let answers = up::Answers {
         title: Some("a title".into()),
         ..Default::default()
     };
     let out = walk_with(&rec, &Publish::default(), &answers, None, false, false);
-    assert_eq!(out.error.as_deref(), Some(up::NO_INSTRUCTION));
+    assert_eq!(out.error, None, "{:?}", out.error);
+    assert!(out.own, "the first image is the picture");
     assert!(
         !rec.took("draw"),
         "nothing was asked of sd.cpp: {:?}",

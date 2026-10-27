@@ -954,10 +954,12 @@ fn ink_halves(png: &[u8]) -> (usize, usize) {
     (top, bottom)
 }
 
-/// S6's refusal, reached from the PAGE's emptiness rather than the file's: a session with a frame in the row
-/// but no instruction anywhere must answer with the spec's own sentence, because §S6 refuses before a call.
+/// S6 with no instruction: nothing is drawn, so nothing is asked of sd.cpp. The first image of the row is the
+/// thumbnail as it is (cropped to the video's shape, the title printed onto it), the way a picked frame is: a
+/// context that says "pick an image, do not make one" is answered without a GPU. The first rewrite refused here
+/// ("nothing to tell the image model") and the run went out with no thumbnail.
 #[test]
-fn f5_6_s6_an_empty_page_instruction_refuses_before_any_call() {
+fn f5_6_s6_no_instruction_takes_the_first_image_as_it_is() {
     let sd = FakeSd::start(vec![]);
     let scene = fixture("no-page-instruction", &sd.url);
     let frame = frame_on_disk(&scene.tree, "room", 2.0, 1440, 1080);
@@ -978,22 +980,27 @@ fn f5_6_s6_an_empty_page_instruction_refuses_before_any_call() {
     };
     let outcome = walk_with_frames(&scene, &publish, &answers, &files, false, &logs);
     assert_eq!(
-        outcome.error.as_deref(),
-        Some(up::NO_INSTRUCTION),
-        "S6's own sentence, not a substitute: {:?}",
+        outcome.error, None,
+        "nothing was refused: {:?}",
         outcome.error
     );
+    assert!(outcome.own, "the first image is the picture");
     assert!(
-        outcome.published,
-        "the text still lands ahead of the refusal (S5)"
+        scene.tree.thumbnail_plain_png().exists(),
+        "taken from the frame on disk, as it is"
     );
-    assert!(
-        !scene.tree.thumbnail_plain_png().exists(),
-        "a refused draw leaves no picture behind"
-    );
+    assert!(outcome.reprinted, "with the title printed onto it");
     assert!(
         sd.try_next_body().is_none(),
-        "nothing was asked of the drawing server"
+        "and nothing was asked of sd.cpp"
+    );
+    assert!(
+        logs.lock()
+            .unwrap()
+            .iter()
+            .any(|l| l == up::FIRST_IMAGE_AS_IS_LOG),
+        "said in the log: {:?}",
+        logs.lock().unwrap()
     );
 }
 

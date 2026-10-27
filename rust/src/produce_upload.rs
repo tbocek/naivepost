@@ -547,6 +547,10 @@ pub fn picked_frame_answer(asked: f64, taken: f64, named: &str) -> String {
     )
 }
 
+/// Said when the walk takes the first image as the thumbnail because there is no instruction to draw from.
+pub const FIRST_IMAGE_AS_IS_LOG: &str =
+    "    publish: no edit instruction \u{2014} the first image is the thumbnail as it is (nothing drawn)";
+
 /// S5–S7: the whole words half, in the spec's order.
 ///
 /// brief → model → **publish.json + description.txt** → (own frame | 3 frames off the cut) → draw unless
@@ -649,6 +653,16 @@ pub fn walk(
         }
         out.took_three = true;
         log(take_three_log());
+    }
+
+    // S6's other door: with no edit instruction there is nothing to draw, so nothing is drawn. The first image
+    // of the row IS the thumbnail, taken as it is (cropped to the video's shape, the title printed onto it), the
+    // way a picked frame is: a context that asks to pick a picture, not to make one, is answered without a GPU.
+    // The first rewrite refused here ("nothing to tell the image model") and the run went out with no thumbnail.
+    if !next.own && next.prompt.trim().is_empty() && !next.frames.is_empty() {
+        next.own = true;
+        out.own = true;
+        log(FIRST_IMAGE_AS_IS_LOG);
     }
 
     // S5: the text lands BEFORE any drawing.
