@@ -522,13 +522,13 @@ fn f5_6_s3_a_picked_frame_becomes_the_picture() {
         "the walk finished: {:?}",
         outcome.error
     );
-    // An OWN picture is not reprinted when the words changed (decision 34): this scenario's row holds a frame
-    // AND an instruction of its own, so `edited_by_hand` is true and the title change costs no lettering.
-    // That is the rule under test, so the plain picture is what this check measures — and it only exists at
-    // all because the S3 leg wrote it (§F5.6 S3: the frame IS the thumbnail, no model, no GPU).
+    // The frame was taken THIS run, so it is a new picture with no words on it: the title is printed onto it even
+    // though the row held a frame and an instruction of its own (`edited_by_hand`). Decision 34 keeps a hand-edited
+    // picture's words when the title changes; it never leaves a picture the run just took without its title (the
+    // prototype prints the title onto the frame it takes). The plain picture exists because the S3 leg wrote it.
     assert!(
-        !outcome.reprinted,
-        "an own picture is not re-lettered by a title change"
+        outcome.reprinted,
+        "a picture taken this run gets its title printed"
     );
     let plain = scene.tree.thumbnail_plain_png();
     assert!(
@@ -800,7 +800,13 @@ fn print_leg() -> Box<up::PrintWords> {
             .ok()
             .and_then(|record| record.title_box)
             .unwrap_or_default();
-        naivepost::produce_upload_print::print_words(&plain, &tree.thumbnail_png(), words, &band)
+        naivepost::produce_upload_print::print_words(
+            &plain,
+            &tree.thumbnail_png(),
+            &[],
+            &words.join(" "),
+            &band,
+        )
     })
 }
 

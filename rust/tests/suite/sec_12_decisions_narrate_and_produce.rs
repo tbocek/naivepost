@@ -763,7 +763,10 @@ fn sec_12_decisions_narrate_and_produce_s34_a_rewritten_title_reprints_until_the
         out.calls
     );
 
-    // Second run, same words: nothing to reprint. The pass is decided by whether the TEXT differs.
+    // Second run, same words, but this run drew a NEW picture: a picture this run takes or draws carries no words
+    // yet, so its title is printed onto it (the prototype prints onto every picture it takes or draws). Words that
+    // did not change over a picture that was not remade are not printed twice: `reprint_title_on_change`, tested
+    // in `produce_upload_flow`.
     let same = Publish {
         prompt: "brighten it".into(),
         thumb_title: "A win nobody expected".into(),
@@ -774,8 +777,8 @@ fn sec_12_decisions_narrate_and_produce_s34_a_rewritten_title_reprints_until_the
     let legs = Legs::default();
     let out = upload_walk(&legs, &same, &answers, false, &mut |_| {});
     assert!(
-        !out.calls.iter().any(|c| c == "print-title"),
-        "the same words are not printed twice: {:?}",
+        out.calls.iter().any(|c| c == "picture") && out.calls.iter().any(|c| c == "print-title"),
+        "a picture drawn this run gets its title: {:?}",
         out.calls
     );
 
@@ -796,12 +799,23 @@ fn sec_12_decisions_narrate_and_produce_s34_a_rewritten_title_reprints_until_the
         out.calls
     );
 
-    // Fourth: the same rewrite, but the picture has been edited by hand. It is theirs now; the words stay.
+    // Fourth: the same rewrite on a hand-edited picture is not a reason to print (`reprint_title_on_change`
+    // answers no); but this run DREW the picture again from the person's own instruction, and a picture drawn this
+    // run carries no words yet, so its title goes onto it. Without the pass, `thumbnail.png` would still be the
+    // previous picture beside a new plain one.
+    assert!(
+        !naivepost::audit_gaps::reprint_title_on_change(
+            "An old title",
+            "A win nobody expected",
+            true
+        ),
+        "a title change alone leaves a hand-edited picture's words"
+    );
     let legs = Legs::default();
     let out = upload_walk(&legs, &rewritten, &answers, true, &mut |_| {});
     assert!(
-        !out.calls.iter().any(|c| c == "print-title"),
-        "a hand-edited picture keeps its own words: {:?}",
+        out.calls.iter().any(|c| c == "picture") && out.calls.iter().any(|c| c == "print-title"),
+        "a picture drawn this run gets its title even when hand-edited: {:?}",
         out.calls
     );
 }

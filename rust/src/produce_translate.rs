@@ -73,6 +73,8 @@ pub fn track(
 /// One language, start to finish: numbered originals, batches, the one re-ask, then the merge put back
 /// onto the original cues. Every word it says goes out through `log` — the run's own log line, never a print.
 fn one_track(cues: &[subs::Cue], language: &str, ask: &Ask, log: &mut impl FnMut(&str)) -> Tracked {
+    // `language` is the track's CODE (it names the file); a person reads the language by its name.
+    let said = crate::roles::language_name(language);
     // 1-based numbers (the contract is what the model sees printed), and `sent_text` strips the
     // placement tag so `{\an8}` never travels as a word — §3.10's first must-fix.
     let original: Vec<(usize, String)> = (1..=cues.len())
@@ -89,7 +91,7 @@ fn one_track(cues: &[subs::Cue], language: &str, ask: &Ask, log: &mut impl FnMut
         // heading, so sending it alone asks for a translation of lines the model never got.
         let request = format!(
             "{}\n{}",
-            subs::message(part.len(), language),
+            subs::message(part.len(), &crate::roles::language_name(language)),
             subs::numbered(&part)
         );
         if let Ok(answers) = ask(&request, &numbers) {
@@ -105,7 +107,7 @@ fn one_track(cues: &[subs::Cue], language: &str, ask: &Ask, log: &mut impl FnMut
         if !batch.complete() {
             let again: Vec<usize> = batch.missing();
             // §6's sentence, said before the call so the second round is explained while it runs.
-            log(&subs::came_back_missing(language, &again));
+            log(&subs::came_back_missing(&said, &again));
             if let Ok(answers) = ask(&batch.ask_again_text(&part), &again) {
                 for (number, text) in answers {
                     let _ = batch.translate_line(number, &text);
@@ -118,13 +120,13 @@ fn one_track(cues: &[subs::Cue], language: &str, ask: &Ask, log: &mut impl FnMut
 
     // The merge owns the per-line decision (translated, or the original with its rows folded back) and
     // the warning that names the lines that stayed behind.
-    let merged = subs::merge(language, &original, &got);
+    let merged = subs::merge(&said, &original, &got);
     // §6's cache sentence: only a COMPLETE track is ever cached (`subs::cached`), so a complete answer here is
     // exactly the case where the reply may have come from `cache/llm` rather than from the model. The walk
     // cannot tell which — the LLM cache answers inside the same leg it hands this function — so the line is
     // said for the complete track and the run's own log keeps it next to the ask.
     if subs::cached(got.len() == original.len()) {
-        log(&subs::from_cache_log(language));
+        log(&subs::from_cache_log(&said));
     }
     let translated = cues
         .iter()

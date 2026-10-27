@@ -165,7 +165,7 @@ fn p_eng_blursigma_s4_the_chain_carries_exactly_the_derived_sigma() {
     // COVER the frame (increase + centred crop) and smeared, then the sharp copy is laid back over the
     // middle of it. Only the background copy gets the gblur.
     assert!(
-        blurred.iter().any(|f| f == "split=2[bg][fg]"),
+        blurred.iter().any(|f| f == "split=2[bdb][bdf]"),
         "{blurred:?}"
     );
     let bg = blurred
@@ -173,7 +173,7 @@ fn p_eng_blursigma_s4_the_chain_carries_exactly_the_derived_sigma() {
         .find(|f| f.contains("gblur="))
         .expect("the blurred branch must push a background filter");
     assert!(
-        bg.starts_with("[bg]scale="),
+        bg.starts_with("[bdb]scale="),
         "the smeared copy is the background: {bg}"
     );
     assert!(bg.contains("force_original_aspect_ratio=increase"), "{bg}");
@@ -181,7 +181,15 @@ fn p_eng_blursigma_s4_the_chain_carries_exactly_the_derived_sigma() {
     assert!(
         blurred
             .iter()
-            .any(|f| f == "[fg][bg]overlay=(W-w)/2:(H-h)/2"),
+            .any(|f| f == "[bdf]scale=1920:1080:force_original_aspect_ratio=decrease[bdf]"),
+        "the sharp copy is fitted into the frame: {blurred:?}"
+    );
+    // `overlay` lays its second input over its first: the backdrop first, the sharp copy over it. The first
+    // rewrite had them the other way round and every video came out one smear.
+    assert!(
+        blurred
+            .iter()
+            .any(|f| f == "[bdb][bdf]overlay=(W-w)/2:(H-h)/2"),
         "the sharp copy is centred over the smeared backdrop: {blurred:?}"
     );
     // Exactly one element blurs: the foreground is never touched.

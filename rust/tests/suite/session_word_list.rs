@@ -820,4 +820,12 @@ fn f1_13_s6_the_list_follows_the_session_clock_not_the_row_order() {
     let list = words::load(&tree).unwrap().expect("the list was built");
     let said: Vec<&str> = list.iter().map(|word| word.match_word.as_str()).collect();
     assert_eq!(said, ["welcome", "goodbye"], "10-28-46 was recorded first");
+    // And on the session clock (§F1.13): 10-39-43 starts 657 s after 10-28-46, so its first word, 0.0 s into
+    // its own file, is at session second 657. The first rewrite kept each file's own seconds, every take near
+    // 0, and the joins' marks ended before they began, so no stumble ever left the cut.
+    let starts: Vec<f64> = list.iter().map(|word| word.start).collect();
+    assert!(
+        (starts[0] - 0.0).abs() < 1e-6 && (starts[1] - 657.0).abs() < 1e-6,
+        "each word at its recording's place on the session clock: {starts:?}"
+    );
 }

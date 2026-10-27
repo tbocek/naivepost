@@ -97,7 +97,7 @@ fn sec_08_produce_5_rules_s1_every_clip_comes_out_at_one_size_and_layout() {
         let sound = render::audio_chain(&clip, &Produce { mono, ..settings() }, 0, &[]);
         let last = sound.last().expect("a chain");
         assert!(
-            last.starts_with("format=sample_fmts=fltp:sample_rates=48000:channel_layouts="),
+            last.starts_with("aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts="),
             "{last}"
         );
         assert!(last.ends_with(layout), "{last}");
@@ -132,6 +132,14 @@ fn sec_08_produce_5_rules_s1_seek_on_input_and_length_on_output() {
         "2400.500",
         "the same three decimals as every other time"
     );
+    // And footage is read for as long as the clip takes of it, on the input beside the seek: without it a plain
+    // 1x clip ran on to the end of its recording (the first rewrite's every footage clip).
+    let length = argv
+        .iter()
+        .position(|a| a == "-t")
+        .expect("-t on the input");
+    assert!(length < first_input, "{argv:?}");
+    assert_eq!(argv[length + 1], "8.000", "{argv:?}");
 
     // -t on the output: after every input and filter argument, immediately before the file's name.
     let rated = render::Clip {
@@ -145,7 +153,7 @@ fn sec_08_produce_5_rules_s1_seek_on_input_and_length_on_output() {
     let last_input = argv.iter().rposition(|a| a == "-i").expect("the last -i");
     let t = argv
         .iter()
-        .position(|a| a == "-t")
+        .rposition(|a| a == "-t")
         .expect("-t on a rated clip");
     assert!(t > last_input, "{argv:?}");
     assert_eq!(argv[t + 1], "6.500");
@@ -220,7 +228,8 @@ fn sec_08_produce_5_rules_s1_delays_in_whole_milliseconds_and_inputs_append_only
     assert_eq!(ITEM, "§08-produce#5-rules");
     // P.policy.gameVolume rides with these two: the bed's `volume=0.22` and the line's `adelay` are the same
     // filter pair, and a fractional millisecond would make ffmpeg parse what we meant as an expression.
-    let chain = render::audio_chain(&clip_with_line(0.3456), &settings(), 0, &[]).join(",");
+    let clip = clip_with_line(0.3456);
+    let chain = render::voice_chain(&clip.lines[0], &settings()).join(",");
     let delay = chain
         .split(',')
         .find(|filter| filter.starts_with("adelay="))
@@ -235,7 +244,8 @@ fn sec_08_produce_5_rules_s1_delays_in_whole_milliseconds_and_inputs_append_only
         assert!(number.parse::<i64>().is_ok(), "{delay} is not an integer");
     }
     assert_eq!(value, "346ms|346ms", "rounded, not truncated: {delay}");
-    assert!(chain.contains("volume=0.22"), "{chain}");
+    let bed = render::audio_chain(&clip, &settings(), 0, &[]).join(",");
+    assert!(bed.contains("volume=0.22"), "{bed}");
 
     // Input indices append-only: one -i per pair, in the order given, and the `anullsrc` branch takes a slot
     // like any other input — otherwise a later filter's `[N:a]` would point at its neighbour's audio.

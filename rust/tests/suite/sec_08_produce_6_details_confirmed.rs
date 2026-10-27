@@ -155,7 +155,7 @@ fn planned(
         wav_of: &wav_of,
         wav_seconds: &|_entry| None,
         footage_left: &left,
-        source_file: &|_clip| Some("project:media/in.mp4".to_string()),
+        source_file: &|clip| Some(("project:media/in.mp4".to_string(), clip.seg_s)),
         on_recording: !runs.is_empty(),
         cues: exec::Cues::default(),
         sources: &project_sources,
@@ -224,8 +224,8 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_copy
         vec![copy_seg(10.0, 30.0)],
         Vec::new(),
         Vec::new(),
-        // The tape stops 6.251 s after the clip's end, so that is the length §6 says it keeps.
-        &[(0.0, 36.251)],
+        // The tape stops 6.251 s into the paste, so that is the length §6 says it keeps.
+        &[(0.0, 16.251)],
         false,
     );
     assert!(
@@ -256,8 +256,8 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_soun
         vec![seg(10.0, 40.0)],
         Vec::new(),
         Vec::new(),
-        // Tape that stops 12 s past this clip's end: 12 s is what the run kept.
-        &[(0.0, 52.0)],
+        // Tape that stops 12 s into this clip: 12 s is what the run kept.
+        &[(0.0, 22.0)],
         false,
     );
     assert!(
@@ -267,6 +267,21 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_soun
         ),
         "{:?}",
         short.logs
+    );
+    // Tape that runs on 12 s past the clip: nothing ran out, so nothing is said. The first rewrite said
+    // "shortened to 12 s" here, of every clip longer than the tape left after it.
+    let covered = planned(
+        "p6-s1-sound-covered",
+        vec![seg(10.0, 40.0)],
+        Vec::new(),
+        Vec::new(),
+        &[(0.0, 52.0)],
+        false,
+    );
+    assert!(
+        !covered.logs.iter().any(|l| l.contains("past the end")),
+        "{:?}",
+        covered.logs
     );
 }
 
@@ -420,9 +435,9 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_clip
         vec![seg(0.0, 10.0), seg(10.0, 40.0), seg(40.0, 50.0)],
         Vec::new(),
         Vec::new(),
-        // The tape stops at 45 s: only clip 2 (10→40) starts inside a run AND runs past its end, so it is
-        // the one clip §6 says a word about, and the number in the line is 2.
-        &[(0.0, 45.0)],
+        // The first run stops at 15 s and the next starts at 40 s: only clip 2 (10→40) starts inside a run AND
+        // runs past its end, so it is the one clip §6 says a word about, and the number in the line is 2.
+        &[(0.0, 15.0), (40.0, 50.0)],
         false,
     );
     assert!(
@@ -467,7 +482,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s1_a_wa
         wav_of: &|_e| None,
         wav_seconds: &|_e| None,
         footage_left: &render::unknown_footage,
-        source_file: &|_c| Some("project:media/in.mp4".to_string()),
+        source_file: &|c| Some(("project:media/in.mp4".to_string(), c.seg_s)),
         on_recording: false,
         cues: exec::Cues::default(),
         sources: &project_sources,

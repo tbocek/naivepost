@@ -533,25 +533,29 @@ fn f5_2_s5_one_encode_command_per_clip() {
     assert!(line.contains("-b:v 0"), "{line}");
     assert!(!line.contains("yuv420p"), "{line}");
 
-    // A frame rate: named when the row names one, and `source` means ffmpeg is told nothing.
-    let argv = r::encode_command(&clip, &settings, &[], None, out);
-    assert!(argv.windows(2).any(|w| w == ["-fpsmax", "30"]), "{argv:?}");
+    // A frame rate: named when the row names one, and `source` means ffmpeg is told nothing. With the
+    // frame-timing tick off the `fps` filter sets the grid and the output is told it is constant.
+    let mut constant = settings.clone();
+    constant.vfr = false;
+    let argv = r::encode_command(&clip, &constant, &[], None, out);
     assert!(
         argv.windows(2).any(|w| w == ["-fps_mode", "cfr"]),
         "{argv:?}"
     );
+    assert!(argv.join(" ").contains("fps=fps=30"), "{argv:?}");
     let mut source = settings.clone();
     source.frame_rate = project::FrameRate::Source;
     assert!(!r::encode_command(&clip, &source, &[], None, out)
         .iter()
-        .any(|a| a == "-fpsmax"));
-    // The peak-rate tick turns the same number from a target into a ceiling.
+        .any(|a| a == "-fpsmax" || a == "-fps_mode"));
+    // The peak-rate tick turns the same number into a ceiling: `-fpsmax` alone, since ffmpeg refuses it beside
+    // `-fps_mode vfr` as contradictory (the first rewrite's every VFR encode), and no `fps` filter pinning a grid.
     let mut peak = settings.clone();
     peak.vfr = true;
-    assert_eq!(
-        r::frame_rate_args("30", true),
-        vec!["-fps_mode", "vfr", "-fpsmax", "30"]
-    );
+    let argv = r::encode_command(&clip, &peak, &[], None, out);
+    assert!(argv.windows(2).any(|w| w == ["-fpsmax", "30"]), "{argv:?}");
+    assert!(!argv.iter().any(|a| a == "-fps_mode"), "{argv:?}");
+    assert!(!argv.join(" ").contains("fps=fps="), "{argv:?}");
 
     // Burned-in subtitles reach the encoder as a filter. The default Produce row ticks blurred edges, so the
     // run below turns that off to keep the question to one filter.
@@ -668,6 +672,8 @@ fn f5_2_s8_the_mux_carries_only_ticked_subtitles() {
     let line = r::mux_command(video, audio, &[], &settings, out, &[]).join(" ");
     assert!(!line.contains("-c:s"), "{line}");
     assert!(!line.contains("mov_text"), "{line}");
+    // The rewritten sound keeps the page's bitrate and layout, as every clip was encoded with.
+    assert!(line.contains("-b:a 128k -ac 2"), "{line}");
 
     // Ticked and in-file: one track per language, mp4's own codec, each mapped with its language tag.
     let mut track = settings.clone();
@@ -676,7 +682,14 @@ fn f5_2_s8_the_mux_carries_only_ticked_subtitles() {
     let line = r::mux_command(video, audio, &tracks, &track, out, &[]).join(" ");
     assert!(line.contains("produce/final.de.srt"), "{line}");
     assert!(line.contains("-c:s mov_text"), "{line}");
-    assert!(line.contains("-map s:0"), "{line}");
+    // Every input before any output option (an option before an `-i` is that input's), and the track mapped
+    // by its own input: the video, the sound, then the .srt as input 2.
+    let srt = line
+        .find("-i produce/final.de.srt")
+        .expect("the track is an input");
+    assert!(srt < line.find("-c:s").unwrap(), "{line}");
+    assert!(srt < line.find("-map").unwrap(), "{line}");
+    assert!(line.contains("-map 2:0"), "{line}");
 
     // Burned-in is the encoder's business (§F5.2 S5), so the mux adds nothing for it.
     let mut burned = settings.clone();

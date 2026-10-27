@@ -36,8 +36,8 @@ fn exists_everything(_: &str) -> bool {
 fn no_wav(_: &naivepost::narration::Entry) -> Option<std::path::PathBuf> {
     None
 }
-fn any_source(_: &render::Clip) -> Option<String> {
-    Some("project:media/in.mp4".to_string())
+fn any_source(clip: &render::Clip) -> Option<(String, f64)> {
+    Some(("project:media/in.mp4".to_string(), clip.seg_s))
 }
 fn project_sources() -> Vec<naivepost::project::Source> {
     project().sources
@@ -204,12 +204,13 @@ fn all_translated(numbers: &[usize]) -> std::collections::BTreeMap<usize, String
 
 /// §6's line naming the numbers that never came back, spelled by the program's own function.
 fn left_line(numbers: &[usize]) -> String {
-    subs::left_in_the_original("de", numbers)
+    // Said by the language's name; the code names only its file.
+    subs::left_in_the_original("German", numbers)
 }
 
 /// §6's re-ask line, spelled by the program's own function.
 fn reask_line(numbers: &[usize]) -> String {
-    subs::came_back_missing("de", numbers)
+    subs::came_back_missing("German", numbers)
 }
 
 #[test]
@@ -263,7 +264,7 @@ fn sec_08_produce_5_rules_s2_a_gap_is_re_asked_once_and_then_named_on_the_log() 
     assert!(
         got.logs
             .iter()
-            .any(|l| l.starts_with(">>> subtitles: de came from the cache")),
+            .any(|l| l.starts_with(">>> subtitles: German came from the cache")),
         "the finished track says where an answer like this can come from: {:?}",
         got.logs
     );
@@ -311,7 +312,7 @@ fn sec_08_produce_5_rules_s2_a_gap_the_re_ask_cannot_fill_is_left_and_said() {
     let warn = left_line(&[2]);
     assert_eq!(
         warn,
-        "!!! subtitles: de: 1 line(s) left in the original (2) -- the rest of the track is good"
+        "!!! subtitles: German: 1 line(s) left in the original (2) -- the rest of the track is good"
     );
     assert!(
         got.logs.contains(&warn),
@@ -342,7 +343,7 @@ fn sec_08_produce_5_rules_s2_a_tick_named_twice_costs_no_ask() {
     );
     assert_eq!(
         subs::track_languages("English", &["English".to_string(), "German".to_string()]),
-        ["German".to_string()],
+        ["de".to_string()],
         "and a setting that carries it anyway asks for nothing"
     );
     // So the walk over a tick list carrying only the session's own language costs no ask and writes no
@@ -378,7 +379,7 @@ fn sec_08_produce_5_rules_s2_a_tick_named_twice_costs_no_ask() {
         "the one real translation was asked for"
     );
     assert!(
-        got.tree.final_srt(Some("German")).is_file(),
+        got.tree.final_srt(Some("de")).is_file(),
         "the language that IS a translation gets its sheet"
     );
     assert!(
@@ -397,7 +398,7 @@ fn sec_08_produce_5_rules_s2_a_tick_named_twice_costs_no_ask() {
         said,
         [
             render::sidecar_log("final", None),
-            render::sidecar_log("final", Some("German"))
+            render::sidecar_log("final", Some("de"))
         ],
         "{:?}",
         got.logs
@@ -417,7 +418,7 @@ fn sec_08_produce_5_rules_s2_a_tick_named_twice_costs_no_ask() {
                 .filter(|n| {
                     n.ends_with(".srt")
                         && *n != "final.srt"
-                        && *n != render::sidecar_names("final", Some("German"))[0]
+                        && *n != render::sidecar_names("final", Some("de"))[0]
                 })
                 .collect()
         })

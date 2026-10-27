@@ -491,9 +491,7 @@ fn pixels(pixbuf: &gtk::gdk_pixbuf::Pixbuf) -> Option<(Vec<u8>, i32, i32)> {
 /// The violet dashed box §A draws for a word mark, with its words inside, printed by the render's own rule
 /// ([`crate::produce_runs::reprint`]: the Cut page's fitter, wrapped into lines) and scaled from the render's
 /// picture to the `picture_w` px it is drawn at here, so the editor shows the lines the thumbnail will carry.
-fn draw_words(cr: &cairo::Context, boxes: &[PaintedBox], picture_w: f64, picture_h: f64) {
-    // `reprint` fits the words in its own 1920-wide picture; the plate draws that picture `picture_w` wide.
-    let scale = picture_w / f64::from(crate::produce_runs::WIDTH);
+fn draw_words(cr: &cairo::Context, boxes: &[PaintedBox]) {
     for (x, y, bw, bh, text) in boxes {
         cr.set_line_width(2.0);
         cr.set_dash(&[6.0, 4.0], 0.0);
@@ -504,33 +502,10 @@ fn draw_words(cr: &cairo::Context, boxes: &[PaintedBox], picture_w: f64, picture
         if text.is_empty() {
             continue;
         }
-        let fitted = crate::produce_runs::reprint(
-            text,
-            TitleBox {
-                cx: (x + bw / 2.0) / picture_w,
-                cy: (y + bh / 2.0) / picture_h,
-                wf: bw / picture_w,
-                hf: bh / picture_h,
-            },
-        );
-        let size = (fitted.size * scale).max(6.0);
-        cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
-        cr.set_font_size(size);
-        let leading = size * 1.2;
-        let mut baseline = y + ((bh - leading * fitted.lines.len() as f64) / 2.0).max(0.0) + size;
-        for line in &fitted.lines {
-            let left = match cr.text_extents(line) {
-                Ok(extent) => x + ((bw - extent.width()) / 2.0).max(0.0),
-                Err(_) => *x,
-            };
-            cr.set_source_rgba(0.0, 0.0, 0.0, 0.45);
-            cr.move_to(left + size * 0.03, baseline + size * 0.03);
-            let _ = cr.show_text(line);
-            cr.set_source_rgb(1.0, 1.0, 1.0);
-            cr.move_to(left, baseline);
-            let _ = cr.show_text(line);
-            baseline += leading;
-        }
+        // The SAME lettering `thumbnail.png` is printed with (the prototype's one `drawFxText`), fitted to the box
+        // as it sits on the plate, so what the page shows is what the upload gets. The first rewrite drew its own
+        // white letters with a soft shadow here, at a size scaled off the print's.
+        crate::produce_upload_print::draw_text_box(cr, text, *x, *y, *bw, *bh, 1.0);
     }
 }
 
@@ -656,8 +631,6 @@ fn paint_thumbnail(area: &gtk::DrawingArea, cr: &cairo::Context, w: f64, h: f64)
             pw,
             ph,
         ),
-        pw,
-        ph,
     );
     let _ = cr.restore();
 }
@@ -668,22 +641,83 @@ fn paint_slot(area: &gtk::DrawingArea, cr: &cairo::Context, w: f64, h: f64, inde
     let state = crate::ui::produce_page::read_state();
     ground(cr, w, h);
     let path = frame_path(state.frames.get(index));
-    match photo_rect(area, cr, &path, w, h) {
+    let photo = photo_rect(area, cr, &path, w, h);
+    SLOT_SHOWN.with(|shown| {
+        shown.borrow_mut().insert(
+            index,
+            matches!(photo, Photo::Painted(_)).then(|| path.clone()),
+        )
+    });
+    match photo {
         Photo::Painted(picture) if index == 0 => draw_crop(cr, &state, picture),
         Photo::Painted(_) | Photo::Coming => {}
         Photo::Missing => missing(cr, w, h),
     }
 }
 
-/// A stored `project:`-relative frame path resolved against the session folder. No folder or no entry
-/// answers a path that cannot exist, which the caller treats as "no picture" through the pixbuf error.
+thread_local! {
+    /// The picture each slot's last real draw showed, if it showed one: the window's own paints, for the test
+    /// that must see a slot fill in without painting it itself.
+    static SLOT_SHOWN: std::cell::RefCell<std::collections::HashMap<usize, Option<std::path::PathBuf>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// For a test: the picture slot `index`'s last draw by the window showed, if it showed one.
+pub fn slot_shown_for_test(index: usize) -> Option<std::path::PathBuf> {
+    SLOT_SHOWN.with(|shown| shown.borrow().get(&index).cloned().flatten())
+}
+
+/// A stored row entry as the file it shows. A `frame:<seconds>` entry (what the spread, the model's pick and a
+/// chosen frame write) is the session's extracted frame nearest that second, through the request's own rule
+/// ([`crate::produce_upload_media::entry_file`]), so a slot shows the picture the request sends; anything else
+/// is a `project:`-relative or absolute path resolved against the session folder. No folder, no entry, or a
+/// frame list still being read answers a path that cannot exist, which the caller paints as "no picture". The
+/// first rewrite resolved `frame:91.7` as a file name, so every frame slot painted the missing marker.
 fn frame_path(entry: Option<&String>) -> std::path::PathBuf {
-    match entry {
-        Some(stored) => {
-            let dir = session_dir();
-            crate::layout::resolve(&dir, &dir, stored)
+    let Some(stored) = entry else {
+        return std::path::PathBuf::new();
+    };
+    let dir = session_dir();
+    if crate::produce_details::frame_line(stored).is_none() {
+        return crate::layout::resolve(&dir, &dir, stored);
+    }
+    let Ok(tree) = crate::layout::Tree::new(&dir) else {
+        return std::path::PathBuf::new();
+    };
+    session_frames(&tree)
+        .and_then(|frames| crate::produce_upload_media::entry_file(&tree, stored, &frames))
+        .unwrap_or_default()
+}
+
+/// Every extracted frame of the session's footage as `(session second, path)`, off the Cut page's frame cache:
+/// the folders are listed on a worker, never in a paint (§03-shell §1), and `None` means a listing is still
+/// coming; its landing repaints the plates ([`repaint_plates`]).
+fn session_frames(tree: &crate::layout::Tree) -> Option<Vec<(f64, std::path::PathBuf)>> {
+    let project = crate::ui::window::live_project();
+    let names: Vec<&str> = project
+        .sources
+        .iter()
+        .map(|source| source.path.rsplit('/').next().unwrap_or(&source.path))
+        .collect();
+    let zero = crate::clock::clock(&names).zero;
+    let mut frames = Vec::new();
+    for stem in crate::ui::produce_press_wiring::frame_source_stems() {
+        for path in crate::ui::cut_picture_cache::frames_or_coming(tree, &stem)? {
+            let Some(name) = path.file_stem().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if let Some(seconds) = crate::clock::frame_session_seconds(name, zero) {
+                frames.push((seconds, path));
+            }
         }
-        None => std::path::PathBuf::new(),
+    }
+    Some(frames)
+}
+
+/// A frame listing landed: the page's plates paint again, so a slot waiting on it shows its picture.
+pub fn repaint_plates() {
+    if let Some(window) = crate::ui::produce_page::held_window() {
+        install(&window);
     }
 }
 

@@ -46,9 +46,6 @@ pub struct Doors<'a> {
     /// Does an insert's asset still exist — the same door `plan_clips` answers its "is not there any more"
     /// line with, so a clip that already has a reason says it once. Asked with the cut's own spelling.
     pub exists: &'a dyn Fn(&str) -> bool,
-    /// How much tape is left past the segment's end. `0.0` means the caller does not know, and "unknown" is
-    /// not "out of tape", so no past-the-end sentence is said on it.
-    pub footage_left: &'a dyn Fn(&Seg) -> f64,
 }
 
 impl<'a> Doors<'a> {
@@ -64,14 +61,16 @@ impl<'a> Doors<'a> {
 /// straight into its doors without owning a vec; the program hands its snapshot's real spans instead.
 pub const NO_TAPE: &[(f64, f64)] = &[];
 
-/// The seconds the clip keeps when its tape gives out, or `None` when nothing is shortened. `left` is the
-/// caller's per-segment `footage_left` answer — the same door F4.3's grow step uses, which the produce page
-/// computes from the run covering the segment (`(run_end - seg.e).max(0.0)`), so a clip that started later
-/// gets its OWN leftover rather than the first clip's. `0.0` is that page's own "I do not know"
-/// ([`crate::produce_render::unknown_footage`]) and is never a shortening. A clip sitting on no recording at
-/// all is not "shortened" either: the no-recording sentence above already refused it.
-fn kept_length(left: f64, planned: f64) -> Option<f64> {
-    (left > 0.0 && planned > left).then_some(left)
+/// The seconds the clip keeps when its tape gives out, or `None` when nothing is shortened: the filmed run the
+/// clip starts in ends before the clip does, and what is left is that run's end less the clip's start. A clip
+/// that starts in no run is not "shortened": the no-recording sentence above already refused it. The first
+/// rewrite compared the clip's length with the tape left AFTER its end (F4.3's grow bound), so every clip
+/// longer than that leftover was said to be shortened to it, on a session whose tape covered all of them.
+fn kept_length(seg: &Seg, runs: &[(f64, f64)]) -> Option<f64> {
+    let (_, end) = runs
+        .iter()
+        .find(|(start, end)| *start <= seg.s + 1e-6 && seg.s < *end)?;
+    (seg.e > end + 1e-6).then(|| end - seg.s)
 }
 
 /// The planned clips' refusals and news, in clip-number order, in the wording §6 spells.
@@ -98,11 +97,10 @@ pub fn refusals(
             continue;
         }
         let on_tape = produce_read_head::on_recording(seg, doors.runs);
-        let left = (doors.footage_left)(seg);
         let base = (doors.base_of)(seg);
         let copied = seg.ins.starts_with("copy:");
         // What §6's "shortened to X s" names is the CLIP's own length after the tape gives out.
-        let shortened = kept_length(left, seg.e - seg.s);
+        let shortened = kept_length(seg, doors.runs);
 
         // "clip N copies footage at T s that falls in no recording — skipped" and its past-the-end twin:
         // a pasted stretch points at session seconds, and session seconds with no file behind them decode

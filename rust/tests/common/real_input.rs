@@ -154,6 +154,13 @@ fn settle_input() {
 }
 
 /// A real click of `button` (1 left, 2 middle, 3 right) at `(x, y)` in `widget`'s coordinates.
+/// Move the real pointer over `widget` at `(x, y)` without pressing, and let the motion land.
+pub fn real_hover(widget: &impl IsA<gtk::Widget>, x: f64, y: f64) {
+    let (_, sx, sy) = screen_point(widget, x, y);
+    pointer_to(sx, sy);
+    settle_input();
+}
+
 pub fn real_click(widget: &impl IsA<gtk::Widget>, x: f64, y: f64, button: u32) {
     let (_, sx, sy) = screen_point(widget, x, y);
     pointer_to(sx, sy);

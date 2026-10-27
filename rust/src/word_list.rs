@@ -573,11 +573,18 @@ pub fn press_word_list(
     }
     // One stat per lane up front: the closure runs once per word and must not touch the disk each time.
     let lanes = lane_stats(tree, project);
+    let offsets = lane_offsets(project);
     let built = build_session(
         &sources,
         |lane, start, end| peak_in(&lanes, lane, start, end),
         |lane| raw_transcript(tree, lane),
-        |lane, start, end| fixed_spelling(tree, lane, start, end),
+        // `transcript.fixed.tsv` is on the recording's own clock and the words are on the session's: asked
+        // in the recording's seconds, the line's end handed back in the session's.
+        |lane, start, end| {
+            let off = offsets.get(lane).copied().unwrap_or(0.0);
+            fixed_spelling(tree, lane, start - off, end - off)
+                .map(|(line_end, words)| (line_end + off, words))
+        },
         tree,
     );
     let (words, mut logs) = match built {
@@ -623,9 +630,11 @@ fn gather(
 ) -> Result<Vec<(String, Vec<Token>)>, String> {
     let hz = crate::transcribe::SAMPLE_RATE as f64;
     let mut out: Vec<(String, Vec<Token>)> = Vec::new();
+    let offsets = lane_offsets(project);
     // On the session clock: a seam is a change of recording in THIS order, and BEFORE has to be the earlier.
     for source in crate::fix_session::in_clock_order(project) {
         let lane = lane_of(source);
+        let off = offsets.get(&lane).copied().unwrap_or(0.0);
         // The aligner's times first: they are what a cut point is measured against, and gluing off
         // them keeps the list agreeing with the edges F1.11 will place. ASR's own samples are the
         // fallback for a session that was never aligned (no aligner served, or alignment skipped),
@@ -645,15 +654,34 @@ fn gather(
         }
         let tokens = timed
             .into_iter()
+            // The aligner counts from the recording's own first sample; the list is on the SESSION clock
+            // (§F1.13), so each word moves by where its recording sits. The first rewrite stored the
+            // recording's own seconds, every take starting near 0, and the joins' marks came out ending
+            // before they began (07-news, 2026-10-26: "62.09 → 1.54"), so no stumble ever left the cut.
             .map(|word| Token {
                 word: word.word,
-                start: word.start_sample as f64 / hz,
-                end: word.end_sample as f64 / hz,
+                start: off + word.start_sample as f64 / hz,
+                end: off + word.end_sample as f64 / hz,
             })
             .collect();
         out.push((lane, tokens));
     }
     Ok(out)
+}
+
+/// Where each lane's recording starts on the session clock, by lane: the placement every stage shares.
+fn lane_offsets(project: &crate::project::Project) -> std::collections::HashMap<String, f64> {
+    let names: Vec<&str> = project
+        .sources
+        .iter()
+        .map(|source| base_name(&source.path))
+        .collect();
+    project
+        .sources
+        .iter()
+        .map(lane_of)
+        .zip(crate::fix_transcripts::placement(&names))
+        .collect()
 }
 
 /// One lane's cached envelope plus where its recording sits on the session clock.

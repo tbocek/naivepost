@@ -244,10 +244,30 @@ pub fn press_zoom(window: &adw::ApplicationWindow, inward: bool) -> String {
     let runs = crate::timeline::filmed_runs(&page_recordings());
     let filmed: f64 = runs.iter().map(|(start, end)| end - start).sum();
     let before = crate::ui::cut_view::pps();
+    // Where the red line stands on screen before the step, in the band's own pixels.
+    let line = ui::line_position(window).t;
+    let gutter = crate::ui::cut_view::gutter_px();
+    let line_x = crate::ui::cut_tracks::band_x(&crate::ui::cut_view::band_scene_for(window), line)
+        - crate::ui::cut_view::origin();
     let (next, _) = crate::ui::cut_view::zoom_step(
         inward,
         &runs,
         crate::ui::cut_view::total_px(filmed, before),
+        view,
+    );
+    // §A: the buttons zoom about the red line, so it stays in view: where it stood when it was on screen, in
+    // the middle of the view when it was not. The prototype (and the first rewrite) zoomed about the middle of
+    // the view, and a line near an edge was pushed off screen by a few presses of +.
+    let on_screen = line_x >= gutter && line_x <= gutter + view;
+    let wanted_x = if on_screen {
+        line_x
+    } else {
+        gutter + view / 2.0
+    };
+    let after = crate::ui::cut_tracks::band_x(&crate::ui::cut_view::band_scene_for(window), line);
+    crate::ui::cut_view::set_origin(
+        after - wanted_x,
+        crate::ui::cut_view::total_px(filmed, next),
         view,
     );
     crate::ui::cut_view::repaint_page(window);

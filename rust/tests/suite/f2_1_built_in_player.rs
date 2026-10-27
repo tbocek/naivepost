@@ -128,13 +128,8 @@ fn f2_1_s5_play_runs_the_recording_in_the_preview_and_the_line_follows_it() {
         // picture goes with it (the line's jump is followed by a seek), the player standing where the line does.
         ui::cut_picture::note_line_moved(&window, 0.6);
         let play_cut = ui::play_cut_button(&window).expect("\u{25b6}\u{2702} is on the page");
-        // F2.2 S2: the first press only switches a paused preview to the cut; the second plays it.
-        play_cut.emit_clicked();
-        common::settle();
-        assert!(
-            !naivepost::play_back::running(),
-            "a switch made while paused plays nothing"
-        );
+        // F2.2 S2: one press switches a paused preview to the cut AND plays it (the prototype's `playAs`); the
+        // first rewrite only switched, and ▶✂ had to be pressed twice.
         play_cut.emit_clicked();
         let mut in_gap = Vec::new();
         let (mut at_join, mut past_join) = (None, None);

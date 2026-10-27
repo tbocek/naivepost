@@ -376,7 +376,11 @@ fn check_play_takes_the_preview_back(app: &adw::Application) {
         "and the click put its own sentence on the row"
     );
     assert!(
-        said.contains("no longer watched") || said.contains("plays the cut"),
+        // F2.2 S2: the switch also starts the cut from the line, and this fixture's footage is not on disk,
+        // so the start fails and its §05-cut#8 sentence is the one the press leaves.
+        said.contains("no longer watched")
+            || said.contains("plays the cut")
+            || said == naivepost::preview::playback_status("Cut"),
         "the press answered the click about the preview, not something else: {said:?}"
     );
     window.close();

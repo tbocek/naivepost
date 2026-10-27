@@ -1322,6 +1322,19 @@ fn f5_6_s4_spread_skips_inserts_and_freezes() {
         vec![10.0 / 3.0 * 1.0, 10.0 / 3.0 * 3.0, 10.0 / 3.0 * 5.0],
         "evenly spread over the kept total"
     );
+    // Spread over the VIDEO, answered on the SESSION clock (a `frame:` entry is the session second a frame on
+    // disk is named by): two 10 s clips filmed at 100 s and 200 s put the middle moment at 200 s, not at the
+    // video's 10 s. The first rewrite answered produced seconds, and the slots showed other moments.
+    let apart = vec![common::seg(100.0, 110.0), common::seg(200.0, 210.0)];
+    let spread = frames::spread_moments(&apart);
+    let want = [100.0 + 10.0 / 3.0, 200.0, 200.0 + 20.0 / 3.0];
+    assert!(
+        spread
+            .iter()
+            .zip(want)
+            .all(|(got, want)| (got - want).abs() < 1e-6),
+        "on the session clock: {spread:?}"
+    );
     // Nothing kept at all: no moments, which is what makes the walk log NO_FRAMES_LOG instead of lying.
     let frozen = vec![common::seg(3.0, 3.0)];
     assert!(
@@ -1359,6 +1372,68 @@ fn f5_6_s4_a_chosen_frame_blocks_the_three() {
     let row = published().frames;
     assert_eq!(row.len(), 1, "the row holds the chosen frame only: {row:?}");
     assert!(row[0].starts_with("frame:"), "{}", row[0]);
+}
+
+/// S3 + S7: a frame picked THIS run is a new picture with no words on it, so the answered title is printed onto
+/// it and kept as the printed title, even on a project an earlier run had already given a picked frame (which
+/// counts as the picture being one's own). The prototype takes the frame and prints the title onto it; the first
+/// rewrite printed nothing, and the thumbnail went out without its white title.
+#[test]
+fn f5_6_s3_a_frame_picked_this_run_gets_the_title_printed() {
+    let rec = Recorder::new();
+    let answers = up::Answers {
+        title: Some("Distributed Systems in the News".into()),
+        instruction: None,
+        negative: None,
+        description: Some("the body".into()),
+        picked_frame: Some(12.0),
+    };
+    let mut before = publish_with(&["frame:3.8"], "", "");
+    before.own = true;
+    let out = walk_with(&rec, &before, &answers, None, true, false);
+    assert!(
+        out.calls.iter().any(|c| c == "own-frame"),
+        "the picked frame was taken: {:?}",
+        out.calls
+    );
+    assert!(
+        out.calls.iter().any(|c| c == "print-title"),
+        "and the title printed onto it: {:?}",
+        out.calls
+    );
+    assert_eq!(
+        published().thumb_title,
+        "Distributed Systems in the News",
+        "the record's printed title is the answered one"
+    );
+}
+
+/// S7, the prototype's `TitleSeeded`: the first title to exist is seeded as the picture's printed title, and
+/// nothing seeds it twice. After that the words on the thumbnail are the person's (set and placed on the page),
+/// and a reworded video title leaves them alone.
+#[test]
+fn f5_6_s7_the_printed_title_is_seeded_once() {
+    let rec = Recorder::new();
+    let answers = up::Answers {
+        title: Some("A reworded video title".into()),
+        instruction: None,
+        negative: None,
+        description: Some("the body".into()),
+        picked_frame: Some(12.0),
+    };
+    let mut before = publish_with(&["frame:3.8"], "The first title", "");
+    before.thumb_title = "Words I set on the picture".to_string();
+    before.title_seeded = true;
+    walk_with(&rec, &before, &answers, None, false, false);
+    let written = published();
+    assert_eq!(
+        written.title, "A reworded video title",
+        "the video title is the answer's"
+    );
+    assert_eq!(
+        written.thumb_title, "Words I set on the picture",
+        "the picture's words stay the person's"
+    );
 }
 
 #[test]
@@ -1417,13 +1492,55 @@ fn f5_6_s7_the_title_lands_on_the_picture() {
         wf: 0.9,
         hf: 0.3,
     };
+    // A marked text in its OWN box near the bottom, beside the title in its band near the top: the prototype's
+    // `drawPubTexts` prints each where it was put. The first rewrite squeezed every marked text into a slice of
+    // the title band.
+    let mark = naivepost::project::TextMark {
+        cx: 0.5,
+        cy: 0.85,
+        wf: 0.6,
+        hf: 0.2,
+        text: "Episode seven".to_string(),
+    };
     naivepost::produce_upload_print::print_words(
         &plain,
         &out,
-        &["The comeback nobody saw coming".to_string()],
+        &[mark],
+        "The comeback nobody saw coming",
         &band,
     )
     .expect("the print leg drew the title");
+    // Read back: white letters AND a dark edge round them, in the band and in the mark's own box (the lettering
+    // of a Cut Text effect, the prototype's `drawFxText`; the first rewrite drew white with a soft shadow).
+    let mut file = std::fs::File::open(&out).expect("the printed picture");
+    let mut printed = cairo::ImageSurface::create_from_png(&mut file).expect("a PNG");
+    let (wide, high, stride) = (printed.width(), printed.height(), printed.stride());
+    let data = printed.data().expect("pixels").to_vec();
+    let ink = |top: f64, bottom: f64| {
+        let (mut white, mut dark) = (0, 0);
+        for row in (top * f64::from(high)) as i32..(bottom * f64::from(high)) as i32 {
+            for col in 0..wide {
+                let at = (row * stride + col * 4) as usize;
+                let (b, g, r) = (data[at], data[at + 1], data[at + 2]);
+                if r > 240 && g > 240 && b > 240 {
+                    white += 1;
+                } else if r < 25 && g < 25 && b < 25 {
+                    dark += 1;
+                }
+            }
+        }
+        (white, dark)
+    };
+    let (band_white, band_dark) = ink(0.15, 0.45);
+    assert!(
+        band_white > 50 && band_dark > 50,
+        "the title is white with a dark edge: {band_white} white, {band_dark} dark pixels"
+    );
+    let (mark_white, mark_dark) = ink(0.75, 0.95);
+    assert!(
+        mark_white > 20 && mark_dark > 20,
+        "and the marked text sits in its own box, lettered the same: {mark_white} white, {mark_dark} dark"
+    );
     let after = std::fs::read(&out).expect("the printed picture exists");
     assert!(
         before != after,
@@ -1436,16 +1553,12 @@ fn f5_6_s7_the_title_lands_on_the_picture() {
     );
     // An empty word list prints nothing and says so by leaving the base alone rather than erroring.
     let bare = root.join("bare.png");
-    naivepost::produce_upload_print::print_words(&plain, &bare, &[], &band)
+    naivepost::produce_upload_print::print_words(&plain, &bare, &[], "", &band)
         .expect("nothing to print is ok");
     // A missing base refuses with the file named, which is where an operator would look first.
-    let why = naivepost::produce_upload_print::print_words(
-        &root.join("nope.png"),
-        &out,
-        &["x".into()],
-        &band,
-    )
-    .expect_err("a missing base must refuse");
+    let why =
+        naivepost::produce_upload_print::print_words(&root.join("nope.png"), &out, &[], "x", &band)
+            .expect_err("a missing base must refuse");
     assert!(why.contains("nope.png"), "{why}");
     let _ = std::fs::remove_dir_all(&root);
 }

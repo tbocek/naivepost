@@ -382,7 +382,10 @@ fn f2_3_s8_the_other_two_buttons_switch_over_without_stopping() {
     };
     assert_eq!(
         naivepost::preview::press_recording(&mut player, &[(0.0, 260.0)]),
-        naivepost::preview::Press::SwitchedToRecording { kept_playing: true }
+        naivepost::preview::Press::SwitchedToRecording {
+            kept_playing: true,
+            started: None
+        }
     );
     assert!(!player.reviewing && !player.cut_only && player.transport.playing);
 }

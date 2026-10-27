@@ -120,13 +120,15 @@ fn f2_2_s2_switch_from_the_recording_snaps_the_line_onto_kept_material() {
     );
 }
 
+/// F2.2 S2: a switch made while paused also starts the cut, in the same press (the prototype's `playAs`). The
+/// first rewrite only switched, and ▶✂ had to be pressed twice.
 #[test]
-fn f2_2_s2_switch_while_paused_stays_paused() {
+fn f2_2_s2_switch_while_paused_plays_from_the_line() {
     let cut = two_clips_with_a_hole();
     let mut p = player(false, false, false, Some(5.0));
     match cut_play::pressed(&mut p, &cut) {
         cut_play::Pressed::SwitchedToCut { kept_playing, .. } => {
-            assert!(!kept_playing, "nothing was playing, so nothing starts")
+            assert!(!kept_playing, "nothing was playing before the press")
         }
         other => panic!("expected a switch, got {other:?}"),
     }
@@ -135,7 +137,7 @@ fn f2_2_s2_switch_while_paused_stays_paused() {
         Some(5.0),
         "5 s is already kept material, so the line stays put"
     );
-    assert!(!p.transport.playing);
+    assert!(p.transport.playing, "and the cut plays from it");
 }
 
 #[test]

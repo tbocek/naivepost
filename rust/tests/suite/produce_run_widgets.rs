@@ -423,6 +423,91 @@ fn run_round(app: &adw::Application) {
             "S2: a matching stamp opens no encode — nothing logged past the skip: {:?}",
             &logs[skip_at..]
         );
+        // S2's skip leaves out the render and nothing else: the words half (F5.6) still asks for the title, the
+        // description and the thumbnail. The first rewrite returned after the tag page, so a video that was up
+        // to date never got its upload text. No model is configured here, so the ask is refused, out loud.
+        crate::common::settle_workers();
+        settle();
+        let logs = ui::window_logs();
+        let first = logs
+            .iter()
+            .position(|l| l == flow::SKIP_LOG)
+            .expect("the skip line");
+        assert!(
+            logs[first..].iter().any(|l| l.starts_with(">>> youtube:")),
+            "a skipped encode still runs the words half: {:?}",
+            &logs[first..]
+        );
+        // F5.6 onto the page when the run lands: what the words half wrote to `publish.json` is what the Title and
+        // description boxes then hold (the prototype's `landPublish`). Written here as the words half writes it,
+        // and the run pressed again; the first rewrite never read it back, so the boxes stayed empty.
+        let written = naivepost::project::Publish {
+            title: "Written by the run".to_string(),
+            thumb_title: "Written by the run".to_string(),
+            description: "The run's own description.".to_string(),
+            ..Default::default()
+        };
+        naivepost::publish::save(&written, &tree).expect("publish.json written");
+        click_play(&window);
+        crate::common::settle_workers();
+        settle();
+        let shown = ui::produce_page::read_state();
+        assert_eq!(shown.title, "Written by the run", "the title box");
+        assert_eq!(
+            shown.description, "The run's own description.",
+            "and the description box"
+        );
+        // F5.6, the prototype's `needText = !written`: once the upload text is written, ▶ keeps it and the picture
+        // the person chose, and does not ask the model again (↻ beside the title does). The first rewrite asked on
+        // every press, and the model's answer replaced the chosen frame and the typed title.
+        let chosen = naivepost::project::Publish {
+            title: "My own title".to_string(),
+            thumb_title: "My own title".to_string(),
+            title_seeded: true,
+            description: "My own description.".to_string(),
+            frames: vec!["frame:11.750".to_string()],
+            own: true,
+            ..Default::default()
+        };
+        naivepost::publish::save(&chosen, &tree).expect("publish.json written");
+        // ...and on the page, where the person typed the title and chose the frame.
+        let mut page = ui::produce_page::read_state();
+        page.title = chosen.title.clone();
+        page.frames = chosen.frames.clone();
+        page.own = true;
+        ui::produce_page::set_state(page);
+        let mark = ui::window_logs().len();
+        click_play(&window);
+        crate::common::settle_workers();
+        settle();
+        let after = &ui::window_logs()[mark..];
+        assert!(
+            after
+                .iter()
+                .any(|l| l == naivepost::ui::produce_languages::UPLOAD_TEXT_KEPT_LOG),
+            "the written text is kept, said once: {after:?}"
+        );
+        assert!(
+            !after.iter().any(|l| l.starts_with(">>> youtube:")),
+            "and the model is not asked: {after:?}"
+        );
+        let kept = naivepost::publish::load(&tree).expect("publish.json");
+        assert_eq!(kept.title, "My own title", "the typed title stands");
+        assert_eq!(
+            kept.frames,
+            vec!["frame:11.750".to_string()],
+            "and so does the chosen frame"
+        );
+        // The page letters the picture's title over the picture only once the title is seeded, so the landing
+        // brings the seeding with the words: the first rewrite copied the title and not the flag, and the plate
+        // showed the chosen frame with no title while `thumbnail.png` carried it.
+        let shown = ui::produce_page::read_state();
+        assert!(
+            shown.title_seeded && shown.thumb_title == "My own title",
+            "the page holds the printed title, seeded: {:?} / {}",
+            shown.thumb_title,
+            shown.title_seeded
+        );
         RAN_SKIP.store(true, Ordering::SeqCst);
         window.close();
         settle();

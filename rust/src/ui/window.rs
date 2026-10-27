@@ -935,6 +935,12 @@ the Produce settings",
         cut_history(window).borrow_mut().note_change(landed);
         cut_history(window).borrow_mut().suggested(landed);
         refresh_history_buttons(window);
+        // The page shows the cut that landed, at once: what Undo refreshes after it replaces the cut (the
+        // effects lane, the timeline readouts), and the band and its scrollbar. The first rewrite stored the
+        // cut and repainted nothing, so a suggestion appeared only when the window was next resized.
+        crate::ui::refresh_effects_lane(window);
+        crate::ui::window_bench::refresh_cut_readouts(window);
+        crate::ui::cut_view::repaint_page(window);
     });
     // §F2.14 S2b: the Suggest call's progress, painted (§S2b's "streaming progress counts segments"). One
     // reply's reading goes back through the page's one progress door, so the bar and the status row are drawn

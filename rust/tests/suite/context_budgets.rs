@@ -48,18 +48,6 @@ const MIC: &str = "2026-05-01 10-01-30_mic";
 const VIDEO: &str = "2026-05-01 10-00-00_deck.mkv";
 const AUDIO: &str = "2026-05-01 10-01-30_mic.wav";
 
-/// One `fix_line` per line of a block, then `finish` — §3.3's answer shape.
-fn fix_answer(lines: usize) -> String {
-    let mut calls = String::new();
-    for n in 1..=lines {
-        calls.push_str(&format!(
-            "{{\"function\":{{\"name\":\"fix_line\",\"arguments\":\"{{\\\"n\\\":{n},\\\"text\\\":\\\"respelled line {n}\\\"}}\"}}}},",
-        ));
-    }
-    calls.push_str("{\"function\":{\"name\":\"finish\",\"arguments\":\"{}\"}}");
-    format!("{{\"choices\":[{{\"message\":{{\"content\":\"\",\"tool_calls\":[{calls}]}}}}]}}")
-}
-
 /// A session with transcripts on both lanes and one lane already fixed, which is the state that makes the
 /// merge row run `fix_transcripts::run` rather than skip it.
 struct FixScene {
@@ -190,32 +178,29 @@ impl FixScene {
     }
 }
 
-/// A fake LLM on loopback answering every ask with `answer`, recording each request body.
+/// A fake LLM on loopback answering every fix ask with that block's own rows respelled
+/// ([`common::respelled_rows_answer`]), recording each request.
 struct Fake {
     url: String,
     asks: Arc<Mutex<Vec<String>>>,
-    #[allow(dead_code)] // held so the reply outlives the connection threads reading it
-    answer: Arc<Mutex<String>>,
 }
 
 impl Fake {
-    fn start(answer: String) -> Fake {
+    fn respelling() -> Fake {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
         let port = listener.local_addr().expect("an address").port();
         let asks = Arc::new(Mutex::new(Vec::new()));
         let recorder = asks.clone();
-        let held = Arc::new(Mutex::new(answer));
-        let replies = held.clone();
         std::thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(stream) = stream else { continue };
                 let recorder = recorder.clone();
-                let replies = replies.clone();
                 std::thread::spawn(move || {
-                    let answer = replies.lock().expect("the reply lock").clone();
-                    if let Some(body) = serve(stream, &answer) {
+                    if let Some(ask) =
+                        common::serve_chat_with(stream, &common::respelled_rows_answer)
+                    {
                         if let Ok(mut row) = recorder.lock() {
-                            row.push(body);
+                            row.push(ask.body);
                         }
                     }
                 });
@@ -224,7 +209,6 @@ impl Fake {
         Fake {
             url: format!("http://127.0.0.1:{port}"),
             asks,
-            answer: held,
         }
     }
 
@@ -240,8 +224,6 @@ impl Fake {
         }
     }
 }
-
-use common::serve_body as serve;
 
 /// Messages of `n` ASCII characters: one text part each, so a size is easy to state exactly.
 fn ascii_messages(count: usize, parts_each: usize) -> Vec<Message> {
@@ -487,12 +469,14 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s3_the_rest_is_read_through_tools(
 
     for job in &llm_jobs {
         let offered = tools::offered(*job);
-        if *job == roles::Job::Joins {
+        if matches!(*job, roles::Job::Joins | roles::Job::CleanTranscript) {
             // §3.5: the text edit reads nothing. Its join goes out in three views (wide, close, BEFORE/AFTER)
             // and it answers in one reply; offered tools beside that, the 27B answered nothing usable.
+            // §3.3: the transcript fix the same way: its block, its context and the User Context in one call,
+            // the rows answered back; offered reads, the model asked for them and answered nothing.
             assert!(
                 offered.is_empty(),
-                "the text edit is offered no tool: {offered:?}"
+                "{job:?} is offered no tool: {offered:?}"
             );
             continue;
         }
@@ -679,7 +663,7 @@ fn sec_09_llm_and_tools_5_context_budgets_new_s2_the_session_fix_walk_runs_in_a_
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     // Only ONE source gets a fixed file planted: the other still owes the fixer, which is what makes the
     // merge row run the session walk instead of skipping it (§S3's resume rule).
-    let fake = Fake::start(fix_answer(FIX_LINES));
+    let fake = Fake::respelling();
     let scene = FixScene::new(FIX_LINES, &fake.url);
     scene.enter();
     let stages = scene.stages();

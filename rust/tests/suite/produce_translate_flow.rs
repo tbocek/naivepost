@@ -160,7 +160,8 @@ fn f5_4_s3_a_ticked_language_gets_translated_cues_not_the_original() {
 
     assert_eq!(tracked.len(), 1, "one ticked language, one track");
     let german = &tracked[0];
-    assert_eq!(german.language, "German");
+    // The track goes by its CODE, which names its file (`final.de.srt`); the page ticked it by name.
+    assert_eq!(german.language, "de");
     assert_eq!(tracked.len(), 1, "one ticked language, one track");
     assert_eq!(
         german
@@ -310,7 +311,7 @@ fn f5_4_s3_the_session_language_is_track_zero_and_never_asked() {
     // The rule, straight from `subs`: the session's own language leaves the ticked list.
     assert_eq!(
         subs::track_languages("English", &ticked(&["English", "German"])),
-        vec!["German".to_string()],
+        vec!["de".to_string()],
         "the session's own language is dropped whatever the tick says"
     );
 
@@ -328,7 +329,7 @@ fn f5_4_s3_the_session_language_is_track_zero_and_never_asked() {
         1,
         "only the translated language gets a track here"
     );
-    assert_eq!(tracked[0].language, "German");
+    assert_eq!(tracked[0].language, "de");
     assert_eq!(asks.count(), 1, "exactly one ask for the whole run");
     assert!(
         asks.message_at(0).contains("German") && !asks.message_at(0).contains("English"),
@@ -665,7 +666,7 @@ fn check_press_writes_the_translated_sidecar(root: &Path) {
     let logs = ui::window::window_logs();
     let sidecar_logged = logs
         .iter()
-        .any(|l| l.contains("final.") && l.contains("German") && l.contains(".vtt"));
+        .any(|l| l.contains("final.de.srt") && l.contains(".vtt"));
     assert!(
         sidecar_logged,
         "the run logged the ticked language's sidecars: {:?}",
@@ -674,7 +675,7 @@ fn check_press_writes_the_translated_sidecar(root: &Path) {
             .collect::<Vec<&String>>()
     );
 
-    let srt = tree.final_srt(Some("German"));
+    let srt = tree.final_srt(Some("de"));
     let bare = tree.final_srt(None);
     assert!(
         bare.exists(),

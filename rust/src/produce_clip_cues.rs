@@ -46,9 +46,11 @@ pub fn words_for(
     if source_of(clip) != Source::Footage {
         return Vec::new();
     }
-    // The clip's own seconds are cut-relative (the session clock), which is what the session word list
-    // is timed on; `subs::Word` wants the same numbers, unshifted, because `on_clock` adds the clip's
-    // place in the video afterwards.
+    // The word list is timed on the session clock; a cue is timed from the CLIP's start (in its recording
+    // seconds: `word_cues` divides by the rate and `on_clock` adds the clip's place in the video), and stays
+    // inside the clip (the prototype's `wordCues`: `(s - s0) / speed`, held to the clip's length). The first
+    // rewrite handed the session seconds on unshifted, so every cue landed its clip's session start late: a
+    // 9-minute video carried captions to 20:06, and its file reported that length.
     let start = clip.seg_s;
     let end = clip.seg_s
         + clip.on_screen
@@ -62,8 +64,8 @@ pub fn words_for(
         .filter(|word| word.end > start && word.start < end)
         .map(|word| subs::Word {
             text: word.written.clone(),
-            s: word.start,
-            e: word.end,
+            s: (word.start - start).max(0.0),
+            e: (word.end - start).min(end - start),
         })
         .collect()
 }

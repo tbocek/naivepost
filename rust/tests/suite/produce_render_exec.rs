@@ -90,8 +90,8 @@ fn has_one_wav(line: &Entry) -> Option<PathBuf> {
 }
 
 /// Every clip reads the same recording: what a single-camera session hands the encoder.
-fn any_source(_: &render::Clip) -> Option<String> {
-    Some("/media/take.mp4".to_string())
+fn any_source(clip: &render::Clip) -> Option<(String, f64)> {
+    Some(("/media/take.mp4".to_string(), clip.seg_s))
 }
 
 /// No aligned words: these tests are about files, rates and lines. The F5.4 word path is exercised in
@@ -153,6 +153,8 @@ struct Spy {
     argv: Rc<RefCell<Vec<Spawned>>>,
     logs: Rc<RefCell<Vec<String>>>,
     spoken: Rc<RefCell<Vec<String>>>,
+    /// Every `-i` the mux named that was not on disk when it ran: ffmpeg opens them all before it writes.
+    mux_missing: Rc<RefCell<Vec<String>>>,
 }
 
 impl Spy {
@@ -171,6 +173,7 @@ impl Spy {
         let argv = self.argv.clone();
         let logs = self.logs.clone();
         let spoken = self.spoken.clone();
+        let mux_missing = self.mux_missing.clone();
         let asked = Rc::new(RefCell::new(0usize));
         exec::run_render(
             run,
@@ -192,6 +195,13 @@ impl Spy {
             |command: &exec::Command| {
                 argv.borrow_mut()
                     .push((command.step.to_string(), command.argv.clone()));
+                if command.step == "muxing" {
+                    for pair in command.argv.windows(2) {
+                        if pair[0] == "-i" && !Path::new(&pair[1]).exists() {
+                            mux_missing.borrow_mut().push(pair[1].clone());
+                        }
+                    }
+                }
                 // The tool "writes" the file its last argument names, so size and existence are real.
                 if let Some(out) = command.argv.last() {
                     let path = Path::new(out);
@@ -569,17 +579,46 @@ fn f5_2_s5_the_narration_sits_at_the_game_volume() {
         Default::default(),
         "",
     );
+    // The line's take is on disk, so it is an input of the encode and joins the clip's sound by its label.
+    let take = tree.dir().join("take.wav");
+    std::fs::write(&take, b"a take").unwrap();
+    let take_of = |_: &Entry| Some(take.clone());
     let spy = Spy::new();
     spy.run(
         &run,
         &tree,
-        &mats(&[], exec::Cues::default(), &no_wav, &seconds_2_5),
+        &mats(&[], exec::Cues::default(), &take_of, &seconds_2_5),
         None,
     );
+    let held = spy.argv.borrow();
+    let (_, encode) = held
+        .iter()
+        .find(|(step, _)| step == "clip")
+        .expect("the clip's encode");
+    let input = encode
+        .iter()
+        .position(|a| a == &take.display().to_string())
+        .expect("the take is one of the encode's inputs");
+    assert_eq!(encode[input - 1], "-i", "{encode:?}");
+    let index = encode[..input - 1].iter().filter(|a| *a == "-i").count();
+    let graph = encode
+        .iter()
+        .skip_while(|a| *a != "-filter_complex")
+        .nth(1)
+        .expect("a filter graph");
     assert!(
-        spy.joined().contains(&format!("volume={:.2}", game_volume)),
-        "the bed is turned down to P.policy.gameVolume in the audio chain: {}",
-        spy.joined()
+        graph.contains(&format!("[{index}:a]atempo=")) && graph.contains("adelay="),
+        "the take is read from its own input, delayed into place: {graph}"
+    );
+    assert!(
+        graph.contains(&format!(
+            "volume={game_volume:.2}[bg];[bg][nr0]amix=inputs=2"
+        )),
+        "the bed is turned down to P.policy.gameVolume and the narration mixed over it: {graph}"
+    );
+    assert!(
+        encode.windows(2).any(|w| w == ["-map", "[a]"]),
+        "and the mixed sound is the clip's: {encode:?}"
     );
 }
 
@@ -1139,7 +1178,7 @@ fn f5_2_gap_s7_and_s4_a_press_writes_its_sidecars_and_deletes_the_named_stale() 
     // The earlier render's German sheet stands in the produced folder. The sweep names it (this run ticks
     // German), and S9 rewrites it below — so the assertion is that the OLD text is gone from it, which only
     // happens if the sweep really deleted the file the run then wrote again.
-    let stale = produce.join(format!("{}.German.srt", press.stem));
+    let stale = produce.join(format!("{}.de.srt", press.stem));
     std::fs::write(&stale, "1\n00:00:00,000 --> 00:00:01,000\nALTE ZEILE\n").expect("stale");
     // Beside it, a sheet no language this run named: the sweep cannot name it and must leave it standing.
     let keep = produce.join(format!("{}.other.srt", press.stem));
@@ -1329,6 +1368,53 @@ fn f5_2_s8_the_mux_carries_the_loudnorm_and_the_container_tracks() {
     );
 }
 
+/// S7 + S8: a translated track is in the video, not only beside it. Its sheet is written into the scratch folder as
+/// soon as the translation is back and the mux reads it from there, tagged with the language's ISO-639-2 code
+/// (the prototype's `subTracks`). The first rewrite pointed the mux at the sidecar beside the video, which is
+/// written after the mux, and every press with a language ticked failed: "Error opening input file
+/// …/final.English.srt".
+#[test]
+fn f5_2_s8_the_mux_reads_every_track_sheet_it_names() {
+    let settings = Produce {
+        translate: vec!["German".to_string()],
+        subtitles: Subtitles::TrackInFile,
+        ..Default::default()
+    };
+    let cues = common::produce_cues_for_test(vec!["German".to_string()]);
+    let (tree, run) = run_over(
+        "s8-tracks",
+        vec![common::seg(0.0, 10.0)],
+        vec![entry(0.0, 8.0, 0.0, "words for the sheet")],
+        settings,
+        "",
+    );
+    let spy = Spy::new();
+    let made = spy.run(
+        &run,
+        &tree,
+        &mats(&[], cues.clone(), &no_wav, &seconds_2_5),
+        None,
+    );
+    assert!(made.ok, "{made:?}");
+    let mux = spy.last_with("loudnorm");
+    let sheet = tree.clips_dir().join("final.de.srt");
+    assert!(
+        mux.windows(2)
+            .any(|w| w[0] == "-i" && w[1] == sheet.display().to_string()),
+        "the German track is read from the scratch folder: {mux:?}"
+    );
+    assert!(
+        spy.mux_missing.borrow().is_empty(),
+        "every file the mux opens is there when it runs: {:?}",
+        spy.mux_missing.borrow()
+    );
+    assert!(
+        mux.windows(2)
+            .any(|w| w == ["-metadata:s:s:1", "language=deu"]),
+        "and tagged as German: {mux:?}"
+    );
+}
+
 // ---- S9 -----------------------------------------------------------------------------------------
 
 #[test]
@@ -1358,10 +1444,10 @@ fn f5_2_s9_sidecars_exist_per_language_and_each_is_logged() {
     );
     assert!(tree.final_vtt(None).exists(), "…and its .vtt");
     assert!(
-        tree.final_srt(Some("German")).exists(),
+        tree.final_srt(Some("de")).exists(),
         "the ticked language's .srt"
     );
-    assert!(tree.final_vtt(Some("German")).exists(), "…and its .vtt");
+    assert!(tree.final_vtt(Some("de")).exists(), "…and its .vtt");
     let logs = spy.logs_vec();
     let lines: Vec<&String> = logs
         .iter()
@@ -1563,5 +1649,230 @@ fn f5_2_s2_a_blank_line_is_never_spoken() {
         asked,
         vec!["worded before", "worded after"],
         "the silent middle row is dropped by the seam; the survivors are the worded ones, in order"
+    );
+}
+
+/// f5_2_s5_a_footage_clip_is_cut_from_its_own_recording — §S5's picture input, through the press's own door
+/// (`produce_snapshot::gather` → `render_half`, the scripted spawner standing in for ffmpeg). A session of two
+/// recordings, the second placed ten minutes later and slid by hand: each clip's encode opens the file of the
+/// recording that holds its session second, resolved against the project (`project:` is a spelling, not a path
+/// ffmpeg can open), and seeks to the second INSIDE that file. The first rewrite opened the first footage row,
+/// unresolved, at the session second, for every clip. The same commands carry the program name once and the
+/// audio chain's audio format filter (`aformat`; `format` is the video one and ffmpeg refused the graph).
+#[test]
+fn f5_2_s5_a_footage_clip_is_cut_from_its_own_recording() {
+    let (_root, tree) = common::tree_in("s5-own-recording");
+    let first = "2026-10-25 10-00-00";
+    let second = "2026-10-25 10-10-00";
+    let project = naivepost::project::Project {
+        sources: [first, second]
+            .iter()
+            .map(|name| Source {
+                path: format!("project:sources/{name}.mkv"),
+                footage: true,
+                ..Default::default()
+            })
+            .collect(),
+        ..Default::default()
+    };
+    // The second clip runs 5 s past its recording's end, so §6's line about it has to name that recording.
+    let mut cut = cut_of(vec![common::seg(10.0, 20.0), common::seg(630.0, 705.0)]);
+    cut.shift.insert(second.to_string(), 1.5);
+    let recordings = vec![
+        naivepost::timeline::Recording {
+            base: first.into(),
+            start: 0.0,
+            end: 100.0,
+        },
+        naivepost::timeline::Recording {
+            base: second.into(),
+            start: 600.0,
+            end: 700.0,
+        },
+    ];
+    let snap = naivepost::ui::produce_snapshot::gather(
+        &tree,
+        &cut,
+        &Default::default(),
+        &project,
+        &recordings,
+        Default::default(),
+    );
+    let run = flow::snapshot(
+        Some(cut),
+        &tree,
+        vec![],
+        Default::default(),
+        &project,
+        None,
+        String::new(),
+    );
+    let seen: std::sync::Arc<std::sync::Mutex<Vec<exec::Command>>> = Default::default();
+    let held = seen.clone();
+    naivepost::produce_translate::set_spawn_for_test(std::sync::Arc::new(
+        move |command: &exec::Command| {
+            held.lock().unwrap().push(command.clone());
+            // The output is the file after `-o` (join, mux) or the last argument (an encode).
+            let out = command
+                .argv
+                .iter()
+                .position(|arg| arg == "-o")
+                .and_then(|at| command.argv.get(at + 1))
+                .or(command.argv.last());
+            if let Some(out) = out {
+                let path = Path::new(out);
+                if let Some(dir) = path.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                let _ = std::fs::write(path, b"a rendered file of some length");
+            }
+            Ok(())
+        },
+    ));
+    naivepost::ui::window::clear_logs_for_test();
+    let made = naivepost::ui::produce_snapshot::render_half(&run, &snap);
+    let logs = naivepost::ui::window::logs_for_test();
+    assert!(
+        logs.contains(&naivepost::produce_details::sound_past_end_log(
+            2,
+            &format!("{second}.mkv"),
+            70.0
+        )),
+        "the clip that runs off its recording is named with THAT recording: {logs:?}"
+    );
+    assert!(
+        !logs
+            .iter()
+            .any(|l| l.starts_with("clip 1 ") && l.contains("past the end")),
+        "and the clip its tape covers is not said to be shortened: {logs:?}"
+    );
+    let commands = seen.lock().unwrap().clone();
+    assert!(made.ok, "the press came back clean: {made:?}");
+    let encodes: Vec<&exec::Command> = commands.iter().filter(|c| c.step == "clip").collect();
+    assert_eq!(
+        encodes.len(),
+        2,
+        "two kept segments, two encodes: {commands:?}"
+    );
+    let opened = |command: &exec::Command| -> (String, f64) {
+        let argv = &command.argv;
+        let input = argv.iter().position(|a| a == "-i").expect("an input");
+        let seek = argv
+            .iter()
+            .position(|a| a == "-ss")
+            .filter(|at| *at < input)
+            .map_or(0.0, |at| argv[at + 1].parse().expect("a seek in seconds"));
+        (argv[input + 1].clone(), seek)
+    };
+    let file_of = |name: &str| {
+        tree.dir()
+            .join(format!("sources/{name}.mkv"))
+            .to_string_lossy()
+            .to_string()
+    };
+    assert_eq!(
+        opened(encodes[0]),
+        (file_of(first), 10.0),
+        "the first clip is cut from the first recording at its own second"
+    );
+    assert_eq!(
+        opened(encodes[1]),
+        (file_of(second), 31.5),
+        "the second clip is cut from the SECOND recording, 30 s past its start plus its 1.5 s slide"
+    );
+    for command in &commands {
+        assert_eq!(
+            command.argv.iter().filter(|a| *a == "ffmpeg").count(),
+            1,
+            "the program name is the first argument and only there: {:?}",
+            command.argv
+        );
+        assert!(
+            command.log.ends_with(&command.argv.join(" ")),
+            "and the logged line is the argv as run: {}",
+            command.log
+        );
+        assert_eq!(
+            command.argv.get(1).map(String::as_str),
+            Some("-y"),
+            "every step overwrites what an earlier run wrote rather than asking: {:?}",
+            command.argv
+        );
+    }
+    for command in &encodes {
+        let graph = command.argv.join(" ");
+        assert!(
+            graph.contains("aformat=sample_fmts=fltp:sample_rates=48000")
+                && !graph.contains(";format=sample_fmts")
+                && !graph.contains(",format=sample_fmts"),
+            "the audio chain ends in the AUDIO format filter: {graph}"
+        );
+        assert!(
+            !graph.contains("amix"),
+            "with no lane and no line there is nothing to mix, so no mix: {graph}"
+        );
+    }
+}
+
+/// f5_2_s5_a_heard_lane_is_mixed_into_the_bed — §S5's "lane bed": a separate recording running under the clip (a
+/// lapel microphone) is an input of the clip's encode, read from the second it is at when the clip starts, and is
+/// mixed with the clip's own sound before the gain cues and the dips. The first rewrite planned the mix and handed
+/// ffmpeg nothing to mix, and ffmpeg refused every clip that heard a lane.
+#[test]
+fn f5_2_s5_a_heard_lane_is_mixed_into_the_bed() {
+    let (tree, run) = run_over(
+        "s5-lane",
+        vec![common::seg(10.0, 20.0)],
+        vec![],
+        Default::default(),
+        "",
+    );
+    let lanes = [Lane {
+        name: "mic".into(),
+        src: "project:sources/mic.wav".into(),
+        at: 4.0,
+        off: 1.5,
+        dur: 100.0,
+    }];
+    let spy = Spy::new();
+    spy.run(
+        &run,
+        &tree,
+        &mats(&lanes, exec::Cues::default(), &no_wav, &seconds_2_5),
+        None,
+    );
+    let held = spy.argv.borrow();
+    let (_, encode) = held
+        .iter()
+        .find(|(step, _)| step == "clip")
+        .expect("the clip's encode");
+    let mic = tree.dir().join("sources/mic.wav").display().to_string();
+    let input = encode
+        .iter()
+        .position(|a| a == &mic)
+        .expect("the lane's own file, resolved against the project, is an input");
+    assert_eq!(
+        &encode[input - 3..input],
+        &["-ss", "7.500", "-i"],
+        "read from 7.5 s in: the clip starts 6 s after the lane, which starts 1.5 s into its file: {encode:?}"
+    );
+    let index = encode[..input - 1].iter().filter(|a| *a == "-i").count();
+    let graph = encode
+        .iter()
+        .skip_while(|a| *a != "-filter_complex")
+        .nth(1)
+        .expect("a filter graph");
+    assert!(
+        graph.contains(&format!("[{index}:a]aformat="))
+            && graph.contains("[0:a][ln0]amix=inputs=2:duration=first:normalize=0[bed]"),
+        "the lane joins the clip's own sound by its label: {graph}"
+    );
+    assert!(
+        graph.contains("[bed]alimiter="),
+        "and what follows acts on the whole bed: {graph}"
+    );
+    assert!(
+        !graph.contains("afade="),
+        "a clip with no seam where its sound rejoins the picture is not dipped: {graph}"
     );
 }

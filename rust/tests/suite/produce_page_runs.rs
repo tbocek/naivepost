@@ -768,7 +768,12 @@ fn f5_7_s8_a_transcode_reads_the_whole_file_and_carries_no_captions() {
     );
 
     // mp4 still streams from the front, as the render's own mux insists.
-    assert!(argv.contains(&"+faststart".to_string()), "{:?}", argv);
+    assert!(
+        argv.windows(2)
+            .any(|w| w == ["-movflags", "+faststart+negative_cts_offsets"]),
+        "{:?}",
+        argv
+    );
     assert_eq!(argv.last().unwrap(), "/out/final.mp4");
 }
 

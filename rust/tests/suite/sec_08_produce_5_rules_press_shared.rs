@@ -200,7 +200,7 @@ fn check_sidecars_for_every_language(tree: &Tree) {
             "{name} is empty"
         );
     }
-    for name in render::sidecar_names("final", Some("German")) {
+    for name in render::sidecar_names("final", Some("de")) {
         assert!(
             produced.join(&name).is_file(),
             "the ticked language wrote no {name}"
@@ -208,7 +208,7 @@ fn check_sidecars_for_every_language(tree: &Tree) {
     }
     assert!(
         logs.iter()
-            .any(|l| *l == render::sidecar_log("final", Some("German"))),
+            .any(|l| *l == render::sidecar_log("final", Some("de"))),
         "the press never said the ticked language's sidecar: {:?}",
         logs
     );
@@ -235,11 +235,11 @@ fn check_nothing_to_say(tree: &Tree) {
     let produced = tree.final_video("mp4").parent().unwrap().to_path_buf();
     std::fs::create_dir_all(&produced).unwrap();
     // The page stores a tick under the name the tick itself carries (§A's Translate row: English, German,
-    // French), which is also the stem its sidecar is named after. The ticked language's own pair is stale
+    // French); its sidecar is named after the language's CODE (`final.de.srt`, the prototype's spelling). The ticked language's own pair is stale
     // (this run rewrites it), the bare stem is left over from an older render with nothing to rewrite it now,
     // and a language nobody ticked is not this run's to touch.
-    let stale_de = produced.join("final.German.srt");
-    let stale_de_vtt = produced.join("final.German.vtt");
+    let stale_de = produced.join("final.de.srt");
+    let stale_de_vtt = produced.join("final.de.vtt");
     let bare_sheet = tree.final_srt(None);
     let bare_vtt = tree.final_vtt(None);
     let foreign = produced.join("final.nl.srt");
@@ -285,7 +285,7 @@ fn check_stale_sidecar_replaced(tree: &Tree) {
     write_words(tree);
     let produced = tree.final_video("mp4").parent().unwrap().to_path_buf();
     std::fs::create_dir_all(&produced).unwrap();
-    let stale = produced.join("final.German.srt");
+    let stale = produced.join("final.de.srt");
     std::fs::write(
         &stale,
         "1\n00:00:00,000 --> 00:00:01,000\nvon einem alteren render\n\n",

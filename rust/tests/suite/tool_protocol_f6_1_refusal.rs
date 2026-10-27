@@ -1,16 +1,13 @@
-//! F6.1 S5 over the wire for the three steps that did not honour it: the transcript fixer, the retake pool and
-//! the cut's own ask.
-//!
-//! `tests/suite/tool_protocol_f6_1_wire.rs` proves the rule for the upload text, whose flow already had a copy of it.
-//! What §2 says the rewrite MUST NOT keep is the per-step forgetting — "the refusal is not remembered, so a step
-//! retrying with tools re-offers the field and re-logs the line each time" — and until this round the fixer, the
-//! retakes and the cut each built `Some(tools)` and gave up on the first error. They now share
-//! [`naivepost::llm_tool_refusal_leg::dial_honouring_refusal`], and these checks point the SETTINGS address (the
-//! seam the program itself reads) at a fake that answers 400 to any body carrying a `tools` key, then assert on
-//! the bodies the fake ACTUALLY received.
+//! F6.1 S5 over the wire: a server that refuses the `tools` field is asked the identical request again without
+//! it, the line is said once, the refusal is remembered (never re-offered, never re-said), and a dead server is
+//! not a refusal. The rule lives in ONE leg, [`naivepost::llm_tool_refusal_leg::dial_honouring_refusal`], which
+//! every step that offers tools dials through (the retake pool, the cut, captions, speeds, effects); these checks
+//! drive that leg with the retake job's tools against a fake that answers 400 to any body carrying a `tools` key,
+//! and assert on the bodies the fake ACTUALLY received. The transcript fixer offers no tools any more (one call,
+//! the rows answered back, as the prototype asked it), so a refusing server costs it nothing: pinned last.
 //!
 //! One scenario per test function, each with its own fake port and its own settings folder handed to the door
-//! explicitly (`tree`/`paths`), so no thread touches the process env — the pattern `tests/suite/fix_call.rs` uses.
+//! explicitly (`tree`/`paths`), so no thread touches the process env.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -34,13 +31,27 @@ const SOURCE_ROWS: [(&str, &str, &str, &str); 4] = [
 ];
 const LANE: &str = "lecture";
 
-/// One `fix_line` + `finish` answer in the chat envelope §3.3's tool surface replies with.
-fn fix_answer(n: u32, text: &str) -> String {
-    let args = serde_json::json!({ "n": n, "text": text }).to_string();
-    let escaped = args.replace('"', "\\\"");
-    format!(
-        "{{\"choices\":[{{\"message\":{{\"content\":\"\",\"tool_calls\":[\n{{\"function\":{{\"name\":\"fix_line\",\"arguments\":\"{escaped}\"}}}},\n{{\"function\":{{\"name\":\"finish\",\"arguments\":\"{{}}\"}}}}\n]}}}}]}}"
-    )
+/// The fixer's answer: the four rows back with line 1 respelled, as the content of a chat reply.
+fn rows_answer() -> String {
+    let rows: Vec<String> = SOURCE_ROWS
+        .iter()
+        .enumerate()
+        .map(|(index, (start, end, speaker, text))| {
+            let text = if index == 0 {
+                "so the algorithm receives the input"
+            } else {
+                text
+            };
+            format!("{start}\t{end}\t{speaker}\t{text}")
+        })
+        .collect();
+    serde_json::json!({ "choices": [ { "message": { "content": rows.join("\n") } } ] }).to_string()
+}
+
+/// A plain answer for the retake-tool asks below.
+fn plain_answer() -> String {
+    serde_json::json!({ "choices": [ { "message": { "content": "{\"abandoned\":[]}" } } ] })
+        .to_string()
 }
 
 // ---- the refusing fake ---------------------------------------------------------------------------
@@ -224,40 +235,92 @@ impl Scene {
         )
     }
 
+    /// One ask through the shared refusal leg, offering the retake job's tools, as every tool-offering step
+    /// dials: the body built by `llm_request`, sent by `llm_retry_leg`.
+    fn ask(&self) -> Result<naivepost::server_leg::Sent, String> {
+        let tree = self.tree();
+        let conf = self.conf();
+        let endpoint = naivepost::services::llm_endpoint(&conf);
+        let tools = naivepost::tools::offered(naivepost::roles::Job::Retakes);
+        let messages = vec![naivepost::exchanges::Message {
+            role: "user".to_string(),
+            parts: vec![naivepost::exchanges::Part::Text("BRIEF".to_string())],
+        }];
+        let base = naivepost::server_leg::base_row(
+            naivepost::services::Server::Llm,
+            &conf.model,
+            "POST",
+            "",
+            STEP,
+            STEP,
+        );
+        naivepost::llm_tool_refusal_leg::dial_honouring_refusal(
+            STEP,
+            &endpoint.url,
+            Some(&tools),
+            &|offer| {
+                Ok(naivepost::llm_request::body(
+                    STEP,
+                    &conf.model,
+                    &messages,
+                    naivepost::prompts::mode_of(STEP),
+                    offer,
+                    true,
+                )?
+                .to_string())
+            },
+            &|body| {
+                naivepost::llm_retry_leg::chat(STEP, &tree, &base, &endpoint, body, &|| false, &say)
+            },
+            &say,
+        )
+    }
+
     fn drop_root(&self) {
         let _ = std::fs::remove_dir_all(&self.root);
     }
 }
 
-/// Every refusal line this thread's window log holds.
+thread_local! {
+    /// What the leg said on this thread when these checks drove it directly.
+    static SAID: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The log the leg is handed in these checks.
+fn say(line: &str) {
+    SAID.with(|said| said.borrow_mut().push(line.to_string()));
+}
+
+/// Every refusal line said on this thread: by the leg these checks drive, and by the program's own log.
 fn refusals() -> Vec<String> {
-    naivepost::ui::window::window_logs()
+    SAID.with(|said| said.borrow().clone())
         .into_iter()
+        .chain(naivepost::ui::window::window_logs())
         .filter(|line| line.contains("the server refused the request with tools"))
         .collect()
 }
 
 // ---- S5 for the steps that never honoured it -----------------------------------------------------
 
-/// The fix step: the refusal costs the identical request again WITHOUT the field, the line is said once, and the
-/// block still gets fixed — the job survives a server that cannot take tools.
+/// The step the requests are made for: one that offers tools.
+const STEP: &str = "retake";
+
+/// A tool-offering step: the refusal costs the identical request again WITHOUT the field, the line is said once,
+/// and the step gets its answer: the job survives a server that cannot take tools.
 #[test]
-fn f6_1_s5_the_fix_step_asks_again_without_the_tools_field() {
-    let llm = RefusingLlm::start(fix_answer(1, "so the algorithm receives the input"));
-    let scene = Scene::new("fix", &llm.url);
+fn f6_1_s5_a_step_asks_again_without_the_tools_field() {
+    let llm = RefusingLlm::start(plain_answer());
+    let scene = Scene::new("resend", &llm.url);
     naivepost::ui::window::clear_logs_for_test();
-    let fixed = scene.fix(&mut |_: &str| {});
-    assert_eq!(
-        fixed.expect("a refused tools field does not lose the fix"),
-        1,
-        "one line was fixed"
-    );
+    scene
+        .ask()
+        .expect("a refused tools field does not lose the answer");
 
     let asked = llm.waited(2);
-    assert!(
-        asked.len() >= 2,
-        "the refusal and its resend both reached the server: {}",
-        asked.len()
+    assert_eq!(
+        asked.len(),
+        2,
+        "the refusal and its resend both reached the server"
     );
     assert!(
         offers_tools(&asked[0]),
@@ -275,7 +338,7 @@ fn f6_1_s5_the_fix_step_asks_again_without_the_tools_field() {
     let said = refusals();
     assert_eq!(said.len(), 1, "the refusal is logged once: {said:?}");
     assert!(
-        said[0].contains(">>> fix:"),
+        said[0].contains(&format!(">>> {STEP}:")),
         "the line names the step: {}",
         said[0]
     );
@@ -286,37 +349,24 @@ fn f6_1_s5_the_fix_step_asks_again_without_the_tools_field() {
 /// This is what the prototype could not do, and what §5 says the rewrite SHOULD.
 #[test]
 fn f6_1_s5_a_step_that_already_heard_the_refusal_is_asked_silently() {
-    let llm = RefusingLlm::start(fix_answer(1, "so the algorithm receives the input"));
+    let llm = RefusingLlm::start(plain_answer());
     let scene = Scene::new("silent", &llm.url);
     naivepost::ui::window::clear_logs_for_test();
-    // First call: refused, resent, remembered. Its cache entry is cleared so the second call really dials again.
-    let first = scene.fix(&mut |_: &str| {});
-    assert!(
-        first.is_ok(),
-        "the first call survived the refusal: {first:?}"
-    );
+    scene.ask().expect("the first call survived the refusal");
     let after_first = refusals().len();
     assert_eq!(after_first, 1, "the first call said it once");
 
-    clear_cache(&scene);
-    let second = scene.fix(&mut |_: &str| {});
-    assert!(second.is_ok(), "the second call too: {second:?}");
+    scene.ask().expect("the second call too");
     assert_eq!(
         refusals().len(),
         after_first,
         "the remembered refusal is silent from then on"
     );
-
-    // And every request the second call made carried no `tools` key at all.
     let asked = llm.waited(3);
-    let bare_after = &asked[2..];
+    assert_eq!(asked.len(), 3, "the second call costs one request, not two");
     assert!(
-        bare_after.iter().all(|body| !offers_tools(body)),
-        "a remembered refusal is never re-offered: {:?}",
-        bare_after
-            .iter()
-            .map(|b| offers_tools(b))
-            .collect::<Vec<_>>()
+        !offers_tools(&asked[2]),
+        "a remembered refusal is never re-offered"
     );
     scene.drop_root();
 }
@@ -324,12 +374,10 @@ fn f6_1_s5_a_step_that_already_heard_the_refusal_is_asked_silently() {
 /// A dead server is NOT a refusal: nothing about the server is remembered, so a later call still offers the field.
 #[test]
 fn f6_1_s5_a_dead_server_is_not_a_refusal() {
-    // Port 1: nothing listens, so every block's dial dies in the connect rather than being answered. The stage
-    // carries on (a down server must not stop a run — §"failure is specific and local"), which is exactly why
-    // this check cannot assert `is_err()`; what it asserts is that no refusal was RECORDED about that server.
+    // Port 1: nothing listens, so the dial dies in the connect rather than being answered.
     let scene = Scene::new("dead", "http://127.0.0.1:1");
     naivepost::ui::window::clear_logs_for_test();
-    let _ = scene.fix(&mut |_: &str| {});
+    assert!(scene.ask().is_err(), "a dead server answers nothing");
     assert!(
         refusals().is_empty(),
         "a transport death is not reported as a refusal: {:?}",
@@ -337,20 +385,42 @@ fn f6_1_s5_a_dead_server_is_not_a_refusal() {
     );
 
     // The same scene's endpoint comes alive: the next call offers the field again, because nothing was remembered.
-    let llm = RefusingLlm::start(fix_answer(1, "so the algorithm receives the input"));
+    let llm = RefusingLlm::start(plain_answer());
     let back = Scene::at(scene.root.clone(), &llm.url);
-    clear_cache(&back);
-    let got = back.fix(&mut |_: &str| {});
-    assert!(
-        got.is_ok(),
-        "with a server answering, the block fixes: {got:?}"
-    );
+    back.ask()
+        .expect("with a server answering, the step answers");
     let asked = llm.waited(2);
     assert!(
         offers_tools(&asked[0]),
         "the field is offered again to a server that never refused it"
     );
     back.drop_root();
+}
+
+/// The transcript fixer offers no tools (one call, the block's rows answered back, as the prototype asked it), so
+/// a server that refuses the `tools` field fixes its block in ONE request and nothing is refused or said.
+#[test]
+fn f6_1_s5_the_fix_step_offers_no_tools_to_refuse() {
+    let llm = RefusingLlm::start(rows_answer());
+    let scene = Scene::new("fix", &llm.url);
+    naivepost::ui::window::clear_logs_for_test();
+    let blocks = scene.fix(&mut |_: &str| {}).expect("the fix ran");
+    assert_eq!(blocks, 1, "one block");
+    let asked = llm.waited(1);
+    assert_eq!(asked.len(), 1, "one request for one block");
+    assert!(!offers_tools(&asked[0]), "with no `tools` field in it");
+    assert!(
+        refusals().is_empty(),
+        "so nothing was refused: {:?}",
+        refusals()
+    );
+    let fixed =
+        std::fs::read_to_string(scene.tree().transcript_fixed_tsv(LANE)).unwrap_or_default();
+    assert!(
+        fixed.contains("so the algorithm receives the input"),
+        "and the block is fixed: {fixed}"
+    );
+    scene.drop_root();
 }
 
 impl Scene {
@@ -370,10 +440,4 @@ impl Scene {
             llm: llm_url.to_string(),
         }
     }
-}
-
-/// Empty this scene's LLM cache so a second call goes back to the wire instead of replaying the first answer.
-fn clear_cache(scene: &Scene) {
-    let dir = scene.tree().dir().join("cache/llm");
-    let _ = std::fs::remove_dir_all(&dir);
 }

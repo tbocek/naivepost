@@ -104,6 +104,11 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_tools_are_offered_per
         tools::offered(Job::Joins).is_empty(),
         "the text edit asks no tool"
     );
+    // §3.3: the transcript fix answers its block's rows back in one reply, and is offered no tool.
+    assert!(
+        tools::offered(Job::CleanTranscript).is_empty(),
+        "the transcript fix asks no tool"
+    );
 
     // Each section's own tools arrive on exactly one job (or, for §3.9's shared state, on the two
     // jobs whose table it is) and nowhere else.
@@ -111,8 +116,9 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s1_tools_are_offered_per
         (Tool::RecordEvent, &[Job::Describe][..]),
         (Tool::SetState, &[Job::Describe]),
         (Tool::SpeechAround, &[Job::Describe]),
-        (Tool::FixLine, &[Job::CleanTranscript]),
-        (Tool::FlagLine, &[Job::CleanTranscript]),
+        // The fix's own names, kept for the `Block` that applies a respelling, offered to no job (§3.3).
+        (Tool::FixLine, &[]),
+        (Tool::FlagLine, &[]),
         (Tool::MarkAbandoned, &[Job::Retakes]),
         (Tool::Unmark, &[Job::Retakes]),
         // The join rules' own names, kept for the `Join` that checks a quoted removal, offered to no job.

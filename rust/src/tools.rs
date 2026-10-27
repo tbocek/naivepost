@@ -204,15 +204,10 @@ pub fn offered(job: Job) -> Vec<Tool> {
             Tool::SetState,
             Tool::SpeechAround,
         ],
-        Job::CleanTranscript => vec![
-            Tool::GetContext,
-            Tool::GetLines,
-            Tool::GetEvents,
-            Tool::GetFrames,
-            Tool::Finish,
-            Tool::FixLine,
-            Tool::FlagLine,
-        ],
+        // §3.3: the transcript fix offers no tools, as the prototype asked it. It answers the block's own rows with
+        // only the text changed, in one reply; offered `fix_line`, `flag_line` and reads with nothing behind
+        // them, the model asked for an empty context and answered nothing, 4 blocks out of 5.
+        Job::CleanTranscript => vec![],
         Job::Retakes => vec![
             Tool::GetContext,
             Tool::GetLines,

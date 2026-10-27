@@ -41,16 +41,16 @@ fn frames_of(stems: &[String]) -> Vec<(f64, std::path::PathBuf)> {
     crate::produce_upload_media::frame_files(&out)
 }
 
-/// Which prepare folders hold frames a slot could be set from or added to the row: the footage stems of the
-/// live cut, since those are the recordings whose frames survive into the video (an insert contributes none).
+/// Which prepare folders hold frames a slot could be set from or added to the row: one per footage recording of
+/// the live project, named the way Prepare names them (the file's stem), the same folders the run's request
+/// reads. The first rewrite named them after the cut's cameras (`cam0`), a folder Prepare never writes, so no
+/// slot ever found its picture.
 pub fn frame_source_stems() -> Vec<String> {
-    let Some(window) = produce_page::held_window() else {
-        return Vec::new();
-    };
-    let cut = crate::ui::window::review_cut_of(&window);
-    crate::timeline::kept_footage_recordings(&cut)
-        .into_iter()
-        .map(|rec| rec.base)
+    crate::ui::window::live_project()
+        .sources
+        .iter()
+        .filter(|source| source.footage)
+        .map(|source| crate::ui::produce_languages::source_stem(&source.path))
         .collect()
 }
 

@@ -165,6 +165,40 @@ fn sec_05_cut_every_surface_answers_real_input() {
             "a click clears the selection"
         );
 
+        // F2.8 S1: the pointer shows what a press would take. Near clip 1's end border (6 s), on the pictures and
+        // on its green bar, the resize arrow; over the middle of the bar, the open hand (a drag moves the scene);
+        // over plain picture ground, the page's own pointer. The first rewrite never changed it.
+        let bar_y = (bands.selection.0 + bands.selection.1) / 2.0;
+        let cursor =
+            |band: &gtk4::Widget| band.cursor().and_then(|c| c.name()).map(|n| n.to_string());
+        crate::common::real_input::real_hover(&band, x_of(&window, 6.0) + 2.0, picture_y);
+        assert_eq!(
+            cursor(&band).as_deref(),
+            Some("ew-resize"),
+            "near a border on the pictures"
+        );
+        crate::common::real_input::real_hover(&band, x_of(&window, 6.0) - 2.0, bar_y);
+        assert_eq!(
+            cursor(&band).as_deref(),
+            Some("ew-resize"),
+            "near a border on the green bar"
+        );
+        // The bar's ✕ sits in its middle: a button, so the pointing hand; the bar beside it, the open hand.
+        crate::common::real_input::real_hover(&band, x_of(&window, 3.5), bar_y);
+        assert_eq!(
+            cursor(&band).as_deref(),
+            Some("pointer"),
+            "over the green bar's ✕"
+        );
+        crate::common::real_input::real_hover(&band, x_of(&window, 2.0), bar_y);
+        assert_eq!(
+            cursor(&band).as_deref(),
+            Some("grab"),
+            "over the green bar beside its ✕"
+        );
+        crate::common::real_input::real_hover(&band, x_of(&window, 3.5), picture_y);
+        assert_eq!(cursor(&band), None, "over plain picture ground");
+
         // F2.8 S1: a left drag on clip 1's end border (6 s) resizes it.
         real_drag(
             &band,
@@ -400,6 +434,40 @@ fn sec_05_cut_every_surface_answers_real_input() {
         if let Some(stop) = ui::stop_button(&window) {
             real_click(&stop, 10.0, 10.0, 1);
         }
+
+        // §A: the zoom buttons zoom about the red line, so it stays in view. A line near the right edge stays
+        // where it stands on screen; a line scrolled off screen comes to the middle. The first rewrite zoomed
+        // about the middle of the view, and a few presses of + pushed the line off screen.
+        let zoom_in = ui::line_step_button(&window, "zoom-in-button").expect("zoom +");
+        let width = band.width() as f64;
+        real_click(&band, width - 60.0, picture_y, 1);
+        let line_x = |w: &adw::ApplicationWindow| x_of(w, line(w));
+        let stood = line_x(&window);
+        for _ in 0..3 {
+            real_click(&zoom_in, 6.0, 6.0, 1);
+        }
+        common::settle();
+        assert!(
+            (line_x(&window) - stood).abs() < 3.0,
+            "the line stays where it stood through + + +: {stood:.0} -> {:.0}",
+            line_x(&window)
+        );
+        real_scroll(&band, 300.0, picture_y, 8, &["shift"]);
+        common::settle();
+        assert!(
+            line_x(&window) < 0.0 || line_x(&window) > width,
+            "scrolled the line off screen: {:.0}",
+            line_x(&window)
+        );
+        real_click(&zoom_in, 6.0, 6.0, 1);
+        common::settle();
+        let gutter = ui::cut_view::gutter_px();
+        let middle = gutter + (width - gutter) / 2.0;
+        assert!(
+            (line_x(&window) - middle).abs() < 40.0,
+            "a press of + brings the line back to the middle: {:.0} (middle {middle:.0})",
+            line_x(&window)
+        );
 
         RAN.store(true, Ordering::SeqCst);
         app.quit();

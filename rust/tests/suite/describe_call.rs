@@ -236,8 +236,8 @@ impl Scene {
         // frame every heartbeat inside a scene, so a folder spaced
         // any finer than that is asked for pictures that were never written, and `describe_scale::ensure`
         // names the missing one and fails the stage before a request goes out -- which reads to a test as
-        // "the fake was asked 0 times". `is_every_frame` wants the same spacing or it refuses the source
-        // outright as an every-frame extraction. Both rules are about the interval, so this is the one
+        // "the fake was asked 0 times". `is_every_frame` refuses a source spaced finer than the
+        // grid outright as an every-frame extraction. Both rules are about the interval, so this is the one
         // spacing that lets the stage reach the wire.
         let interval = SCENE_INTERVAL;
         // The folder is named for THIS process, not just for the test: cargo runs every test binary

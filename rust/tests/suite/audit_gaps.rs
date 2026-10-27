@@ -30,7 +30,7 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s1_the_added_tools_are_registered_a
     for name in [
         "get_frames",
         "speech_around",
-        "flag_line",
+        // `flag_line` is no longer here: the transcript fix that offered it is one call with no tools (§3.3).
         "cut_status",
         "list_emotions",
         "describe_insert",
@@ -108,8 +108,12 @@ fn sec_12_decisions_5_gaps_this_audit_closed_s2_add_effect_takes_a_box_and_repor
 fn sec_12_decisions_5_gaps_this_audit_closed_s3_every_job_names_reads_alongside_writes() {
     for job in gaps::all_covered_jobs() {
         let offered = naivepost::tools::offered(job);
-        if job == naivepost::roles::Job::Joins {
-            // §3.5: the text edit has no tools at all; its reads are the wide view in the request.
+        if matches!(
+            job,
+            naivepost::roles::Job::Joins | naivepost::roles::Job::CleanTranscript
+        ) {
+            // §3.5: the text edit has no tools at all; its reads are the wide view in the request. §3.3: the
+            // transcript fix the same, its reads are the context and the User Context in the request.
             assert!(offered.is_empty(), "{offered:?}");
             continue;
         }

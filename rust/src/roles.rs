@@ -333,6 +333,53 @@ pub fn subtitle_languages(raw: &str) -> Vec<Language> {
     out
 }
 
+/// The languages the app knows with no `SUBTITLE_LANGUAGES` written: the prototype's own three (`subLangs`), each
+/// with its ISO-639-1 code, the ISO-639-2 tag a container wants and the name a person (and a prompt) reads.
+pub const BUILT_IN_LANGUAGES: [(&str, &str, &str); 3] = [
+    ("en", "eng", "English"),
+    ("de", "deu", "German"),
+    ("fr", "fra", "French"),
+];
+
+/// The settings list, or the built-in three when it names none: an empty `SUBTITLE_LANGUAGES` is a file nobody
+/// filled in, not a wish for untagged tracks (the first rewrite tagged every track `und`, named by its code).
+pub fn languages_or_built_in(raw: &str) -> Vec<Language> {
+    let listed = subtitle_languages(raw);
+    if !listed.is_empty() {
+        return listed;
+    }
+    BUILT_IN_LANGUAGES
+        .iter()
+        .map(|(code, tag, name)| Language {
+            code: code.to_string(),
+            tag: tag.to_string(),
+            name: name.to_string(),
+        })
+        .collect()
+}
+
+/// The code a language goes by, given its code or its name (`German` and `de` both answer `de`): the Produce
+/// page ticks languages by name and the policy holds the session's by code, and a file is named by the code.
+/// A language the app does not know keeps what it was given.
+pub fn language_code(given: &str) -> String {
+    let given = given.trim();
+    BUILT_IN_LANGUAGES
+        .iter()
+        .find(|(code, _, name)| {
+            code.eq_ignore_ascii_case(given) || name.eq_ignore_ascii_case(given)
+        })
+        .map_or_else(|| given.to_string(), |(code, _, _)| code.to_string())
+}
+
+/// The name a language is asked for and said by (`de` answers `German`); one the app does not know keeps its
+/// code.
+pub fn language_name(code: &str) -> String {
+    BUILT_IN_LANGUAGES
+        .iter()
+        .find(|(known, _, _)| known.eq_ignore_ascii_case(code.trim()))
+        .map_or_else(|| code.trim().to_string(), |(_, _, name)| name.to_string())
+}
+
 /// How many translation calls `languages` takes: one per language (§2).
 pub fn subtitle_calls(languages: &[&str]) -> usize {
     languages.len()

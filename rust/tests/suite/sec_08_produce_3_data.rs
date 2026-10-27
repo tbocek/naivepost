@@ -990,8 +990,8 @@ fn run_over(
 fn no_fx(_: &Seg) -> Vec<naivepost::cut::Fx> {
     Vec::new()
 }
-fn any_source(_: &render::Clip) -> Option<String> {
-    Some("/media/take.mp4".to_string())
+fn any_source(clip: &render::Clip) -> Option<(String, f64)> {
+    Some(("/media/take.mp4".to_string(), clip.seg_s))
 }
 fn no_wav(_: &Entry) -> Option<PathBuf> {
     None

@@ -774,6 +774,8 @@ fn session_words(tree: &Tree, project: &Project) -> (Vec<Word>, Vec<(f64, f64)>)
     let hz = crate::transcribe::SAMPLE_RATE as f64;
     let mut words: Vec<Word> = Vec::new();
     let mut times: Vec<(f64, f64)> = Vec::new();
+    // Where each recording starts on the session clock: the marks are session seconds, as the word list's are.
+    let placed = crate::fix_session::placed_sources(project);
     // On the session clock, as the session word list is: BEFORE has to be the earlier recording.
     for source in crate::fix_session::in_clock_order(project) {
         if crate::sources::is_narrator_mic(source) {
@@ -781,6 +783,10 @@ fn session_words(tree: &Tree, project: &Project) -> (Vec<Word>, Vec<(f64, f64)>)
             continue;
         }
         let lane = lane_of(source);
+        let off = placed
+            .iter()
+            .find(|placed| placed.base == lane)
+            .map_or(0.0, |placed| placed.start);
         let Ok(Some(doc)) = crate::requests::read_words(tree, &lane) else {
             continue;
         };
@@ -788,8 +794,8 @@ fn session_words(tree: &Tree, project: &Project) -> (Vec<Word>, Vec<(f64, f64)>)
             if word.word.trim().is_empty() {
                 continue;
             }
-            let start = word.start_sample as f64 / hz;
-            let end = word.end_sample as f64 / hz;
+            let start = off + word.start_sample as f64 / hz;
+            let end = off + word.end_sample as f64 / hz;
             words.push(Word {
                 source: lane.clone(),
                 match_word: word_list::bare(&word.word),

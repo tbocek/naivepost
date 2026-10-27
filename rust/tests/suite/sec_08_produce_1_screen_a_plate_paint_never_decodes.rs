@@ -18,7 +18,15 @@ fn sec_08_produce_1_screen_a_plate_paint_never_decodes() {
     let root = common::temp_dir_created("sec08-plate");
     std::env::set_current_dir(&root).expect("cwd pinned to the temp root");
     common::one_app_round(move |app| {
-        let model = naivepost::project::Project::default();
+        // One footage recording, so the page has a frames folder to read `frame:` entries from.
+        let model = naivepost::project::Project {
+            sources: vec![naivepost::project::Source {
+                path: "project:sources/2026-10-25 10-39-43.mkv".to_string(),
+                footage: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
         let window = ui::build_window(app, &model, naivepost::shell::Page::Produce.label());
         window.present();
         common::settle();
@@ -51,6 +59,39 @@ fn sec_08_produce_1_screen_a_plate_paint_never_decodes() {
         assert!(
             ui::produce_paint::paint_slot_for_test(&window, 0),
             "and the next paint draws it from what is held"
+        );
+
+        // A `frame:<seconds>` entry (what the spread and the model's pick write) shows the extracted frame
+        // nearest that second, out of the recording's own frames folder, named by its real instant. The first
+        // rewrite read the entry as a file name and painted the missing marker in every such slot.
+        let tree = naivepost::layout::Tree::new(naivepost::startup::open_dir())
+            .expect("the session folder");
+        let zero = naivepost::clock::clock(&["2026-10-25 10-39-43.mkv"]).zero;
+        let frames = tree.frames_dir("2026-10-25 10-39-43");
+        std::fs::create_dir_all(&frames).expect("frames folder");
+        for second in [90.0, 92.0] {
+            naivepost::produce_upload_print::flat_png_for_test(
+                &frames.join(format!(
+                    "{}.jpg",
+                    naivepost::clock::frame_name(zero + second)
+                )),
+                640,
+                360,
+                0.4,
+            )
+            .expect("an extracted frame");
+        }
+        let mut page = ui::produce_page::read_state();
+        page.frames = vec!["frame:91.7".to_string()];
+        ui::produce_page::set_state(page);
+        ui::produce_page::refresh(&window);
+        // The window's own draws only: the folder is listed on a worker and its landing repaints the plate,
+        // whose decode lands and repaints it again. Waited for on the clock, since a busy machine draws late;
+        // the picture is the frame at 92 s, the nearest to 91.7.
+        let nearest = frames.join(format!("{}.jpg", naivepost::clock::frame_name(zero + 92.0)));
+        common::wait_until(
+            "a frame: slot painting the extracted frame nearest its second, not the missing marker",
+            || ui::produce_paint::slot_shown_for_test(0).as_deref() == Some(nearest.as_path()),
         );
         RAN.store(true, Ordering::SeqCst);
         window.close();

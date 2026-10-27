@@ -178,6 +178,7 @@ fn save_named(name: &str, text: &str) -> String {
     match profile::save(&paths, name, text) {
         Ok(file) => {
             crate::ui::profile_form::refresh_all();
+            crate::ui::profile_form::follow_profile_produce();
             format!("profile {name} saved to {}", file.display())
         }
         Err(why) => why,

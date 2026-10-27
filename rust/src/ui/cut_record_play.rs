@@ -175,6 +175,14 @@ pub fn playing_second() -> Option<f64> {
 /// Where the press landed, so the leg knows what to start or stop. `SwitchedToRecording` touches nothing:
 /// S1 says "already playing: carry on", and the pipeline that is running is the one being carried on.
 pub fn after_press(window: &adw::ApplicationWindow, pressed: &Press, runs: &[(f64, f64)]) {
+    // A switch from a paused cut also starts the recording from the line: the same start a plain ▶ makes.
+    let pressed = &match pressed {
+        Press::SwitchedToRecording {
+            started: Some(from),
+            ..
+        } => Press::Playing { from: *from },
+        other => *other,
+    };
     match pressed {
         Press::Playing { from } if crate::play_built_in::in_use() => {
             // ▶ takes the preview from ▶✂: the cut's own player and spare go first, or two pipelines would
