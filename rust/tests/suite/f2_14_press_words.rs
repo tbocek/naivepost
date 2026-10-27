@@ -76,6 +76,17 @@ fn round(app: &adw::Application) {
         "a words cut leaves footage on the page: {:?}",
         on_screen.segs
     );
+    // The page shows the landed cut at once, with no resize to make it repaint: the Segments reading already
+    // counts the new cut (the first rewrite stored it and repainted nothing).
+    let segments = crate::common::widget_in(&window, "cut-readout-segments")
+        .and_then(|w| w.downcast::<gtk4::Label>().ok())
+        .map(|label| label.text().to_string())
+        .expect("the Segments reading");
+    assert!(
+        segments.contains(&on_screen.segs.len().to_string()),
+        "Segments reads the landed cut's {} right after the press: {segments:?}",
+        on_screen.segs.len()
+    );
     // §S2a's persist, on the file the NEXT open reads. The write goes to the tree the press resolved for
     // this session (`session_tree()`), which is the folder `point_session_at` pointed at — NOT the
     // working copy beside the cwd, and not the temp tree until a landing has written it.

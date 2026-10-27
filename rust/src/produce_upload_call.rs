@@ -362,22 +362,28 @@ where
     // server and why, and the caller writes nothing (S5 keeps the thinking only for a FAILED DRAW).
     if let tool_loop::Outcome::Exhausted = run.outcome {
         // `take` rather than `is_some()` + `expect`: the loop only logs a failure when its ask returned one.
-        if state.answers.is_empty() {
+        if !state.wrote {
             if let Some(why) = dial_error.borrow_mut().take() {
                 return Err(why);
             }
         }
     }
-    // The prose a round spoke but no tool wrote: kept on `spoken` because a quiet round's text never enters the
-    // loop's messages (see above). Only when nothing was heard at all falls back to reading the conversation.
-    if state.answers.is_empty() {
-        let text = if spoken_ref.borrow().trim().is_empty() {
-            state.content_of(&run).unwrap_or_default()
-        } else {
-            spoken_ref.borrow().clone()
-        };
-        state.wrote |= peel_into(&mut state.publish, &text);
-    }
+    // The prose the model spoke, kept on `spoken` because a quiet round's text never enters the loop's messages
+    // (see above); only when nothing was heard at all is the conversation read instead. It is the answer the job
+    // asks for (§3.9's three parts; the prototype read nothing else), so whatever it names wins over what a tool
+    // set: the first rewrite read it only when no tool had answered, then only when none had written, and a model
+    // that looked at frames or picked one before answering in prose lost its title and description each time.
+    let text = if spoken_ref.borrow().trim().is_empty() {
+        state.content_of(&run).unwrap_or_default()
+    } else {
+        spoken_ref.borrow().clone()
+    };
+    state.wrote |= peel_into(
+        &mut state.publish,
+        &text,
+        &state.starts,
+        &state.frames_moments,
+    );
     Ok(Collected {
         publish: state.publish,
         wrote: state.wrote,
@@ -564,7 +570,7 @@ fn clip_span(starts: &[f64], clip: usize) -> (f64, f64) {
 
 /// Apply §3.9's prose fallback to the record: `TITLE:`/`THUMBNAIL:`/description off the front of the reply.
 /// Returns whether anything landed.
-fn peel_into(publish: &mut Publish, reply: &str) -> bool {
+fn peel_into(publish: &mut Publish, reply: &str, starts: &[f64], frames: &[f64]) -> bool {
     let (title, thumbnail, description) = upload::peel(reply);
     let mut wrote = false;
     if let Some(title) = title {
@@ -577,7 +583,9 @@ fn peel_into(publish: &mut Publish, reply: &str) -> bool {
         // folding rule lives in `details`, and a frame still beats an instruction here).
         match crate::produce_details::frame_line(thumbnail.trim()) {
             Some(FrameAt::Clip(clip, offset)) => {
-                if let Ok(picked) = upload::pick_frame(clip, offset, &[], &[]) {
+                // Through the call's own clips and frames, as the `pick_frame` tool is: the first rewrite asked
+                // with none, so "frame: clip 1 +0" found no clip 1 and the picked frame was lost.
+                if let Ok(picked) = upload::pick_frame(clip, offset, starts, frames) {
                     publish.own = true;
                     publish.frames = vec![format!("frame:{:.1}", picked.taken)];
                 }

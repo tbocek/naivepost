@@ -17,16 +17,19 @@ fn f2_1_s1_pressing_play_while_the_cut_is_previewed_switches_back_to_the_recordi
         playhead: Some(30.0),
         ..Default::default()
     };
+    // Paused, the switch also starts the recording from the line, in one press (the prototype's `playAs`):
+    // the first rewrite only switched, and ▶ had to be pressed twice.
     assert_eq!(
         preview::press_recording(&mut player, &runs),
         Press::SwitchedToRecording {
-            kept_playing: false
+            kept_playing: false,
+            started: Some(30.0)
         }
     );
     assert!(!player.cut_only, "the preview is the recording now");
     assert!(
-        !player.transport.playing,
-        "nothing was running, and nothing started"
+        player.transport.playing,
+        "and it plays, from the line, in the same press"
     );
     assert_eq!(
         preview::RECORDING_STATUS,
@@ -42,7 +45,8 @@ fn f2_1_s1_pressing_play_while_the_cut_is_previewed_switches_back_to_the_recordi
     assert_eq!(
         preview::press_recording(&mut reviewing, &runs),
         Press::SwitchedToRecording {
-            kept_playing: false
+            kept_playing: false,
+            started: Some(30.0)
         }
     );
     assert!(!reviewing.reviewing);
@@ -61,7 +65,10 @@ fn f2_1_s1_pressing_play_while_the_cut_is_previewed_switches_back_to_the_recordi
     };
     assert_eq!(
         preview::press_recording(&mut running, &runs),
-        Press::SwitchedToRecording { kept_playing: true }
+        Press::SwitchedToRecording {
+            kept_playing: true,
+            started: None
+        }
     );
     assert!(running.transport.playing, "the switch carries on playing");
     assert!(!running.cut_only);

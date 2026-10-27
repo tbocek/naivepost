@@ -819,7 +819,15 @@ pub struct ChatAsk {
 }
 
 /// Read one HTTP request off `stream`, answer it with `answer`, and return the ask.
-pub fn serve_chat(mut stream: std::net::TcpStream, answer: &str) -> Option<ChatAsk> {
+pub fn serve_chat(stream: std::net::TcpStream, answer: &str) -> Option<ChatAsk> {
+    serve_chat_with(stream, &|_body: &str| answer.to_string())
+}
+
+/// [`serve_chat`] with the answer computed from the request's body: a fake that answers what it was asked.
+pub fn serve_chat_with(
+    mut stream: std::net::TcpStream,
+    answer_for: &dyn Fn(&str) -> String,
+) -> Option<ChatAsk> {
     use std::io::{BufRead, BufReader, Read, Write};
     let mut reader = BufReader::new(stream.try_clone().ok()?);
     let mut line = String::new();
@@ -845,7 +853,8 @@ pub fn serve_chat(mut stream: std::net::TcpStream, answer: &str) -> Option<ChatA
     if length > 0 {
         let _ = reader.read_exact(&mut body);
     }
-    let payload = answer.to_string();
+    let body = String::from_utf8_lossy(&body).into_owned();
+    let payload = answer_for(&body);
     let framed = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
@@ -853,10 +862,7 @@ pub fn serve_chat(mut stream: std::net::TcpStream, answer: &str) -> Option<ChatA
     let _ = stream.write_all(framed.as_bytes());
     let _ = stream.flush();
     let _ = stream.shutdown(std::net::Shutdown::Both);
-    Some(ChatAsk {
-        path,
-        body: String::from_utf8_lossy(&body).into_owned(),
-    })
+    Some(ChatAsk { path, body })
 }
 
 /// Read one HTTP request off `stream`, answer it with `answer`, and return the body it carried.
@@ -1177,4 +1183,42 @@ pub fn silent_wav_bytes(seconds: f64) -> Vec<u8> {
     out.extend_from_slice(&(data.len() as u32).to_le_bytes());
     out.extend_from_slice(&data);
     out
+}
+
+/// What a model that follows the job answers a fix ask with: the block's own rows (read off the request, as
+/// the model reads them), each text replaced by "respelled line n". Any other ask (one with no rows) gets an
+/// empty answer.
+pub fn respelled_rows_answer(body: &str) -> String {
+    let sent: serde_json::Value = serde_json::from_str(body).unwrap_or_default();
+    let user: String = sent["messages"]
+        .as_array()
+        .and_then(|messages| {
+            messages
+                .iter()
+                .rev()
+                .find(|message| message["role"].as_str() == Some("user"))
+        })
+        .and_then(|message| message["content"].as_array())
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|part| part["text"].as_str())
+                .collect::<Vec<&str>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+    let rows: Vec<String> = naivepost::fix_transcripts::answered_rows(&user)
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            format!(
+                "{:.2}\t{:.2}\t{}\trespelled line {}",
+                row.start,
+                row.end,
+                row.speaker,
+                index + 1
+            )
+        })
+        .collect();
+    serde_json::json!({ "choices": [ { "message": { "content": rows.join("\n") } } ] }).to_string()
 }

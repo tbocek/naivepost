@@ -95,6 +95,47 @@ fn trim_to(window: &adw::ApplicationWindow, drag: &mut BorderDrag, x: f64, last:
     cut_view::repaint_page(window);
 }
 
+/// §F2.8 S1: what the pointer shows at band pixel `(x, y)`, from the same doors a press asks, so the pointer
+/// can never promise a grab the press would not make (the prototype's `wantCursor`): a badge (✕, fold) is a
+/// button, the pointing hand; within reach of a clip border on the pictures or a green bar, the resize arrow;
+/// over the rest of a scene's green bar, the open hand, since a drag there moves the scene; anywhere else the
+/// page's own pointer. The first rewrite never changed the pointer: a border could be dragged, but nothing
+/// showed where.
+pub fn cursor_at(window: &adw::ApplicationWindow, x: f64, y: f64) -> Option<&'static str> {
+    let scene = cut_view::band_scene_for(window);
+    let rows = crate::ui::cut_tracks::rows_for_press(&scene);
+    if crate::ui::cut_band_marks::mark_at(&scene, rows, x, y).is_some() {
+        return Some("pointer");
+    }
+    let geo = Geometry::of(window);
+    let surface = geo.surface_at(y);
+    if !matches!(surface, Surface::PictureRow(_) | Surface::SelectionBand) {
+        return None;
+    }
+    if border_under(window, &geo, x).is_some() {
+        return Some("ew-resize");
+    }
+    let on_a_bar = matches!(surface, Surface::SelectionBand)
+        && boxes(window).iter().any(|b| {
+            let at = x + geo.origin;
+            !b.insert && b.w > 0.0 && at >= b.x && at <= b.x + b.w
+        });
+    on_a_bar.then_some("grab")
+}
+
+thread_local! {
+    /// The pointer the band last asked for: set only when it changes, since asking the display for a pointer
+    /// it already shows at every motion event is a round trip for nothing.
+    static SHOWN: std::cell::Cell<Option<&'static str>> = const { std::cell::Cell::new(None) };
+}
+
+fn show_cursor(band: &gtk::Widget, name: Option<&'static str>) {
+    if SHOWN.with(|shown| shown.replace(name)) == name {
+        return;
+    }
+    band.set_cursor_from_name(name);
+}
+
 /// Attach the two gestures to `track-band`.
 pub(crate) fn wire(window: &adw::ApplicationWindow) {
     let Some(band) = window
@@ -103,6 +144,14 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
     else {
         return;
     };
+
+    // The pointer follows what a press here would take (§F2.8 S1).
+    let motion = gtk::EventControllerMotion::new();
+    let (win, over) = (window.clone(), band.clone());
+    motion.connect_motion(move |_m, x, y| show_cursor(&over, cursor_at(&win, x, y)));
+    let over = band.clone();
+    motion.connect_leave(move |_m| show_cursor(&over, None));
+    band.add_controller(motion);
 
     let left = gtk::GestureDrag::new();
     left.set_button(1);

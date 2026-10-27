@@ -147,6 +147,19 @@ pub struct Clip {
     pub on_recording: bool,
     pub src: (i32, i32),
     pub scratch: std::path::PathBuf,
+    /// The heard lanes as the encode reads them, filled by [`crate::produce_exec`] once it can resolve their files.
+    pub lane_files: Vec<LaneFile>,
+    /// Each spoken line's take (a line in `lines` with speech), in that order, filled beside `lane_files`.
+    pub voice_files: Vec<String>,
+}
+
+/// One lane recording a clip mixes into its bed: the file, the second inside it the clip starts reading at, and
+/// how many output seconds into the clip the lane begins (a lane that starts after the clip does).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct LaneFile {
+    pub path: String,
+    pub seek: f64,
+    pub delay: f64,
 }
 
 /// One narration line as the render places it: clip-relative output seconds, the tempo it has to be spoken
@@ -290,6 +303,9 @@ pub fn plan_clips(
             on_recording: false,
             src: src_shape,
             scratch: std::path::PathBuf::new(),
+            // The files are the plan's to resolve; the clip only knows the lanes' names and its lines.
+            lane_files: Vec::new(),
+            voice_files: Vec::new(),
         });
     }
     (clips, logs)
@@ -644,27 +660,19 @@ pub fn clip_stem(no: usize, stamp: &str) -> String {
 }
 
 /// S5's `-fps_mode` piece, kept separate because it is the one part of the command a test can pin without
-/// building a whole clip. `source` adds nothing at all — the recording's own rate is what ffmpeg gets when
-/// it is told nothing. With the frame-timing tick on the rate is a ceiling (§A: "peak rate (VFR)"); with it
-/// off it is a target, and `-fpsmax` is what makes it one rather than a floor ffmpeg pads.
+/// building a whole clip. `source` adds nothing at all: the recording's own rate is what ffmpeg gets when it is
+/// told nothing. With the frame-timing tick off the `fps` filter has already set the grid and the output is
+/// told it is constant; with it on the rate is a ceiling (§A: "peak rate (VFR)"), `-fpsmax` ALONE: ffmpeg
+/// refuses it beside `-fps_mode vfr` ("One of -r/-fpsmax was specified together a non-CFR -fps_mode. This is
+/// contradictory."), which the first rewrite sent, so every VFR encode failed (the prototype's `fpsArgs`).
 pub fn frame_rate_args(frame_rate: &str, vfr: bool) -> Vec<String> {
     if frame_rate == "source" {
         return Vec::new();
     }
     if vfr {
-        return vec![
-            "-fps_mode".into(),
-            "vfr".into(),
-            "-fpsmax".into(),
-            frame_rate.into(),
-        ];
+        return vec!["-fpsmax".into(), frame_rate.into()];
     }
-    vec![
-        "-fps_mode".into(),
-        "cfr".into(),
-        "-fpsmax".into(),
-        frame_rate.into(),
-    ]
+    vec!["-fps_mode".into(), "cfr".into()]
 }
 
 /// The Preset row's spelling of a preset — the same words §A lists, and the words x264 takes.
@@ -716,16 +724,20 @@ pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec
         // is derived here by [`blur_sigma`] from the finished height — [`BLUR_SIGMA_FRACTION`] of it,
         // floored at [`BLUR_SIGMA_MIN`] — so one rule owns both numbers and the catalogue reads them
         // off the same pair. (It does not come from `render_fx`: nothing there derives a sigma.)
-        chain.push("split=2[bg][fg]".into());
+        //
+        // `overlay` lays its SECOND input over its first, so the backdrop goes first and the sharp copy, fitted
+        // into the frame, second (the prototype's `bdrop.chain`). The first rewrite wrote `[fg][bg]overlay` and
+        // never fitted the picture: the blurred copy covered it, and every video came out one smear.
+        let (wide, high) = clip.frame;
+        chain.push("split=2[bdb][bdf]".into());
         chain.push(format!(
-            "[bg]scale={}:{}:force_original_aspect_ratio=increase,crop={}:{},gblur=sigma={}[bg]",
-            clip.frame.0,
-            clip.frame.1,
-            clip.frame.0,
-            clip.frame.1,
-            blur_sigma(clip.frame.1)
+            "[bdb]scale={wide}:{high}:force_original_aspect_ratio=increase,crop={wide}:{high},gblur=sigma={},setsar=1[bdb]",
+            blur_sigma(high)
         ));
-        chain.push("[fg][bg]overlay=(W-w)/2:(H-h)/2".into());
+        chain.push(format!(
+            "[bdf]scale={wide}:{high}:force_original_aspect_ratio=decrease[bdf]"
+        ));
+        chain.push("[bdb][bdf]overlay=(W-w)/2:(H-h)/2".into());
     }
     chain.push(format!(
         "scale={}:{}:force_original_aspect_ratio=decrease,pad={}:{}:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
@@ -738,73 +750,199 @@ pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec
     chain.extend(built.video);
     chain
 }
-/// The frame rate as a filter (the camera's own path under VFR) — the in-graph half of [`frame_rate_args`].
+/// The frame rate as a filter, the in-graph half of [`frame_rate_args`]: the `fps` filter pins a stream to a
+/// grid by duplicating and dropping frames, so it is there only for a constant rate. Under VFR the rate is a
+/// ceiling, the encoder's job and not a filter's; a moving camera brings its own grid (`zoompan`'s `fps`). The
+/// first rewrite put the grid in under VFR too, so the tick changed nothing about the frames.
 fn frame_rate_filter(frame_rate: &str, vfr: bool) -> Vec<String> {
-    if frame_rate == "source" {
+    if frame_rate == "source" || vfr {
         return Vec::new();
-    }
-    if vfr {
-        return vec![format!("fps=fps={frame_rate}:round=near")]
-            .into_iter()
-            .collect();
     }
     vec![format!("fps=fps={frame_rate}")]
 }
 
 /// S5's audio chain, in the order §B and S5 give it: speed → hush → the lane bed → gain cues → seam dips →
-/// the narration at `P.policy.gameVolume` → limiter → format. Extends [`render_fx::audio_order`] rather than
-/// re-listing it: that answer is where the volume cues sit relative to the lane mix, and this is everything
-/// around it.
+/// the narration at `P.policy.gameVolume` → limiter → format. This is the clip's OWN sound's path, flat: each
+/// `amix` is a mix point where other inputs join it (the `lanes` heard under the clip, then the spoken lines),
+/// and is there only when something joins. [`audio_graph`] wires the same steps with the inputs' labels; what a
+/// lane or a line does before it joins is [`lane_chain`] and [`voice_chain`].
 pub fn audio_chain(
     clip: &Clip,
     settings: &Produce,
     lanes: usize,
     hush: &[(f64, f64)],
 ) -> Vec<String> {
-    let mut chain = Vec::new();
+    let parts = audio_parts(clip, settings, lanes, spoken_lines(clip).len(), hush);
+    let mut chain = parts.head;
+    chain.extend(parts.lane_mix);
+    chain.extend(parts.middle);
+    if let Some((volume, mix)) = parts.voice_mix {
+        chain.push(volume);
+        chain.push(mix);
+    }
+    chain.extend(parts.tail);
+    chain
+}
+
+/// The lines of a clip that are spoken: a line with no synthesis takes no room and joins no mix.
+fn spoken_lines(clip: &Clip) -> Vec<&Placed> {
+    clip.lines.iter().filter(|line| line.speech > 0.0).collect()
+}
+
+/// [`audio_chain`] cut at its two mix points.
+struct AudioParts {
+    /// Speed and hush: the clip's own sound before anything joins it.
+    head: Vec<String>,
+    /// The bed: the clip's sound and every lane heard under it, mixed at their recorded level.
+    lane_mix: Option<String>,
+    /// Gain cues and seam dips, on the bed.
+    middle: Vec<String>,
+    /// The bed turned down to the game volume, and the narration mixed over it.
+    voice_mix: Option<(String, String)>,
+    /// Limiter and format.
+    tail: Vec<String>,
+}
+
+fn audio_parts(
+    clip: &Clip,
+    settings: &Produce,
+    lanes: usize,
+    voices: usize,
+    hush: &[(f64, f64)],
+) -> AudioParts {
+    let mut head = Vec::new();
     if (clip.rate - 1.0).abs() > f64::EPSILON {
-        chain.push(render_fx::atempo_chain(clip.rate));
+        head.push(render_fx::atempo_chain(clip.rate));
     }
     for (from, to) in hush {
-        chain.push(format!(
+        head.push(format!(
             "volume=0:eval=frame:enable='between(t,{from:.3},{to:.3})'"
         ));
     }
-    if lanes > 0 {
-        chain.push(format!("amix=inputs={}:normalize=0", lanes + 1));
-    }
+    // `duration=first` pins every mix to the clip's own sound, so a lane or a line that stops early does not end
+    // the clip; `normalize=0` keeps everything at its own level. The first rewrite wrote these `amix` steps into
+    // one chain with nothing labelled to mix, and ffmpeg refused it ("Cannot find an unused audio input stream").
+    let lane_mix = (lanes > 0).then(|| mix(lanes + 1));
     // §4's volume cues: ONE `volume=<expr>:eval=frame` per cue, chained in turn so overlapping ones multiply, after
-    // the bed and before the narration. `produce_fx_chain` builds them and the sped-sound answer; nothing here
-    // restates a filter. A read head brings its own two dips, so the plain seam dip stands down when they are there.
+    // the bed and before the narration. `produce_fx_chain` builds them and the seam dips (a read head's two, where
+    // the sound rejoins the picture); nothing here restates a filter. A clip with no seam has no dip: the first
+    // rewrite put `afade=t=out:st=0` on every other clip, a fade OUT from its first second, and every such clip
+    // came out silent after 0.15 s.
     let built = crate::produce_fx_chain::for_clip(clip, &clip.fx, clip.src, &clip.scratch);
-    chain.extend(built.audio.iter().cloned());
-    let dips = chain.iter().any(|f| f.starts_with("afade="));
-    if !dips {
-        chain.push(format!(
-            "afade=t=out:st=0:d={}",
-            crate::fx_lane::SOUND_DIP_SECONDS
-        ));
-    }
-    for line in &clip.lines {
-        if line.speech <= 0.0 {
-            continue;
-        }
-        // P.policy.gameVolume is the bed's level, not the voice's: the narration rides at full level over a
-        // bed turned down to it, which is why the number appears on the lane side of the mix.
-        chain.push(format!("volume={:.2}", settings.game_volume));
-        chain.push(format!(
-            "adelay={}ms|{}ms",
-            (line.at * 1000.0).round() as i64,
-            (line.at * 1000.0).round() as i64
-        ));
-    }
-    chain.push("amix=duration=first:normalize=0".into());
-    chain.push(LIMITER.into());
+    let middle: Vec<String> = built.audio.to_vec();
+    // P.policy.gameVolume is the bed's level, not the voice's: the narration rides at full level over a bed turned
+    // down to it, which is why the number appears on the bed side of the mix.
+    let voice_mix = (voices > 0).then(|| {
+        (
+            format!("volume={:.2}", settings.game_volume),
+            mix(voices + 1),
+        )
+    });
     let layout = if settings.mono { "mono" } else { "stereo" };
-    chain.push(format!(
-        "format=sample_fmts=fltp:sample_rates=48000:channel_layouts={layout}"
-    ));
+    // `aformat`, the AUDIO format filter: `format` is the video one, has no `sample_fmts`, and ffmpeg refused the
+    // whole graph with "Option not found" (the first rewrite's every clip with sound).
+    let tail = vec![
+        LIMITER.to_string(),
+        format!("aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts={layout}"),
+    ];
+    AudioParts {
+        head,
+        lane_mix,
+        middle,
+        voice_mix,
+        tail,
+    }
+}
+
+fn mix(inputs: usize) -> String {
+    format!("amix=inputs={inputs}:duration=first:normalize=0")
+}
+
+/// What one spoken line's take goes through before it joins the bed: its tempo (atempo takes no less than 0.5),
+/// 48 kHz, panned across the output layout (a mono voice otherwise lands in one speaker), and its place in the
+/// clip as a delay in whole milliseconds, once per channel.
+pub fn voice_chain(line: &Placed, settings: &Produce) -> Vec<String> {
+    let ms = (line.at * 1000.0).round() as i64;
+    vec![
+        format!("atempo={:.3}", line.tempo.max(0.5)),
+        "aresample=48000".to_string(),
+        if settings.mono {
+            "pan=mono|c0=c0".to_string()
+        } else {
+            "pan=stereo|c0=c0|c1=c0".to_string()
+        },
+        format!("adelay={ms}ms|{ms}ms"),
+    ]
+}
+
+/// What one lane recording goes through before it joins the bed: the output format, the clip's own speed (a lane
+/// was recorded with the picture and goes with it), and its delay when it starts after the clip does.
+pub fn lane_chain(lane: &LaneFile, clip: &Clip, settings: &Produce) -> Vec<String> {
+    let layout = if settings.mono { "mono" } else { "stereo" };
+    let mut chain = vec![format!(
+        "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts={layout}"
+    )];
+    if (clip.rate - 1.0).abs() > f64::EPSILON {
+        chain.push(render_fx::atempo_chain(clip.rate));
+    }
+    let ms = (lane.delay * 1000.0).round() as i64;
+    if ms > 0 {
+        chain.push(format!("adelay={ms}ms|{ms}ms"));
+    }
     chain
+}
+
+/// The clip's sound as `-filter_complex` wires it, ending in `[a]`: the clip's own sound from `[0:a]` through
+/// [`audio_chain`]'s steps, each lane (input `lane_base + k`) joining the bed and each spoken line (input
+/// `voice_base + k`) joining the narration mix, every branch labelled (the prototype's graph).
+pub fn audio_graph(clip: &Clip, settings: &Produce, lane_base: usize, voice_base: usize) -> String {
+    let voices: Vec<&Placed> = spoken_lines(clip)
+        .into_iter()
+        .take(clip.voice_files.len())
+        .collect();
+    let parts = audio_parts(clip, settings, clip.lane_files.len(), voices.len(), &[]);
+    let mut graph = String::new();
+    let mut current = "0:a".to_string();
+    let step = |graph: &mut String, current: &mut String, filters: &[String], to: &str| {
+        if !filters.is_empty() {
+            graph.push_str(&format!("[{current}]{}[{to}];", filters.join(",")));
+            *current = to.to_string();
+        }
+    };
+    step(&mut graph, &mut current, &parts.head, "own");
+    if let Some(mix) = &parts.lane_mix {
+        let mut joined = String::new();
+        for (k, lane) in clip.lane_files.iter().enumerate() {
+            graph.push_str(&format!(
+                "[{}:a]{}[ln{k}];",
+                lane_base + k,
+                lane_chain(lane, clip, settings).join(",")
+            ));
+            joined.push_str(&format!("[ln{k}]"));
+        }
+        graph.push_str(&format!("[{current}]{joined}{mix}[bed];"));
+        current = "bed".to_string();
+    }
+    step(&mut graph, &mut current, &parts.middle, "mid");
+    let tail = parts.tail.join(",");
+    match &parts.voice_mix {
+        Some((volume, mix)) => {
+            let mut joined = String::new();
+            for (k, line) in voices.iter().enumerate() {
+                graph.push_str(&format!(
+                    "[{}:a]{}[nr{k}];",
+                    voice_base + k,
+                    voice_chain(line, settings).join(",")
+                ));
+                joined.push_str(&format!("[nr{k}]"));
+            }
+            graph.push_str(&format!(
+                "[{current}]{volume}[bg];[bg]{joined}{mix},{tail}[a]"
+            ));
+        }
+        None => graph.push_str(&format!("[{current}]{tail}[a]")),
+    }
+    graph
 }
 
 /// S5's codec arguments — `tool:ffmpeg.encode`: these are ffmpeg's encoder names and flags, not this app's
@@ -903,7 +1041,7 @@ pub fn encode_command(
     burned: Option<&str>,
     out: &std::path::Path,
 ) -> Vec<String> {
-    encode_command_with(clip, settings, inputs, burned, out, false)
+    encode_command_with(clip, settings, inputs, burned, out, false, clip.seg_s)
 }
 
 /// [`encode_command`] with one extra answer: does this clip read a baked card that has no own length? Then its
@@ -916,12 +1054,23 @@ pub fn encode_command_with(
     burned: Option<&str>,
     out: &std::path::Path,
     loops_card: bool,
+    seek: f64,
 ) -> Vec<String> {
+    #![allow(clippy::too_many_arguments)]
     let mut argv = vec!["ffmpeg".into()];
-    // The picture's own seek first, always before its -i (inventory §B: "0 picture (-ss before -i)").
-    if clip.seg_s > 0.0 {
+    // The picture's own seek first, always before its -i (inventory §B: "0 picture (-ss before -i)"): `seek` is the
+    // second inside the picture's own FILE, which for footage is the session second less where its recording
+    // starts (the caller knows which recording), not the session second itself.
+    if seek > 0.0 {
         argv.push(SEEK_FLAG.into());
-        argv.push(format!("{:.3}", clip.seg_s));
+        argv.push(format!("{seek:.3}"));
+    }
+    // Footage is read for as long as the clip takes of it, on the input (the prototype's `-ss … -t … -i`): the
+    // first rewrite gave plain 1x footage no length at all, so a clip ran on to the end of its recording.
+    let footage = clip.source.is_empty() || clip.source.starts_with("copy:");
+    if footage && clip.rate > 0.0 {
+        argv.push("-t".into());
+        argv.push(format!("{:.3}", clip.on_screen * clip.rate));
     }
     let mut filter_inputs = 0;
     // §5 (`-t` on the output for inserts, sounds, freezes, rated clips) trims the loop to the slot; `-stream_loop -1`
@@ -957,11 +1106,31 @@ pub fn encode_command_with(
         }
         filter_inputs += 1;
     }
+    // The lanes and then the spoken lines go in after everything the picture reads, so their indices only
+    // append (§5: input indices append-only); each lane is read from its own second for the clip's length.
+    let lane_base = argv.iter().filter(|arg| *arg == "-i").count();
+    for lane in &clip.lane_files {
+        argv.extend([
+            SEEK_FLAG.into(),
+            format!("{:.3}", lane.seek.max(0.0)),
+            "-i".into(),
+            lane.path.clone(),
+        ]);
+    }
+    let voice_base = lane_base + clip.lane_files.len();
+    for take in &clip.voice_files {
+        argv.extend(["-i".into(), take.clone()]);
+    }
     let video = video_chain(clip, settings, burned).join(",");
-    let audio = audio_chain(clip, settings, clip.lanes.len(), &[]).join(",");
+    let audio = audio_graph(clip, settings, lane_base, voice_base);
     argv.extend([
         "-filter_complex".into(),
-        format!("[0:v]{video}[v];[0:a]{audio}[a]"),
+        format!("[0:v]{video}[v];{audio}"),
+        // The graph's two labelled outputs ARE the clip: ffmpeg maps only unlabelled outputs by itself.
+        "-map".into(),
+        "[v]".into(),
+        "-map".into(),
+        "[a]".into(),
     ]);
     argv.extend(codec_args(settings));
     argv.extend(frame_rate_args(
@@ -1092,12 +1261,15 @@ pub const MUX_FRACTION: f64 = 0.96;
 /// the command cannot disagree about what webm carries.
 // The mp4-only tail of the mux, named because §08 §4 lists "faststart flags" among the engineering values this
 // page uses: a row in `params::produce()` spells these two consts, so the catalogue cannot drift from the argv.
-// So the file streams from the front instead of waiting for the moov atom at the end.
-pub const MP4_STREAM_FLAGS: [&str; 2] = ["-movflags", "+faststart"];
+// So the file streams from the front instead of waiting for the moov atom at the end, and (`negative_cts_offsets`)
+// the decode delay goes in the sample table so the video track genuinely starts at zero. Both are MOVFLAGS: the
+// first rewrite passed `-negative_cts_offsets on` as an option of its own, which ffmpeg refuses ("Unrecognized
+// option"), so every mp4 mux failed (the prototype's `-movflags +faststart+negative_cts_offsets`).
+pub const MP4_STREAM_FLAGS: [&str; 2] = ["-movflags", "+faststart+negative_cts_offsets"];
 
-// The two edit-list flags that stop mp4 writing a negative-CTS start that some players read as a black first
-// frame.
-pub const MP4_START_FLAGS: [&str; 4] = ["-use_editlist", "0", "-negative_cts_offsets", "on"];
+// No edit list, so there is no start offset for players to read two ways (browsers and VLC disagree about them,
+// and the picture ran two frames behind the sound in one of them).
+pub const MP4_START_FLAGS: [&str; 2] = ["-use_editlist", "0"];
 
 /// The picture's own seek flag, and the input flag it must precede (inventory §B: "0 picture (-ss before -i)").
 /// Named so §08 §4's "input ordering" has one home: `encode_command` pushes them and `params_produce` spells them.
@@ -1115,22 +1287,35 @@ pub fn mux_command(
     out: &std::path::Path,
     languages: &[crate::roles::Language],
 ) -> Vec<String> {
-    let (codec, subtitles) = crate::produce_screen::apply_container_rules(
+    let (_, subtitles) = crate::produce_screen::apply_container_rules(
         settings.container,
         settings.codec,
         settings.subtitles,
     );
-    let _ = codec;
-    let mut argv = vec![
-        "ffmpeg".into(),
-        "-i".into(),
-        video.display().to_string(),
-        "-i".into(),
-        audio.display().to_string(),
+    // Every input first, then what goes into the output: an option written before an `-i` belongs to that input.
+    // The first rewrite put the subtitle files' `-i` after `-c:s` and the maps, so the subtitle codec was read as
+    // the INPUT's decoder, and it opened the joined file twice for one video and its own sound.
+    let mut argv = vec!["ffmpeg".into(), "-i".into(), video.display().to_string()];
+    let audio_input = if audio == video {
+        0
+    } else {
+        argv.extend(["-i".into(), audio.display().to_string()]);
+        1
+    };
+    let tracks: &[(&str, &std::path::Path)] = if subtitles == Subtitles::TrackInFile {
+        srt_tracks
+    } else {
+        &[]
+    };
+    let first_track = audio_input + 1;
+    for (_, path) in tracks {
+        argv.extend(["-i".into(), path.display().to_string()]);
+    }
+    argv.extend([
         "-map".into(),
         "0:v".into(),
         "-map".into(),
-        "0:a".into(),
+        format!("{audio_input}:a"),
         "-c:v".into(),
         "copy".into(),
         "-af".into(),
@@ -1139,30 +1324,29 @@ pub fn mux_command(
         "48000".into(),
         "-c:a".into(),
         audio_codec(settings.container).into(),
-    ];
-    if subtitles == Subtitles::TrackInFile {
-        argv.extend(["-c:s".into(), subtitle_codec(settings.container).into()]);
-        for (index, (code, path)) in srt_tracks.iter().enumerate() {
-            // The .srt files are inputs after the two streams, so their index starts at 2; each is mapped
-            // to its own subtitle stream and tagged with its ISO-639-2 code and name (§6: "so players name them").
-            // `title` is ffmpeg's stream-name field — a player's language menu reads `language`, its track list
-            // reads the title, and an untitled track shows as "Subtitle 1".
-            let (tag, name) = crate::produce_details::language_tag(code, languages);
-            argv.push("-i".into());
-            argv.push(path.display().to_string());
-            argv.extend([
-                "-map".into(),
-                format!("s:{index}"),
-                "-metadata".into(),
-                format!("s:{index}:language={tag}"),
-                "-metadata".into(),
-                format!("s:{index}:title={name}"),
-            ]);
-        }
+        "-b:a".into(),
+        format!("{}k", settings.audio_kbps),
+        "-ac".into(),
+        if settings.mono { "1" } else { "2" }.into(),
+    ]);
+    for (index, (code, _)) in tracks.iter().enumerate() {
+        // Each .srt is its own input, mapped to its own subtitle stream and tagged with its ISO-639-2 code and
+        // name (§6: "so players name them"): `language` is what a player's language menu reads, `title` its track
+        // list, and an untitled track shows as "Subtitle 1". Per-stream metadata is `-metadata:s:s:<n>`; the
+        // first rewrite wrote `-metadata s:<n>:language=…`, a global tag no player reads.
+        let (tag, name) = crate::produce_details::language_tag(code, languages);
+        argv.extend([
+            "-map".into(),
+            format!("{}:0", first_track + index),
+            "-c:s".into(),
+            subtitle_codec(settings.container).into(),
+            format!("-metadata:s:s:{index}"),
+            format!("language={tag}"),
+            format!("-metadata:s:s:{index}"),
+            format!("title={name}"),
+        ]);
     }
     if settings.container == project::Container::Mp4 {
-        // faststart so the file streams from the front, and the two edit-list flags that stop mp4 writing a
-        // negative-CTS start that some players read as a black first frame.
         argv.extend(MP4_STREAM_FLAGS.iter().map(|flag| flag.to_string()));
         argv.extend(MP4_START_FLAGS.iter().map(|flag| flag.to_string()));
     }

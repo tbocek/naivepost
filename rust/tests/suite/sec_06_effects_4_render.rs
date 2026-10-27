@@ -211,11 +211,13 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s1_an_own_clock_run_ge
     assert_eq!(
         sound.matches("afade=").count(),
         2,
-        "a read head brings its own pair, so the plain seam dip stands down: {sound}"
+        "the read head's own pair and nothing else: {sound}"
     );
-    // A clip nobody re-timed keeps the plain seam dip: it is a splice, not a read head.
+    // A clip nobody re-timed has no seam where its sound rejoins the picture, so it has no dip (the prototype's
+    // `audDipChain` answers nothing there). The first rewrite gave it `afade=t=out:st=0`, a fade OUT from its
+    // first second, and the clip came out silent after 0.15 s.
     let plain = render::audio_chain(&clip(1, 1.0, 30.0), &Produce::default(), 0, &[]).join(",");
-    assert_eq!(plain.matches("afade=").count(), 1, "{plain}");
+    assert_eq!(plain.matches("afade=").count(), 0, "{plain}");
 }
 
 // --- S2: the stop ---------------------------------------------------------------------------------------------
@@ -542,7 +544,7 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s5_one_volume_filter_p
         mix < cue,
         "§4's order: the cues come after the lane mix: {sound}"
     );
-    // One spoken line shows where the cues land relative to the voice: before its `adelay`.
+    // One spoken line shows where the cues land relative to the voice: before the narration's mix.
     let mut spoken = c.clone();
     spoken.lines = vec![naivepost::produce_render::Placed {
         entry_index: 0,
@@ -555,8 +557,8 @@ fn sec_06_effects_4_render_how_each_effect_becomes_ffmpeg_s5_one_volume_filter_p
     let voiced = render::audio_chain(&spoken, &Produce::default(), 1, &[]).join(",");
     let cue = voiced.find("eval=frame").unwrap();
     let voice = voiced
-        .find("adelay=")
-        .expect("the narration is delayed into place: {voiced}");
+        .find("volume=0.22")
+        .expect("the bed is turned down for the narration: {voiced}");
     assert!(
         cue < voice,
         "§4: volume cues before the narration: {voiced}"
@@ -762,8 +764,8 @@ fn materials_with<'a>(fx: Vec<Fx>) -> exec::Materials<'a> {
     fn no_wav(_: &naivepost::narration::Entry) -> Option<PathBuf> {
         None
     }
-    fn take_mp4(_: &Clip) -> Option<String> {
-        Some("/media/take.mp4".to_string())
+    fn take_mp4(clip: &Clip) -> Option<(String, f64)> {
+        Some(("/media/take.mp4".to_string(), clip.seg_s))
     }
     fn no_words(_: &Clip) -> Vec<naivepost::produce_subtitles::Word> {
         Vec::new()
@@ -782,7 +784,7 @@ fn materials_with<'a>(fx: Vec<Fx>) -> exec::Materials<'a> {
     }
     let exists: &'a dyn Fn(&str) -> bool = &always_exists;
     let wav_of: &'a dyn Fn(&naivepost::narration::Entry) -> Option<PathBuf> = &no_wav;
-    let source_file: &'a dyn Fn(&Clip) -> Option<String> = &take_mp4;
+    let source_file: &'a dyn Fn(&Clip) -> Option<(String, f64)> = &take_mp4;
     let words: &'a dyn Fn(&Clip) -> Vec<naivepost::produce_subtitles::Word> = &no_words;
     let translate: &'static Translate = &pass_through;
     let sources: &'a dyn Fn() -> Vec<naivepost::project::Source> = &no_sources;

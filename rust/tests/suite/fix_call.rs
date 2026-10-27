@@ -1,19 +1,15 @@
 //! §02-services.md **§2 Model roles**, the "clean transcript" row: a source's ASR lines go to the LLM,
-//! **thinking off**, and the answer is the same lines respelled — times and speakers unchanged, and
-//! *enforced*, not checked afterwards.
+//! **thinking off**, and the answer is the same lines respelled: times and speakers unchanged, and
+//! *enforced*.
 //!
-//! Item id: `sec_02_services_2_model_roles_which_job_asks_which_server`. Before
-//! [`naivepost::fix_call`] existed, `fix_transcripts::fix_block` took an `ask` closure that nothing in
-//! `src` supplied: the respelling job had no request leg at all, so no block ever reached a server.
-//! These tests drive the door the Prepare walk reaches (`run_stages::plan` → the `TEXT_TASK` row →
-//! `fix_call::run_task` → `stage_chunk`) against a loopback LLM answering with §3.3's `fix_line` calls,
-//! pointed at through the Settings box exactly as §1's re-read-per-request seam allows. So what is
-//! proven is the program's request and the program's own file, not a substitute's.
-//!
-//! The enforcement is structural and these tests say so out loud: `tools::fix::Block::fix_line(n, text)`
-//! takes no time and no speaker argument, so a reply has nowhere to put either. That is why one test
-//! sends only `flag_line` notes — the channel §3.3 gives a model for "the speaker on this row is wrong"
-//! — and the fixed file comes back with every original time and speaker still standing.
+//! Item id: `sec_02_services_2_model_roles_which_job_asks_which_server`. These tests drive the door the
+//! Prepare walk reaches (`fix_call::run_task` → `stage_chunk`) against a loopback LLM pointed at through the
+//! Settings box. One block is ONE chat call with no tools, as the prototype asked it (`fixRows`): the User
+//! Context (a script included) over the grounding and the block's rows, and the answer is the same rows with
+//! only the text changed. The enforcement is the prototype's strict check: an answer whose count, times or
+//! speakers moved is refused, the model is told why on its one retry, and a block refused twice keeps the
+//! ASR's own lines. The first rewrite offered tools instead and sent no User Context; the model asked for an
+//! empty context and answered nothing, and the subtitles kept "my name is thomas bocek".
 
 use std::io::{BufRead, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -33,22 +29,42 @@ const SOURCE_ROWS: [(&str, &str, &str, &str); 4] = [
     ("5.00", "6.75", "S1", "than doing it twice"),
 ];
 
-/// One `fix_line` call inside the chat envelope §3.3's tool surface answers with.
-fn fix_answer(n: u32, text: &str) -> String {
-    let args = serde_json::json!({ "n": n, "text": text }).to_string();
-    let escaped = args.replace('"', "\\\"");
-    format!(
-        "{{\"choices\":[{{\"message\":{{\"content\":\"\",\"tool_calls\":[\n{{\"function\":{{\"name\":\"fix_line\",\"arguments\":\"{escaped}\"}}}},\n{{\"function\":{{\"name\":\"finish\",\"arguments\":\"{{}}\"}}}}\n]}}}}]}}"
-    )
+/// A chat envelope whose content is `text`, as a model answers a call with no tools.
+fn content_answer(text: &str) -> String {
+    serde_json::json!({ "choices": [ { "message": { "content": text } } ] }).to_string()
 }
 
-/// A reply whose only calls are `flag_line` notes: the model saw something wrong it may not change.
-fn flag_answer(n: u32, why: &str) -> String {
-    let args = serde_json::json!({ "n": n, "why": why }).to_string();
-    let escaped = args.replace('"', "\\\"");
-    format!(
-        "{{\"choices\":[{{\"message\":{{\"content\":\"\",\"tool_calls\":[\n{{\"function\":{{\"name\":\"flag_line\",\"arguments\":\"{escaped}\"}}}},\n{{\"function\":{{\"name\":\"finish\",\"arguments\":\"{{}}\"}}}}\n]}}}}]}}"
-    )
+/// The block's four rows answered back, with `changed` texts replacing theirs (1-based line numbers): what a
+/// model that follows the job sends.
+fn rows_answer(changed: &[(usize, &str)]) -> String {
+    let rows: Vec<String> = SOURCE_ROWS
+        .iter()
+        .enumerate()
+        .map(|(index, (start, end, speaker, text))| {
+            let text = changed
+                .iter()
+                .find(|(n, _)| *n == index + 1)
+                .map_or(*text, |(_, new)| *new);
+            format!("{start}\t{end}\t{speaker}\t{text}")
+        })
+        .collect();
+    content_answer(&rows.join("\n"))
+}
+
+/// The rows answered back with line 2's start moved and its speaker changed: what the strict check refuses.
+fn moved_answer() -> String {
+    let rows: Vec<String> = SOURCE_ROWS
+        .iter()
+        .enumerate()
+        .map(|(index, (start, end, speaker, text))| {
+            if index == 1 {
+                format!("1.75\t{end}\tINTERVIEWER\t{text}")
+            } else {
+                format!("{start}\t{end}\t{speaker}\t{text}")
+            }
+        })
+        .collect();
+    content_answer(&rows.join("\n"))
 }
 
 /// What the fake answers with, and how many chat asks it has taken.
@@ -273,29 +289,21 @@ fn scripted(replies: Vec<String>) -> Fake {
     }
 }
 
-/// One call inside the chat envelope, with whatever arguments the caller built.
-fn call_answer(name: &str, args: serde_json::Value) -> String {
-    let escaped = args.to_string().replace('"', "\\\"");
-    format!(
-        "{{\"choices\":[{{\"message\":{{\"content\":\"\",\"tool_calls\":[\n{{\"function\":{{\"name\":\"{name}\",\"arguments\":\"{escaped}\"}}}}\n]}}}}]}}"
-    )
-}
-
-/// The message list of one recorded ask, as JSON — so a test can look at what the model was shown on
-/// its second round, including the tool result the app fed back.
-fn messages_of(ask: &ChatAsk) -> Vec<serde_json::Value> {
+/// The text of the last user message of one recorded ask: what the model was shown.
+fn user_text(ask: &ChatAsk) -> String {
     let sent: serde_json::Value = serde_json::from_str(&ask.body).expect("a JSON body");
-    sent["messages"].as_array().cloned().unwrap_or_default()
-}
-
-/// The text of every message whose role is `tool`, joined: what the app answered the model's calls with.
-fn tool_answers(ask: &ChatAsk) -> String {
-    messages_of(ask)
+    sent["messages"]
+        .as_array()
+        .expect("the messages")
         .iter()
-        .filter(|message| message["role"].as_str() == Some("tool"))
-        .flat_map(|message| message["content"].as_array().cloned().unwrap_or_default())
-        .filter_map(|part| part["text"].as_str().map(str::to_string))
-        .collect::<Vec<String>>()
+        .rev()
+        .find(|message| message["role"].as_str() == Some("user"))
+        .expect("a user message")["content"]
+        .as_array()
+        .expect("the user parts")
+        .iter()
+        .filter_map(|part| part["text"].as_str())
+        .collect::<Vec<&str>>()
         .join("\n")
 }
 
@@ -304,13 +312,13 @@ fn fields(row: &str) -> Vec<&str> {
     row.split('\t').take(4).collect()
 }
 
-/// §2's row on the wire: the block goes out numbered with its times and speaker, the model is asked for
-/// exactly that count, thinking is OFF in both places the switch is written, and §3.3's tools are
-/// offered so the answer can be a `fix_line` per line.
+/// §2's row on the wire: the block goes out as its rows with their times and speaker (no line numbers, as the
+/// job says), the model is asked for exactly that count, thinking is OFF in both places the switch is written,
+/// and no tools are offered: the answer is the rows themselves.
 #[test]
 fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript_asks_the_llm_with_the_block_and_thinking_off(
 ) {
-    let fake = Fake::start(fix_answer(1, "so the algorithm receives the input"));
+    let fake = Fake::start(rows_answer(&[(1, "So the algorithm receives the input")]));
     let scene = Scene::new("wire", &fake.url);
     let mut log = Vec::new();
     let blocks = scene
@@ -328,34 +336,15 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
         asks[0].path
     );
     let sent: serde_json::Value = serde_json::from_str(&asks[0].body).expect("a JSON body");
-    // The last message is the user's block, spelled as `fix_transcripts::ask_text` spells it. The wire
-    // field is `content` (an array of parts; a text part carries no `image_url`).
-    let messages = sent["messages"].as_array().expect("the messages");
-    let user = messages
-        .iter()
-        .rev()
-        .find(|message| message["role"].as_str() == Some("user"))
-        .expect("a user message")["content"]
-        .as_array()
-        .expect("the user parts")
-        .iter()
-        .filter_map(|part| part["text"].as_str())
-        .collect::<Vec<&str>>()
-        .join("\n");
+    let user = user_text(&asks[0]);
     assert!(
         user.contains("Transcript lines to clean (4 lines, return exactly 4)"),
         "the ask names the count it wants back: {user}"
     );
-    for (index, (start, end, speaker, text)) in SOURCE_ROWS.iter().enumerate() {
-        let row = format!("{n}\t{start}\t{end}\t{speaker}\t{text}", n = index + 1);
-        assert!(
-            user.contains(&row),
-            "line {} went out whole: {user}",
-            index + 1
-        );
+    for (start, end, speaker, text) in SOURCE_ROWS.iter() {
+        let row = format!("\n{start}\t{end}\t{speaker}\t{text}");
+        assert!(user.contains(&row), "the row went out whole: {user}");
     }
-    // §2's thinking column for this row is OFF. `llm_request` writes the switch in both places a
-    // server reads it, so both copies have to say false.
     assert_eq!(
         sent["enable_thinking"],
         serde_json::json!(false),
@@ -366,18 +355,37 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
         serde_json::json!(false),
         "thinking OFF in the template copy too: {sent}"
     );
-    let offered: Vec<&str> = sent["tools"]
-        .as_array()
-        .expect("the §3.3 tools are offered")
-        .iter()
-        .filter_map(|tool| tool["function"]["name"].as_str())
-        .collect();
-    for name in ["fix_line", "flag_line", "finish"] {
-        assert!(
-            offered.contains(&name),
-            "{name} is offered to the fix job: {offered:?}"
-        );
-    }
+    assert!(
+        sent.get("tools").is_none(),
+        "no tools are offered: the answer is the rows (the prototype asked with none): {sent}"
+    );
+}
+
+/// The session note, a script included, reaches the fixer above the block: the spellings of names come from
+/// it ("Use the script's spelling for names"), as the prototype's `ctxBlockFor("fix")` sent it. The first
+/// rewrite sent no User Context, and a name the ASR wrote in lower case stayed that way in the subtitles.
+#[test]
+fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_the_session_note_and_its_script_reach_the_fixer(
+) {
+    let fake = Fake::start(rows_answer(&[]));
+    let scene = Scene::new("context", &fake.url);
+    let project = naivepost::project::Project {
+        context: "My name is Thomas Bocek. Script: the algorithm receives the input.".to_string(),
+        ..Default::default()
+    };
+    naivepost::project::save(&project, &scene.session()).expect("the project file");
+    scene
+        .fix(&conf_at(&fake.url), &mut |_| {})
+        .expect("the fix ran");
+    let user = user_text(&fake.waited(1)[0]);
+    assert!(
+        user.starts_with(naivepost::narrate_pass::CTX_INTRO),
+        "the User Context leads the message: {user}"
+    );
+    assert!(user.contains("My name is Thomas Bocek."), "{user}");
+    let note = user.find("Thomas Bocek").unwrap();
+    let rows = user.find("Transcript lines to clean").unwrap();
+    assert!(note < rows, "above the block it is about: {user}");
 }
 
 /// The answer lands: line 1 keeps its own times and speaker and carries the respelling, and the rows
@@ -386,7 +394,7 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
 fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript_rewrites_only_the_text_column(
 ) {
     let respelled = "so the algorithm receives the input";
-    let fake = Fake::start(fix_answer(1, respelled));
+    let fake = Fake::start(rows_answer(&[(1, respelled)]));
     let scene = Scene::new("files", &fake.url);
     let source = scene.source();
     let mut log = Vec::new();
@@ -407,7 +415,7 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
         first[3], respelled,
         "the model's spelling is what the row holds: {fixed}"
     );
-    // Times and speaker byte-identical to the source row: `fix_line(n, text)` has nowhere to change them.
+    // Times and speaker byte-identical to the source row: the answer's own are held against them.
     let origin = fields(before[0]);
     assert_eq!(
         first[..3],
@@ -418,59 +426,57 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
         assert_eq!(
             fields(row),
             fields(origin),
-            "line {} was not asked about: {row}",
+            "line {} came back unchanged: {row}",
             index + 1
         );
     }
 }
 
-/// A reply cannot move a time or a speaker, because the tool surface has no place to ask for one. The
-/// channel for "this row's speaker is wrong" is `flag_line`, which notes it and leaves the row alone.
+/// A reply cannot move a time or a speaker: an answer whose line 2 starts later and names another speaker is
+/// refused, the model is told what was wrong on its one retry, and a block refused twice keeps every field as
+/// the ASR wrote it (the prototype's strict check: same count, byte-identical start, end and speaker).
 #[test]
 fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript_a_reply_cannot_move_a_time_or_a_speaker(
 ) {
-    let fake = Fake::start(flag_answer(
-        2,
-        "the speaker on this row is the interviewer, not S1",
-    ));
-    let scene = Scene::new("flags", &fake.url);
+    let fake = Fake::start(moved_answer());
+    let scene = Scene::new("moved", &fake.url);
     let source = scene.source();
     let mut log = Vec::new();
     scene
         .fix(&conf_at(&fake.url), &mut |line| log.push(line.to_string()))
         .expect("the fix ran");
-    fake.waited(1);
-    let fixed = scene.fixed();
-    let before: Vec<&str> = source.lines().filter(|row| !row.is_empty()).collect();
-    let after: Vec<&str> = fixed.lines().filter(|row| !row.is_empty()).collect();
-    assert_eq!(
-        after.len(),
-        before.len(),
-        "a flag changes no row count: {fixed}"
-    );
-    for (row, origin) in after.iter().zip(&before) {
-        assert_eq!(
-            fields(row),
-            fields(origin),
-            "every field stands as the ASR wrote it: {fixed}"
-        );
-    }
+    let asks = fake.waited(2);
+    assert_eq!(asks.len(), 2, "the refusal costs its one retry: {asks:?}");
     assert!(
-        log.iter()
-            .any(|line| line.contains("line 2") && line.contains("interviewer")),
-        "the note reaches the log rather than being dropped: {log:?}"
+        user_text(&asks[1])
+            .contains("line 2 must keep its start, end and speaker exactly as given"),
+        "the model hears what it got wrong: {}",
+        user_text(&asks[1])
+    );
+    assert_eq!(
+        scene.fixed(),
+        source,
+        "every field stands as the ASR wrote it"
+    );
+    assert!(
+        log.contains(&naivepost::fix_transcripts::give_up_log(LANE, 0, 1)),
+        "and the block says it kept its lines: {log:?}"
     );
 }
 
-/// Out of tries is a block outcome, not a crash: `fix_line` refuses a number outside the block twice,
+/// Out of tries is a block outcome, not a crash: an answer short of a row is refused twice,
 /// so the block keeps the ASR's own lines and says so. Every other block would still have been fixed —
 /// which is why a block, and not a source, is the unit of failure here.
 #[test]
 fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript_a_block_that_runs_out_of_tries_keeps_the_asr_lines(
 ) {
-    // Line 99 is not in a four-line block, so `Block::fix_line` refuses it -- twice, which is all
-    // `P.machine.fixTries` allows.
-    let fake = Fake::start(fix_answer(99, "an answer about a line that does not exist"));
+    // Three rows back for a four-line block: refused, twice, which is all `P.machine.fixTries` allows.
+    let three = rows_answer(&[]);
+    let short: serde_json::Value = serde_json::from_str(&three).expect("json");
+    let text = short["choices"][0]["message"]["content"].as_str().unwrap();
+    let fake = Fake::start(content_answer(
+        &text.lines().take(3).collect::<Vec<&str>>().join("\n"),
+    ));
     let scene = Scene::new("gaveup", &fake.url);
     let source = scene.source();
     let mut log = Vec::new();
@@ -486,102 +492,41 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
     assert_eq!(scene.fixed(), source, "the originals stand, byte for byte");
 }
 
-/// §3.1's shared reads, answered on the fix leg. The job is OFFERED `get_lines` (and the other three), so
-/// a model may ask for its own rows back before respelling them — and before [`naivepost::tool_reads`] it
-/// got silence, which reads to a model as a tool that does not exist. This drives the whole door: round one
-/// asks for lines 1-2, the app answers from the block in hand, round two gets the answer beside the same
-/// question and then does the actual fix.
+/// An answer with no rows in it (a model that talked instead of answering) is refused with the reason, asked
+/// once more, and the block keeps its lines when the second answer has none either. The first rewrite's
+/// tool rounds read "answered nothing at all" as nothing to fix and moved on.
 #[test]
-fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_a_shared_read_reaches_the_model_and_the_answer_comes_back(
+fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_an_answer_with_no_rows_is_refused_and_asked_again(
 ) {
-    let read_first = call_answer("get_lines", serde_json::json!({ "from": 1, "to": 2 }));
     let fake = scripted(vec![
-        read_first,
-        fix_answer(1, "so the algorithm receives the input"),
+        content_answer("Sure, I can clean these lines for you."),
+        rows_answer(&[(2, "And writes it down again.")]),
     ]);
-    let scene = Scene::new("readback", &fake.url);
-    let mut log = Vec::new();
+    let scene = Scene::new("norows", &fake.url);
     scene
-        .fix(&conf_at(&fake.url), &mut |line| log.push(line.to_string()))
-        .expect("a read round does not fail the block");
+        .fix(&conf_at(&fake.url), &mut |_| {})
+        .expect("the fix ran");
     let asks = fake.waited(2);
-    assert_eq!(asks.len(), 2, "the read costs a round: {asks:?}");
-
-    // Not a coincidence: the read was offered on the FIRST ask, so the model had a reason to call it.
-    let offered: Vec<String> = serde_json::from_str::<serde_json::Value>(&asks[0].body)
-        .expect("a JSON body")["tools"]
-        .as_array()
-        .expect("tools are offered")
-        .iter()
-        .filter_map(|tool| tool["function"]["name"].as_str().map(str::to_string))
-        .collect();
+    assert_eq!(asks.len(), 2, "a talking answer costs the retry");
     assert!(
-        offered.iter().any(|name| name == "get_lines"),
-        "get_lines is offered to the fix job: {offered:?}"
-    );
-
-    // The second ask carries the answer to the read: both requested rows, stamped, with their speaker.
-    // Read back out of the JSON rather than matched as raw text, so the escaping is not what is tested.
-    let answers = tool_answers(&asks[1]);
-    let body: serde_json::Value =
-        serde_json::from_str(&answers).expect("the read answered in JSON");
-    let rows = body["lines"]
-        .as_array()
-        .expect("the lines the model asked for");
-    assert_eq!(rows.len(), 2, "both rows came back: {answers}");
-    assert_eq!(
-        rows[0],
-        "00:00-00:01\tS1\tso the algorithum recieves the input"
-    );
-    assert_eq!(rows[1], "00:01-00:03\tS1\tand writes it down again");
-
-    // And the fix the model made AFTER reading still lands: the read cost a round, not the answer.
-    let fixed = scene.fixed();
-    assert!(
-        fixed.contains("so the algorithm receives the input"),
-        "the later fix_line is what the file holds: {fixed}"
-    );
-}
-
-/// A read with bad arguments comes back as `{"error": …}` naming what to send (§3: a problem is text the
-/// model can act on, never silence and never a dropped flow).
-#[test]
-fn sec_02_services_2_model_roles_which_job_asks_which_server_s7_a_read_with_bad_arguments_is_answered_with_an_error_not_silence(
-) {
-    let read_first = call_answer("get_lines", serde_json::json!({}));
-    let fake = scripted(vec![read_first, fix_answer(2, "and writes it down again")]);
-    let scene = Scene::new("badread", &fake.url);
-    let mut log = Vec::new();
-    scene
-        .fix(&conf_at(&fake.url), &mut |line| log.push(line.to_string()))
-        .expect("a bad argument is not a failure");
-    let asks = fake.waited(2);
-    let answers = tool_answers(&asks[1]);
-    assert!(
-        answers.contains("\"error\""),
-        "the refusal shape reaches the model: {answers}"
+        user_text(&asks[1]).contains("the answer held no lines"),
+        "and the model hears why: {}",
+        user_text(&asks[1])
     );
     assert!(
-        answers.contains("from") && answers.contains("to"),
-        "it names the arguments to send instead: {answers}"
-    );
-    // The flow continued past the error: the next round's fix is in the file.
-    assert!(
-        scene.fixed().contains("and writes it down again"),
-        "the block was still fixed"
+        scene.fixed().contains("And writes it down again."),
+        "the retry's rows land: {}",
+        scene.fixed()
     );
 }
 
 /// §6 on this job's live path: a block's answer is filed under `cache/llm/fix/<sha256 hex>` — §6's
-/// digest, model id included — and the next pass over the same rows reads it back: no ask, no new row in
-/// `requests.tsv`, same fixed transcript on disk. Two slots stand there after one pass because this job
-/// files at two heights (`fix_call::ask_once` keeps the reply the round ended with; `store_block` keeps
-/// the respelled rows that resume marker needs), so what is pinned is each slot's NAME and HEX SHAPE, not
-/// a count. "Only its first attempt is cached" is already pinned in `tests/suite/fix_transcripts.rs`.
+/// digest over the block's rows — and the next pass over the same rows reads it back: no ask, no new row in
+/// `requests.tsv`, same fixed transcript on disk. "Only its first attempt is cached" is pinned below.
 #[test]
 fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_its_answer_and_replays_it_without_a_socket() {
     let respelled = "so the algorithm receives the input";
-    let fake = Fake::start(fix_answer(1, respelled));
+    let fake = Fake::start(rows_answer(&[(1, respelled)]));
     let scene = Scene::new("s7-cache", &fake.url);
     let conf = conf_at(&fake.url);
     let mut log = Vec::new();
@@ -676,7 +621,7 @@ fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_its_answer_and_replays_it_wit
 }
 
 /// The names of the files filed under `cache/llm/fix/` — §6's slots for this job, at either height
-/// (`fix_call::ask_once`'s reply and `store_block`'s resume rows both land in this one folder).
+/// (`store_block`'s resume rows).
 fn slots_under(tree: &naivepost::layout::Tree) -> Vec<String> {
     let dir = tree
         .dir()
@@ -699,12 +644,9 @@ fn slots_under(tree: &naivepost::layout::Tree) -> Vec<String> {
 #[test]
 fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_only_its_first_attempt() {
     let respelled = "so the algorithm receives the input";
-    // Round one names a line that is not in this four-row block, so `Block::fix_line` refuses it and a
-    // second attempt actually happens; round two answers properly.
-    let fake = scripted(vec![
-        call_answer("get_lines", serde_json::json!({ "from": 1, "to": 2 })),
-        fix_answer(1, respelled),
-    ]);
+    // Round one moves a time, so the strict check refuses it and a second attempt actually happens; round
+    // two answers properly.
+    let fake = scripted(vec![moved_answer(), rows_answer(&[(1, respelled)])]);
     let scene = Scene::new("s7-first-attempt", &fake.url);
     let conf = conf_at(&fake.url);
     let mut log = Vec::new();
@@ -719,38 +661,15 @@ fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_only_its_first_attempt() {
         fixed.contains(respelled),
         "the repaired answer still writes the file: {fixed}"
     );
-    // The repair round's own key is NOT filed: §6 caches the first attempt only, and the plain-ask key
-    // that did earn a slot is `block_key`'s (the resume marker), which is why exactly one slot stands.
+    // The repaired block earns no slot: §6 caches the first attempt only, so the next run asks it again.
     let slots = slots_under(&scene.tree());
-    assert_eq!(slots.len(), 1, "only the resume marker stands -- {slots:?}");
-    let lines = naivepost::fix_transcripts::load_transcript(&scene.tree(), LANE).expect("rows");
-    let marker =
-        naivepost::fix_transcripts::block_key(&naivepost::fix_transcripts::blocks(&lines)[0]);
     assert!(
-        slots.contains(&marker),
-        "the slot is the block's own marker: {slots:?}"
-    );
-    let repair_key = naivepost::llm_cache::key(&naivepost::llm_cache::parts(
-        &naivepost::llm_cache::Request {
-            system: "",
-            user: "x",
-            state: "",
-            speech: "",
-            context: "",
-            images: Vec::new(),
-            run_index: None,
-            model: "",
-            thinking: false,
-        },
-    ))
-    .expect("keys");
-    assert!(
-        !slots.contains(&repair_key),
-        "no stray reply slot: {slots:?}"
+        slots.is_empty(),
+        "a repaired block is not filed -- {slots:?}"
     );
 
     // The other half: a first-try answer IS filed, under §6's digest, and the next pass replays it.
-    let other = Fake::start(fix_answer(1, respelled));
+    let other = Fake::start(rows_answer(&[(1, respelled)]));
     let first_scene = Scene::new("s7-first-try", &other.url);
     let first_conf = conf_at(&other.url);
     let mut again_log = Vec::new();

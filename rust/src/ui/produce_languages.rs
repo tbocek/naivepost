@@ -120,7 +120,10 @@ pub fn upload_legs(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -
         ask_draw: draw_leg(),
         poll: poll_leg(),
         save_picture: Box::new(save_drawn),
-        print: print_leg(title_band_of(&publish)),
+        print: print_leg(title_band_of(&publish), {
+            let texts = publish.texts.clone();
+            move || texts.clone()
+        }),
         nearest_frame: Box::new({
             let tree = tree.clone();
             let run = run.clone();
@@ -272,6 +275,10 @@ pub fn frame_images(
 ///
 /// Every rule lives in [`crate::produce_upload`]; this gathers what the session folder holds and hands the
 /// walk its legs. Nothing here decides an order, prints a spec sentence or spawns anything itself.
+/// Said when ▶ keeps the upload text it already wrote rather than asking the model again.
+pub const UPLOAD_TEXT_KEPT_LOG: &str =
+    "    publish: the upload text is already written \u{2014} kept (\u{21bb} beside the title asks again)";
+
 pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     let tree = session_tree();
     let brief = upload_brief_for(&tree, run);
@@ -286,8 +293,21 @@ pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     // ONE dial per press (F5.6 S1's "one LLM call"): the legs carry the real leg, so the half asks THAT and
     // hands `walk` the answers it produced rather than making the walk dial a second time for the same brief.
     let legs = upload_legs(&tree, run);
-    let reply = (legs.ask_model)(&brief)?;
-    let answers = answers_from(&reply, starts_of(run), |at| nearest_frame(&tree, run, at));
+    // ▶ writes the upload text ONCE per project (the prototype's `needText = !written`): the gate is the record on
+    // disk, not the boxes, because a title you emptied or a frame you chose is a decision, and ↻ beside the title
+    // is the button that asks again. It asks anyway when there is nothing to make a thumbnail from at all. The
+    // first rewrite asked on every press, and the model's answer replaced the person's frame and title.
+    let nothing_to_make = !publish.own
+        && publish.prompt.trim().is_empty()
+        && publish.frames.is_empty()
+        && !tree.thumbnail_png().is_file();
+    let answers = if crate::publish::is_written(&tree) && !nothing_to_make {
+        crate::ui::window::log_line(UPLOAD_TEXT_KEPT_LOG);
+        crate::produce_upload::Answers::default()
+    } else {
+        let reply = (legs.ask_model)(&brief)?;
+        answers_from(&reply, starts_of(run), |at| nearest_frame(&tree, run, at))
+    };
     let mats = upload_mats(&legs, run);
     let outcome = crate::produce_upload::walk(
         &brief,
@@ -299,16 +319,12 @@ pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     outcome.error.map_or(Ok(()), Err)
 }
 
-/// The clip starts on the produced clock, in the cut's order — the numbers `frame: clip n +s` resolves
-/// against (§3.9), built here because only the page holds the live cut.
+/// The clip starts on the SESSION clock, in the cut's order — the numbers `frame: clip n +s` resolves against
+/// (§3.9: the clip's session start plus the offset its EVENT line is stamped with, the prototype's `frameSecs`),
+/// so the moment it names is the one a frame on disk is named by. The first rewrite counted them on the produced
+/// clock and the frame then read as a session second: the thumbnail came out of the wrong moment.
 fn starts_of(run: &crate::produce_flow::Run) -> Vec<f64> {
-    let mut starts = Vec::with_capacity(run.cut.segs.len());
-    let mut at = 0.0;
-    for seg in &run.cut.segs {
-        starts.push(at);
-        at += output_length(seg);
-    }
-    starts
+    run.cut.segs.iter().map(|seg| seg.s).collect()
 }
 
 /// A segment's length in OUTPUT seconds: rate applied once (`narration::output_seconds`' own rule), with
@@ -386,7 +402,7 @@ fn read_all_events(
 
 /// The name a source's prepare folder is filed under: its base name without the extension. `Tree::input_dir`
 /// and friends key every per-source artefact on this, not on the full path.
-fn source_stem(path: &str) -> String {
+pub(crate) fn source_stem(path: &str) -> String {
     let base = path.rsplit('/').next().unwrap_or(path);
     base.rsplit_once('.')
         .map_or(base, |(stem, _)| stem)
@@ -454,12 +470,9 @@ fn string_field(value: &serde_json::Value, key: &str) -> Option<String> {
 /// An empty list is a legal answer — S4 says take three from the cut and S3 reports there is nothing near.
 fn extracted_frames(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) -> Vec<f64> {
     let mut out = Vec::new();
-    let mut at = 0.0;
     let zero = crate::frames_run::session_zero(tree);
     for seg in &run.cut.segs {
-        let kept = output_length(seg);
         if !seg.ins.is_empty() {
-            at += kept;
             continue;
         }
         for source in run.sources.footage.iter() {
@@ -478,18 +491,19 @@ fn extracted_frames(tree: &crate::layout::Tree, run: &crate::produce_flow::Run) 
                 else {
                     continue;
                 };
+                // On the session clock, as the frame is named and as every `frame:` entry is read.
                 if seconds >= seg.s && seconds < seg.e {
-                    out.push(at + (seconds - seg.s));
+                    out.push(seconds);
                 }
             }
         }
-        at += kept;
     }
     out.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    out.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
     out
 }
 
-/// The nearest extracted frame to a produced-clock moment (S3 / decision 32), through the ONE nearest rule
+/// The nearest extracted frame to a session second (S3 / decision 32), through the ONE nearest rule
 /// [`crate::produce_upload_frames::frame_at`] so a spread frame and a picked frame resolve the same way.
 fn nearest_frame(
     tree: &crate::layout::Tree,
@@ -650,15 +664,27 @@ fn write_plain(path: &std::path::Path, png: &[u8]) -> Result<(), String> {
 /// The band comes from the record the press started from, not from `publish.json`: §S3 snapshots the page's
 /// state at the press, so a title box dragged since the last write prints where the person sees it, and only
 /// a door with no run to ask (a bare `Run`) falls back to the file.
-pub fn print_leg(band: TitleBox) -> Box<crate::produce_upload::PrintWords> {
-    Box::new(move |_kind: &str, words: &[String]| {
+///
+/// Every pass prints from the plain picture, so the title's pass prints the marked texts again, each in its own
+/// box, beside the title in its band (the prototype's `drawPubTexts`, one picture with all its words); the texts'
+/// pass prints them alone. `texts` answers the marked texts with their boxes.
+pub fn print_leg(
+    band: TitleBox,
+    texts: impl Fn() -> Vec<crate::project::TextMark> + 'static,
+) -> Box<crate::produce_upload::PrintWords> {
+    Box::new(move |kind: &str, words: &[String]| {
         let tree = session_tree();
         let plain = tree.thumbnail_plain_png();
         if !plain.is_file() {
             return Err("nothing has been drawn to print onto".to_string());
         }
         let out = tree.thumbnail_png();
-        crate::produce_upload_print::print_words(&plain, &out, words, &band)
+        let title = if kind == "title" {
+            words.join(" ")
+        } else {
+            String::new()
+        };
+        crate::produce_upload_print::print_words(&plain, &out, &texts(), &title, &band)
     })
 }
 
@@ -811,7 +837,9 @@ pub fn legs(
         save_picture: Box::new(save_drawn),
         // §S3: a press with no run in front of it still reads the record on disk, which is what "the page left
         // it" means for a door that snapshots nothing (↻ redraw and ↻ suggest build their own legs).
-        print: print_leg(stored_title_band()),
+        print: print_leg(stored_title_band(), || {
+            crate::ui::produce_page::read_state().texts
+        }),
         ask_model: upload_ask(
             &session_tree(),
             &crate::publish::load(&session_tree()).unwrap_or_default(),
@@ -928,7 +956,7 @@ pub fn tag_page(settings: &crate::project::Produce, language: &str) {
         crate::layout::Tree::new(std::path::Path::new("session.naivepost"))
             .expect("a session folder")
     });
-    let known = crate::roles::subtitle_languages(
+    let known = crate::roles::languages_or_built_in(
         &crate::settings::from_environment()
             .and_then(|paths| crate::settings::read(&paths).ok())
             .map(|conf| conf.subtitle_languages)

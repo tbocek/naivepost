@@ -76,14 +76,23 @@ fn f2_4_s1_a_real_click_on_the_band_places_the_line() {
             .emit_clicked();
         common::settle_workers();
         common::settle();
-        // Zoomed in, as the person had it.
+        // The line in the middle of the take first, then zoomed in, as the person had it.
+        let band = common::widget_in(&window, "track-band").expect("the tracks band");
+        let middle = ui::cut_tracks::bands_for(naivepost::fx_lane::row_count(
+            &ui::review_cut_of(&window).fx,
+        ));
+        click_at(
+            &window,
+            &band,
+            10.0,
+            (middle.ruler.0 + middle.ruler.1) / 2.0,
+        );
         for _ in 0..4 {
             ui::line_step_button(&window, "zoom-in-button")
                 .expect("zoom +")
                 .emit_clicked();
             common::settle_workers();
         }
-        let band = common::widget_in(&window, "track-band").expect("the tracks band");
         // The rows as the page lays them out: an effects lane is always drawn, even an empty one.
         let bands = ui::cut_tracks::bands_for(naivepost::fx_lane::row_count(
             &ui::review_cut_of(&window).fx,
@@ -91,8 +100,8 @@ fn f2_4_s1_a_real_click_on_the_band_places_the_line() {
         let picture_y = bands.first_picture + bands.row_height / 2.0;
         let ruler_y = (bands.ruler.0 + bands.ruler.1) / 2.0;
         let selection_y = (bands.selection.0 + bands.selection.1) / 2.0;
-        // + zooms about the view's centre, so the band is scrolled now, as a zoomed-in band usually is: the
-        // seconds are aimed at from the first one on screen.
+        // + zooms about the red line (F2.4: it keeps its place on screen), so with the line at 10 s the band is
+        // scrolled now, as a zoomed-in band usually is: the seconds are aimed at from the first one on screen.
         let first = ui::cut_view::origin() / ui::cut_view::band_scene_for(&window).pps;
         assert!(
             first > 1.0,

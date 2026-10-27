@@ -278,7 +278,39 @@ fn f0_14_s3_to_s6_prepare_fills_a_profile_in_and_refuses_while_a_required_field_
             Some(Some("News show".to_string())),
             "the Profiles window opens on the project's profile"
         );
-        ui::profiles_dialog::open_window().expect("open").close();
+        // S9 after the fact: the profile's own Produce rows changed and saved reach the project already on it,
+        // in the window, on disk and on the Produce page. The first rewrite applied them only when the profile
+        // was chosen, while the page greyed its rows and sent the person to Profiles: a Translate tick set
+        // there never reached the run.
+        let profiles = ui::profiles_dialog::open_window().expect("open");
+        let german = common::find_in(profiles.upcast_ref(), "translate-tick-German")
+            .and_then(|w| w.downcast::<gtk::CheckButton>().ok())
+            .expect("the profile's Translate row offers German");
+        german.set_active(true);
+        common::settle();
+        let paths = naivepost::settings::from_environment().expect("a settings folder");
+        ui::profiles_dialog::save_as_to(&naivepost::profile::dir(&paths).join("News show.txt"));
+        common::settle();
+        let german_only = vec!["German".to_string()];
+        assert_eq!(
+            session.borrow().produce.translate,
+            german_only,
+            "in the window"
+        );
+        assert_eq!(
+            naivepost::project::load(&naivepost::startup::open_dir())
+                .expect("the project file")
+                .produce
+                .translate,
+            german_only,
+            "kept in naivepost.json"
+        );
+        assert_eq!(
+            ui::produce_page::read_state().translate,
+            german_only,
+            "and shown on the Produce page"
+        );
+        profiles.close();
         common::settle();
 
         // S4: each change stores the value and rebuilds the context.

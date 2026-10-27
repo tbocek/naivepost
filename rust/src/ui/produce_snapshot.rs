@@ -43,6 +43,8 @@ pub struct Snapshot {
     pub on_recording: bool,
     /// The filmed spans, which is how a clip's `footage_left` is answered without walking the page again.
     pub filmed_runs: Vec<(f64, f64)>,
+    /// The recordings on the session clock, by name: which file a footage clip is cut from, and where in it.
+    pub recordings: Vec<crate::timeline::Recording>,
     /// S3's publish state, and S4's distinction: `None` = nothing was ever written.
     pub publish: Option<Publish>,
     /// The page's own thumbnail rows, merged into the held publish state by [`publish_of`].
@@ -114,6 +116,7 @@ pub fn gather(
         src_shape: first_footage_shape(tree, recordings),
         on_recording: !recordings.is_empty(),
         filmed_runs: crate::timeline::filmed_runs(recordings),
+        recordings: recordings.to_vec(),
         publish: Some(page_publish),
         // S4's three shapes turn on whether anything was ever written for this video; the page's rows answer
         // that directly (an image row, a title or an edit instruction means something has been described).
@@ -187,6 +190,40 @@ pub fn merge_publish(held: Option<Publish>, on_disk: &Publish) -> Publish {
     }
 }
 
+/// The file a footage clip at session second `at` is cut from, and the second inside it to seek to: the
+/// recording whose span holds `at`, under its own path resolved against the project, `at` counted from that
+/// recording's start (plus the cut's hand shift for it). The first rewrite handed every footage clip the FIRST
+/// footage row of the project list, unresolved (`project:sources/…`), and seeked it to the SESSION second: a
+/// session of several recordings came out cut from one file at the wrong places, and ffmpeg could not open it.
+fn footage_file(snap: &Snapshot, at: f64) -> Option<(String, f64)> {
+    let resolve = |stored: &str| {
+        crate::layout::resolve(snap.tree.dir(), snap.tree.dir(), stored)
+            .to_string_lossy()
+            .to_string()
+    };
+    let recording = snap
+        .recordings
+        .iter()
+        .find(|rec| rec.start <= at + 1e-6 && at < rec.end)
+        .or_else(|| snap.recordings.iter().filter(|rec| rec.start <= at).last());
+    if let Some(rec) = recording {
+        if let Some(source) = snap
+            .sources
+            .iter()
+            .filter(|src| src.footage)
+            .find(|src| crate::audio_task::source_lane(&src.path) == rec.base)
+        {
+            let seek = at - rec.start + crate::timeline::shift_of(&snap.cut, &rec.base);
+            return Some((resolve(&source.path), seek.max(0.0)));
+        }
+    }
+    // No tape known (a session the page never laid out): the one footage row, on its own clock from 0.
+    snap.sources
+        .iter()
+        .find(|src| src.footage)
+        .map(|src| (resolve(&src.path), at.max(0.0)))
+}
+
 /// F5.2's half of the run, driven from the snapshot: plan the whole encode, walk the subprocesses and report
 /// what was made. Every lookup `produce_exec` asks is answered from `snap` and nothing else — no
 /// `session_tree()`, no `live_project()`, no word-list or recording re-read — because §S3 says the press owns
@@ -255,11 +292,7 @@ pub fn render_half(
             // first footage recording of the snapshot's source list.
             source_file: &|clip| {
                 if clip.source.is_empty() || clip.source.starts_with("copy:") {
-                    return snap
-                        .sources
-                        .iter()
-                        .find(|src| src.footage)
-                        .map(|src| src.path.clone());
+                    return footage_file(snap, clip.seg_s);
                 }
                 // `Seg::insert_asset` is the one path rule of §1; the clip carries the same spelling.
                 Some(
@@ -271,17 +304,18 @@ pub fn render_half(
                     .map(|p| p.to_string_lossy().to_string())
                     .unwrap_or_else(|| clip.source.clone()),
                 )
+                .map(|path| (path, clip.seg_s))
             },
             // §6 bullet 1's doors: the filmed spans this snapshot already gathered (the same list
             // `footage_left` reads), and the name a clip's base goes by — the footage row's for footage and a
             // `copy:` stretch, the asset's own for an insert, since §6's "<base>" is a name a person reads.
             filmed_runs: &snap.filmed_runs,
             base_of: &|seg: &crate::cut::Seg| {
+                // Footage is named by the recording the clip starts in, the file its encode opens (the first
+                // rewrite named every clip after the first footage row).
                 let path = if seg.ins.is_empty() || seg.ins.starts_with("copy:") {
-                    snap.sources
-                        .iter()
-                        .find(|src| src.footage)
-                        .map(|src| src.path.clone())
+                    footage_file(snap, seg.s)
+                        .map(|(path, _)| path)
                         .unwrap_or_default()
                 } else {
                     seg.insert_asset(&root, &root)

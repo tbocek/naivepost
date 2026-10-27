@@ -43,7 +43,7 @@ fn p_machine_fixtries_s1_two_attempts_per_block() {
 #[test]
 fn p_machine_fixtries_s2_an_unfixable_block_is_asked_twice_and_no_more() {
     let asked = Cell::new(0);
-    let outcome = fix::fix_block(&lines(2), |_| {
+    let outcome = fix::fix_block(&lines(2), "", |_| {
         asked.set(asked.get() + 1);
         // Refused every time: a row that is not in this block, which the tool answers by name.
         Ok(vec![fix::Reply::Fix {
@@ -69,7 +69,7 @@ fn p_machine_fixtries_s2_an_unfixable_block_is_asked_twice_and_no_more() {
 #[test]
 fn p_machine_fixtries_s3_the_second_try_can_repair_what_the_first_lost() {
     let seen = std::cell::RefCell::new(Vec::<String>::new());
-    let outcome = fix::fix_block(&lines(2), |ask| {
+    let outcome = fix::fix_block(&lines(2), "", |ask| {
         seen.borrow_mut().push(ask.to_string());
         if seen.borrow().len() == 1 {
             // First answer refused: one row right, one row out of the block.

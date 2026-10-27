@@ -590,11 +590,20 @@ pub fn cached(complete: bool) -> bool {
 /// is written anyway, beside the video and unnamed by a code. Order is preserved so the tracks arrive in the
 /// order the menu listed them.
 pub fn track_languages(session: &str, ticked: &[String]) -> Vec<String> {
-    ticked
-        .iter()
-        .filter(|code| code.as_str() != session)
-        .cloned()
-        .collect()
+    // By CODE on both sides: the page ticks names ("German") and the policy holds the session's code ("en"), and
+    // a track is named, tagged and filed by its code (`final.de.srt`, as the prototype's `SubLangs`). The first
+    // rewrite compared the two spellings as they came, so English was translated into English and the tracks
+    // were filed as `final.English.srt`.
+    let own = crate::roles::language_code(session);
+    let mut out: Vec<String> = Vec::new();
+    for tick in ticked {
+        let code = crate::roles::language_code(tick);
+        if code.is_empty() || code == own || out.contains(&code) {
+            continue;
+        }
+        out.push(code);
+    }
+    out
 }
 
 // ---- §3.10's two must-fix behaviours ---------------------------------------------

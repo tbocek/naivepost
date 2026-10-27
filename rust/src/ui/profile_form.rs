@@ -235,16 +235,43 @@ fn choose(form: &Rc<Form>, name: Option<&str>) {
     paint(form);
 }
 
+/// S9 kept true after the profile is chosen: the open project's profile is read again and its `## produce` rows
+/// set the project's encoder settings wherever they no longer agree, kept and shown like a choice. Asked after a
+/// profile is saved and when a window opens. The first rewrite applied them only at the choice, while the
+/// Produce page greyed those rows and sent the person to Profiles: a row changed there (a Translate tick) never
+/// reached the project or the run.
+pub fn follow_profile_produce() {
+    let Some(session) = crate::ui::window::SESSION.with(|slots| slots.borrow().last().cloned())
+    else {
+        return;
+    };
+    let (name, current) = {
+        let held = session.borrow();
+        let Some(used) = held.profile.as_ref() else {
+            return;
+        };
+        (used.name.clone(), held.produce.clone())
+    };
+    let Ok(template) = template_of(&name) else {
+        return;
+    };
+    if template.produce.is_empty() {
+        return;
+    }
+    let produce = crate::ui::produce_page::apply_rows(&current, &template.produce);
+    if produce != current {
+        keep_produce(&produce, &name, &template.produce);
+    }
+}
+
 /// S9: the encoder settings a profile set, kept in the project file, shown on the Produce page, and said.
 fn keep_produce(produce: &crate::project::Produce, name: &str, rows: &[(String, String)]) {
-    let dir = crate::startup::open_dir();
-    if let Ok(mut on_disk) = crate::project::load(&dir) {
-        on_disk.produce = produce.clone();
-        if let Err(why) = crate::project::save(&on_disk, &dir) {
-            crate::ui::window::log_line(&format!(
-                "!!! the profile's encoder settings were not kept: {why}"
-            ));
-        }
+    // Through the page's one keeping door, so the window's session holds them too and no autosave writes the
+    // settings it opened with back over them.
+    if let Err(why) = crate::ui::produce_page::keep_produce(produce) {
+        crate::ui::window::log_line(&format!(
+            "!!! the profile's encoder settings were not kept: {why}"
+        ));
     }
     crate::ui::produce_page::show_encoder(produce);
     let said: Vec<String> = rows

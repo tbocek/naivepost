@@ -94,10 +94,15 @@ fn sec_08_produce_1_screen_every_setting_reaches_the_project_and_the_render() {
                     );
                 }
                 "Frame rate" => {
+                    // The whole encode: a constant rate reaches ffmpeg as the `fps` filter, a peak rate as
+                    // `-fpsmax`, so neither half alone carries every row change.
                     let rate = |p: &Produce| {
-                        naivepost::produce_render::frame_rate_args(
-                            naivepost::produce_render::frame_rate_name(p.frame_rate),
-                            p.vfr,
+                        naivepost::produce_render::encode_command(
+                            &naivepost::produce_render::Clip::default(),
+                            p,
+                            &[],
+                            None,
+                            std::path::Path::new("out.mp4"),
                         )
                     };
                     assert_ne!(rate(&after), rate(&before), "{row}: ffmpeg's rate changed");
@@ -133,6 +138,34 @@ fn sec_08_produce_1_screen_every_setting_reaches_the_project_and_the_render() {
                 "{tick}: the render's up-to-date stamp moved"
             );
         }
+        // The Translate row's tick, and the record SURVIVING the project's own autosave: the window's
+        // session is saved whole whenever anything in it changes, so a setting kept only on disk was written
+        // back over with what the session held at opening (the first rewrite's German tick, lost before the
+        // run and never translated).
+        let german = common::widget_in(&window, "translate-tick-German")
+            .and_then(|widget| widget.downcast::<gtk4::CheckButton>().ok())
+            .expect("the page drew the German tick");
+        german.set_active(true);
+        common::settle();
+        assert_eq!(
+            kept(&session).translate,
+            vec!["German".to_string()],
+            "the German tick landed in naivepost.json"
+        );
+        let shown = ui::produce_page::row_settings();
+        ui::set_marking_pass(&window, naivepost::project::MarkingPass::Joins);
+        let wrote =
+            naivepost::project_autosave::tick(&naivepost::project_autosave::newest_slot_for_test());
+        assert_eq!(
+            wrote,
+            naivepost::project_autosave::Tick::Wrote,
+            "the changed session was autosaved"
+        );
+        assert_eq!(
+            kept(&session),
+            shown,
+            "and the autosave kept every encoder setting the page shows, the German tick with them"
+        );
         RAN.store(true, Ordering::SeqCst);
         app.quit();
     });

@@ -38,37 +38,11 @@ pub fn layout(effect: &Fx, fit: (f64, f64)) -> ((f64, f64, f64, f64), f64, Vec<S
     (box_px, size, lines)
 }
 
-/// Draw one caption: the dark dilated edge first, then the white words over it, both at `alpha`.
-///
-/// Bold sans-serif (§S4), the block centred in the box by [`fx_text::baselines`] and every line centred on the box's
-/// middle x. The edge is a dilation, not a drop shadow: [`fx_text::EDGE_STEPS`] offsets evenly spaced around a
-/// circle of radius [`fx_text::edge_radius`], drawn in black at [`fx_text::EDGE_ALPHA`] before the letters go down.
-/// Offsets are scaled by `stroke / 2` because [`fx_text::render_stroke_width`] straddles its path while these are
-/// repeated fills, so the two halves' edges end up the same thickness.
+/// Draw one caption at `alpha`, through the ONE lettering the thumbnail's words are printed with
+/// ([`crate::produce_upload_print::draw_text_box`], the prototype's `drawFxText` for both): bold sans, fitted to the
+/// box, every line centred, the dark edge composited once and the white words over it. The first rewrite painted
+/// each of the edge's copies at the edge's alpha, which compounds where they overlap and bands into several edges.
 pub fn draw(cr: &cairo::Context, effect: &Fx, fit: (f64, f64), alpha: f64) {
-    let (box_px, size, lines) = layout(effect, fit);
-    if size <= 0.0 || lines.is_empty() || alpha <= 0.0 {
-        return;
-    }
-    cr.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Bold);
-    cr.set_font_size(size);
-    let stroke = fx_text::render_stroke_width(size);
-    let radius = (stroke / 2.0).max(0.5);
-    let ys = fx_text::baselines(box_px.1, box_px.3, size, lines.len());
-    for (line, &baseline) in lines.iter().zip(ys.iter()) {
-        let Ok(extents) = cr.text_extents(line) else {
-            continue;
-        };
-        let x = box_px.0 + box_px.2 / 2.0 - extents.width() / 2.0 - extents.x_bearing();
-        // "16 directions": the angle list is derived from the constant, so §10's row is the only place to change it.
-        for step in 0..fx_text::EDGE_STEPS {
-            let angle = std::f64::consts::TAU * step as f64 / fx_text::EDGE_STEPS as f64;
-            cr.set_source_rgba(0.0, 0.0, 0.0, fx_text::EDGE_ALPHA * alpha);
-            cr.move_to(x + angle.cos() * radius, baseline + angle.sin() * radius);
-            let _ = cr.show_text(line);
-        }
-        cr.set_source_rgba(1.0, 1.0, 1.0, alpha);
-        cr.move_to(x, baseline);
-        let _ = cr.show_text(line);
-    }
+    let (x, y, w, h) = box_of(effect, fit);
+    crate::produce_upload_print::draw_text_box(cr, &effect.text, x, y, w, h, alpha);
 }

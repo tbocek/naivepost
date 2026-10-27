@@ -73,8 +73,8 @@ fn no_wav(_: &Entry) -> Option<PathBuf> {
     None
 }
 
-fn any_source(_: &render::Clip) -> Option<String> {
-    Some("/media/take.mp4".to_string())
+fn any_source(clip: &render::Clip) -> Option<(String, f64)> {
+    Some(("/media/take.mp4".to_string(), clip.seg_s))
 }
 
 fn project_sources() -> Vec<Source> {
@@ -185,6 +185,58 @@ fn f5_4_s1_a_footage_clip_with_no_narration_is_captioned_from_its_words() {
     assert_eq!(
         cues, expected,
         "the sheet is the rule's answer, not a second opinion"
+    );
+}
+
+/// S1 through the page's own word door (`produce_clip_cues::words_for`, what the press hands the render): the
+/// session's words are timed on the SESSION clock and a clip's cue on the VIDEO's, so a word is counted from its
+/// clip's start, then placed where that clip sits in the video. The second clip below was filmed at 100 s and
+/// plays from 10 s in the video: its word at 102 s is captioned at 12 s, and no cue runs past the video's 20 s.
+/// The first rewrite handed the session seconds on unshifted, so a 9-minute video carried captions to 20:06
+/// and its file reported that length.
+#[test]
+fn f5_4_s1_a_clips_own_words_are_timed_from_the_clip_on_the_videos_clock() {
+    let word = |text: &str, start: f64| naivepost::word_list::Word {
+        source: "/media/take.mp4".to_string(),
+        match_word: text.to_string(),
+        written: text.to_string(),
+        start,
+        end: start + 0.8,
+        stray: false,
+    };
+    let list = vec![word("first", 11.0), word("later", 102.0)];
+    let (_root, tree) = common::tree_in("s1-clock");
+    let run = flow::snapshot(
+        Some(cut_of(vec![
+            common::seg(10.0, 20.0),
+            common::seg(100.0, 110.0),
+        ])),
+        &tree,
+        Vec::new(),
+        Produce::default(),
+        &project(),
+        Some(Publish::default()),
+        "1".to_string(),
+    );
+    let words_of = |clip: &render::Clip| naivepost::produce_clip_cues::words_for(clip, &list, &[]);
+    let plan = exec::plan(&run, &tree, &mats(&[], &words_of));
+    let sheet = sheet(&plan);
+    let later = sheet
+        .iter()
+        .find(|cue| cue.text.contains("later"))
+        .expect("the second clip's word is captioned");
+    assert!(
+        (later.s - 12.0).abs() < 0.05,
+        "2 s into the clip that starts 10 s into the video: {sheet:?}"
+    );
+    let first = sheet
+        .iter()
+        .find(|cue| cue.text.contains("first"))
+        .expect("the first clip's word is captioned");
+    assert!((first.s - 1.0).abs() < 0.05, "{sheet:?}");
+    assert!(
+        sheet.iter().all(|cue| cue.e <= 20.0 + 1e-6),
+        "no cue runs past the video's own 20 s: {sheet:?}"
     );
 }
 

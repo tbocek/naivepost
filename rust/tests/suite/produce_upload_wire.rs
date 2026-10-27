@@ -502,6 +502,128 @@ fn f5_6_s2_finish_names_what_is_still_missing() {
     );
 }
 
+/// S2 / §3.9's prose shape after a look at the frames: the model reads with a tool first (`get_frames`, which
+/// writes nothing), then answers with the three labelled parts as prose, beside two empty tool calls, which is
+/// what the live model sent. The prose is the record: the first rewrite counted the frame lookup as an answer
+/// through the tools and dropped the title and the description ("no title or description in the answer").
+#[test]
+fn f5_6_s2_prose_after_a_read_tool_is_the_answer() {
+    let prose =
+        "TITLE: Switzerland Approves First Spot Bitcoin ETF\nTHUMBNAIL: frame: clip 1 +0\n\n\
+                 The weekly news, five articles.\n0:00 FINMA approves an ETF";
+    let empty_call =
+        serde_json::json!({ "type": "function", "function": { "name": "", "arguments": "" } });
+    let spoken = serde_json::json!({ "choices": [ { "message": {
+        "content": prose,
+        "tool_calls": [empty_call.clone(), empty_call],
+    } } ] })
+    .to_string();
+    let rounds = vec![
+        tool_calls(&[("get_frames", serde_json::json!({ "clip": 0 }))]),
+        spoken,
+    ];
+    let llm = FakeLlm::start(rounds);
+    let scene = fixture("prose_after_read", &llm.url());
+    let moments = [1.0f64];
+    let starts = [0.0f64];
+    let frames = call::Frames {
+        moments: &moments,
+        starts: &starts,
+        interval: 1.0,
+        lines: &[],
+    };
+    let collected = call::call(
+        &scene.tree,
+        "BRIEF",
+        &empty(),
+        &frames,
+        false,
+        &cancelled(),
+        silent,
+    )
+    .expect("the fake answers");
+    assert_eq!(
+        collected.publish.thumb_title, "Switzerland Approves First Spot Bitcoin ETF",
+        "{:?}",
+        collected.publish
+    );
+    assert!(
+        collected
+            .publish
+            .description
+            .contains("The weekly news, five articles."),
+        "the prose description is the record's: {:?}",
+        collected.publish
+    );
+    assert!(collected.wrote, "and the call says it wrote something");
+    // "frame: clip 1 +0" is clip 1's first second, taken as the extracted frame nearest it.
+    assert!(collected.publish.own, "{:?}", collected.publish);
+    assert_eq!(
+        collected.publish.frames,
+        vec!["frame:1.0".to_string()],
+        "the picked frame is the thumbnail"
+    );
+}
+
+/// S2 / §3.9, the live model's shape after it PICKED a frame with the tool: the title and the description still
+/// come as prose, after a draft and a correction ("Let me correct the hashtag list"), and the prose is the answer
+/// (the prototype read nothing else): its title and the description that follows the labelled lines land, the
+/// draft above them does not, and its `frame: clip n +s` is the clip's SESSION start plus the offset. The first
+/// rewrite read the prose only when no tool had written, so this answer left the title and description empty.
+#[test]
+fn f5_6_s2_prose_after_a_picked_frame_is_still_the_answer() {
+    let prose = "The second video (news) DRAFT paragraph.\n\n#draft #tags\n\nLet me correct the hashtag list:\n\n\
+                 #better #tags\n\nTITLE: Switzerland Approves First Spot Bitcoin ETF\n\n\
+                 THUMBNAIL: frame: clip 2 +1\n\nThe second video (news) FINAL paragraph.\n\n#final #tags";
+    let rounds = vec![
+        tool_calls(&[(
+            "pick_frame",
+            serde_json::json!({ "clip": 1, "offset": 0.5 }),
+        )]),
+        serde_json::json!({ "choices": [ { "message": { "content": prose } } ] }).to_string(),
+    ];
+    let llm = FakeLlm::start(rounds);
+    let scene = fixture("prose_after_pick", &llm.url());
+    // Two clips filmed at 100 s and 200 s, with frames named on the session clock.
+    let moments = [100.0f64, 100.5, 201.0, 205.0];
+    let starts = [100.0f64, 200.0];
+    let frames = call::Frames {
+        moments: &moments,
+        starts: &starts,
+        interval: 1.0,
+        lines: &[],
+    };
+    let collected = call::call(
+        &scene.tree,
+        "BRIEF",
+        &empty(),
+        &frames,
+        false,
+        &cancelled(),
+        silent,
+    )
+    .expect("the fake answers");
+    let publish = &collected.publish;
+    assert_eq!(
+        publish.thumb_title, "Switzerland Approves First Spot Bitcoin ETF",
+        "{publish:?}"
+    );
+    assert!(
+        publish.description.contains("FINAL paragraph") && publish.description.contains("#final"),
+        "the description that follows the labelled lines: {publish:?}"
+    );
+    assert!(
+        !publish.description.contains("DRAFT") && !publish.description.contains("Let me correct"),
+        "and not the draft above them: {publish:?}"
+    );
+    assert_eq!(
+        publish.frames,
+        vec!["frame:201.0".to_string()],
+        "clip 2 +1 is 201 s on the session clock, the frame named by it"
+    );
+    assert!(publish.own);
+}
+
 /// `finish` itself, asked for twice: ok when both parts exist, and naming what is not there when they do not.
 #[test]
 fn f5_6_s2_the_finish_tool_answers_ok_or_names_what_is_missing() {

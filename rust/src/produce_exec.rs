@@ -69,13 +69,25 @@ impl Command {
     }
 }
 
-/// The command for a step whose argv `produce_render` builds bare (it returns the arguments, not the
-/// program name; the program is [`FFMPEG`]).
+/// The command for a step whose argv `produce_render` builds: with the program name [`FFMPEG`] first, added
+/// here when the builder left it out.
 fn command(step: &'static str, argv: Vec<String>) -> Command {
+    // The program goes first exactly once. The render builders already start their argv with it, and adding it
+    // again handed ffmpeg a stray "ffmpeg" argument at every encode, join and mux (and logged "ffmpeg ffmpeg").
+    let mut argv: Vec<String> = if argv.first().map(String::as_str) == Some(FFMPEG) {
+        argv
+    } else {
+        std::iter::once(FFMPEG.to_string()).chain(argv).collect()
+    };
+    // `-y` right after the program: every file a step writes may stand from an earlier run (the video itself does
+    // after the first one), and ffmpeg asks before overwriting, which a run with no terminal answers with no.
+    if argv.get(1).map(String::as_str) != Some("-y") {
+        argv.insert(1, "-y".to_string());
+    }
     Command {
         step,
-        log: format!(">>> {step}: {} {}", FFMPEG, argv.join(" ")),
-        argv: std::iter::once(FFMPEG.to_string()).chain(argv).collect(),
+        log: format!(">>> {step}: {}", argv.join(" ")),
+        argv,
     }
 }
 
@@ -139,7 +151,8 @@ pub struct Materials<'a> {
     /// spelling (`project:` under the root, absolute elsewhere), exactly as it does for [`Materials::exists`]
     /// — this module never guesses at roots. `None` means the clip has nothing to open, and its encode is
     /// skipped rather than sent to ffmpeg with no input.
-    pub source_file: &'a dyn Fn(&render::Clip) -> Option<String>,
+    /// The clip's picture file and the second inside it the encode seeks to.
+    pub source_file: &'a dyn Fn(&render::Clip) -> Option<(String, f64)>,
     /// §8 bullet 4: does this session have tape at all? The render dips a join
     /// only where the sound can actually be read back off a recording, so the
     /// door that resolves each clip's source also answers whether there is one.
@@ -247,6 +260,13 @@ impl Plan {
 /// A language a subtitle track can be named after: §C's codes are two letters (`en`, `de`, `fr`). A tick
 /// that is not one describes a file this run never writes and must not delete — the same reason an unknown
 /// stored subtitle mode reads as "none" rather than lettering somebody's picture.
+/// Where one translated track's sheet is written for the mux: the scratch folder, beside the session's own
+/// `final.srt`, as soon as the translation is back (the prototype's `subTracks`). The first rewrite pointed the
+/// mux at the sidecars beside the video, which are written AFTER it, and ffmpeg could not open them.
+fn track_sheet(scratch: &Path, code: &str) -> PathBuf {
+    scratch.join(format!("final.{code}.srt"))
+}
+
 fn is_track_code(code: &str) -> bool {
     // A language code, not a filename: any alphabetic tag names a sidecar the run owns a translation for
     // (`de`, `en`, and §C's three-letter forms alike). What it must not be is blank or punctuation, which
@@ -448,7 +468,6 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             base_of: mats.base_of,
             wav_of: mats.wav_of,
             exists: mats.exists,
-            footage_left: mats.footage_left,
         },
     );
 
@@ -573,9 +592,45 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             // The picture's own file goes in as `[0:v]`/`[0:a]`, the inputs the filter graph names.
             // Clip 0 gets no `-ss` at all because `encode_command` omits it when `seg_s == 0.0`, which is
             // right and not something a test should expect to find there.
+            // The sound that joins the clip's own, as files: each heard lane's recording read from the second it
+            // is at when the clip starts, and each spoken line's take. The first rewrite planned the mix and handed
+            // the encode no file to mix, so the narration and the lanes never reached the video.
+            let mut clip = clip.clone();
+            clip.lane_files = mats
+                .lanes
+                .iter()
+                .filter(|lane| {
+                    clip.lanes.contains(&lane.name)
+                        && crate::cut_hear::lane_covers(
+                            lane,
+                            crate::cut_hear::lane_seconds(lane, clip.seg_s),
+                            clip.seg_s,
+                        )
+                })
+                .map(|lane| render::LaneFile {
+                    path: crate::layout::resolve(tree.dir(), tree.dir(), &lane.src)
+                        .display()
+                        .to_string(),
+                    seek: crate::cut_hear::lane_seconds(lane, clip.seg_s),
+                    delay: 0.0,
+                })
+                .collect();
+            clip.voice_files = clip
+                .lines
+                .iter()
+                .filter(|line| line.speech > 0.0)
+                .map_while(|line| {
+                    run.lines
+                        .get(line.entry_index)
+                        .and_then(|entry| (mats.wav_of)(entry))
+                        .map(|wav| wav.display().to_string())
+                })
+                .collect();
+            let clip = &clip;
             let source = (mats.source_file)(clip);
-            let mut inputs: Vec<(&str, Option<&str>)> = match source.as_deref() {
-                Some(path) => vec![("video", Some(path))],
+            let seek = source.as_ref().map_or(clip.seg_s, |(_, seek)| *seek);
+            let mut inputs: Vec<(&str, Option<&str>)> = match source.as_ref() {
+                Some((path, _)) => vec![("video", Some(path.as_str()))],
                 None => Vec::new(),
             };
             // Set when this clip reads a baked card that has no own length; see `produce_cards::Staged::loops`.
@@ -597,7 +652,9 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             // and an animated one is baked to one static SVG per frame at the bake fps — all of that is
             // `produce_cards`' decision; this writes what it produced into the scratch folder BEFORE the command is
             // built, exactly as the title sheets above are, and hands ffmpeg the frames or the one filled file.
-            if let Some(mut card_input) = crate::produce_cards::stage(clip, source.as_deref()) {
+            if let Some(mut card_input) =
+                crate::produce_cards::stage(clip, source.as_ref().map(|(path, _)| path.as_str()))
+            {
                 effect_logs.extend(card_input.logs.iter().cloned());
                 for (path, text) in &card_input.files {
                     if let Err(err) = std::fs::write(path, text) {
@@ -634,6 +691,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
                 burn.as_deref(),
                 &file,
                 loops_card,
+                seek,
             );
             ClipEncode {
                 stem,
@@ -686,7 +744,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             .iter()
             .filter(|code| is_track_code(code.trim()))
         {
-            tracks.push((code.clone(), tree.final_srt(Some(code))));
+            tracks.push((code.clone(), track_sheet(&scratch, code)));
         }
     }
     let track_refs: Vec<(&str, &Path)> = tracks
@@ -696,7 +754,7 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
     // The tag/name pair comes from the app's own language list (`SUBTITLE_LANGUAGES`, 03-shell §6), read
     // here rather than inside `mux_command` so that stays a pure argv builder. No settings file = no list,
     // and every track then falls back the way §6 spells it: `und`, named by its upper-cased code.
-    let known_languages = crate::roles::subtitle_languages(
+    let known_languages = crate::roles::languages_or_built_in(
         &crate::settings::from_environment()
             .and_then(|paths| crate::settings::read(&paths).ok())
             .map(|conf| conf.subtitle_languages)
@@ -987,11 +1045,37 @@ where
         |line| log(line),
     );
     for code in &plan.translated {
-        log(&render::translate_log(plan.cues.all.len(), code));
+        log(&render::translate_log(
+            plan.cues.all.len(),
+            &crate::roles::language_name(code),
+        ));
     }
     // S3: a line that stayed in the source language is said out loud, not left for a viewer to notice.
     for t in tracked.iter().filter(|t| t.warning.is_some()) {
         log(t.warning.as_deref().unwrap_or_default());
+    }
+    // The translated cues by code, read twice: the mux's track sheets now, the sidecars after it. A language the
+    // leg could not reach at all comes back with the ORIGINAL cues and a warning, so its sheet is never empty.
+    let by_code: BTreeMap<String, Vec<subs::Cue>> = tracked
+        .into_iter()
+        .map(|t| (t.language.clone(), t.cues))
+        .collect();
+    let translated_or_original = |code: &str| -> Vec<subs::Cue> {
+        match by_code.get(code) {
+            Some(cues) if !cues.is_empty() => cues.clone(),
+            _ => plan.cues.all.clone(),
+        }
+    };
+    // Each translated track's sheet, written before the mux that reads it.
+    if plan.mux.argv.iter().any(|arg| arg == "-c:s") {
+        for code in &plan.translated {
+            let sheet = track_sheet(&plan.scratch, code);
+            if let Err(why) = std::fs::write(&sheet, subs::srt_text(&translated_or_original(code)))
+            {
+                ran.failed = Some(format!("{}: {why}", sheet.display()));
+                return ran;
+            }
+        }
     }
     log(&plan.mux.log);
     match spawn(&plan.mux) {
@@ -1011,10 +1095,6 @@ where
     // S9 — the sidecars beside the video, each one logged. A `.code` track carries the TRANSLATED cues
     // (never a copy of the session's track, which is what made a German file say English); the bare-stem
     // one keeps the originals, since that is the track the viewer hears.
-    let by_code: BTreeMap<String, Vec<subs::Cue>> = tracked
-        .into_iter()
-        .map(|t| (t.language.clone(), t.cues))
-        .collect();
     for sidecar in &plan.sidecars {
         // A `.code` sidecar must hold the translation the walk got back. When the translation leg could not
         // be reached at all — a server down, a settings file unreadable — `track` still returns that language
@@ -1022,15 +1102,9 @@ where
         // from an empty cue list: an empty sidecar beside a finished video is the one answer §5 forbids.
         let out = match &sidecar.language {
             None => sidecar.clone(),
-            Some(code) => match by_code.get(code) {
-                Some(cues) if !cues.is_empty() => Sidecar {
-                    cues: cues.clone(),
-                    ..sidecar.clone()
-                },
-                _ => Sidecar {
-                    cues: plan.cues.all.clone(),
-                    ..sidecar.clone()
-                },
+            Some(code) => Sidecar {
+                cues: translated_or_original(code),
+                ..sidecar.clone()
             },
         };
         if let Err(why) = write_sidecar(&out) {

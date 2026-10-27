@@ -432,8 +432,9 @@ fn f1_7_s1_a_second_walk_scales_nothing_again() {
 /// fatal either: §Failure-is-specific keeps the run going with the sources that can be described.
 #[test]
 fn f1_7_s0_an_every_frame_folder_is_refused_and_costs_no_request() {
-    // Spacing at exactly the 250 ms grid is what an unthinned extraction looks like.
-    let seconds: Vec<f64> = (0..12).map(|index| index as f64 * 0.25).collect();
+    // Spacing finer than the 250 ms grid (the video's own frames, 1/30 s apart) is what an unthinned extraction
+    // looks like; a folder ON the grid is the normal one and is described.
+    let seconds: Vec<f64> = (0..90).map(|index| index as f64 / 30.0).collect();
     let fake = Fake::start(events_answer(12));
     let scene = Scene::planted(0.25, &seconds, &fake.url);
     let (drive, log) = walk(&scene);

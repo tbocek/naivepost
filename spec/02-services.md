@@ -74,13 +74,7 @@ Reads: `get_frames`, `get_events`, `get_context`, `speech_around`.
 
 ### 3.3 Fix (per block of transcript lines)
 
-| tool | args | result |
-|---|---|---|
-| `fix_line` | `n` (line number in the block), `text` | ok, or error when `n` is not in this block or the text has a tab |
-| `get_lines` | `from`, `to` | the lines around the block from this and every other source, beyond the brief's ±P.machine.fixContextSeconds |
-| `flag_line` | `n`, `why` | ok — the line stands, the note is logged: the channel the prototype lacks, where a wrong speaker or mis-timed row is "not yours to fix" with nowhere to say so |
-
-Times and speakers are not arguments: the tool cannot change them — the enforcement the prototype did by comparison. A line no `fix_line` names keeps its ASR text. That is the point: the prototype threw away **the whole block of 25 lines** when one row came back with a changed time, speaker or lost tab, dropped reply lines with fewer than four tab fields before counting, then re-asked the identical question once more without saying what was wrong.
+No tools. One chat call per block, as the prototype asked it: the User Context, the context around the block and its rows (`start⇥end⇥speaker⇥text`), and the answer is the same rows with only the text changed. The enforcement is the prototype's comparison, kept strict: a count, a time (±0.01) or a speaker that moved, or a row emptied, refuses the answer; unlike the prototype, the refusal's reason is put in front of the model on its one retry, and a block refused twice keeps its ASR lines. The first rewrite offered `fix_line(n, text)`, `flag_line(n, why)`, `get_lines` and `finish` instead; on a real model the reads answered nothing, the model answered nothing after them, and the blocks kept the ASR's text.
 
 ### 3.4 Retake marking
 

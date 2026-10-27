@@ -265,7 +265,10 @@ fn f2_4_s3_space_toggles_the_preview_from_anything_but_a_text_box() {
     let switch = preview::press_recording(&mut player, &[(0.0, 60.0)]);
     assert_eq!(
         switch,
-        Press::SwitchedToRecording { kept_playing: true },
+        Press::SwitchedToRecording {
+            kept_playing: true,
+            started: None
+        },
         "the cut preview plays on as the recording"
     );
     assert!(!player.cut_only, "and is no longer the cut");

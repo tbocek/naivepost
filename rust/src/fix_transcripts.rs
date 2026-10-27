@@ -284,11 +284,12 @@ pub fn context_text(
 /// One line of the ask: numbered as the model will send it back, with its times and speaker. The text
 /// keeps its own tabs — §6's rows are split on the first three, so a tab inside a word is part of it.
 pub fn ask_text(context: &str, lines: &[Line]) -> String {
-    let mut numbered = String::new();
-    for (index, line) in lines.iter().enumerate() {
-        numbered.push_str(&format!(
-            "{n}\t{start:.2}\t{end:.2}\t{speaker}\t{text}\n",
-            n = index + 1,
+    // The prototype's rows: start, end, speaker, text and nothing else. The job says "no line numbers", and the
+    // first rewrite put one in front of every row anyway.
+    let mut rows = String::new();
+    for line in lines {
+        rows.push_str(&format!(
+            "{start:.2}\t{end:.2}\t{speaker}\t{text}\n",
             start = line.start,
             end = line.end,
             speaker = line.speaker,
@@ -298,8 +299,77 @@ pub fn ask_text(context: &str, lines: &[Line]) -> String {
     let count = lines.len();
     format!(
         "Context around these lines:\n{context}\nTranscript lines to clean ({count} lines, return \
-         exactly {count}):\n{numbered}"
+         exactly {count}):\n{rows}"
     )
+}
+
+/// One row of a fixer's answer as it came back, before it is held against the block it answers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnsweredRow {
+    pub start: f64,
+    pub end: f64,
+    pub speaker: String,
+    pub text: String,
+}
+
+/// The answer's rows, read the way the prototype read them: every line with at least four tab-separated fields
+/// is a row (start, end, speaker, then the text, whose own tabs are joined back with spaces); anything else (a
+/// fence, a blank line, a sentence around the answer) is not a row. Whether the rows ARE the block is
+/// [`rows_to_fixes`]'s question.
+pub fn answered_rows(answer: &str) -> Vec<AnsweredRow> {
+    answer
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<&str> = line.split('\t').collect();
+            if fields.len() < 4 {
+                return None;
+            }
+            Some(AnsweredRow {
+                start: fields[0].trim().parse().ok()?,
+                end: fields[1].trim().parse().ok()?,
+                speaker: fields[2].trim().to_string(),
+                text: fields[3..].join(" ").trim().to_string(),
+            })
+        })
+        .collect()
+}
+
+/// The prototype's strict check of an answer against its block: exactly as many rows, each with the block's own
+/// start, end and speaker, and none emptied. A row that passes is a fix of that line; anything else refuses the
+/// whole answer with the reason the model is shown on its next try.
+pub fn rows_to_fixes(lines: &[Line], rows: &[AnsweredRow]) -> Result<Vec<Reply>, String> {
+    if rows.len() != lines.len() {
+        return Err(format!(
+            "{} line(s) came back for the {} asked -- answer exactly {} lines, one per line asked",
+            rows.len(),
+            lines.len(),
+            lines.len()
+        ));
+    }
+    let mut fixes = Vec::with_capacity(rows.len());
+    for (index, (row, line)) in rows.iter().zip(lines).enumerate() {
+        let same = |a: f64, b: f64| (a - b).abs() < 0.006;
+        if !same(row.start, line.start) || !same(row.end, line.end) || row.speaker != line.speaker {
+            return Err(format!(
+                "line {} must keep its start, end and speaker exactly as given ({:.2}\t{:.2}\t{})",
+                index + 1,
+                line.start,
+                line.end,
+                line.speaker
+            ));
+        }
+        if row.text.is_empty() {
+            return Err(format!(
+                "line {} came back empty -- a line you cannot make sense of keeps its original text",
+                index + 1
+            ));
+        }
+        fixes.push(Reply::Fix {
+            n: index as u32 + 1,
+            text: row.text.clone(),
+        });
+    }
+    Ok(fixes)
 }
 
 /// S2: the checkpoint before a block goes out. Recorded rather than drawn — F0.5 owns the bar.
@@ -336,13 +406,14 @@ pub const GARBAGE: &str = "cannot be made out";
 /// tab comes back as an error naming that line and is put in front of the model on the next try; the
 /// other calls of the reply still land, which is what the prototype's all-or-nothing discard could not
 /// do. A block whose tries run out is `valid: false`, and its original stands.
-pub fn fix_block<F>(lines: &[Line], mut ask: F) -> Result<BlockOutcome, String>
+pub fn fix_block<F>(lines: &[Line], context: &str, mut ask: F) -> Result<BlockOutcome, String>
 where
     F: FnMut(&str) -> Result<Vec<Reply>, String>,
 {
-    // The model is shown the message built from these rows, so a refusal — which is about that
-    // message — can only be appended to it here; `context_text` supplies the grounding it carries.
-    let message = ask_text("", lines);
+    // The model is shown the message built from these rows and the grounding around them (`context_text`), so a
+    // refusal, which is about that message, is appended to it here. The first rewrite built it with the context
+    // and threw it away, and asked with "Context around these lines:" empty.
+    let message = ask_text(context, lines);
     let mut block = Block::new(
         lines
             .iter()
@@ -365,7 +436,32 @@ where
             Some(err) => format!("{message}\nThe previous answer was refused: {err}"),
             None => message.clone(),
         };
-        let reply = ask(&ask_with)?;
+        let mut reply = ask(&ask_with)?;
+        // A wire answer is the block's rows as the model wrote them; held against the block here, where the
+        // block is known. A count, a time or a speaker that moved refuses the answer, as the prototype did.
+        let rows: Vec<AnsweredRow> = reply
+            .iter()
+            .filter_map(|call| match call {
+                Reply::Row(row) => Some(row.clone()),
+                _ => None,
+            })
+            .collect();
+        if let Some(Reply::Unreadable(why)) = reply
+            .iter()
+            .find(|call| matches!(call, Reply::Unreadable(_)))
+        {
+            refusals.push(why.clone());
+            continue;
+        }
+        if !rows.is_empty() {
+            match rows_to_fixes(lines, &rows) {
+                Ok(fixes) => reply = fixes,
+                Err(why) => {
+                    refusals.push(why);
+                    continue;
+                }
+            }
+        }
         // Every call of the reply goes through the tool surface, and every answer comes back — a
         // `flag_line` note or a `get_lines` read-back is an answer, not a refusal. The first refusal is
         // what ends this try, since that is the one thing the model has to hear about.
@@ -516,6 +612,11 @@ pub fn apply_reply(block: &mut Block, reply: &[Reply]) -> Vec<String> {
             // and neither ends the flow.
             Reply::Flag { n, why } => block.flag_line(*n, why),
             Reply::Done => crate::tools::ok(&serde_json::json!({ "finished": true })),
+            // Rows are turned into fixes by `fix_block` before a reply is applied; one reaching here says so.
+            Reply::Row(_) => {
+                crate::tools::error("an answered row was not checked against its block")
+            }
+            Reply::Unreadable(why) => crate::tools::error(why),
         })
         .collect()
 }
@@ -523,9 +624,19 @@ pub fn apply_reply(block: &mut Block, reply: &[Reply]) -> Vec<String> {
 /// One call in a reply, as §3's tool surface spells it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Reply {
-    Fix { n: u32, text: String },
-    Flag { n: u32, why: String },
+    Fix {
+        n: u32,
+        text: String,
+    },
+    Flag {
+        n: u32,
+        why: String,
+    },
     Done,
+    /// One row of a wire answer, held against the block by [`fix_block`] before it becomes a fix.
+    Row(AnsweredRow),
+    /// An answer with no rows in it at all: refused, with the reason the model hears next.
+    Unreadable(String),
 }
 
 /// S4: the source's own fixed files. A recorder writes `commentary.fixed.tsv` because its words are
@@ -895,11 +1006,10 @@ where
             let context = context_text(from, to, &source.base, &placed, &every_line, &every_event);
             // S3: the cache is keyed on the block's own rows, so a re-run of an unchanged transcript
             // reads its answer back instead of paying for the same question twice. `fix_block` builds
-            // the message it asks with — [`ask_text`] plus the grounding from `context_text`.
-            let _ = ask_text(&context, &block);
+            // the message it asks with: [`ask_text`] over the grounding from `context_text`.
             let outcome = match cached_block(tree, &block) {
-                Some(reply) => fix_block(&block, |_| Ok(reply.clone()))?,
-                None => fix_block(&block, &mut ask)?,
+                Some(reply) => fix_block(&block, &context, |_| Ok(reply.clone()))?,
+                None => fix_block(&block, &context, &mut ask)?,
             };
             out.blocks += 1;
             out.fixed_lines += outcome.fixed;

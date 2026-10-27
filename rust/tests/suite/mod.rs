@@ -120,6 +120,7 @@ mod f0_13_health_line;
 mod f0_14_profiles;
 mod f0_14_profiles_dialog_every_press;
 mod f0_14_profiles_window;
+mod f0_14_s9_profile_rows_follow_an_opened_project;
 mod f0_14_s9_profiles_produce_form;
 mod f0_1_shell_beats;
 mod f0_1_where_it_runs_a_switch_never_walks;

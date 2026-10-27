@@ -379,22 +379,28 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s4_mux_
     );
     // Each track is tagged with its ISO-639-2 code and its name (§6: "so players name them"), never with the
     // stream's own index; an unlisted language falls back to `und` named by its upper-cased code.
-    let tagged: Vec<&str> = argv
-        .iter()
-        .filter(|a| a.starts_with("s:") && a.contains("language="))
-        .map(String::as_str)
+    // Per-stream metadata: `-metadata:s:s:<n>` names the subtitle stream, its value follows.
+    let tagged: Vec<String> = argv
+        .windows(2)
+        .filter(|w| w[0].starts_with("-metadata:s:s:") && w[1].starts_with("language="))
+        .map(|w| format!("{}:{}", w[0].trim_start_matches("-metadata:"), w[1]))
         .collect();
-    assert_eq!(tagged, ["s:0:language=deu", "s:1:language=und"], "{argv:?}");
-    let named: Vec<&str> = argv
-        .iter()
-        .filter(|a| a.starts_with("s:") && a.contains("title="))
-        .map(String::as_str)
+    assert_eq!(
+        tagged,
+        ["s:s:0:language=deu", "s:s:1:language=und"],
+        "{argv:?}"
+    );
+    // Per-stream metadata: `-metadata:s:s:<n>` names the subtitle stream, its value follows.
+    let named: Vec<String> = argv
+        .windows(2)
+        .filter(|w| w[0].starts_with("-metadata:s:s:") && w[1].starts_with("title="))
+        .map(|w| format!("{}:{}", w[0].trim_start_matches("-metadata:"), w[1]))
         .collect();
-    assert_eq!(named, ["s:0:title=Deutsch", "s:1:title=NL"], "{argv:?}");
+    assert_eq!(named, ["s:s:0:title=Deutsch", "s:s:1:title=NL"], "{argv:?}");
     // Burned-in asks for nothing in the container, and §5's rule holds whatever the caller handed as tracks.
     let burned = details::mux(&video, &audio, &tracks, &Produce::default(), &out, &list).join(" ");
     assert!(
-        !burned.contains("-map s:"),
+        !burned.contains("-c:s"),
         "burned-in muxes no track: {burned}"
     );
 
@@ -413,7 +419,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s4_mux_
         &list,
     );
     assert!(
-        !argv.join(" ").contains("-map s:"),
+        !argv.join(" ").contains("-c:s"),
         "no track survives a webm mux: {}",
         argv.join(" ")
     );
@@ -1023,9 +1029,9 @@ fn bare_materials(
         Box::leak(Box::new(|_line: &naivepost::narration::Entry| None));
     let wav_seconds: &'static dyn Fn(&naivepost::narration::Entry) -> Option<f64> =
         Box::leak(Box::new(|_line: &naivepost::narration::Entry| Some(2.5)));
-    let source_file: &'static dyn Fn(&naivepost::produce_render::Clip) -> Option<String> =
-        Box::leak(Box::new(|_clip: &naivepost::produce_render::Clip| {
-            Some("/media/take.mp4".to_string())
+    let source_file: &'static dyn Fn(&naivepost::produce_render::Clip) -> Option<(String, f64)> =
+        Box::leak(Box::new(|clip: &naivepost::produce_render::Clip| {
+            Some(("/media/take.mp4".to_string(), clip.seg_s))
         }));
     let base_of: &'static dyn Fn(&naivepost::cut::Seg) -> String =
         Box::leak(Box::new(|_seg: &naivepost::cut::Seg| String::new()));
@@ -1114,20 +1120,28 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s_mux_t
         ..Default::default()
     };
     let argv = details::mux(&video, &audio, &tracks, &settings, &out, &list);
-    let tagged: Vec<&str> = argv
-        .iter()
-        .filter(|a| a.starts_with("s:") && a.contains("language="))
-        .map(String::as_str)
+    // Per-stream metadata: `-metadata:s:s:<n>` names the subtitle stream, its value follows.
+    let tagged: Vec<String> = argv
+        .windows(2)
+        .filter(|w| w[0].starts_with("-metadata:s:s:") && w[1].starts_with("language="))
+        .map(|w| format!("{}:{}", w[0].trim_start_matches("-metadata:"), w[1]))
         .collect();
-    let named: Vec<&str> = argv
-        .iter()
-        .filter(|a| a.starts_with("s:") && a.contains("title="))
-        .map(String::as_str)
+    // Per-stream metadata: `-metadata:s:s:<n>` names the subtitle stream, its value follows.
+    let named: Vec<String> = argv
+        .windows(2)
+        .filter(|w| w[0].starts_with("-metadata:s:s:") && w[1].starts_with("title="))
+        .map(|w| format!("{}:{}", w[0].trim_start_matches("-metadata:"), w[1]))
         .collect();
     // Asserted against `language_tag`'s own answers where the seam can be reused, so the mux and the rule the
     // inventory quotes cannot drift apart silently.
     let (de_tag, de_name) = details::language_tag("de", &list);
     let (nl_tag, nl_name) = details::language_tag("nl", &list);
+    // A language spelled by its name is the same language: the page ticks names, the policy holds codes.
+    assert_eq!(
+        details::language_tag("German", &list),
+        details::language_tag("de", &list),
+        "a name and its code tag alike"
+    );
     assert_eq!(de_tag, "deu");
     assert_eq!(de_name, "Deutsch");
     assert_eq!(nl_tag, details::UNDETERMINED_TAG);
@@ -1135,16 +1149,16 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s_mux_t
     assert_eq!(
         tagged,
         [
-            format!("s:0:language={de_tag}"),
-            format!("s:1:language={nl_tag}")
+            format!("s:s:0:language={de_tag}"),
+            format!("s:s:1:language={nl_tag}")
         ],
         "{argv:?}"
     );
     assert_eq!(
         named,
         [
-            format!("s:0:title={de_name}"),
-            format!("s:1:title={nl_name}")
+            format!("s:s:0:title={de_name}"),
+            format!("s:s:1:title={nl_name}")
         ],
         "{argv:?}"
     );
@@ -1202,15 +1216,19 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s_mux_o
     // by its upper-cased code. A listed language would carry its ISO-639-2 tag instead — pinned by the tagging
     // test through `produce_details::mux`, where the list is an argument.
     let argv = plan.mux.argv.join(" ");
-    // Two streams + one input per track.
+    // The joined file once (its picture and its sound are one input) + one input per track.
     assert_eq!(
         plan.mux.argv.iter().filter(|a| a.as_str() == "-i").count(),
-        5,
-        "two streams (video, audio re-encoded) plus own language plus two translations: {argv}"
+        4,
+        "the joined file plus own language plus two translations: {argv}"
     );
+    // Each track mapped from its own input, which follows the joined file's: input 1 + its index.
     for index in 0..3 {
         assert!(
-            plan.mux.argv.iter().any(|a| a == &format!("s:{index}")),
+            plan.mux
+                .argv
+                .windows(2)
+                .any(|w| w == ["-map".to_string(), format!("{}:0", index + 1)]),
             "track {index} mapped: {argv}"
         );
     }
@@ -1240,7 +1258,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s_mux_o
         plan.mux
             .argv
             .iter()
-            .filter(|a| a.starts_with("s:") && a.contains("language="))
+            .filter(|a| a.starts_with("language="))
             .count(),
         3,
         "every track carries a language tag: {argv}"
@@ -1249,18 +1267,34 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s_mux_o
         plan.mux
             .argv
             .iter()
-            .filter(|a| a.starts_with("s:") && a.contains("title="))
+            .filter(|a| a.starts_with("title="))
             .count(),
         3,
         "and every track carries a name: {argv}"
     );
-    // The translations fall back exactly as §6 spells it: no tag to carry, so `und`, named by the code.
+    // The translations carry their ISO-639-2 tag and name: with no `SUBTITLE_LANGUAGES` written, the app's own
+    // three answer (the prototype's `subLangs`); the first rewrite tagged every one `und`.
     assert!(
-        plan.mux.argv.iter().any(|a| a == "s:1:language=und"),
+        plan.mux
+            .argv
+            .windows(2)
+            .any(|w| w == ["-metadata:s:s:1", "language=deu"]),
         "{argv}"
     );
-    assert!(plan.mux.argv.iter().any(|a| a == "s:1:title=DE"), "{argv}");
-    assert!(plan.mux.argv.iter().any(|a| a == "s:2:title=FR"), "{argv}");
+    assert!(
+        plan.mux
+            .argv
+            .windows(2)
+            .any(|w| w == ["-metadata:s:s:1", "title=German"]),
+        "{argv}"
+    );
+    assert!(
+        plan.mux
+            .argv
+            .windows(2)
+            .any(|w| w == ["-metadata:s:s:2", "title=French"]),
+        "{argv}"
+    );
     // The same tracks are the sidecars beside the video: one fact, two places.
     assert_eq!(
         plan.sidecars.len(),
@@ -1312,7 +1346,7 @@ fn sec_08_produce_6_details_confirmed_against_the_code_verification_pass_s_webm_
     );
     let argv = plan.mux.argv.join(" ");
     assert!(
-        !argv.contains("-map s:"),
+        !argv.contains("-c:s"),
         "no track survives a webm mux: {argv}"
     );
     assert!(

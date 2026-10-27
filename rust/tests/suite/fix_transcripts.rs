@@ -273,53 +273,101 @@ fn f1_8_s2_the_grounding_is_every_other_source_and_this_one_s_events() {
 // --- S3: the fixer's tools, two asks per block, a refusal that never ends the flow ----------------
 
 #[test]
-fn f1_8_s3_the_ask_numbers_its_rows_and_carries_the_grounding() {
+fn f1_8_s3_the_ask_lists_its_rows_and_carries_the_grounding() {
     let ask = fix::ask_text("EVENT (lecture): a slide changes\n", &lines(2));
     assert!(ask.contains("Transcript lines to clean (2 lines, return exactly 2):"));
     assert!(
         ask.contains("EVENT (lecture): a slide changes"),
         "the grounding is shown with the block"
     );
-    // `n` starts at 1 because that is what the model sends back.
-    assert!(ask.contains("\n1\t0.00\t9.00\tSPEAKER_00\tuh number 0 about the thing\n"));
-    assert!(ask.contains("\n2\t10.00\t19.00\tSPEAKER_00\tuh number 1 about the thing\n"));
+    // The prototype's rows: start, end, speaker, text. The job says "no line numbers", and the first rewrite put
+    // one in front of every row.
+    assert!(ask.contains("\n0.00\t9.00\tSPEAKER_00\tuh number 0 about the thing\n"));
+    assert!(ask.contains("\n10.00\t19.00\tSPEAKER_00\tuh number 1 about the thing\n"));
+    assert!(!ask.contains("\n1\t0.00"), "{ask}");
 
     assert_eq!(fix::checkpoint(1, 3, BASE), ">>> fixing lecture: block 1/3");
     assert_eq!(fix::FIX_STEP, "fix");
 }
 
+/// The block's rows as a model answers them: copied, only the text changed by `respell`.
+fn answered(message: &str, respell: impl Fn(&str) -> String) -> Vec<fix::Reply> {
+    fix::answered_rows(message)
+        .into_iter()
+        .map(|mut row| {
+            row.text = respell(&row.text);
+            fix::Reply::Row(row)
+        })
+        .collect()
+}
+
 #[test]
-fn f1_8_s3_the_fixer_answers_through_fix_line_and_times_survive() {
-    let outcome = fix::fix_block(&lines(3), |message| {
-        // The reply is read off the message it was asked with, so the numbers mean the same thing.
-        let mut reply = Vec::new();
-        for row in message
-            .lines()
-            .filter(|row| row.starts_with(char::is_numeric))
-        {
-            let fields: Vec<&str> = row.split('\t').collect();
-            assert_eq!(fields.len(), 5, "n, start, end, speaker, text");
-            reply.push(fix::Reply::Fix {
-                n: fields[0].parse().unwrap(),
-                text: fields[4].replace("uh ", "").replace("thing", "widget"),
-            });
-        }
-        Ok(reply)
+fn f1_8_s3_the_fixer_answers_its_rows_and_times_survive() {
+    let mut shown = String::new();
+    let outcome = fix::fix_block(&lines(3), "EVENT (lecture): a slide changes\n", |message| {
+        shown = message.to_string();
+        Ok(answered(message, |text| {
+            text.replace("uh ", "").replace("thing", "widget")
+        }))
     })
     .unwrap();
+    // The grounding rides the question the model is asked: the first rewrite built it and asked without it,
+    // and the model was shown "Context around these lines:" over nothing.
+    assert!(
+        shown.contains("Context around these lines:\nEVENT (lecture): a slide changes"),
+        "{shown}"
+    );
 
     assert!(outcome.valid);
     assert_eq!(outcome.fixed, 3);
     assert_eq!(outcome.lines[0].text, "number 0 about the widget");
-    // A respell may not shift a time or change a speaker — §3 enforces it by having nowhere to put one.
+    // A respell may not shift a time or change a speaker: the rows are held against the block.
     assert_eq!(outcome.lines[0].start, 0.0);
     assert_eq!(outcome.lines[2].end, 29.0);
     assert_eq!(outcome.lines[2].speaker, "SPEAKER_00");
 }
 
+/// The prototype's strict check: an answer with a moved time, another speaker or a missing row is refused, the
+/// model is told why on its one retry, and a block refused twice keeps its ASR lines.
+#[test]
+fn f1_8_s3_a_moved_time_or_a_missing_row_is_refused() {
+    let mut asked: Vec<String> = Vec::new();
+    let outcome = fix::fix_block(&lines(2), "", |message| {
+        asked.push(message.to_string());
+        let mut rows = answered(message, |text| text.to_string());
+        if asked.len() == 1 {
+            // First answer: the second row's start moved.
+            if let Some(fix::Reply::Row(row)) = rows.get_mut(1) {
+                row.start += 1.0;
+            }
+        }
+        Ok(rows)
+    })
+    .unwrap();
+    assert!(outcome.valid, "the retry, with the rows copied, is taken");
+    assert_eq!(asked.len(), 2);
+    assert!(
+        asked[1].contains("line 2 must keep its start, end and speaker exactly as given"),
+        "the model hears what was wrong: {}",
+        asked[1]
+    );
+    let short = fix::fix_block(&lines(3), "", |message| {
+        Ok(answered(message, |text| text.to_string())
+            .into_iter()
+            .take(2)
+            .collect())
+    })
+    .unwrap();
+    assert!(
+        !short.valid,
+        "a missing row twice keeps the block's own lines"
+    );
+    assert_eq!(short.lines, lines(3));
+}
+
 #[test]
 fn f1_8_s3_flag_line_and_get_lines_are_answers_not_refusals() {
-    let outcome = fix::fix_block(&lines(2), |_| {
+    let outcome = fix::fix_block(&lines(2), "", |_| {
         Ok(vec![
             fix::Reply::Fix {
                 n: 1,
@@ -349,7 +397,7 @@ fn f1_8_s3_two_asks_per_block_then_the_originals_stand() {
     assert_eq!(fix::BLOCK_TRIES, 2);
 
     let asked = Cell::new(0);
-    let outcome = fix::fix_block(&lines(2), |_| {
+    let outcome = fix::fix_block(&lines(2), "", |_| {
         asked.set(asked.get() + 1);
         Ok(vec![fix::Reply::Fix {
             n: 99,
@@ -367,7 +415,7 @@ fn f1_8_s3_two_asks_per_block_then_the_originals_stand() {
 #[test]
 fn f1_8_s3_the_second_ask_is_told_what_was_refused() {
     let seen = std::cell::RefCell::new(Vec::<String>::new());
-    fix::fix_block(&lines(1), |message| {
+    fix::fix_block(&lines(1), "", |message| {
         seen.borrow_mut().push(message.to_string());
         Ok(vec![fix::Reply::Fix {
             n: 9,
@@ -525,7 +573,7 @@ fn sec_09_llm_and_tools_6_cache_s6_the_fixer_caches_only_its_first_attempt() {
             fix::Reply::Done,
         ])
     };
-    let outcome = fix::fix_block(&rows, good).unwrap();
+    let outcome = fix::fix_block(&rows, "", good).unwrap();
     assert!(outcome.valid);
     assert_eq!(outcome.attempt, 1, "one ask answered it");
     assert!(
@@ -542,7 +590,7 @@ fn sec_09_llm_and_tools_6_cache_s6_the_fixer_caches_only_its_first_attempt() {
     // A block that needed the second ask: `attempt` says 2, so the caller files nothing (§6).
     let repaired_tree = tree("repaired");
     let asks = Cell::new(0);
-    let repaired = fix::fix_block(&rows, |_| {
+    let repaired = fix::fix_block(&rows, "", |_| {
         asks.set(asks.get() + 1);
         if asks.get() == 1 {
             // Refused: a number outside the block is what `Block::fix_line` refuses by name.
@@ -576,7 +624,7 @@ fn sec_09_llm_and_tools_6_cache_s6_the_fixer_caches_only_its_first_attempt() {
         "nothing was filed for the repair"
     );
     let reread_asks = Cell::new(0);
-    let _again = fix::fix_block(&rows, |_| {
+    let _again = fix::fix_block(&rows, "", |_| {
         reread_asks.set(reread_asks.get() + 1);
         Ok(vec![fix::Reply::Done])
     })
@@ -814,21 +862,12 @@ fn no_marks() -> Result<Vec<fix::Mark>, String> {
     Ok(Vec::new())
 }
 
-/// A fixer that respells every row it is shown, reading the numbers off its own message.
+/// A fixer that respells every row it is shown, answering the rows as the model does.
 fn respeller() -> impl FnMut(&str) -> Result<Vec<fix::Reply>, String> {
     |message: &str| {
-        let mut reply = Vec::new();
-        for row in message
-            .lines()
-            .filter(|row| row.starts_with(char::is_numeric))
-        {
-            let fields: Vec<&str> = row.split('\t').collect();
-            reply.push(fix::Reply::Fix {
-                n: fields[0].parse().unwrap(),
-                text: fields[4].replace("uh ", "").replace("thing", "widget"),
-            });
-        }
-        Ok(reply)
+        Ok(answered(message, |text| {
+            text.replace("uh ", "").replace("thing", "widget")
+        }))
     }
 }
 

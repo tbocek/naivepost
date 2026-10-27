@@ -95,11 +95,18 @@ fn f1_7_s0_every_scene_change_has_its_first_picture() {
 /// or resume arithmetic off a set with no known interval.
 #[test]
 fn f1_7_s0_an_every_frame_folder_is_refused() {
-    // A folder extracted frame-by-frame: every picture one grid step apart, nothing thinned.
-    let raw: Vec<f64> = (0..49).map(|i| i as f64 * 0.25).collect();
+    // A folder extracted frame-by-frame: the video's own frames, 1/30 s apart, finer than the grid.
+    let raw: Vec<f64> = (0..360).map(|i| i as f64 / 30.0).collect();
     assert!(
         describe::is_every_frame(&raw, 0.25),
-        "pictures sitting `grid` apart all the way through is an every-frame extraction"
+        "pictures a frame rate apart all the way through is an every-frame extraction"
+    );
+    // The 250 ms grid itself is what Prepare writes and what describe picks from: never refused. The first
+    // rewrite refused exactly this folder, so no recording was ever described.
+    let grid: Vec<f64> = (0..49).map(|i| i as f64 * 0.25).collect();
+    assert!(
+        !describe::is_every_frame(&grid, 0.25),
+        "a folder on the grid is the one describe needs"
     );
     assert_eq!(
         describe::every_frame_refusal("lecture"),

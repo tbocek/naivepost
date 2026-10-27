@@ -1006,14 +1006,25 @@ fn parse_subtitles(value: &str) -> Subtitles {
 /// the settings a person chose are the ones the project reopens on. Nothing to write without a project open; a
 /// write that fails is said on the log, and the row keeps the choice either way.
 fn keep_settings() {
-    let dir = crate::startup::open_dir();
-    let Ok(mut project) = crate::project::load(&dir) else {
-        return;
-    };
-    project.produce = produce_settings(&read_state());
-    if let Err(why) = crate::project::save(&project, &dir) {
+    if let Err(why) = keep_produce(&produce_settings(&read_state())) {
         crate::ui::window::log_line(&format!("!!! the encoder settings were not kept: {why}"));
     }
+}
+
+/// The encoder settings kept, in both places the project lives: the window's session, which the autosave and
+/// the close flush write whole, and the file. The first rewrite wrote the file alone, so the next autosave of
+/// anything else in the session (and every close) put back the settings the window opened with: a Translate
+/// tick was gone before the run, and the run translated nothing.
+pub(crate) fn keep_produce(produce: &crate::project::Produce) -> Result<(), String> {
+    if let Some(session) =
+        crate::ui::window::PLAY_SESSION.with(|slots| slots.borrow().last().cloned())
+    {
+        session.borrow_mut().produce = produce.clone();
+    }
+    let dir = crate::startup::open_dir();
+    let mut project = crate::project::load(&dir).map_err(|why| why.to_string())?;
+    project.produce = produce.clone();
+    crate::project::save(&project, &dir).map_err(|why| why.to_string())
 }
 
 /// The page as the opened project holds it (§08-produce#1-screen): the encoder rows from `naivepost.json`'s
@@ -1307,6 +1318,9 @@ pub fn wire(window: &adw::ApplicationWindow) {
     if let Ok(tree) = crate::layout::Tree::new(crate::startup::open_dir()) {
         set_state(load_page(&tree));
     }
+    // A profile edited while this project was closed still sets its encoder rows: they are greyed here as the
+    // profile's, so they must BE the profile's.
+    crate::ui::profile_form::follow_profile_produce();
     // Hold the WINDOW, not just the content root: the slot row needs it to attach its per-slot buttons,
     // which are looked up by name from the window root.
     ROOT.with(|held| *held.borrow_mut() = Some(window.clone().upcast()));
@@ -1639,6 +1653,45 @@ fn finish_produce(
     encode_and_finish(window, s, project, &cut, &settings, gate)
 }
 
+/// F5.6's answer onto the page once the run lands: what the words half wrote to `publish.json` (the title, the
+/// description, the edit instruction, the image row and whether the thumbnail is a picked frame) replaces what the
+/// page showed, and the plates repaint from the files it drew. The first rewrite never read it back, so the boxes
+/// stayed empty and the thumbnail plate showed its checkerboard until the project was opened again (the
+/// prototype's `landPublish`). A part the run left empty keeps what the page has.
+fn take_written_publish(window: &adw::ApplicationWindow) {
+    let tree = session_tree();
+    if !crate::publish::is_written(&tree) {
+        return;
+    }
+    let Ok(written) = crate::publish::load(&tree) else {
+        return;
+    };
+    mutate(|s| {
+        let take = |held: &mut String, from: &str| {
+            if !from.trim().is_empty() {
+                *held = from.to_string();
+            }
+        };
+        take(&mut s.title, &written.title);
+        take(&mut s.thumb_title, &written.thumb_title);
+        take(&mut s.instruction, &written.prompt);
+        take(&mut s.negative, &written.negative);
+        take(&mut s.description, &written.description);
+        if !written.frames.is_empty() {
+            s.frames = written.frames.clone();
+            s.own = written.own;
+        }
+        // The seeding travels with the printed title: the plate letters the title over the picture only once it
+        // is seeded, so a landing that copied the words and not the flag left the picture on the page untitled
+        // while `thumbnail.png` carried the title.
+        s.title_seeded = s.title_seeded || written.title_seeded;
+        if !written.texts.is_empty() {
+            s.texts = written.texts.clone();
+        }
+    });
+    refresh(window);
+}
+
 /// S3's snapshot and S4–S6, reached by the straight-through paths and by an answered confirmation.
 fn encode_and_finish(
     window: &adw::ApplicationWindow,
@@ -1649,21 +1702,10 @@ fn encode_and_finish(
     gate: crate::produce_flow::Gate,
 ) -> String {
     let language = project.policy.language.value.clone();
-    if gate == crate::produce_flow::Gate::Skip {
-        // F5.5 S5 runs on the skip path too: the page is rewritten even when the encode was skipped. Its poster
-        // is an ffmpeg call, so the page is written on a worker and the skip said when it lands.
-        let settings = settings.clone();
-        let w = window.clone();
-        crate::ui::background::run(
-            "produce",
-            move || crate::ui::produce_languages::tag_page(&settings, &language),
-            move |()| {
-                crate::ui::run_close::close_window_run();
-                say(&w, crate::produce_flow::SKIP_LOG);
-            },
-        );
-        return String::new();
-    }
+    // S2's skip leaves out the RENDER and nothing else: the snapshot is taken, the words half (F5.6) runs and the
+    // tag page (F5.5 S5) is rewritten, as the flowchart draws it. The first rewrite returned after the tag page,
+    // so a video that was up to date never got its title, description or thumbnail.
+    let skip = gate == crate::produce_flow::Gate::Skip;
     // S3: EVERYTHING the two halves read is gathered here, once, on the GUI thread. From this line on the
     // run asks `snap` and never the page: a render walks subprocesses for minutes, and a leg that re-read
     // the window inside the run would describe whatever had been moved in the meantime.
@@ -1697,8 +1739,12 @@ fn encode_and_finish(
         aspect: run.cut.aspect.clone(),
         ..run
     };
-    // S4: the one opening line, logged before either half starts.
-    crate::ui::window::log_line(&crate::produce_flow::opening_line(&run, false));
+    // S4: the one opening line, logged before either half starts; a skip says its own line instead, at once.
+    if skip {
+        crate::ui::window::log_line(crate::produce_flow::SKIP_LOG);
+    } else {
+        crate::ui::window::log_line(&crate::produce_flow::opening_line(&run, false));
+    }
     // S5/S6 on a worker (§03-shell §1): the snapshot above is everything the halves read, and the page's state
     // and scripted seams travel with it ([`crate::ui::produce_worker::Carried`]).
     let carried = crate::ui::produce_worker::Carried::take();
@@ -1710,6 +1756,14 @@ fn encode_and_finish(
             carried.load();
             // The run's `llm/` page is this thread's (§7 keeps one per thread).
             crate::exchange_leg::note_run_started();
+            if skip {
+                if let Err(why) = words_half(&run) {
+                    crate::ui::window::log_line(&crate::produce_flow::words_failed(&why));
+                }
+                crate::ui::produce_languages::tag_page(&settings, &language);
+                crate::exchange_leg::note_run_ended();
+                return None;
+            }
             // Both halves through `run_with`, so the closing line and the bar's progress text come from
             // one place. The words half is F5.6's; its failure is logged with the spec's own tail and never
             // stops the render. The render half is F5.2's, run by `produce_exec`: it plans the whole run, walks
@@ -1729,9 +1783,15 @@ fn encode_and_finish(
             // render's error as the run's verdict).
             crate::ui::produce_languages::tag_page(&settings, &language);
             crate::exchange_leg::note_run_ended();
-            ending
+            Some(ending)
         },
         move |ending| {
+            take_written_publish(&w);
+            let Some(ending) = ending else {
+                crate::ui::run_close::close_window_run();
+                say(&w, crate::produce_flow::SKIP_LOG);
+                return;
+            };
             crate::ui::window::log_line(&ending.log);
             if !ending.progress.is_empty() {
                 crate::ui::window::log_line(&ending.progress);

@@ -168,8 +168,8 @@ fn check_plan_lands_through_the_button(app: &adw::Application) {
 /// An every-frame folder refuses through the same click, with §F1.7's exact sentence.
 fn check_every_frame_refusal_lands_through_the_button(app: &adw::Application) {
     let (_keep, tree) = pin_session("everyframe");
-    // Every grid step present over 12 s and no interval applied: 49 pictures at 0.25 s apart.
-    let seconds: Vec<f64> = (0..49).map(|i| i as f64 * 0.25).collect();
+    // The video's every frame over 12 s, finer than the grid: 360 pictures 1/30 s apart.
+    let seconds: Vec<f64> = (0..360).map(|i| i as f64 / 30.0).collect();
     seed_frames(&tree, "rawcam", &seconds, &[]);
 
     let mut model = Project::default();

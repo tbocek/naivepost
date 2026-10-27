@@ -134,9 +134,12 @@ pub fn is_every_frame(frames: &[f64], grid: f64) -> bool {
     if frames.len() < 2 || grid <= 0.0 {
         return false;
     }
-    frames
-        .windows(2)
-        .all(|pair| (pair[1] - pair[0] - grid).abs() <= grid / 2.0)
+    // Every-frame is FINER than the grid: the video's own frames, a frame rate apart (33 ms at 30 fps). A folder
+    // on the grid is what Prepare writes and what describe picks from. The first rewrite asked for steps of one
+    // grid, so it refused exactly the folders it said it needed ("describe needs the 250 ms grid"): every
+    // recording went undescribed, every clip reached the upload text as "nothing was seen", and the model could
+    // not find the title slide it was asked to use as the thumbnail. The prototype had no such refusal.
+    frames.windows(2).all(|pair| pair[1] - pair[0] < grid / 2.0)
 }
 
 // ---- S1: sorted, scaled, and heard alongside ---------------------------------

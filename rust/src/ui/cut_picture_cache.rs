@@ -71,6 +71,7 @@ fn landed() {
         repaint();
     }
     crate::ui::cut_picture_rows::repaint_bands();
+    crate::ui::produce_paint::repaint_plates();
 }
 
 /// One recording's extracted frames, oldest first, for a paint or a line move: the listing held for this

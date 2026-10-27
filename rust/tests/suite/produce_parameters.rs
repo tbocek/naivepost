@@ -249,7 +249,7 @@ fn sec_08_produce_4_parameters_used_s4_the_loudness_target_and_the_ceiling() {
         .expect("the limiter");
     let format = chain
         .iter()
-        .position(|f| f.starts_with("format=sample_fmts=fltp:sample_rates=48000"))
+        .position(|f| f.starts_with("aformat=sample_fmts=fltp:sample_rates=48000"))
         .expect("the format");
     assert!(bed < limiter && limiter < format, "{chain:?}");
 }
@@ -430,7 +430,12 @@ fn sec_08_produce_4_parameters_used_s7_input_order_and_the_faststart_flags() {
     let audio = std::path::Path::new("produce/audio.m4a");
     let out = std::path::Path::new("produce/final.mp4");
     let mp4 = render::mux_command(video, audio, &[], &settings(), out, &[]).join(" ");
-    for flag in ["+faststart", "-use_editlist", "0", "-negative_cts_offsets"] {
+    // Both are MOVFLAGS: `-negative_cts_offsets on` as an option of its own is refused by ffmpeg.
+    assert!(!mp4.contains("-negative_cts_offsets"), "{mp4}");
+    for flag in [
+        "-movflags +faststart+negative_cts_offsets",
+        "-use_editlist 0",
+    ] {
         assert!(mp4.contains(flag), "{flag} missing from {mp4}");
     }
     for container in [Container::Mkv, Container::Webm] {

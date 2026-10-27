@@ -585,6 +585,14 @@ pub fn walk(
     if let Some(title) = &answers.title {
         next.title = title.clone();
     }
+    // The first title to exist is also the one printed on the picture, and nothing seeds it twice (the prototype's
+    // `TitleSeeded`): after that the thumbnail's words are the person's, set and placed on the page, and a
+    // reworded video title leaves them alone. The first rewrite never seeded it, so the title box never appeared
+    // on the picture.
+    if !next.title_seeded && !next.title.trim().is_empty() {
+        next.thumb_title = next.title.trim().to_string();
+        next.title_seeded = true;
+    }
     if let Some(instruction) = &answers.instruction {
         next.prompt = instruction.clone();
     }
@@ -661,15 +669,11 @@ pub fn walk(
         &aspect,
         next.own,
     );
-    // S5/S7: the title that goes onto the picture. From the answer when there is one; otherwise the line the
-    // record already carries, since S8 keeps the previous value and a missing title must not reprint nothing.
-    let printed_title = answers
-        .title
-        .clone()
-        .unwrap_or_else(|| publish.thumb_title.clone());
+    // S5/S7: the title that goes onto the picture: the record's printed title, seeded above from the first title.
+    let printed_title = next.thumb_title.clone();
     // S5: whether the picture has to carry the new words. One answer for both doors — `set_title` reports it
     // to the model and the walk acts on it — so the two can never disagree about what got printed.
-    let reprint = crate::audit_gaps::reprint_title_on_change(
+    let mut reprint = crate::audit_gaps::reprint_title_on_change(
         &publish.thumb_title,
         &printed_title,
         mats.edited_by_hand,
@@ -696,7 +700,11 @@ pub fn walk(
                         }
                     }
                 }
-                out.calls.push("own-frame".to_string())
+                out.calls.push("own-frame".to_string());
+                // A picture taken this run carries no words yet: its title is printed onto it whoever chose the
+                // frame (the prototype takes the frame and prints the title onto it). The first rewrite counted
+                // an earlier run's picked frame as "edited by hand" and printed nothing on the new picture.
+                reprint = true;
             }
             Err(why) => {
                 // A frame named but not present is the chosen-frame failure the spec names, not a drawn
@@ -785,6 +793,8 @@ pub fn walk(
             return out;
         }
         out.calls.push("picture".to_string());
+        // A freshly drawn picture carries no words yet either.
+        reprint = true;
     }
 
     // S7: print the marked texts, then the title, onto thumbnail.png; then the picture's stamp. The passes

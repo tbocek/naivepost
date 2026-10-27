@@ -183,16 +183,20 @@ pub fn held_cue_end(line_start: f64, next_line_start: Option<f64>, clip_end: f64
 }
 
 /// S1's last rule as one call: what the render does to a spoken line. Time-stretch, resample, pan across the
-/// output layout (a mono voice otherwise lands in one speaker), delay in whole milliseconds — every filter of it
-/// is [`crate::produce_render`]'s audio chain and [`render_fx`]'s tempo chains; this names the four steps so §6's
-/// sentence has a single test target. `hush` is the clip's own volume cues, in output seconds.
+/// output layout (a mono voice otherwise lands in one speaker), delay in whole milliseconds: the clip's first
+/// spoken line through [`render::voice_chain`], the branch its take joins the bed by, so §6's sentence has a
+/// single test target. The lanes and the hush are the bed's, not the line's, and change nothing here.
 pub fn spoken_line_filters(
     clip: &render::Clip,
     settings: &Produce,
-    lanes: usize,
-    hush: &[(f64, f64)],
+    _lanes: usize,
+    _hush: &[(f64, f64)],
 ) -> Vec<String> {
-    render::audio_chain(clip, settings, lanes, hush)
+    clip.lines
+        .iter()
+        .find(|line| line.speech > 0.0)
+        .map(|line| render::voice_chain(line, settings))
+        .unwrap_or_default()
 }
 
 // ---- S3: what produce/clips/ also holds ----------------------------------------------
@@ -261,7 +265,12 @@ pub const UNDETERMINED_TAG: &str = "und";
 /// The two strings one subtitle input is tagged with, so a player can name the track. A language in the list
 /// answers with its own tag and name; anything else falls back as [`UNDETERMINED_TAG`] spells.
 pub fn language_tag(spoken: &str, list: &[Language]) -> (String, String) {
-    match list.iter().find(|language| language.code == spoken) {
+    // By code, whichever spelling arrived (`English` and `en` are one language), as `track_languages` reads it.
+    let code = crate::roles::language_code(spoken);
+    match list
+        .iter()
+        .find(|language| language.code.eq_ignore_ascii_case(&code))
+    {
         Some(language) => (language.tag.clone(), language.name.clone()),
         None => (UNDETERMINED_TAG.to_string(), spoken.to_uppercase()),
     }
@@ -547,17 +556,27 @@ pub fn thumbnail_line_is_frame(line: &str) -> bool {
 pub fn peel_labels(reply: &str) -> (Vec<String>, String) {
     let text = strip_whole_fence(reply);
     let mut labels = Vec::new();
-    let mut rest = Vec::new();
+    let mut before = Vec::new();
+    let mut after = Vec::new();
     for line in text.lines() {
         let trimmed = line.trim();
         if labels.len() < LABELLED_LINES_MAX {
             if let Some(value) = labelled_value(trimmed) {
                 labels.push(value);
+                // What came before a labelled line is the model drafting aloud ("Let me correct the hashtag
+                // list"), and the answer starts again here: only what follows the LAST label is the description.
+                before.append(&mut after);
                 continue;
             }
         }
-        rest.push(line.to_string());
+        after.push(line.to_string());
     }
+    // A reply that put its prose first and its labels last keeps that prose rather than none.
+    let rest = if labels.is_empty() || after.iter().all(|l| l.trim().is_empty()) {
+        before.into_iter().chain(after).collect::<Vec<String>>()
+    } else {
+        after
+    };
     (labels, rest.join("\n"))
 }
 

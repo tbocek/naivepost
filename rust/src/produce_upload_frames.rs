@@ -42,21 +42,28 @@ pub fn kept_footage(segs: &[Seg]) -> Vec<(f64, f64)> {
 /// three per clip would show the start of the video three times over on a session that keeps one long take.
 /// Empty when nothing was kept, which is the caller's signal to draw from words alone.
 pub fn spread_moments(segs: &[Seg]) -> Vec<f64> {
-    let spans = kept_footage(segs);
-    let total: f64 = spans.iter().map(|(from, to)| to - from).sum();
+    // Spread evenly over the FINISHED video, but answered on the SESSION clock: a `frame:` entry is a session
+    // second (the frames on disk are named by one, and every reader resolves it so). The first rewrite answered
+    // the produced second, which named a different moment of the session the further into the video it was.
+    let kept: Vec<(&Seg, f64)> = segs
+        .iter()
+        .filter(|seg| seg.ins.is_empty())
+        .map(|seg| (seg, output_length(seg)))
+        .filter(|(_, len)| *len > 0.0)
+        .collect();
+    let total: f64 = kept.iter().map(|(_, len)| len).sum();
     if total <= 0.0 {
         return Vec::new();
     }
-    // Flatten the kept stretches onto one continuous ruler, then read each band middle back off it: a
-    // moment inside the second clip is that clip's start plus how far into the kept total it sits.
     let mut out = Vec::with_capacity(SPREAD_COUNT);
     for band in 0..SPREAD_COUNT {
         let want = total * (2.0 * band as f64 + 1.0) / (2.0 * SPREAD_COUNT as f64);
         let mut walked = 0.0;
-        for (from, to) in &spans {
-            let len = to - from;
+        for (seg, len) in &kept {
             if want < walked + len {
-                out.push(from + (want - walked));
+                // The produced seconds into this clip, back onto its recording's seconds.
+                let footage = (seg.e - seg.s).max(0.0);
+                out.push(seg.s + (want - walked) * footage / len);
                 break;
             }
             walked += len;

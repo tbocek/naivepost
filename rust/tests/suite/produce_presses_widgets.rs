@@ -131,6 +131,10 @@ fn inside(slot: &gtk::Widget) -> Vec<gtk::Widget> {
     out
 }
 
+/// The fixture's footage recording (`sources/lecture.mkv`): Prepare files its frames under the stem, and that
+/// folder is where the page looks for them (not a cut camera's name).
+const FOOTAGE: &str = "lecture";
+
 /// Lay one real extracted JPEG per moment where the live cut's footage folders are looked for (ALL of them,
 /// once, up front) and put the matching `frame:<seconds>` entries on the page, oldest first. Seeding the row
 /// from state rather than through ＋ Add image is deliberate: task 2 pins what the chooser door appends, and
@@ -139,7 +143,7 @@ fn inside(slot: &gtk::Widget) -> Vec<gtk::Widget> {
 /// title and no marked texts the print leg has nothing to letter, which is what lets a plain frame stand as the
 /// base a `Set Thumbnail` prints onto.
 fn seed_row(window: &adw::ApplicationWindow, tree: &Tree, moments: &[f64]) -> Vec<String> {
-    let dir = tree.frames_dir("cam0");
+    let dir = tree.frames_dir(FOOTAGE);
     std::fs::create_dir_all(&dir).expect("frame folder");
     let mut entries = Vec::new();
     for (index, seconds) in moments.iter().enumerate() {
@@ -628,9 +632,9 @@ fn press_save(window: &adw::ApplicationWindow, to: Option<&str>) -> String {
     })
 }
 
-/// The JPEG `seed_row` laid for the moment `at` (cam0's frames folder).
+/// The JPEG `seed_row` laid for the moment `at` (the fixture footage's frames folder).
 fn newest_file_of(tree: &Tree, at: f64) -> PathBuf {
-    tree.frames_dir("cam0")
+    tree.frames_dir(FOOTAGE)
         .join(format!("{}.jpg", naivepost::clock::frame_name(at)))
 }
 
@@ -828,7 +832,7 @@ fn check_picked_frame_sole_entry(root: &Path) {
     // One extracted frame inside the second segment, so "the nearest frame" has an answer at all.
     let seconds = 12.0;
     let frame = tree
-        .frames_dir("cam0")
+        .frames_dir(FOOTAGE)
         .join(format!("{}.jpg", naivepost::clock::frame_name(seconds)));
     std::fs::create_dir_all(frame.parent().unwrap()).expect("frame folder");
     make_noisy_png(&frame, 640, 360);
@@ -861,10 +865,10 @@ fn check_picked_frame_sole_entry(root: &Path) {
 fn check_add_image_is_a_real_frame(root: &Path) {
     let tree = session(root);
     let _fake = script_legs();
-    // One extracted JPEG where the live cut's footage folders are looked for (`cam0`, the segs' default cam).
+    // One extracted JPEG where the project's footage frames are looked for (its stem's folder).
     let seconds = 4.0;
     let frame = tree
-        .frames_dir("cam0")
+        .frames_dir(FOOTAGE)
         .join(format!("{}.jpg", naivepost::clock::frame_name(seconds)));
     std::fs::create_dir_all(frame.parent().unwrap()).expect("frame folder");
     naivepost::produce_upload_print::flat_png_for_test(&frame, 320, 180, 0.5)
@@ -944,7 +948,7 @@ fn check_change_nothing_extracted(root: &Path) {
     // One frame on disk, so a slot can be seeded with a real entry …
     let seconds = 6.0;
     let frame = tree
-        .frames_dir("cam0")
+        .frames_dir(FOOTAGE)
         .join(format!("{}.jpg", naivepost::clock::frame_name(seconds)));
     std::fs::create_dir_all(frame.parent().unwrap()).expect("frame folder");
     naivepost::produce_upload_print::flat_png_for_test(&frame, 320, 180, 0.5)
@@ -1096,7 +1100,7 @@ fn check_slot_buttons(root: &Path) {
             .trim_start_matches("frame:")
             .parse()
             .expect("a moment entry");
-        tree.frames_dir("cam0")
+        tree.frames_dir(FOOTAGE)
             .join(format!("{}.jpg", naivepost::clock::frame_name(at)))
     };
     let before_change = ui::produce_page::read_state().frames.clone();

@@ -239,15 +239,9 @@ pub fn press_play_cut(window: &adw::ApplicationWindow, cut: &cut::Cut) -> cut_pl
         // S2/S3: both change what the clock means or what is playing, so both get their sentence. Both also
         // need a process making sound from the line the press just snapped to: ▶✂ owns that player, so the
         // press starts it (`cut_play_back::cue_clips` has no other program door).
-        // F2.2 S2: "if playing, carry on" — a switch made while paused only switches; the transport and the
-        // player must not disagree about whether anything plays.
-        cut_play::Pressed::SwitchedToCut {
-            status: line,
-            kept_playing,
-        } => {
-            if *kept_playing {
-                crate::ui::cut_cut_play::cue_running(window, preview_playhead(window));
-            }
+        // F2.2 S2: the switch plays: carried on when it was playing, started from the line when it was paused.
+        cut_play::Pressed::SwitchedToCut { status: line, .. } => {
+            crate::ui::cut_cut_play::cue_running(window, preview_playhead(window));
             if released.is_none() {
                 status.set_text(line)
             }

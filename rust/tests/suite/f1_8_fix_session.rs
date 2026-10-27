@@ -35,54 +35,27 @@ const AUDIO: &str = "2026-05-01 10-01-30_mic.wav";
 const DECK: &str = "2026-05-01 10-00-00_deck";
 const MIC: &str = "2026-05-01 10-01-30_mic";
 
-/// One `fix_line` per line of a block, then `finish` — §3.3's answer shape, built for however many lines
-/// the block actually holds (the last block of thirty lines at twenty-five a block is a block of FIVE).
-fn fix_answer(lines: usize) -> String {
-    let mut calls = String::new();
-    for n in 1..=lines {
-        calls.push_str(&format!(
-            "{{\"function\":{{\"name\":\"fix_line\",\"arguments\":\"{{\\\"n\\\":{n},\\\"text\\\":\\\"respelled line {n}\\\"}}\"}}}},",
-        ));
-    }
-    calls.push_str("{\"function\":{\"name\":\"finish\",\"arguments\":\"{}\"}}");
-    format!("{{\"choices\":[{{\"message\":{{\"content\":\"\",\"tool_calls\":[{calls}]}}}}]}}")
-}
-
-/// An answer short by one line: `fix_block` refuses it ("n in the block, no tab?"). Kept for the
-/// validation rule's own tests, which live in `tests/suite/fix_transcripts.rs`; this file's S3 case goes
-/// through the wire instead, where a refusal never arrives because nothing answers.
-#[allow(dead_code)]
-fn short_answer(lines: usize) -> String {
-    fix_answer(lines.saturating_sub(1))
-}
-
 /// A fake LLM answering every chat ask with the held reply, recording how many asks arrived.
 struct Fake {
     url: String,
     asks: std::sync::Arc<Mutex<Vec<ChatAsk>>>,
-    /// Held so the reply outlives the connection threads that read it; no test here changes it.
-    #[allow(dead_code)]
-    answer: std::sync::Arc<Mutex<String>>,
 }
 
-use common::{serve_chat as serve, ChatAsk};
+use common::{serve_chat_with, ChatAsk};
 
 impl Fake {
-    fn start(answer: String) -> Fake {
+    /// A fake that answers every fix ask with that block's own rows, respelled ([`common::respelled_rows_answer`]).
+    fn respelling() -> Fake {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
         let port = listener.local_addr().expect("an address").port();
         let asks = std::sync::Arc::new(Mutex::new(Vec::new()));
         let recorder = asks.clone();
-        let held = std::sync::Arc::new(Mutex::new(answer));
-        let replies = held.clone();
         std::thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(stream) = stream else { continue };
                 let recorder = recorder.clone();
-                let replies = replies.clone();
                 std::thread::spawn(move || {
-                    let answer = replies.lock().expect("the reply lock").clone();
-                    if let Some(ask) = serve(stream, &answer) {
+                    if let Some(ask) = serve_chat_with(stream, &common::respelled_rows_answer) {
                         if let Ok(mut row) = recorder.lock() {
                             row.push(ask);
                         }
@@ -93,7 +66,6 @@ impl Fake {
         Fake {
             url: format!("http://127.0.0.1:{port}"),
             asks,
-            answer: held,
         }
     }
 
@@ -113,12 +85,6 @@ impl Fake {
     #[allow(dead_code)]
     fn count(&self) -> usize {
         self.asks.lock().expect("the record lock").len()
-    }
-
-    /// Change what every later ask is answered with — the retry case answers the first ask badly.
-    #[allow(dead_code)]
-    fn set_answer(&self, answer: String) {
-        *self.answer.lock().expect("the reply lock") = answer;
     }
 }
 
@@ -352,7 +318,7 @@ fn walk_marked(scene: &Scene, pass: MarkingPass) -> (run_stages::Drive, Vec<Stri
 /// out — the seconds a block's context names have to be ones the timeline on disk already agrees with.
 #[test]
 fn f1_8_s1_offsets_tsv_is_written_before_any_block() {
-    let fake = Fake::start(fix_answer(4));
+    let fake = Fake::respelling();
     let scene = Scene::new(4, &fake.url);
     let (drive, log) = walk(&scene);
     assert!(
@@ -393,12 +359,12 @@ fn f1_8_s1_offsets_tsv_is_written_before_any_block() {
 /// S2: a block is `P.machine.fixBlockLines` lines and the message says so, with the grounding around it.
 #[test]
 fn f1_8_s2_a_block_is_25_lines_and_the_message_names_its_context() {
-    let fake = Fake::start(fix_answer(25));
+    let fake = Fake::respelling();
     let scene = Scene::new(30, &fake.url);
     let (_drive, log) = walk(&scene);
-    // Thirty lines at twenty-five a block is two blocks per source. The second source's first block is
-    // the identical question -- same times, same words -- so §S3's cache answers it and only three FIX
-    // asks go out; what this test pins is the BLOCKING and the message, which the four checkpoints show.
+    // Thirty lines at twenty-five a block is two blocks per source. The second source's two blocks are the
+    // identical questions -- same times, same words -- so §S3's cache answers both and only two FIX asks go
+    // out; what this test pins is the BLOCKING and the message, which the four checkpoints show.
     // A Prepare press now dials other jobs too (§F1.9's pooled retake runs ask the same server), so the
     // count is taken over the fix job's own asks only — recognisable by the wording only §3.3's message
     // carries — rather than over everything that reached the socket.
@@ -409,8 +375,8 @@ fn f1_8_s2_a_block_is_25_lines_and_the_message_names_its_context() {
         .collect();
     assert_eq!(
         fix_asks.len(),
-        3,
-        "the unchanged repeat block costs no fix ask: {log:?}"
+        2,
+        "the unchanged repeat blocks cost no fix ask: {log:?}"
     );
     let blocks: Vec<&String> = log
         .iter()
@@ -452,7 +418,7 @@ fn f1_8_s2_a_block_is_25_lines_and_the_message_names_its_context() {
 /// S3: a valid answer lands — the fixed file holds the respelling while every time and speaker stands.
 #[test]
 fn f1_8_s3_a_fix_lands_on_disk() {
-    let fake = Fake::start(fix_answer(4));
+    let fake = Fake::respelling();
     let scene = Scene::new(4, &fake.url);
     let (_drive, log) = walk(&scene);
     fake.waited(2);
@@ -520,7 +486,7 @@ fn f1_8_s3_a_refused_block_keeps_the_original_lines() {
 /// microphone gets `commentary.fixed.tsv` and no subtitles, since there is nothing to caption over it.
 #[test]
 fn f1_8_s4_a_video_gets_subtitles_and_a_commentator_gets_none() {
-    let fake = Fake::start(fix_answer(4));
+    let fake = Fake::respelling();
     let mut scene = Scene::new(4, &fake.url);
     scene.make_narrator();
     let (drive, log) = walk(&scene);
@@ -563,7 +529,7 @@ fn f1_8_s4_a_video_gets_subtitles_and_a_commentator_gets_none() {
 /// sorted by start — and the log counts what it merged.
 #[test]
 fn f1_8_s5_session_tsv_merges_both_sources_and_the_log_counts_them() {
-    let fake = Fake::start(fix_answer(4));
+    let fake = Fake::respelling();
     let scene = Scene::new(4, &fake.url);
     let (_drive, log) = walk(&scene);
     fake.waited(2);
@@ -604,7 +570,7 @@ fn f1_8_s5_session_tsv_merges_both_sources_and_the_log_counts_them() {
 /// S6 with the policy saying none: nothing is asked of any marking pass and nothing is folded away.
 #[test]
 fn f1_8_s6_marking_none_leaves_the_timeline_unmarked() {
-    let fake = Fake::start(fix_answer(4));
+    let fake = Fake::respelling();
     let scene = Scene::new(4, &fake.url);
     // A mark sitting there unclaimed, written in by hand: `none` means the fold asks for nothing, so it
     // stays unfolded. Planting it is honest here — the case is about the FOLD ignoring a file, and no
@@ -647,7 +613,7 @@ fn f1_8_s6_marking_none_leaves_the_timeline_unmarked() {
 /// to fail here without taking the LLM's address away from the fix rows that share the stage.
 #[test]
 fn f1_8_s6_a_marking_pass_trouble_never_costs_the_timeline() {
-    let fake = Fake::start(fix_answer(3));
+    let fake = Fake::respelling();
     let scene = Scene::new(3, &fake.url);
     let (_drive, log) = walk_marked(&scene, MarkingPass::Retakes);
     // The fixes are not lost to a pass that marked nothing, and the pass said so out loud (§S1's own
@@ -673,7 +639,7 @@ fn f1_8_s6_a_marking_pass_trouble_never_costs_the_timeline() {
 /// way `labelled` stamps, and the narrator's lane named as the narrator.
 #[test]
 fn f1_8_s7_session_txt_is_the_text_the_cut_reads() {
-    let fake = Fake::start(fix_answer(4));
+    let fake = Fake::respelling();
     let scene = Scene::new(4, &fake.url);
     let (_drive, log) = walk(&scene);
     fake.waited(2);
@@ -711,7 +677,7 @@ fn f1_8_s7_session_txt_is_the_text_the_cut_reads() {
 /// `tests/suite/retakes_flow.rs`, not here.
 #[test]
 fn f1_8_s7_a_marked_stretch_folds_into_one_line() {
-    let fake = Fake::start(fix_answer(4));
+    let fake = Fake::respelling();
     let scene = Scene::new(4, &fake.url);
     let (_drive, log) = walk(&scene);
     fake.waited(2);

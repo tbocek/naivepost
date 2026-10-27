@@ -89,7 +89,8 @@ pub fn snap_to_kept(segs: &[Seg], line: f64) -> f64 {
 pub enum Pressed {
     /// S1/S2 with no clips: nothing to skip to.
     Refused(&'static str),
-    /// S2: the preview became the cut. `kept_playing` = it was already playing and carries on.
+    /// S2: the preview became the cut and plays: `kept_playing` = it was already playing and carries on, else
+    /// it starts from the line.
     SwitchedToCut { kept_playing: bool, status: String },
     /// S3: a review was running; it ended and the plain cut carries on.
     ReviewEnded { status: &'static str },
@@ -118,6 +119,10 @@ pub fn pressed(player: &mut Player, cut: &Cut) -> Pressed {
         let kept_playing = player.transport.playing;
         player.cut_only = true;
         player.transport.started = true;
+        // The switch plays: what was playing plays on as the cut, and a paused preview starts from the line.
+        // Switching is why a play button was pressed and not ⏸ (the prototype's `playAs`); the first rewrite
+        // only switched a paused preview, so ▶✂ after ▶ took two presses to start.
+        player.transport.playing = true;
         let snapped = snap_to_kept(&cut.segs, player.playhead.unwrap_or(0.0));
         player.playhead = Some(snapped);
         return Pressed::SwitchedToCut {
@@ -131,6 +136,9 @@ pub fn pressed(player: &mut Player, cut: &Cut) -> Pressed {
     if player.reviewing {
         cut_review::switch_over(player);
         player.cut_only = true;
+        // As S2: the plain cut plays on, or starts if the review was paused.
+        player.transport.started = true;
+        player.transport.playing = true;
         if let Some(line) = player.playhead {
             player.playhead = Some(snap_to_kept(&cut.segs, line));
         }

@@ -54,8 +54,15 @@ pub const RECORDING_STATUS: &str =
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Press {
     Paused,
-    Playing { from: f64 },
-    SwitchedToRecording { kept_playing: bool },
+    Playing {
+        from: f64,
+    },
+    /// S1: the preview became the recording and plays: carried on when it was playing (`kept_playing`), else
+    /// started from `started`, the line.
+    SwitchedToRecording {
+        kept_playing: bool,
+        started: Option<f64>,
+    },
     NoFootage,
 }
 
@@ -73,7 +80,27 @@ pub fn press_recording(player: &mut Player, runs: &[(f64, f64)]) -> Press {
         player.reviewing = false;
         // "already playing: carry on": pressing ▶ must not pause the preview it has just switched to a
         // view of, or the button would stop the thing its own status line says is running.
-        return Press::SwitchedToRecording { kept_playing };
+        if kept_playing {
+            return Press::SwitchedToRecording {
+                kept_playing,
+                started: None,
+            };
+        }
+        // Paused, the switch also starts the recording from the line: switching is why a play button was
+        // pressed and not ⏸ (the prototype's `playAs`); the first rewrite only switched, and ▶ took two presses.
+        let Some(from) = player
+            .playhead
+            .or_else(|| runs.first().map(|(start, _)| *start))
+        else {
+            return Press::NoFootage;
+        };
+        player.transport.started = true;
+        player.transport.playing = true;
+        player.playhead = Some(from);
+        return Press::SwitchedToRecording {
+            kept_playing,
+            started: Some(from),
+        };
     }
 
     // S2: the toggle. A pause clears `playing` and leaves `started`, which is what keeps the preview the

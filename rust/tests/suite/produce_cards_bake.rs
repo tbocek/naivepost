@@ -564,7 +564,15 @@ fn encode(staged: &produce_cards::Staged, loops: bool) -> Vec<String> {
         .iter()
         .map(|(kind, path)| (kind.as_str(), Some(path.as_str())))
         .collect();
-    render::encode_command_with(&clip, &settings, &inputs, None, Path::new("out.mp4"), loops)
+    render::encode_command_with(
+        &clip,
+        &settings,
+        &inputs,
+        None,
+        Path::new("out.mp4"),
+        loops,
+        clip.seg_s,
+    )
 }
 
 /// The whole plan leg: a card clip's §8 note lands in the run's log lines beside the clip's other news, and its
@@ -622,7 +630,8 @@ fn sec_06_effects_5_cards_svg_inserts_s15b_the_plan_stages_the_card_before_it_en
         Ok(numbers.iter().map(|n| (*n, format!("t {n}"))).collect())
     }
     let translate: &produce_translate::Ask = &translate_pass;
-    let source_file = |_clip: &render::Clip| Some(card_path.to_string_lossy().to_string());
+    let source_file =
+        |clip: &render::Clip| Some((card_path.to_string_lossy().to_string(), clip.seg_s));
     let mats = exec::Materials {
         exists: &exists,
         fx_for: &fx_for,
@@ -762,7 +771,8 @@ fn sec_06_effects_5_cards_svg_inserts_s15c_the_run_loops_a_card_with_no_own_leng
         Ok(numbers.iter().map(|n| (*n, format!("t {n}"))).collect())
     }
     let translate: &produce_translate::Ask = &translate_pass;
-    let source_file = |_clip: &render::Clip| Some(card_path.to_string_lossy().to_string());
+    let source_file =
+        |clip: &render::Clip| Some((card_path.to_string_lossy().to_string(), clip.seg_s));
     let mats = exec::Materials {
         exists: &exists,
         fx_for: &fx_for,
