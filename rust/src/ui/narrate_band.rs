@@ -30,8 +30,6 @@ pub fn lane_width(zoom: f64, duration: f64, viewport: f64) -> f64 {
 const RULER_PX: f64 = screen::BAND_RULER_PX;
 /// Wave peaks arrive at this rate from [`wave_build::ensure`]'s cache.
 const PEAK_HZ: f64 = wave_build::PEAK_HZ;
-/// The scroll notches one wheel step spans, so a notch is one zoom step wherever the tracker is.
-const WHEEL_NOTCH_PX: f64 = 50.0;
 /// The red bar's width in px: two, so it reads over the ruler and the lane as ONE line.
 const BAR_PX: f64 = 2.0;
 
@@ -91,7 +89,10 @@ pub fn attach(window: &adw::ApplicationWindow) {
     lane.add_controller(drag.clone());
     DRAG.with(|slot| *slot.borrow_mut() = Some(drag));
 
-    // ONE vertical wheel controller: plain notches zoom, Shift pans an eighth of the view.
+    // ONE vertical wheel controller: plain notches zoom, Shift pans an eighth of the view, the way the wheel
+    // turned. GTK hands a mouse notch over as dy = ±1, so one notch is one zoom step (the prototype's
+    // `1.25^-dy`); the first rewrite divided by 50 as if dy were pixels, and a notch zoomed by 0.4 %, which
+    // reads as a wheel that does nothing.
     let wheel = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
     wheel.set_name(Some("wheel-take-band"));
     let scroll_win = window.clone();
@@ -100,9 +101,9 @@ pub fn attach(window: &adw::ApplicationWindow) {
             .current_event_state()
             .contains(gtk::gdk::ModifierType::SHIFT_MASK);
         if shift {
-            pan(&scroll_win, -band::pan_by(view_width(&scroll_win)));
+            pan(&scroll_win, dy * band::pan_by(view_width(&scroll_win)));
         } else {
-            zoom_by(&scroll_win, -dy / WHEEL_NOTCH_PX);
+            zoom_by(&scroll_win, -dy);
         }
         repaint(&scroll_win);
         glib::Propagation::Stop
@@ -199,6 +200,7 @@ pub fn pointer_px() -> f64 {
 /// S4 deletes that file on every take, pitch or voice change, so keying visibility to it hid the band on the
 /// very press that made a take — the shot printed "take band seeded = true" over a page with no lane in it.
 pub fn show_only_with_recording(window: &adw::ApplicationWindow) {
+    follow_tape();
     let Some(scroller) = crate::ui::window::find_widget_by_name(
         &window.content().expect("the window has content"),
         "take-band-scroller",
@@ -742,23 +744,26 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
         draw_envelope(cr, &peaks.1, width, lane_top, lane_h);
     }
 
-    // 2. The ruler: minute ticks across the top strip, seconds labelled.
+    // 2. The ruler, on the Cut page's tick ladder (the prototype's `tickStep`): the first step at least 70 px
+    // apart at this zoom, every tick labelled. The first rewrite ticked every 30 s whatever the zoom, so a
+    // recording under half a minute had a bare ruler, and zooming in never added a mark.
     cr.set_source_rgb(0.55, 0.58, 0.62);
     cr.set_line_width(1.0);
     cr.move_to(0.0, RULER_PX);
     cr.line_to(width, RULER_PX);
     let _ = cr.stroke();
     cr.set_font_size(8.0);
-    let mut px = 0.0;
-    while px < width {
-        let second = band::ruler_second(px, offset(), pps);
-        if second > 0 && (second % 30) == 0 {
-            cr.move_to(px, 0.0);
-            cr.line_to(px, RULER_PX);
-            let _ = cr.stroke();
-            let _ = cr.show_text(&crate::tools::mm_ss(second as f64));
+    let step = crate::ui::cut_tracks::tick_step_seconds(pps);
+    for (x, label) in crate::cut_trim::ruler_ticks(duration, pps, step) {
+        let x = x - offset();
+        if x < 0.0 || x > width {
+            continue;
         }
-        px += pps * 30.0;
+        cr.move_to(x + 0.5, RULER_PX);
+        cr.line_to(x + 0.5, RULER_PX - 4.0);
+        let _ = cr.stroke();
+        cr.move_to(x + 2.0, RULER_PX - 3.0);
+        let _ = cr.show_text(&label);
     }
 
     // 3. The takes, green, each labelled with its duration alone when wide enough.
@@ -849,56 +854,65 @@ fn envelope_attempt(
     if state.voice == screen::CAPTIONS {
         return Err("the voice is captions only".to_string());
     }
-    let sources = envelope_sources(&tree, &state.voice);
-    envelope_of(&tree, sources)
+    let (tape, reference) = envelope_sources(&tree, &state.voice);
+    envelope_of(&tree, &tape, &reference)
 }
 
-/// The files the lane may be drawn from, in the order they are tried: the recording the voice is cloned
-/// from, then the built reference.
-fn envelope_sources(tree: &crate::layout::Tree, voice: &str) -> Vec<std::path::PathBuf> {
-    let mut sources: Vec<std::path::PathBuf> = Vec::new();
-    if let Ok(project) = crate::project::load(tree.dir()) {
-        sources.extend(crate::narrate_band_face::recording_path(
-            tree, &project, voice,
-        ));
-    }
-    sources.push(crate::narrate_data::base_reference(tree));
-    sources
+/// What the lane is drawn from: the voice's tape ([`crate::narrate_band_face::tape`]), and the built reference
+/// for a voice with no recording at all.
+fn envelope_sources(
+    tree: &crate::layout::Tree,
+    voice: &str,
+) -> (crate::narrate_tape::Tape, std::path::PathBuf) {
+    let tape = crate::project::load(tree.dir())
+        .map(|project| crate::narrate_band_face::tape(tree, &project, voice))
+        .unwrap_or_default();
+    (tape, crate::narrate_data::base_reference(tree))
 }
 
-/// The peaks off the first source that gives them. Decodes and builds the wave cache when it has to, so it
-/// runs on a worker ([`cached_envelope`]), never inside a draw.
+/// The tape's peaks, end to end: each recording's envelope read once (decoded and measured when it has to be, so
+/// this runs on a worker, [`cached_envelope`]), and each stretch's seconds of it laid where the stretch sits on
+/// the band. A stretch the envelope runs short of is padded with silence, so every later stretch stays at its own
+/// second. With no tape, the built reference whole.
 fn envelope_of(
     tree: &crate::layout::Tree,
-    sources: Vec<std::path::PathBuf>,
+    tape: &crate::narrate_tape::Tape,
+    reference: &std::path::Path,
 ) -> Result<(f64, Vec<u8>), String> {
+    if tape.is_empty() {
+        if !reference.is_file() {
+            return Err(format!("{}: no such file", reference.display()));
+        }
+        let lane = format!("voice:{}", crate::narrate_data::take_base(reference));
+        return envelope(tree, &lane, reference).map(|peaks| (PEAK_HZ, peaks));
+    }
     // One lane per SOURCE file, not one per voice slot: `wave_build` keys its cache by (lane, size, mtime),
     // so two different files sharing a lane name would each accept whichever cache was written first.
-    let mut reasons = Vec::new();
-    for source in sources {
-        if !source.is_file() {
-            reasons.push(format!("{}: no such file", source.display()));
-            continue;
+    let mut read: std::collections::HashMap<std::path::PathBuf, Vec<u8>> =
+        std::collections::HashMap::new();
+    let mut out: Vec<u8> = Vec::new();
+    for stretch in &tape.0 {
+        if !read.contains_key(&stretch.file) {
+            let lane = format!("voice:{}", stretch.base);
+            read.insert(stretch.file.clone(), envelope(tree, &lane, &stretch.file)?);
         }
-        let lane = format!("voice:{}", crate::narrate_data::take_base(&source));
-        match envelope(tree, &lane, &source) {
-            Ok(peaks) => return Ok((PEAK_HZ, peaks)),
-            Err(why) => reasons.push(why),
-        }
+        let peaks = &read[&stretch.file];
+        let want = ((stretch.to - stretch.from) * PEAK_HZ).round() as usize;
+        let from = ((stretch.from * PEAK_HZ).round() as usize).min(peaks.len());
+        let until = (from + want).min(peaks.len());
+        out.extend_from_slice(&peaks[from..until]);
+        out.resize(out.len() + want - (until - from), 0);
     }
-    Err(if reasons.is_empty() {
-        "no recording to read".to_string()
-    } else {
-        reasons.join("; ")
-    })
+    Ok((PEAK_HZ, out))
 }
 
-/// What a cached envelope was read for: the session, the voice, and each source's size and mtime, so a new
-/// take, a new voice or a re-recorded file is read again and nothing else is.
+/// What a cached envelope was read for: the session, the voice, the tape's stretches, and each file's size and
+/// mtime, so a new take, a new voice, an edited cut or a re-recorded file is read again and nothing else is.
 #[derive(Clone, PartialEq)]
 struct EnvelopeKey {
     dir: std::path::PathBuf,
     voice: String,
+    tape: crate::narrate_tape::Tape,
     stamps: Vec<(std::path::PathBuf, Option<(i64, i64)>)>,
 }
 
@@ -922,13 +936,18 @@ fn cached_envelope(state: &crate::ui::narrate_page::NarrateState) -> Peaks {
     if state.voice == screen::CAPTIONS {
         return Err("the voice is captions only".to_string());
     }
-    let sources = envelope_sources(&tree, &state.voice);
+    let (tape, reference) = envelope_sources(&tree, &state.voice);
+    let mut files: Vec<std::path::PathBuf> =
+        tape.0.iter().map(|stretch| stretch.file.clone()).collect();
+    files.dedup();
+    files.push(reference.clone());
     let key = EnvelopeKey {
         dir: tree.dir().to_path_buf(),
         voice: state.voice.clone(),
-        stamps: sources
+        tape: tape.clone(),
+        stamps: files
             .iter()
-            .map(|source| (source.clone(), stamp(source).ok()))
+            .map(|file| (file.clone(), stamp(file).ok()))
             .collect(),
     };
     let held = ENVELOPE.with(|slot| {
@@ -945,7 +964,7 @@ fn cached_envelope(state: &crate::ui::narrate_page::NarrateState) -> Peaks {
     ENVELOPE.with(|slot| *slot.borrow_mut() = Some((key.clone(), None)));
     crate::ui::background::run(
         "take band envelope",
-        move || envelope_of(&tree, sources),
+        move || envelope_of(&tree, &tape, &reference),
         move |peaks: Peaks| {
             if let Err(why) = &peaks {
                 crate::ui::window::log_line(&format!("take band: {why}"));
@@ -989,4 +1008,34 @@ fn draw_envelope(cr: &cairo::Context, peaks: &[u8], width: f64, lane_top: f64, l
         cr.rectangle(x, lane_top + (lane_h - h) / 2.0, step, h.max(1.0));
     }
     let _ = cr.fill();
+}
+
+thread_local! {
+    /// The project and tape the page's takes were last read for.
+    static TAPE_SEEN: std::cell::RefCell<Option<(std::path::PathBuf, crate::narrate_tape::Tape)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Keep the page's takes on the tape the band shows: when the tape changes (another voice, the session's
+/// recordings measured, the cut edited on the Cut page) the takes are read again off `narrate/takes.json`, where
+/// every pick already is, in the new tape's seconds. A take list carried over from another tape would put its
+/// green on seconds that are now someone else's.
+fn follow_tape() {
+    let Some(tree) = crate::ui::window::narrate_session_tree() else {
+        return;
+    };
+    let Ok(project) = crate::project::load(tree.dir()) else {
+        return;
+    };
+    let voice = crate::ui::narrate_page::read_state().voice;
+    let tape = crate::narrate_band_face::tape(&tree, &project, &voice);
+    // Keyed on the tape, not the voice's id: `own` and `narrator1` are the same narrator on the same tape.
+    let now = Some((tree.dir().to_path_buf(), tape));
+    // The first look at a project only notes the tape: the page was seeded off disk on it when it was loaded.
+    let before = TAPE_SEEN.with(|seen| seen.replace(now.clone()));
+    if before.as_ref().map(|seen| &seen.0) != Some(&tree.dir().to_path_buf()) || before == now {
+        return;
+    }
+    let takes = crate::ui::narrate_seed::stored_takes(&tree, &voice);
+    crate::ui::narrate_page::mutate(|state| state.takes = takes);
 }

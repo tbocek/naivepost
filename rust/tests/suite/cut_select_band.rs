@@ -588,8 +588,7 @@ fn f2_6_s3_the_readout_follows_the_band_live() {
     let band = footage(0, 12.0, 20.0);
     assert_eq!(sel::marks(Some(&band)), Some((12.0, 20.0)));
 
-    let rows =
-        cut_screen::idle_readouts(64, "", 0.0, sel::marks(Some(&band)), &Cut::default(), 0.0);
+    let rows = cut_screen::idle_readouts("", 0.0, sel::marks(Some(&band)), &Cut::default(), 0.0);
     let value = |label: &str| {
         rows.iter()
             .find(|row| row.label == label)
@@ -604,8 +603,7 @@ fn f2_6_s3_the_readout_follows_the_band_live() {
     );
 
     let moved = sel::move_band(&band, 40.0, &[40.0], 40.0);
-    let rows =
-        cut_screen::idle_readouts(64, "", 0.0, sel::marks(Some(&moved)), &Cut::default(), 0.0);
+    let rows = cut_screen::idle_readouts("", 0.0, sel::marks(Some(&moved)), &Cut::default(), 0.0);
     assert_eq!(
         value("Selection"),
         "00:12 \u{2013} 00:20",
@@ -623,14 +621,7 @@ fn f2_6_s3_the_readout_follows_the_band_live() {
     );
 
     let resized = sel::resize(&band, false, 8.0, &[], 40.0);
-    let rows = cut_screen::idle_readouts(
-        64,
-        "",
-        0.0,
-        sel::marks(Some(&resized)),
-        &Cut::default(),
-        0.0,
-    );
+    let rows = cut_screen::idle_readouts("", 0.0, sel::marks(Some(&resized)), &Cut::default(), 0.0);
     let resized_value = rows
         .iter()
         .find(|row| row.label == "Selection")

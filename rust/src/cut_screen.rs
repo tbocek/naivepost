@@ -77,7 +77,7 @@ pub fn tool_icon(name: &str) -> Option<&'static str> {
 pub const TOOLBAR_GROUPS: [&str; 6] =
     ["transport", "volume", "verbs", "effects", "history", "zoom"];
 
-// --- Thumbnail size (§A's idle row: "Thumbnails [🖼− 🖼+] … ×3/4, ×4/3, clamp 40..160") ----------
+// --- Thumbnail size (§1 badge 2: the grip at the bottom of the picture rows, clamp 40..160) --------
 
 /// The smallest row the tracks will draw: below this a face is a smudge and zooming further out is
 /// what the zoom control is for.
@@ -89,15 +89,12 @@ pub const THUMB_MAX: u32 = 160;
 /// Where a page that opens meets you — big enough to read a slide, small enough to see an hour.
 pub const THUMB_AT_OPEN: u32 = 64;
 
-/// 🖼+ : a third bigger, because the steps are ×4/3 and ÷3/4 rather than ±1 px — the same ratio in
-/// both directions means 🖼− after 🖼+ lands where you started.
-pub fn thumb_up(px: u32) -> u32 {
-    ((px as f64 * 4.0 / 3.0).round() as u32).min(THUMB_MAX)
-}
-
-/// 🖼− : the inverse step, clamped at [`THUMB_MIN`].
-pub fn thumb_down(px: u32) -> u32 {
-    ((px as f64 * 3.0 / 4.0).round() as u32).max(THUMB_MIN)
+/// The thumbnail height after a drag on the grip at the bottom of a picture row: `rows` is how many rows sit
+/// above that edge, itself included, and all of them grow by the same amount, so the edge stays under the hand.
+/// Kept inside 40..160.
+pub fn thumb_dragged(was: u32, rows: usize, dy: f64) -> u32 {
+    let grown = f64::from(was) + dy / rows.max(1) as f64;
+    (grown.round().max(0.0) as u32).clamp(THUMB_MIN, THUMB_MAX)
 }
 
 // --- Zoom (§A's toolbar group 7 and §B's zoom rules) --------------------------------------------
@@ -547,12 +544,11 @@ pub fn history_buttons_enabled(undo_left: usize, redo_left: usize, ever_edited: 
     ]
 }
 
-/// The eight idle rows of the form column, §1 item 4's order: thumbnail size, aspect, playhead,
-/// selection, cut, cut at 1×, source, segments. These are the labels [`idle_readouts`] emits, in
+/// The seven idle rows of the form column, §1 item 4's order: aspect, playhead, selection, cut, cut at
+/// 1×, source, segments. These are the labels [`idle_readouts`] emits, in
 /// the order it emits them — listed here so the page's row set is checkable without building a Cut,
 /// and so a renamed row fails a test instead of silently reordering the column.
-pub const IDLE_FORM_ROWS: [&str; 8] = [
-    "Thumbnails",
+pub const IDLE_FORM_ROWS: [&str; 7] = [
     "Aspect ratio",
     "Playhead",
     "Selection",
@@ -592,7 +588,6 @@ pub fn readout_widget(label: &str) -> String {
 pub struct Readout {
     pub label: &'static str,
     pub value: String,
-    pub tip: &'static str,
 }
 
 /// The shape a cut with no `aspect` is shown in. §A lists Aspect ratio as a dropdown and leaves its
@@ -649,10 +644,9 @@ pub fn aspect_shown(aspect: &str) -> String {
     }
 }
 
-/// The eight rows of the idle form, in §A's order and with its spellings. The clocks go through
+/// The seven rows of the idle form, in §A's order and with its spellings. The clocks go through
 /// [`crate::tools::mm_ss`], so a page and a log line never disagree about what 4271 seconds is.
 pub fn idle_readouts(
-    thumb_px: u32,
     aspect: &str,
     playhead: f64,
     selection: Option<(f64, f64)>,
@@ -668,45 +662,33 @@ pub fn idle_readouts(
     };
     vec![
         Readout {
-            label: "Thumbnails",
-            value: format!("{thumb_px} px"),
-            tip: "smaller|larger thumbnails on the tracks",
-        },
-        Readout {
             label: "Aspect ratio",
             value: aspect.to_string(),
-            tip: "",
         },
         Readout {
             label: "Playhead",
             // The preview's own clock face (inventory §D: "mm:ss.d"), the one the status line reads while ▶ runs.
             value: crate::preview::clock(Some(playhead)),
-            tip: "",
         },
         Readout {
             label: "Selection",
             value: selection,
-            tip: "",
         },
         Readout {
             label: "Cut",
             value: tools::mm_ss(cut_seconds(cut)),
-            tip: "",
         },
         Readout {
             label: "Cut at 1\u{00d7}",
             value: tools::mm_ss(cut_seconds_at_1x(cut)),
-            tip: "",
         },
         Readout {
             label: "Source",
             value: tools::mm_ss(source_seconds),
-            tip: "",
         },
         Readout {
             label: "Segments",
             value: segment_count(cut).to_string(),
-            tip: "",
         },
     ]
 }

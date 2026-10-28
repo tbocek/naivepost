@@ -451,6 +451,7 @@ pub use window::{switch_latch, tab_info_parts, view_stack};
 pub use window_policy::live_session_policy;
 // F3.12: the clamp seam, so a test can run "effects held to the cut as applied" by name and read the same
 // cut state `tests/suite/cut_clamped_to_cut.rs` checks.
+pub use cut_band_trim::{band_left_gesture_for_test, cursor_at as band_cursor_at};
 pub use cut_select_press::band_selection_gesture_for_test;
 pub use window::apply_mix;
 pub use window::clamp_effects_to_cut;

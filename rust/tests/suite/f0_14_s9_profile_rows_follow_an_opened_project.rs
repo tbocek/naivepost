@@ -30,6 +30,7 @@ fn f0_14_s9_an_opened_project_takes_its_profiles_produce_rows() {
     project.profile = Some(naivepost::project::ProfileUse {
         name: "Weekly".to_string(),
         values: Default::default(),
+        ..Default::default()
     });
     project.produce.translate = Vec::new();
     naivepost::project::save(&project, &dir).expect("the project is kept");

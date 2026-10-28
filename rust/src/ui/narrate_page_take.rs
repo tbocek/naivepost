@@ -86,13 +86,20 @@ pub fn press_take_remove(window: &adw::ApplicationWindow, selection: (f64, f64))
     )
 }
 
-/// The take walk a ▶ started: the stretches it plays in order, which one sounds, when that one began, and the
-/// recording they are cut from.
+/// One stretch the walk plays: the recording, its own seconds `from..to`, and the band second it starts at.
+struct Played {
+    file: std::path::PathBuf,
+    from: f64,
+    to: f64,
+    band: f64,
+}
+
+/// The take walk a ▶ started: the stretches it plays in order, each from the recording it is cut from, which one
+/// sounds and when that one began.
 struct Walk {
-    spans: Vec<(f64, f64)>,
+    spans: Vec<Played>,
     at: usize,
     began: std::time::Instant,
-    file: std::path::PathBuf,
     /// How long past a span's end the clock waits for the player to end it: a player told the end
     /// (ffplay's `-t`) gets half a second to exit by itself; one that cannot be told (`gst-play-1.0`) is ended
     /// by the clock at the end itself, or it would play on into what is not picked.
@@ -140,19 +147,31 @@ pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
         return say(window, "no project folder is open \u{2014} nothing to play");
     };
     let project = crate::project::load(tree.dir()).unwrap_or_default();
-    let Some(file) = crate::narrate_band_face::recording_path(&tree, &project, &s.voice)
-        .filter(|path| path.is_file())
-    else {
+    // The band's seconds are the tape's: what the narrator says in the cut, across their recordings. Each queued
+    // span plays from the recording under it, a span over a seam as one piece of each.
+    let tape = crate::narrate_band_face::tape(&tree, &project, &s.voice);
+    if tape.is_empty() {
         return say(
             window,
             "this voice has no recording to play \u{2014} tag one on the Prepare step",
         );
-    };
-    // A recording whose length could not be read plays to its own end.
-    let duration = crate::ui::narrate_band::painted_seconds().unwrap_or(f64::INFINITY);
+    }
     let from = crate::ui::narrate_band::red_bar_or(s.session);
-    let (spans, takes) = narrate_screen::take_queue(&s.takes, from, duration);
-    let Some(&(first, _)) = spans.first() else {
+    let (queued, takes) = narrate_screen::take_queue(&s.takes, from, tape.length());
+    let spans: Vec<Played> = queued
+        .iter()
+        .flat_map(|span| {
+            tape.pieces(*span)
+                .into_iter()
+                .map(|(stretch, from, to, band)| Played {
+                    file: stretch.file.clone(),
+                    from,
+                    to,
+                    band,
+                })
+        })
+        .collect();
+    let Some(first) = spans.first().map(|played| played.band) else {
         return say(
             window,
             "the red bar is at the end of the recording \u{2014} click the band where ▶ should start",
@@ -160,16 +179,15 @@ pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
     };
     // The player is the sample's too: a sample still sounding would play over the takes.
     narrate_sample::stop();
-    if let Err(why) = narrate_sample::play_span(&file, spans[0].0, spans[0].1) {
+    if let Err(why) = narrate_sample::play_span(&spans[0].file, spans[0].from, spans[0].to) {
         return say(window, &why);
     }
-    let total: f64 = spans.iter().map(|(a, b)| b - a).sum();
+    let total: f64 = queued.iter().map(|(a, b)| b - a).sum();
     WALK.with(|walk| {
         *walk.borrow_mut() = Some(Walk {
             spans,
             at: 0,
             began: std::time::Instant::now(),
-            file,
             slack: if crate::narrate_preview_leg::voice_player_bounds_spans() {
                 0.5
             } else {
@@ -181,11 +199,7 @@ pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
     crate::ui::narrate_band::set_walk_head(Some(first));
     paint_take_play(window);
     walk_on(window);
-    let count = if takes {
-        WALK.with(|walk| walk.borrow().as_ref().map_or(0, |w| w.spans.len()))
-    } else {
-        0
-    };
+    let count = if takes { queued.len() } else { 0 };
     say(window, &narrate_details::playing_takes(count, total, first))
 }
 
@@ -197,7 +211,7 @@ fn walk_on(window: &adw::ApplicationWindow) {
         enum Beat {
             Gone,
             At(f64),
-            Next(std::path::PathBuf, f64, f64),
+            Next(std::path::PathBuf, f64, f64, f64),
             Done,
         }
         let beat = WALK.with(|walk| {
@@ -205,7 +219,8 @@ fn walk_on(window: &adw::ApplicationWindow) {
             let Some(held) = walk.as_mut() else {
                 return Beat::Gone;
             };
-            let (start, end) = held.spans[held.at];
+            let played = &held.spans[held.at];
+            let (start, end) = (played.band, played.band + played.to - played.from);
             let at = start + held.began.elapsed().as_secs_f64();
             // The player's own exit is the end; the clock is the fallback for a player that lingers.
             if (narrate_sample::all_finished() && at > start + 0.2) || at >= end + held.slack {
@@ -215,17 +230,17 @@ fn walk_on(window: &adw::ApplicationWindow) {
                 }
                 held.at += 1;
                 held.began = std::time::Instant::now();
-                let (next_start, next_end) = held.spans[held.at];
-                return Beat::Next(held.file.clone(), next_start, next_end);
+                let next = &held.spans[held.at];
+                return Beat::Next(next.file.clone(), next.from, next.to, next.band);
             }
             Beat::At(at.min(end))
         });
         match beat {
             Beat::Gone => return glib::ControlFlow::Break,
             Beat::At(at) => crate::ui::narrate_band::set_walk_head(Some(at)),
-            Beat::Next(file, start, end) => {
+            Beat::Next(file, start, end, band) => {
                 narrate_sample::stop();
-                crate::ui::narrate_band::set_walk_head(Some(start));
+                crate::ui::narrate_band::set_walk_head(Some(band));
                 if let Err(why) = narrate_sample::play_span(&file, start, end) {
                     WALK.with(|walk| walk.borrow_mut().take());
                     crate::ui::narrate_band::set_walk_head(None);

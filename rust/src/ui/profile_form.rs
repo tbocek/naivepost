@@ -14,7 +14,7 @@ use gtk4 as gtk;
 use crate::profile::{self, Field, Kind, Template};
 use crate::project::{ProfileUse, Project};
 
-/// A text area is this share of the window's height: a third.
+/// A text area is at least this share of the window's height (a third), and takes what the form leaves besides.
 pub const TEXTAREA_SHARE: i32 = 3;
 /// Its floor, for a window that has not been laid out yet.
 const TEXTAREA_MIN_PX: i32 = 80;
@@ -221,9 +221,13 @@ fn choose(form: &Rc<Form>, name: Option<&str>) {
                     }
                     Err(_) => kept,
                 };
+                let produce_rows = template_of(name)
+                    .map(|template| rows_signature(&template.produce))
+                    .unwrap_or_default();
                 held.profile = Some(ProfileUse {
                     name: name.to_string(),
                     values,
+                    produce_rows,
                 });
             }
         }
@@ -235,22 +239,27 @@ fn choose(form: &Rc<Form>, name: Option<&str>) {
     paint(form);
 }
 
-/// S9 kept true after the profile is chosen: the open project's profile is read again and its `## produce` rows
-/// set the project's encoder settings wherever they no longer agree, kept and shown like a choice. Asked after a
-/// profile is saved and when a window opens. The first rewrite applied them only at the choice, while the
-/// Produce page greyed those rows and sent the person to Profiles: a row changed there (a Translate tick) never
-/// reached the project or the run.
+/// S9 kept true after the profile is chosen: when the profile's `## produce` rows have CHANGED since this
+/// project took them (edited in Profiles while the project was open or closed), they are taken again, kept and
+/// shown like a choice. Rows that read as they did when the project took them say nothing new, so whatever the
+/// person set on the Produce page since stands: the page's rows are the project's own and always editable.
+/// Asked after a profile is saved and when a window opens. The first rewrite applied them only at the choice,
+/// then on every opening, which would have thrown the person's own page edits away.
 pub fn follow_profile_produce() {
     let Some(session) = crate::ui::window::SESSION.with(|slots| slots.borrow().last().cloned())
     else {
         return;
     };
-    let (name, current) = {
+    let (name, current, seen) = {
         let held = session.borrow();
         let Some(used) = held.profile.as_ref() else {
             return;
         };
-        (used.name.clone(), held.produce.clone())
+        (
+            used.name.clone(),
+            held.produce.clone(),
+            used.produce_rows.clone(),
+        )
     };
     let Ok(template) = template_of(&name) else {
         return;
@@ -258,10 +267,22 @@ pub fn follow_profile_produce() {
     if template.produce.is_empty() {
         return;
     }
-    let produce = crate::ui::produce_page::apply_rows(&current, &template.produce);
-    if produce != current {
-        keep_produce(&produce, &name, &template.produce);
+    let signature = rows_signature(&template.produce);
+    if signature == seen {
+        return;
     }
+    if let Some(used) = session.borrow_mut().profile.as_mut() {
+        used.produce_rows = signature;
+    }
+    let produce = crate::ui::produce_page::apply_rows(&current, &template.produce);
+    keep_produce(&produce, &name, &template.produce);
+}
+
+/// A profile's `## produce` rows as one comparable text, `Row: value` per line.
+fn rows_signature(rows: &[(String, String)]) -> String {
+    rows.iter()
+        .map(|(row, value)| format!("{row}: {value}\n"))
+        .collect()
 }
 
 /// S9: the encoder settings a profile set, kept in the project file, shown on the Produce page, and said.
@@ -436,27 +457,23 @@ fn control_for(form: &Rc<Form>, field: &Field, value: &str) -> gtk::Widget {
                 let (start, end) = buffer.bounds();
                 store(buffer.text(&start, &end, false).to_string());
             });
-            // A third of the window tall, scrolling inside itself, following the window as it is resized: a
-            // pasted script grew the box to its whole length and pushed the form past the page.
+            // At least a third of the window tall, and every pixel the form leaves below it besides (the form's
+            // viewport is at least as tall as the page, and the text areas are what take the rest), scrolling
+            // inside itself so a pasted script never grows the box past the page. The first rewrite held it at
+            // exactly a third, and a short form left the rest of the page empty under a script that scrolled.
             let scroller = gtk::ScrolledWindow::new();
             scroller.set_widget_name(&format!("{name}-box"));
             scroller.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
             scroller.set_child(Some(&view));
             scroller.add_css_class("card");
+            scroller.set_vexpand(true);
             scroller.add_tick_callback(|scroller, _| {
                 let page = scroller
                     .root()
                     .map_or(0, |root| root.upcast_ref::<gtk::Widget>().height());
-                let wanted = (page / TEXTAREA_SHARE).max(TEXTAREA_MIN_PX);
-                if scroller.min_content_height() != wanted {
-                    // Max first when shrinking and min first when growing, so the pair never crosses.
-                    if wanted < scroller.min_content_height() {
-                        scroller.set_min_content_height(wanted);
-                        scroller.set_max_content_height(wanted);
-                    } else {
-                        scroller.set_max_content_height(wanted);
-                        scroller.set_min_content_height(wanted);
-                    }
+                let floor = (page / TEXTAREA_SHARE).max(TEXTAREA_MIN_PX);
+                if scroller.min_content_height() != floor {
+                    scroller.set_min_content_height(floor);
                 }
                 glib::ControlFlow::Continue
             });

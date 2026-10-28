@@ -227,7 +227,7 @@ fn f3_2_s5_aspect_and_zoom_are_one_undo_step() {
     );
 
     // The readout says what was chosen (§05-cut#1's Aspect ratio row reads the cut, not a default).
-    let rows = cut_screen::idle_readouts(64, &cut.aspect, 0.0, None, &cut, 0.0);
+    let rows = cut_screen::idle_readouts(&cut.aspect, 0.0, None, &cut, 0.0);
     let value = |label: &str| {
         rows.iter()
             .find(|row| row.label == label)

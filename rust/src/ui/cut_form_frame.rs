@@ -91,7 +91,7 @@ pub fn frame_parts(body: &gtk::Widget) -> (gtk::Box, gtk::Box) {
     // §1's "the idle column STARTS with the readings", held as a rule on the adjustment itself rather
     // than as one ask made at build time. Anything can park a `gtk::ScrolledWindow`'s viewport lower — a
     // focus landing on the Aspect ratio dropdown, a re-render at another size, a later resize — and a
-    // column parked past its first line loses badge **2**, 'Thumbnails:', off the painted pixels while
+    // column parked past its first line loses its first reading off the painted pixels while
     // every tree walk still finds the row (measured: the shot's viewport reported `value=0` a moment
     // before its PNG opened on 'Aspect ratio:'). While a form is open the column may scroll — §A pins
     // only its heading and footer — so the guard reads the pinned heading: visible heading means a form

@@ -166,16 +166,16 @@ fn scrollbar_ask_px() -> i32 {
 
 /// The scroller's FLOOR: what the eight idle readings cost, asked of the real `cut-form` grid rather
 /// than remembered. A form body longer than this still scrolls (the cap below), but §1's readings never
-/// do: at 200 px the viewport was shorter than the eight rows (~250 px), so the column opened on its TAIL
-/// and "Thumbnails:" — badge **2**, the first reading — was painted above the visible edge even though
+/// do: at 200 px the viewport was shorter than the rows (~250 px), so the column opened on its TAIL
+/// and the first reading was painted above the visible edge even though
 /// every door that asks for the top had run.
 pub const IDLE_ROWS_MIN_HEIGHT: i32 = ROW_PITCH_PX * IDLE_ROW_COUNT as i32;
 /// One reading row's pitch: a label line plus the 2 px the grid keeps between rows (`cut_form_column`).
 const ROW_PITCH_PX: i32 = 29;
 /// How many readings §1 lists (**4** playhead, selection, cut, cut at 1×, source, segments, plus the
-/// thumbnail size and the aspect) — spelled once in `cut_screen::IDLE_FORM_ROWS`, which is also checked
+/// aspect) — spelled once in `cut_screen::IDLE_FORM_ROWS`, which is also checked
 /// against this by `tests/suite/sec_05_cut_1_screen_layout.rs`.
-pub const IDLE_ROW_COUNT: usize = 8;
+pub const IDLE_ROW_COUNT: usize = 7;
 /// The width §1's reading column asks for before the preview starts losing pixels to it.
 pub const FORM_COLUMN_MIN_W: i32 = 300;
 /// The height that column needs to show its eight idle readings whole (§1: "idle readings, one per line").
@@ -292,7 +292,7 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
             // gives this pane what it can.
             // …and the column must FIT the pane it is seated in. §A opens the upper part 380 px tall; left to
             // its own asks the frame measured 417 px, so GTK overflowed it past the divider and the first
-            // reading — badge **2**, "Thumbnails:" with its −/+ ladder — landed under the header bar's edge,
+            // reading landed under the header bar's edge,
             // present in the tree and painted where nobody can see it. Capping the height here (not after the
             // map: a headless window is allocated exactly once, and every ask made later never reaches the
             // render node `write_png` draws) keeps the whole column inside §A's opening.
@@ -554,9 +554,9 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
 ///
 /// The grid is found by DESCENT, not among the frame's direct children: `cut_form_frame::frame_parts`
 /// puts the body INSIDE `cut-form-scroller`, so a one-level scan answered `None` here, this returned 0,
-/// and every ask below fell back to [`IDLE_ROWS_MIN_HEIGHT`] (8 × 29 = 232 px) — less than the grid
+/// and every ask below fell back to [`IDLE_ROWS_MIN_HEIGHT`] (7 × 29 = 203 px) — less than the grid
 /// really costs, because its Aspect ratio row carries a `gtk::DropDown` taller than a label line. The
-/// viewport was then shorter than its body and §1's first reading, "Thumbnails:" (badge **2**), was
+/// viewport was then shorter than its body and §1's first reading was
 /// painted above the visible edge.
 fn idle_rows_height(frame: &gtk::Widget) -> i32 {
     find_grid(frame)

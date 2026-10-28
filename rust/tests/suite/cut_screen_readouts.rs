@@ -22,15 +22,15 @@ fn footage(start: f64, end: f64, rate: f64) -> Seg {
 }
 
 #[test]
-fn sec_05_cut_1_screen_s6_the_idle_form_reads_the_session_eight_ways() {
-    // §A: "Idle rows: Thumbnails …, Aspect ratio …, Playhead …, Selection [marks], Cut [total],
-    // Cut at 1× [totalRaw], Source [totalSrc], Segments [totalSegs]" — eight rows, this order.
-    let rows = cut_screen::idle_readouts(64, "", 0.0, None, &Cut::default(), 0.0);
+fn sec_05_cut_1_screen_s6_the_idle_form_reads_the_session_seven_ways() {
+    // §A: "Idle rows: Aspect ratio …, Playhead …, Selection [marks], Cut [total], Cut at 1× [totalRaw],
+    // Source [totalSrc], Segments [totalSegs]" — seven rows, this order (the thumbnail size is a grip on the
+    // tracks, not a reading).
+    let rows = cut_screen::idle_readouts("", 0.0, None, &Cut::default(), 0.0);
     let labels: Vec<&str> = rows.iter().map(|row| row.label).collect();
     assert_eq!(
         labels,
         [
-            "Thumbnails",
             "Aspect ratio",
             "Playhead",
             "Selection",
@@ -50,24 +50,12 @@ fn sec_05_cut_1_screen_s6_the_idle_form_reads_the_session_eight_ways() {
     };
     assert_eq!(value("Segments"), "0");
     assert_eq!(value("Cut"), "00:00");
-    assert_eq!(value("Thumbnails"), "64 px");
     assert_eq!(
         value("Aspect ratio"),
         cut_screen::ASPECT_DEFAULT,
         "an unset aspect still has a shape"
     );
     assert_eq!(value("Selection"), "", "a reading, not a prompt");
-
-    // §A supplies a tooltip for the thumbnail buttons and nothing else.
-    let tip = |label: &str| {
-        rows.iter()
-            .find(|row| row.label == label)
-            .unwrap()
-            .tip
-            .to_string()
-    };
-    assert_eq!(tip("Thumbnails"), "smaller|larger thumbnails on the tracks");
-    assert_eq!(tip("Segments"), "");
 }
 
 #[test]
@@ -92,7 +80,7 @@ fn sec_05_cut_1_screen_s7_cut_and_cut_at_1x_disagree_by_the_speed_effects() {
     assert_eq!(cut_screen::cut_seconds_at_1x(&cut), 13.0);
     assert_eq!(cut_screen::segment_count(&cut), 2);
 
-    let rows = cut_screen::idle_readouts(64, "9:16", 75.0, Some((12.0, 20.0)), &cut, 3600.0);
+    let rows = cut_screen::idle_readouts("9:16", 75.0, Some((12.0, 20.0)), &cut, 3600.0);
     let value = |label: &str| {
         rows.iter()
             .find(|row| row.label == label)
@@ -118,40 +106,6 @@ fn sec_05_cut_1_screen_s7_cut_and_cut_at_1x_disagree_by_the_speed_effects() {
         "mm_ss lets the minutes run past an hour"
     );
     assert_eq!(value("Selection"), "00:12 \u{2013} 00:20");
-}
-
-#[test]
-fn sec_05_cut_1_screen_s8_the_thumbnail_ladder_steps_by_a_third_and_clamps() {
-    // §A: "×3/4, ×4/3, clamp 40..160". The steps are one ratio in both directions, so the ladder is
-    // reversible and neither end can be overshot by holding the button.
-    let mut px = cut_screen::THUMB_AT_OPEN;
-    for _ in 0..4 {
-        px = cut_screen::thumb_up(px);
-        assert!(px <= cut_screen::THUMB_MAX, "{px} over the ceiling");
-    }
-    assert_eq!(px, cut_screen::THUMB_MAX);
-
-    let mut px = cut_screen::THUMB_AT_OPEN;
-    for _ in 0..4 {
-        px = cut_screen::thumb_down(px);
-        assert!(px >= cut_screen::THUMB_MIN, "{px} under the floor");
-    }
-    assert_eq!(px, cut_screen::THUMB_MIN);
-
-    assert_eq!(
-        cut_screen::thumb_up(cut_screen::THUMB_MAX),
-        cut_screen::THUMB_MAX
-    );
-    assert_eq!(
-        cut_screen::thumb_down(cut_screen::THUMB_MIN),
-        cut_screen::THUMB_MIN
-    );
-    // One step each way is the size you started with, within a px of rounding.
-    let back = cut_screen::thumb_down(cut_screen::thumb_up(64));
-    assert!(
-        (back as i32 - 64).abs() <= 1,
-        "{back} after one step each way"
-    );
 }
 
 #[test]

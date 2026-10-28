@@ -73,7 +73,7 @@ Paths written into any project file follow one rule: inside the project → `pro
 | reference_sources | inverted on purpose: absent = copy sources in | false |
 | vid_dir / aud_dir | last chooser folders | root/input_video, root/input_audio |
 | context | the User Context, verbatim; with a profile, the template filled in (rebuilt on every field change) | "" |
-| profile | new: the profile this project's context is made from and its own values, `{"name": "News show", "values": {"title": "…", "episode": "6"}}` ([03 F0.14](03-shell.md#f014-profiles)); absent = free-text context | absent |
+| profile | new: the profile this project's context is made from and its own values, `{"name": "News show", "values": {"title": "…", "episode": "6"}, "produce_rows": "Preset: veryslow\n…"}` (`produce_rows`: the profile's produce rows as this project last took them, so only rows changed in Profiles since are taken again) ([03 F0.14](03-shell.md#f014-profiles)); absent = free-text context | absent |
 | policy | new, not in the prototype: the editing policy ([`10-parameters.md` §2](10-parameters.md#2-editing-policy-project-derived-from-the-user-context-by-f07-else-defaults)) with a `source` per field (user / model / default) | defaults |
 | produce | encoder settings ([`08-produce.md` §2](08-produce.md#2-flows)), each option spelled as §A lists it (`"resolution": "original"`; the first rewrite wrote `Original`, which its own reader did not know, so the choice was lost on the next open; that spelling is still read); `out_file` is never stored | defaults |
 | publish | upload text and thumbnail state ([§5](#5-producepublishpublishjson)) | absent |

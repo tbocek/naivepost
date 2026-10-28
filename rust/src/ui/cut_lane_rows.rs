@@ -465,13 +465,12 @@ fn sync_lane_rows(lane: &gtk::Box, rows: usize) {
 
 /// The form column as the page sits idle (§1's "Form column", §A's "Idle rows"). A Grid named
 /// `cut-form`: one row per reading, label in the left column and its value in the right, each value
-/// named off `cut_screen::readout_widget` so a test reads the same eight rows the spec lists.
+/// named off `cut_screen::readout_widget` so a test reads the same seven rows the spec lists.
 ///
-/// Two of the rows carry controls rather than a plain value: Thumbnails has the 🖼− / 🖼+ ladder
-/// (40..160 px, one third at a step — `cut_screen::thumb_down`/`thumb_up`) and Aspect ratio has the
-/// F3.2 dropdown (`aspect-choice`, listed from `fx_aspect::ASPECTS`). The thumbnail buttons write
-/// through `set_thumb_px`; the dropdown writes through `press_aspect` below, and both repaint the row
-/// they changed, so the readout is never a copy that drifted from the control.
+/// One row carries a control rather than a plain value: Aspect ratio has the F3.2 dropdown (`aspect-choice`,
+/// listed from `fx_aspect::ASPECTS`), which writes through `press_aspect` below and repaints the row it changed,
+/// so the readout is never a copy that drifted from the control. The thumbnail size is no reading here: it is
+/// the grip at the bottom of the picture rows (§1 badge 2, `cut_band_trim`).
 pub(crate) fn cut_form_column() -> gtk::Grid {
     let form = gtk::Grid::new();
     form.set_widget_name("cut-form");
@@ -485,65 +484,23 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
     // One column pair only -- key, then value. The Aspect ratio dropdown used to be attached in a THIRD
     // column, which is what held every other row's value ~95 px short of the column's right edge (measured).
     form.set_column_spacing(8);
-    // What the readings show for a page with no cut yet: zeros and the open-at thumbnail size. The
-    // real values arrive with the rounds that own them; this fills the rows so none is blank.
+    // What the readings show for a page with no cut yet: zeros. The real values arrive with the rounds that
+    // own them; this fills the rows so none is blank.
     let cut_ = crate::cut::Cut::default();
-    let rows = cut_screen::idle_readouts(
-        crate::ui::cut_tracks::thumb_px(),
-        cut_screen::ASPECT_DEFAULT,
-        0.0,
-        None,
-        &cut_,
-        0.0,
-    );
+    let rows = cut_screen::idle_readouts(cut_screen::ASPECT_DEFAULT, 0.0, None, &cut_, 0.0);
     for (index, row) in rows.iter().enumerate() {
         let name = cut_screen::readout_widget(row.label);
-        // §A's ladder: the Thumbnails row must answer to its readout name (`cut-readout-<key kebab>`, which
-        // `press_thumb` repaints), so the name goes on the row's VALUE box and the number label inside it
-        // is what the user reads.
-        let ladder = name == "cut-readout-thumbnails";
         let key = gtk::Label::new(Some(&format!("{}:", row.label)));
         key.set_xalign(0.0);
         key.add_css_class("dim-label");
         key.set_widget_name(&format!("{name}-key"));
-        let value: gtk::Widget = if row.tip.is_empty() {
-            // No control on this row: the value is the whole of it, and it reads at the RIGHT end (§1).
-            let plain = gtk::Label::new(Some(&row.value));
-            plain.set_xalign(1.0);
-            // GTK 4's GtkGrid has no per-column expand flag (that was GtkTable): a column grows when the
-            // widgets in it ask to expand, so the value cells carry it and the key cells do not.
-            plain.set_hexpand(true);
-            plain.upcast::<gtk::Widget>()
-        } else {
-            // Thumbnails: the ladder sits beside the number it drives.
-            // The number sits between its two steps, and the ladder as a WHOLE ends at the column's right
-            // end (§1: one line per reading, value right) -- so the box grows and the buttons stay at their
-            // natural width beside the number.
-            let line = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-            line.set_hexpand(true);
-            line.set_halign(gtk::Align::End);
-            if ladder {
-                line.set_widget_name(&cut_screen::readout_widget(row.label));
-            }
-            let minus = gtk::Button::with_label("\u{1f5bc}\u{2212}");
-            minus.set_widget_name("thumb-minus");
-            minus.set_tooltip_text(Some(row.tip));
-            let plus = gtk::Button::with_label("\u{1f5bc}+");
-            plus.set_widget_name("thumb-plus");
-            plus.set_tooltip_text(Some(row.tip));
-            // The number reads right-aligned inside the ladder, so it ends where every other row's value
-            // ends (the ✕-free rows and this one share §1's right edge).
-            let value = gtk::Label::new(Some(&row.value));
-            value.set_xalign(1.0);
-            value.set_hexpand(true);
-            line.append(&minus);
-            line.append(&value);
-            line.append(&plus);
-            line.upcast::<gtk::Widget>()
-        };
-        if !ladder {
-            value.set_widget_name(&name);
-        }
+        // The value reads at the RIGHT end (§1). GTK 4's GtkGrid has no per-column expand flag (that was
+        // GtkTable): a column grows when the widgets in it ask to expand, so the value cells carry it and the
+        // key cells do not.
+        let value = gtk::Label::new(Some(&row.value));
+        value.set_xalign(1.0);
+        value.set_hexpand(true);
+        value.set_widget_name(&name);
         form.attach(&key, 0, index as i32, 1, 1);
         form.attach(&value, 1, index as i32, 1, 1);
     }
@@ -558,7 +515,7 @@ pub(crate) fn cut_form_column() -> gtk::Grid {
     // (`cut_text_hand.rs`) repaints that label from the live cut on every Undo/Revert/Clear, and
     // `tests/suite/aspect_choice_widgets.rs` reads the label as the page's own answer -- replacing the
     // label with the control strands both. The value column still ends at the pane's right edge (§1's
-    // value-right rule) because the ladder and every plain value expand into it; this row's cell is the
+    // value-right rule) because every plain value expands into it; this row's cell is the
     // pair readout + dropdown together, which is what §A calls "a dropdown" for this one reading.
     if let Some(aspect_row) = cut_screen::IDLE_FORM_ROWS
         .iter()

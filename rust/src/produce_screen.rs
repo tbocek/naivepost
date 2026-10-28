@@ -360,6 +360,123 @@ pub fn box_is_too_small(w_px: f64, h_px: f64) -> bool {
     w_px < OVERLAY_MIN_PX || h_px < OVERLAY_MIN_PX
 }
 
+/// How near a box's border a press takes hold of that border rather than of the whole box: a 2 px dashed line
+/// is not a mouse target, this reach on either side of it is (the prototype's `fxGrab`).
+pub const OVERLAY_GRAB_PX: f64 = 9.0;
+
+/// What a press at a point has hold of on one box (the prototype's `fxEdges`): a side border (`horiz`: the
+/// left or right edge, `left` says which), a top or bottom border (`vert`, `top`), both at a corner, or the
+/// middle (`inside`). Nothing set is a press beside the box.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Grip {
+    pub horiz: bool,
+    pub vert: bool,
+    pub left: bool,
+    pub top: bool,
+    pub inside: bool,
+}
+
+impl Grip {
+    /// The press took the box: a border to resize or the middle to move.
+    pub fn holds(&self) -> bool {
+        self.horiz || self.vert || self.inside
+    }
+
+    /// The pointer over the box, named before anything is pressed, which is the whole of how anyone finds out
+    /// a border resizes: the resize arrows on borders and corners, the move hand inside (the prototype's
+    /// `fxCursorName`).
+    pub fn cursor(&self) -> &'static str {
+        match (self.horiz, self.vert) {
+            (true, true) if self.left == self.top => "nwse-resize",
+            (true, true) => "nesw-resize",
+            (true, false) => "ew-resize",
+            (false, true) => "ns-resize",
+            _ if self.inside => "move",
+            _ => "default",
+        }
+    }
+}
+
+/// The grip a press at `(x, y)` takes on the box `(rx, ry, rw, rh)`, all in the same pixels.
+pub fn grip_at(x: f64, y: f64, (rx, ry, rw, rh): (f64, f64, f64, f64)) -> Grip {
+    let reach = OVERLAY_GRAB_PX;
+    let in_x = x >= rx - reach && x <= rx + rw + reach;
+    let in_y = y >= ry - reach && y <= ry + rh + reach;
+    let near_left = (x - rx).abs() <= reach;
+    let near_right = (x - (rx + rw)).abs() <= reach;
+    let near_top = (y - ry).abs() <= reach;
+    let near_bottom = (y - (ry + rh)).abs() <= reach;
+    Grip {
+        horiz: (near_left || near_right) && in_y,
+        vert: (near_top || near_bottom) && in_x,
+        left: near_left,
+        top: near_top,
+        inside: x >= rx && x <= rx + rw && y >= ry && y <= ry + rh,
+    }
+}
+
+/// A border drag on a box of words (the prototype's `resizeFree`): the hand at `(x, y)`, the box as it was
+/// `was`, the grip it was taken by. A side moves one edge, a corner two, and an edge that was not grabbed does
+/// not move; the far edge stays where it was. No box gets smaller than [`OVERLAY_MIN_PX`], so the hand can
+/// still find its border.
+pub fn resize_box(x: f64, y: f64, was: (f64, f64, f64, f64), grip: Grip) -> (f64, f64, f64, f64) {
+    let (mut nx, mut ny, mut nw, mut nh) = was;
+    let (x0, y0, w0, h0) = was;
+    if grip.horiz {
+        if grip.left {
+            let anchor = x0 + w0;
+            nx = x.min(anchor - OVERLAY_MIN_PX);
+            nw = anchor - nx;
+        } else {
+            nx = x0;
+            nw = (x - x0).max(OVERLAY_MIN_PX);
+        }
+    }
+    if grip.vert {
+        if grip.top {
+            let anchor = y0 + h0;
+            ny = y.min(anchor - OVERLAY_MIN_PX);
+            nh = anchor - ny;
+        } else {
+            ny = y0;
+            nh = (y - y0).max(OVERLAY_MIN_PX);
+        }
+    }
+    (nx, ny, nw, nh)
+}
+
+/// The move half of the snapping (the prototype's `snapEdgePx`): a whole box slides, so any of its three lines
+/// on one axis, near edge, middle or far edge, may be the one that lands on a target. `near` is the near edge
+/// and `length` the box's size on that axis; the box is carried by whichever line came closest within
+/// [`OVERLAY_SNAP_PX`], and nothing within reach leaves it where the hand put it.
+pub fn snap_slide(near: f64, length: f64, targets: &[f64]) -> f64 {
+    let mut best = (near, OVERLAY_SNAP_PX);
+    for mine in [near, near + length / 2.0, near + length] {
+        for target in targets {
+            let off = (mine - target).abs();
+            if off < best.1 {
+                best = (near + (target - mine), off);
+            }
+        }
+    }
+    best.0
+}
+
+/// A box in picture pixels `(x, y, w, h)` back into the fractions a mark and the title band are stored in, held
+/// inside the picture (the prototype's `fxBox.clamp`: never narrower than 4 % nor shorter than 3 %, never off
+/// an edge).
+pub fn box_fractions(rect: (f64, f64, f64, f64), wide: f64, high: f64) -> crate::project::TitleBox {
+    let (x, y, w, h) = rect;
+    let wf = (w / wide).clamp(0.04, 1.0);
+    let hf = (h / high).clamp(0.03, 1.0);
+    crate::project::TitleBox {
+        cx: ((x + w / 2.0) / wide).clamp(wf / 2.0, 1.0 - wf / 2.0),
+        cy: ((y + h / 2.0) / high).clamp(hf / 2.0, 1.0 - hf / 2.0),
+        wf,
+        hf,
+    }
+}
+
 /// §A's snap targets for one drag: the picture's own edges and middles plus EVERY box already on it, in the
 /// plate's pixels (§A states its numbers in pixels, and a mark stores fractions, so the conversion happens
 /// here at the size the plate actually has). `(x targets, y targets)` — feed each to [`snap`].

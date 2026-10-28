@@ -62,7 +62,7 @@ pub fn rest_page_splits(window: &adw::ApplicationWindow) {
 }
 
 /// Print what the Cut page's form column was ALLOCATED at the size the shot is taken at, one line: §1's
-/// first idle reading is 'Thumbnails:' (badge **2**), and when a render opens on 'Aspect ratio:' instead,
+/// first idle reading is 'Aspect ratio:' (badge **3**), and when a render opens on another reading instead,
 /// these are the numbers that say why (a viewport shorter than its body, a row whose y sits above the
 /// viewport's own top edge). Same shape as the badge-31 report in `snapshot::run`.
 pub fn report_form_column(window: &adw::ApplicationWindow) {
@@ -73,10 +73,10 @@ pub fn report_form_column(window: &adw::ApplicationWindow) {
     };
     let target = window.clone().upcast::<gtk::Widget>();
     let body = crate::ui::find_source_widget(window, "cut-form");
-    let row = crate::ui::find_source_widget(window, "cut-readout-thumbnails-key");
+    let row = crate::ui::find_source_widget(window, "cut-readout-aspect-ratio-key");
     let adjust = scroller.vadjustment();
     println!(
-        "snapshot: 05-cut form column | viewport {} px tall at y={}, body {} px, adjustment page={} value={}, \n         'Thumbnails:' at y={}",
+        "snapshot: 05-cut form column | viewport {} px tall at y={}, body {} px, adjustment page={} value={}, \n         'Aspect ratio:' at y={}",
         scroller.height(),
         scroller
             .compute_bounds(&target)

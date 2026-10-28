@@ -41,6 +41,11 @@ pub struct Project {
 pub struct ProfileUse {
     pub name: String,
     pub values: std::collections::BTreeMap<String, String>,
+    /// The profile's `## produce` rows as this project last took them (`Row: value` per line). A profile whose
+    /// rows still read so has nothing new to say, so the encoder settings the person changed on the Produce page
+    /// stand; rows that changed in Profiles are taken again.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub produce_rows: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

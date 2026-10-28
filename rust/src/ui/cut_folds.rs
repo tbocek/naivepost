@@ -67,6 +67,10 @@ pub fn set_session_recordings(recordings: &[crate::timeline::Recording]) {
     if declared.is_none() {
         SESSION_DECLARED.with(|flags| flags.borrow_mut().push(std::cell::Cell::new(true)));
     }
+    // The Narrate page reads these recordings too: its preview's still (the one painted before they arrived was
+    // looked up in the stand-ins the cut implied, which have no frames, and stayed dark) and its take band's tape.
+    crate::ui::narrate_picture::repaint_landed();
+    crate::ui::narrate_page::recordings_landed();
 }
 
 pub(crate) fn push_session_recordings(recordings: Vec<crate::timeline::Recording>) {

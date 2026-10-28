@@ -126,6 +126,7 @@ pub mod narrate_rules;
 pub mod narrate_run;
 pub mod narrate_sample;
 pub mod narrate_screen;
+pub mod narrate_tape;
 pub mod narrate_tts;
 pub mod narration;
 pub mod new_project;

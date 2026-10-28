@@ -195,9 +195,9 @@ the verbs (＋ Add, | Split, － Remove, ⧉ Copy, ⧉ Paste, Insert, ⇲ Lane),
 **✚ Effect** dropdown, history (↶ Undo `Ctrl+Z`, ↷ Redo `Ctrl+Shift+Z` or
 `Ctrl+Y`, Revert, ✗ Clear) and zoom (**− +**). Each press scales by a quarter-step
 and stops at both ends — in at 240 px a second, out where the whole session
-fits, so you can never scroll past the end of your own recording. The **Thumbnails**
-row in the form column carries its own 🖼− / 🖼+ ladder between 40 and 160 px, and
-the page opens at 64 px.
+fits, so you can never scroll past the end of your own recording. Drag the bottom edge
+of a picture row (the pointer turns into an up-down arrow there) to make the
+thumbnails bigger or smaller, between 40 and 160 px; the page opens at 64 px.
 
 Picking an entry under **✚ Effect** adds that kind of effect at the red line with its kind's own
 default: a bare caption lands in the lower third, a drawing in the middle, a volume on the whole bed

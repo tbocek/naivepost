@@ -510,12 +510,37 @@ fn draw_words(cr: &cairo::Context, boxes: &[PaintedBox]) {
 }
 
 /// The box the title prints in: the record's own when it has one, else the default, as the render reads it.
-fn title_band() -> TitleBox {
+pub fn title_band() -> TitleBox {
+    // A title being dragged is painted where the pointer has it; then the page's own box; then the record's.
+    if let Some((crate::ui::produce_words_press::Hold::Title, dragged)) =
+        crate::ui::produce_words_press::dragging()
+    {
+        return dragged;
+    }
+    if let Some(held) = crate::ui::produce_page::read_state().title_box {
+        return held;
+    }
     crate::layout::Tree::new(session_dir())
         .ok()
         .and_then(|tree| crate::publish::load(&tree).ok())
         .and_then(|record| record.title_box)
         .unwrap_or_default()
+}
+
+/// The marked texts as painted now: a box being dragged is painted where the pointer has it.
+fn texts_now(texts: &[crate::project::TextMark]) -> Vec<crate::project::TextMark> {
+    let mut out = texts.to_vec();
+    if let Some((crate::ui::produce_words_press::Hold::Mark(index), dragged)) =
+        crate::ui::produce_words_press::dragging()
+    {
+        if let Some(mark) = out.get_mut(index) {
+            mark.cx = dragged.cx;
+            mark.cy = dragged.cy;
+            mark.wf = dragged.wf;
+            mark.hf = dragged.hf;
+        }
+    }
+    out
 }
 
 /// The base slot's crop box: the video-shape rectangle the thumbnail keeps, drawn over the taller/wider
@@ -624,7 +649,7 @@ fn paint_thumbnail(area: &gtk::DrawingArea, cr: &cairo::Context, w: f64, h: f64)
     draw_words(
         cr,
         &layout_marks(
-            &state.texts,
+            &texts_now(&state.texts),
             &state.thumb_title,
             state.title_seeded,
             &title_band(),

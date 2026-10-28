@@ -172,6 +172,7 @@ fn check_an_edited_policy_prompt_wins_on_the_wire(app: &adw::Application) {
     on_disk.profile = Some(naivepost::project::ProfileUse {
         name: "Policy probe".into(),
         values: Default::default(),
+        ..Default::default()
     });
     naivepost::project::save(&on_disk, &dir).expect("the project names its profile");
     ui::session_handle(&window).borrow_mut().profile = on_disk.profile.clone();

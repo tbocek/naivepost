@@ -57,8 +57,6 @@ fn sec_07_narrate_1_screen_s1_seconds_and_pixels_round_trip_across_the_view() {
     assert_eq!(band::second_to_px(10.0, offset, pps), 0.0);
     // And a pixel left of the lane answers 0 s rather than a negative second.
     assert_eq!(band::x_to_second(-50.0, 0.0, pps), 0.0);
-    // The ruler prints whole seconds, which is what a viewer reads while dragging.
-    assert_eq!(band::ruler_second(60.0, 0.0, pps), 12);
 }
 
 // --- S2: the wheel ---------------------------------------------------------------

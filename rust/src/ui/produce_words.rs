@@ -153,3 +153,26 @@ pub fn open_place(parent: &adw::ApplicationWindow, cx: f64, cy: f64, w: f64, h: 
     });
     dialog.present();
 }
+
+/// ✎ on the title band: the words printed ON THE PICTURE, which start as the video's title and are the
+/// picture's own from then on. Rewording them leaves the video's title alone; Remove takes the line off the
+/// picture and it stays off (the prototype's `editTitle`).
+pub fn open_title(parent: &adw::ApplicationWindow, current: &str) {
+    let dialog = build(parent, current, true);
+    remember(Some(&dialog));
+    let w = parent.clone();
+    dialog.connect_response(None, move |dialog: &adw::MessageDialog, response| {
+        match response {
+            "save" => {
+                produce_page::press_title_words(&w, &entry_of(dialog));
+            }
+            "remove" => {
+                produce_page::press_title_words(&w, "");
+            }
+            _ => (),
+        }
+        remember(None);
+        dialog.close();
+    });
+    dialog.present();
+}

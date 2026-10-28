@@ -388,13 +388,12 @@ fn sec_05_cut_1_screen_s13_undo_and_redo_grey_with_nothing_to_do_and_revert_with
 }
 
 #[test]
-fn sec_05_cut_1_screen_s14_the_idle_form_reads_eight_things_in_the_order_the_spec_lists() {
-    // §1 item 4: "readings: playhead, selection, cut, cut at 1×, source, segments" plus §A's two
-    // leading rows (thumbnail size, aspect) — eight in all.
+fn sec_05_cut_1_screen_s14_the_idle_form_reads_seven_things_in_the_order_the_spec_lists() {
+    // §1 item 4: "readings: playhead, selection, cut, cut at 1×, source, segments" plus §A's leading
+    // aspect row — seven in all.
     assert_eq!(
         cut_screen::IDLE_FORM_ROWS,
         [
-            "Thumbnails",
             "Aspect ratio",
             "Playhead",
             "Selection",
@@ -404,7 +403,7 @@ fn sec_05_cut_1_screen_s14_the_idle_form_reads_eight_things_in_the_order_the_spe
             "Segments",
         ]
     );
-    assert_eq!(cut_screen::IDLE_FORM_ROWS.len(), 8);
+    assert_eq!(cut_screen::IDLE_FORM_ROWS.len(), 7);
 
     // The list describes what idle_readouts actually emits, in the same order: no drift between the
     // row set the page builds and the values it fills them with.
@@ -412,12 +411,12 @@ fn sec_05_cut_1_screen_s14_the_idle_form_reads_eight_things_in_the_order_the_spe
         segs: vec![footage(0.0, 10.0)],
         ..Default::default()
     };
-    let rows = cut_screen::idle_readouts(64, "", 3.0, None, &cut, 12.0);
+    let rows = cut_screen::idle_readouts("", 3.0, None, &cut, 12.0);
     let emitted: Vec<&str> = rows.iter().map(|row| row.label).collect();
     assert_eq!(
         emitted,
         cut_screen::IDLE_FORM_ROWS.to_vec(),
-        "eight rows, this order"
+        "seven rows, this order"
     );
 
     // Every row gets its own widget name off its label, so a label is spelled once and the name follows.
@@ -428,13 +427,13 @@ fn sec_05_cut_1_screen_s14_the_idle_form_reads_eight_things_in_the_order_the_spe
     let unique: std::collections::HashSet<&str> = names.iter().map(String::as_str).collect();
     assert_eq!(
         unique.len(),
-        8,
+        7,
         "no two readings collide on a widget name: {names:?}"
     );
-    assert_eq!(names[2], "cut-readout-playhead");
-    assert_eq!(names[7], "cut-readout-segments");
+    assert_eq!(names[1], "cut-readout-playhead");
+    assert_eq!(names[6], "cut-readout-segments");
     // "Cut at 1×" spells its × out rather than dropping it: a truncated-looking name reads as a bug.
-    assert_eq!(names[5], "cut-readout-cut-at-1-times");
+    assert_eq!(names[4], "cut-readout-cut-at-1-times");
 
     // The two lengths that disagree when a speed effect is on: the s7 fixture's five seconds played at
     // 2× beside a three-second card. The rate rides the SEGMENT (`Seg::rate`), which is what
@@ -463,7 +462,7 @@ fn sec_05_cut_1_screen_s14_the_idle_form_reads_eight_things_in_the_order_the_spe
         }],
         ..Default::default()
     };
-    let rows = cut_screen::idle_readouts(64, "", 0.0, None, &sped, 13.0);
+    let rows = cut_screen::idle_readouts("", 0.0, None, &sped, 13.0);
     let value = |label: &str| {
         rows.iter()
             .find(|r| r.label == label)
@@ -547,48 +546,6 @@ fn sec_05_cut_1_screen_s6_the_zoom_ladder_steps_by_the_ratio_and_clamps_both_end
         wide_floor * 10.0,
         "a higher floor stops the same ladder earlier"
     );
-}
-
-/// §A's thumbnail ladder: 🖼+ is ×4/3 and 🖼− is ÷3/4, so the two invert, clamped at 40 and 160 px.
-/// The page opens at 64 px and that is the number the first press steps FROM — see `press_thumb`,
-/// which seeds its slot from `THUMB_AT_OPEN` rather than from 0, because stepping from 0 would make
-/// the first 🖼− land somewhere the form never showed.
-#[test]
-fn sec_05_cut_1_screen_s7_the_thumbnail_ladder_is_x4_3_and_div3_4_and_clamps_at_40_and_160() {
-    // The open-at size, and the two ends of the ladder.
-    assert_eq!(cut_screen::THUMB_AT_OPEN, 64, "the page meets you at 64 px");
-    assert_eq!(
-        cut_screen::THUMB_MIN,
-        40,
-        "P.layout.thumbMin 40 clamps the small end"
-    );
-    assert_eq!(
-        cut_screen::THUMB_MAX,
-        160,
-        "P.layout.thumbMax 160 clamps the large end"
-    );
-
-    // One step each way from the open-at size, and the round trip back.
-    assert_eq!(cut_screen::thumb_up(64), 85, "64 * 4/3 rounds to 85");
-    assert_eq!(
-        cut_screen::thumb_down(85),
-        64,
-        "85 * 3/4 rounds back to 64 -- the steps invert"
-    );
-    assert_eq!(cut_screen::thumb_down(64), 48, "64 * 3/4 = 48");
-    assert_eq!(cut_screen::thumb_up(48), 64, "and 48 * 4/3 = 64");
-
-    // Saturating at both ends: pushing further changes nothing, so a held key cannot run away.
-    let mut px = cut_screen::THUMB_AT_OPEN;
-    for _ in 0..40 {
-        px = cut_screen::thumb_up(px);
-    }
-    assert_eq!(px, cut_screen::THUMB_MAX, "the ladder holds at 160");
-    let mut px = cut_screen::THUMB_AT_OPEN;
-    for _ in 0..40 {
-        px = cut_screen::thumb_down(px);
-    }
-    assert_eq!(px, cut_screen::THUMB_MIN, "and at 40");
 }
 
 /// §1 items 18-19 spell TWO redo chords because both hands reach for one of them. All three chords

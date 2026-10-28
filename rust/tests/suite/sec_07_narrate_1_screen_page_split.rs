@@ -169,7 +169,7 @@ fn check_the_second_divider(app: &adw::Application) {
         "the LOWER half is the paned's end child"
     );
     // §A.1's opening: the handle sits at the bottom of the upper half, just under the transport row. The page builds
-    // that opening from the rows it must clear (game audio row + gap + the 16:9 frame + gap + transport = 392) instead of
+    // that opening from the rows it must clear (game audio row + gap + the 16:9 frame + gap + transport + gap = 400) instead of
     // typing 420, because a headless window never reaches 420 px of room for the left column; read off the widget
     // here so the shot and this test agree on one number rather than each trusting its own constant.
     let upper = bounds(&window, "narrate-upper");
@@ -234,6 +234,15 @@ fn check_the_second_divider(app: &adw::Application) {
         "the voice picker starts BELOW the transport row: picker top {:.1} vs transport bottom {:.1}",
         picker.y(),
         transport.y() + transport.height()
+    );
+    // And neither row sits on the divider's line: each keeps a gap of page between itself and the handle.
+    let divider = upper.y() + upper.height();
+    assert!(
+        divider - (transport.y() + transport.height()) >= 6.0 && picker.y() - divider >= 6.0,
+        "the transport and the voice row stand clear of the divider: transport bottom {:.1}, divider {divider:.1}, \
+         picker top {:.1}",
+        transport.y() + transport.height(),
+        picker.y()
     );
     RAN_SPLIT.store(true, Ordering::SeqCst);
     window.close();

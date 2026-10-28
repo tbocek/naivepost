@@ -137,6 +137,7 @@ fn sec_01_project_and_files_2_naivepostjson_round_trip_keeps_every_written_key()
             values: [("title".to_string(), "In the News HS26#6".to_string())]
                 .into_iter()
                 .collect(),
+            ..Default::default()
         }),
     };
 
