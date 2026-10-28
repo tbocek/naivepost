@@ -198,10 +198,10 @@ pub fn build() -> gtk::Widget {
     vsplit.set_widget_name("narrate-left-split");
     // §A.1's opening, as ONE formula over the rows it has to clear rather than a second magic number: the tick
     // (`TICK_ROW_PX`) + a gap + the frame (`PREVIEW_FRAME_H_PX`, the column at 16:9) + a gap + the transport row
-    // (`TRANSPORT_ROW_PX`) = 392, which is where `spec/img/07-narrate.png` draws the handle — just under the
+    // (`TRANSPORT_ROW_PX`) + the gap that keeps the transport off the handle = 400, which is where `spec/img/07-narrate.png` draws the handle — just under the
     // transport, with the voice picker the first row below it. A headless window is never dragged, so this is also
     // where the shot's handle sits.
-    vsplit.set_position(PREVIEW_FRAME_H_PX + TRANSPORT_ROW_PX + TICK_ROW_PX + 2 * COLUMN_GAP_PX);
+    vsplit.set_position(PREVIEW_FRAME_H_PX + TRANSPORT_ROW_PX + TICK_ROW_PX + 3 * COLUMN_GAP_PX);
     vsplit.set_wide_handle(true);
     vsplit.set_shrink_start_child(true);
     // NOT `true`: with `resize_start_child` GTK hands every extra pixel of window height to the UPPER half, whose
@@ -345,6 +345,9 @@ pub fn build() -> gtk::Widget {
     // `narrate_volume::ensure_slot` pushed that slot in `build_window`, before any page was built.
     let volume = narrate_volume::build();
     transport.append(&volume);
+    // Clear of the divider below it: with no room of their own the transport's buttons and the voice row's sat on
+    // the handle's line from both sides (`spec/img/07-narrate.png` leaves a band of page between them).
+    transport.set_margin_bottom(COLUMN_GAP_PX);
     upper.append(&transport);
 
     // **7** who speaks, **8** the take band's buttons and **9** Add file…, on ONE row: §1's "First row, left to
@@ -352,6 +355,7 @@ pub fn build() -> gtk::Widget {
     // row and what a pick does) lives in `narrate_picker`; this box only says where it sits.
     let voice_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     voice_row.set_widget_name("voice-row");
+    voice_row.set_margin_top(COLUMN_GAP_PX);
     let picker = narrate_picker::build();
     // The dropdown takes the row's spare width, as §1's picture draws it; the four buttons after it keep their
     // own natural width.
@@ -541,6 +545,19 @@ pub(crate) fn clock_text(s: &NarrateState) -> String {
         })
     };
     narrate_screen::clock_line(s.session, cut_at, s.length)
+}
+
+/// The session's recordings were measured: the take band's tape is laid out on them, so the page follows, when it
+/// is the page on screen. Another page is left alone (a refresh reads the project, the cut and the takes, and the
+/// Produce page's run must not wait behind it); the Narrate page reads them again when it is shown.
+pub fn recordings_landed() {
+    if let Some(window) = crate::ui::window::built_window() {
+        if crate::ui::state(&window).page == crate::shell::Page::Narrate
+            && widget_in(&window, "take-band").is_some()
+        {
+            refresh(&window);
+        }
+    }
 }
 
 /// Repaint the labels, the picker's rows and the line rows from the published state.

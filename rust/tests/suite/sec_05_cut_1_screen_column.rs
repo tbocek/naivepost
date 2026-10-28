@@ -16,7 +16,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 static RAN_VALUES: AtomicBool = AtomicBool::new(false);
 static RAN_IDLE_PAINTED: AtomicBool = AtomicBool::new(false);
-static RAN_LADDER: AtomicBool = AtomicBool::new(false);
 static RAN_HEADING: AtomicBool = AtomicBool::new(false);
 static RAN_GUTTER: AtomicBool = AtomicBool::new(false);
 static RAN_CEILING: AtomicBool = AtomicBool::new(false);
@@ -99,7 +98,7 @@ fn cut_page(app: &adw::Application) -> adw::ApplicationWindow {
     window
 }
 
-/// §1's "idle readings, one per line, label left and value right": for each of the eight rows the key's
+/// §1's "idle readings, one per line, label left and value right": for each of the seven rows the key's
 /// right edge sits at or left of its value's left edge, and the value ends where the grid ends.
 fn check_the_readings_are_label_left_value_right(app: &adw::Application) {
     let window = cut_page(app);
@@ -117,16 +116,14 @@ fn check_the_readings_are_label_left_value_right(app: &adw::Application) {
     );
     for label in naivepost::cut_screen::IDLE_FORM_ROWS {
         let name = naivepost::cut_screen::readout_widget(label);
-        // Two rows carry a CONTROL as their value rather than a plain label (the thumbnail ladder, the
-        // aspect dropdown), and for those the row's whole value cell is what has to end at the column's
-        // right edge -- `cut_form_column` drops the row's plain label when it attaches a control, so §1
-        // still gets one line with one value per reading.
+        // One row carries a CONTROL as its value rather than a plain label (the aspect dropdown), and for it
+        // the row's whole value cell is what has to end at the column's right edge -- `cut_form_column` drops
+        // the row's plain label when it attaches a control, so §1 still gets one line with one value per
+        // reading.
         let key_box = format!("{name}-key");
         let (key_name, value_name): (&str, &str) = match label {
-            // The two rows whose value is a CONTROL rather than a plain label. The thumbnail ladder's own
-            // box is the value cell and its first child answers to `cut-readout-thumbnails`, so THAT row's
-            // label carries `-key`; the aspect dropdown replaces its readout outright.
-            "Thumbnails" => (&key_box, "thumb-minus"),
+            // The row whose value is a CONTROL rather than a plain label: the aspect dropdown replaces its
+            // readout outright.
             "Aspect ratio" => (&key_box, "aspect-choice"),
             _ => (&key_box, &name),
         };
@@ -136,17 +133,16 @@ fn check_the_readings_are_label_left_value_right(app: &adw::Application) {
             .unwrap_or_else(|| panic!("the `{label}` row has no value ({value_name})"));
         // The grid's own right edge is the column's: the pane ends where the divider sits, and §1 wants
         // each value reading at that end. (`cut-form` fills its pane -- see `cut_form_column`.)
-        let (grid_right, value_right) =
-            if value_name == "thumb-minus" || value_name == "aspect-choice" {
-                // A row whose value is a CONTROL: measure its whole CELL (the ladder's box for 🖼− number 🖼+,
-                // the readout-plus-dropdown box for Aspect ratio), not the first widget inside it.
-                let cell = value.parent().expect("the control lives in a box");
-                let (_, cell_right) = span(&cell);
-                (grid_right, cell_right)
-            } else {
-                let (_, right) = span(&value);
-                (grid_right, right)
-            };
+        let (grid_right, value_right) = if value_name == "aspect-choice" {
+            // A row whose value is a CONTROL: measure its whole CELL (the readout-plus-dropdown box for
+            // Aspect ratio), not the first widget inside it.
+            let cell = value.parent().expect("the control lives in a box");
+            let (_, cell_right) = span(&cell);
+            (grid_right, cell_right)
+        } else {
+            let (_, right) = span(&value);
+            (grid_right, right)
+        };
         // The grid's own right edge is the column's: the pane ends where the divider sits, and §1 wants
         // each value reading at that end. (`cut-form` fills its pane -- see `cut_form_column`.)
         let (key_left, key_right) = span(&key);
@@ -197,7 +193,6 @@ fn check_the_idle_column_paints_every_reading(app: &adw::Application) {
             key.width()
         );
         let value = match label {
-            "Thumbnails" => common::find_named(&window, "thumb-plus"),
             "Aspect ratio" => common::find_named(&window, "aspect-choice"),
             _ => common::find_named(&window, &name),
         }
@@ -224,68 +219,6 @@ fn check_the_idle_column_paints_every_reading(app: &adw::Application) {
     );
     hold_last_window(window);
     RAN_IDLE_PAINTED.store(true, Ordering::SeqCst);
-}
-
-/// §1's ladder clicks on the real buttons: 🖼− / 🖼+ step the number they drive, and the readout in the
-/// column moves with them (it is written by the same door). `cut_screen::thumb_up`/`thumb_down` own the
-/// arithmetic (pinned in `cut_screen_readouts.rs`); this proves the buttons are wired to it and that the
-/// label the user reads agrees, so the control can never drift from the number beside it.
-fn check_the_thumbnail_ladder_steps_its_readout(app: &adw::Application) {
-    let window = cut_page(app);
-    // The Thumbnails row's value is the ladder's BOX (🖼− number 🖼+): the number is the BOX that carries
-    // the row's readout name (`cut_form_column` names the control cell, not a label inside it), and
-    // `press_thumb` repaints the number label that sits beside it.
-    let cell = common::find_named(&window, "cut-readout-thumbnails")
-        .expect("the Thumbnails row answers to its readout name");
-    let number = || {
-        fn find(w: &gtk::Widget) -> Option<String> {
-            if let Some(label) = w.downcast_ref::<gtk::Label>() {
-                // The ladder's two steps are buttons with labels too; the number is the label that is not
-                // one of their glyphs.
-                let text = label.text().trim().to_string();
-                if !text.starts_with('\u{1f5bc}') {
-                    return Some(text);
-                }
-            }
-            for child in w.observe_children().iter::<glib::Object>().flatten() {
-                if let Some(w) = child.downcast_ref::<gtk::Widget>() {
-                    if let Some(text) = find(w) {
-                        return Some(text);
-                    }
-                }
-            }
-            None
-        }
-        find(cell.upcast_ref()).expect("the ladder carries its number between the two steps")
-    };
-    let before = number();
-    common::find_named(&window, "thumb-plus")
-        .expect("§A's 🖼+ is on the column")
-        .emit_by_name::<()>("clicked", &[]);
-    settle();
-    let bigger = number();
-    assert_ne!(
-        bigger, before,
-        "🖼+ moves the number it drives: {before} -> {bigger}"
-    );
-    // And the band itself: the number is the height every picture row is drawn at, not a label of its own.
-    assert_eq!(
-        format!("{} px", naivepost::ui::cut_tracks::thumb_px()),
-        bigger,
-        "the band paints at the size the readout says"
-    );
-    common::find_named(&window, "thumb-minus")
-        .expect("§A's 🖼− is on the column")
-        .emit_by_name::<()>("clicked", &[]);
-    settle();
-    assert_eq!(
-        number(),
-        before,
-        "and 🖼− steps it back: {before} -> {bigger} -> {}",
-        number()
-    );
-    hold_last_window(window);
-    RAN_LADDER.store(true, Ordering::SeqCst);
 }
 
 /// §1's idle column at the MINIMUM window: the readings are shown from their FIRST line. The scroller is
@@ -357,7 +290,7 @@ fn column_opens_at_top(window: adw::ApplicationWindow, where_: &str) {
         adjust.value(),
         adjust.lower()
     );
-    for name in ["thumb-minus", "thumb-plus", "aspect-choice"] {
+    for name in ["aspect-choice"] {
         let widget =
             common::find_named(&window, name).unwrap_or_else(|| panic!("{name} is on the column"));
         crate::common::wait_until(
@@ -376,16 +309,16 @@ fn column_opens_at_top(window: adw::ApplicationWindow, where_: &str) {
             y + widget.height()
         );
     }
-    // §1's order in the column: the thumbnail row comes before the aspect row, which comes before the clocks.
-    let thumb_key = common::find_named(&window, "cut-readout-thumbnails-key")
-        .expect("the Thumbnails row has its key label");
+    // §1's order in the column: the aspect row comes before the clocks.
     let aspect_key = common::find_named(&window, "cut-readout-aspect-ratio-key")
         .expect("the Aspect ratio key label");
-    let (thumb_top, aspect_top) = (top_y(&thumb_key), top_y(&aspect_key));
-    println!("COLUMN order: 'Thumbnails:' y={thumb_top}, 'Aspect ratio:' y={aspect_top}");
+    let playhead_key =
+        common::find_named(&window, "cut-readout-playhead-key").expect("the Playhead key label");
+    let (aspect_top, playhead_top) = (top_y(&aspect_key), top_y(&playhead_key));
+    println!("COLUMN order: 'Aspect ratio:' y={aspect_top}, 'Playhead:' y={playhead_top}");
     assert!(
-        thumb_top < aspect_top,
-        "'Thumbnails:' reads above 'Aspect ratio:' (§1's row order): {thumb_top} vs {aspect_top}"
+        aspect_top < playhead_top,
+        "'Aspect ratio:' reads above 'Playhead:' (§1's row order): {aspect_top} vs {playhead_top}"
     );
     for label in naivepost::cut_screen::IDLE_FORM_ROWS {
         let key = common::find_named(
@@ -638,8 +571,6 @@ fn round() {
         check_the_idle_column_paints_every_reading(app);
         println!("CHECK 1d at the minimum window the column opens on its FIRST reading");
         check_the_idle_column_opens_on_its_first_reading(app);
-        println!("CHECK 1c the thumbnail ladder clicks step the number it drives");
-        check_the_thumbnail_ladder_steps_its_readout(app);
         println!("CHECK 2 the pinned heading shows only while a form is open");
         check_the_pinned_heading_shows_only_with_a_form(app);
         println!("CHECK 3 the gutter is a 30 px column, not a band");
@@ -666,16 +597,6 @@ fn sec_05_cut_1_screen_the_idle_column_shows_its_readings() {
     assert!(
         RAN_IDLE_PAINTED.load(Ordering::SeqCst),
         "the idle-column-painted check never ran"
-    );
-}
-
-#[test]
-fn sec_05_cut_1_screen_the_thumbnail_ladder_steps_the_number_it_drives() {
-    common::pin_private_cwd();
-    round();
-    assert!(
-        RAN_LADDER.load(Ordering::SeqCst),
-        "the thumbnail ladder check never ran"
     );
 }
 

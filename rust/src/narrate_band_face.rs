@@ -26,21 +26,17 @@ pub fn recording_exists(tree: &layout::Tree, project: &Project, voice: &str) -> 
     recording_path(tree, project, voice).is_some_and(|path| path.is_file())
 }
 
-/// The seconds the band spans. First the built reference, measured by its own header through
-/// [`crate::ui::narrate_band::recording_seconds`] — that is the file the voice is actually cloned from, and
-/// keeping it first means a built reference still sizes the ruler exactly as before. When it is gone (never
-/// built, or just invalidated by S4), the band falls back to the recording itself probed with ffprobe,
-/// because §A.7's lane is the RECORDING's waveform: an invalidation may empty `narrate/`, it may not make the
-/// voice's video disappear from the page. `None` only when there is genuinely no recording.
+/// The seconds the band spans: its tape's length ([`tape`]), so the ruler, the wave, the takes, the red bar and ▶
+/// all mean seconds of what the narrator says in the cut. With no recording at all, the built reference's own
+/// length ([`crate::ui::narrate_band::recording_seconds`]), the one thing left to select from. `None` only when
+/// there is neither.
 pub fn band_seconds(tree: &layout::Tree, project: &Project, voice: &str) -> Option<f64> {
     // The RECORDING's own seconds first: the wave, the takes, the red bar and ▶ are all seconds of the
     // recording, and the first rewrite measured the ruler from the built reference instead, so a band over a
     // ten-minute recording mapped its bar onto the reference's few seconds and ▶ played from somewhere else.
-    if let Some(seconds) = recording_path(tree, project, voice)
-        .filter(|path| path.is_file())
-        .and_then(|path| probe_cached(&path))
-    {
-        return Some(seconds);
+    let length = tape(tree, project, voice).length();
+    if length > 0.0 && length.is_finite() {
+        return Some(length);
     }
     crate::ui::narrate_band::recording_seconds()
 }
@@ -97,6 +93,38 @@ fn voices_candidate(voice: &str) -> Option<PathBuf> {
         format!("{voice}.wav")
     };
     Some(folder.join(named))
+}
+
+/// The band's tape for this voice (§1 badge 10): a narrator slot's kept stretches across every recording tagged
+/// with that slot ([`crate::narrate_tape::kept`]), laid out on the session recordings the page holds; a voice that
+/// is one file (a voices-folder id, a narrator whose recording no kept clip shows, a session whose recordings are
+/// not measured yet) is that file whole. Empty for captions, or when there is no recording at all.
+pub fn tape(tree: &layout::Tree, project: &Project, voice: &str) -> crate::narrate_tape::Tape {
+    if let Some(slot) = voice_ref::narrator_slot(voice) {
+        let narrated: Vec<(String, PathBuf)> = project
+            .sources
+            .iter()
+            .filter(|source| source.narrator == slot as u32)
+            .map(|source| {
+                let file = layout::resolve(tree.dir(), tree.dir(), &source.path);
+                (crate::narrate_data::take_base(&file), file)
+            })
+            .collect();
+        let cut = crate::cut::load(tree).unwrap_or_default();
+        let kept = crate::narrate_tape::kept(&cut, &crate::ui::page_recordings(), &narrated);
+        if !kept.is_empty() {
+            return kept;
+        }
+    }
+    // A file ffprobe cannot measure is still the voice's recording: one open-ended stretch, its seconds the
+    // band's own, so takes and ▶ keep working and only the drawing waits for a length.
+    match recording_path(tree, project, voice).filter(|path| path.is_file()) {
+        Some(file) => {
+            let seconds = probe_cached(&file).unwrap_or(f64::INFINITY);
+            crate::narrate_tape::whole(file, seconds)
+        }
+        None => crate::narrate_tape::Tape::default(),
+    }
 }
 
 /// ffprobe's answer for one file, through the configured ffmpeg's own ffprobe like every other probe in

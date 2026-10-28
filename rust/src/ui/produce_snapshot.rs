@@ -144,6 +144,7 @@ pub fn publish_of_state(s: &ProduceState) -> Publish {
         title: s.title.clone(),
         thumb_title: s.thumb_title.clone(),
         title_seeded: s.title_seeded,
+        title_box: s.title_box,
         prompt: s.instruction.clone(),
         negative: s.negative.clone(),
         description: s.description.clone(),

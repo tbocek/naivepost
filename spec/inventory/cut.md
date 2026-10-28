@@ -9,7 +9,7 @@ Raw material for the spec, read off go/cut*.go (non-effects), player.go, player_
 ## A. UI layout
 
 Page = vertical paned (380): top = horizontal paned (660) of preview (GtkPicture contain-fit, min height 160, click toggles play) and the form column; bottom = toolbar, tracks, scrollbar.
-Form column: pinned heading (title + ✕ "close this form — nothing is lost that was not already saved"), a scroller holding either the idle rows or a form body, pinned footer for buttons. Idle rows: Thumbnails [🖼− 🖼+] ("smaller|larger thumbnails on the tracks", ×3/4, ×4/3, clamp 40..160), Aspect ratio [dropdown], Playhead [clock], Selection [marks], Cut [total], Cut at 1× [totalRaw], Source [totalSrc], Segments [totalSegs].
+Form column: pinned heading (title + ✕ "close this form — nothing is lost that was not already saved"), a scroller holding either the idle rows or a form body, pinned footer for buttons. Idle rows: Aspect ratio [dropdown], Playhead [clock], Selection [marks], Cut [total], Cut at 1× [totalRaw], Source [totalSrc], Segments [totalSegs].
 
 Toolbar (wheel over it steps frames; Shift = 5):
 

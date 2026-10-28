@@ -126,12 +126,6 @@ pub fn envelope_note(decoded: bool) -> Option<&'static str> {
     (!decoded).then_some("reading the recording\u{2026}")
 }
 
-/// The seconds the ruler prints at a pixel: the minute mark a viewer reads while dragging, rounded
-/// to whole seconds because the band's own labels are durations, not timecodes.
-pub fn ruler_second(x: f64, offset: f64, pps: f64) -> i64 {
-    x_to_second(x, offset, pps).round() as i64
-}
-
 /// The peaks to paint for the visible window: the cache stores peaks at `hz` per second, so the band
 /// asks for the slice its view covers and lets the painter stretch it. Returns `(start_second,
 /// peaks)`; empty when the cache has nothing for this recording.

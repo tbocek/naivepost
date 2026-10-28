@@ -94,7 +94,7 @@ fn session_project(tag: &str) -> (naivepost::layout::Tree, naivepost::project::P
     let tree = naivepost::layout::Tree::new(&dir).expect("the folder is a project");
     let project = naivepost::project::Project {
         sources: vec![naivepost::project::Source {
-            path: "/media/lecture.mkv".into(),
+            path: "project:sources/lecture.wav".into(),
             narrator: 1,
             footage: true,
             ..Default::default()
@@ -102,6 +102,15 @@ fn session_project(tag: &str) -> (naivepost::layout::Tree, naivepost::project::P
         ..Default::default()
     };
     naivepost::project::save(&project, tree.dir()).expect("naivepost.json");
+    // The narrator's recording is a real file: the take band shows a narrator's recordings, and a take is filed
+    // under the recording it lies in.
+    std::fs::create_dir_all(tree.dir().join("sources")).unwrap();
+    naivepost::snapshot::write_silence_wav(
+        &tree.dir().join("sources/lecture.wav"),
+        8_000,
+        8_000 * 45,
+    )
+    .expect("the recording");
     (tree, project)
 }
 
@@ -110,10 +119,19 @@ fn session_project(tag: &str) -> (naivepost::layout::Tree, naivepost::project::P
 /// tree but no window, and `session_project` moves the process's cwd.
 fn narrated_tree(tag: &str) -> naivepost::layout::Tree {
     let (_root, tree) = tree_in(tag);
+    // A real 12 s recording: the band shows a narrator's recordings, so a file that is not there has no seconds
+    // for a take to sit on.
+    std::fs::create_dir_all(tree.dir().join("sources")).unwrap();
+    naivepost::snapshot::write_silence_wav(
+        &tree.dir().join("sources/lecture.wav"),
+        16_000,
+        16_000 * 12,
+    )
+    .expect("the recording");
     naivepost::project::save(
         &naivepost::project::Project {
             sources: vec![naivepost::project::Source {
-                path: "/media/lecture.mkv".into(),
+                path: "project:sources/lecture.wav".into(),
                 narrator: 1,
                 footage: true,
                 ..Default::default()
@@ -133,14 +151,14 @@ fn narrated_tree(tag: &str) -> naivepost::layout::Tree {
 fn sec_07_narrate_3_data_stored_takes_come_from_the_recording_key() {
     let tree = narrated_tree("data-stored");
     assert!(
-        ui::narrate_seed::stored_takes(&tree).is_empty(),
+        ui::narrate_seed::stored_takes(&tree, naivepost::narrate_data::OWN_VOICE).is_empty(),
         "nothing picked yet, so the band opens bare"
     );
     narrate_data::save_takes(&tree, "lecture", &[Take { s: 4.0, e: 9.0 }]).expect("a pick stored");
     narrate_data::save_takes(&tree, "other_cam", &[Take { s: 0.0, e: 2.0 }])
         .expect("another recording's pick");
     assert_eq!(
-        ui::narrate_seed::stored_takes(&tree),
+        ui::narrate_seed::stored_takes(&tree, naivepost::narrate_data::OWN_VOICE),
         vec![(4.0, 9.0)],
         "the seed is this recording's list only"
     );

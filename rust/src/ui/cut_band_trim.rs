@@ -29,6 +29,9 @@ struct BorderDrag {
 thread_local! {
     static LEFT: std::cell::RefCell<Option<BorderDrag>> = const { std::cell::RefCell::new(None) };
     static RIGHT: std::cell::RefCell<Option<RightPress>> = const { std::cell::RefCell::new(None) };
+    /// The thumbnail-size grip in hand (§1 badge 2): how many rows sit above the edge taken, and the height the
+    /// thumbnails had at the press.
+    static GRIP: std::cell::Cell<Option<(usize, u32)>> = const { std::cell::Cell::new(None) };
 }
 
 /// A right press: where it landed, the border it landed on (if any), and whether it has travelled yet.
@@ -107,6 +110,10 @@ pub fn cursor_at(window: &adw::ApplicationWindow, x: f64, y: f64) -> Option<&'st
     if crate::ui::cut_band_marks::mark_at(&scene, rows, x, y).is_some() {
         return Some("pointer");
     }
+    // §1 badge 2: the bottom edge of a picture row is the grip that sizes the thumbnails.
+    if crate::ui::cut_tracks::row_grip_at(&scene, y).is_some() {
+        return Some("ns-resize");
+    }
     let geo = Geometry::of(window);
     let surface = geo.surface_at(y);
     if !matches!(surface, Surface::PictureRow(_) | Surface::SelectionBand) {
@@ -157,6 +164,14 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
     left.set_button(1);
     let win = window.clone();
     left.connect_drag_begin(move |gesture, x, y| {
+        // §1 badge 2: the bottom edge of a picture row sizes the thumbnails; nothing else takes that press.
+        let grip = crate::ui::cut_tracks::row_grip_at(&cut_view::band_scene_for(&win), y);
+        GRIP.with(|held| held.set(grip.map(|above| (above, crate::ui::cut_tracks::thumb_px()))));
+        if grip.is_some() {
+            LEFT.with(|cell| *cell.borrow_mut() = None);
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+            return;
+        }
         let geo = Geometry::of(&win);
         let on_trim_ground = matches!(
             geo.surface_at(y),
@@ -180,7 +195,14 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
         }
     });
     let win = window.clone();
-    left.connect_drag_update(move |_g, dx, _dy| {
+    left.connect_drag_update(move |_g, dx, dy| {
+        if let Some((above, was)) = GRIP.with(std::cell::Cell::get) {
+            crate::ui::window_history_zoom::press_thumb(
+                &win,
+                crate::cut_screen::thumb_dragged(was, above, dy),
+            );
+            return;
+        }
         let held = LEFT.with(|cell| *cell.borrow());
         if let Some(mut drag) = held {
             let x = drag.press_x + dx;
@@ -189,13 +211,21 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
         }
     });
     let win = window.clone();
-    left.connect_drag_end(move |_g, dx, _dy| {
+    left.connect_drag_end(move |_g, dx, dy| {
+        if let Some((above, was)) = GRIP.with(|held| held.take()) {
+            crate::ui::window_history_zoom::press_thumb(
+                &win,
+                crate::cut_screen::thumb_dragged(was, above, dy),
+            );
+            return;
+        }
         if let Some(mut drag) = LEFT.with(|cell| cell.borrow_mut().take()) {
             let x = drag.press_x + dx;
             trim_to(&win, &mut drag, x, true);
         }
     });
-    band.add_controller(left);
+    band.add_controller(left.clone());
+    LEFT_GESTURE.with(|held| *held.borrow_mut() = Some(left));
 
     let right = gtk::GestureDrag::new();
     right.set_button(3);
@@ -269,4 +299,15 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
         }
     });
     band.add_controller(right);
+}
+
+thread_local! {
+    /// The band's left-button drag, kept so a test can fire the grip and the border drags the way GTK does.
+    static LEFT_GESTURE: std::cell::RefCell<Option<gtk::GestureDrag>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The PAINTED band's left-button drag ([`wire`]): the thumbnail-size grip and the clip borders. Test-only
+/// reader: the page wires the gesture and never asks for it back.
+pub fn band_left_gesture_for_test() -> Option<gtk::GestureDrag> {
+    LEFT_GESTURE.with(|held| held.borrow().clone())
 }

@@ -87,6 +87,27 @@ fn sec_07_narrate_1_screen_the_take_band_zooms_inside_itself_in_recording_second
             "the RECORDING's 60 s, not the reference's 3 s: {seconds}"
         );
 
+        // The ruler is on the Cut page's tick ladder: at fit (60 s across the band, under 10 px a second) a tick
+        // every 10 s, each one marked. The first rewrite ticked every 30 s at any zoom, so a recording under half
+        // a minute had a bare ruler. Counted on the row just above the ruler's line, where only the ticks reach.
+        let lane_w = common::find_named(&window, "take-band")
+            .expect("the lane")
+            .width();
+        let (rgb, w, _, _, pps) =
+            ui::narrate_band::painted_pixels_for_test(lane_w, 56).expect("the lane paints");
+        let row = (naivepost::narrate_screen::BAND_RULER_PX as usize) - 2;
+        let inked = |x: usize| {
+            let at = (row * w as usize + x) * 3;
+            rgb[at] > 100 && rgb[at + 1] > 100 && rgb[at + 2] > 100
+        };
+        let ticks = (1..w as usize)
+            .filter(|&x| inked(x) && !inked(x - 1))
+            .count();
+        assert!(
+            ticks >= 5,
+            "a tick every 10 s across 60 s at {pps:.1} px/s, not every 30 s: {ticks} ticks"
+        );
+
         let scroller = common::find_named(&window, "take-band-scroller")
             .and_then(|w| w.downcast::<gtk::ScrolledWindow>().ok())
             .expect("the band's scroller");
@@ -100,7 +121,9 @@ fn sec_07_narrate_1_screen_the_take_band_zooms_inside_itself_in_recording_second
             .find(|c| c.name().as_deref() == Some("wheel-take-band"))
             .expect("the band's wheel");
         for _ in 0..6 {
-            let _: bool = wheel.emit_by_name("scroll", &[&0.0f64, &-50.0f64]);
+            // A mouse notch, as GTK hands it over: dy = -1 (the first rewrite's tests fired -50, as if dy were
+            // pixels, which hid that a real notch zoomed by 0.4 %).
+            let _: bool = wheel.emit_by_name("scroll", &[&0.0f64, &-1.0f64]);
             common::settle();
         }
         common::wait_for_stable_layout(&window);

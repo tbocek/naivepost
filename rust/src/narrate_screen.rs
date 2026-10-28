@@ -272,7 +272,8 @@ pub fn voice_options(narrators: usize, files: &[&str]) -> Vec<VoiceOption> {
             } else {
                 format!("narrator{slot}")
             },
-            label: format!("Narrator {slot} \u{2014} cut from the recording"),
+            // Every recording tagged with the slot, as far as the cut keeps it: what the take band shows.
+            label: format!("Narrator {slot} \u{2014} everything they say in the cut"),
         });
     }
     options.extend(files.iter().map(|name| VoiceOption {

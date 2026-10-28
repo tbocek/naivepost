@@ -514,12 +514,8 @@ fn check_the_readings_are_painted_pairs(app: &adw::Application) {
             widget.is_mapped()
         );
     }
-    // Three rows: two plain readings and the Thumbnails ladder, whose value is a box holding the number.
-    for name in [
-        "cut-readout-playhead",
-        "cut-readout-aspect-ratio",
-        "cut-readout-thumbnails",
-    ] {
+    // Two readings, the first two rows.
+    for name in ["cut-readout-playhead", "cut-readout-aspect-ratio"] {
         let value = common::find_named(&window, name)
             .unwrap_or_else(|| panic!("the reading row `{name}` is missing"));
         let (top, bottom) = edges(&value);

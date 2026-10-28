@@ -780,6 +780,19 @@ impl Rows {
     }
 }
 
+/// How near the bottom edge of a picture row a press takes the thumbnail-size grip (§1 badge 2), either side.
+pub const ROW_GRIP_PX: f64 = 3.0;
+
+/// The thumbnail-size grip under band height `y` (§1 badge 2): the bottom edge of a picture row, camera or cut
+/// lane, within [`ROW_GRIP_PX`]. Answers how many rows sit above that edge, itself included, since a drag there
+/// grows every one of them and the edge must stay under the hand.
+pub fn row_grip_at(scene: &Scene, y: f64) -> Option<usize> {
+    let rows = rows_for_press(scene);
+    let count = rows.camera_rows(scene) + lane_rows(scene);
+    (1..=count)
+        .find(|above| (y - (rows.pictures + *above as f64 * rows.row_h)).abs() <= ROW_GRIP_PX)
+}
+
 /// Rows the band gives the cut lanes — one each, below the cameras. Public so a test reads the SAME number the
 /// painter laid out rather than counting `scene.lanes` itself and drifting from it. A spliced or overwriting
 /// card takes no row of its own (they sit among the footage), so this is also how many rows an insert costs.

@@ -344,68 +344,26 @@ pub(crate) fn wire_history_and_zoom(window: &adw::ApplicationWindow) {
             });
         }
     }
-    // The thumbnail ladder (§A's "Thumbnails [🖼− 🖼+]") sits in the FORM column beside the number it
-    // drives, so its handler repaints that one label rather than a status line.
-    for (name, bigger) in [("thumb-minus", false), ("thumb-plus", true)] {
-        if let Some(button) = ui::line_step_button(window, name) {
-            let win = window.clone();
-            button.connect_clicked(move |_| {
-                let px = press_thumb(&win, bigger);
-                // The ladder's number is the readout in the FORM column (`cut-readout-thumbnails`), not a
-                // status line: the row the user reads is what moves.
-                if let Some(cell) = ui::find_widget_by_name(
-                    win.upcast_ref(),
-                    &cut_screen::readout_widget("Thumbnails"),
-                ) {
-                    if let Some(number) = ladder_number(&cell) {
-                        number.set_text(&format!("{px} px"));
-                    }
-                }
-            });
-        }
-    }
 }
 
-/// The number label inside the Thumbnails ladder (the `cut-readout-thumbnails` box holds 🖼− number 🖼+,
-/// so the readout name is on the box and the plain label in it is the number the user reads).
-fn ladder_number(cell: &gtk::Widget) -> Option<gtk::Label> {
-    let mut child = cell.first_child();
-    while let Some(node) = child {
-        if let Some(label) = node.downcast_ref::<gtk::Label>() {
-            return Some(label.clone());
-        }
-        child = node.next_sibling();
-    }
-    None
-}
-
-/// 🖼− / 🖼+ (§A): one third of a step, clamped 40..160 by `cut_screen::thumb_down`/`thumb_up`. The size is the
-/// band's (`cut_tracks::thumb_px`): every picture row is drawn, fitted and pressed at it, so a press re-fits the
-/// band, repaints it and re-places the gutter's row switches, and the readout repaints from the same number. At
-/// either end the status line says the ladder can go no further. Returns the new height.
-pub fn press_thumb(window: &adw::ApplicationWindow, bigger: bool) -> u32 {
+/// The grip at the bottom of the picture rows (§1 badge 2) set the thumbnail height to `px`, kept inside
+/// 40..160. The size is the band's (`cut_tracks::thumb_px`): every picture row is drawn, fitted and pressed at
+/// it, so a step re-fits the band, repaints it and re-places the gutter's row switches. The status line says the
+/// size, and at either end that it can go no further. Returns the height the band now has.
+pub fn press_thumb(window: &adw::ApplicationWindow, px: u32) -> u32 {
     let held = crate::ui::cut_tracks::thumb_px();
-    let next = if bigger {
-        cut_screen::thumb_up(held)
-    } else {
-        cut_screen::thumb_down(held)
-    };
-    crate::ui::cut_tracks::set_thumb_px(next);
+    crate::ui::cut_tracks::set_thumb_px(px);
     let now = crate::ui::cut_tracks::thumb_px();
-    if let Some(label) = ui::find_widget_by_name(
-        window.upcast_ref(),
-        &cut_screen::readout_widget("Thumbnails"),
-    )
-    .and_then(|w| w.downcast::<gtk::Label>().ok())
-    {
-        label.set_text(&format!("{now} px"));
+    if now != held {
+        crate::ui::cut_view::repaint_page(window);
+        crate::ui::cut_cameras::refresh_camera_rows(window);
     }
-    crate::ui::cut_view::repaint_page(window);
-    crate::ui::cut_cameras::refresh_camera_rows(window);
-    let said = match (now == held, bigger) {
-        (true, true) => format!("thumbnails at their largest, {now} px"),
-        (true, false) => format!("thumbnails at their smallest, {now} px"),
-        (false, _) => format!("thumbnails {now} px"),
+    let said = if now == cut_screen::THUMB_MAX && px >= now {
+        format!("thumbnails at their largest, {now} px")
+    } else if now == cut_screen::THUMB_MIN && px <= now {
+        format!("thumbnails at their smallest, {now} px")
+    } else {
+        format!("thumbnails {now} px")
     };
     if let Some(status_line) = ui::find_status(window.upcast_ref()) {
         status_line.set_text(&said);

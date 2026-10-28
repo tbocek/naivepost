@@ -1169,3 +1169,81 @@ fn f4_6_s1_the_take_band_shows_only_for_a_voice_with_a_recording_spans_the_recor
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// §F4.6 S2/S3 with the narrator on several recordings: the take band shows them all, end to end, so the hand
+/// picks lie in more than one file, and each piece of the reference is cut from the recording its take is in, in
+/// the order the recordings were made. The first rewrite read the takes of the one recording the flow was handed,
+/// so picks made anywhere else were silently left out of the voice.
+#[test]
+fn f4_6_s3_hand_picked_takes_are_cut_from_each_narrator_recording_they_lie_in() {
+    let root = recut_root("several");
+    let session = root.join("session.naivepost");
+    let tree = naivepost::layout::Tree::new(&session).expect("tree");
+    std::fs::create_dir_all(session.join("sources")).unwrap();
+    for name in ["2026-10-25 10-00-00.wav", "2026-10-25 10-05-00.wav"] {
+        std::fs::write(session.join("sources").join(name), wav_bytes(1, 48_000)).unwrap();
+    }
+    let mut project = naivepost::project::Project::default();
+    // Listed newest first, the way the user's project lists them: the reference still plays oldest first.
+    for name in ["2026-10-25 10-05-00.wav", "2026-10-25 10-00-00.wav"] {
+        project.sources.push(naivepost::project::Source {
+            path: format!("project:sources/{name}"),
+            narrator: 1,
+            footage: true,
+            ..Default::default()
+        });
+    }
+    naivepost::project::save(&project, tree.dir()).expect("naivepost.json");
+    use naivepost::narrate_data::Take;
+    naivepost::narrate_data::save_takes(&tree, "2026-10-25 10-00-00", &[Take { s: 1.0, e: 3.0 }])
+        .unwrap();
+    naivepost::narrate_data::save_takes(&tree, "2026-10-25 10-05-00", &[Take { s: 7.0, e: 9.5 }])
+        .unwrap();
+    let (script, log) = fake_ffmpeg(&root);
+    let first = session
+        .join("sources/2026-10-25 10-05-00.wav")
+        .display()
+        .to_string();
+
+    let built = voice_ref::recut_for_voice(
+        &tree,
+        &script.to_string_lossy(),
+        &first,
+        &[],
+        words_for_window,
+        full_span,
+    )
+    .expect("two hand-picked takes need no diarization");
+    assert_eq!(built.hand_picked, 2, "both picks are in the reference");
+    let argv = std::fs::read_to_string(&log).expect("argv recorded");
+    let cut_from: Vec<String> = argv
+        .lines()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .filter(|pair| pair[0] == "-i")
+        .map(|pair| pair[1].to_string())
+        .filter(|input| input.contains("sources"))
+        .collect();
+    assert_eq!(
+        cut_from,
+        vec![
+            session
+                .join("sources/2026-10-25 10-00-00.wav")
+                .display()
+                .to_string(),
+            session
+                .join("sources/2026-10-25 10-05-00.wav")
+                .display()
+                .to_string(),
+        ],
+        "each piece from its own recording, oldest first: {argv}"
+    );
+    assert!(
+        argv.contains("1.000")
+            && argv.contains("3.000")
+            && argv.contains("7.000")
+            && argv.contains("9.500"),
+        "at each recording's own seconds: {argv}"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}

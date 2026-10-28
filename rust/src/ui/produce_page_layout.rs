@@ -133,7 +133,7 @@ fn control(s: &ProduceState, name: &str) -> gtk::Widget {
 fn translate_menu(s: &ProduceState) -> gtk::MenuButton {
     let menu = gtk::MenuButton::new();
     menu.set_widget_name(&row_widget("Translate"));
-    menu.set_label(&translate_label(&s.translate));
+    menu.set_label(&translate_label(&s.translate, &s.session_language));
     menu.set_halign(gtk::Align::Start);
     menu.set_tooltip_text(Some(screen::tooltip("Translate")));
     let ticks = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -151,11 +151,20 @@ fn translate_menu(s: &ProduceState) -> gtk::MenuButton {
 }
 
 /// What the Translate button reads: the ticked languages in order, or "none".
-pub fn translate_label(ticked: &[String]) -> String {
-    if ticked.is_empty() {
+///
+/// The language the video is spoken in is never translated into, whatever a profile ticked (§F5.4 S3 drops it by
+/// code), so it is not named here either: a German video with English and German ticked reads "English".
+pub fn translate_label(ticked: &[String], spoken: &str) -> String {
+    let own = crate::roles::language_code(spoken);
+    let shown: Vec<&str> = ticked
+        .iter()
+        .filter(|language| own.is_empty() || crate::roles::language_code(language) != own)
+        .map(String::as_str)
+        .collect();
+    if shown.is_empty() {
         "none".to_string()
     } else {
-        ticked.join(", ")
+        shown.join(", ")
     }
 }
 

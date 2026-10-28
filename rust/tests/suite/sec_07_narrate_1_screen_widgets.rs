@@ -789,6 +789,12 @@ fn second_round(app: &adw::Application) {
         // wider than its parent, which makes the remembered viewport drift from this reading.
         let _ = wheel.emit_by_name::<bool>("scroll", &[&0.0f64, &-1.0f64]);
         settle();
+        assert!(
+            (naivepost::ui::narrate_band::zoom() - naivepost::narrate_band::ZOOM_NOTCH).abs()
+                < 1e-9,
+            "one mouse notch (dy = -1) is one zoom step: zoom {}",
+            naivepost::ui::narrate_band::zoom()
+        );
         let asked = lane.width_request();
         // The request is exactly what `fit_lane_to_view` handed the widget after that notch, computed
         // through the same door the program uses.

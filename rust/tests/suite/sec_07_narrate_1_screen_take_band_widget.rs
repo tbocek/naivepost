@@ -45,7 +45,7 @@ fn stand_project() {
     naivepost::project::save(
         &naivepost::project::Project {
             sources: vec![naivepost::project::Source {
-                path: "/media/lecture.mkv".into(),
+                path: "project:sources/lecture.wav".into(),
                 narrator: 1,
                 footage: true,
                 ..Default::default()
@@ -55,6 +55,14 @@ fn stand_project() {
         tree.dir(),
     )
     .expect("naivepost.json with a narrator");
+    // A real 45 s recording behind the narrator: the band shows it, and a take is filed under it.
+    std::fs::create_dir_all(tree.dir().join("sources")).unwrap();
+    naivepost::snapshot::write_silence_wav(
+        &tree.dir().join("sources/lecture.wav"),
+        8_000,
+        8_000 * 45,
+    )
+    .expect("the recording");
 }
 
 /// The page with `state` published, sized before `present()` so the paned lays out both columns. Built the
@@ -251,7 +259,7 @@ fn round(app: &adw::Application) {
         );
         // And the page's own seed door — what a rebuild re-reads that file through — shows the same span.
         assert_eq!(
-            ui::narrate_seed::stored_takes(&tree),
+            ui::narrate_seed::stored_takes(&tree, &ui::narrate_page::read_state().voice),
             vec![(stored_span.s, stored_span.e)],
             "the file and the page's seed agree: the take survives a rebuild"
         );

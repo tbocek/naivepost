@@ -10,7 +10,7 @@
 //! quietly in that case rather than inventing a path.
 
 use crate::layout::Tree;
-use crate::narrate_data::{self, Take};
+use crate::narrate_data;
 use crate::ui::narrate_page::NarrateState;
 
 /// The page's own pitch door, whichever control moved it: the slider's debounced wire and the keyboard step
@@ -30,7 +30,7 @@ pub fn note_pitch_for_session(semitones: f64) -> Option<String> {
 pub fn note_takes_for_session(takes: &[(f64, f64)]) -> Option<String> {
     let tree = crate::ui::window::narrate_session_tree()?;
     crate::voice_ref::invalidate_for_change(&tree, crate::voice_ref::Changed::Takes);
-    note_takes(&tree, takes)
+    note_takes(&tree, &crate::ui::narrate_page::read_state().voice, takes)
 }
 
 /// `narrate/voice.txt` after a voice pick, plus S4's invalidation of the reference cut from the old one
@@ -128,25 +128,20 @@ pub fn seed_from_disk(tree: &Tree, mut state: NarrateState) -> NarrateState {
         state.pitch = narrate_data::read_pitch(tree);
     }
     if state.takes.is_empty() {
-        state.takes = stored_takes(tree);
+        state.takes = stored_takes(tree, &state.voice);
     }
     state
 }
 
-/// What the page shows when it opens: the takes this project left in `narrate/takes.json`, under its own
-/// recording's key. Empty when no narrator is tagged or nothing was ever picked, which is what leaves the
-/// band bare rather than showing someone else's list.
-pub fn stored_takes(tree: &Tree) -> Vec<(f64, f64)> {
-    let Some(recording) = take_recording_key(tree) else {
+/// What the page shows when it opens: the takes this project left in `narrate/takes.json`, each under the
+/// recording it was cut from, as the band shows them, in seconds of the voice's tape
+/// ([`crate::narrate_tape::Tape::takes_on`]). Empty for a voice with no recording, or when nothing was picked.
+pub fn stored_takes(tree: &Tree, voice: &str) -> Vec<(f64, f64)> {
+    let Ok(project) = crate::project::load(tree.dir()) else {
         return Vec::new();
     };
-    narrate_data::load_takes(tree)
-        .ok()
-        .and_then(|mut all| all.remove(&recording))
-        .unwrap_or_default()
-        .iter()
-        .map(|take| (take.s, take.e))
-        .collect()
+    let tape = crate::narrate_band_face::tape(tree, &project, voice);
+    tape.takes_on(&narrate_data::load_takes(tree).unwrap_or_default())
 }
 
 /// The recording the takes belong to: the project's narrator 1, keyed by its own stem (§07's takes row —
@@ -159,14 +154,25 @@ pub fn take_recording_key(tree: &Tree) -> Option<String> {
     (!key.is_empty()).then_some(key)
 }
 
-/// `narrate/takes.json` for the session's recording, from the page's `(start, end)` spans. An empty list
-/// is what deletes the key, which is [`narrate_data::save_takes`]'s own rule, so "removed the last take"
-/// and "never had one" end up as the same file.
-pub fn note_takes(tree: &Tree, takes: &[(f64, f64)]) -> Option<String> {
-    let Some(recording) = take_recording_key(tree) else {
-        // No narrator tagged: there is no recording to file the picks under, so nothing is written.
+/// `narrate/takes.json` after the band's takes became `takes` (band seconds): each recording on the voice's tape
+/// stores its own part of them in its own seconds, beside what it keeps outside the tape
+/// ([`crate::narrate_tape::Tape::store`]). An emptied list is what deletes a key, which is
+/// [`narrate_data::save_takes`]'s own rule, so "removed the last take" and "never had one" end up as the same file.
+pub fn note_takes(tree: &Tree, voice: &str, takes: &[(f64, f64)]) -> Option<String> {
+    let project = crate::project::load(tree.dir()).ok()?;
+    let tape = crate::narrate_band_face::tape(tree, &project, voice);
+    // No recording behind the voice: there is nothing to file the picks under, so nothing is written.
+    if tape.is_empty() {
         return None;
+    }
+    let stored = match narrate_data::load_takes(tree) {
+        Ok(stored) => stored,
+        Err(why) => return Some(why),
     };
-    let stored: Vec<Take> = takes.iter().map(|(s, e)| Take { s: *s, e: *e }).collect();
-    narrate_data::save_takes(tree, &recording, &stored).err()
+    for (recording, picked) in tape.store(takes, &stored) {
+        if let Err(why) = narrate_data::save_takes(tree, &recording, &picked) {
+            return Some(why);
+        }
+    }
+    None
 }

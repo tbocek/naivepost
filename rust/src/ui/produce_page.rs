@@ -32,6 +32,8 @@ pub struct ProduceState {
     pub thumb_title: String,
     /// The first draw already printed the title, so a retitle does not repaint the picture.
     pub title_seeded: bool,
+    /// Where the title is printed on the picture, as dragged on the plate; `None` is the app's default band.
+    pub title_box: Option<crate::project::TitleBox>,
     pub instruction: String,
     pub negative: String,
     pub description: String,
@@ -79,7 +81,7 @@ pub struct ProduceState {
 thread_local! {
     static PRODUCE_STATE: std::cell::RefCell<ProduceState> = const { std::cell::RefCell::new(ProduceState {
         frames: Vec::new(), own: false, texts: Vec::new(), title: String::new(),
-        thumb_title: String::new(), title_seeded: false, instruction: String::new(),
+        thumb_title: String::new(), title_seeded: false, title_box: None, instruction: String::new(),
         negative: String::new(), description: String::new(),
         container: String::new(), codec: String::new(), preset: String::new(),
         resolution: String::new(), frame_rate: String::new(), audio: String::new(),
@@ -520,13 +522,18 @@ fn rebuild_settings(window: &adw::ApplicationWindow, _s: &ProduceState) {
     // The fresh controls carry no handlers until this runs: rebuilding the grid would otherwise leave
     // every row decorative.
     wire_settings(window);
-    // F0.14 S9: a project whose profile sets the encoder rows shows them here, greyed: they are changed in
-    // Profiles, the one place a profile's settings live.
+    // F0.14 S9: a profile's rows are where the project's encoder settings START; the rows here are the
+    // project's own and always editable (the first rewrite greyed them and sent the person to Profiles, where a
+    // change reached nothing). The tooltip says which profile set them.
     let set_by = encoder_profile();
-    settings.set_sensitive(set_by.is_none());
+    settings.set_sensitive(true);
     settings.set_tooltip_text(
         set_by
-            .map(|name| format!("Set by the profile {name} \u{2014} change them in Profiles"))
+            .map(|name| {
+                format!(
+                    "Started from the profile {name} \u{2014} a change here is this project's own"
+                )
+            })
             .as_deref(),
     );
 }
@@ -931,6 +938,7 @@ pub fn press_words_reword(window: &adw::ApplicationWindow, index: usize, text: &
     if !done {
         return say(window, "no such word box on the thumbnail");
     }
+    keep_page_publish();
     refresh(window);
     say(
         window,
@@ -948,6 +956,7 @@ pub fn press_words_remove(window: &adw::ApplicationWindow, index: usize) -> Stri
     if !done {
         return say(window, "no such word box on the thumbnail");
     }
+    keep_page_publish();
     refresh(window);
     say(window, "words removed")
 }
@@ -968,8 +977,66 @@ pub fn press_words_place(
         screen::place_words(&mut mark, cx, cy, wf, hf, text);
         s.texts.push(mark);
     });
+    keep_page_publish();
     refresh(window);
     say(window, &format!("words placed: {}", text.trim()))
+}
+
+/// A box moved or resized on the picture by hand: the title band or one marked text, at the fractions the drag
+/// left it. Kept like every other edit of the picture's words, and printed onto the thumbnail at once.
+pub fn press_words_move(
+    window: &adw::ApplicationWindow,
+    hold: crate::ui::produce_words_press::Hold,
+    at: crate::project::TitleBox,
+) -> String {
+    use crate::ui::produce_words_press::Hold;
+    let done = mutate(|s| match hold {
+        Hold::Title => {
+            s.title_box = Some(at);
+            true
+        }
+        Hold::Mark(index) => match s.texts.get_mut(index) {
+            Some(mark) => {
+                (mark.cx, mark.cy, mark.wf, mark.hf) = (at.cx, at.cy, at.wf, at.hf);
+                true
+            }
+            None => false,
+        },
+    });
+    if !done {
+        return say(window, "no such word box on the thumbnail");
+    }
+    keep_page_publish();
+    refresh(window);
+    say(
+        window,
+        match hold {
+            Hold::Title => "title moved",
+            Hold::Mark(_) => "words moved",
+        },
+    )
+}
+
+/// The title band's ✎: the line printed on the picture, reworded, or taken off when emptied. Setting it counts
+/// as seeding either way, so a line taken off stays off (the prototype's `setThumbTitle`); the video's title is
+/// not touched.
+pub fn press_title_words(window: &adw::ApplicationWindow, text: &str) -> String {
+    let words = text.trim().to_string();
+    let removed = words.is_empty();
+    mutate(|s| {
+        s.thumb_title = words;
+        s.title_seeded = true;
+    });
+    keep_page_publish();
+    refresh(window);
+    say(
+        window,
+        if removed {
+            "title taken off the picture"
+        } else {
+            "title on the picture reworded"
+        },
+    )
 }
 
 // --- spelling helpers ------------------------------------------------------------------------------
@@ -1009,6 +1076,63 @@ fn keep_settings() {
     if let Err(why) = keep_produce(&produce_settings(&read_state())) {
         crate::ui::window::log_line(&format!("!!! the encoder settings were not kept: {why}"));
     }
+}
+
+/// The thumbnail's words as the page now holds them (the title box, the marked texts, the printed title), kept in
+/// the window's session so the autosave and the close flush write them into the project: an edit made on the
+/// picture survives closing the window without a run. Kept in the project's own `publish` record, not in
+/// `publish.json`, which is what a RUN wrote and whose existence says the upload text was written.
+pub(crate) fn keep_page_publish() {
+    let Some(session) =
+        crate::ui::window::PLAY_SESSION.with(|slots| slots.borrow().last().cloned())
+    else {
+        return;
+    };
+    let page = crate::ui::produce_snapshot::publish_of_state(&read_state());
+    let held = session.borrow().publish.clone().unwrap_or_default();
+    session.borrow_mut().publish = Some(crate::ui::produce_snapshot::merge_publish(
+        Some(page),
+        &held,
+    ));
+    reprint_picture();
+}
+
+/// The page's words printed onto `thumbnail.png` again from the plain picture, after every edit of a box (the
+/// prototype's `recomposite`): the file ⤓ export and the upload take carries what the plate shows, with no
+/// run and no GPU. A decode and an encode, so on a worker; a picture never drawn has nothing to print onto.
+fn reprint_picture() {
+    let s = read_state();
+    let tree = crate::ui::produce_page_rows::session_tree();
+    let plain = tree.thumbnail_plain_png();
+    if !plain.is_file() {
+        return;
+    }
+    let title = if s.title_seeded {
+        s.thumb_title.clone()
+    } else {
+        String::new()
+    };
+    let band = s.title_box.unwrap_or_default();
+    let texts = s.texts.clone();
+    crate::ui::background::run(
+        "thumbnail words",
+        move || {
+            crate::produce_upload_print::print_words(
+                &plain,
+                &tree.thumbnail_png(),
+                &texts,
+                &title,
+                &band,
+            )
+        },
+        |printed| {
+            if let Err(why) = printed {
+                crate::ui::window::log_line(&format!(
+                    "    publish: printing the words failed: {why}"
+                ));
+            }
+        },
+    );
 }
 
 /// The encoder settings kept, in both places the project lives: the window's session, which the autosave and
@@ -1059,6 +1183,9 @@ pub fn load_page(tree: &crate::layout::Tree) -> ProduceState {
         }
         publish.own = publish.own || written.own;
         publish.title_seeded = publish.title_seeded || written.title_seeded;
+        if publish.title_box.is_none() {
+            publish.title_box = written.title_box;
+        }
     }
     let clips: Vec<&crate::cut::Seg> = cut.segs.iter().filter(|seg| seg.e > seg.s).collect();
     let narration = crate::narration::load(tree).unwrap_or_default();
@@ -1069,6 +1196,7 @@ pub fn load_page(tree: &crate::layout::Tree) -> ProduceState {
         title: publish.title.clone(),
         thumb_title: publish.thumb_title.clone(),
         title_seeded: publish.title_seeded,
+        title_box: publish.title_box,
         instruction: publish.prompt.clone(),
         negative: publish.negative.clone(),
         description: publish.description.clone(),
@@ -1685,6 +1813,9 @@ fn take_written_publish(window: &adw::ApplicationWindow) {
         // is seeded, so a landing that copied the words and not the flag left the picture on the page untitled
         // while `thumbnail.png` carried the title.
         s.title_seeded = s.title_seeded || written.title_seeded;
+        if written.title_box.is_some() {
+            s.title_box = written.title_box;
+        }
         if !written.texts.is_empty() {
             s.texts = written.texts.clone();
         }

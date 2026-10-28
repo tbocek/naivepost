@@ -669,6 +669,20 @@ fn f5_4_s3_the_sessions_own_language_is_track_0() {
     assert_eq!(sub::track_languages("en", &other), vec!["sv", "de"]);
     assert!(sub::track_languages("en", &["en".to_string()]).is_empty());
     assert!(sub::track_languages("en", &[]).is_empty());
+
+    // A profile ticks languages by name for every video it makes; a German video with English and German ticked
+    // is translated into English only, and the page's Translate row names only that.
+    let both = ["English".to_string(), "German".to_string()];
+    assert_eq!(sub::track_languages("de", &both), vec!["en"]);
+    assert_eq!(sub::track_languages("en", &both), vec!["de"]);
+    assert_eq!(
+        naivepost::ui::produce_page_layout::translate_label(&both, "German"),
+        "English"
+    );
+    assert_eq!(
+        naivepost::ui::produce_page_layout::translate_label(&both, "en"),
+        "German"
+    );
 }
 
 #[test]

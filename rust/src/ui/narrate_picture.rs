@@ -32,10 +32,21 @@ pub fn repaint(window: &adw::ApplicationWindow) {
 }
 
 thread_local! {
-    /// What `narrate-video` shows now: the built-in player's frames (`None`), or the still last put there.
-    static SHOWN: std::cell::RefCell<Option<Option<std::path::PathBuf>>> = const { std::cell::RefCell::new(None) };
+    /// What `narrate-video` shows now, or `None` before anything was put there.
+    static SHOWN: std::cell::RefCell<Option<Shown>> = const { std::cell::RefCell::new(None) };
     /// A recheck is already set for a listing or a decode a worker has not answered yet.
     static RECHECK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// What `narrate-video` holds. Two kinds, not one `Option` doing both: the first rewrite spelled "the built-in
+/// player's frames" and "no still found" the same way, so a page whose first look found no still never put the
+/// player's frames up when ▶ started it, and the preview stayed black while the cut played.
+#[derive(Clone, PartialEq)]
+enum Shown {
+    /// The built-in player's own frames.
+    Player,
+    /// The still Prepare extracted for this second.
+    Still(std::path::PathBuf),
 }
 
 /// How soon a picture still coming from a worker is looked for again.
@@ -49,14 +60,14 @@ fn show_frame(window: &adw::ApplicationWindow) {
         return;
     };
     if crate::narrate_preview_leg::picture_built_in() {
-        if SHOWN.with(|shown| shown.borrow().as_ref().is_some_and(Option::is_none)) {
+        if SHOWN.with(|shown| *shown.borrow() == Some(Shown::Player)) {
             return;
         }
         if let Some(paintable) = crate::play_built_in::paintable()
             .and_then(|object| object.downcast::<gtk::gdk::Paintable>().ok())
         {
             video.set_paintable(Some(&paintable));
-            SHOWN.with(|shown| *shown.borrow_mut() = Some(None));
+            SHOWN.with(|shown| *shown.borrow_mut() = Some(Shown::Player));
         }
         return;
     }
@@ -67,22 +78,35 @@ fn show_frame(window: &adw::ApplicationWindow) {
         recheck(window);
         return;
     };
-    if SHOWN.with(|shown| shown.borrow().as_ref() == Some(&still)) {
+    // No frame for this second: the dark plate, and nothing held, so the next look (a landed listing, a tick, a
+    // seek) tries again rather than taking "none yet" for an answer.
+    let Some(path) = still else {
+        video.set_paintable(None::<&gtk::gdk::Paintable>);
+        SHOWN.with(|shown| *shown.borrow_mut() = None);
+        return;
+    };
+    let wanted = Shown::Still(path.clone());
+    if SHOWN.with(|shown| shown.borrow().as_ref() == Some(&wanted)) {
         return;
     }
-    let texture = match still.as_ref() {
-        None => None,
-        Some(path) => match crate::ui::cut_picture_cache::picture(path) {
-            crate::ui::cut_picture_cache::Decoded::Ready(held) => Some(held.texture),
-            crate::ui::cut_picture_cache::Decoded::Missing => None,
-            crate::ui::cut_picture_cache::Decoded::Coming => {
-                recheck(window);
-                return;
-            }
-        },
+    let texture = match crate::ui::cut_picture_cache::picture(&path) {
+        crate::ui::cut_picture_cache::Decoded::Ready(held) => Some(held.texture),
+        crate::ui::cut_picture_cache::Decoded::Missing => None,
+        crate::ui::cut_picture_cache::Decoded::Coming => {
+            recheck(window);
+            return;
+        }
     };
     video.set_paintable(texture.as_ref());
-    SHOWN.with(|shown| *shown.borrow_mut() = Some(still));
+    SHOWN.with(|shown| *shown.borrow_mut() = Some(wanted));
+}
+
+/// The preview again, for a worker's answer that landed (a frame folder listed, a still decoded): the page's
+/// own repaint, on the window the page lives in.
+pub fn repaint_landed() {
+    if let Some(window) = crate::ui::window::built_window() {
+        repaint(&window);
+    }
 }
 
 /// Look again in a moment, once: what a worker was asked for will have landed or still be coming.

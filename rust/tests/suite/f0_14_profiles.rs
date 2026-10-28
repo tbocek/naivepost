@@ -222,10 +222,21 @@ fn f0_14_s3_to_s6_prepare_fills_a_profile_in_and_refuses_while_a_required_field_
             "the text area starts left of the one-line fields: {notes_box:?} vs {title_box:?}"
         );
         assert!(
-            (notes_box.height() - window.height() as f32 / 3.0).abs() <= 12.0,
-            "a third of the window tall: {} of {}",
+            notes_box.height() >= window.height() as f32 / 3.0 - 12.0,
+            "at least a third of the window tall: {} of {}",
             notes_box.height(),
             window.height()
+        );
+        // And it takes the space the form leaves: its bottom is the bottom of the form's visible area, not a
+        // third of the way down with the rest of the page empty (the first rewrite's fixed third).
+        let form_area = common::find_named(&window, "profile-form")
+            .and_then(|form| form.parent())
+            .expect("the form's viewport");
+        let area = at(&form_area);
+        let gap = (area.y() + area.height()) - (notes_box.y() + notes_box.height());
+        assert!(
+            gap <= 30.0,
+            "the text area fills down to the bottom of the form, {gap} px short: {notes_box:?} in {area:?}"
         );
         assert!(
             !common::find_named(&window, "bench-text").is_some_and(|w| w.is_mapped()),
@@ -249,17 +260,38 @@ fn f0_14_s3_to_s6_prepare_fills_a_profile_in_and_refuses_while_a_required_field_
             naivepost::project::Preset::VerySlow,
             "kept in naivepost.json"
         );
-        // And the Produce page shows them greyed: they are changed in Profiles now.
+        // And the Produce page shows them EDITABLE: the profile is where they start, and a change on the page is
+        // the project's own (the first rewrite greyed them, and a change made in Profiles reached nothing).
         let settings = common::find_named(&window, "encoder-settings").expect("the Produce rows");
         assert!(
-            !settings.is_sensitive(),
-            "the Produce page's rows are the profile's"
+            settings.is_sensitive(),
+            "the Produce page's rows can be changed"
         );
         assert!(
             settings
                 .tooltip_text()
                 .is_some_and(|tip| tip.contains("News show")),
-            "and say which profile sets them"
+            "and say which profile they started from"
+        );
+        // The project remembers which rows it took, so an opening with the profile unchanged keeps the person's
+        // own page edits: only rows that changed in Profiles are taken again.
+        let taken = session
+            .borrow()
+            .profile
+            .as_ref()
+            .unwrap()
+            .produce_rows
+            .clone();
+        assert!(
+            taken.contains("Preset: veryslow"),
+            "the rows taken: {taken}"
+        );
+        session.borrow_mut().produce.preset = naivepost::project::Preset::Fast;
+        ui::profile_form::follow_profile_produce();
+        assert_eq!(
+            session.borrow().produce.preset,
+            naivepost::project::Preset::Fast,
+            "an unchanged profile leaves a page edit alone"
         );
 
         // S6: Title and Episode are required and empty, so ▶ refuses with the first.

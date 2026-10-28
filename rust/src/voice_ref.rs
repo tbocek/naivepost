@@ -494,8 +494,12 @@ pub fn recut_for_voice(
     // §6 (`Automatic ranking`): the reference is cut from whoever holds the most turn time. The flow's slot
     // is the fallback when there is no diarization to rank at all, so S2 answers "no diarization" rather
     // than inventing a speaker.
+    // Hand-picked takes come from every recording the narrator is tagged on (the take band shows them all, end
+    // to end), each cut from its own file; the automatic pick reads the one recording the flow was handed.
+    let picked = picked_takes(tree, source);
+    let takes: Vec<(f64, f64)> = picked.iter().map(|(_, s, e)| (*s, *e)).collect();
     let plan = plan_reference(
-        &takes_of(tree, source),
+        &takes,
         turns,
         &words_in,
         &words_span,
@@ -505,6 +509,13 @@ pub fn recut_for_voice(
         ReferencePlan::HandPicked(pieces) => (pieces.clone(), pieces.len()),
         ReferencePlan::Automatic(pieces) => (pieces.clone(), 0usize),
         ReferencePlan::Unavailable(why) => return Err(why.clone()),
+    };
+    // The file each piece is cut from: a hand-picked piece's own recording (the plan keeps the takes' order),
+    // an automatic one's the source.
+    let files: Vec<String> = if hand_picked > 0 {
+        picked.iter().map(|(file, _, _)| file.clone()).collect()
+    } else {
+        vec![source.to_string(); pieces.len()]
     };
     // §6 (`Reference build`) counts the reference in WORDS when it was picked automatically and in TAKES
     // when a hand picked them — the same distinction `reference_build_log` spells. The count is the chosen
@@ -523,7 +534,12 @@ pub fn recut_for_voice(
     if pieces.len() == 1 {
         // One stretch needs no stitching: level it straight onto the base.
         let piece = &pieces[0];
-        let args = level_piece_args(source, piece.start, piece.end, &base.display().to_string());
+        let args = level_piece_args(
+            &files[0],
+            piece.start,
+            piece.end,
+            &base.display().to_string(),
+        );
         run_ffmpeg(ffmpeg, &args)?;
     } else {
         // Each piece levelled on its own, so the loudness target is met per stretch rather than across
@@ -532,8 +548,12 @@ pub fn recut_for_voice(
         let mut parts: Vec<PathBuf> = Vec::new();
         for (index, piece) in pieces.iter().enumerate() {
             let part = part_path(tree, index);
-            let args =
-                level_piece_args(source, piece.start, piece.end, &part.display().to_string());
+            let args = level_piece_args(
+                &files[index],
+                piece.start,
+                piece.end,
+                &part.display().to_string(),
+            );
             run_ffmpeg(ffmpeg, &args)?;
             parts.push(part);
         }
@@ -614,16 +634,40 @@ fn same_file(a: &str, b: &str) -> bool {
     !a.is_empty() && !b.is_empty() && name(a) == name(b)
 }
 
-/// The hand-picked takes this recording owns, as seconds. `takes.json` is keyed by RECORDING, so the
-/// lookup is the source's own stem; no file, no key, or an unreadable one all mean "nobody picked
-/// anything", which sends the plan to S2's automatic branch rather than failing the build.
-fn takes_of(tree: &Tree, source: &str) -> Vec<(f64, f64)> {
-    let key = narrate_data::take_base(Path::new(source));
-    narrate_data::load_takes(tree)
-        .ok()
-        .and_then(|all| all.get(&key).cloned())
-        .map(|takes| takes.iter().map(|take| (take.s, take.e)).collect())
-        .unwrap_or_default()
+/// The hand-picked takes, each with the recording it is cut from: every recording tagged with the flow's
+/// narrator slot (the take band shows them all, end to end), in the order they were made (their names are their
+/// stamps), each one's takes in its own seconds. `takes.json` is keyed by RECORDING, by the file's stem. A
+/// project that tags nothing answers the flow's own source's takes; no file, no key, or an unreadable one all
+/// mean "nobody picked anything", which sends the plan to S2's automatic branch rather than failing the build.
+fn picked_takes(tree: &Tree, source: &str) -> Vec<(String, f64, f64)> {
+    let all = narrate_data::load_takes(tree).unwrap_or_default();
+    let mut files: Vec<String> = crate::project::load(tree.dir())
+        .map(|project| {
+            project
+                .sources
+                .iter()
+                .filter(|tagged| tagged.narrator == FLOW_SLOT as u32)
+                .map(|tagged| {
+                    crate::layout::resolve(tree.dir(), tree.dir(), &tagged.path)
+                        .display()
+                        .to_string()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if files.is_empty() {
+        files.push(source.to_string());
+    }
+    files.sort_by_key(|file| narrate_data::take_base(Path::new(file)));
+    files
+        .iter()
+        .flat_map(|file| {
+            all.get(&narrate_data::take_base(Path::new(file)))
+                .into_iter()
+                .flatten()
+                .map(move |take| (file.clone(), take.s, take.e))
+        })
+        .collect()
 }
 
 /// One stitched piece's working file, beside the two the server reads.

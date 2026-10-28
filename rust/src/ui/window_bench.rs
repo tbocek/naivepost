@@ -376,8 +376,7 @@ pub(crate) fn paint_tabs_for(window: &adw::ApplicationWindow, project: &Project)
 /// paste — the page still read `Segments: 0` / `Cut: 00:00` beside landed scenes. Each value comes from
 /// the same row list [`idle_readouts`] emits, so no second copy of a reading exists to drift. Everything
 /// else on that form keeps its own owner: Playhead belongs to the preview clock, Selection to
-/// [`refresh_selection_readout`], Aspect ratio to `refresh_aspect_readout`, and Thumbnails is set by the
-/// 🖼−/🖼+ ladder, which writes the number it drives.
+/// [`refresh_selection_readout`] and Aspect ratio to `refresh_aspect_readout`.
 pub(crate) fn refresh_cut_readouts(window: &adw::ApplicationWindow) {
     let cut_ = ui::newest_review_cut();
     // The footage total: what the `Source:` row answers with — the session's merged filmed runs, the same
@@ -387,7 +386,6 @@ pub(crate) fn refresh_cut_readouts(window: &adw::ApplicationWindow) {
         .map(|(start, end)| end - start)
         .sum();
     let rows = cut_screen::idle_readouts(
-        crate::ui::cut_tracks::thumb_px(),
         &cut_.aspect,
         crate::ui::preview_player(window).playhead.unwrap_or(0.0),
         cut_select::marks(ui::selection(window).as_ref()),
@@ -395,8 +393,8 @@ pub(crate) fn refresh_cut_readouts(window: &adw::ApplicationWindow) {
         source,
     );
     for row in rows.iter() {
-        // Only the four readings that answer from the timeline. The other four each have their own owner
-        // already: Thumbnails is written by the 🖼−/🖼+ ladder, Aspect ratio by `refresh_aspect_readout`,
+        // Only the four readings that answer from the timeline. The other three each have their own owner
+        // already: Aspect ratio by `refresh_aspect_readout`,
         // Selection by [`refresh_selection_readout`], and Playhead by the preview's own clock tick.
         if !matches!(
             row.label,
