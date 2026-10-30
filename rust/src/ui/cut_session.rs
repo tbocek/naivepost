@@ -245,12 +245,18 @@ fn ask_length(configured: String, key: String) {
 /// Cut page's rows, badges and band drawn from them.
 fn repaint_measured() {
     let cut_ = crate::ui::window::newest_review_cut();
-    if let Some(spans) = for_open_session(&cut_).filter(|spans| !spans.is_empty()) {
-        crate::ui::cut_folds::set_session_recordings(&spans);
-    }
+    let spans = for_open_session(&cut_).filter(|spans| !spans.is_empty());
     let Some(window) = crate::ui::window::built_window() else {
+        if let Some(spans) = spans {
+            crate::ui::cut_folds::set_session_recordings(&spans);
+        }
         return;
     };
+    if let Some(spans) = spans {
+        crate::ui::cut_view::keep_line_through_layout(&window, || {
+            crate::ui::cut_folds::set_session_recordings(&spans);
+        });
+    }
     crate::ui::refresh_camera_rows(&window);
     crate::ui::cut_folds::refresh_fold_badges(&window);
     gtk4::prelude::WidgetExt::queue_draw(&window);

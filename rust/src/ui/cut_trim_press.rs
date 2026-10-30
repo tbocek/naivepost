@@ -317,7 +317,7 @@ fn press_move_core(
         d_seconds,
         &cut_.segs,
         0.0,
-        window::TRACK_REC_END,
+        crate::ui::window_trim_strip::session_wall(),
         pps,
         &cut_.folds,
         &cut_.shift,
@@ -750,7 +750,10 @@ pub fn press_border_move(
     first: bool,
 ) -> f64 {
     let mut cut_ = crate::ui::window::newest_review_cut();
-    let clamped = cut_trim::clamp_edge(&cut_.segs, index, border, to, 0.0, window::TRACK_REC_END);
+    let (rec_start, rec_end) = cut_.segs.get(index).map_or((0.0, window::TRACK_REC_END), |seg| {
+        crate::ui::window_trim_strip::clip_wall(seg.s, seg.e)
+    });
+    let clamped = cut_trim::clamp_edge(&cut_.segs, index, border, to, rec_start, rec_end);
     match border {
         cut_trim::Border::Start => {
             if let Some(seg) = cut_.segs.get_mut(index) {

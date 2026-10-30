@@ -322,8 +322,15 @@ fn build_right_column() -> gtk::Box {
         screen::DESCRIPTION_LINES as i32,
         "What goes under the video on YouTube",
     );
-    description.set_vexpand(true);
-    right.append(&description);
+    // In a scroller of its own: a bare text view asks for the height of all its text, so a long description raised
+    // the page's minimum and the divider above the bottom bar could not move up. Its 8 lines are the floor.
+    let description_scroller = gtk::ScrolledWindow::new();
+    description_scroller.set_widget_name("description-scroller");
+    description_scroller.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    description_scroller.set_min_content_height(20 * screen::DESCRIPTION_LINES as i32);
+    description_scroller.set_child(Some(&description));
+    description_scroller.set_vexpand(true);
+    right.append(&description_scroller);
 
     // §1's separator between what a person WRITES and how the video is ENCODED: "the YouTube description
     // heading and box, a separator, then the encoder settings". Named because the spec lists it as one of

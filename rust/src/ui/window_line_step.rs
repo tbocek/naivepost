@@ -352,7 +352,7 @@ fn nudge_held_segment(
         index,
         seg.s + delta,
         0.0,
-        crate::ui::window_trim_strip::TRACK_REC_END,
+        crate::ui::window_trim_strip::session_wall(),
         f64::MAX,
     );
     let moved = {

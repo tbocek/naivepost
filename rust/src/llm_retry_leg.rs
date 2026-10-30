@@ -271,22 +271,18 @@ fn record_dial(
         Err(why) => ("", "", why.to_string()),
     };
     let problem = (!failure.is_empty()).then_some(failure);
-    // A streamed call's own reply is the words that reached the page. The leg hands `reply_body` to `call_of`
-    // as raw SSE framing (`data: {…}` lines), which belongs on an exchange page only once it has been read
-    // back into prose — otherwise the closed section shows the wire, not the answer. The hook did that reading
-    // as it grew the live section, so its copy is what the finished section prints; a call that streamed nothing
-    // (refused, dead) keeps the body as it arrived, which for those endings is the server's own message and
-    // worth seeing.
+    // A whole stream is read back through `call_of`'s stream parser, which is what keeps the thinking and the tool
+    // calls on the finished section. A call that ended without one (refused, given up mid-stream) shows the words the
+    // hook decoded, or, with none, the body as it arrived, which for those endings is the server's own message.
     let streamed_words = live.streamed_words();
-    let shown_reply = if streamed && !streamed_words.is_empty() {
+    let partial = streamed && !streamed_words.is_empty() && !crate::llm_request::is_event_stream(content_type);
+    let shown_reply = if partial {
         streamed_words.as_str()
     } else {
         reply_body
     };
-    // And the page's `reply:` line has to describe that same text: `call_of` reads an answer through the
-    // stream parser when the content type says event-stream, and prose handed to it then parses as nothing.
-    let shown_type = if streamed && !streamed_words.is_empty() {
-        "text/plain"
+    let shown_type = if partial {
+        exchange_leg::WORDS_AS_RECEIVED
     } else {
         content_type
     };

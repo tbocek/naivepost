@@ -171,6 +171,29 @@ fn check_an_unmoved_press_is_a_click(app: &adw::Application) {
 }
 
 /// S1: the trim seam writes exactly the clamped edge and prints the release sentence.
+/// Past the first hour a border moves like any other: the wall is the recording, not a one-hour placeholder that
+/// clamped every later clip's end to its 1 s minimum the moment it was taken.
+fn check_a_border_past_the_first_hour_moves(app: &adw::Application) {
+    let window = cut_window(app);
+    let mut seeded = ui::window::review_cut_of(&window);
+    seeded.segs = vec![clip(3638.5, 3683.9)];
+    ui::seed_review_cut(&window, &seeded);
+    let end = |t: f64| {
+        ui::window::press_trim_border(&window, 0, naivepost::cut_trim::Border::End, t);
+        ui::window::review_cut_of(&window).segs[0].e
+    };
+    assert!((end(3690.0) - 3690.0).abs() < 1e-9, "the end grows");
+    assert!((end(3650.0) - 3650.0).abs() < 1e-9, "and shrinks only as far as the hand went");
+
+    ui::set_session_recordings(&[naivepost::timeline::Recording {
+        base: "take".to_string(),
+        start: 3630.0,
+        end: 3700.0,
+    }]);
+    assert!((end(3800.0) - 3700.0).abs() < 1e-9, "with the takes known, its recording's end is the wall");
+    window.close();
+}
+
 fn check_a_border_drag_lands_where_the_rule_says(app: &adw::Application) {
     let window = cut_window(app);
 
@@ -327,6 +350,7 @@ fn window_round() {
         RAN_RIGHT_TRIM.store(true, Ordering::SeqCst);
         check_an_unmoved_right_press_changes_nothing_through_the_widget(app);
         RAN_UNMOVED.store(true, Ordering::SeqCst);
+        check_a_border_past_the_first_hour_moves(app);
         check_a_border_drag_lands_where_the_rule_says(app);
         RAN_TRIM.store(true, Ordering::SeqCst);
         check_a_border_drag_on_the_real_strip_trims_the_clip(app);

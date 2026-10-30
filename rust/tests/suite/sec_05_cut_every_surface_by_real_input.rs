@@ -321,16 +321,15 @@ fn sec_05_cut_every_surface_answers_real_input() {
         );
 
         // §1 wheel over the tracks: a notch up zooms in, Shift pans.
-        // The zoom keeps the second under the cursor where it is: 4 s stays under the pointer.
+        // The red line is on screen, so the zoom stays on it, wherever the pointer is.
         let pps = ui::cut_view::band_scene_for(&window).pps;
-        let cursor = x_of(&window, 4.0);
-        real_scroll(&band, cursor, picture_y, -1, &[]);
+        let stands = x_of(&window, line(&window));
+        real_scroll(&band, x_of(&window, 4.0), picture_y, -1, &[]);
         assert!(
-            ui::cut_view::band_scene_for(&window).pps > pps && near(x_of(&window, 4.0), cursor, 2.0),
-            "a wheel notch over the tracks zooms in around the cursor ({pps} -> {} px/s, 4 s from x {cursor} \
-             to {})",
+            ui::cut_view::band_scene_for(&window).pps > pps && near(x_of(&window, line(&window)), stands, 2.0),
+            "a wheel notch over the tracks zooms in around the line ({pps} -> {} px/s, the line from x {stands} to {})",
             ui::cut_view::band_scene_for(&window).pps,
-            x_of(&window, 4.0)
+            x_of(&window, line(&window))
         );
         // Shift+wheel down pans later, as a scrolled list does.
         let origin = ui::cut_view::origin();

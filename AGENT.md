@@ -11,7 +11,7 @@ was written from: read it for observed behaviour; new work goes in `rust/`.
 
 ## Environment
 
-- Container: Alpine (`.devcontainer/`) with the Rust toolchain, GTK 4 and libadwaita
+- Container: Arch Linux (`.devcontainer/`) with the Rust toolchain, GTK 4 and libadwaita
   dev packages, just and Xvfb. No display and no GPU: the app's window exists only in
   tests and in `just snapshot`, both under Xvfb. No Go toolchain; check `command -v go`
   before proposing a Go command.

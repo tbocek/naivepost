@@ -1,30 +1,31 @@
 # codehalter bootstrap assisted
-FROM alpine:3.24
+FROM archlinux:latest
 
 # Base tools, then the rust/GTK rewrite toolchain (rust/) with node/npm, plus a
 # virtual display, fonts and icons so GUI tests run and screenshots render text
 # and icons inside this container.
-RUN apk update && apk add --no-cache \
-        ca-certificates curl git sudo openssh-client gcompat \
-        bash shadow \
-        grep coreutils procps \
-        firefox-esr \
+RUN pacman -Syu --noconfirm --needed \
+        ca-certificates curl git sudo openssh \
+        bash python \
+        grep coreutils procps-ng \
+        firefox \
         nodejs npm \
-        rust cargo rust-clippy gcc musl-dev \
-        gtk4.0-dev libadwaita-dev \
+        rust gcc pkgconf make \
+        gtk4 libadwaita \
         just \
-        xvfb xvfb-run xdotool \
-        font-dejavu font-noto font-noto-emoji \
+        xorg-server-xvfb xorg-xauth xdotool \
+        ttf-dejavu noto-fonts noto-fonts-cjk noto-fonts-emoji \
         adwaita-icon-theme hicolor-icon-theme librsvg \
         ffmpeg \
-        gstreamer-dev gst-plugins-base-dev gst-plugins-good gst-libav \
-        gst-plugins-rs-gtk4 gstreamer-tools \
-        dconf gsettings-desktop-schemas
+        gstreamer gst-plugins-base gst-plugins-good gst-libav gst-plugin-gtk4 \
+        dconf gsettings-desktop-schemas \
+    && pacman -Scc --noconfirm
 
 RUN groupadd --gid 1000 dev \
     && useradd --uid 1000 --gid 1000 -m -s /bin/bash -G wheel dev \
     && echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev \
     && install -d -o 1000 -g 1000 /home/dev/.config \
+    && install -d -o 1000 -g 1000 /home/dev/.config/naivepost \
     && install -d -m 700 -o 1000 -g 1000 /run/user/1000
 
 USER dev
