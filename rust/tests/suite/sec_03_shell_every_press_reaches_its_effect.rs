@@ -298,17 +298,13 @@ fn check_log_link_click(window: &adw::ApplicationWindow, session: &std::path::Pa
         .flatten()
         .find_map(|controller| controller.downcast::<gtk::GestureClick>().ok())
         .expect("the log view answers clicks");
-    let before = ui::window_logs().len();
+    let before = ui::log_link::blocked_opens_for_test();
     click.emit_by_name::<()>("released", &[&1i32, &x, &y]);
-    let said = || {
-        ui::window_logs()[before..]
-            .iter()
-            .any(|line| line.contains("xdg-open") || line.contains("could not open"))
-    };
     assert!(
-        turn_until(Duration::from_secs(10), said),
-        "the click opened the path (here: the fallback, or why not): {:?}",
-        &ui::window_logs()[before..]
+        turn_until(Duration::from_secs(10), || {
+            ui::log_link::blocked_opens_for_test() > before
+        }),
+        "the click reached the opener, which a test binary only counts"
     );
 }
 

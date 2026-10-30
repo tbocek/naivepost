@@ -13,7 +13,7 @@ RUN apk update && apk add --no-cache \
         rust cargo rust-clippy gcc musl-dev \
         gtk4.0-dev libadwaita-dev \
         just \
-        xvfb xvfb-run \
+        xvfb xvfb-run xdotool \
         font-dejavu font-noto font-noto-emoji \
         adwaita-icon-theme hicolor-icon-theme librsvg \
         ffmpeg \

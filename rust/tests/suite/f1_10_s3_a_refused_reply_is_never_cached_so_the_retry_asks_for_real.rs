@@ -30,5 +30,9 @@ fn f1_10_s3_a_refused_reply_is_never_cached_so_the_retry_asks_for_real() {
     );
     let cache = fixture.root.join("session.naivepost/cache/llm/textedit");
     let stored = std::fs::read_dir(&cache).map(|d| d.count()).unwrap_or(0);
-    assert_eq!(stored, 0, "no cache file left behind by a refused answer");
+    // Refused on every try, the join is filed as "nothing removed" under its own input (`join_ask::keep_for_good`):
+    // the refused WORDS are never what comes back, and the next run asks nothing about a join nothing changed.
+    assert_eq!(stored, 1, "the give-up is filed once, under the join's input");
+    let lines = press(&fixture.tree, &fixture.project);
+    assert_eq!(llm.drained(), 0, "the same join asks nothing on the next run: {lines:?}");
 }

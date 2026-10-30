@@ -275,7 +275,10 @@ fn sec_08_produce_every_surface_answers_real_input() {
 
         // F5.1 and §03-shell §2: ▶ opens the run, ⏹ stops it between two of the encoder's steps. Pressed before
         // ↻ Transcode, whose finished video would put S2's Overwrite question in front of the run.
-        naivepost::produce_translate::set_spawn_for_test(spawn_after(Duration::from_millis(700)));
+        // The encoder's first step holds until the click has landed: a real click takes over a second, so a step of
+        // a fixed length could end the walk's last checkpoint first, and the run would rightly finish.
+        static STOP_PRESSED: AtomicBool = AtomicBool::new(false);
+        naivepost::produce_translate::set_spawn_for_test(spawn_when(&STOP_PRESSED));
         let play = ui::play_button(&window).expect("the run bar's \u{25b6}");
         real_click_centre(&play);
         assert_eq!(
@@ -286,6 +289,7 @@ fn sec_08_produce_every_surface_answers_real_input() {
         );
         let stop = ui::stop_button(&window).expect("the run bar's \u{23f9}");
         real_click_centre(&stop);
+        STOP_PRESSED.store(true, Ordering::SeqCst);
         assert!(
             ui::background::settle_for_test(Duration::from_secs(60)),
             "the render's worker answered"
@@ -317,6 +321,17 @@ fn sec_08_produce_every_surface_answers_real_input() {
 }
 
 /// The scripted encoder: each command's output appears on disk after `wait`.
+/// [`spawn_after`] that answers once `go` is set, or after 30 s so a click that never lands fails rather than hangs.
+fn spawn_when(go: &'static AtomicBool) -> naivepost::produce_translate::SpawnSlot {
+    std::sync::Arc::new(move |command: &naivepost::produce_exec::Command| {
+        let until = std::time::Instant::now() + Duration::from_secs(30);
+        while !go.load(Ordering::SeqCst) && std::time::Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        spawn_after(Duration::ZERO)(command)
+    })
+}
+
 fn spawn_after(wait: Duration) -> naivepost::produce_translate::SpawnSlot {
     std::sync::Arc::new(move |command: &naivepost::produce_exec::Command| {
         std::thread::sleep(wait);

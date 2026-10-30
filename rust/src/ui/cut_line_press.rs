@@ -106,10 +106,10 @@ pub fn press(
     }
 
     // S4's cue-and-scroll follows the position rather than being a rule of its own: the frame under the
-    // line is repainted and the view recentres if the line left it.
+    // line is repainted. The line lands under the hand, so the view does not move.
     if outcome.line_moved {
         cut_picture::note_line_moved(window, outcome.line_at);
-        cut_view::follow_playhead(window, outcome.line_at);
+        cut_view::repaint_page(window);
     }
     // F2.10 S3: a click that watches a row says what the cut shows there, as the row's own plate did.
     if let Some(row) = outcome.watches {

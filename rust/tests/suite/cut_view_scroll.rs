@@ -196,16 +196,37 @@ fn sec_05_cut_1_screen_s9_zooming_around_the_cursor_keeps_that_second_under_it()
 #[test]
 fn sec_05_cut_1_screen_s9_the_view_only_slips_to_follow_a_line_that_left_it() {
     common::pin_private_cwd();
-    // §B's `revealPlayhead`: recentre when the line is outside, leave it alone otherwise — a preview that
-    // slid the view on every tick could never be read.
+    // The view stands still up to three quarters of its width, then holds the line there.
     let view = 1000.0;
     let total = 8000.0;
     cut_view::set_origin(0.0, total, view);
     assert_eq!(
-        cut_view::reveal_playhead(500.0, total, view),
+        cut_view::reveal_playhead(750.0, total, view),
         0.0,
-        "a line inside the view does not move the view"
+        "a line up to three quarters does not move the view"
     );
+    assert_eq!(
+        cut_view::reveal_playhead(760.0, total, view),
+        10.0,
+        "past three quarters the view moves just enough to hold the line there"
+    );
+    assert_eq!(
+        cut_view::reveal_playhead(765.0, total, view),
+        15.0,
+        "and keeps holding it"
+    );
+    assert_eq!(
+        cut_view::reveal_playhead(400.0, total, view),
+        15.0,
+        "a line moving back inside the view does not move it"
+    );
+    let furthest = cut_view::set_origin(total, total, view);
+    assert_eq!(
+        cut_view::reveal_playhead(total - 10.0, total, view),
+        furthest,
+        "at the tape's end the line runs on into the last quarter"
+    );
+    cut_view::set_origin(0.0, total, view);
     let slipped = cut_view::reveal_playhead(5000.0, total, view);
     assert!(
         slipped > 0.0,

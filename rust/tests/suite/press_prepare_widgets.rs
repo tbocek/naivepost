@@ -276,6 +276,8 @@ fn check_start_clears_and_logs(app: &adw::Application) {
     let model = with_sources(&["project:sources/lecture.mkv"]);
     let window = ui::build_window(app, &model, "Prepare");
     window.present();
+    // Only a ⏹ that cut through Describe starts the description over (F0.3's arming); any other ▶ resumes it.
+    naivepost::stop_legs::arm_describe_restart();
     ui::play_button(&window)
         .expect("the run bar has a ▶")
         .emit_clicked();

@@ -304,21 +304,26 @@ pub fn zoom_around(
     (next, set_origin(scrolled, total, view))
 }
 
-/// Recentre the line when it leaves the view (§B's `revealPlayhead`) and leave it alone otherwise — a
-/// preview that slid the view on every tick could never be read. `playhead_px` is a pixel INSIDE the
-/// timeline (the gutter already subtracted), which is what [`total_px`] measures from its start.
+/// How far across the view a moving line may run before the view moves with it: the last quarter stays ahead of it.
+pub const LINE_HOLD_FRACTION: f64 = 0.75;
+
+/// Follow a moving line: the view stands still until the line would pass [`LINE_HOLD_FRACTION`] of it, then scrolls
+/// just enough to keep the line there. At the tape's end the clamp lets the line run on into the last quarter. A line
+/// that left by the left edge is recentred. `playhead_px` is a pixel INSIDE the timeline (the gutter already
+/// subtracted), which is what [`total_px`] measures from its start.
 pub fn reveal_playhead(playhead_px: f64, total: f64, view: f64) -> f64 {
     let held = origin();
-    if playhead_px < held || playhead_px > held + view {
+    if playhead_px < held {
         set_origin(playhead_px - view / 2.0, total, view)
+    } else if playhead_px > held + view * LINE_HOLD_FRACTION {
+        set_origin(playhead_px - view * LINE_HOLD_FRACTION, total, view)
     } else {
         held
     }
 }
 
-/// §B's `revealPlayhead`, on this window's own view: recentre only when the line has LEFT the view. The
-/// transport writes the line through `window.rs`'s `set_playhead`, which calls this, so a preview that ran
-/// for an hour pulls the view along once per crossing instead of sliding it on every tick.
+/// [`reveal_playhead`] on this window's own view. The transport writes the line through `window.rs`'s
+/// `set_playhead`, which calls this on every tick.
 pub fn follow_playhead(window: &adw::ApplicationWindow, at: f64) {
     let view = view_px(surface_width(window));
     let total = total_px(filmed_seconds(), pps());

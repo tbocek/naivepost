@@ -119,7 +119,7 @@ fn check_the_preview_grows_with_the_room(app: &adw::Application) {
         "preview-panel",
         "cut-preview-stack",
         "effects-lane",
-        "track-strip",
+        "track-layers",
         "cut-bottom",
     ] {
         let (x, y, w, h) = drawn(&window, name);
@@ -227,7 +227,9 @@ fn check_every_page_keeps_the_same_margins(app: &adw::Application) {
                 assert_eq!(widget.width().min(widget.height()), 1, "{page}: a divider is one line");
             }
             if kind == "GtkButton" && widget.height() > 0 && widget.ancestor(adw::HeaderBar::static_type()).is_none() && widget.widget_name() != "preview-picture-button" {
-                assert_eq!(widget.height(), 34, "{page}: {} is one height", widget.widget_name());
+                // The drawn box, not `height()`: that one leaves out the padding, so a 34 px icon button reads 24.
+                let drawn_h = widget.compute_bounds(widget).expect("a mapped button has bounds").height();
+                assert_eq!(drawn_h, 34.0, "{page}: {} is one height", widget.widget_name());
             }
         }
         let plate = match page {

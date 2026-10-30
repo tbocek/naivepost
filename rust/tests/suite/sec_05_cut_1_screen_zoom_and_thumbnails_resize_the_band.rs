@@ -156,7 +156,7 @@ fn sec_05_cut_1_screen_zoom_and_thumbnails_resize_the_band() {
 
         // The grip at the bottom of the picture row (§1 badge 2): the pointer turns into the up-down arrow
         // there, and only there, which is the whole of how anyone finds out the rows resize.
-        let edges = |window: &adw::ApplicationWindow| -> Vec<f64> {
+        let grips = |window: &adw::ApplicationWindow| -> Vec<f64> {
             let mut found = Vec::new();
             let mut y = 0.0;
             while y < f64::from(band_height(window)) {
@@ -171,15 +171,18 @@ fn sec_05_cut_1_screen_zoom_and_thumbnails_resize_the_band() {
             }
             found
         };
+        // The row's two grips, top to bottom: the line above its sound strip, and its bottom edge, which is the one
+        // that makes the thumbnails larger and the one this test pulls.
+        let edges = |window: &adw::ApplicationWindow| -> Vec<f64> {
+            let all = grips(window);
+            all[all.len() - 1..].to_vec()
+        };
+        let all = grips(&window);
+        assert_eq!(all.len(), 2, "one picture row, its two grips: {all:?}");
         let opened = edges(&window);
-        assert_eq!(
-            opened.len(),
-            1,
-            "one picture row, one grip at its bottom: {opened:?}"
-        );
         let edge = opened[0];
         assert_ne!(
-            ui::band_cursor_at(&window, 200.0, edge - 20.0),
+            ui::band_cursor_at(&window, 200.0, all[0] - 20.0),
             Some("row-resize"),
             "inside the pictures the pointer is not the grip's"
         );

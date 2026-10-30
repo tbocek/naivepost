@@ -149,8 +149,8 @@ fn check_the_second_divider(app: &adw::Application) {
         "§A.1: the LEFT column is split TOP AND BOTTOM by this divider"
     );
     assert!(
-        paned.is_wide_handle(),
-        "the handle is wide enough to grab, like every other divider here"
+        !paned.is_wide_handle(),
+        "the thin handle, like every other divider here"
     );
     let start = paned
         .start_child()
@@ -179,7 +179,7 @@ fn check_the_second_divider(app: &adw::Application) {
         upper.height()
     );
     assert!(
-        (paned.position() as f32 - upper.height()).abs() <= OPEN_TOLERANCE_PX,
+        (paned.position() as f32 - ui::margins::DIVIDER_GAP_PX as f32 - upper.height()).abs() <= OPEN_TOLERANCE_PX,
         "the divider handle sits at the bottom of the upper half: position {} vs measured height {:.1}",
         paned.position(),
         upper.height()
@@ -236,7 +236,7 @@ fn check_the_second_divider(app: &adw::Application) {
         transport.y() + transport.height()
     );
     // And neither row sits on the divider's line: each keeps a gap of page between itself and the handle.
-    let divider = upper.y() + upper.height();
+    let divider = upper.y() + upper.height() + ui::margins::DIVIDER_GAP_PX as f32;
     assert!(
         divider - (transport.y() + transport.height()) >= 6.0 && picker.y() - divider >= 6.0,
         "the transport and the voice row stand clear of the divider: transport bottom {:.1}, divider {divider:.1}, \
