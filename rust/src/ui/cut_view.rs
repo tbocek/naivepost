@@ -322,6 +322,19 @@ pub fn reveal_playhead(playhead_px: f64, total: f64, view: f64) -> f64 {
     }
 }
 
+/// A wheel zoom keeps the second under the cursor, which can push a line that was on screen off it: pan just enough
+/// to have it at the view's edge again, and leave the view alone when the line is still inside.
+pub fn pull_line_on_screen(line_px: f64, total: f64, view: f64) -> f64 {
+    let held = origin();
+    if line_px < held {
+        set_origin(line_px, total, view)
+    } else if line_px > held + view {
+        set_origin(line_px - view, total, view)
+    } else {
+        held
+    }
+}
+
 /// [`reveal_playhead`] on this window's own view. The transport writes the line through `window.rs`'s
 /// `set_playhead`, which calls this on every tick.
 pub fn follow_playhead(window: &adw::ApplicationWindow, at: f64) {
@@ -520,7 +533,14 @@ fn apply_wheel_result(
             } else {
                 at_x
             };
+            let folds = crate::ui::window::review_cut_of(window).folds;
+            let at = crate::ui::window::line_position(window).t;
+            let line_before = line_px(&runs, &folds, pps(), at);
+            let was_on_screen = (origin()..=origin() + view).contains(&line_before);
             let (next, _) = zoom_around(anchor, factor, &runs, total, view);
+            if was_on_screen {
+                pull_line_on_screen(line_px(&runs, &folds, next, at), total_px(filmed, next), view);
+            }
             Some(format!("zoom {:.1} px a second", next))
         }
         cut_screen::Wheel::Pan { px } => {
