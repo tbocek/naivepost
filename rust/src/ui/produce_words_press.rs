@@ -146,6 +146,18 @@ fn moved(grab: &Grab, dx: f64, dy: f64, xs: &[f64], ys: &[f64]) -> (f64, f64, f6
     )
 }
 
+/// The lines a drag lands on: none while Shift is held, so the box follows the hand smoothly.
+fn unless_shift(gesture: &gtk::GestureDrag, targets: (Vec<f64>, Vec<f64>)) -> (Vec<f64>, Vec<f64>) {
+    let shift = gesture
+        .current_event_state()
+        .contains(gtk::gdk::ModifierType::SHIFT_MASK);
+    if shift {
+        (Vec::new(), Vec::new())
+    } else {
+        targets
+    }
+}
+
 /// The marked text's own dashed widget, hidden while the painted box follows the hand, so the box is not seen
 /// twice, once where it was and once where it goes.
 fn show_widget_of(hold: Hold, shown: bool) {
@@ -209,12 +221,12 @@ pub fn install_words_gesture(window: &adw::ApplicationWindow) {
         held_begin.set(grab_at(&read_state(), x - left, y - top, wide, high));
     });
     let (held_update, where_, plate) = (held.clone(), on_picture.clone(), picture.clone());
-    gesture.connect_drag_update(move |_g, dx, dy| {
+    gesture.connect_drag_update(move |g, dx, dy| {
         let Some(grab) = held_update.get() else {
             return;
         };
         let (_, _, wide, high) = where_();
-        let (xs, ys) = targets_beside(&read_state(), grab.hold, wide, high);
+        let (xs, ys) = unless_shift(g, targets_beside(&read_state(), grab.hold, wide, high));
         let rect = moved(&grab, dx, dy, &xs, &ys);
         DRAGGING.with(|now| {
             *now.borrow_mut() = Some((grab.hold, screen::box_fractions(rect, wide, high)))
@@ -223,7 +235,7 @@ pub fn install_words_gesture(window: &adw::ApplicationWindow) {
         plate.queue_draw();
     });
     let w = window.clone();
-    gesture.connect_drag_end(move |_g, offset_x, offset_y| {
+    gesture.connect_drag_end(move |g, offset_x, offset_y| {
         let (left, top, wide, high) = on_picture();
         if let Some(grab) = held.take() {
             DRAGGING.with(|now| *now.borrow_mut() = None);
@@ -233,7 +245,7 @@ pub fn install_words_gesture(window: &adw::ApplicationWindow) {
                 crate::ui::produce_paint::repaint_plates();
                 return;
             }
-            let (xs, ys) = targets_beside(&read_state(), grab.hold, wide, high);
+            let (xs, ys) = unless_shift(g, targets_beside(&read_state(), grab.hold, wide, high));
             let rect = moved(&grab, offset_x, offset_y, &xs, &ys);
             crate::ui::produce_page::press_words_move(
                 &w,
@@ -246,7 +258,10 @@ pub fn install_words_gesture(window: &adw::ApplicationWindow) {
         let (start_x, start_y) = (start_x - left, start_y - top);
         // The targets are read when the drag ENDS, not when it was wired: whatever boxes the page holds at
         // that moment are the ones this box may line up with.
-        let (xs, ys) = screen::overlay_snap_targets(wide, high, &read_state().texts);
+        let (xs, ys) = unless_shift(
+            g,
+            screen::overlay_snap_targets(wide, high, &read_state().texts),
+        );
         let near_x = screen::snap(start_x, &xs);
         let near_y = screen::snap(start_y, &ys);
         let far_x = screen::snap(start_x + offset_x, &xs);

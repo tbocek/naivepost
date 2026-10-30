@@ -22,7 +22,7 @@ const ITEM: &str = "F5.7";
 /// The spec's own wording for the two runs that rewrite something — quoted so a paraphrase in the code cannot
 /// pass as the item it implements.
 const SPEC_REWORD: &str =
-    "Ask again for the title, thumbnail instruction and description — one LLM call, three \
+    "Ask again for the title and description — one LLM call, two \
 answers, nothing else rewritten (not even the picture it prints)";
 
 /// One row of the catalogue's Produce section, by id.
@@ -84,23 +84,23 @@ fn f5_7_s2_the_reword_refusal_is_the_cut_steps_own_sentence() {
 }
 
 #[test]
-fn f5_7_s2_the_reword_end_names_all_three_answers() {
+fn f5_7_s2_the_reword_end_names_both_answers() {
     assert_eq!(ITEM, "F5.7");
-    // Line 185's ending, quoted whole. Three answers named, so the line answers "did the description change
+    // Line 185's ending, quoted whole. Both answers named, so the line answers "did the description change
     // too?" without a second press.
     assert_eq!(
         runs::REWORD_DONE,
-        "title, instruction and description rewritten \u{2014} \u{25b6} renders the video"
+        "title and description rewritten \u{2014} \u{25b6} renders the video"
     );
-    for key in ["title", "instruction", "description"] {
+    for key in ["title", "description"] {
         assert!(
             runs::REWORD_DONE.contains(key),
             "{key} missing from {}",
             runs::REWORD_DONE
         );
     }
-    // The three are the same three `reword()` counts as its answers: the sentence and the cost agree.
-    assert_eq!(runs::reword().answers.len(), 3);
+    // The two are the same two `reword()` counts as its answers: the sentence and the cost agree.
+    assert_eq!(runs::reword().answers.len(), 2);
 }
 
 #[test]
@@ -285,11 +285,11 @@ fn ticked_keeps() -> &'static [&'static str] {
 // ---- S2: Reword -------------------------------------------------------------------
 
 #[test]
-fn f5_7_s2_one_llm_call_answers_three_things_and_leaves_the_picture() {
+fn f5_7_s2_one_llm_call_answers_two_things_and_leaves_the_picture() {
     assert_eq!(ITEM, "F5.7");
     let reword = runs::reword();
     assert_eq!(reword.llm_calls, 1);
-    assert_eq!(reword.answers, ["title", "instruction", "description"]);
+    assert_eq!(reword.answers, ["title", "description"]);
     // The picture is what this run must not touch — the mirror image of S1's keeps.
     assert!(reword.keeps.contains(&"thumbnail"), "{:?}", reword.keeps);
     assert!(reword.keeps.contains(&"publish record") && reword.keeps.contains(&"chapter times"));
@@ -299,12 +299,12 @@ fn f5_7_s2_one_llm_call_answers_three_things_and_leaves_the_picture() {
 fn f5_7_s2_the_log_line_is_the_specs_own_sentence() {
     assert_eq!(ITEM, "F5.7");
     // Quoted from spec/08-produce.md §F5.7 rather than retyped, so the sentence in the code is checked against
-    // the sentence in the spec: both name three answers and one call, and say nothing else is rewritten.
+    // the sentence in the spec: both name two answers and one call, and say nothing else is rewritten.
     let words: Vec<&str> = SPEC_REWORD
         .split([' ', '—'])
         .filter(|w| !w.is_empty())
         .collect();
-    for key in ["title", "instruction", "description"] {
+    for key in ["title", "description"] {
         assert!(
             words.iter().any(|w| w.contains(key)),
             "{key} missing from the spec's sentence"
@@ -312,11 +312,11 @@ fn f5_7_s2_the_log_line_is_the_specs_own_sentence() {
     }
     assert_eq!(
         runs::REWORD_LOG,
-        "publish: rewriting the title, instruction and description — one LLM call"
+        "publish: rewriting the title and description — one LLM call"
     );
-    // Three answers named, one call counted. A log line that dropped one of the three would leave a reader
+    // Both answers named, one call counted. A log line that dropped one would leave a reader
     // wondering which answer arrived.
-    for key in ["title", "instruction", "description"] {
+    for key in ["title", "description"] {
         assert!(
             runs::REWORD_LOG.contains(key),
             "{key} missing from {}",

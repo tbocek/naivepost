@@ -221,23 +221,21 @@ pub fn press_redraw_thumbnail(
 /// S2: ↻ beside Title — rewrite the title, the instruction and the description, and NOTHING else. In
 /// particular no draw: the picture stays exactly as it is, which is what makes the press cheap and why
 /// `ask_draw` must never be reached here.
-pub fn press_reword(legs: &Legs, mut log: impl FnMut(&str)) -> Outcome {
+pub fn press_reword(
+    legs: &Legs,
+    words: impl FnOnce() -> Result<(), String>,
+    mut log: impl FnMut(&str),
+) -> Outcome {
     let mut out = Outcome::default();
     if !(legs.has_cut)() {
         return Outcome::refusal(runs::REWORD_NO_CUT);
     }
     log(runs::REWORD_LOG);
-    match (legs.ask_model)(&(legs.brief)()) {
-        Ok(_) => {
-            out.llm_calls = 1;
-            out.calls.push("model".to_string());
-        }
-        Err(why) => return fail(out, "the text", &why, legs),
-    }
-    // Success re-prints the words onto the picture that already exists (§line 186). Still no draw.
-    if let Err(why) = print_words(legs, &mut out) {
+    out.llm_calls = 1;
+    if let Err(why) = words() {
         return fail(out, "the text", &why, legs);
     }
+    out.calls.push("model".to_string());
     out.status = runs::ending("the text", runs::REWORD_DONE, true, false);
     out
 }

@@ -152,8 +152,8 @@ fn f5_7_where_it_runs_a_press_returns_busy_then_lands() {
         );
         let mut page = ui::produce_page::read_state();
         page.instruction = "an instruction already on the page".to_string();
-        page.thumb_title = "a title already on the page".to_string();
-        page.title = page.thumb_title.clone();
+        page.thumb_title = "other words on the picture".to_string();
+        page.title = "a title already on the page".to_string();
         ui::produce_page::set_state(page);
         ui::produce_page::refresh(&window);
         common::settle();
@@ -190,6 +190,19 @@ fn f5_7_where_it_runs_a_press_returns_busy_then_lands() {
             "the model's answer lands on the status line when the walk does"
         );
         assert!(button.is_sensitive(), "and the button is pressable again");
+        let page = ui::produce_page::read_state();
+        assert_eq!(page.title, "a title from the model", "the answer reached the page");
+        assert_eq!(
+            page.thumb_title, "a title from the model",
+            "the new title replaces the line on the picture, whatever it said"
+        );
+        assert_eq!(page.description, "The model also wrote this paragraph about the video.");
+        assert_eq!(
+            page.instruction, "an instruction already on the page",
+            "the press leaves the instruction alone, whatever the answer named"
+        );
+        let saved = naivepost::publish::load(&_tree).expect("the record was written");
+        assert_eq!(saved.title, "a title from the model", "and the record on disk");
         assert!(
             arrivals.load(Ordering::SeqCst) >= 1,
             "the model the settings name was asked"

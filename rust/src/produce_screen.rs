@@ -549,7 +549,7 @@ pub const TITLE_BOX_DEFAULT: (f64, f64, f64, f64) = (0.5, 0.25, 1.0, 0.4);
 
 /// §A's ↻ suggest: the only thing on this page that asks a model to rewrite text, and it rewrites all three
 /// of the written things at once so they cannot disagree about what the video is.
-pub const SUGGEST_TIP: &str = "Ask the model for a fresh title, thumbnail instruction and description — the only thing that does";
+pub const SUGGEST_TIP: &str = "Ask the model for a fresh title and description — the only thing that does";
 
 /// §A's title entry placeholder.
 pub const TITLE_PLACEHOLDER: &str =

@@ -974,6 +974,12 @@ fn check_settings_wire(root: &std::path::Path) {
     scale.set_value(19.0);
     scale.emit_by_name::<()>("value-changed", &[]);
     common::settle();
+    // A drag fires this many times over, so the scale under the pointer has to outlive each one.
+    assert_eq!(
+        common::widget_in(&window, &ui::produce_page::row_widget("Quality (CRF)")).as_ref(),
+        Some(scale.upcast_ref::<gtk::Widget>()),
+        "moving the scale did not replace it mid-drag"
+    );
 
     // The Channels tick: toggled, not poked.
     let tick = common::widget_in(&window, "tick-mono")

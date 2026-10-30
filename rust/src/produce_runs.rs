@@ -52,10 +52,10 @@ pub const REDRAW_DONE: &str = "thumbnail drawn \u{2014} \u{25b6} renders the vid
 /// their refusal from this module rather than one reaching into `cut` for a string and the other not.
 pub const REWORD_NO_CUT: &str = crate::cut::NO_CUT_YET;
 
-/// …and its ending, naming all three things it rewrote so the line answers "did the description change too?"
+/// …and its ending, naming both things it rewrote so the line answers "did the description change too?"
 /// without a second press.
 pub const REWORD_DONE: &str =
-    "title, instruction and description rewritten \u{2014} \u{25b6} renders the video";
+    "title and description rewritten \u{2014} \u{25b6} renders the video";
 
 /// S3's own sentence: the chosen picture arrives with the words printed on it, and ↻ is what takes them off
 /// again. Kept separate from [`take_from_image`]'s log because that one records the *copy* (size, source
@@ -154,26 +154,26 @@ pub fn redraw(only_thumbnail: bool) -> Redraw {
 
 // ---- S2: Reword ------------------------------------------------------------------
 
-/// The one-LLM-call run's log line. Naming the three answers is the point: a reader of the log can tell this
+/// The one-LLM-call run's log line. Naming the two answers is the point: a reader of the log can tell this
 /// press from a redraw without knowing which button was pressed.
 pub const REWORD_LOG: &str =
-    "publish: rewriting the title, instruction and description — one LLM call";
+    "publish: rewriting the title and description — one LLM call";
 
 /// What a re-word costs and keeps.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reword {
     pub llm_calls: usize,
-    /// The three answers the one call gives back.
+    /// The two answers the one call gives back.
     pub answers: &'static [&'static str],
     pub keeps: &'static [&'static str],
 }
 
-/// S2: ask again for the words — one LLM call, three answers, and the picture it prints stays as it is. The
+/// S2: ask again for the words — one LLM call, two answers, and the picture it prints stays as it is. The
 /// mirror image of [`redraw`]: this run never costs an sd.cpp call.
 pub fn reword() -> Reword {
     Reword {
         llm_calls: 1,
-        answers: &["title", "instruction", "description"],
+        answers: &["title", "description"],
         keeps: &["thumbnail", "publish record", "chapter times"],
     }
 }

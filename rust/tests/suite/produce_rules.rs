@@ -535,7 +535,7 @@ fn sec_08_produce_5_rules_s3_upload_text_is_written_once_per_project() {
     // Rewriting the text is a press of its own (↻ beside Title) and never part of ▶.
     let reword = runs::reword();
     assert_eq!(reword.llm_calls, 1);
-    assert_eq!(reword.answers, ["title", "instruction", "description"]);
+    assert_eq!(reword.answers, ["title", "description"]);
     assert!(reword.keeps.contains(&"thumbnail"), "{:?}", reword.keeps);
 
     // Deleting the record restarts the step — which is what §5's "once per project" leaves as the way back.

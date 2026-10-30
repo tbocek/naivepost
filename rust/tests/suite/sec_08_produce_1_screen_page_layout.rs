@@ -263,6 +263,36 @@ fn assert_order(found: &[String], want: &[&str], column: &str) {
 
 /// A long description scrolls in its box: it must not raise what the page asks for, or the divider above the bottom
 /// bar cannot move up.
+/// The picture follows the divider: its plate takes the column's spare height as well as the width, so a wider
+/// column shows a bigger picture rather than wider bars beside one of the same size.
+fn check_the_picture_follows_the_divider(window: &adw::ApplicationWindow) {
+    let split = widget(window, "produce-split")
+        .downcast::<gtk::Paned>()
+        .expect("the split is a paned");
+    let was = split.position();
+    let at = |position: i32| {
+        split.set_position(position);
+        // The column's own margin comes off the width the divider gives it.
+        common::wait_until(
+            "the column to take the width the divider gives it",
+            || (bounds(window, "produce-left").width() - (position - 12) as f32).abs() < 2.0,
+        );
+        let plate = bounds(window, "thumbnail-picture");
+        (plate.width(), plate.height())
+    };
+    let (narrow_w, narrow_h) = at(520);
+    let (wide_w, wide_h) = at(760);
+    println!("{ITEM}: plate {narrow_w}x{narrow_h} at 520, {wide_w}x{wide_h} at 760");
+    assert!(wide_w > narrow_w + 200.0, "the plate widens with the column");
+    assert!(
+        narrow_h > 180.0,
+        "the plate takes the column's spare height, not only its 180 px floor: {narrow_h}"
+    );
+    assert_eq!(wide_h, narrow_h, "and the height is the column's own");
+    split.set_position(was);
+    common::settle();
+}
+
 fn check_a_long_description_keeps_the_page_small(window: &adw::ApplicationWindow) {
     let right = widget(window, "produce-right");
     let view: gtk::TextView = widget(window, "description-box").downcast().expect("a text view");
@@ -862,6 +892,7 @@ fn layout_round() {
 
         let window = produce_window(app);
         check_both_columns_hold_spec_order(&window);
+        check_the_picture_follows_the_divider(&window);
         check_a_long_description_keeps_the_page_small(&window);
         window.close();
         common::settle();

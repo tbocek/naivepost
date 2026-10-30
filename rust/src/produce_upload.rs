@@ -551,6 +551,32 @@ pub fn picked_frame_answer(asked: f64, taken: f64, named: &str) -> String {
 pub const FIRST_IMAGE_AS_IS_LOG: &str =
     "    publish: no edit instruction \u{2014} the first image is the thumbnail as it is (nothing drawn)";
 
+/// S8: the model's words on the record. A missing title or instruction keeps the previous value.
+pub fn apply_text(publish: &Publish, answers: &Answers) -> Publish {
+    let mut next = publish.clone();
+    if let Some(title) = &answers.title {
+        next.title = title.clone();
+    }
+    // The first title to exist is also the one printed on the picture, and nothing seeds it twice (the prototype's
+    // `TitleSeeded`): after that the thumbnail's words are the person's, set and placed on the page, and a
+    // reworded video title leaves them alone. The first rewrite never seeded it, so the title box never appeared
+    // on the picture.
+    if !next.title_seeded && !next.title.trim().is_empty() {
+        next.thumb_title = next.title.trim().to_string();
+        next.title_seeded = true;
+    }
+    if let Some(instruction) = &answers.instruction {
+        next.prompt = instruction.clone();
+    }
+    if let Some(negative) = &answers.negative {
+        next.negative = negative.clone();
+    }
+    if let Some(description) = &answers.description {
+        next.description = description.clone();
+    }
+    next
+}
+
 /// S5–S7: the whole words half, in the spec's order.
 ///
 /// brief → model → **publish.json + description.txt** → (own frame | 3 frames off the cut) → draw unless
@@ -585,27 +611,7 @@ pub fn walk(
     out.calls.push("model".to_string());
 
     // S8: a missing title or instruction keeps the previous value; the description is always replaced.
-    let mut next = publish.clone();
-    if let Some(title) = &answers.title {
-        next.title = title.clone();
-    }
-    // The first title to exist is also the one printed on the picture, and nothing seeds it twice (the prototype's
-    // `TitleSeeded`): after that the thumbnail's words are the person's, set and placed on the page, and a
-    // reworded video title leaves them alone. The first rewrite never seeded it, so the title box never appeared
-    // on the picture.
-    if !next.title_seeded && !next.title.trim().is_empty() {
-        next.thumb_title = next.title.trim().to_string();
-        next.title_seeded = true;
-    }
-    if let Some(instruction) = &answers.instruction {
-        next.prompt = instruction.clone();
-    }
-    if let Some(negative) = &answers.negative {
-        next.negative = negative.clone();
-    }
-    if let Some(description) = &answers.description {
-        next.description = description.clone();
-    }
+    let mut next = apply_text(publish, answers);
 
     // S8/§3.9: `finish` wants a title and a description. A missing one keeps the previous value (S8), so
     // this names what came over from last run instead of aborting — the requirement belongs to `finish`'
