@@ -139,8 +139,8 @@ fn fake_by_order<'a>(
 /// A fake pass-2 ask that answers every span with no turns: these tests are about which rung served, and
 /// pass 2 is the serving rung's own work — the line counts and the anchored turns are pinned in
 /// `tests/suite/diar_anchored_pass.rs`.
-fn no_placements() -> impl FnMut((f64, f64), f64) -> Result<Vec<Turn>, String> {
-    |_, _| Ok(vec![])
+fn no_placements() -> impl FnMut((f64, f64), &diarize::Anchor) -> Result<Vec<Turn>, String> {
+    |_, _: &diarize::Anchor| Ok(vec![])
 }
 
 /// (d) the walk uses the shipped ladder, biggest first, read straight off `diarize::ladder()`.

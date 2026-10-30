@@ -225,14 +225,14 @@ pub fn placed(scene: &Scene, rows: Rows) -> Vec<Placed> {
     for (row, (_, heard)) in marks.rows.iter().enumerate() {
         out.push(pin(
             Mark::RowSound(row, *heard),
-            rows.wave_top(row) + cut_tracks::ROW_WAVE_PX / 2.0,
+            rows.wave_top(row) + cut_tracks::row_wave_px() / 2.0,
         ));
     }
     if let Some(row) = marks.empty_row {
         let picture = rows.pictures + row as f64 * rows.row_h;
         out.push(pin(
             Mark::RowCross(row),
-            picture + (rows.row_h - cut_tracks::ROW_WAVE_PX) / 2.0,
+            picture + (rows.row_h - cut_tracks::row_wave_px()) / 2.0,
         ));
     }
     for (lane, heard) in marks.lanes_heard.iter().enumerate() {
@@ -285,7 +285,7 @@ pub fn placed(scene: &Scene, rows: Rows) -> Vec<Placed> {
             if hear.has_own {
                 out.push(at(
                     Mark::SceneSound(hear.own_heard),
-                    rows.wave_top(hear.row) + cut_tracks::ROW_WAVE_PX / 2.0,
+                    rows.wave_top(hear.row) + cut_tracks::row_wave_px() / 2.0,
                 ));
             }
             for (lane, heard) in hear.lanes_heard.iter().enumerate() {
@@ -299,7 +299,7 @@ pub fn placed(scene: &Scene, rows: Rows) -> Vec<Placed> {
                     let picture = rows.pictures + *row as f64 * rows.row_h;
                     out.push(at(
                         Mark::Lens(*row, *row == hear.row),
-                        picture + (rows.row_h - cut_tracks::ROW_WAVE_PX) / 2.0,
+                        picture + (rows.row_h - cut_tracks::row_wave_px()) / 2.0,
                     ));
                 }
             }
@@ -340,7 +340,7 @@ fn wash(cr: &cairo::Context, heard: bool, x: f64, top: f64, w: f64) {
     } else {
         cr.set_source_rgba(0.55, 0.55, 0.6, 0.3);
     }
-    cr.rectangle(x, top, w.max(0.0), cut_tracks::ROW_WAVE_PX);
+    cr.rectangle(x, top, w.max(0.0), cut_tracks::row_wave_px());
     let _ = cr.fill();
 }
 

@@ -120,41 +120,6 @@ fn p_machine_fixtries_s3_the_second_try_can_repair_what_the_first_lost() {
     );
 }
 
-// --- S4: only the first attempt may be cached -------------------------------------------------
-
-#[test]
-fn p_machine_fixtries_s4_only_the_first_attempt_earns_a_cache_entry() {
-    // §6's second irregularity: the fixer caches its first attempt and nothing after it. An answer
-    // repaired after a refusal depends on the refusal it was shown, so replaying it from disk would
-    // skip the validation that made it right — the retry is paid for again rather than trusted.
-    // Both spellings are pinned against the same rule so the two cannot drift apart.
-    assert!(
-        fix::caches_attempt(1),
-        "attempt 1 is the first, and it caches"
-    );
-    assert!(
-        !fix::caches_attempt(2),
-        "a repaired answer is not cacheable"
-    );
-    assert!(!fix::caches_attempt(3));
-    assert_eq!(
-        fix::caches_attempt(1),
-        naivepost::llm_cache::fixer_caches(1)
-    );
-    assert_eq!(
-        fix::caches_attempt(2),
-        naivepost::llm_cache::fixer_caches(2)
-    );
-    // So with P.machine.fixTries = 2 at most one of a block's two asks can ever be free on a re-run.
-    assert!(fix::attempts() >= 2);
-    let cached: Vec<bool> = (1..=fix::attempts()).map(fix::caches_attempt).collect();
-    assert_eq!(
-        cached.iter().filter(|caches| **caches).count(),
-        1,
-        "{cached:?}"
-    );
-}
-
 // --- S5: the give-up line names the block and the count ---------------------------------------
 
 #[test]

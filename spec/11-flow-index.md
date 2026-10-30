@@ -50,6 +50,7 @@ flowchart LR
 | [F0.12](03-shell.md#f012-add-sources-from-prepare) | Add sources | [03](03-shell.md) |
 | [F0.13](03-shell.md#f013-tests) | Settings tests | [03](03-shell.md) |
 | [F0.14](03-shell.md#f014-profiles) | Profiles: User Context templates with fields | [03](03-shell.md) |
+| [F0.15](03-shell.md#f015-reset) | Reset: delete what a page's workflow generated, to do it again | [03](03-shell.md) |
 | [F1.1](04-prepare.md#f11--prepare) | ▶ Prepare | [04](04-prepare.md) |
 | [F1.2](04-prepare.md#f12-voice-separation-rows-with-) | Voice separation | [04](04-prepare.md) |
 | [F1.3](04-prepare.md#f13-per-source-audio--text--word-times--speakers--segments) | Per source: audio, ASR, alignment, diarization, segments | [04](04-prepare.md) |

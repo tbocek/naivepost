@@ -401,11 +401,12 @@ fn stamp_text(at: f64) -> String {
 /// [`crate::llm_cache`] is the shared implementation of §6's digest for every job that caches;
 /// this stage asks it for the key over its own parts and stores through it, so one rule decides
 /// what may be kept everywhere.
-pub fn cache_key(content: &str, images: &[Vec<u8>], model: &str) -> String {
+pub fn cache_key(system: &str, content: &str, images: &[Vec<u8>], model: &str) -> String {
     let request = crate::llm_cache::Request {
-        // Describe sends ONE user message, so there is no system prompt to key on; an empty part keeps
-        // §6's order rather than shifting every later field by one.
-        system: "",
+        // The system message the chunk is asked under: the house rules, the profile's `## describe` wording and
+        // the precedence rule. A changed prompt asks again; the first rewrite left it out ("describe sends ONE
+        // user message", which stopped being true), so a reworded describe prompt replayed the old answers.
+        system,
         user: content,
         state: "",
         speech: "",
@@ -455,6 +456,72 @@ pub fn cached_note(cached: usize) -> String {
 }
 
 // ---- S5: the tools, through one door ---------------------------------------
+
+/// §3.2's prose floor: a reply written as the shipped prompt shows it ("EVENT [+14.2s]: …" lines and a
+/// "STATE: …" line) read into the `record_event` / `set_state` calls it stands for, so it goes through the
+/// same tool surface as a reply made of calls. `stamps` are the batch's frames as the request printed them
+/// (`[+31.2s] FRAME 1 of 2`): each frame's own second in the recording, not an offset from the chunk's first
+/// frame; reading them as offsets dropped every line of a chunk that does not start at 0 (08-dex 18-53-15, the
+/// chunk at 31.2 s refused twice). Each stamped line goes to the nearest frame, and is dropped when no frame is
+/// within [`PROSE_SNAP_SECONDS`] of it; a reply with no stamps but an "EVENT:" label, or words in front of
+/// its STATE line, is the first frame's line. Nothing labelled is nothing recorded.
+///
+/// The first rewrite had no such reading: a prose reply was parsed as a list of calls, came out empty, and
+/// every frame was written "same" (08-dex: every event log was placeholders, the model's words only in the
+/// cache). And a prose reply that also called `finish` was read for its calls alone, refused for three
+/// frames without an event, and failed Prepare although every frame was described in its text.
+pub fn prose_calls(reply: &str, stamps: &[f64]) -> Vec<(String, serde_json::Value)> {
+    let mut calls = Vec::new();
+    let (rest, state) = match reply.find("STATE:") {
+        Some(at) => (&reply[..at], Some(flatten_line(&reply[at + "STATE:".len()..]))),
+        None => (reply, None),
+    };
+    let stamped = regex::Regex::new(r"(?m)EVENT\s*\[\s*([+-]?[0-9]+(?:\.[0-9]+)?)\s*s?\s*\]\s*:\s*(.*)$")
+        .expect("a fixed pattern");
+    for line in stamped.captures_iter(rest) {
+        let Ok(at) = line[1].parse::<f64>() else {
+            continue;
+        };
+        let nearest = stamps
+            .iter()
+            .enumerate()
+            .min_by(|a, b| (a.1 - at).abs().total_cmp(&(b.1 - at).abs()));
+        if let Some((index, offset)) = nearest {
+            if (offset - at).abs() <= PROSE_SNAP_SECONDS {
+                calls.push((
+                    "record_event".to_string(),
+                    serde_json::json!({ "frame": index + 1, "text": flatten_line(&line[2]) }),
+                ));
+            }
+        }
+    }
+    if calls.is_empty() && !stamps.is_empty() {
+        let event = match rest.find("EVENT:") {
+            Some(at) => Some(flatten_line(&rest[at + "EVENT:".len()..])),
+            None if state.is_some() => Some(flatten_line(rest)),
+            None => None,
+        };
+        if let Some(text) = event.filter(|text| !text.is_empty()) {
+            calls.push((
+                "record_event".to_string(),
+                serde_json::json!({ "frame": 1, "text": text }),
+            ));
+        }
+    }
+    if let Some(text) = state {
+        calls.push(("set_state".to_string(), serde_json::json!({ "text": text })));
+    }
+    calls
+}
+
+/// How far a prose line's stamp may sit from a frame's and still be that frame's: the request prints the
+/// stamps to a tenth of a second, so a model copying them lands well inside this.
+pub const PROSE_SNAP_SECONDS: f64 = 1.0;
+
+/// One line of whatever it is given, so a description that came back on two lines is one events row.
+fn flatten_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
 
 /// S5: apply one tool call to the batch. The three names are §3.2's; their rules live in
 /// [`crate::tools::describe`] and are not restated here.
@@ -627,9 +694,8 @@ pub fn pick_log(base: &str, frames: &[f64]) -> String {
 /// One function so the UI callback stays a forwarder (spec/00-principles.md §5): it returns lines,
 /// it never decides in the caller. It PLANS and reports — nothing is spawned and no vision server is
 /// needed, because every rule here is arithmetic over files F1.6 already wrote and over the scene
-/// changes read from `scenes.tsv`. A source whose frames are missing answers with a refusal line
-/// rather than a panic: the run carries on with the sources that do have frames, and the failure
-/// names the source it happened to.
+/// changes read from `scenes.tsv`. A source with no frames yet answers with no lines: ▶ says this
+/// before the frames stage runs, so its frames are still to come.
 ///
 /// The order of the returned lines is the order the spec puts them in: S0's every-frame refusal
 /// first if that is what the folder holds; otherwise the S1 note for each recording heard alongside,
@@ -648,15 +714,12 @@ pub fn stage_log(
     if is_every_frame(frames_on_disk, grid) {
         return vec![every_frame_refusal(base)];
     }
-    // No frames on disk at all: there is no take to measure, so nothing is picked and the source is
-    // reported. A duration of zero would otherwise still yield one frame at t=0, which describes a
-    // picture that does not exist.
+    // No frames on disk yet: this is said at ▶, before the frames stage has run, so an empty folder
+    // is a source this run is about to extract, not an error, and it says nothing. The describe stage
+    // itself refuses a folder still empty when it reaches it (`describe_call`). The first rewrite said
+    // "no frames to describe -- the frames folder is empty" here for every source of a fresh project.
     if frames_on_disk.is_empty() {
-        // The sentence is built here rather than through `refuse_missing`, which answers only for an
-        // empty LIST and would say nothing about a source that has no folder at all.
-        return vec![format!(
-            ">>> [{base}] no frames to describe -- the frames folder is empty"
-        )];
+        return Vec::new();
     }
     let picked = sorted(&pick_frames(changes, duration, grid, freq));
     if let Some(refusal) = refuse_missing(&picked) {
@@ -670,6 +733,25 @@ pub fn stage_log(
     }
     lines.push(pick_log(base, &picked));
     lines
+}
+
+/// The frames that go to the model for one footage source, read off disk: S0's pick over the frames F1.6
+/// extracted and the scene changes the text gate (else the pixel pass) logged, in stamp order. The one door
+/// both the stage and its count read, so the count is the number of chunks the stage will ask.
+pub fn picked_for(tree: &Tree, lane: &str, frames_on_disk: &[f64]) -> Vec<f64> {
+    let changes = read_changes(tree, lane);
+    let duration = frames_on_disk.last().copied().unwrap_or(0.0) + GRID;
+    sorted(&pick_frames(&changes, duration, GRID, crate::text_gate::HEARTBEAT_S))
+}
+
+/// How many requests describing one footage source takes, read off disk: its chunks, four picked frames a
+/// request. None for a source with no frames, or an every-frame folder the stage refuses.
+pub fn planned_requests(tree: &Tree, lane: &str) -> usize {
+    let frames = frames_on_disk(&tree.frames_dir(lane));
+    if frames.is_empty() || is_every_frame(&frames, GRID) {
+        return 0;
+    }
+    chunk_plan(&picked_for(tree, lane, &frames), FRAMES_PER_REQ).len()
 }
 
 /// The stage's entry point for one footage source, read off disk: what ▶ prints before any request

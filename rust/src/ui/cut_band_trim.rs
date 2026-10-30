@@ -32,6 +32,8 @@ thread_local! {
     /// The thumbnail-size grip in hand (§1 badge 2): how many rows sit above the edge taken, and the height the
     /// thumbnails had at the press.
     static GRIP: std::cell::Cell<Option<(usize, u32)>> = const { std::cell::Cell::new(None) };
+    /// A drag on the line above the sound strip: the strip's height at the press.
+    static WAVE_GRIP: std::cell::Cell<Option<f64>> = const { std::cell::Cell::new(None) };
 }
 
 /// A right press: where it landed, the border it landed on (if any), and whether it has travelled yet.
@@ -110,9 +112,9 @@ pub fn cursor_at(window: &adw::ApplicationWindow, x: f64, y: f64) -> Option<&'st
     if crate::ui::cut_band_marks::mark_at(&scene, rows, x, y).is_some() {
         return Some("pointer");
     }
-    // §1 badge 2: the bottom edge of a picture row is the grip that sizes the thumbnails.
-    if crate::ui::cut_tracks::row_grip_at(&scene, y).is_some() {
-        return Some("ns-resize");
+    // §1 badge 2: the bottom edge of a picture row sizes the thumbnails, the line above the sound strip the strip.
+    if crate::ui::cut_tracks::grip_at(&scene, y).is_some() {
+        return Some("row-resize");
     }
     let geo = Geometry::of(window);
     let surface = geo.surface_at(y);
@@ -120,7 +122,7 @@ pub fn cursor_at(window: &adw::ApplicationWindow, x: f64, y: f64) -> Option<&'st
         return None;
     }
     if border_under(window, &geo, x).is_some() {
-        return Some("ew-resize");
+        return Some("col-resize");
     }
     let on_a_bar = matches!(surface, Surface::SelectionBand)
         && boxes(window).iter().any(|b| {
@@ -164,10 +166,20 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
     left.set_button(1);
     let win = window.clone();
     left.connect_drag_begin(move |gesture, x, y| {
-        // §1 badge 2: the bottom edge of a picture row sizes the thumbnails; nothing else takes that press.
-        let grip = crate::ui::cut_tracks::row_grip_at(&cut_view::band_scene_for(&win), y);
-        GRIP.with(|held| held.set(grip.map(|above| (above, crate::ui::cut_tracks::thumb_px()))));
-        if grip.is_some() {
+        // §1 badge 2: the bottom edge of a picture row sizes the thumbnails; nothing else takes that press. The
+        // line above the sound strip sizes the strip, unless a badge stands on it (the pointer says the same).
+        let scene = cut_view::band_scene_for(&win);
+        let grip = crate::ui::cut_tracks::grip_at(&scene, y);
+        let above = match grip {
+            Some(crate::ui::cut_tracks::Grip::Row(above)) => Some(above),
+            _ => None,
+        };
+        let rows = crate::ui::cut_tracks::rows_for_press(&scene);
+        let wave = grip == Some(crate::ui::cut_tracks::Grip::Wave)
+            && crate::ui::cut_band_marks::mark_at(&scene, rows, x, y).is_none();
+        GRIP.with(|held| held.set(above.map(|above| (above, crate::ui::cut_tracks::thumb_px()))));
+        WAVE_GRIP.with(|held| held.set(wave.then(crate::ui::cut_tracks::row_wave_px)));
+        if above.is_some() || wave {
             LEFT.with(|cell| *cell.borrow_mut() = None);
             gesture.set_state(gtk::EventSequenceState::Claimed);
             return;
@@ -203,6 +215,11 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
             );
             return;
         }
+        // The line stays under the hand: up makes the strip taller by what the hand moved.
+        if let Some(was) = WAVE_GRIP.with(std::cell::Cell::get) {
+            crate::ui::window_history_zoom::press_wave(&win, was - dy);
+            return;
+        }
         let held = LEFT.with(|cell| *cell.borrow());
         if let Some(mut drag) = held {
             let x = drag.press_x + dx;
@@ -217,6 +234,10 @@ pub(crate) fn wire(window: &adw::ApplicationWindow) {
                 &win,
                 crate::cut_screen::thumb_dragged(was, above, dy),
             );
+            return;
+        }
+        if let Some(was) = WAVE_GRIP.with(|held| held.take()) {
+            crate::ui::window_history_zoom::press_wave(&win, was - dy);
             return;
         }
         if let Some(mut drag) = LEFT.with(|cell| cell.borrow_mut().take()) {

@@ -21,10 +21,10 @@ pub struct Inputs {
     pub silences: Vec<(f64, f64)>,
 }
 
-/// The second one word starts at, on the session clock: the aligner's times when it answered and
+/// Where one word starts and ends, in its recording's own seconds: the aligner's times when it answered and
 /// otherwise the ASR's, which is the same preference [`crate::word_list`] uses to build its list —
 /// one preference, spelled once, or the two would place cuts on different seconds.
-fn word_seconds(tree: &Tree, source: &str) -> Vec<f64> {
+fn word_spans(tree: &Tree, source: &str) -> Vec<(f64, f64)> {
     let hz = crate::transcribe::SAMPLE_RATE as f64;
     let timed = match crate::requests::read_aligned(tree, source) {
         Ok(Some(doc)) if !doc.words.is_empty() => doc.words,
@@ -36,7 +36,7 @@ fn word_seconds(tree: &Tree, source: &str) -> Vec<f64> {
     };
     timed
         .iter()
-        .map(|word| word.start_sample as f64 / hz)
+        .map(|word| (word.start_sample as f64 / hz, word.end_sample as f64 / hz))
         .collect()
 }
 
@@ -59,6 +59,12 @@ pub fn runs_of(tree: &Tree, cut: &Cut) -> Vec<SpokenRun> {
     } else {
         tape
     };
+    // The envelopes the edges are placed on, as the marks' are (F1.11). A recording with none takes the word pad.
+    let sources: Vec<String> = crate::project::load(tree.dir())
+        .map(|project| project.sources.iter().map(|source| source.path.clone()).collect())
+        .unwrap_or_default();
+    let held = crate::edges::load(tree, &crate::hand_edit::session_lanes(tree, &sources));
+    let edge_of = crate::edges::finder(&held);
     let mut runs = Vec::new();
     for span in crate::timeline::filmed_runs(&recordings) {
         let Some(rec) = recordings
@@ -69,7 +75,7 @@ pub fn runs_of(tree: &Tree, cut: &Cut) -> Vec<SpokenRun> {
             continue;
         };
         // §04 F1.9's preference, spelled once: the aligner's times when it answered, the ASR's otherwise.
-        let seconds = word_seconds(tree, &rec.base);
+        let spoken = word_spans(tree, &rec.base);
         // A tape's own second onto the session clock: `sessionAt(local)` for this recording, exactly as
         // §B defines it, so a word 5 s into a tape that opened at 0:20 is a word at 0:25 of the session.
         let on_session = |local: f64| {
@@ -82,26 +88,55 @@ pub fn runs_of(tree: &Tree, cut: &Cut) -> Vec<SpokenRun> {
         };
         // Only words the run actually shows count; a recording that ran twice in the session keeps each
         // stretch to its own words.
-        let inside: Vec<f64> = seconds
+        let mut inside: Vec<(f64, f64)> = spoken
             .iter()
-            .map(|local| on_session(*local))
-            .filter(|t| *t >= span.0 && *t < span.1)
+            .map(|(from, to)| (on_session(*from), on_session(*to)))
+            .filter(|(from, _)| *from >= span.0 && *from < span.1)
             .collect();
-        let (earliest, latest) = inside.iter().fold((None, None), |acc, t| {
-            let lo = acc.0.map_or(*t, |cur: f64| cur.min(*t));
-            let hi = acc.1.map_or(*t, |cur: f64| cur.max(*t));
-            (Some(lo), Some(hi))
-        });
+        // The same correction the word list makes: a first word stamped ahead of its sound starts on the sound.
+        if let Some(sound) = inside.first().and_then(|first| edge_of(first.0)) {
+            if let Some(moved) =
+                crate::edges::misplaced_first_word(&inside, |a, b| sound.peak_between(a, b))
+            {
+                inside[0] = moved;
+            }
+        }
+        let earliest = inside.iter().map(|word| word.0).reduce(f64::min);
+        let latest = inside.iter().map(|word| word.1).reduce(f64::max);
         let (Some(earliest), Some(latest)) = (earliest, latest) else {
             // Nothing was said while this footage is on screen. No run, rather than a run whose
             // "words" are the footage itself: §S2a builds the cut from what was said, and a silent
             // stretch answers "nothing", not "keep all of it".
             continue;
         };
+        // Both edges placed by the sound, inside the reach of their words: the first word's onset and the last
+        // word's own tail, the same fenced placement a mark's edges get.
+        let word = |s: f64, e: f64| crate::edges::AlignedWord {
+            word: String::new(),
+            s,
+            e,
+        };
+        let first = inside.iter().find(|w| w.0 == earliest).copied();
+        let last = inside.iter().find(|w| w.1 == latest).copied();
+        let placed = match (edge_of(earliest), edge_of(latest), first, last) {
+            (Some(opening), Some(closing), Some(first), Some(last)) => Some((
+                opening.start_before(
+                    &word(first.0, first.1),
+                    (earliest - crate::suggest::TRIM_REACH_SECONDS).max(span.0),
+                ),
+                closing.end_after(
+                    &word(last.0, last.1),
+                    (latest + crate::suggest::TRIM_REACH_SECONDS).min(span.1),
+                ),
+            )),
+            _ => None,
+        };
         runs.push(SpokenRun {
             span,
             first_spoken: earliest,
             last_spoken: latest,
+            placed,
+            words: inside,
         });
     }
     runs
@@ -191,8 +226,10 @@ pub fn run_words(
         &made.segs,
         &crate::ui::cut_suggest_model_run::walk_of(&read),
     );
-    let changed = walked.segs != made.segs;
-    if walked.segs.is_empty() {
+    // The walk removes the marks again over what it closed, so the wordless pieces come back and go again here.
+    let segs = crate::suggest::drop_wordless(&walked.segs, &read.runs);
+    let changed = segs != made.segs;
+    if segs.is_empty() {
         // Nothing was kept. `suggest` has no sentence for this and inventing one is not this module's
         // job, so the page hears the same status it would have heard and the cut on screen stands.
         return Landed {
@@ -202,7 +239,7 @@ pub fn run_words(
             cut,
         };
     }
-    let landed = crate::ui::cut_suggest_land::land_spans(window, &walked.segs);
+    let landed = crate::ui::cut_suggest_land::land_spans(window, &segs);
     let mut log = made.log;
     if changed {
         // "The page shows what it did": the walk says its own account, appended to the words cut's line so

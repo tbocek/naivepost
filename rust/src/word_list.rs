@@ -162,6 +162,21 @@ pub fn retimed(
         let Some(median) = median(&measured) else {
             continue;
         };
+        // The first word has no word before it to be timed against; stamped on a breath ahead of itself, it
+        // moves onto the sound it is, or the cut starts on the breath and the subtitles run ahead of the voice.
+        let spans: Vec<(f64, f64)> = mine.iter().map(|&i| (words[i].start, words[i].end)).collect();
+        if let Some((from, to)) =
+            crate::edges::misplaced_first_word(&spans, |a, b| peak(source.as_str(), a, b))
+        {
+            let first = mine[0];
+            logs.push(format!(
+                ">>> words: \u{201c}{}\u{201d} was placed ahead of its sound -- moved to where the sound starts ({})",
+                words[first].written,
+                mm_ss(from)
+            ));
+            words[first].start = from;
+            words[first].end = to;
+        }
         for row in 1..mine.len() {
             let this = mine[row];
             // No envelope under this word's seconds: it is not evidence of anything.

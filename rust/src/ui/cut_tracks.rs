@@ -45,6 +45,9 @@ pub const PICTURE_ROW_EXTRA_PX: f64 = 4.0;
 /// WAVE_H}` does for the placeholder strip's own rows: the lower third of the row's pitch, which leaves the
 /// upper two thirds to the thumbnail and keeps every press y that meant "row N" meaning row N.
 pub const ROW_WAVE_PX: f64 = (THUMB_DEFAULT_PX as f64 + PICTURE_ROW_EXTRA_PX) / 3.0;
+/// The thinnest the sound strip goes, and the least of the pictures it leaves above it.
+pub const WAVE_MIN_PX: f64 = 6.0;
+pub const FILM_MIN_PX: f64 = 16.0;
 /// A flag's triangle: 3 px of line (§1) with a pennant this wide and tall.
 const MARK_LINE_PX: f64 = 3.0;
 const FLAG_PX: f64 = 10.0;
@@ -61,6 +64,9 @@ thread_local! {
     /// band. Kept for the session, not saved (the spec stores it nowhere). The first rewrite's ladder wrote a
     /// number nothing read, so the buttons changed their own label and no picture.
     static THUMB_PX: std::cell::Cell<u32> = const { std::cell::Cell::new(THUMB_DEFAULT_PX) };
+    /// The sound strip's height, set by the grip between the pictures and the strip. Kept for the session, not
+    /// saved, like the thumbnail height.
+    static WAVE_PX: std::cell::Cell<f64> = const { std::cell::Cell::new(ROW_WAVE_PX) };
 }
 
 /// The thumbnail height the band is painted, fitted and pressed at right now.
@@ -71,6 +77,20 @@ pub fn thumb_px() -> u32 {
 /// Set the thumbnail height, kept inside §A's 40..160.
 pub fn set_thumb_px(px: u32) {
     THUMB_PX.with(|cell| cell.set(px.clamp(cut_screen::THUMB_MIN, cut_screen::THUMB_MAX)));
+}
+
+/// The sound strip's height as the grip left it: every painter and press reader asks this, never the opening
+/// [`ROW_WAVE_PX`]. The pitch is the row's and is not touched: the strip takes its height from the pictures, and
+/// a row made shorter takes it back, down to [`FILM_MIN_PX`] of pictures.
+pub fn row_wave_px() -> f64 {
+    let room = thumb_px() as f64 + PICTURE_ROW_EXTRA_PX - FILM_MIN_PX;
+    WAVE_PX.with(std::cell::Cell::get).min(room).max(WAVE_MIN_PX)
+}
+
+/// Set the sound strip's height, kept between [`WAVE_MIN_PX`] and what leaves the pictures [`FILM_MIN_PX`].
+pub fn set_row_wave_px(px: f64) {
+    let room = thumb_px() as f64 + PICTURE_ROW_EXTRA_PX - FILM_MIN_PX;
+    WAVE_PX.with(|cell| cell.set(px.min(room).max(WAVE_MIN_PX)));
 }
 
 /// The live picture-row pitch: the gutter rail places its switches with it, so a switch lands on the row it
@@ -793,6 +813,28 @@ pub fn row_grip_at(scene: &Scene, y: f64) -> Option<usize> {
         .find(|above| (y - (rows.pictures + *above as f64 * rows.row_h)).abs() <= ROW_GRIP_PX)
 }
 
+/// A grip on the band: what a left drag at this height would size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Grip {
+    /// The bottom edge of a row, with how many rows sit above it: makes every row larger or smaller.
+    Row(usize),
+    /// The line between a row's pictures and its sound strip: moves the strip's height to or from the pictures.
+    Wave,
+}
+
+/// The grip under band height `y`, the one answer the press and the pointer share. The bottom edge goes first:
+/// where a thin strip brings the two within reach of one height, the drag makes everything larger.
+pub fn grip_at(scene: &Scene, y: f64) -> Option<Grip> {
+    if let Some(above) = row_grip_at(scene, y) {
+        return Some(Grip::Row(above));
+    }
+    let rows = rows_for_press(scene);
+    let count = rows.camera_rows(scene) + lane_rows(scene);
+    (0..count)
+        .any(|row| (y - rows.wave_top(row)).abs() <= ROW_GRIP_PX)
+        .then_some(Grip::Wave)
+}
+
 /// Rows the band gives the cut lanes — one each, below the cameras. Public so a test reads the SAME number the
 /// painter laid out rather than counting `scene.lanes` itself and drifting from it. A spliced or overwriting
 /// card takes no row of its own (they sit among the footage), so this is also how many rows an insert costs.
@@ -959,10 +1001,10 @@ pub struct Rows {
 }
 
 impl Rows {
-    /// Where one row's wave strip begins: the lower [`ROW_WAVE_PX`] of its picture row. Every painter and
+    /// Where one row's wave strip begins: the lower [`row_wave_px`] of its picture row. Every painter and
     /// every press reader asks THIS rather than doing its own arithmetic, or the ink and the reach disagree.
     pub fn wave_top(&self, row: usize) -> f64 {
-        self.pictures + row as f64 * self.row_h + (self.row_h - ROW_WAVE_PX)
+        self.pictures + row as f64 * self.row_h + (self.row_h - row_wave_px())
     }
 }
 
@@ -974,7 +1016,7 @@ pub fn bands_for(fx_rows: usize) -> crate::cut_select::SurfaceBands {
     let held = rows_of(fx_rows, thumb_px());
     // One camera row is a picture band PLUS its own wave strip, exactly as §27 Tracks lays it out and as
     // `SurfaceBands` was designed: the row's PITCH (`held.row_h`) is unchanged, split into the picture half
-    // above and the wave strip below ([`ROW_WAVE_PX`]), so `surface_at` bounds the rows by the same bottom
+    // above and the wave strip below ([`row_wave_px`]), so `surface_at` bounds the rows by the same bottom
     // it always did and every press y that meant a row still means that row. A wave-height of 0 here would
     // make `Surface::WaveStrip` unreachable on the painted band, and a sound scope could then only be aimed
     // at the placeholder strip — which is what left F2.9's footage/sound fork unaimable by hand.
@@ -983,13 +1025,13 @@ pub fn bands_for(fx_rows: usize) -> crate::cut_select::SurfaceBands {
         selection: (cut_trim::RULER_H, held.effects),
         fx: (held.effects, held.pictures),
         first_picture: held.pictures,
-        row_height: (held.row_h - ROW_WAVE_PX).max(0.0),
-        wave_height: ROW_WAVE_PX.min(held.row_h),
+        row_height: (held.row_h - row_wave_px()).max(0.0),
+        wave_height: row_wave_px().min(held.row_h),
     }
 }
 
 /// The rows a press on the live band is measured against: the band is painted at [`thumb_px`].
-pub(crate) fn rows_for_press(scene: &Scene) -> Rows {
+pub fn rows_for_press(scene: &Scene) -> Rows {
     rows(scene, thumb_px())
 }
 
@@ -1107,7 +1149,7 @@ fn draw_kept_bars(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
 /// wave strip more faintly, and a green line down either side, so what the cut keeps reads off the pictures as
 /// well as off the bars.
 fn draw_kept_tint(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
-    let film = (rows.row_h - ROW_WAVE_PX).max(0.0);
+    let film = (rows.row_h - row_wave_px()).max(0.0);
     for (index, (x, w)) in band_boxes(scene).into_iter().enumerate() {
         let seg = &scene.segs[index];
         if seg.is_insert() || x >= tape || x + w < 0.0 {
@@ -1115,7 +1157,7 @@ fn draw_kept_tint(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
         }
         let top = rows.pictures + seg.cam.max(0) as f64 * rows.row_h;
         fill(cr, KEPT_TINT, x, top, w, film, KEPT_TINT_ALPHA);
-        fill(cr, KEPT_TINT, x, top + film, w, ROW_WAVE_PX, 0.16);
+        fill(cr, KEPT_TINT, x, top + film, w, row_wave_px(), 0.16);
         for edge in [x, x + w] {
             fill(cr, KEPT_EDGE, edge - 1.0, top, 2.0, rows.row_h, 1.0);
         }
@@ -1170,7 +1212,7 @@ fn draw_effects_lane(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) 
 /// edge and diagonals 5 px apart leaning into the recording (`go/cut.go` `srcEdgeMark`). The far end only where the
 /// recording is drawn wider than its two marks.
 fn draw_recording_edges(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
-    let film = (rows.row_h - ROW_WAVE_PX).max(1.0);
+    let film = (rows.row_h - row_wave_px()).max(1.0);
     for (index, recording) in scene.recordings.iter().enumerate() {
         let top = rows.pictures + scene.row_of(index) as f64 * rows.row_h;
         let (x0, x1) = (
@@ -1215,7 +1257,7 @@ fn edge_mark(cr: &cairo::Context, x: f64, dir: f64, top: f64, h: f64, room: f64)
 /// pictures (`go/cut.go` `wholeTakeMark`). The first port washed every dropped stretch yellow, which put a bright
 /// block over each hole in the cut. The rose lies under a SPEED effect and nothing else.
 fn draw_join_washes(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
-    let film = (rows.row_h - ROW_WAVE_PX).max(1.0);
+    let film = (rows.row_h - row_wave_px()).max(1.0);
     for (index, recording) in scene.recordings.iter().enumerate() {
         if !scene.marks.whole.contains(&recording.base) {
             continue;

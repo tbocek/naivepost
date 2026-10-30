@@ -379,7 +379,7 @@ pub fn paint_bands(cr: &cairo::Context, w: f64, cut_: &Cut, filmed: &[Recording]
 
 /// One row's wave strip, painted at whatever geometry the caller has: the placeholder strip calls this from
 /// [`paint_bands`] with its own span, and the PAINTED band's picture rows call it with the lower third of
-/// each camera row (`cut_tracks::ROW_WAVE_PX`). Split out of [`paint_bands`] so both surfaces ink the same
+/// each camera row (`cut_tracks::row_wave_px`). Split out of [`paint_bands`] so both surfaces ink the same
 /// plate from the same cache instead of drawing two different answers to "what does this row sound like".
 ///
 /// The peaks are decoration: a cache that cannot be read draws a flat baseline, so the row still reads as a

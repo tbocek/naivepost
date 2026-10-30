@@ -267,6 +267,9 @@ fn f1_1_s3_a_failed_clear_is_logged_and_the_run_resumes() {
 // over" before reading what is being sent.
 #[test]
 fn f1_1_s3_the_clear_notice_precedes_the_opening_log() {
+    let _turn = crate::common::describe_flags_turn();
+    // A ⏹ inside Describe is what makes the next ▶ start over (an `events.tsv` alone is finished output).
+    naivepost::stop_legs::arm_describe_restart();
     let (_keep, tree) = scratch("order");
     fs::create_dir_all(tree.describe_dir("lecture")).unwrap();
     fs::write(tree.events_tsv("lecture"), b"x\n").unwrap();

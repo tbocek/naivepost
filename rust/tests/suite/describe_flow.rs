@@ -582,19 +582,19 @@ fn f1_7_s3_new_scene_is_measured_against_the_changes() {
 #[test]
 fn f1_7_s4_the_key_covers_the_content_and_the_images() {
     let images = vec![b"frame-a".to_vec(), b"frame-b".to_vec()];
-    let key = describe::cache_key("ask about four frames", &images, "qwen-vl");
+    let key = describe::cache_key("", "ask about four frames", &images, "qwen-vl");
     assert_eq!(
         key,
-        describe::cache_key("ask about four frames", &images, "qwen-vl"),
+        describe::cache_key("", "ask about four frames", &images, "qwen-vl"),
         "same request, same key"
     );
     assert_ne!(
         key,
-        describe::cache_key("ask about four frames?", &images, "qwen-vl"),
+        describe::cache_key("", "ask about four frames?", &images, "qwen-vl"),
         "changed wording is a different question"
     );
     assert_ne!(
-        describe::cache_key(
+        describe::cache_key("", 
             "ask about four frames",
             &[b"frame-A".to_vec(), b"frame-b".to_vec()],
             "qwen-vl"
@@ -603,14 +603,14 @@ fn f1_7_s4_the_key_covers_the_content_and_the_images() {
         "a re-encoded frame misses the cache -- hashing names only would make this a silent hit"
     );
     assert_ne!(
-        describe::cache_key("x", &[b"ab".to_vec()], "qwen-vl"),
-        describe::cache_key("x", &[b"a".to_vec(), b"b".to_vec()], "qwen-vl"),
+        describe::cache_key("", "x", &[b"ab".to_vec()], "qwen-vl"),
+        describe::cache_key("", "x", &[b"a".to_vec(), b"b".to_vec()], "qwen-vl"),
         "image boundaries are part of the key, so images cannot be merged into one blob"
     );
     // §6's rewrite addition: the model that answered is in the key, so a swap in Settings asks again
     // instead of replaying the previous model's chunk as if this one had written it.
     assert_ne!(
-        describe::cache_key("ask about four frames", &images, "gemma-vl"),
+        describe::cache_key("", "ask about four frames", &images, "gemma-vl"),
         key,
         "another model's answer is not this model's answer"
     );
@@ -622,7 +622,7 @@ fn f1_7_s4_the_key_covers_the_content_and_the_images() {
 #[test]
 fn sec_09_llm_and_tools_6_cache_s1_describe_names_its_file_with_the_shared_digest() {
     let images = vec![b"frame-a".to_vec()];
-    let key = describe::cache_key("ask about one frame", &images, "qwen-vl");
+    let key = describe::cache_key("", "ask about one frame", &images, "qwen-vl");
     assert_eq!(key.len(), 64, "a sha256 hex digest names the file");
     assert!(
         key.chars()
@@ -652,7 +652,7 @@ fn sec_09_llm_and_tools_6_cache_s1_describe_names_its_file_with_the_shared_diges
 #[test]
 fn f1_7_s4_cache_round_trip_under_the_step_folder() {
     let (_keep, tree) = scratch("cache");
-    let key = describe::cache_key("ask", &[b"img".to_vec()], "qwen-vl");
+    let key = describe::cache_key("", "ask", &[b"img".to_vec()], "qwen-vl");
     assert!(
         describe::cached_reply(&tree, &key).is_none(),
         "cold cache is a miss"
@@ -675,7 +675,7 @@ fn f1_7_s4_cache_round_trip_under_the_step_folder() {
     assert!(describe::cached_reply(&tree, "deadbeef").is_none());
     assert_eq!(describe::cached_note(3), ", 3 answered from the cache");
     // §6: an empty reply is never stored, so a blank answer cannot become a permanent "nothing".
-    let blank = describe::cache_key("ask about nothing", &[b"img".to_vec()], "qwen-vl");
+    let blank = describe::cache_key("", "ask about nothing", &[b"img".to_vec()], "qwen-vl");
     describe::store_reply(&tree, &blank, "   ").expect("a refused store is not a failed step");
     assert!(
         describe::cached_reply(&tree, &blank).is_none(),

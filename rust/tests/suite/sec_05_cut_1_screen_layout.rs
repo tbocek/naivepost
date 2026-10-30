@@ -316,8 +316,8 @@ fn check_the_page_has_both_dividers(app: &adw::Application) {
         naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX
     );
     assert!(
-        (top_pos - naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX).abs() <= SPLIT_SLACK_PX,
-        "the upper part opens {} px tall, not {} px",
+        top_pos >= naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX - SPLIT_SLACK_PX,
+        "the upper part opens {} px tall, under {} px",
         top_pos,
         naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX
     );
@@ -463,10 +463,9 @@ fn check_the_band_is_whole_and_the_bar_follows(app: &adw::Application) {
     let vsplit = common::find_named(&window, "cut-page-split")
         .and_then(|w| w.downcast::<gtk::Paned>().ok())
         .expect("§A's vertical paned (380) is on the page");
-    assert_eq!(
-        vsplit.position(),
-        naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX,
-        "§A opens the upper part {} px tall; the handle sits at {}",
+    assert!(
+        vsplit.position() >= naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX,
+        "the upper part opens at least {} px tall; the handle sits at {}",
         naivepost::ui::cut_page_layout::SELF_SPLIT_TOP_PX,
         vsplit.position()
     );

@@ -203,6 +203,24 @@ pub fn press_take_play(window: &adw::ApplicationWindow) -> String {
     say(window, &narrate_details::playing_takes(count, total, first))
 }
 
+/// A click on the band is "play from here" wherever the sound is going: a take walk starts again from the bar, and
+/// the preview's line moves to the same moment, so its ▶ starts there and a running preview jumps there. The first
+/// rewrite only moved the bar, which nothing but the band's own next ▶ read.
+pub fn band_clicked(window: &adw::ApplicationWindow, band_second: f64) {
+    if walking() {
+        press_take_play(window);
+        press_take_play(window);
+    }
+    let Some(tree) = crate::ui::window::narrate_session_tree() else {
+        return;
+    };
+    let project = crate::project::load(tree.dir()).unwrap_or_default();
+    let tape = crate::narrate_band_face::tape(&tree, &project, &read_state().voice);
+    if let Some(session) = tape.session_at(band_second) {
+        crate::ui::narrate_page_seek::seek_preview(window, session, None, true);
+    }
+}
+
 /// The walk's beat: the red bar follows the sounding stretch, and at its end the next one starts where it is
 /// picked, the bar jumping there; after the last, "takes played".
 fn walk_on(window: &adw::ApplicationWindow) {

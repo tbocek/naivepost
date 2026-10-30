@@ -1,15 +1,15 @@
 # codehalter bootstrap assisted
 FROM alpine:3.24
 
+# Base tools, then the rust/GTK rewrite toolchain (rust/) with node/npm, plus a
+# virtual display, fonts and icons so GUI tests run and screenshots render text
+# and icons inside this container.
 RUN apk update && apk add --no-cache \
         ca-certificates curl git sudo openssh-client gcompat \
         bash shadow \
         grep coreutils procps \
-        firefox-esr
-
-# rust/GTK rewrite toolchain (rust/), plus virtual display, fonts and icons so
-# GUI tests run and screenshots render text and icons inside this container.
-RUN apk add --no-cache \
+        firefox-esr \
+        nodejs npm \
         rust cargo rust-clippy gcc musl-dev \
         gtk4.0-dev libadwaita-dev \
         just \

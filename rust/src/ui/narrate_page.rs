@@ -138,7 +138,7 @@ fn install_page_css_once() {
     }
     // A line's text box is framed (§1 badge 20, `spec/img/07-narrate.png`): unframed, a white box on the white
     // lines column cannot be seen, and a fresh line looked like a row with nowhere to type.
-    let css = ".narrate-plate { background-color: #1c1c1d; border: 1px solid #000000; }\n\
+    let css = ".narrate-plate { background-color: #1c1c1d; }\n\
                #narrate-lines textview.line-text { border: 1px solid alpha(currentColor, 0.25); \
                border-radius: 6px; padding: 4px; }\n";
     let provider = gtk::CssProvider::new();
@@ -156,6 +156,10 @@ fn install_page_css_once() {
 pub(crate) const PREVIEW_FRAME_W_PX: i32 = 560;
 pub(crate) const PREVIEW_FRAME_H_PX: i32 = 315;
 
+/// How small the divider may make the column and its frame: the floor of Cut's preview, one number on both pages.
+const COLUMN_MIN_W_PX: i32 = crate::ui::cut_zoom_hand::PREVIEW_PANEL_W as i32;
+const COLUMN_MIN_H_PX: i32 = crate::ui::cut_zoom_hand::PREVIEW_PANEL_H as i32;
+
 /// One row of buttons in a page column, measured on this page's own transport and take rows.
 pub(crate) const TRANSPORT_ROW_PX: i32 = 34;
 
@@ -170,13 +174,14 @@ pub fn build() -> gtk::Widget {
     install_page_css_once();
     let split = gtk::Paned::new(gtk::Orientation::Horizontal);
     // §A.1: 560 px to the left pair, the window's extra width going to the lines.
-    split.set_position(560);
+    split.set_position(PREVIEW_FRAME_W_PX);
     // NOT `true`: §1 opens the left column at 560 px and sends every extra window pixel to the RIGHT ("extra
     // window width goes to the right"), so the lines column is what grows. With `true` the paned handed the growth
     // to the left pair and the rows were starved of width.
     split.set_resize_start_child(false);
     split.set_shrink_start_child(false);
-    split.set_wide_handle(true);
+    // §1: every divider is one line. A wide handle draws 5 px with a line on each side, read as a double line.
+    split.set_wide_handle(false);
 
     // §1's "Left column, split top and bottom by a second draggable divider (opened with the upper part 420 px
     // tall)": ABOVE it, top to bottom, the Narration tick, the preview and the transport row; BELOW it, the voice
@@ -191,7 +196,7 @@ pub fn build() -> gtk::Widget {
     lower.set_widget_name("narrate-lower");
     for half in [&upper, &lower] {
         half.set_hexpand(true);
-        half.set_size_request(560, -1);
+        half.set_size_request(COLUMN_MIN_W_PX, -1);
         half.set_halign(gtk::Align::Fill);
     }
     let vsplit = gtk::Paned::new(gtk::Orientation::Vertical);
@@ -201,14 +206,24 @@ pub fn build() -> gtk::Widget {
     // (`TRANSPORT_ROW_PX`) + the gap that keeps the transport off the handle = 400, which is where `spec/img/07-narrate.png` draws the handle — just under the
     // transport, with the voice picker the first row below it. A headless window is never dragged, so this is also
     // where the shot's handle sits.
-    vsplit.set_position(PREVIEW_FRAME_H_PX + TRANSPORT_ROW_PX + TICK_ROW_PX + 3 * COLUMN_GAP_PX);
-    vsplit.set_wide_handle(true);
-    vsplit.set_shrink_start_child(true);
+    vsplit.set_position(
+        PREVIEW_FRAME_H_PX
+            + TRANSPORT_ROW_PX
+            + TICK_ROW_PX
+            + 2 * COLUMN_GAP_PX
+            + crate::ui::margins::DIVIDER_GAP_PX,
+    );
+    // §1: every divider is one line. A wide handle draws 5 px with a line on each side, read as a double line.
+    vsplit.set_wide_handle(false);
+    // Neither half goes under its own minimum: the preview shrinks to its floor and the handle stops there. Allowed
+    // to shrink, the upper half was cut off from the top, the game audio row and the top of the picture gone.
+    vsplit.set_shrink_start_child(false);
+    vsplit.set_shrink_end_child(false);
     // NOT `true`: with `resize_start_child` GTK hands every extra pixel of window height to the UPPER half, whose
     // content is fixed-size (tick + the 16:9 frame + the transport row) — so the leftover showed up as an empty
     // band between the transport row and the voice picker, where `spec/img/07-narrate.png` has the picker directly
     // under the transport. The lower half takes the slack instead; the opening above still fixes where the handle
-    // starts, and a drag moves it either way because both halves can shrink.
+    // starts, and a drag moves it either way as far as the halves' minimums.
     vsplit.set_resize_start_child(false);
     vsplit.set_start_child(Some(&upper));
     vsplit.set_end_child(Some(&lower));
@@ -247,7 +262,10 @@ pub fn build() -> gtk::Widget {
     // The plate is the column's width at 16:9 (560 → 315), which is what §A.1's picture draws and what the second
     // divider opens past. NOT `vexpand`: the box's height here is its SIZE, and an expanding frame soaked up the
     // upper half's whole allocation, grew to ~400 px (measured) and pushed the transport row under the fold.
-    preview.set_size_request(PREVIEW_FRAME_W_PX, PREVIEW_FRAME_H_PX);
+    // Since the divider is what sizes it, the frame fills the room the upper half has, the way Cut's does, and
+    // `COLUMN_MIN_*` is only its floor: pinned at 560 by 315 it held the divider off everything to its left.
+    preview.set_size_request(COLUMN_MIN_W_PX, COLUMN_MIN_H_PX);
+    preview.set_vexpand(true);
     // NOT `Start`: the frame is a fixed-size box inside a column that is itself only as wide as its widest
     // child, so `Start` left it at its minimum width and the whole left column collapsed to ~140 px while
     // the picture became an invisible sliver. `Fill` makes the column take the paned's 560 px and the
@@ -262,7 +280,7 @@ pub fn build() -> gtk::Widget {
     // and the "16:9 frame" rendered ~1170 px tall; with no natural height and no request, GTK gave the area 2 px
     // inside its box. The explicit request makes the plate the frame it claims to be.
     picture.set_vexpand(false);
-    picture.set_size_request(PREVIEW_FRAME_W_PX, PREVIEW_FRAME_H_PX);
+    picture.set_size_request(COLUMN_MIN_W_PX, COLUMN_MIN_H_PX);
     // The plate the frame is cut out of: a bare `DrawingArea` paints nothing until a
     // `connect_draw` handler exists (there is none anywhere in `src/`), so headless and live alike the
     // frame was invisible. CSS gives it the dark 16:9 field with a stroke, which is what §2's image shows.
@@ -283,9 +301,10 @@ pub fn build() -> gtk::Widget {
     video.set_widget_name("narrate-video");
     video.set_content_fit(gtk::ContentFit::Contain);
     video.set_can_shrink(true);
-    video.set_size_request(PREVIEW_FRAME_W_PX, PREVIEW_FRAME_H_PX);
-    video.add_css_class("narrate-plate");
+    video.set_size_request(COLUMN_MIN_W_PX, COLUMN_MIN_H_PX);
+    video.add_css_class("video-plate");
     let stack = gtk::Overlay::new();
+    stack.set_vexpand(true);
     stack.set_child(Some(&video));
     stack.add_overlay(&picture);
     picture.remove_css_class("narrate-plate");
@@ -345,9 +364,7 @@ pub fn build() -> gtk::Widget {
     // `narrate_volume::ensure_slot` pushed that slot in `build_window`, before any page was built.
     let volume = narrate_volume::build();
     transport.append(&volume);
-    // Clear of the divider below it: with no room of their own the transport's buttons and the voice row's sat on
-    // the handle's line from both sides (`spec/img/07-narrate.png` leaves a band of page between them).
-    transport.set_margin_bottom(COLUMN_GAP_PX);
+    // Clear of the divider below it through the one stylesheet (`margins::css`), as every divider is.
     upper.append(&transport);
 
     // **7** who speaks, **8** the take band's buttons and **9** Add file…, on ONE row: §1's "First row, left to
@@ -355,7 +372,6 @@ pub fn build() -> gtk::Widget {
     // row and what a pick does) lives in `narrate_picker`; this box only says where it sits.
     let voice_row = gtk::Box::new(gtk::Orientation::Horizontal, 4);
     voice_row.set_widget_name("voice-row");
-    voice_row.set_margin_top(COLUMN_GAP_PX);
     let picker = narrate_picker::build();
     // The dropdown takes the row's spare width, as §1's picture draws it; the four buttons after it keep their
     // own natural width.
@@ -463,7 +479,14 @@ pub fn build() -> gtk::Widget {
     right.set_hexpand(true);
     right.append(&scroller);
 
-    split.set_start_child(Some(&vsplit));
+    // The column goes as narrow as Cut's preview, whatever its rows ask: narrower than the rows it scrolls sideways,
+    // so the divider moves and no control is lost off the edge.
+    let left = gtk::ScrolledWindow::new();
+    left.set_widget_name("narrate-left-scroller");
+    left.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Never);
+    left.set_min_content_width(COLUMN_MIN_W_PX);
+    left.set_child(Some(&vsplit));
+    split.set_start_child(Some(&left));
     split.set_end_child(Some(&right));
     upcast_widget(split)
 }
@@ -521,6 +544,7 @@ fn paint_head(window: &adw::ApplicationWindow) {
         clock.set_text(&clock_text(&s));
     }
     sync_scrub(window, &s);
+    crate::ui::narrate_band::follow_head(s.session);
     // The painted frame walks with the line: the preview's crop, zoom and still are read at `session`, so the
     // 100 ms tick is what makes the picture move.
     crate::ui::narrate_picture::repaint(window);
@@ -581,6 +605,7 @@ pub fn refresh(window: &adw::ApplicationWindow) {
     // The scrub bar carries the same second (§A.4: the bar IS the cut's clock), so a seek by button, wheel or
     // program moves the thumb instead of leaving it where the last drag put it.
     sync_scrub(window, &s);
+    crate::ui::narrate_band::follow_head(s.session);
     // The volume slider shows the same one number every other preview hears (§A.4), so a run or the Cut
     // page moving it has to show up here too — mirrored only when it differs, since writing a scale back
     // would read as a phantom drag.

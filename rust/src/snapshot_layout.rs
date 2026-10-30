@@ -11,16 +11,6 @@
 use adw::prelude::*;
 use gtk4 as gtk;
 
-/// Share of the page band §A's picture gives the pane above the Cut page's divider: the upper pane sits a
-/// little under half (`paned 660/380`, and `spec/img/05-cut.png` draws the preview pane just short of half of
-/// the page under the header bar). Rounded to whole pixels and floored so a tiny band still shows a picture.
-const UPPER_PANE_SHARE: f64 = 0.45;
-
-/// Where the Cut page's top/bottom divider goes in a snapshot `page_h` px tall.
-fn cut_upper_pane_px(page_h: i32) -> i32 {
-    (page_h.max(1) as f64 * UPPER_PANE_SHARE).round() as i32
-}
-
 /// Rest BOTH of the Cut page's dividers the moment this window has a real size — the same door a person's
 /// drag fires, and the reason a headless shot can show §A's `paned 660/380` at all.
 ///
@@ -33,10 +23,6 @@ fn cut_upper_pane_px(page_h: i32) -> i32 {
 /// both rules from a drain that runs AFTER the window took §1's size. No sleep, no guessed wait: the drain
 /// only runs the loop that is already pending.
 pub fn rest_page_splits(window: &adw::ApplicationWindow) {
-    let Some(scroll) = crate::ui::find_source_widget(window, "page-scroll-Cut") else {
-        return;
-    };
-    let page_h = scroll.height().max(1);
     // The shell's page/band split first: it is what decides how much room the page has at all.
     if let Some(divider) = crate::ui::find_source_widget(window, "main-divider")
         .and_then(|w| w.downcast::<gtk::Paned>().ok())
@@ -49,8 +35,7 @@ pub fn rest_page_splits(window: &adw::ApplicationWindow) {
     else {
         return;
     };
-    vsplit
-        .set_position(cut_upper_pane_px(page_h).max(crate::ui::cut_page_layout::SELF_SPLIT_TOP_PX));
+    vsplit.set_position(vsplit.height().max(crate::ui::cut_page_layout::SELF_SPLIT_TOP_PX));
     // …and the left/right divider, at §A's 660 px of preview, once its own pane has a width to be clamped by.
     if let Some(hsplit) = crate::ui::find_source_widget(window, "cut-top")
         .and_then(|w| w.downcast::<gtk::Paned>().ok())

@@ -225,6 +225,7 @@ mod window_bench;
 /// the repaint from the answer. Split out of `window.rs`, which is past its size budget. Its doors
 /// are re-exported through `window`.
 mod window_history_zoom;
+pub mod window_reset;
 mod window_holds;
 /// F2.12 Insert — the form's half: its holder, what is open, the plan drawn and Apply. Split out of
 /// `window.rs`, which is past its size budget. Its doors are re-exported through `window`.

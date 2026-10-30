@@ -441,7 +441,7 @@ fn sec_04_prepare_5_rules_b5_diarization_is_fatal_only_after_the_whole_ladder() 
             Ok(windows.iter().map(|_| crowded()).collect())
         }
     };
-    let mut place = |_: (f64, f64), _: f64| Ok(vec![]);
+    let mut place = |_: (f64, f64), _: &naivepost::diarize::Anchor| Ok(vec![]);
     let outcome = diar_scan::run(
         600.0,
         "sortformer-diar",
@@ -472,7 +472,7 @@ fn sec_04_prepare_5_rules_b5_diarization_is_fatal_only_after_the_whole_ladder() 
     // One rung serving is the same call answering Ok: fatal only after the ladder ran out.
     let mut scan_ok =
         |windows: &[(f64, f64)]| Ok(windows.iter().map(|_| two_voices()).collect::<Vec<_>>());
-    let mut place_ok = |_: (f64, f64), _: f64| Ok(vec![]);
+    let mut place_ok = |_: (f64, f64), _: &naivepost::diarize::Anchor| Ok(vec![]);
     let rung = diar_scan::run(
         600.0,
         "sortformer-diar",
@@ -510,7 +510,7 @@ fn sec_04_prepare_5_rules_b5_no_speech_is_a_real_case_at_every_layer() {
     );
     let mut scan_none =
         |windows: &[(f64, f64)]| Ok(windows.iter().map(|_| vec![]).collect::<Vec<_>>());
-    let mut place_none = |_: (f64, f64), _: f64| Ok(vec![]);
+    let mut place_none = |_: (f64, f64), _: &naivepost::diarize::Anchor| Ok(vec![]);
     let rung = diar_scan::run(
         600.0,
         "sortformer-diar",

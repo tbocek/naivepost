@@ -52,7 +52,7 @@ pub fn run<F, G, L>(
 ) -> Result<Rung, String>
 where
     F: FnMut(&[(f64, f64)]) -> Result<Vec<Vec<Turn>>, String>,
-    G: FnMut((f64, f64), f64) -> Result<Vec<Turn>, String>,
+    G: FnMut((f64, f64), &Anchor) -> Result<Vec<Turn>, String>,
     L: FnMut(&str),
 {
     let mut last: Option<(f64, f64)> = None;
@@ -135,7 +135,7 @@ fn placed<F, L>(
     mut log: L,
 ) -> Result<Vec<Turn>, String>
 where
-    F: FnMut((f64, f64), f64) -> Result<Vec<Turn>, String>,
+    F: FnMut((f64, f64), &Anchor) -> Result<Vec<Turn>, String>,
     L: FnMut(&str),
 {
     // Pass 1 heard the anchor's window, so its slot numbers are the anchor's own; a stranger in a later
@@ -149,7 +149,7 @@ where
     let mut turns = Vec::new();
     for (index, span) in spans.iter().enumerate() {
         log(&diarize::placement_log(base, index, spans.len()));
-        let heard = ask(*span, anchor.seconds())?;
+        let heard = ask(*span, anchor)?;
         // One claim per slot, in anchor seconds: every turn that slot owns, its whole reach measured from
         // the start of the anchor file. `match_slots` then decides one-to-one, strongest claim first.
         let claims = slot_claims(&heard, anchor);
@@ -162,18 +162,23 @@ where
                 )
             })
             .collect();
+        // The answer's zero is the anchor file's start: what lies inside the anchor is the reference, heard and
+        // placed by pass 1 already, and what lies past it is this span, `width` seconds later on the file than on
+        // the recording. The first rewrite added the anchor's start and width to every turn instead, which puts
+        // a span anywhere but right after the anchor on the wrong seconds, and kept the reference's turns too.
+        let width = (anchor.seconds() * SAMPLE_RATE as f64) as u64;
+        let span_start = (span.0 * SAMPLE_RATE as f64) as u64;
         for turn in heard {
+            if turn.end_sample <= width {
+                continue;
+            }
             let slot = named
                 .iter()
                 .find(|(slot, _)| *slot == turn.speaker_id)
                 .map_or(slot_base + turn.speaker_id, |(_, voice)| *voice);
-            // An answer counts from the front of the audio it was sent, which is the anchor: its own zero
-            // is the anchor's start on the recording's clock, and the anchor's width is what its samples
-            // have already been counted in.
-            let shift = anchor.from + anchor.seconds();
             turns.push(Turn {
-                start_sample: turn.start_sample + (shift * SAMPLE_RATE as f64) as u64,
-                end_sample: turn.end_sample + (shift * SAMPLE_RATE as f64) as u64,
+                start_sample: span_start + turn.start_sample.max(width) - width,
+                end_sample: span_start + turn.end_sample - width,
                 speaker_id: slot,
             });
         }
@@ -192,6 +197,12 @@ fn slot_claims(heard: &[Turn], anchor: &Anchor) -> Vec<(u32, f64, f64)> {
     let width = anchor.seconds();
     let mut claims: Vec<(u32, f64, f64)> = Vec::new();
     for turn in heard {
+        // Only what the slot said INSIDE the anchor is a claim on it. A turn past the anchor, clamped to its
+        // end, stretched the claim over every later block: the first rewrite let a voice heard again in the
+        // new audio claim the next voice's block, and that voice came back as a stranger.
+        if turn.start_sample as f64 / SAMPLE_RATE as f64 >= width {
+            continue;
+        }
         let from = (turn.start_sample as f64 / SAMPLE_RATE as f64).min(width);
         let to = (turn.end_sample as f64 / SAMPLE_RATE as f64)
             .min(width)

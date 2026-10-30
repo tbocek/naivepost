@@ -384,20 +384,6 @@ fn sec_04_prepare_5_rules_b6_the_restart_happens_only_on_the_next_play() {
     stop_legs::arm_describe_restart();
     let before = survivors(&tree);
 
-    // The rule as `prepare_run::begin` computes it: armed OR a marker on disk ⇒ restart; neither ⇒ not.
-    assert!(
-        stop_legs::describes_from_the_start(true, false),
-        "an armed stop restarts the describing"
-    );
-    assert!(
-        stop_legs::describes_from_the_start(false, true),
-        "so does a lane left holding its working files, with no stop at all"
-    );
-    assert!(
-        !stop_legs::describes_from_the_start(false, false),
-        "and only when neither is true does a run simply resume"
-    );
-
     // Nothing has cleared them yet: the arming sits on the flag, waiting for a press that has not come.
     assert_eq!(
         survivors(&tree),
@@ -422,6 +408,39 @@ fn sec_04_prepare_5_rules_b6_the_restart_happens_only_on_the_next_play() {
         !stop_legs::take_describe_restart(),
         "and a third ▶ restarts nothing"
     );
+}
+
+/// §5 and F1.7 S2 through the door ▶ runs, `prepare_run::begin`: a lane's `events.tsv` is Describe's finished
+/// output, so a press with no stop behind it keeps it and the description resumes; only a ⏹ that cut through
+/// Describe starts it over. The first rewrite also started over whenever an `events.tsv` was on disk, so every
+/// ▶ deleted every event log and paid for the description again wherever the cache could not answer.
+#[test]
+fn sec_04_prepare_5_rules_b7_a_finished_event_log_survives_the_next_play() {
+    let _turn = crate::common::describe_flags_turn();
+    let tree = Tree::new(scratch("b7-survives")).expect("a session folder");
+    seed_stopped_describe(&tree);
+    let project = with_sources(&["project:sources/lecture.mkv"]);
+    let _ = stop_legs::take_describe_restart();
+    let before = survivors(&tree);
+    let unarmed = prepare_run::begin(&project, &tree);
+    assert!(
+        matches!(&unarmed, prepare_run::Start::Started { cleared, .. } if cleared.quiet()),
+        "a press with no stop behind it clears nothing"
+    );
+    assert_eq!(survivors(&tree), before, "and the event log stands for the resume");
+
+    stop_legs::arm_describe_restart();
+    let armed = prepare_run::begin(&project, &tree);
+    assert!(
+        matches!(&armed, prepare_run::Start::Started { cleared, .. } if !cleared.quiet()),
+        "after a stop inside Describe the press starts it over"
+    );
+    let left = survivors(&tree);
+    assert!(
+        !left.contains(&"events.tsv".to_string()) && !left.contains(&"state.txt".to_string()),
+        "the describing's two files went: {left:?}"
+    );
+    assert!(left.contains(&"scaled frame".to_string()), "and the scaled frames stayed: {left:?}");
 }
 
 // ---- the round, and the #[test] that starts it ----------------------------------------

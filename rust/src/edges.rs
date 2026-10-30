@@ -67,6 +67,49 @@ pub const EDGE_TAIL_MAX: f64 = 0.25;
 /// searches the gap behind it for the quietest place to cut.
 pub const TROUGH_REACH: f64 = 0.4;
 
+/// How long the silence after a recording's first word must be stamped for [`misplaced_first_word`] to look in it.
+pub const MISPLACED_GAP_SECONDS: f64 = 0.2;
+
+/// How finely the gap is walked for where the sound starts: the wave cache's own 5 ms bucket.
+const ONSET_STEP_SECONDS: f64 = 0.005;
+
+/// A recording's first word stamped too early: the corrected span, or `None` when it stands where it is.
+///
+/// The aligner hangs a first word on whatever comes first, and what comes first can be a breath: on 08-dex
+/// 17-54-32 "Dass" was stamped on 0.58..0.74 s (peak 25), "der" followed at 1.30 s, and the word itself was in
+/// that "gap" from 1.10 s (peak 63). The sign is speech where the words say nothing was said: a gap of at
+/// least [`MISPLACED_GAP_SECONDS`] after the first word holding sound at half the recording's median word peak or
+/// more, and half as loud again as the stamped word. The word then runs from where that sound starts to the next
+/// word. One first word in 94 recordings has this; the only other first word followed by a gap had silence in it.
+/// `words` are one recording's in order; `peak` answers the loudest bucket between two seconds, `None` where
+/// nothing is measured, and nothing unmeasured moves a word.
+pub fn misplaced_first_word(
+    words: &[(f64, f64)],
+    mut peak: impl FnMut(f64, f64) -> Option<i32>,
+) -> Option<(f64, f64)> {
+    let (first, next) = (*words.first()?, *words.get(1)?);
+    if next.0 - first.1 < MISPLACED_GAP_SECONDS {
+        return None;
+    }
+    let mut loud: Vec<i32> = words.iter().filter_map(|(s, e)| peak(*s, *e)).collect();
+    loud.sort_unstable();
+    let median = *loud.get(loud.len() / 2)?;
+    let (own, in_gap) = (peak(first.0, first.1)?, peak(first.1, next.0)?);
+    if in_gap * 2 < median || in_gap * 2 < own * 3 {
+        return None;
+    }
+    let mut at = first.1;
+    while at < next.0 {
+        // Half the gap's own peak, not the recording's level: the breath the word was stamped on trails on into the
+        // gap at speech level or near it, and the start of the word is the first sound well above that.
+        if peak(at, at + ONSET_STEP_SECONDS).is_some_and(|here| here * 2 >= in_gap) {
+            return Some((at, next.0));
+        }
+        at += ONSET_STEP_SECONDS;
+    }
+    None
+}
+
 /// One lane of the session, as the edge placement needs it: the key Prepare keyed it under
 /// (`lecture` for `project:sources/lecture.mkv`), the session second its first sample lands on,
 /// and the recording's OWN size/mtime so the cache is checked against the file it was made from.
@@ -109,14 +152,16 @@ pub fn load(tree: &crate::layout::Tree, lanes: &[Lane]) -> Vec<(Lane, Edges)> {
 /// closure — handing out references while inserting into the same collection is the shape that
 /// cannot type.
 ///
-/// `held` arrives in lane order (ascending by `off`) because that is the order the takes sit on the
-/// timeline, which is what makes "the last lane starting at or before `t`" the recording playing
-/// then rather than an arbitrary match.
+/// `held` may arrive in any order: a project's sources are often listed newest first. The first rewrite took the
+/// last in the list starting at or before `t`, which on such a list is always the session's first recording: every
+/// later second asked the wrong file, found nothing, and fell back to the word pad without a word said (08-dex: no
+/// edge of any of its 95 recordings was placed by the sound).
 pub fn finder<'a>(held: &'a [(Lane, Edges)]) -> impl Fn(f64) -> Option<&'a Edges> + 'a {
     move |t: f64| {
         held.iter()
-            .rposition(|(lane, _)| lane.off <= t)
-            .map(|index| &held[index].1)
+            .filter(|(lane, _)| lane.off <= t)
+            .max_by(|(a, _), (b, _)| a.off.total_cmp(&b.off))
+            .map(|(_, edges)| edges)
     }
 }
 
@@ -160,6 +205,18 @@ impl Edges {
             return -1;
         }
         i
+    }
+
+    /// The loudest bucket between two session seconds; `None` where the span holds no bucket of this file.
+    pub fn peak_between(&self, from: f64, to: f64) -> Option<i32> {
+        let peaks = self.peaks();
+        let lo = ((from - self.off) * self.wave.hz).floor().max(0.0) as usize;
+        let hi = ((to - self.off) * self.wave.hz).ceil().max(0.0) as usize;
+        peaks
+            .get(lo..hi.min(peaks.len()))?
+            .iter()
+            .map(|peak| i32::from(*peak))
+            .max()
     }
 
     /// What counts as sound around a point: the quiet of that stretch of the recording, with room over

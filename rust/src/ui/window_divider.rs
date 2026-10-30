@@ -56,7 +56,10 @@ pub fn install(
     // screen at the minimum (which needs the page half NON-shrinkable, so GTK cannot crush it to 342 px and
     // dump the rest on the band) while the band is squeezed to the two rows §1 counts. The handle does that:
     // `rest_split` puts it at `total − band_px(…)` and the paned then allocates the end child exactly that.
-    divider.set_shrink_end_child(true);
+    // The band never goes under its minimum, whatever the page asks: the first rewrite let it, and on a page that
+    // needs its height the run bar's buttons and the log header were cut off at the window's edge. An open log
+    // gives way first, and collapses when too little of it is left (`collapse_without_room`).
+    divider.set_shrink_end_child(false);
     // §1's split of the EXTRA height: the page takes it, the band keeps its own. `resize_start_child` is what
     // makes a growing window give its new pixels to the page instead of stretching the log half.
     divider.set_resize_start_child(true);
@@ -167,22 +170,82 @@ fn connect_first_allocation(divider: &gtk::Paned) {
 /// has no `height` or `width` property to watch: the `notify::height` handlers this replaces never fired, on
 /// Xvfb or anywhere, so a window that grew kept its handle where the first map put it.
 fn connect_every_layout(divider: &gtk::Paned) {
-    divider.connect_realize(|d| {
+    // §1: "the log take[s] the extra height" and "splits keep their proportions". While the log is open the band
+    // keeps the share of the height it last settled at (opened, or dragged to), never less than its open ask; a
+    // collapsed band keeps its own height and the page takes the rest. The share is read whenever the handle
+    // moves at a height the window already had, so GTK's own move in the middle of a resize is not taken for a
+    // drag. The first rewrite snapped the open band back to its 220 px ask at every resize, so the log never grew.
+    let seen = std::rc::Rc::new(std::cell::Cell::new(0));
+    let share = std::rc::Rc::new(std::cell::Cell::new(0.0_f64));
+    divider.connect_position_notify({
+        let (seen, share) = (seen.clone(), share.clone());
+        move |d| {
+            let height = d.height();
+            if height > 1 && height == seen.get() && open_log(d).is_some() {
+                share.set(f64::from(height - d.position()) / f64::from(height));
+            }
+        }
+    });
+    divider.connect_realize(move |d| {
         let Some(surface) = d.native().and_then(|native| native.surface()) else {
             return;
         };
         let held = d.downgrade();
-        let seen = std::rc::Rc::new(std::cell::Cell::new(0));
+        let (seen, share) = (seen.clone(), share.clone());
         surface.connect_layout(move |_, _, _| {
             let Some(d) = held.upgrade() else { return };
             let height = d.height();
             // Only a height not seen yet: the re-ask moves the handle, which lays the window out again.
-            if height > 1 && seen.get() != height {
-                seen.set(height);
-                rest_split(&d);
+            if height <= 1 || seen.get() == height {
+                return;
+            }
+            seen.set(height);
+            collapse_without_room(&d);
+            match open_log(&d) {
+                Some((run_row, log)) if share.get() > 0.0 => {
+                    let kept = (share.get() * f64::from(height)).round() as i32;
+                    let band = kept
+                        .max(super::window_shot::band_px(&run_row, &log))
+                        .clamp(1, height - 1);
+                    d.set_position(super::window_shot::rest_position(height, band));
+                    super::window_run_scroller::resize_row(&run_row);
+                }
+                _ => rest_split(&d),
             }
         });
     });
+}
+
+/// Too little room for an open log: it collapses, the "Log" header and the run bar stay. On the next idle, because
+/// this runs while the window is being laid out or the expander is changing. Asked of the page's own minimum, which
+/// is what the band cannot take from.
+fn collapse_without_room(divider: &gtk::Paned) {
+    let held = divider.clone();
+    glib::idle_add_local_once(move || {
+        let Some((run_row, log)) = open_log(&held) else {
+            return;
+        };
+        let Some(page) = held.start_child() else {
+            return;
+        };
+        let page_floor = page.measure(gtk::Orientation::Vertical, -1).0;
+        let rows = super::window_shot::height_px(&run_row, &log);
+        if held.height() > 1
+            && held.height() - page_floor - rows < super::window_bench::LOG_MIN_BODY_PX
+        {
+            log.set_expanded(false);
+        }
+    });
+}
+
+/// The band's run-bar row and log expander, when the log is open: the two widgets an open band is measured by.
+fn open_log(divider: &gtk::Paned) -> Option<(gtk::Widget, gtk::Expander)> {
+    let bottom = divider.end_child()?;
+    let log = find_in(&bottom, "log-expander")?.downcast::<gtk::Expander>().ok()?;
+    if !log.is_expanded() {
+        return None;
+    }
+    Some((bottom.first_child()?, log))
 }
 
 /// Ask §1's resting split of the shell's divider: the band keeps its own height for the log's current state
@@ -269,6 +332,7 @@ fn connect_band_rest(divider: &gtk::Paned, run_row: &gtk::Widget, log: &gtk::Exp
             // Opening the log is the ONE moment the band is taller than its collapsed pair of rows: §1 says the
             // expander then gets "room of its own", taken out of the page. Closing returns to the resting rule.
             let band = if l.is_expanded() {
+                collapse_without_room(&d);
                 super::window_shot::band_px(&run_row, l)
             } else {
                 super::window_shot::rest_px(&run_row, l)

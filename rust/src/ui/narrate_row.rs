@@ -97,6 +97,7 @@ pub fn build(
     ] {
         let button = gtk::Button::with_label(label);
         button.set_widget_name(&format!("line-{suffix}-{index}"));
+        button.add_css_class("media-button");
         button.set_tooltip_text(Some(tip));
         header.append(&button);
     }

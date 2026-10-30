@@ -654,6 +654,10 @@ pub fn paint_run_bar(
     // ⏹ is sensitive whenever there is something to end — a run, a playing preview, or one parked
     // part way through. `controls` already decides that; this only draws it.
     stop_.set_sensitive(drawn.stop_sensitive);
+    // F0.15: ↺ sits after ⏹, and a run's files are not to be taken from under it.
+    if let Some(reset_) = stop_.next_sibling() {
+        reset_.set_sensitive(bar.running.is_none());
+    }
 }
 
 /// Repaint the run bar's ▶ and ⏹ from `window`'s bar and its preview, for a change that came from outside the
@@ -686,6 +690,9 @@ pub fn repaint_run_bar(window: &adw::ApplicationWindow) {
 /// §10's prose log heights: 220 px open, 110 px collapsed. No `P.` id exists for them, so they are
 /// bare constants here with the note rather than invented parameter rows.
 pub(crate) const LOG_OPEN_PX: i32 = 220;
+/// The least an open log's text keeps. Less room than this and the log collapses (`window_divider`): the run bar
+/// and the "Log" header stay either way.
+pub(crate) const LOG_MIN_BODY_PX: i32 = 60;
 /// The prompt bench's floor: enough lines to read a paragraph of prompt without scrolling. The ceiling
 /// is the scroller's own (`editor_scroller`), so nothing here caps it twice.
 pub(crate) const BENCH_MIN_H: i32 = 160;

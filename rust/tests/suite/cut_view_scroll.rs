@@ -296,3 +296,13 @@ fn wheel_over_tracks_and_transport(app: &adw::Application) {
 fn cut_screen_open() -> f64 {
     naivepost::cut_screen::ZOOM_AT_OPEN
 }
+
+/// The view follows the line where it is drawn: the time between two recordings and a folded stretch take no width,
+/// so a session with gaps must not send the view past the line.
+#[test]
+fn the_view_follows_the_line_through_gaps_and_folds() {
+    let runs = [(0.0, 100.0), (300.0, 400.0)];
+    assert_eq!(cut_view::line_px(&runs, &[], 2.0, 50.0), 100.0);
+    assert_eq!(cut_view::line_px(&runs, &[], 2.0, 350.0), 300.0, "the gap takes no width");
+    assert_eq!(cut_view::line_px(&runs, &[[10.0, 60.0]], 2.0, 350.0), 200.0, "nor does a fold");
+}

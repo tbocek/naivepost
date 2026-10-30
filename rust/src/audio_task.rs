@@ -97,14 +97,24 @@ fn joined(words: &[Word]) -> String {
 /// `speaker_turns | turns | speakers | diarization` at either level (`speaker_turns` is what audio.cpp's
 /// nemotron diarizer sends; the first rewrite did not know it and failed the run on a good answer), each entry read with [`turn`] and then sorted by
 /// start, because placement anchors on order and a server that answers out of order would otherwise
-/// place against a scrambled timeline. An empty list is an honest answer: nobody spoke.
+/// place against a scrambled timeline. An empty list is an honest answer: nobody spoke. audio.cpp says
+/// that by leaving the list out and sending only its `timing` (probed 2026-10-28 on 2.5 s of silence:
+/// `{"timing":{"wall_ms":15.65}}`), so a finished run with no list is nobody speaking too; the first
+/// rewrite failed Prepare on it. A reply with neither is still the model's failure.
 pub fn diar_answer(body: &Value) -> Result<Vec<Turn>, String> {
     let reply = answer(body);
-    let list = ["speaker_turns", "turns", "speakers", "diarization"]
+    let Some(list) = ["speaker_turns", "turns", "speakers", "diarization"]
         .iter()
         .filter_map(|key| reply.get(*key).and_then(Value::as_array))
         .next()
-        .ok_or_else(|| format!("the audio.cpp server answered {body} -- no speaker turns in it"))?;
+    else {
+        if reply.get("timing").is_some() {
+            return Ok(Vec::new());
+        }
+        return Err(format!(
+            "the audio.cpp server answered {body} -- no speaker turns in it"
+        ));
+    };
     let mut turns = Vec::new();
     for entry in list {
         if let Some(turn) = turn(entry) {
@@ -573,8 +583,8 @@ pub fn diar_scan<'a>(
                 let one = diar_window_ask(tree, paths, source, model);
                 windows.iter().map(|span| one(span.0, span.1)).collect()
             },
-            |(from, to), anchor_seconds| {
-                placement_ask(tree, paths, source, model, from, to, anchor_seconds)
+            |(from, to), anchor: &crate::diarize::Anchor| {
+                placement_ask(tree, paths, source, model, from, to, anchor)
             },
             |line| said.borrow_mut().push(line.to_string()),
         )?;
@@ -582,10 +592,12 @@ pub fn diar_scan<'a>(
     }
 }
 
-/// One pass-2 request: the anchor's own seconds followed by this span's, cut from the same decode and sent
-/// as one file, because that is the shape the answer is counted in. The cut starts anchor-length before the
-/// window for exactly that reason, and the answer comes back with the anchor inside it: the shift is undone
-/// here so [`crate::diar_scan`] only ever measures claims on the anchor file's clock.
+/// One pass-2 request: the anchor's own pieces followed by this span's seconds, cut from the same decode and
+/// sent as one file, because that is the shape the answer is counted in. The turns come back on THAT file's
+/// clock (the anchor at zero): [`crate::diar_scan`] measures the claims against the anchor and moves what lies
+/// past it onto the recording's clock itself. The first rewrite cut one stretch starting anchor-length before
+/// the span instead (`-ss -12` for the first span, 65..67.5 s for a span at 77 s), so the server never heard
+/// the anchor, and a silent stretch it was sent by mistake failed Prepare.
 pub fn placement_ask(
     tree: &Option<Tree>,
     paths: &crate::settings::Paths,
@@ -593,21 +605,30 @@ pub fn placement_ask(
     model: &str,
     from: f64,
     to: f64,
-    anchor_seconds: f64,
+    anchor: &crate::diarize::Anchor,
 ) -> Result<Vec<Turn>, String> {
-    let one = diar_window_ask(tree, paths, source, model);
-    let turns = one(from - anchor_seconds, to - anchor_seconds)?;
-    // The reply is in the sent file's seconds, whose zero is the anchor's start; taking the anchor's length
-    // off again leaves the window's own, which is what `Placement::within` expects.
-    let back = (anchor_seconds * SAMPLE_RATE as f64) as u64;
-    Ok(turns
-        .into_iter()
-        .map(|turn| Turn {
-            start_sample: turn.start_sample.saturating_sub(back),
-            end_sample: turn.end_sample.saturating_sub(back),
-            speaker_id: turn.speaker_id,
-        })
-        .collect())
+    let mut pieces: Vec<(f64, f64)> = anchor.slots.iter().map(|slot| (slot.from, slot.to)).collect();
+    pieces.push((from, to));
+    let chunk = format!("p{:04}.wav", (from * 10.0) as i64);
+    diar_file_ask(tree, paths, source, model, &chunk, &joined_plan(&pieces))
+}
+
+/// ffmpeg's arguments for one file made of `pieces` of the input, in order: the input split once per piece,
+/// each piece trimmed to its seconds and restarted at zero, and the pieces concatenated with nothing between.
+fn joined_plan(pieces: &[(f64, f64)]) -> Vec<String> {
+    let labels: String = (0..pieces.len()).map(|i| format!("[s{i}]")).collect();
+    let mut graph = format!("[0:a]asplit={}{labels}", pieces.len());
+    for (i, (from, to)) in pieces.iter().enumerate() {
+        graph.push_str(&format!(";[s{i}]atrim=start={from}:end={to},asetpts=PTS-STARTPTS[p{i}]"));
+    }
+    let parts: String = (0..pieces.len()).map(|i| format!("[p{i}]")).collect();
+    graph.push_str(&format!(";{parts}concat=n={}:v=0:a=1[out]", pieces.len()));
+    vec![
+        "-filter_complex".into(),
+        graph,
+        "-map".into(),
+        "[out]".into(),
+    ]
 }
 
 /// The diarization turns [`crate::transcribe::run`] wants: nothing in but this source's turns out.
@@ -624,45 +645,10 @@ pub fn diar_window_ask<'a>(
 ) -> impl Fn(f64, f64) -> Result<Vec<Turn>, String> + 'a {
     move |from: f64, to: f64| {
         let chunk = format!("d{:04}.wav", (from * 10.0) as i64);
-        let plan = crate::asr::cut_plan(from, to);
-        // The scratch note records the request the way the door spells every other one, so a failed window
-        // is comparable against its audio without asking again — the same file `asr_ask` reads back.
-        // The path in it is the chunk's own name: nothing has been uploaded yet at this point.
-        let note = serde_json::json!({ "audio": chunk, "language": "" });
-        // The diarizer's windows live in `diar/`, not beside the ASR's chunks: `asr::run` clears `asr/`
-        // when it succeeds, so a window left in there would outlive every stage's cleanup.
-        let dir = match tree {
-            Some(tree) => tree.diar_scratch(source),
-            None => scratch_dir(),
-        };
-        write_scratch_at(&dir, &chunk, &plan, &note)?;
-        let out = dir.join(&chunk);
-        if let Some(parent) = out.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|why| format!("{}: {why}", parent.display()))?;
-        }
-        let input = tree
-            .as_ref()
-            .map(|tree| tree.voice16k_wav(source))
-            .unwrap_or_else(|| std::path::PathBuf::from(source));
-        cut_from(paths, &input, &plan, &out)?;
-        let bytes = std::fs::read(&out).map_err(|why| format!("{}: {why}", out.display()))?;
-        let audio = upload_bytes(tree, paths, &chunk, &bytes)?;
-        let envelope = task_body(Task::Diarize, model, &audio, "", None);
-        let body = dial(
-            tree,
-            paths,
-            Ask {
-                step: Task::Diarize.step(),
-                job: &chunk,
-                task: Task::Diarize.task(),
-            },
-            model,
-            &envelope,
-        )?;
+        let turns = diar_file_ask(tree, paths, source, model, &chunk, &crate::asr::cut_plan(from, to))?;
         // A window's answer is in that window's own seconds; the ladder's arithmetic is all on the
         // recording's clock, so every turn is moved back before anyone looks at it.
-        Ok(diar_answer(&parse_json(&body)?)?
+        Ok(turns
             .into_iter()
             .map(|turn| Turn {
                 start_sample: turn.start_sample + (from * SAMPLE_RATE as f64) as u64,
@@ -671,6 +657,53 @@ pub fn diar_window_ask<'a>(
             })
             .collect())
     }
+}
+
+/// One diarization request: `chunk` cut from this source's `voice16k.wav` with ffmpeg's `plan`, uploaded, and
+/// asked about. The turns are on the cut file's own clock; the caller says where that file sits.
+fn diar_file_ask(
+    tree: &Option<Tree>,
+    paths: &crate::settings::Paths,
+    source: &str,
+    model: &str,
+    chunk: &str,
+    plan: &[String],
+) -> Result<Vec<Turn>, String> {
+    // The scratch note records the request the way the door spells every other one, so a failed window
+    // is comparable against its audio without asking again — the same file `asr_ask` reads back.
+    // The path in it is the chunk's own name: nothing has been uploaded yet at this point.
+    let note = serde_json::json!({ "audio": chunk, "language": "" });
+    // The diarizer's windows live in `diar/`, not beside the ASR's chunks: `asr::run` clears `asr/`
+    // when it succeeds, so a window left in there would outlive every stage's cleanup.
+    let dir = match tree {
+        Some(tree) => tree.diar_scratch(source),
+        None => scratch_dir(),
+    };
+    write_scratch_at(&dir, chunk, plan, &note)?;
+    let out = dir.join(chunk);
+    if let Some(parent) = out.parent() {
+        std::fs::create_dir_all(parent).map_err(|why| format!("{}: {why}", parent.display()))?;
+    }
+    let input = tree
+        .as_ref()
+        .map(|tree| tree.voice16k_wav(source))
+        .unwrap_or_else(|| std::path::PathBuf::from(source));
+    cut_from(paths, &input, plan, &out)?;
+    let bytes = std::fs::read(&out).map_err(|why| format!("{}: {why}", out.display()))?;
+    let audio = upload_bytes(tree, paths, chunk, &bytes)?;
+    let envelope = task_body(Task::Diarize, model, &audio, "", None);
+    let body = dial(
+        tree,
+        paths,
+        Ask {
+            step: Task::Diarize.step(),
+            job: chunk,
+            task: Task::Diarize.task(),
+        },
+        model,
+        &envelope,
+    )?;
+    diar_answer(&parse_json(&body)?)
 }
 
 /// The `diarize` [`crate::transcribe::run`] wants: this source's diarization out, collecting what

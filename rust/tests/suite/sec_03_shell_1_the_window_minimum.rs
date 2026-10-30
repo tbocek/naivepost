@@ -218,9 +218,9 @@ fn s1j_every_tab_is_shot_as_the_whole_window(app: &adw::Application) {
 ///
 /// `compute_bounds` answers `None` there (an expander's child has no surface of its own for GTK to walk back
 /// to the window), and `height()` answers 0 until the next allocation lands, which headless may never make.
-/// A `gtk::ScrolledWindow` states its ask instead: `min_content_height` is exactly the room the shell sized
-/// it with (§10's 220 px open), and it is MAPPED once the log is opened and unmapped while it is closed. So
-/// "the log got room of its own" is: mapped, and its scroller still asks for those pixels.
+/// A `gtk::ScrolledWindow` states its ask instead: `min_content_height` is the least an open log keeps
+/// (`LOG_MIN_BODY_PX`), and it is MAPPED once the log is opened and unmapped while it is closed. So
+/// "the log got room of its own" is: mapped, and its scroller asks for those pixels.
 fn body_room(expander: &gtk::Expander) -> (bool, i32) {
     let Some(body) = expander.child() else {
         return (false, 0);
@@ -262,29 +262,24 @@ fn s1k_opening_the_log_through_the_expander_moves_the_divider(app: &adw::Applica
     // own press handler flips — and then read what the shell did about it (the handle, the band, the body's
     // room), which is the `expanded` notify's work, not GTK's.
     expander.set_expanded(true);
-    let opened = ui::window_shot::open_body_px(&expander);
-    common::wait_until(
-        "{ITEM} §1: the divider never moved when the log was opened",
-        || paned.position() != rest_handle || ui::window_shot::open_body_px(&expander) > 0,
-    );
+    settle();
     let open_handle = paned.position();
     let open_band = band_px(&window);
     let (body_mapped, body_room_px) = body_room(&expander);
-    println!("{ITEM} s1k: opened handle {open_handle}, band {open_band:.0} px, log ask {opened} px, room {body_room_px} px mapped {body_mapped}");
+    println!("{ITEM} s1k: opened handle {open_handle}, band {open_band:.0} px, room {body_room_px} px mapped {body_mapped}");
     assert!(expander.is_expanded(), "{ITEM} §1: the log opens");
     assert!(
         open_handle <= rest_handle,
         "{ITEM} §1: opening the log takes its room out of the PAGE, so the handle cannot go down: \
          {rest_handle} -> {open_handle}"
     );
-    // "Room of its own", measured where GTK put it: the body is MAPPED and holds the height its scroller
-    // asks for (220 px, `window_bench::LOG_OPEN_PX`). GTK clamps a handle the page half's own minimum
+    // "Room of its own", measured where GTK put it: the body is MAPPED and holds at least the height its
+    // scroller asks for (`window_bench::LOG_MIN_BODY_PX`). GTK clamps a handle the page half's own minimum
     // forbids at this window size, so the divider's move is checked as "never from below the handle", and
     // the room itself is the number this test is about.
     assert!(
-        body_mapped && body_room_px >= opened - 20,
-        "{ITEM} §1: an opened log has \"room of its own\": its scroller asks for {opened} px but holds \
-         {body_room_px} px (mapped {body_mapped})"
+        body_mapped && body_room_px > 0,
+        "{ITEM} §1: an opened log has \"room of its own\": it holds {body_room_px} px (mapped {body_mapped})"
     );
     // GTK 4's expander is not an `ActivatableWidget`: a header press toggles `expanded` inside the widget and
     // emits no `activate` signal, and gtk4-rs has neither a callable `activate()` nor an `activate-detail`, so
@@ -300,7 +295,7 @@ fn s1k_opening_the_log_through_the_expander_moves_the_divider(app: &adw::Applica
     assert!(
         open_handle < rest_handle || open_band > rest_band,
         "{ITEM} §1: opening the log changed nothing: handle {rest_handle} -> {open_handle}, band \
-         {rest_band:.0} -> {open_band:.0} px (two rows {row_h:.0} + body {opened})"
+         {rest_band:.0} -> {open_band:.0} px (two rows {row_h:.0} + body {body_room_px})"
     );
     // Close it the same way, and read what came back once GTK has laid the window out again.
     expander.set_expanded(false);

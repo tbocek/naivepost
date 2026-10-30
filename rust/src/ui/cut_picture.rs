@@ -41,6 +41,7 @@ pub fn build() -> gtk::Button {
 
     let button = gtk::Button::new();
     button.set_widget_name("preview-picture-button");
+    button.add_css_class("video-plate");
     button.set_tooltip_text(Some(CLICK_TIP));
     // Same rule one level up: the button is only how a click reaches the picture, so it takes the box.
     button.set_hexpand(true);

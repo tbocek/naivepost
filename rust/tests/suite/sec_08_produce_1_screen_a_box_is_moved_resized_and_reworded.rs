@@ -98,12 +98,12 @@ fn sec_08_produce_1_screen_a_box_is_moved_resized_and_reworded_on_the_picture() 
         assert_eq!(cursor_at(at(0.5, 0.25)), "move", "inside the title band");
         assert_eq!(
             cursor_at(at(0.35, 0.75)),
-            "ew-resize",
+            "col-resize",
             "on the mark's right border"
         );
         assert_eq!(
             cursor_at(at(0.25, 0.65)),
-            "ns-resize",
+            "row-resize",
             "on the mark's top border"
         );
         assert_eq!(

@@ -389,8 +389,8 @@ impl Grip {
         match (self.horiz, self.vert) {
             (true, true) if self.left == self.top => "nwse-resize",
             (true, true) => "nesw-resize",
-            (true, false) => "ew-resize",
-            (false, true) => "ns-resize",
+            (true, false) => "col-resize",
+            (false, true) => "row-resize",
             _ if self.inside => "move",
             _ => "default",
         }

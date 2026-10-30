@@ -958,3 +958,19 @@ fn sec_09_llm_and_tools_8_prompt_assembly_s15_retakes_wire_carries_the_assembled
         "and the rule closes the system turn"
     );
 }
+
+/// The script block goes, however many stars the profile wrote around its lines, and all that is around it stays;
+/// a context with no block comes back as it was.
+#[test]
+fn sec_09_llm_and_tools_8_prompt_assembly_the_script_block_can_be_taken_out_of_the_context() {
+    for (start, stop) in [
+        ("****SCRIPT START****", "****SCRIPT STOP****"),
+        ("**SCRIPT START**", "**SCRIPT STOP**"),
+    ] {
+        let context = format!("Before.\n\n{start}\nSaid here.\nAnd here.\n{stop}\n\nAfter.");
+        let left = asm::without_script(&context);
+        assert!(left.contains("Before.") && left.contains("After."), "{left}");
+        assert!(!left.contains("Said here") && !left.contains("SCRIPT"), "{left}");
+    }
+    assert_eq!(asm::without_script("No script at all."), "No script at all.");
+}

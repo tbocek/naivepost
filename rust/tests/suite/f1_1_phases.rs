@@ -298,3 +298,37 @@ fn f1_1_s6_the_bar_moves_forward_and_is_full_only_at_the_end() {
         queue.fraction()
     );
 }
+
+/// §03-shell §2: the status line says where the queue is, not only which task runs: "describe 1/2: 2 of 3,
+/// describe 1" while the second of three rows runs. The first rewrite showed the row's label alone, so a
+/// person watching Prepare saw "describe 2/2: describing <file>" and no count of the recordings done or to
+/// come; the count was in the tooltip only. A stage of one row says no count.
+#[test]
+fn f1_1_s6_the_status_line_counts_the_rows_of_the_stage() {
+    let rows = |name: &'static str, n: usize| Stage {
+        track: TRACK_STT,
+        name,
+        phase: 1,
+        of: 2,
+        kind: "row",
+        tasks: (0..n).map(|i| noop_task(&format!("{name} {i}"))).collect(),
+    };
+    let stages = vec![rows("describe", 3), rows("fix", 1)];
+    let mut queue = Queue::new();
+    let mut seen: Vec<String> = Vec::new();
+    run_stages::drive_walk_watched_for_test(
+        &stages,
+        &mut queue,
+        |_| {},
+        &[],
+        &mut |queue, _| seen.push(queue.text_and_tip().0),
+    );
+    assert!(
+        seen.iter().any(|line| line == "describe 1/2: 2 of 3, describe 1"),
+        "the second of three rows says its place in the queue: {seen:?}"
+    );
+    assert!(
+        seen.iter().any(|line| line == "fix 1/2: fix 0"),
+        "a stage of one row says no count: {seen:?}"
+    );
+}

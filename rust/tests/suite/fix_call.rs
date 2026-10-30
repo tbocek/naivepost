@@ -388,6 +388,33 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_the_session_note
     assert!(note < rows, "above the block it is about: {user}");
 }
 
+/// The script between its SCRIPT START and SCRIPT STOP lines does not reach the fixer: with it in the request the
+/// model takes what was said for a mishearing of the script and rewrites the line to match (08-dex 18-40-10: said
+/// USDC, the script says DAI; 3 of 8 asks kept USDC with the script, 8 of 8 without). The rest of the note still
+/// does, and since the script is no longer part of the question, changing it asks nothing again.
+#[test]
+fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_the_fixer_is_not_shown_the_script() {
+    let fake = Fake::start(rows_answer(&[]));
+    let scene = Scene::new("no-script", &fake.url);
+    let with_script = |script: &str| naivepost::project::Project {
+        context: format!("A lecture by Thomas Bocek.\n\n****SCRIPT START****\n{script}\n****SCRIPT STOP****\n"),
+        ..Default::default()
+    };
+    naivepost::project::save(&with_script("DAI kostet 1 Dollar."), &scene.session()).expect("the project file");
+    scene.fix(&conf_at(&fake.url), &mut |_| {}).expect("the fix ran");
+    let user = user_text(&fake.waited(1)[0]);
+    assert!(user.contains("A lecture by Thomas Bocek."), "the note still leads: {user}");
+    assert!(!user.contains("DAI") && !user.contains("SCRIPT"), "the script stays out: {user}");
+
+    naivepost::project::save(&with_script("USDC kostet 1 Dollar."), &scene.session()).expect("the project file");
+    scene.fix(&conf_at(&fake.url), &mut |_| {}).expect("the second fix ran");
+    assert_eq!(
+        fake.asks.lock().expect("the record lock").bodies.len(),
+        1,
+        "a changed script is not a changed question"
+    );
+}
+
 /// The answer lands: line 1 keeps its own times and speaker and carries the respelling, and the rows
 /// nobody fixed stand untouched. Same row count, same first three fields.
 #[test]
@@ -568,7 +595,11 @@ fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_its_answer_and_replays_it_wit
     let lines = naivepost::fix_transcripts::load_transcript(&tree, LANE).expect("the source rows");
     let blocks = naivepost::fix_transcripts::blocks(&lines);
     assert_eq!(blocks.len(), 1, "four rows fit one block");
-    let block_key = naivepost::fix_transcripts::block_key(&blocks[0]);
+    let context = naivepost::project::load(scene.tree().dir())
+        .map(|project| project.context)
+        .unwrap_or_default();
+    let prompt = naivepost::fix_call::cache_prompt(&scene.paths, &context);
+    let block_key = naivepost::fix_transcripts::block_key(&prompt, &blocks[0]);
     assert_eq!(
         block_key.len(),
         64,
@@ -642,7 +673,7 @@ fn slots_under(tree: &naivepost::layout::Tree) -> Vec<String> {
 /// given the refusal it was shown. The first-attempt half is pinned beside it so the rule reads as a
 /// pair rather than as "the fixer never caches".
 #[test]
-fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_only_its_first_attempt() {
+fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_its_answer_by_input_whichever_try_earned_it() {
     let respelled = "so the algorithm receives the input";
     // Round one moves a time, so the strict check refuses it and a second attempt actually happens; round
     // two answers properly.
@@ -655,17 +686,28 @@ fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_only_its_first_attempt() {
         .expect("the repair still fixes the block");
     assert_eq!(fake.waited(2).len(), 2, "a refusal costs a second ask");
 
-    // The fix landed anyway: withholding the CACHE is all §6 asks for.
     let fixed = scene.fixed();
     assert!(
         fixed.contains(respelled),
-        "the repaired answer still writes the file: {fixed}"
+        "the repaired answer writes the file: {fixed}"
     );
-    // The repaired block earns no slot: §6 caches the first attempt only, so the next run asks it again.
+    // The repaired block is filed under its own rows, and the same rows cost nothing next time. The first
+    // rewrite filed only a first-try answer, so a block answered on its retry was asked twice on every run.
     let slots = slots_under(&scene.tree());
+    assert_eq!(slots.len(), 1, "the repaired block is filed -- {slots:?}");
+    let mut replay_log = Vec::new();
+    scene
+        .fix(&conf, &mut |line| replay_log.push(line.to_string()))
+        .expect("the replay ran");
+    assert_eq!(
+        fake.asks.lock().expect("the record lock").bodies.len(),
+        2,
+        "the replay of the unchanged block cost no ask: {replay_log:?}"
+    );
     assert!(
-        slots.is_empty(),
-        "a repaired block is not filed -- {slots:?}"
+        scene.fixed().contains(respelled),
+        "and wrote the same fix: {}",
+        scene.fixed()
     );
 
     // The other half: a first-try answer IS filed, under §6's digest, and the next pass replays it.

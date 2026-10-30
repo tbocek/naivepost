@@ -472,7 +472,31 @@ where
         // The walk's own position. A stop reports THIS, not an arithmetic guess off the loop index:
         // a run stopped between two tasks leaves exactly the tasks that were never reached.
         let mut progress = Progress::at_start(total);
-        for task in stage.tasks.iter() {
+        // A describe stage counts its requests over the whole stage, not per recording: what there is and how
+        // much is done, both updated as they change. The total is each row's planned chunks, summed before the
+        // first row runs, and a row whose own plan comes out different (or that sends nothing) corrects it.
+        let mut planned: Vec<usize> = stage
+            .tasks
+            .iter()
+            .map(|task| {
+                if task.program == VISION_TASK {
+                    crate::describe_call::planned_requests(task)
+                } else {
+                    0
+                }
+            })
+            .collect();
+        let mut requests_total: usize = planned.iter().sum();
+        let mut requests_done = 0usize;
+        for (index, task) in stage.tasks.iter().enumerate() {
+            // The status line says where the queue is, not only which task runs: "37 of 97, describing <file>".
+            // The first rewrite showed the label alone, so a person saw the phase ("describe 2/2") and no count
+            // of the tasks done or still to come; the count was in the tooltip only.
+            let label = if total > 1 {
+                format!("{} of {total}, {}", index + 1, task.label)
+            } else {
+                task.label.clone()
+            };
             // What the task before this one finished is shown before this one starts.
             on_queue(queue, stage.name);
             // §S3: ask before every task. A pause waits one poll and asks again; a stop leaves now.
@@ -487,12 +511,12 @@ where
             // The status names the task that is running, from its first moment: before, the line kept the label
             // of the task that had just ENDED (Prepare said "building the word list" for the minutes the joins
             // repair after it took).
-            queue.prog(stage.track, position(progress.done, total), &task.label);
+            queue.prog(stage.track, position(progress.done, total), &label);
             on_queue(queue, stage.name);
             if task.already_done {
                 skipped += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &task.label);
+                queue.prog(stage.track, position(progress.done, total), &label);
                 continue;
             }
             // The audio tasks are dials, not processes: same checkpoint, same `take`, same bar, and the
@@ -514,7 +538,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &task.label);
+                queue.prog(stage.track, position(progress.done, total), &label);
                 continue;
             }
             // The frames rows are this module's own dial too (S2's sweep plus one ffmpeg per frame is far
@@ -529,7 +553,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &task.label);
+                queue.prog(stage.track, position(progress.done, total), &label);
                 continue;
             }
             // The text gate's rows (F1.6 S6) are chat requests too, a stage of their own before describe.
@@ -542,7 +566,7 @@ where
                         queue,
                         on_queue,
                         stage,
-                        task,
+                        &label,
                         done,
                         at.fraction(),
                         &at.words(),
@@ -556,13 +580,41 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &task.label);
+                queue.prog(stage.track, position(progress.done, total), &label);
                 continue;
             }
             // The vision rows are a chat request rather than an audio task: same checkpoint, same
             // `take`, different door. `drive_walk` does not decide which, the row says by its program.
             if task.program == VISION_TASK {
-                if let Err(error) = crate::describe_call::run_task(task, &mut log) {
+                // A recording is described for minutes, chunk by chunk: each answer moves the bar inside this
+                // task's share and says which chunk it is on, as the text gate does.
+                let done = progress.done;
+                let before = requests_done;
+                let mut answered_here = None;
+                let mut reached = |answered: usize, row_total: usize| {
+                    if row_total != planned[index] {
+                        requests_total = requests_total + row_total - planned[index];
+                        planned[index] = row_total;
+                    }
+                    answered_here = Some(answered);
+                    let within = if row_total > 0 {
+                        answered as f64 / row_total as f64
+                    } else {
+                        1.0
+                    };
+                    let words = format!("{} of {requests_total} requests", before + answered);
+                    report_within(queue, on_queue, stage, &label, done, within, &words);
+                };
+                let described = crate::describe_call::run_task(task, &mut log, &mut reached);
+                match answered_here {
+                    Some(answered) => requests_done = before + answered,
+                    // A row that sent nothing (no frames, an every-frame folder) leaves the total.
+                    None => {
+                        requests_total -= planned[index];
+                        planned[index] = 0;
+                    }
+                }
+                if let Err(error) = described {
                     return Drive::Failed {
                         stage: stage.name,
                         error,
@@ -570,7 +622,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &task.label);
+                queue.prog(stage.track, position(progress.done, total), &label);
                 continue;
             }
             // §F1.13's word list is a dial of the same fix stage: it reads the files the rows above just
@@ -584,7 +636,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &task.label);
+                queue.prog(stage.track, position(progress.done, total), &label);
                 continue;
             }
             // The fix rows are a chat request too, same checkpoint and same door shape: the row says
@@ -598,7 +650,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &task.label);
+                queue.prog(stage.track, position(progress.done, total), &label);
                 continue;
             }
             // Fix's two session rows (S1's placement, S5-S7's merge) are dials of the same stage: the
@@ -610,7 +662,7 @@ where
                 // row's share and names itself in the status, the way the text gate's judges do.
                 let done = progress.done;
                 let mut reached = |within: f64, words: &str| {
-                    report_within(queue, on_queue, stage, task, done, within, words);
+                    report_within(queue, on_queue, stage, &label, done, within, words);
                 };
                 let worked = if task.program == crate::fix_session::PLACEMENT_TASK {
                     crate::fix_session::run_placement(task, &mut log)
@@ -625,7 +677,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &task.label);
+                queue.prog(stage.track, position(progress.done, total), &label);
                 continue;
             }
             if let Err(why) = spawn_task(task, procs, &mut log) {
@@ -636,7 +688,7 @@ where
             }
             ran += 1;
             progress = progress.advanced();
-            queue.prog(stage.track, position(progress.done, total), &task.label);
+            queue.prog(stage.track, position(progress.done, total), &label);
         }
         queue.done(stage.track, 1.0);
         on_queue(queue, stage.name);
@@ -651,14 +703,14 @@ fn report_within(
     queue: &mut Queue,
     on_queue: &mut dyn FnMut(&Queue, &str),
     stage: &Stage,
-    task: &Task,
+    label: &str,
     done: usize,
     within: f64,
     words: &str,
 ) {
     let total = stage.tasks.len();
     let at = position(done, total) + within.clamp(0.0, 1.0) / total.max(1) as f64;
-    queue.prog(stage.track, at, &format!("{} -- {words}", task.label));
+    queue.prog(stage.track, at, &format!("{label} -- {words}"));
     on_queue(queue, stage.name);
 }
 

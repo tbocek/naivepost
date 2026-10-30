@@ -375,7 +375,9 @@ fn f1_3_s4_no_transcript_means_nothing_to_align() {
         SOURCE,
         30.0,
         "nemotron-asr",
-        |_| Align::Failed("would have been asked".into()),
+        // Asked at all is the failure: the first rewrite called the aligner on every resumed run and threw
+        // its answer away afterwards, so a closure that only answered "failed" never noticed.
+        |_| -> Align { panic!("the aligner is asked nothing when words.aligned.json is on disk") },
         || Ok(WordsDoc::default()),
         || Ok(vec![]),
     )

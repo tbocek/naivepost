@@ -98,24 +98,58 @@ pub const DEAD_AIR_KEEP_SECONDS: f64 = 0.5;
 pub const TRIM_REACH_SECONDS: f64 = 0.4;
 
 /// One filmed run with the two seconds that bookend its speech. The span is what was recorded; the
-/// spoken pair is what the transcript says was said inside it.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// spoken pair is what the transcript says was said inside it: where the first word starts and where the
+/// last word ENDS.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct SpokenRun {
     pub span: (f64, f64),
     pub first_spoken: f64,
     pub last_spoken: f64,
+    /// The two edges as the sound placed them within [`TRIM_REACH_SECONDS`] of those words (F1.11's
+    /// `start_before` / `end_after`). `None` when the recording has no envelope: the word pad stands in.
+    pub placed: Option<(f64, f64)>,
+    /// Every word of the run, start and end on the session clock: what [`drop_wordless`] reads.
+    pub words: Vec<(f64, f64)>,
 }
 
-/// S2a: every filmed run trimmed to its words — just before the first to just after the last, and
-/// never outside the run.
+/// S2a: every filmed run trimmed to its words — just before the first to just after the last, placed by the
+/// sound, and never outside the run. The first rewrite took a blind 0.4 s either side of each word's START: every
+/// recording opened up to 0.4 s before its first word, and a last word longer than 0.4 s lost its end.
 ///
 /// Never outside the run: the clamp is the whole of that rule. A reach that crossed the run's own end
 /// would spend the next recording's seconds on this one's last syllable, and the next run starts where
 /// this one stops, so the overlap would be silent footage counted twice.
 pub fn trim_run_to_words(run: &SpokenRun) -> (f64, f64) {
-    let start = (run.first_spoken - TRIM_REACH_SECONDS).max(run.span.0);
-    let end = (run.last_spoken + TRIM_REACH_SECONDS).min(run.span.1);
-    (start, end.max(start))
+    let (start, end) = run.placed.unwrap_or((
+        run.first_spoken - crate::edges::WORD_PAD,
+        run.last_spoken + crate::edges::WORD_PAD,
+    ));
+    let start = start.max(run.span.0);
+    (start, end.min(run.span.1).max(start))
+}
+
+/// S2a: a kept piece with no spoken word in it is not kept. Marks are taken out of a run trimmed past its words,
+/// so a mark that takes a recording's last words leaves the tail behind them as a piece of its own: a green scrap
+/// of nothing at every such join (08-dex: 11 of 15 segments under a second held no word). A word counts by the
+/// middle of what its run shows of it, so a mark ending a hair inside a word does not make that word's last
+/// milliseconds a piece, and a word running past the run's end still counts. Runs that know no words leave
+/// everything standing.
+pub fn drop_wordless(segs: &[(f64, f64)], runs: &[SpokenRun]) -> Vec<(f64, f64)> {
+    let middles: Vec<f64> = runs
+        .iter()
+        .flat_map(|run| {
+            run.words
+                .iter()
+                .map(|(from, to)| (from.max(run.span.0) + to.min(run.span.1)) / 2.0)
+        })
+        .collect();
+    if middles.is_empty() {
+        return segs.to_vec();
+    }
+    segs.iter()
+        .filter(|(from, to)| middles.iter().any(|at| at >= from && at < to))
+        .copied()
+        .collect()
 }
 
 /// Subtract every mark from the kept spans. Returns the pieces left and how many marks actually took
@@ -231,7 +265,7 @@ pub fn words_cut(runs: &[SpokenRun], marks: &[(f64, f64)], silences: &[(f64, f64
         DEAD_AIR_MAX_SECONDS,
         DEAD_AIR_KEEP_SECONDS,
     );
-    let segs = coalesce(&kept);
+    let segs = coalesce(&drop_wordless(&kept, runs));
     let total: f64 = segs.iter().map(|(a, b)| b - a).sum();
     WordsCut {
         status: format!("cut by the words: {} segments", segs.len()),

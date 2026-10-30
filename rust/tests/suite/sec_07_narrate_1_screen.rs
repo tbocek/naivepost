@@ -986,3 +986,22 @@ fn sec_07_narrate_1_screen_text_box_wraps_under_the_header_and_the_warning_sits_
         "the box-under-header check never ran"
     );
 }
+
+/// A long recording draws one bar per pixel column, its loudest peak among them, whatever the peak rate: drawing
+/// each of the 850 000 peaks of 70 minutes took a paint longer than a beat of the preview.
+#[test]
+fn the_wave_draws_one_bar_per_pixel_column() {
+    let seconds = 4257.0;
+    let mut peaks = vec![10u8; (seconds * 200.0) as usize];
+    peaks[(2000.0 * 200.0) as usize] = 250;
+    let pps = 900.0 / seconds;
+    let columns = band::peak_columns(200.0, &peaks, 0.0, pps, 900.0);
+    assert_eq!(columns.len(), 900);
+    let loud: Vec<f64> = columns.iter().filter(|(_, peak)| *peak == 250).map(|(x, _)| *x).collect();
+    assert_eq!(loud, vec![(2000.0 * pps).floor()], "the one loud peak shows in its own column");
+
+    // Zoomed in past the peaks, every column still has its bar, and the wave stops where the recording does.
+    let zoomed = band::peak_columns(200.0, &[10, 20], 0.0, 1000.0, 50.0);
+    assert_eq!(zoomed.len(), 10);
+    assert!(zoomed.iter().all(|(_, peak)| *peak > 0));
+}

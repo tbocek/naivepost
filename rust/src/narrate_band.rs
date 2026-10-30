@@ -126,27 +126,25 @@ pub fn envelope_note(decoded: bool) -> Option<&'static str> {
     (!decoded).then_some("reading the recording\u{2026}")
 }
 
-/// The peaks to paint for the visible window: the cache stores peaks at `hz` per second, so the band
-/// asks for the slice its view covers and lets the painter stretch it. Returns `(start_second,
-/// peaks)`; empty when the cache has nothing for this recording.
-pub fn visible_peaks(hz: f64, peaks: &[u8], offset: f64, pps: f64, width: f64) -> Vec<(f64, u8)> {
-    if peaks.is_empty() || hz <= 0.0 {
+/// The wave as the lane draws it: one `(x, peak)` per pixel column in `width` px, the loudest peak the column
+/// covers. A recording's peaks come 200 to the second, so a 70 minute recording has 850 000 of them for some 900
+/// columns, and the first rewrite drew every one: a paint took far longer than the 100 ms between two beats of
+/// the preview, and the window stood still. Zoomed in past the peaks, a column shows the one it stands on.
+pub fn peak_columns(hz: f64, peaks: &[u8], offset: f64, pps: f64, width: f64) -> Vec<(f64, u8)> {
+    if peaks.is_empty() || hz <= 0.0 || pps <= 0.0 {
         return Vec::new();
     }
-    let first = x_to_second(0.0, offset, pps);
-    let last = x_to_second(width, offset, pps);
     let mut out = Vec::new();
-    let mut i = 0usize;
-    while i < peaks.len() {
-        let at = i as f64 / hz;
-        if at >= first && at <= last {
-            out.push((at, peaks[i]));
-        }
-        if at > last {
+    let mut x = 0.0;
+    while x < width {
+        let first = (x_to_second(x, offset, pps) * hz).floor().max(0.0) as usize;
+        let last = (x_to_second(x + 1.0, offset, pps) * hz).ceil().max(0.0) as usize;
+        if first >= peaks.len() {
             break;
         }
-        // Step in whole peak periods so a dense cache does not paint one point per pixel.
-        i += 1;
+        let covered = &peaks[first..last.max(first + 1).min(peaks.len())];
+        out.push((x, covered.iter().copied().max().unwrap_or(0)));
+        x += 1.0;
     }
     out
 }
