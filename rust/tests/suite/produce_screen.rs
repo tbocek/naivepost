@@ -511,7 +511,7 @@ fn sec_08_produce_1_screen_s8_title_is_printed_once() {
         "{}",
         ps::SUGGEST_TIP
     );
-    assert!(ps::SUGGEST_TIP.contains("fresh title, thumbnail instruction and description"));
+    assert!(ps::SUGGEST_TIP.contains("fresh title and description"));
     assert!(
         ps::TITLE_TIP.contains("Four to seven words"),
         "{}",
@@ -610,4 +610,12 @@ fn sec_08_produce_1_screen_s10_outputs_count_only() {
         ps::FOLDER_TIP,
         "produce/ \u{2014} the finished video, the per-clip encodes, the thumbnail and the upload text"
     );
+}
+
+/// With no lines to land on (Shift held), a held box goes exactly where the hand has it.
+#[test]
+fn no_snap_lines_leave_a_dragged_box_where_the_hand_has_it() {
+    assert_eq!(ps::snap(101.5, &[]), 101.5);
+    assert_eq!(ps::snap_slide(101.5, 40.0, &[]), 101.5);
+    assert_eq!(ps::snap_slide(101.5, 40.0, &[100.0]), 100.0, "without Shift it lands");
 }

@@ -214,11 +214,26 @@ pub fn redraw_thumbnail(window: &adw::ApplicationWindow, only_thumbnail: bool) -
     report(window, out.status)
 }
 
-/// **8** ↻ beside Title: the only thing on this page that asks a model to rewrite text, and it rewrites
-/// all three written things at once so they cannot disagree about what the video is. No draw.
+/// **8** ↻ beside Title: the title and the description, together so they cannot disagree about what the video
+/// is. The images, the instruction and the picture stay as they are.
 pub fn reword(window: &adw::ApplicationWindow) -> String {
-    let out = crate::produce_presses::press_reword(&legs(), crate::ui::window::log_line);
+    let run = produce_page::reword_run(window);
+    let out = crate::produce_presses::press_reword(
+        &legs(),
+        || reword_words(run.as_ref()),
+        crate::ui::window::log_line,
+    );
+    land_reword(window, out)
+}
+
+fn reword_words(run: Option<&crate::produce_flow::Run>) -> Result<(), String> {
+    run.map_or(Ok(()), crate::ui::produce_languages::reword_half)
+}
+
+/// A failed print still wrote the text first, so a re-word lands on the page whichever way it ended.
+fn land_reword(window: &adw::ApplicationWindow, out: crate::produce_presses::Outcome) -> String {
     crate::ui::produce_languages::report(&out);
+    produce_page::take_written_publish(window);
     report(window, out.status)
 }
 
@@ -431,11 +446,20 @@ fn land_outcome(window: &adw::ApplicationWindow, out: crate::produce_presses::Ou
 
 /// **8** ↻ beside Title, as the button fires it: [`reword`] on a worker.
 pub fn reword_from_button(window: &adw::ApplicationWindow) {
+    let run = produce_page::reword_run(window);
     on_worker(
         window,
         "title-suggest",
-        |legs| crate::produce_presses::press_reword(legs, crate::ui::window::log_line),
-        land_outcome,
+        move |legs| {
+            crate::produce_presses::press_reword(
+                legs,
+                || reword_words(run.as_ref()),
+                crate::ui::window::log_line,
+            )
+        },
+        |window, out| {
+            land_reword(window, out);
+        },
     );
 }
 

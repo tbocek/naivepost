@@ -239,9 +239,10 @@ fn build_left_column() -> gtk::Box {
     // itself instead, which no §1 list reads — §1's ORDER entry is this holder either way.
     let picture_holder = gtk::Overlay::new();
     picture_holder.set_widget_name("thumbnail-plate");
-    picture_holder.set_vexpand(false);
+    // The plate takes the column's spare height, or a wider column only adds bars beside a picture of the same size.
+    picture_holder.set_vexpand(true);
     let picture = gtk::DrawingArea::new();
-    picture.set_vexpand(false);
+    picture.set_vexpand(true);
     picture.set_widget_name("thumbnail-picture");
     picture.set_halign(gtk::Align::Fill);
     picture.set_hexpand(true);
@@ -275,12 +276,6 @@ to resize, the middle to move, and press its \u{270e} to reword or remove it.",
     let chips = gtk::Box::new(gtk::Orientation::Vertical, 2);
     chips.set_widget_name("thumbnail-word-chips");
     left.append(&chips);
-    // §1's Produce page must fit §1's minimum window height with nothing scrolling as a whole
-    // (`tests/suite/window_shrinks.rs` measures zero travel), so the column ends with a spacer that soaks up
-    // whatever height is left rather than letting the last box stretch past the band.
-    let filler = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    filler.set_vexpand(true);
-    left.append(&filler);
     left
 }
 
@@ -810,6 +805,14 @@ pub fn set_setting(window: &adw::ApplicationWindow, row: &str, value: &str) -> S
         crate::ui::produce_press_wiring::answer_path(None);
     }
     refresh(window);
+    say(window, &said)
+}
+
+/// A scale moved. Stored and kept like any row, but without [`refresh`]: that rebuilds the grid, and taking the
+/// scale away under the pointer ends the drag after its first step. Neither scale's value decides what else is drawn.
+fn set_scale(window: &adw::ApplicationWindow, row: &str, value: &str) -> String {
+    let said = store_setting(row, value);
+    keep_settings();
     say(window, &said)
 }
 
@@ -1569,7 +1572,7 @@ fn wire_settings(window: &adw::ApplicationWindow) {
             if SETTINGS_GUARD.with(|guard| guard.get()) {
                 return;
             }
-            set_setting(&w, &row, &scale.value().to_string());
+            set_scale(&w, &row, &scale.value().to_string());
         });
     }
     for (row, name) in [
@@ -1797,7 +1800,7 @@ fn finish_produce(
 /// page showed, and the plates repaint from the files it drew. The first rewrite never read it back, so the boxes
 /// stayed empty and the thumbnail plate showed its checkerboard until the project was opened again (the
 /// prototype's `landPublish`). A part the run left empty keeps what the page has.
-fn take_written_publish(window: &adw::ApplicationWindow) {
+pub(crate) fn take_written_publish(window: &adw::ApplicationWindow) {
     let tree = session_tree();
     if !crate::publish::is_written(&tree) {
         return;
@@ -1834,23 +1837,13 @@ fn take_written_publish(window: &adw::ApplicationWindow) {
     refresh(window);
 }
 
-/// S3's snapshot and S4–S6, reached by the straight-through paths and by an answered confirmation.
-fn encode_and_finish(
-    window: &adw::ApplicationWindow,
+/// S3's snapshot and the run built from it: everything a walk reads, gathered on the GUI thread.
+fn snapshot_run(
     s: &ProduceState,
     project: &crate::project::Project,
     cut: &crate::cut::Cut,
     settings: &crate::project::Produce,
-    gate: crate::produce_flow::Gate,
-) -> String {
-    let language = project.policy.language.value.clone();
-    // S2's skip leaves out the RENDER and nothing else: the snapshot is taken, the words half (F5.6) runs and the
-    // tag page (F5.5 S5) is rewritten, as the flowchart draws it. The first rewrite returned after the tag page,
-    // so a video that was up to date never got its title, description or thumbnail.
-    let skip = gate == crate::produce_flow::Gate::Skip;
-    // S3: EVERYTHING the two halves read is gathered here, once, on the GUI thread. From this line on the
-    // run asks `snap` and never the page: a render walks subprocesses for minutes, and a leg that re-read
-    // the window inside the run would describe whatever had been moved in the meantime.
+) -> (crate::ui::produce_snapshot::Snapshot, crate::produce_flow::Run) {
     let snap = crate::ui::produce_snapshot::gather(
         &session_tree(),
         cut,
@@ -1881,6 +1874,37 @@ fn encode_and_finish(
         aspect: run.cut.aspect.clone(),
         ..run
     };
+    (snap, run)
+}
+
+/// The run ↻ beside Title asks over, `None` with no cut or no readable project.
+pub(crate) fn reword_run(window: &adw::ApplicationWindow) -> Option<crate::produce_flow::Run> {
+    let cut = crate::ui::window::review_cut_of(window);
+    if cut.segs.is_empty() {
+        return None;
+    }
+    let project = crate::project::load(session_tree().dir()).ok()?;
+    Some(snapshot_run(&read_state(), &project, &cut, &row_settings()).1)
+}
+
+/// S3's snapshot and S4–S6, reached by the straight-through paths and by an answered confirmation.
+fn encode_and_finish(
+    window: &adw::ApplicationWindow,
+    s: &ProduceState,
+    project: &crate::project::Project,
+    cut: &crate::cut::Cut,
+    settings: &crate::project::Produce,
+    gate: crate::produce_flow::Gate,
+) -> String {
+    let language = project.policy.language.value.clone();
+    // S2's skip leaves out the RENDER and nothing else: the snapshot is taken, the words half (F5.6) runs and the
+    // tag page (F5.5 S5) is rewritten, as the flowchart draws it. The first rewrite returned after the tag page,
+    // so a video that was up to date never got its title, description or thumbnail.
+    let skip = gate == crate::produce_flow::Gate::Skip;
+    // S3: EVERYTHING the two halves read is gathered here, once, on the GUI thread. From this line on the
+    // run asks `snap` and never the page: a render walks subprocesses for minutes, and a leg that re-read
+    // the window inside the run would describe whatever had been moved in the meantime.
+    let (snap, run) = snapshot_run(s, project, cut, settings);
     // S4: the one opening line, logged before either half starts; a skip says its own line instead, at once.
     if skip {
         crate::ui::window::log_line(crate::produce_flow::SKIP_LOG);

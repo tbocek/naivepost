@@ -319,6 +319,35 @@ pub fn upload_half(run: &crate::produce_flow::Run) -> Result<(), String> {
     outcome.error.map_or(Ok(()), Err)
 }
 
+/// ↻ beside Title: the title and the description, asked over the whole brief as ▶ asks. Everything else the answer
+/// names (a frame, an instruction) is left out: the picture has its own ↻. A new title is also printed on the picture,
+/// replacing whatever line it carried. An answer with neither is a failure.
+pub fn reword_half(run: &crate::produce_flow::Run) -> Result<(), String> {
+    let tree = session_tree();
+    let brief = upload_brief_for(&tree, run);
+    let mut publish = publish_of_run(run);
+    let legs = upload_legs(&tree, run);
+    let reply = (legs.ask_model)(&brief)?;
+    let answers = answers_from(&reply, starts_of(run), |at| nearest_frame(&tree, run, at));
+    let answers = crate::produce_upload::Answers {
+        title: answers.title,
+        description: answers.description,
+        ..Default::default()
+    };
+    if answers == crate::produce_upload::Answers::default() {
+        return Err("the model answered with no title and no description".to_string());
+    }
+    publish.title_seeded = publish.title_seeded && answers.title.is_none();
+    let next = crate::produce_upload::apply_text(&publish, &answers);
+    (legs.save_publish)(&next)?;
+    if !tree.thumbnail_plain_png().is_file() {
+        return Ok(());
+    }
+    let texts = next.texts.clone();
+    let print = print_leg(title_band_of(&next), move || texts.clone());
+    print("title", std::slice::from_ref(&next.thumb_title))
+}
+
 /// The clip starts on the SESSION clock, in the cut's order — the numbers `frame: clip n +s` resolves against
 /// (§3.9: the clip's session start plus the offset its EVENT line is stamped with, the prototype's `frameSecs`),
 /// so the moment it names is the one a frame on disk is named by. The first rewrite counted them on the produced
@@ -866,8 +895,8 @@ pub fn legs(
 
 /// The re-word's brief: the same [`crate::produce_upload::brief`] the run's words half sends, over the
 /// spans the page holds. `at_output` accumulates in the order given, because the produced clock is the only
-/// clock the brief speaks. The events and transcript are left out: only the title, instruction and
-/// description come back from this call — the full brief belongs to ▶, not to ↻ beside Title.
+/// clock the brief speaks. The events and transcript are left out; ▶ and ↻ beside Title send the full brief
+/// ([`upload_brief_for`]).
 fn upload_brief(spans: Vec<(f64, f64)>) -> String {
     let clips: Vec<crate::produce_upload::BriefClip> = spans
         .into_iter()
