@@ -433,9 +433,10 @@ fn check_a_row_watch_moves_the_preview_frame(app: &adw::Application) {
         back.0, unwatched.0,
         "▶ put the first row's picture back: {back:?}"
     );
+    // ▶ is running by now, so the line may have walked on from where it was read, over a cut too, but never back.
     assert!(
-        (back.1 - unwatched.1).abs() < 0.001,
-        "at the same second it was read at before the watch: {back:?}"
+        back.1 >= unwatched.1 - 0.001,
+        "from the second it was read at before the watch: {back:?} after {unwatched:?}"
     );
     window.close();
 }

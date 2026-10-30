@@ -124,6 +124,8 @@ fn f1_1_s1_no_sources_beats_the_clash_message() {
 /// still knows what it was pointed at.
 #[test]
 fn f1_1_s2_the_project_is_saved_before_the_run_starts() {
+    // `begin` takes the restart flag, which is process-wide: unturned, it could take another test's arming.
+    let _turn = crate::common::describe_flags_turn();
     let (_keep, tree) = scratch("save");
     let project = with_sources(&["project:sources/lecture.mkv"]);
     let file = tree.dir().join("naivepost.json");
@@ -145,6 +147,8 @@ fn f1_1_s2_the_project_is_saved_before_the_run_starts() {
 /// S2 failing stops the start rather than carrying on with an unsaved project.
 #[test]
 fn f1_1_s2_a_failed_save_stops_the_start() {
+    // `begin` takes the restart flag, which is process-wide: unturned, it could take another test's arming.
+    let _turn = crate::common::describe_flags_turn();
     // A FILE where the project folder should be makes the write fail: the tree resolves, but saving
     // into a plain file cannot succeed.
     let root = std::env::temp_dir().join(format!("naivepost-f11-badsave-{}", std::process::id()));
