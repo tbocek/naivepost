@@ -3,12 +3,19 @@
     "dockerfile": "Dockerfile"
   },
   "runArgs": ["--add-host", "host.docker.internal:host-gateway", "--name", "codehalter-${localWorkspaceFolderBasename}"],
-  "containerEnv": { "DEVCONTAINER": "true" },
+  "containerEnv": {
+    "DEVCONTAINER": "true",
+    "XDG_RUNTIME_DIR": "/run/user/1000",
+    "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
+    "GDK_BACKEND": "wayland"
+  },
   "remoteUser": "dev",
   "mounts": [
     "source=${localEnv:HOME}/.config/codehalter,target=/home/dev/.config/codehalter,type=bind,readonly",
     "source=${localWorkspaceFolder}/.git,target=${containerWorkspaceFolder}/.git,type=bind",
     "source=${localEnv:HOME}/.gitconfig,target=/home/dev/.gitconfig,type=bind,readonly",
-    "source=/mnt/rec,target=/mnt/rec,type=bind"
+    "source=/mnt/rec,target=/mnt/rec,type=bind",
+    "source=${localEnv:XDG_RUNTIME_DIR}/${localEnv:WAYLAND_DISPLAY},target=/run/user/1000/${localEnv:WAYLAND_DISPLAY},type=bind",
+    "source=${localEnv:XDG_RUNTIME_DIR}/pulse,target=/run/user/1000/pulse,type=bind"
   ]
 }
