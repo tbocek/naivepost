@@ -655,10 +655,10 @@ fn f1_7_s4_an_unchanged_run_answers_from_the_cache() {
             .any(|line| line.contains("answered from the cache")),
         "and said where the answer came from: {log:?}"
     );
-    // The rows are BACK: the replay wrote one per frame while the wire stayed silent, and this chunk
-    // has no history (this test just deleted it), so §6's forced line opens the file. Before that rule
-    // landed a cold replay came back one row short, `write_batch` refused to write half an answer, and
-    // a cached chunk cost nothing AND wrote nothing while the pass still closed "event log complete".
+    // The rows are BACK: the replay wrote one per frame while the wire stayed silent, each in the model's own
+    // words. §6's forced line stands only where the first frame has none (`events_rows`); a cached answer that
+    // names that frame keeps its reading. A cold replay once came back one row short, `write_batch` refused to
+    // write half an answer, and a cached chunk cost nothing AND wrote nothing while the pass closed "event log complete".
     let rows = scene.event_rows();
     assert_eq!(
         rows.len(),
@@ -666,19 +666,14 @@ fn f1_7_s4_an_unchanged_run_answers_from_the_cache() {
         "the replay wrote one row per frame: {rows:?}"
     );
     assert!(
-        rows[0].ends_with(naivepost::tools::describe::Batch::SAME_WITHOUT_HISTORY),
-        "the cold replay opens on §6's forced line: {rows:?}"
+        rows[0].ends_with("frame 1 of the take"),
+        "the cold replay opens on the model's own reading of its first frame: {rows:?}"
     );
-    // What is NOT written here: the reply the request cache holds is the CALL list without the STATE
-    // call -- `with_results` records only what the model asked of the four READ tools it did not answer
-    // itself (§3.2 Reads), and describe answers record_event/set_state/finish in-process. So the
-    // replay reproduces the EVENTS but cannot re-derive the state, and `write_chunk` writes the empty
-    // state it was handed (§S6: a cleared state must reach the file). Decided in the spec's spirit:
-    // events.tsv is the resume marker and is whole again; state.txt stays as the replay knows it.
-    assert!(
-        !scene.tree.describe_state(LANE).exists() || scene.state().trim().is_empty(),
-        "the cached replay leaves no state behind, since its stored reply carries no set_state: {}",
-        scene.state()
+    // The replay brings the running state back with the events: the cached answer holds the set_state call too.
+    assert_eq!(
+        scene.state().trim(),
+        "mid-lecture, board half full",
+        "the cached replay restores the state its answer set"
     );
     assert!(
         log.iter()

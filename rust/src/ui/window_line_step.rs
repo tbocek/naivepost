@@ -434,7 +434,7 @@ pub fn step_frames_of(window: &adw::ApplicationWindow, frames: i64) -> Step {
     move_line_and_save(window, cut_line::LinePos { t: to }, now_ms());
     pause_for_step(window);
     // The frame the user sees after a step is Prepare's JPEG nearest the new second -- the same frame a
-    // click cues -- and the view recentres if the step took the line off screen.
+    // click cues -- and the view moves if the step took the line past three quarters of it.
     cut_picture::note_line_moved(window, to);
     crate::ui::cut_view::follow_playhead(window, to);
     Step::SteppedTo { t: to }

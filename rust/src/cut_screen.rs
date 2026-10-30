@@ -30,11 +30,15 @@ pub const BUTTON_MIN_WIDTH_PX: u32 = 32;
 pub fn toolbar_css() -> String {
     format!(
         "#cut-toolbar button {{ padding-left: {px}px; padding-right: {px}px; min-width: {min}px; }}\n\
-         #group-transport-row button {{ padding-left: {tpx}px; padding-right: {tpx}px; min-width: {tmin}px; }}",
+         #group-transport-row button {{ padding-left: {tpx}px; padding-right: {tpx}px; min-width: {tmin}px; }}\n\
+         #play-recording-button label, #play-cut-button label, #review-cuts-button label {{ transform: translateY({pdrop}px); }}\n\
+         #line-step-back-five label, #line-step-back label, #line-step-forward label, #line-step-forward-five label {{ transform: translateY({fdrop}px); }}",
         px = BUTTON_PADDING_PX,
         min = BUTTON_MIN_WIDTH_PX,
         tpx = TRANSPORT_PADDING_PX,
-        tmin = TRANSPORT_MIN_WIDTH_PX
+        tmin = TRANSPORT_MIN_WIDTH_PX,
+        pdrop = PLAY_GLYPH_DROP_PX,
+        fdrop = FRAME_LABEL_DROP_PX
     )
 }
 
@@ -43,6 +47,11 @@ pub fn toolbar_css() -> String {
 pub const TRANSPORT_MIN_WIDTH_PX: u32 = 36;
 /// Their padding either side of the glyph.
 pub const TRANSPORT_PADDING_PX: u32 = 6;
+/// How far the faces of ▶, ▶✂ and ▶✂✂ are lowered, in px: Noto Sans Symbols 2 draws them above the button's centre
+/// (measured on `05-cut`: ink centre 553.5 in a button centred on 555.5). A transform, so the bar's height stays.
+pub const PLAY_GLYPH_DROP_PX: u32 = 2;
+/// How far ‹‹f, ‹f, f› and f›› are lowered, in px: measured on `05-cut`, ink centre 554.5 against 555.5.
+pub const FRAME_LABEL_DROP_PX: u32 = 1;
 
 /// Pixels between two toolbar groups (the prototype's bar spacing); the buttons inside a group are linked.
 pub const TOOLBAR_GAP_PX: i32 = 6;

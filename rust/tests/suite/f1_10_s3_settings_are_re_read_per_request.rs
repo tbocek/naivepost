@@ -44,6 +44,9 @@ fn f1_10_s3_settings_are_re_read_per_request() {
     // nobody started and the ask count here drifts by one between runs.
     naivepost::llm_retry_leg::forget_answer_for_test(&format!("http://127.0.0.1:{dead}"));
     point_at(&format!("http://127.0.0.1:{dead}"));
+    // The refused join was filed for good (`join_ask::keep_for_good`): without this the second press is answered
+    // from the cache and dials nothing, whatever the settings say.
+    let _ = std::fs::remove_dir_all(fixture.root.join("session.naivepost/cache/llm/textedit"));
     let lines = press(&fixture.tree, &fixture.project);
     assert!(
         lines

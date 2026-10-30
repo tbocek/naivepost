@@ -347,9 +347,9 @@ fn s6b_log_messages_and_levels(app: &adw::Application) {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-/// §10's prose log height for the OPEN log (220 px), which `window.rs` puts on the log's own scroller as
-/// its `min_content_height`. The test asks for it by name rather than repeating a number.
-const LOG_BODY_PX: i32 = 220;
+/// The least an open log keeps (`window_bench::LOG_MIN_BODY_PX`), which `window.rs` puts on the log's own scroller
+/// as its `min_content_height`; it opens taller when the page has the room. The test asks for it by name.
+const LOG_BODY_PX: i32 = 60;
 
 /// The band's height as DRAWN: what the shell's own divider gave the bottom half, i.e. everything below
 /// its handle. §1 counts this box twice over ("the bottom half is exactly as tall as the run bar row plus

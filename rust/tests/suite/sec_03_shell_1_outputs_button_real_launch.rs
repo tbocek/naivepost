@@ -1,8 +1,6 @@
-//! §03-shell §1 badge 15, the Outputs folder button, through its REAL opener: no seam, no forced sensitivity.
-//! A project opened the way the program opens one, the readouts left to land, then a click. On a machine with no
-//! file manager (this container) the press must still say what happened: the `xdg-open` fallback's own line, or
-//! "could not open". The first rewrite handed a `file://` folder to GTK's URI launcher and ignored its answer, so
-//! a press the desktop refused did nothing at all and said nothing.
+//! §03-shell §1 badge 15, the Outputs folder button: no seam, no forced sensitivity. A project opened the way the
+//! program opens one, the readouts left to land, then a click that reaches the opener. A test binary opens nothing
+//! on the real desktop (`log_link::open` counts the press instead), so reaching the opener is what is checked.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -29,24 +27,19 @@ fn sec_03_shell_1_the_outputs_button_opens_or_says_why() {
             folder.is_sensitive(),
             "with a project open the button is live, without a test forcing it"
         );
-        let before = ui::window_logs().len();
+        let before = ui::log_link::blocked_opens_for_test();
         folder.emit_clicked();
-        // The launch answers late (a portal, a spawn): turn the loop until the press has said something.
-        let said = |logs: &[String]| {
-            logs.iter()
-                .any(|line| line.contains("xdg-open") || line.contains("could not open"))
-        };
+        // The press answers late, off the readouts: turn the loop until it has reached the opener.
         let until = Instant::now() + Duration::from_secs(10);
         let context = glib::MainContext::default();
-        while Instant::now() < until && !said(&ui::window_logs()[before..]) {
+        while Instant::now() < until && ui::log_link::blocked_opens_for_test() == before {
             context.iteration(false);
             std::thread::sleep(Duration::from_millis(10));
         }
-        let logs = ui::window_logs();
-        assert!(
-            said(&logs[before..]),
-            "a press with no file manager falls back or says why, never nothing: {:?}",
-            &logs[before..]
+        assert_eq!(
+            ui::log_link::blocked_opens_for_test(),
+            before + 1,
+            "the press reached the opener, once"
         );
         RAN.store(true, Ordering::SeqCst);
         app.quit();
