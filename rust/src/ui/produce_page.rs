@@ -330,6 +330,9 @@ fn build_right_column() -> gtk::Box {
     // the page's widgets, so a test can point at it.
     let written_split = gtk::Separator::new(gtk::Orientation::Horizontal);
     written_split.set_widget_name("produce-written-split");
+    // 12 px each side like every line on every page: the column's 8 px spacing and these 4.
+    written_split.set_margin_top(crate::ui::margins::DIVIDER_GAP_PX - 8);
+    written_split.set_margin_bottom(crate::ui::margins::DIVIDER_GAP_PX - 8);
     right.append(&written_split);
 
     // **10** Transcode with ⤓ save and ↻ encode again.
@@ -394,7 +397,8 @@ pub fn build() -> gtk::Widget {
     install_page_css_once();
     let split = gtk::Paned::new(gtk::Orientation::Horizontal);
     split.set_widget_name("produce-split");
-    split.set_wide_handle(true);
+    // §1: every divider is one line. A wide handle draws 5 px with a line on each side, read as a double line.
+    split.set_wide_handle(false);
     // §1: "split left and right by a draggable divider opened at HALF", not at 560 px. `shrink_*_child(true)`
     // on BOTH halves is what keeps the window shrinkable — a Paned that refuses to shrink forces each
     // column's own minimum width on the window, and `tests/suite/window_shrinks.rs` pins the shell's 1240 px

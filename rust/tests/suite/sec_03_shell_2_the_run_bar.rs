@@ -404,8 +404,8 @@ fn check_run_bar_order_and_idle_state(app: &adw::Application) {
     );
     assert_eq!(
         names,
-        vec!["play-button", "stop-button"],
-        "§2's run bar reads \u{25b6} , \u{23f9} and no \"I'm feeling lucky\""
+        vec!["play-button", "stop-button", "reset-button"],
+        "§2's run bar reads \u{25b6} , \u{23f9} , \u{21ba} and no \"I'm feeling lucky\""
     );
     assert!(
         child_names(&run_row)

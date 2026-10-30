@@ -227,12 +227,12 @@ fn s5_bottom_bar_order(app: &adw::Application) {
     );
     let controls =
         common::widget_in(&window, "run-controls-inner").expect("the run bar's controls");
-    // §2's order lives inside the scroller now: ▶ , ⏹ — and nothing else (no "I'm feeling lucky").
+    // §2's order lives inside the scroller now: ▶ , ⏹ , ↺ — and nothing else (no "I'm feeling lucky").
     let control_names = child_names(&controls);
     assert_eq!(
         control_names,
-        vec!["play-button", "stop-button"],
-        "§2's run bar reads ▶ , ⏹ inside its scroller"
+        vec!["play-button", "stop-button", "reset-button"],
+        "§2's run bar reads ▶ , ⏹ , ↺ inside its scroller"
     );
     let progress = position_of(&run_names, "run-progress");
     let readouts = position_of(&run_names, "readout-row");

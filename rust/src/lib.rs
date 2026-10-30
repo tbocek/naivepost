@@ -193,6 +193,7 @@ pub mod request_run;
 pub mod request_timing;
 pub mod requests;
 pub mod rescan;
+pub mod reset;
 pub mod retakes;
 pub mod retakes_ask;
 pub mod roles;

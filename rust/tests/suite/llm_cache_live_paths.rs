@@ -406,7 +406,7 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
         "the network is live today [CUT] the network goes live now",
         &before,
         &after,
-        1,
+        0,
         None,
         &|| false,
     );
@@ -450,7 +450,7 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
         "the network is live today [CUT] the network goes live now",
         &before,
         &after,
-        1,
+        0,
         None,
         &|| false,
     );
@@ -481,6 +481,63 @@ fn sec_09_llm_and_tools_6_cache_s7_textedit_files_its_answer_and_replays_it_with
         "a cache hit writes its own marked row"
     );
     scene.leave();
+}
+
+/// A join answered on its RETRY is filed under the join's own input, the first ask's request, so the next
+/// run's first ask is answered from disk. The first rewrite filed it under the retry's own slot, which no
+/// run reads first, so such a join was asked again on every run.
+#[test]
+fn sec_09_llm_and_tools_6_cache_s7_textedit_files_a_retrys_answer_under_the_joins_input() {
+    let _turn = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let before: Vec<String> = ["the", "network", "is", "live", "today"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    let after: Vec<String> = ["the", "network", "goes", "live", "now"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+    let answer = json!({"choices": [{"message": {"content":
+        json!({"drop_before": "network is live today", "drop_after": ""}).to_string()}}]})
+    .to_string();
+    let fake = Fake::start(answer);
+    let scene = Scene::new("textedit-retry", &fake.url);
+    scene.enter();
+    let wide = "the network is live today [CUT] the network goes live now";
+    let ask = |attempt: u32, refused: Option<&str>| {
+        naivepost::join_ask::ask_at(
+            &scene.tree, &scene.conf, "A lecture.", 1, 3, wide, &before, &after, attempt, refused, &|| false,
+        )
+    };
+    let retry = ask(1, Some("the previous answer was empty"));
+    assert!(!retry.failed && !retry.from_cache, "{:?}", retry.outcome);
+    let asked = fake.count();
+    let rerun = ask(0, None);
+    assert!(rerun.from_cache, "the next run's first ask is answered from disk: {:?}", rerun.outcome);
+    assert_eq!(rerun.outcome, retry.outcome, "deciding the join the same way");
+    assert_eq!(fake.count(), asked, "and opening no socket");
+}
+
+/// A join refused on every try keeps its words, and that outcome is filed under its input: the next run's first
+/// ask about the same join is answered from disk as "nothing removed", with no socket. The first rewrite filed
+/// nothing, so such a join was asked again, every try of it, on every run.
+#[test]
+fn sec_09_llm_and_tools_6_cache_s7_textedit_a_join_given_up_on_is_not_asked_again() {
+    let _turn = ENV.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let before: Vec<String> = ["the", "network", "is", "live"].into_iter().map(str::to_string).collect();
+    let after: Vec<String> = ["the", "network", "goes", "live"].into_iter().map(str::to_string).collect();
+    let fake = Fake::start(json!({"choices": [{"message": {"content": "no idea"}}]}).to_string());
+    let scene = Scene::new("textedit-given-up", &fake.url);
+    scene.enter();
+    let wide = "the network is live [CUT] the network goes live";
+    naivepost::join_ask::keep_for_good(&scene.tree, "A lecture.", 2, 3, wide, &before, &after);
+    let asked = fake.count();
+    let rerun = naivepost::join_ask::ask_at(
+        &scene.tree, &scene.conf, "A lecture.", 2, 3, wide, &before, &after, 0, None, &|| false,
+    );
+    assert!(rerun.from_cache, "answered from disk: {:?}", rerun.outcome);
+    assert_eq!(rerun.outcome, naivepost::joins::Outcome::Kept, "nothing removed, as the give-up left it");
+    assert_eq!(fake.count(), asked, "and no socket opened");
 }
 
 // --- who does NOT cache -------------------------------------------------------------------------------

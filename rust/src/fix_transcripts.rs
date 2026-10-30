@@ -47,14 +47,6 @@ pub fn more_tries_left(asked: u32) -> bool {
     asked < BLOCK_TRIES
 }
 
-/// Whether this attempt's answer may go in `cache/llm/fix`. Only the first one does: an answer
-/// repaired after a refusal depends on the refusal it was shown, so replaying it from disk would
-/// skip the validation that made it right. Delegated to [`crate::llm_cache::fixer_caches`] so the
-/// rule is stated once (§6's second irregularity) rather than twice.
-pub fn caches_attempt(attempt: u32) -> bool {
-    crate::llm_cache::fixer_caches(attempt)
-}
-
 /// What a block that ran out of tries says. Naming the refusal is the point: a reader who sees only
 /// "failed" looks for a crash, and there was none — the answer would not validate twice, so this
 /// block keeps the ASR's own lines and every other block still gets fixed.
@@ -65,15 +57,6 @@ pub fn give_up_log(base: &str, index: usize, total: usize) -> String {
         base,
         index + 1,
         total
-    )
-}
-
-/// What a repaired block says: it stands in this run, and §6 keeps it out of `cache/llm/fix`, so the
-/// next run asks again rather than replaying an answer that was only right once the refusal was shown.
-fn repaired_uncached_log(base: &str, index: usize, total: usize) -> String {
-    format!(
-        ">>> {} block {}/{} fixed on the second try -- not cached, §6 caches the fixer's first attempt only",
-        base, index + 1, total
     )
 }
 
@@ -389,8 +372,6 @@ pub struct BlockOutcome {
     /// False only when the tries ran out, in which case the caller keeps the ASR original.
     pub valid: bool,
     /// Which try answered — 1 for the first ask, 2 once a refusal has been shown back to the model.
-    /// §6's second irregularity reads this: only the FIRST attempt's answer may be cached, because a
-    /// repaired one is only right given the refusal it was told about.
     pub attempt: u32,
 }
 
@@ -474,7 +455,6 @@ where
                     fixed: block.fixes().len(),
                     flags: block.flags().to_vec(),
                     valid: true,
-                    // This ask answered it: 1 means the first try, which is the only one §6 caches.
                     attempt: try_number,
                 });
             }
@@ -487,7 +467,6 @@ where
         fixed: 0,
         flags: block.flags().to_vec(),
         valid: false,
-        // Every ask was spent, so nothing here earned a cache slot whatever the caller does with it.
         attempt: BLOCK_TRIES,
     })
 }
@@ -524,17 +503,19 @@ pub fn cached_blocks_log(base: &str, cached: usize) -> String {
     format!(">>> [{base}] {cached} block(s) answered from the cache")
 }
 
-/// S3: the cache key for a block — §6's digest over its own rows, times and text included. Two runs of
-/// the same transcript ask the identical question, so they read the same answer; one changed line asks
-/// a different one.
+/// S3: the cache key for a block — §6's digest over its own rows, times and text included, and over `prompt`,
+/// the wording and User Context the block is asked under ([`crate::fix_call::cache_prompt`]). Two runs of the
+/// same transcript under the same prompt ask the identical question, so they read the same answer; one
+/// changed line, or a changed prompt or context, asks a different one. The first rewrite keyed on the rows
+/// alone, so a rule added to the profile's `## fix` section never reached a block already answered.
 ///
 /// The part list is `llm_cache`'s, so this file names its entries the same sha256 hex every other
 /// caching job does rather than a hash of its own. The `user` part is the block spelled exactly as
 /// [`ask_text`] spells it when there is no surrounding context — the rows are what decide the answer,
 /// and the grounding window only repeats them with their neighbours.
-pub fn block_key(lines: &[Line]) -> String {
+pub fn block_key(prompt: &str, lines: &[Line]) -> String {
     let request = crate::llm_cache::Request {
-        system: "",
+        system: prompt,
         user: &ask_text("", lines),
         state: "",
         speech: "",
@@ -552,8 +533,8 @@ pub fn block_key(lines: &[Line]) -> String {
 
 /// S3: a block's stored reply, if it has one. Only valid blocks are written here, so a re-run re-asks
 /// a block that failed rather than replaying its failure.
-pub fn cached_block(tree: &Tree, lines: &[Line]) -> Option<Vec<Reply>> {
-    let text = crate::llm_cache::read_at(tree, FIX_STEP, &block_key(lines))?;
+pub fn cached_block(tree: &Tree, prompt: &str, lines: &[Line]) -> Option<Vec<Reply>> {
+    let text = crate::llm_cache::read_at(tree, FIX_STEP, &block_key(prompt, lines))?;
     // §09 §10: the block's stored reply writes its own `cache` line, with no time on the wire, so the
     // file shows what the re-run saved. The model column stays empty for the same reason `block_key`
     // leaves it empty: at this height nothing knows which model spelled the answer.
@@ -584,15 +565,20 @@ pub fn cached_block(tree: &Tree, lines: &[Line]) -> Option<Vec<Reply>> {
     Some(out)
 }
 
-/// S3: store a valid block's text, one line per row in the block's own order.
-pub fn store_block(tree: &Tree, lines: &[Line], fixed: &[Line]) -> Result<(), String> {
+/// S3: store a block's outcome, one line per row in the block's own order, under the block's input: the
+/// fixed lines whichever try earned them, or the ASR lines when every try was refused. The same input reads it
+/// back and asks nothing, and it is validated again on every replay as a live answer is ([`cached_block`] goes
+/// through [`fix_block`]). The first rewrite filed only a first-try answer (§6's old "second irregularity"),
+/// so a block answered right only on its retry, or refused on every try, was asked again on every run although
+/// nothing about it had changed (08-dex 18-41-59: a text-only first answer, then one speaker label miscopied).
+pub fn store_block(tree: &Tree, prompt: &str, lines: &[Line], fixed: &[Line]) -> Result<(), String> {
     let text: String = fixed
         .iter()
         .map(|line| format!("{}\n", line.text))
         .collect();
     // Through `llm_cache` so §6's store rules hold here too: an empty answer is never filed, and a
     // cache that will not write comes back as a sentence for the log instead of failing the fix.
-    match crate::llm_cache::store_at(tree, FIX_STEP, &block_key(lines), &text) {
+    match crate::llm_cache::store_at(tree, FIX_STEP, &block_key(prompt, lines), &text) {
         crate::llm_cache::Stored::Failed(reason) => Err(reason),
         _ => Ok(()),
     }
@@ -927,6 +913,7 @@ pub fn run<F, M>(
     sources: &[Source],
     narrator: &str,
     pass: MarkingPass,
+    prompt: &str,
     mut ask: F,
     mut mark: M,
 ) -> Result<Outcome, String>
@@ -1007,7 +994,9 @@ where
             // S3: the cache is keyed on the block's own rows, so a re-run of an unchanged transcript
             // reads its answer back instead of paying for the same question twice. `fix_block` builds
             // the message it asks with: [`ask_text`] over the grounding from `context_text`.
-            let outcome = match cached_block(tree, &block) {
+            let cached = cached_block(tree, prompt, &block);
+            let from_cache = cached.is_some();
+            let outcome = match cached {
                 Some(reply) => fix_block(&block, &context, |_| Ok(reply.clone()))?,
                 None => fix_block(&block, &context, &mut ask)?,
             };
@@ -1019,18 +1008,15 @@ where
             }
             if !outcome.valid {
                 out.logs.push(give_up_log(&source.base, index, total));
-            } else if caches_attempt(outcome.attempt) {
-                // §6's second irregularity, enforced where the answer is filed: a block repaired after a
-                // refusal keeps its place in this run but earns no cache slot, so the next run re-asks it
-                // and re-validates it rather than replaying a reply that was only ever right given the
-                // refusal it was shown.
-                if let Err(err) = store_block(tree, &block, &outcome.lines) {
+            }
+            if !from_cache {
+                // [`store_block`]'s rule: the outcome is filed under the block's input, whichever try earned it
+                // and also when every try was refused (the ASR lines kept), and an answer just read back is not
+                // written again.
+                if let Err(err) = store_block(tree, prompt, &block, &outcome.lines) {
                     // A cache that will not write is not a reason to lose the fix.
                     out.logs.push(format!("!!! could not keep the fix: {err}"));
                 }
-            } else {
-                out.logs
-                    .push(repaired_uncached_log(&source.base, index, total));
             }
             fixed_lines.extend(outcome.lines);
         }

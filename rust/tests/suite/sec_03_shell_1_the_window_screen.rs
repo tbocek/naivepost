@@ -405,14 +405,14 @@ fn s1_the_run_bar_holds_only_what_section_two_lists(app: &adw::Application) {
         vec!["run-controls", "run-progress", "readout-row"],
         "{ITEM} §1/§2: the run-bar row holds something §2 does not list"
     );
-    // (b) inside the scroller: the two transport badges alone.
+    // (b) inside the scroller: the two transport badges and the reset, alone.
     assert_eq!(
         child_names(
             &common::widget_in(&window, "run-controls-inner")
                 .expect("the controls sit in their scrolling box")
         ),
-        vec!["play-button", "stop-button"],
-        "{ITEM} §2: the run bar's controls are not exactly \u{25b6} , \u{23f9}"
+        vec!["play-button", "stop-button", "reset-button"],
+        "{ITEM} §2: the run bar's controls are not exactly \u{25b6} , \u{23f9} , \u{21ba}"
     );
     // (c) the readouts at the row's right end, in §1's order.
     assert_eq!(

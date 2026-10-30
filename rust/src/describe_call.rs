@@ -85,6 +85,34 @@ pub fn stage_chunk(
     source_index: Option<usize>,
     log: &mut impl FnMut(&str),
 ) -> Result<usize, String> {
+    stage_chunk_reached(tree, paths, conf, lane, source_index, log, &mut |_, _| {})
+}
+
+/// How many requests describing the row `task` names takes, read off the session's disk the way
+/// [`run_task`] finds it: what the walk counts the stage's total from before the first row runs.
+pub fn planned_requests(task: &crate::run_stages::Task) -> usize {
+    let Some(source) = task.args.first() else {
+        return 0;
+    };
+    match Tree::new(&session_dir()) {
+        Ok(tree) => describe::planned_requests(&tree, &crate::audio_task::source_lane(source)),
+        Err(_) => 0,
+    }
+}
+
+/// [`stage_chunk`], saying where it is as it goes: `reached` gets this source's chunks answered and its
+/// chunks in all, at the start and after every answer. §03-shell §2: a task that asks a model for minutes
+/// says where it is, and an hour-long recording is a hundred chunks; the first rewrite said nothing until the
+/// source was done.
+pub fn stage_chunk_reached(
+    tree: &Tree,
+    paths: &Paths,
+    conf: &settings::Conf,
+    lane: &str,
+    source_index: Option<usize>,
+    log: &mut impl FnMut(&str),
+    reached: &mut dyn FnMut(usize, usize),
+) -> Result<usize, String> {
     let frames_on_disk = describe::frames_on_disk(&tree.frames_dir(lane));
     // S0: an every-frame extraction stops this source here, before a request is paid for frames whose
     // spacing nothing chose. Local, not fatal: the run carries on with the sources that can be
@@ -94,7 +122,6 @@ pub fn stage_chunk(
         return Ok(0);
     }
     let changes = describe::read_changes(tree, lane);
-    let duration = frames_on_disk.last().copied().unwrap_or(0.0) + describe::GRID;
     let project = crate::project::load(tree.dir()).ok();
     // F1.6 S6: a frame goes per scene change and one every heartbeat between them: what is on screen did not
     // change in between, and a closer step would describe the same slide anew. The changes are the text gate's
@@ -119,12 +146,7 @@ pub fn stage_chunk(
     let start = describe_scale::clock_start(project.as_ref(), index);
     describe_scale::ensure(tree, conf, lane, start, &frames_on_disk, log)
         .map_err(|why| format!("{lane}: {why}"))?;
-    let picked = describe::sorted(&describe::pick_frames(
-        &changes,
-        duration,
-        describe::GRID,
-        freq,
-    ));
+    let picked = describe::picked_for(tree, lane, &frames_on_disk);
     if picked.is_empty() {
         log(&format!(
             ">>> [{lane}] no frames to describe -- the frames folder is empty"
@@ -143,6 +165,7 @@ pub fn stage_chunk(
     // are applied here, oldest chunk first.
     let context = user_context(tree);
     let plan = describe::chunk_plan(&picked, describe::FRAMES_PER_REQ);
+    reached(0, plan.len());
     for round in plan.chunks(at_once.max(1)) {
         let dialled = std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(round.len());
@@ -196,6 +219,7 @@ pub fn stage_chunk(
             if outcome.cached {
                 from_cache += 1;
             }
+            reached(answered, plan.len());
         }
     }
     let _ = &changes;
@@ -207,7 +231,11 @@ pub fn stage_chunk(
 ///
 /// Frame choice, scaling and the interval are read by [`stage_chunk`]; this only resolves the two
 /// environment pieces the walk's rows do not carry.
-pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> Result<(), String> {
+pub fn run_task(
+    task: &crate::run_stages::Task,
+    log: &mut impl FnMut(&str),
+    reached: &mut dyn FnMut(usize, usize),
+) -> Result<(), String> {
     let paths = settings::from_environment()
         .ok_or("nowhere to keep the settings -- neither XDG_CONFIG_HOME nor HOME is set")?;
     let session = session_dir();
@@ -229,7 +257,7 @@ pub fn run_task(task: &crate::run_stages::Task, log: &mut impl FnMut(&str)) -> R
         .and_then(|text| text.parse().ok())
         .unwrap_or(0);
     let conf = settings::read(&paths).unwrap_or_default();
-    stage_chunk(&tree, &paths, &conf, &lane, Some(index), log)?;
+    stage_chunk_reached(&tree, &paths, &conf, &lane, Some(index), log, reached)?;
     Ok(())
 }
 
@@ -392,7 +420,7 @@ fn run_chunk(
         // and saying which picture is missing is the honest answer (§Failure-is-specific).
         Err(reason) => return Err(format!("{lane}: {reason}")),
     };
-    let key = describe::cache_key(&message, &images, &conf.model);
+    let key = describe::cache_key(&system_message(paths, user_context), &message, &images, &conf.model);
     // §F1.7 S2's resume rule read through [`describe::starts_already_logged`], and one rung past it:
     // a chunk whose START is already in the event log is answered without a request, whether the text
     // comes back from `cache/llm/describe/` or only from what is on disk. Answers `None` when the
@@ -443,9 +471,15 @@ fn run_chunk(
                 continue;
             }
         };
-        if reply.tool_calls.is_empty() {
-            // §3.2's shape is tool calls; a prose reply means the model answered around the surface.
-            // The §3.2 lenient parse is what reads it, so an ordinary answer still counts.
+        let calls = tool_calls_of(&reply);
+        // §3.2's shape is tool calls; a prose reply means the model answered around the surface, and the prose
+        // floor ([`describe::prose_calls`]) is what reads it. A reply whose calls record nothing (a bare
+        // `finish`, the shipped prompt's text beside it) is prose too: read for its calls alone it has no
+        // event for any frame, and was refused until the run failed (08-dex, 3 of 3 replays the same shape).
+        let records = calls
+            .iter()
+            .any(|(name, _)| name == "record_event" || name == "set_state");
+        if reply.tool_calls.is_empty() || (!records && !reply.content.trim().is_empty()) {
             let answered = apply_and_write(tree, lane, batch, interval, &history, &reply.content)?;
             describe::store_reply(tree, &key, &reply.content)?;
             return Ok(ChunkAnswer {
@@ -453,7 +487,15 @@ fn run_chunk(
                 missing: answered,
             });
         }
-        let calls = tool_calls_of(&reply);
+        // The reply's text is read first and its calls after, so a call that records a frame wins and the text
+        // fills the frames the calls left without one. The user's model writes every frame as text and calls
+        // `record_event` beside it with the frame's SECONDS as its number (`frame: 22` in a batch of four,
+        // 08-dex 19-30-48): the call is refused and the text is the answer. The first rewrite read the calls
+        // alone, refused the chunk for three frames without an event, and failed Prepare.
+        let calls: Vec<(String, serde_json::Value)> = describe::prose_calls(&reply.content, batch)
+            .into_iter()
+            .chain(calls)
+            .collect();
         let mut held = batch_of(batch, interval, &history);
         // The answer the leg gave to a read this round asked for, if it asked for one. `run_chunk` keeps its
         // reply as the CALL list rather than the raw envelope, so the answer is written back into that list
@@ -850,7 +892,12 @@ fn apply_and_write(
     history: &[String],
     reply: &str,
 ) -> Result<usize, String> {
-    let calls: Vec<(String, serde_json::Value)> = serde_json::from_str(reply).unwrap_or_default();
+    // A stored reply is the call list the tool path filed, or the prose a prose reply was; a reply that is
+    // not a call list is prose, read by §3.2's floor against the frames as the request stamped them.
+    let calls: Vec<(String, serde_json::Value)> = match serde_json::from_str::<Vec<serde_json::Value>>(reply) {
+        Ok(stored) => stored.iter().filter_map(stored_call).collect(),
+        Err(_) => describe::prose_calls(reply, batch),
+    };
     let mut held = batch_of(batch, interval, history);
     for (name, args) in &calls {
         describe::apply_tool(&mut held, name, args);
@@ -858,7 +905,18 @@ fn apply_and_write(
     Ok(write_batch(tree, lane, batch, interval, history, &held))
 }
 
-/// §F1.7 S6: this chunk's rows appended and `state.txt` rewritten, after EVERY chunk.
+/// One call of a stored reply: `{"0": name, "1": args, "result": …}` as [`with_results`] files it, or a bare
+/// `[name, args]` pair. The first rewrite read the list as pairs only, so every reply the tool path had filed
+/// came back as no call at all, and a replayed chunk was written "same" frame after frame.
+fn stored_call(entry: &serde_json::Value) -> Option<(String, serde_json::Value)> {
+    let (name, args) = match entry {
+        serde_json::Value::Array(pair) => (pair.first()?, pair.get(1)?),
+        serde_json::Value::Object(_) => (entry.get("0")?, entry.get("1")?),
+        _ => return None,
+    };
+    Some((name.as_str()?.to_string(), args.clone()))
+}
+
 /// §F1.7 S6: this chunk's rows appended and `state.txt` rewritten, after EVERY chunk.
 ///
 /// Writing happens once the tool loop is satisfied that every frame of the chunk was answered, so an

@@ -151,6 +151,7 @@ pub fn stage_chunk(
 
     let blocks = fix_transcripts::blocks(&lines);
     let total = blocks.len();
+    let prompt = cache_prompt(paths, &user_context(tree));
     let mut fixed: Vec<Line> = Vec::with_capacity(lines.len());
     let mut asked = 0usize;
     let mut from_cache = 0usize;
@@ -161,9 +162,11 @@ pub fn stage_chunk(
             block.last().map(|line| line.end).unwrap_or(0.0),
         );
         let context = fix_transcripts::context_text(from, to, lane, &[], &every_line, &every_event);
-        // §F1.8 S3: only a first-try answer is cached, and only a VALID block is stored, so a block
-        // that failed twice is re-asked on the next run rather than replaying its failure.
-        let outcome = match fix_transcripts::cached_block(tree, &block) {
+        // §F1.8 S3: a VALID block is stored under its own rows, whichever try it took, so the same rows on
+        // the next run cost nothing; a block that failed every try is re-asked rather than replaying its failure.
+        let cached = fix_transcripts::cached_block(tree, &prompt, &block);
+        let hit = cached.is_some();
+        let outcome = match cached {
             Some(reply) => {
                 from_cache += 1;
                 fix_transcripts::fix_block(&block, &context, |_| Ok(reply.clone()))?
@@ -175,12 +178,11 @@ pub fn stage_chunk(
         };
         if !outcome.valid {
             log(&fix_transcripts::give_up_log(lane, index, total));
-        } else if fix_transcripts::caches_attempt(outcome.attempt) {
-            // §6's second irregularity: only the FIRST attempt's answer is filed. A repaired one is
-            // only right given the refusal it was shown, so replaying it from disk would skip the
-            // validation that made it right — the fix still lands in `transcript.fixed.tsv` below,
-            // it simply costs the same ask again on the next run.
-            if let Err(err) = fix_transcripts::store_block(tree, &block, &outcome.lines) {
+        }
+        // The outcome is filed under the block's input whatever it was, a block that kept its ASR text after its
+        // tries included: the same input asks nothing again. An answer just read back is not written again.
+        if !hit {
+            if let Err(err) = fix_transcripts::store_block(tree, &prompt, &block, &outcome.lines) {
                 // A cache that will not write is not a reason to lose the fix.
                 log(&format!("!!! could not keep the fix: {err}"));
             }
@@ -232,7 +234,11 @@ fn ask_once(
     let context = crate::project::load(tree.dir())
         .map(|project| project.context)
         .unwrap_or_default();
-    let user = crate::prompt_assembly::user_message(&context, STEP, message);
+    let user = crate::prompt_assembly::user_message(
+        &crate::prompt_assembly::without_script(&context),
+        STEP,
+        message,
+    );
     let messages = vec![
         Message {
             role: "system".to_string(),
@@ -289,6 +295,24 @@ fn ask_once(
 /// SYSTEM for a fix call: the house rules cut to this job's section, the shipped fix wording, and no
 /// User Context block of its own (§F1.8's grounding is the surrounding speech, not the session note).
 /// Same assembly the captions ask uses, read through the settings path so an edit wins (§04#6).
+/// What a block is asked under besides its own rows, as its cache key holds it: the system wording (the
+/// profile's `## fix` section, or the shipped one) and the project's User Context. A change to either asks every
+/// block again; the same wording and context replay what they were answered with.
+pub fn cache_prompt(paths: &Paths, context: &str) -> String {
+    format!(
+        "{}\n\n{}",
+        fix_system(paths),
+        crate::prompt_assembly::without_script(context)
+    )
+}
+
+/// The project's User Context, as [`ask_once`] puts it in front of every block.
+fn user_context(tree: &Tree) -> String {
+    crate::project::load(tree.dir())
+        .map(|project| project.context)
+        .unwrap_or_default()
+}
+
 fn fix_system(paths: &Paths) -> String {
     crate::prompt_assembly::system_message(
         &wording(paths, "system"),

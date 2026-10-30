@@ -12,6 +12,7 @@ use gtk4 as gtk;
 
 use crate::narrate_band::{self as band, BandPaint};
 use crate::narrate_screen as screen;
+use crate::ui::cut_wave_rows;
 use crate::wave_build;
 
 /// The lane's height, from the module that catalogues it (`narrate.bandLanePx`).
@@ -276,6 +277,8 @@ thread_local! {
     static RED_BAR: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
     /// Has anyone put the red bar down yet? Until then it rides the cut's playhead.
     static RED_BAR_SEEN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The preview's second the bar last followed ([`follow_head`]).
+    static HEAD_SEEN: std::cell::Cell<f64> = const { std::cell::Cell::new(-1.0) };
     /// The live selection in seconds: written by motion, emptied by a click.
     static SELECTION: std::cell::RefCell<Option<(f64, f64)>> =
         const { std::cell::RefCell::new(None) };
@@ -390,7 +393,29 @@ pub fn red_bar() -> f64 {
 pub fn red_bar_or(session: f64) -> f64 {
     match RED_BAR_SEEN.with(|slot| slot.get()) {
         true => red_bar(),
-        false => session.max(0.0),
+        false => band_second_of(session).unwrap_or(session.max(0.0)),
+    }
+}
+
+/// The band second under a session second, for the voice in hand. `None` when no clip places its tape.
+fn band_second_of(session: f64) -> Option<f64> {
+    let tree = crate::ui::window::narrate_session_tree()?;
+    let project = crate::project::load(tree.dir()).ok()?;
+    let voice = crate::ui::narrate_page::read_state().voice;
+    crate::narrate_band_face::tape(&tree, &project, &voice).band_at(session)
+}
+
+/// The preview's position moved, by its tick or a seek: the red bar goes with it, so the band shows one position,
+/// where the picture is and where either ▶ starts. Only a move counts: a repaint at the same second leaves a bar
+/// that was just put down where it is.
+pub fn follow_head(session: f64) {
+    if HEAD_SEEN.with(|slot| slot.replace(session)) == session {
+        return;
+    }
+    if RED_BAR_SEEN.with(|slot| slot.get()) {
+        if let Some(at) = band_second_of(session) {
+            RED_BAR.with(|slot| slot.set(at));
+        }
     }
 }
 
@@ -467,6 +492,7 @@ fn finish_drag(window: &adw::ApplicationWindow, x: f64) {
             let at = band::x_to_second(x, start, pps);
             set_red_bar(at);
             SELECTION.with(|slot| *slot.borrow_mut() = None);
+            crate::ui::narrate_page_take::band_clicked(window, at);
         }
     }
     repaint(window);
@@ -725,11 +751,11 @@ pub fn paint(cr: &cairo::Context, width: f64, height: f64) {
     });
     // `paint_plan` maps the red bar with the same helper this frame uses; keep them one number.
     plan.red_bar_px = band::second_to_px(red_bar_or(state.session), offset(), pps);
-    // The take walk's own playhead, where the sound is (§1 "playhead while ▶ walks").
+    // The take walk's own playhead, where the sound is (§1 "playhead while ▶ walks"). The preview has none: the red
+    // bar goes with it. The first rewrite drew a white line at the session second as if it were a band second, and
+    // the two clocks part at every stretch the cut took out, so it stood minutes from the bar.
     let head = WALK_HEAD.with(|slot| slot.get());
-    if head >= 0.0 {
-        plan.playhead_px = Some(band::second_to_px(head, offset(), pps));
-    }
+    plan.playhead_px = (head >= 0.0).then(|| band::second_to_px(head, offset(), pps));
 
     // 1. The envelope, or the sentence that says it is not ready: §1's "reading the recording…"
     // while the envelope decodes. Drawn as vertical bars in the lane under the ruler.
@@ -992,22 +1018,18 @@ fn cached_envelope(state: &crate::ui::narrate_page::NarrateState) -> Peaks {
 /// Why a lane has no peaks yet while its worker reads them.
 const READING: &str = "still reading the recording";
 
-/// Vertical peak bars across the visible window, blue over the ground.
+/// The wave, drawn as Cut's strips are (`cut_wave_rows`): one column per pixel standing on the lane's foot, on the
+/// meter curve. The first rewrite mirrored the columns round the middle on a straight scale, so the same recording
+/// looked different on the two pages, in a thin line with empty ground above and below it.
 fn draw_envelope(cr: &cairo::Context, peaks: &[u8], width: f64, lane_top: f64, lane_h: f64) {
     let (duration, view) = size();
     let pps = band::px_per_second(zoom(), duration, view);
-    let visible = band::visible_peaks(PEAK_HZ, peaks, offset(), pps, width);
-    cr.set_source_rgb(0.35, 0.6, 0.9);
-    let step = 1.0_f64.max(2.0_f64.min(pps / PEAK_HZ.max(1.0)));
-    for (at, peak) in &visible {
-        let x = band::second_to_px(*at, offset(), pps);
-        if x > width {
-            break;
-        }
-        let h = (lane_h - 4.0) * (*peak as f64 / 255.0);
-        cr.rectangle(x, lane_top + (lane_h - h) / 2.0, step, h.max(1.0));
-    }
-    let _ = cr.fill();
+    let bot = cut_wave_rows::draw_ground(cr, 0.0, width, lane_top, lane_h);
+    let levels: Vec<(f64, f64)> = band::peak_columns(PEAK_HZ, peaks, offset(), pps, width)
+        .into_iter()
+        .map(|(x, peak)| (x, cut_wave_rows::meter(f64::from(peak) / 255.0)))
+        .collect();
+    cut_wave_rows::draw_columns(cr, &levels, bot, lane_h - 2.0);
 }
 
 thread_local! {

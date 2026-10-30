@@ -131,10 +131,9 @@ pub fn preview_ask_ceiling(pane_h: i32, lane_h: i32) -> i32 {
     (pane_h - lane_h).min(SELF_SPLIT_TOP_PX - lane_h).max(1)
 }
 
-/// What a wide `gtk::Paned` keeps for its own handle and frame, measured on the built page: a 634 px paned
-/// holding a 380 px start pane and a 250 px end pane leaves 4 px over. Named here because it is this page's
-/// divider that has to be paid for, not a GTK-wide constant.
-const PANED_HANDLE_GAP_PX: i32 = 4;
+/// What a `gtk::Paned` keeps for its own handle: one line. Named here because it is this page's divider that has
+/// to be paid for, not a GTK-wide constant.
+const PANED_HANDLE_GAP_PX: i32 = 1;
 
 /// What the bottom pane costs BESIDES the tape, asked rather than remembered: the toolbar's own minimum
 /// height, the scrollbar's (an unseen one is `SCROLLBAR_ASK_PX` thick), and the two gaps `cut-bottom` keeps
@@ -232,6 +231,17 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
         .filter_map(Result::ok)
         .filter_map(|child| child.downcast::<gtk::Widget>().ok())
         .find(|child| child.widget_name() == "fold-all-holder");
+    // §1's bottom half is the band; the narrow placeholder strip stays in the tree for the doors that find it, and
+    // takes no room: seen, it left 96 px of empty page under the tape (84 of its own and the box's spacing).
+    if let Some(strip) = page_box
+        .observe_children()
+        .iter::<glib::Object>()
+        .filter_map(Result::ok)
+        .filter_map(|child| child.downcast::<gtk::Widget>().ok())
+        .find(|child| child.widget_name() == "track-strip")
+    {
+        strip.set_visible(false);
+    }
     let mut detached = detached;
     if let Some(holder) = &fold_all {
         page_box.remove(holder);
@@ -366,7 +376,8 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
     }
     let split = gtk::Paned::new(gtk::Orientation::Horizontal);
     split.set_widget_name("cut-top");
-    split.set_wide_handle(true);
+    // §1: every divider is one line. A wide handle draws 5 px with a line on each side, read as a double line.
+    split.set_wide_handle(false);
     split.set_hexpand(true);
     // The top half takes the height its own content asks for and no more: GTK otherwise grows the
     // paned to fill the window and the tracks are pushed down the column behind a wall of plate.
@@ -429,7 +440,8 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
     // there was no divider to drag and the top half grew or shrank with the window instead of its pane.
     let vsplit = gtk::Paned::new(gtk::Orientation::Vertical);
     vsplit.set_widget_name("cut-page-split");
-    vsplit.set_wide_handle(true);
+    // §1: every divider is one line. A wide handle draws 5 px with a line on each side, read as a double line.
+    vsplit.set_wide_handle(false);
     vsplit.set_vexpand(true);
     vsplit.set_start_child(Some(&split));
     // The top half keeps its own shape (the picture's height plus the lane under it) and never shrinks
@@ -452,7 +464,10 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
     // PICTURE gives the pixels, which is what §A's "above the minimum the layout grows with the window"
     // already says may give. Measured at 1240×900 with no ask: handle at 380, pane 416 px, the bottom half
     // 32 px too short, and GTK clipped the wave rows off the bottom of the band's `DrawingArea`.
-    vsplit.set_size_request(-1, SELF_SPLIT_TOP_PX + pane_floor_px + PANED_HANDLE_GAP_PX);
+    vsplit.set_size_request(
+        -1,
+        SELF_SPLIT_TOP_PX + pane_floor_px + PANED_HANDLE_GAP_PX + 2 * crate::ui::margins::DIVIDER_GAP_PX,
+    );
     // ...and the upper pane used to ask for more than its own content (the old `UPPER_PANE_MIN_H`, 410 px) so
     // GTK would settle the divider on §A's opening rather than on the picture's 304 px natural height. That
     // request is GONE: at §1's minimum the page band cannot hold 410 + 196, and a page that overflows its band
@@ -485,13 +500,6 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
     // above was clamped because the paned had no height yet, so the same rule is re-asked at the first real
     // allocation and at every later one. In a window on a display this is a no-op after the first pass.
     rest_opening_once(&vsplit);
-    // …and once more AFTER the band has been grown to its scene. `cut_tracks::fit_band_height` raises the
-    // tape's own request when the cut needs rows (§1: a row per camera AND a row per lane), and GTK honours a
-    // child's new minimum by pushing the handle toward the START pane — measured at 1240×900 with only
-    // [`rest_opening_once`] wired: handle at 380, bottom pane 287 px of which the band took 132 px, leaving
-    // the selection row (109 px) plus the scrollbar 46 px short, and GTK clipped the bottom of the tape.
-    // Re-asking takes the position back to §A's number at whatever size the window actually reached.
-    rest_on_resize(&vsplit);
 
     // --- the bottom half: toolbar, tracks, scrollbar (A's "bottom = toolbar, tracks, scrollbar") --
     // §A's vertical paned gives the BOTTOM half the page's leftover height, so the tape and the lanes
@@ -529,22 +537,27 @@ pub fn arrange_priced(page_box: &gtk::Box, band_ask: i32, window: Option<&adw::A
     // belongs to the picture). With both expanding the paned split its leftover between them and ignored the
     // position entirely — see [`SELF_SPLIT_TOP_PX`]'s opening note and the `cut-bottom` valign above.
     vsplit.set_shrink_start_child(true);
-    vsplit.set_shrink_end_child(true);
+    // Height the window gains goes to the picture; the bottom half keeps what its three rows need.
+    vsplit.set_resize_end_child(false);
+    // The bottom half never goes under its own minimum (the toolbar, the tape's rows and the scrollbar, see
+    // `bottom`'s floor): the picture gives way instead, and a drag stops there. The first rewrite let it shrink,
+    // so a handle dragged down, or a log made taller, cut the wave rows off the tape and hid the scrollbar.
+    vsplit.set_shrink_end_child(false);
     // Now the upper pane has real height (the window minus the divider's opening), hand it to the picture:
     // §A's preview is "contain-fit, min height 160", and the reference draws it filling the whole upper
     // pane, while the panel was built at its thumbnail shape (`PREVIEW_PANEL_H`, 135) and would otherwise
     // sit as a small plate under a wall of empty plate. Ask through the panel's own door so the picture,
     // the camera rect and every overlay are measured against the same box.
     if let Some(panel) = preview.as_ref() {
-        // The lane under the picture costs its rows too (an empty one is still `fx_lane::lane_height_px(1)`
-        // deep, which is what `sync_lane_rows` asks for), so the picture's share is the pane minus that.
-        let lane_h = crate::fx_lane::lane_height_px(1) as i32;
+        // Only the floors: the panel fills its pane by expanding, and the openings are the two handles' positions.
+        // The first rewrite asked the openings here too (660 x about 300), and an ask is a minimum: the left/right
+        // handle could not go left of 660 px, nor the top/bottom one up without cropping the picture.
         crate::ui::cut_preview_panel::grow_to(
             panel
                 .downcast_ref::<gtk::Widget>()
                 .expect("the preview panel is a widget"),
-            SELF_SPLIT_PREVIEW_PX as f64,
-            (SELF_SPLIT_TOP_PX - BANDS_ABOVE_PICTURE_PX - lane_h) as f64,
+            crate::ui::window::PREVIEW_PANEL_W,
+            PREVIEW_FLOOR_H,
         );
     }
 }
@@ -631,26 +644,9 @@ pub fn rest_scroll_once(scroller: &gtk::ScrolledWindow) {
 /// answers 1 px tall, so an ask made earlier lands on the clamp.
 pub fn rest_opening_once(divider: &gtk::Paned) {
     crate::ui::settle::once_sized("the Cut page's split at its opening", divider, |divider| {
-        divider.set_position(SELF_SPLIT_TOP_PX);
+        // As far down as the bottom half's minimum lets it go, and never above §A's opening: the lower half is
+        // as tall as the toolbar, the tracks and the scrollbar, the picture has the rest, and nothing empty opens
+        // under the tape. The first rewrite opened at a fixed 380 px, which on any taller page was blank space.
+        divider.set_position(divider.height().max(SELF_SPLIT_TOP_PX));
     });
-}
-
-/// Re-ask §A's opening whenever this page's divider is given a new height — the Cut page's own copy of the
-/// rule `window_divider::install` runs for the shell's divider, which is why the shell's shot rests right and
-/// this page's did not. A `set_position` made while the paned is unallocated lands on its clamp (measured: 29 px
-/// of upper pane instead of §A's 380), and GTK 4 fires no allocate signal, so the two `notify` watches plus one
-/// shared cell are the door: it re-asks only for a height it has not seen, which keeps the ask from feeding back
-/// into itself, and a person's drag is untouched because their drag also changes the height only via the paned.
-pub fn rest_on_resize(divider: &gtk::Paned) {
-    let seen_height = std::rc::Rc::new(std::cell::Cell::new(0));
-    for name in ["width", "height"] {
-        let seen = seen_height.clone();
-        divider.connect_notify_local(Some(name), move |paned, _| {
-            let height = paned.height();
-            if height > 1 && seen.get() != height {
-                seen.set(height);
-                paned.set_position(SELF_SPLIT_TOP_PX);
-            }
-        });
-    }
 }

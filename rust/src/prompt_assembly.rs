@@ -383,6 +383,19 @@ pub fn carries_speech_rule(key: &str) -> bool {
     matches!(key, "cut" | "narrate")
 }
 
+/// The User Context with its script taken out: the block between a `SCRIPT START` and a `SCRIPT STOP` line, stars
+/// around them as the profiles write them. What the transcript fixer is shown. With the script in its request
+/// the model takes what was said for a mishearing of the script and rewrites the line to match; told otherwise
+/// in every wording tried, it still did. Measured on the 27B's 08-dex block, 8 asks each: with the script 3 lines
+/// kept the spoken USDC and 1 answer had the right format; without it 8 and 8, and across 12 name-heavy blocks the
+/// fixer kept 96 % of the spoken words and spelled the names the same. A context with no such block is unchanged.
+pub fn without_script(context: &str) -> String {
+    let Ok(block) = regex::Regex::new(r"(?s)\*+\s*SCRIPT START\s*\*+.*?\*+\s*SCRIPT STOP\s*\*+") else {
+        return context.to_string();
+    };
+    block.replace_all(context, "").into_owned()
+}
+
 /// Assemble one call's user message: the User Context block, the speech rule where it applies, and
 /// the job's material.
 ///

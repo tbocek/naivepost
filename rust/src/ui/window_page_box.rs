@@ -108,12 +108,12 @@ pub(crate) fn page_box(
     // (the window may never be pushed wider than §1's 1240 px minimum). The page fits its width because the parts that
     // could overflow scroll inside themselves — the sources list, the bench box, the Cut tool groups.
     page_scroller.set_child(Some(&box_));
-    box_.set_margin_start(24);
-    box_.set_margin_end(24);
+    box_.set_margin_start(crate::ui::margins::PAGE_EDGE_PX);
+    box_.set_margin_end(crate::ui::margins::PAGE_EDGE_PX);
     // 03-shell §1: "12 px from the header bar above it (no more: a deeper band reads as an empty border)".
     // 24 here plus the empty row below and the box's 12 px spacing after it read as a 36 px band.
-    box_.set_margin_top(12);
-    box_.set_margin_bottom(24);
+    box_.set_margin_top(crate::ui::margins::PAGE_EDGE_PX);
+    box_.set_margin_bottom(crate::ui::margins::PAGE_EDGE_PX);
 
     // §1 badge **9** is the page's own first control, not a heading above it, so nothing is DRAWN here —
     // but this empty row stays as `cut_page_layout::arrange`'s insertion anchor (it seats the vertical

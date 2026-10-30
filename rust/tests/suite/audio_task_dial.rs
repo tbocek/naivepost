@@ -1012,3 +1012,21 @@ fn sec_02_services_1_the_four_servers_s1_the_nemotron_diarizer_reply_reads() {
         "speaker_N is voice N, so the transcript says SPEAKER_00 and SPEAKER_01"
     );
 }
+
+/// The same diarizer on 2.5 s of silence, verbatim from the live server (08-dex, 2026-10-28): no list at all,
+/// only its timing. That is nobody speaking, not a failure; the first rewrite failed Prepare on it with "no
+/// speaker turns in it". A reply with neither a list nor a timing is still refused.
+#[test]
+fn sec_02_services_1_the_four_servers_s1_the_nemotron_diarizer_silence_reads_as_nobody() {
+    let silence = r#"{"timing":{"wall_ms":15.6535}}"#;
+    let turns =
+        audio_task::diar_answer(&serde_json::from_str::<serde_json::Value>(silence).expect("JSON"))
+            .expect("silence is an answer");
+    assert!(turns.is_empty(), "nobody spoke: {turns:?}");
+
+    let refusal = r#"{"detail":"no turns here"}"#;
+    let err =
+        audio_task::diar_answer(&serde_json::from_str::<serde_json::Value>(refusal).expect("JSON"))
+            .expect_err("a reply with nothing finished in it");
+    assert!(err.contains("no speaker turns in it"), "{err}");
+}

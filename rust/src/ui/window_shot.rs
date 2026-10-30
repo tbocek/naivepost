@@ -64,10 +64,9 @@ pub fn band_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
     if !log.is_expanded() {
         return collapsed;
     }
-    // The body's own ask, read back off the widget that holds it ([`open_body_px`]): the shell sizes the log's
-    // scroller with `min_content_height` (see `window.rs`, where §10's prose 220 px goes on), so asking that
-    // scroller is how this stays right if that number ever moves.
-    collapsed + open_body_px(log)
+    // §10's open height is what the log asks for, not what it needs: its scroller's own minimum is the smaller
+    // `LOG_MIN_BODY_PX`, so an open log gives way when the page needs the room.
+    collapsed + super::window_bench::LOG_OPEN_PX
 }
 
 /// THE OPEN LOG'S HEIGHT WHEN NOTHING DRAGS THE DIVIDER — the headless answer to §1's "Expanding the log
@@ -156,38 +155,6 @@ fn find_in_bottom(node: &gtk::Widget, name: &str) -> Option<gtk::Widget> {
 /// plate under the two rows.
 pub fn rest_px(run_row: &gtk::Widget, log: &gtk::Expander) -> i32 {
     height_ask(run_row, log)
-}
-
-/// The open log's own height, read back off the widget that holds it: `window.rs` sizes the log's scroller
-/// with `min_content_height` (§10's prose "log heights 220/110" — no `P.` id, so the number lives on the
-/// widget, `window_bench::LOG_OPEN_PX`). It is an ASK, not a floor: a long log scrolls inside the band instead
-/// of pushing the window past §1's 900 px minimum. §1's open band is the collapsed two rows PLUS this, which is
-/// what [`band_px`] adds to get the height the divider has to leave the band. Walked off the expander rather
-/// than passed in because the divider owns neither widget; falls back to §10's number when there is no scroller
-/// to ask (a window still being built).
-pub fn open_body_px(log: &gtk::Expander) -> i32 {
-    log.child()
-        .and_then(|child| find_scroller(&child))
-        .map(|scroller| scroller.min_content_height())
-        .unwrap_or(super::window_bench::LOG_OPEN_PX)
-        .max(0)
-}
-
-/// The first `gtk::ScrolledWindow` at or below `node` — the log body's own scroller.
-fn find_scroller(node: &gtk::Widget) -> Option<gtk::ScrolledWindow> {
-    if let Some(scroller) = node.downcast_ref::<gtk::ScrolledWindow>() {
-        return Some(scroller.clone());
-    }
-    for child in node
-        .observe_children()
-        .iter::<glib::Object>()
-        .filter_map(Result::ok)
-    {
-        if let Some(found) = child.downcast_ref::<gtk::Widget>().and_then(find_scroller) {
-            return Some(found);
-        }
-    }
-    None
 }
 
 /// Start the divider so the band is exactly [`height_px`] tall: the handle goes to `total − band`, leaving

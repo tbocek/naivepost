@@ -83,9 +83,9 @@ impl Walk {
     }
 
     /// Pass 2's ask: every span answered with `answer`, recording what it was offered.
-    fn place(&self, answer: Vec<Turn>) -> impl FnMut((f64, f64), f64) -> PlacementAnswer + '_ {
-        move |span, anchor_seconds| {
-            self.placed.borrow_mut().push((span, anchor_seconds));
+    fn place(&self, answer: Vec<Turn>) -> impl FnMut((f64, f64), &diarize::Anchor) -> PlacementAnswer + '_ {
+        move |span, anchor: &diarize::Anchor| {
+            self.placed.borrow_mut().push((span, anchor.seconds()));
             Ok(answer.clone())
         }
     }
@@ -229,10 +229,12 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diariza
 ) {
     // The anchor holds two voices, 12 s each: block 0 occupies the anchor file's 0..12 s, block 1 its 12..24 s.
     let anchor_seconds = 2.0 * diarize::anchor_per(90.0);
-    // Slot 0 speaks inside the anchor's first block (a real overlap); slot 5 starts past the whole anchor,
-    // so its reach into the reference is nil — well under MIN_ANCHOR_OVERLAP.
+    // Slot 0 speaks inside the anchor's first block (a real overlap) and again in the new audio; slot 5 starts
+    // past the whole anchor, so its reach into the reference is nil — well under MIN_ANCHOR_OVERLAP. A turn
+    // wholly inside the anchor is the reference itself and is not placed again.
     let answer = vec![
         turn(0, 1.0, 5.0),
+        turn(0, anchor_seconds + 6.0, anchor_seconds + 9.0),
         turn(5, anchor_seconds + 1.0, anchor_seconds + 4.0),
     ];
     let walk = Walk::new();
@@ -274,6 +276,26 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_diariza
         0.5,
         "the bound the thin claim falls under"
     );
+
+    // Where the placed turns land: the answer's zero is the anchor file's start, so a turn `t` seconds in is
+    // `t − anchor` seconds into its span on the recording, and the reference's own turn is not placed again.
+    // The first rewrite added the anchor's start and width instead, and kept the reference's turn.
+    let seconds = |sample: u64| sample as f64 / SAMPLE_RATE as f64;
+    let spans = walk.placements();
+    assert_eq!(placed.len(), 2 * spans.len(), "two turns past the anchor per span: {placed:?}");
+    for (pair, ((from, _), _)) in placed.chunks(2).zip(&spans) {
+        let got: Vec<(f64, f64)> = pair
+            .iter()
+            .map(|t| (seconds(t.start_sample), seconds(t.end_sample)))
+            .collect();
+        let want = [(from + 6.0, from + 9.0), (from + 1.0, from + 4.0)];
+        for ((got_from, got_to), (want_from, want_to)) in got.iter().zip(want) {
+            assert!(
+                (got_from - want_from).abs() < 1e-3 && (got_to - want_to).abs() < 1e-3,
+                "span from {from}: {got:?}, want {want:?}"
+            );
+        }
+    }
 }
 
 /// Sound with no voice long enough to anchor on is an ANSWER: the line is said and the turns are empty,

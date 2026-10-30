@@ -447,35 +447,6 @@ fn f0_3_s3_describe_stage_is_what_the_press_reads() {
     );
 }
 
-/// S5's consequence, all four arms. Armed and marker-present are two ways of saying the same thing —
-/// the middle of the description cannot be trusted — so either one alone starts the description over:
-/// a ⏹ cut through Describe (`armed`), or the last run left its working files unfinished on disk
-/// (`resume_marker_present`, the lane's `events.tsv` / `state.txt` F1.1 S3 reads). Only with neither
-/// is there nothing to restart. What starting over keeps (scaled frames, extracted frames,
-/// transcripts) is what spec/00-principles #4 protects; only the untrustworthy event stream goes.
-#[test]
-fn f0_3_s5_an_armed_stop_describes_from_the_start() {
-    let _turn = crate::common::describe_flags_turn();
-    use naivepost::stop_legs::describes_from_the_start as from_start;
-    // Armed by a stop inside Describe, nothing on disk: start from the beginning.
-    assert!(
-        from_start(true, false),
-        "armed with nothing on disk: start over"
-    );
-    // Armed AND a marker left behind: still starts over — both say the middle is untrusted.
-    assert!(from_start(true, true), "armed with a marker: start over");
-    // A marker without the arming says the same about the files: start over.
-    assert!(
-        from_start(false, true),
-        "marker present, not armed: start over"
-    );
-    // Neither: nothing was stopped inside Describe, so nothing restarts.
-    assert!(
-        !from_start(false, false),
-        "nothing at all: nothing to restart"
-    );
-}
-
 /// S5: the arming is consumed on read, so one stop affects exactly one Prepare run — the same
 /// contract `RunBar::describe_restarts` holds for the bar's own flag.
 #[test]

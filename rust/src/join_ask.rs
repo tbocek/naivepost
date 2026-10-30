@@ -135,6 +135,32 @@ pub fn ask(
     )
 }
 
+/// A join refused on every try keeps its words, and that outcome is filed under the join's input like an
+/// answer: the next run asks nothing about a join nothing about has changed. "Nothing removed" is the answer
+/// filed, so the replay keeps the join exactly as the give-up did. Only a refused ANSWER settles this way: a
+/// call that never reached the model ([`Answered::failed`]) is asked again next run. The first rewrite filed
+/// nothing, so a join the model could not get right was asked again, every try of it, on every run.
+#[allow(clippy::too_many_arguments)]
+pub fn keep_for_good(
+    tree: &Tree,
+    user_context: &str,
+    k: usize,
+    n: usize,
+    wide: &str,
+    before: &[String],
+    after: &[String],
+) {
+    let model = current_paths()
+        .as_ref()
+        .and_then(|paths| settings::read(paths).ok())
+        .unwrap_or_default()
+        .model;
+    let system = join_system(user_context);
+    let first = joins::request(user_context, k, n, wide, before, after, None);
+    let parts = seam_parts(&system, &first, &model, 0);
+    llm_cache::store(tree, joins::STEP, &parts, r#"{"drop_before":"","drop_after":""}"#);
+}
+
 /// [`ask`] with the settings already read, for a caller that resolved them itself.
 #[allow(clippy::too_many_arguments)]
 pub fn ask_at(
@@ -222,7 +248,13 @@ pub fn ask_at(
     if outcome.usable() {
         // Cached only when usable (§F1.10): a refusal must go out again rather than be replayed from the slot
         // it failed in. What is filed is the answer itself, which the cache branch above reads through `judge`.
-        llm_cache::store(tree, joins::STEP, &parts, reply.as_str());
+        // Filed under the join's own input, the first ask's request, whichever try earned it: a rerun asks that
+        // first, and is answered by it, judged again as every cached answer is. The first rewrite filed a retry's
+        // answer under the retry's own slot, which no rerun reads, so a join answered on its retry was asked
+        // again on every run.
+        let first = joins::request(user_context, k, n, wide, before, after, None);
+        let first = seam_parts(&system, &first, &model, 0);
+        llm_cache::store(tree, joins::STEP, &first, reply.as_str());
     }
     Answered {
         outcome,
@@ -466,6 +498,7 @@ pub fn run_seams(
                                 &reason,
                                 "nothing removed there",
                             ));
+                            keep_for_good(tree, &project.context, k, n, &wide, &before, &after);
                             unanswered += 1;
                             break;
                         }

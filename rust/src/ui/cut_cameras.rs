@@ -438,7 +438,7 @@ pub fn refresh_camera_rows(window: &adw::ApplicationWindow) {
             let switch_name = format!("row-switch-{}", index + 1);
             let heard = cut_hear::row_is_heard_anywhere(&cut_, row);
             let y = crate::ui::cut_tracks::row_wave_top(window, index)
-                + (crate::ui::cut_tracks::ROW_WAVE_PX - ROW_SWITCH_PX) / 2.0;
+                + (crate::ui::cut_tracks::row_wave_px() - ROW_SWITCH_PX) / 2.0;
             match find_widget_by_name(layer.upcast_ref(), &switch_name)
                 .and_then(|found| found.downcast::<gtk::ToggleButton>().ok())
             {

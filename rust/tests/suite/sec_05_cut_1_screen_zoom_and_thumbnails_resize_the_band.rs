@@ -160,9 +160,9 @@ fn sec_05_cut_1_screen_zoom_and_thumbnails_resize_the_band() {
             let mut found = Vec::new();
             let mut y = 0.0;
             while y < f64::from(band_height(window)) {
-                if ui::band_cursor_at(window, 200.0, y) == Some("ns-resize") {
+                if ui::band_cursor_at(window, 200.0, y) == Some("row-resize") {
                     let from = y;
-                    while ui::band_cursor_at(window, 200.0, y) == Some("ns-resize") {
+                    while ui::band_cursor_at(window, 200.0, y) == Some("row-resize") {
                         y += 0.5;
                     }
                     found.push((from + y - 0.5) / 2.0);
@@ -180,7 +180,7 @@ fn sec_05_cut_1_screen_zoom_and_thumbnails_resize_the_band() {
         let edge = opened[0];
         assert_ne!(
             ui::band_cursor_at(&window, 200.0, edge - 20.0),
-            Some("ns-resize"),
+            Some("row-resize"),
             "inside the pictures the pointer is not the grip's"
         );
         assert_eq!(

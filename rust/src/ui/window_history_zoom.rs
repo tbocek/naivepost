@@ -346,6 +346,31 @@ pub(crate) fn wire_history_and_zoom(window: &adw::ApplicationWindow) {
     }
 }
 
+/// The grip between the pictures and the sound strip set the strip's height to `px`. The row's pitch does not
+/// change, so nothing refits: the band repaints and the gutter's row switches re-place on the strip. The status
+/// line says the height, and at either end that it can go no further.
+pub fn press_wave(window: &adw::ApplicationWindow, px: f64) -> f64 {
+    let held = crate::ui::cut_tracks::row_wave_px();
+    crate::ui::cut_tracks::set_row_wave_px(px);
+    let now = crate::ui::cut_tracks::row_wave_px();
+    if now != held {
+        crate::ui::cut_view::repaint_page(window);
+        crate::ui::cut_cameras::refresh_camera_rows(window);
+    }
+    let shown = now.round();
+    let said = if px > now {
+        format!("sound strip at its largest, {shown} px")
+    } else if px < now {
+        format!("sound strip at its smallest, {shown} px")
+    } else {
+        format!("sound strip {shown} px")
+    };
+    if let Some(status_line) = ui::find_status(window.upcast_ref()) {
+        status_line.set_text(&said);
+    }
+    now
+}
+
 /// The grip at the bottom of the picture rows (§1 badge 2) set the thumbnail height to `px`, kept inside
 /// 40..160. The size is the band's (`cut_tracks::thumb_px`): every picture row is drawn, fitted and pressed at
 /// it, so a step re-fits the band, repaints it and re-places the gutter's row switches. The status line says the
@@ -357,6 +382,15 @@ pub fn press_thumb(window: &adw::ApplicationWindow, px: u32) -> u32 {
     if now != held {
         crate::ui::cut_view::repaint_page(window);
         crate::ui::cut_cameras::refresh_camera_rows(window);
+    }
+    // Shorter rows hand their height to the picture, as the page opened: the handle goes as far down as the bottom
+    // half's new minimum lets it, and nothing empty stays under the tape. Taller rows push it up by themselves.
+    if now < held {
+        if let Some(split) = crate::ui::find_source_widget(window, "cut-page-split")
+            .and_then(|found| found.downcast::<gtk::Paned>().ok())
+        {
+            split.set_position(split.height());
+        }
     }
     let said = if now == cut_screen::THUMB_MAX && px >= now {
         format!("thumbnails at their largest, {now} px")

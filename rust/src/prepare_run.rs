@@ -398,13 +398,13 @@ pub fn begin(project: &Project, tree: &Tree) -> Start {
     if let Err(error) = save_project(project, tree.dir()) {
         return Start::SaveFailed { error };
     }
-    // S3, then S4. Whether this run starts the description over is decided by F0.3's rule: armed by a
-    // ⏹ that cut through Describe, or a lane left holding its working files from an unfinished run.
+    // S3, then S4. The description starts over only when a ⏹ cut through Describe (F0.3's arming); any other
+    // run resumes it, F1.7 S2 skipping the chunks already in `events.tsv`. The first rewrite also started over
+    // whenever a lane HAD an `events.tsv`, taking it for an unfinished run's working file, but it is Describe's
+    // finished output: every ▶ deleted every event log, and the description was paid for again whenever its
+    // cache could not answer (08-dex, after the describe key took in its system prompt).
     let armed = crate::stop_legs::take_describe_restart();
-    let marker_present = project.sources.iter().any(|source| {
-        tree.events_tsv(&lane(source)).exists() || tree.describe_state(&lane(source)).exists()
-    });
-    let cleared = if crate::stop_legs::describes_from_the_start(armed, marker_present) {
+    let cleared = if armed {
         clear_stopped_describe(tree, project)
     } else {
         Cleared::default()

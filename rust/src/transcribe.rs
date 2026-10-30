@@ -428,13 +428,17 @@ where
     // S4: alignment, when an aligner is served and its answer is not already on disk. Decided here,
     // after S3, with the words it will place. A short take asks NOTHING of any server (S2's own words),
     // so the aligner is skipped too — there is no audio worth placing words over.
-    let align = if short { Align::None } else { align(&words) };
-    match align_step(
-        source,
-        align,
-        &words,
-        tree.words_aligned_json(source).exists(),
-    ) {
+    // Its answer on disk is asked for first: a resumed run asks the aligner nothing, as `asr` and `diarize`
+    // are asked nothing when their files are there. The first rewrite called `align` before looking, so every
+    // ▶ aligned every recording again ("ASR already done", then "aligning speech 1/1") and only then threw
+    // the answer away -- after it had already rewritten the file.
+    let already = tree.words_aligned_json(source).exists();
+    let align = if short || already {
+        Align::None
+    } else {
+        align(&words)
+    };
+    match align_step(source, align, &words, already) {
         AlignStep::Warns(warning) => logs.push(warning),
         AlignStep::Stops(err) => return Err(align_failure(model, &err)),
         AlignStep::Quiet | AlignStep::Aligned => {}

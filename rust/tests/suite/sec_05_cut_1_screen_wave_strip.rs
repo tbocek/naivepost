@@ -142,4 +142,77 @@ fn sec_05_cut_1_screen_the_wave_strip_draws_the_rows_own_sound() {
         "a loud second stands most of the strip tall: {loud} px"
     );
     assert_eq!(quiet, 0, "a silent second leaves only the baseline");
+
+    // The grip's height is the height painted: a strip twice as tall stands a loud second about twice as tall,
+    // from a strip top that moved up by what the pictures gave.
+    tracks::set_row_wave_px(tracks::ROW_WAVE_PX * 2.0);
+    let mut taller = cairo::ImageSurface::create(cairo::Format::ARgb32, w, h).expect("a surface");
+    {
+        let cr = cairo::Context::new(&taller).expect("a context");
+        tracks::paint_at(&cr, &scene, w as f64, h as f64, tracks::THUMB_DEFAULT_PX);
+    }
+    let stride = taller.stride() as usize;
+    let data = taller.data().expect("pixels").to_vec();
+    let top = tracks::band_height_px(&scene, tracks::THUMB_DEFAULT_PX) - tracks::row_wave_px();
+    let x = tracks::band_x(&scene, 2.0) as i32;
+    let tall_loud = (top as i32..h)
+        .filter(|y| {
+            let at = *y as usize * stride + x as usize * 4;
+            let (r, b) = (data[at + 2], data[at]);
+            b > r + 40 && b > 120
+        })
+        .count();
+    tracks::set_row_wave_px(tracks::ROW_WAVE_PX);
+    assert!(
+        tall_loud as f64 > loud as f64 * 1.5,
+        "the taller strip paints a taller wave: {loud} -> {tall_loud} px"
+    );
+}
+
+/// The two grips on a row, and which a height means: the bottom edge makes everything larger, the line between
+/// the pictures and the sound strip moves height between the two, and where a thin strip brings both within
+/// reach of one height the bottom edge goes first. The press and the pointer both ask `grip_at`.
+#[test]
+fn sec_05_cut_1_screen_the_line_above_the_sound_strip_is_a_grip_and_the_bottom_edge_goes_first() {
+    let scene = tracks::idle_scene(2);
+    let rows = tracks::rows_for_press(&scene);
+    let bottom = rows.pictures + rows.row_h;
+    let line = rows.wave_top(0);
+    assert_eq!(tracks::grip_at(&scene, bottom), Some(tracks::Grip::Row(1)));
+    assert_eq!(tracks::grip_at(&scene, line), Some(tracks::Grip::Wave));
+    assert_eq!(
+        tracks::grip_at(&scene, rows.wave_top(1)),
+        Some(tracks::Grip::Wave),
+        "every row's line is a grip"
+    );
+    assert_eq!(tracks::grip_at(&scene, line - 10.0), None, "the pictures are not");
+
+    // The thinnest strip: its line and the row's bottom edge are both in reach of one height.
+    tracks::set_row_wave_px(0.0);
+    assert_eq!(tracks::row_wave_px(), tracks::WAVE_MIN_PX, "the strip keeps its least");
+    let thin = tracks::rows_for_press(&scene);
+    let shared = thin.wave_top(0) + tracks::ROW_GRIP_PX;
+    assert_eq!(
+        tracks::grip_at(&scene, shared),
+        Some(tracks::Grip::Row(1)),
+        "where they overlap the bottom edge goes first"
+    );
+    assert_eq!(
+        tracks::grip_at(&scene, thin.wave_top(0) - tracks::ROW_GRIP_PX),
+        Some(tracks::Grip::Wave),
+        "and the line keeps the reach above it"
+    );
+
+    // The tallest: the pictures keep their least, and the row's pitch never changes, so the band does not grow.
+    let height = tracks::band_height_px(&scene, tracks::thumb_px());
+    tracks::set_row_wave_px(10_000.0);
+    assert_eq!(tracks::row_wave_px(), rows.row_h - tracks::FILM_MIN_PX);
+    assert_eq!(tracks::band_height_px(&scene, tracks::thumb_px()), height);
+
+    // A row made shorter takes the height back from the strip, and giving it back restores what was asked.
+    let open = tracks::thumb_px();
+    tracks::set_thumb_px(40);
+    assert_eq!(tracks::row_wave_px(), 40.0 + tracks::PICTURE_ROW_EXTRA_PX - tracks::FILM_MIN_PX);
+    tracks::set_thumb_px(open);
+    tracks::set_row_wave_px(tracks::ROW_WAVE_PX);
 }

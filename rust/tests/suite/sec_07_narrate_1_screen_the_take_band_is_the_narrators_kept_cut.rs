@@ -116,3 +116,23 @@ fn sec_07_narrate_1_screen_a_take_is_stored_in_its_recordings_seconds_and_shown_
     all.extend(next);
     assert_eq!(tape.takes_on(&all), vec![(3.0, 8.0)]);
 }
+
+/// A click on the band lands on the session second under it, across the cut's gaps, and nowhere past the tape.
+#[test]
+fn a_band_second_names_its_session_second() {
+    let (cut, recordings, narrated) = session();
+    let tape = narrate_tape::kept(&cut, &recordings, &narrated);
+    // The band is 5–10 of a, then 50–60 and 70–75 of b, end to end.
+    assert_eq!(tape.session_at(0.0), Some(5.0));
+    assert_eq!(tape.session_at(7.0), Some(52.0));
+    assert_eq!(tape.session_at(16.0), Some(71.0));
+    assert_eq!(tape.session_at(20.0), None);
+    let whole = narrate_tape::whole(PathBuf::from("/s/a.mkv"), 30.0);
+    assert_eq!(whole.session_at(3.0), None, "one whole file has no place in the cut");
+    assert_eq!(whole.band_at(3.0), None);
+    // And back: the preview's second on the band, a removed stretch standing at the next kept start.
+    assert_eq!(tape.band_at(7.0), Some(2.0));
+    assert_eq!(tape.band_at(52.0), Some(7.0));
+    assert_eq!(tape.band_at(30.0), Some(5.0));
+    assert_eq!(tape.band_at(200.0), Some(20.0));
+}

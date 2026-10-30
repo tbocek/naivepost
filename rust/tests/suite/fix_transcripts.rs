@@ -145,6 +145,7 @@ fn sec_04_prepare_3_data_written_nothing_heard_writes_no_empty_files() {
         &sources,
         "",
         MarkingPass::None,
+        "",
         |_| panic!("nothing heard, nothing to ask"),
         || Ok(Vec::new()),
     )
@@ -494,7 +495,7 @@ fn f1_8_s3_a_block_is_cached_under_its_own_rows() {
     let tree = tree("cache");
     let rows = lines(2);
     // The key is the block's own text: one changed row asks a different question.
-    let key = fix::block_key(&rows);
+    let key = fix::block_key("", &rows);
     // §6's format, not this module's own hash any more: sha256 hex over the deciding parts.
     assert_eq!(
         key.len(),
@@ -526,71 +527,40 @@ fn f1_8_s3_a_block_is_cached_under_its_own_rows() {
     );
     let mut changed = rows.clone();
     changed[1].text = "something else entirely".into();
-    assert_ne!(key, fix::block_key(&changed));
+    assert_ne!(key, fix::block_key("", &changed));
 
     assert!(
-        fix::cached_block(&tree, &rows).is_none(),
+        fix::cached_block(&tree, "", &rows).is_none(),
         "nothing asked yet, nothing to replay"
     );
 
     let mut fixed = rows.clone();
     fixed[0].text = "number 0 about the widget".into();
-    fix::store_block(&tree, &rows, &fixed).unwrap();
+    fix::store_block(&tree, "", &rows, &fixed).unwrap();
 
     // Only the row whose text differs is a `fix_line` call to replay.
     assert_eq!(
-        fix::cached_block(&tree, &rows).unwrap(),
+        fix::cached_block(&tree, "", &rows).unwrap(),
         vec![fix::Reply::Fix {
             n: 1,
             text: "number 0 about the widget".into()
         }]
     );
     // A changed transcript does not read the stale answer back.
-    assert!(fix::cached_block(&tree, &changed).is_none());
+    assert!(fix::cached_block(&tree, "", &changed).is_none());
 }
 
-/// §6's second irregularity on the fixer's own live path: "the transcript fixer caches only its first
-/// attempt". A block repaired after a refusal is right only given that refusal, so filing it would let
-/// a later run replay an answer nothing validated.
+/// The fixer's cache is keyed on its input, the block's own rows: an answer accepted on the RETRY is filed too,
+/// so a second run over the same rows asks nothing, and changed rows ask again. The first rewrite filed only a
+/// first-try answer (§6's old "second irregularity"), and the user's model, which often answers a block's first
+/// ask with the text alone, paid two asks per such block on every run (08-dex, 2026-10-29).
 #[test]
-fn sec_09_llm_and_tools_6_cache_s6_the_fixer_caches_only_its_first_attempt() {
-    // The rule itself, both sides.
-    assert!(fix::caches_attempt(1), "the first ask's answer may be kept");
-    assert!(!fix::caches_attempt(2), "a repaired answer may not");
-
-    let first_tree = tree("first-try");
-    let rows = lines(2);
-
-    // A block answered on the first ask: `attempt` says 1, and it earns a cache slot.
-    let first_ask_asks = Cell::new(0);
-    let good = |_: &str| {
-        first_ask_asks.set(first_ask_asks.get() + 1);
-        Ok(vec![
-            fix::Reply::Fix {
-                n: 1,
-                text: "number 0 about the widget".into(),
-            },
-            fix::Reply::Done,
-        ])
-    };
-    let outcome = fix::fix_block(&rows, "", good).unwrap();
-    assert!(outcome.valid);
-    assert_eq!(outcome.attempt, 1, "one ask answered it");
-    assert!(
-        fix::caches_attempt(outcome.attempt),
-        "so this one may be stored"
-    );
-    fix::store_block(&first_tree, &rows, &outcome.lines).expect("stored");
-    assert!(
-        fix::cached_block(&first_tree, &rows).is_some(),
-        "the first attempt's answer is on disk"
-    );
-    assert_eq!(first_ask_asks.get(), 1, "and it took exactly one ask");
-
-    // A block that needed the second ask: `attempt` says 2, so the caller files nothing (§6).
-    let repaired_tree = tree("repaired");
+fn sec_09_llm_and_tools_6_cache_s6_the_fixer_caches_an_answer_by_its_input_whichever_try_earned_it() {
+    let tree = tree("by-input");
+    textfmt::write_lines(&lines(2), &tree.transcript_tsv(BASE)).unwrap();
+    let sources = [source(BASE, "lecture.mkv", 0.0, 60.0, true)];
     let asks = Cell::new(0);
-    let repaired = fix::fix_block(&rows, "", |_| {
+    let refuse_then_fix = |_: &str| {
         asks.set(asks.get() + 1);
         if asks.get() == 1 {
             // Refused: a number outside the block is what `Block::fix_line` refuses by name.
@@ -606,33 +576,103 @@ fn sec_09_llm_and_tools_6_cache_s6_the_fixer_caches_only_its_first_attempt() {
             },
             fix::Reply::Done,
         ])
-    })
-    .unwrap();
-    assert!(repaired.valid, "the second try fixed it");
-    assert_eq!(repaired.attempt, 2, "and the outcome says which try did");
-    assert!(
-        !fix::caches_attempt(repaired.attempt),
-        "§6: that answer earns no cache slot"
+    };
+    run_with(&tree, &sources, MarkingPass::None, "the fix wording", refuse_then_fix, || Ok(Vec::new()));
+    assert_eq!(asks.get(), 2, "the first run paid the refusal and the retry");
+    let first = std::fs::read_to_string(tree.transcript_fixed_tsv(BASE)).unwrap();
+    assert!(first.contains("number 0 about the widget"), "{first}");
+
+    // The same rows again: the retry's answer is read back, and validated, without an ask.
+    run_with(
+        &tree,
+        &sources,
+        MarkingPass::None,
+        "the fix wording",
+        |_| panic!("unchanged rows are answered from the cache"),
+        || Ok(Vec::new()),
     );
-    // Walking it the way `run` does — store only when the attempt may be cached — leaves nothing filed,
-    // so a re-run of the same block asks again instead of replaying an unvalidated reply.
-    if fix::caches_attempt(repaired.attempt) {
-        fix::store_block(&repaired_tree, &rows, &repaired.lines).unwrap();
-    }
-    assert!(
-        fix::cached_block(&repaired_tree, &rows).is_none(),
-        "nothing was filed for the repair"
-    );
-    let reread_asks = Cell::new(0);
-    let _again = fix::fix_block(&rows, "", |_| {
-        reread_asks.set(reread_asks.get() + 1);
-        Ok(vec![fix::Reply::Done])
-    })
-    .unwrap();
     assert_eq!(
-        reread_asks.get(),
-        1,
-        "the next run pays for the repaired block again"
+        std::fs::read_to_string(tree.transcript_fixed_tsv(BASE)).unwrap(),
+        first,
+        "and it writes what the first run wrote"
+    );
+
+    // Changed rows are another input: asked again.
+    let mut changed = lines(2);
+    changed[1].text = "something else entirely".into();
+    textfmt::write_lines(&changed, &tree.transcript_tsv(BASE)).unwrap();
+    let again = Cell::new(0);
+    run_with(
+        &tree,
+        &sources,
+        MarkingPass::None,
+        "the fix wording",
+        |_: &str| {
+            again.set(again.get() + 1);
+            Ok(vec![fix::Reply::Done])
+        },
+        || Ok(Vec::new()),
+    );
+    assert_eq!(again.get(), 1, "a changed block is asked again");
+
+    // The same rows under another prompt (a rule added to the profile's `## fix` section, a changed User
+    // Context) are another question too: asked again. The first rewrite keyed on the rows alone, so the new rule
+    // never reached a block already answered.
+    let reworded = Cell::new(0);
+    run_with(
+        &tree,
+        &sources,
+        MarkingPass::None,
+        "the fix wording, with a rule added",
+        |_: &str| {
+            reworded.set(reworded.get() + 1);
+            Ok(vec![fix::Reply::Done])
+        },
+        || Ok(Vec::new()),
+    );
+    assert_eq!(reworded.get(), 1, "a changed prompt asks again");
+}
+
+/// A block refused on every try keeps its ASR lines, and that outcome is filed under its input too: the next
+/// run over the same rows and prompt asks nothing and keeps the same lines. The first rewrite filed nothing for
+/// it, so such a block was asked again, every try of it, on every run although nothing had changed (08-dex
+/// 18-41-59: a first answer with no columns, then a retry that miscopied one speaker label).
+#[test]
+fn sec_09_llm_and_tools_6_cache_s6_a_block_refused_on_every_try_is_not_asked_again() {
+    let tree = tree("refused-for-good");
+    textfmt::write_lines(&lines(2), &tree.transcript_tsv(BASE)).unwrap();
+    let sources = [source(BASE, "lecture.mkv", 0.0, 60.0, true)];
+    let asks = Cell::new(0);
+    run_with(
+        &tree,
+        &sources,
+        MarkingPass::None,
+        "the fix wording",
+        |_: &str| {
+            asks.set(asks.get() + 1);
+            // Refused every time: a number outside the block.
+            Ok(vec![fix::Reply::Fix {
+                n: 99,
+                text: "not a row of this block".into(),
+            }])
+        },
+        || Ok(Vec::new()),
+    );
+    assert_eq!(asks.get(), fix::attempts(), "every try was spent");
+    let kept = std::fs::read_to_string(tree.transcript_fixed_tsv(BASE)).unwrap();
+
+    run_with(
+        &tree,
+        &sources,
+        MarkingPass::None,
+        "the fix wording",
+        |_| panic!("the same input is not asked again"),
+        || Ok(Vec::new()),
+    );
+    assert_eq!(
+        std::fs::read_to_string(tree.transcript_fixed_tsv(BASE)).unwrap(),
+        kept,
+        "and it keeps the same ASR lines"
     );
 }
 
@@ -848,6 +888,7 @@ fn run_with<F, M>(
     tree: &Tree,
     sources: &[fix::Source],
     pass: MarkingPass,
+    prompt: &str,
     ask: F,
     mark: M,
 ) -> fix::Outcome
@@ -855,7 +896,7 @@ where
     F: FnMut(&str) -> Result<Vec<fix::Reply>, String>,
     M: FnMut() -> Result<Vec<fix::Mark>, String>,
 {
-    fix::run(tree, sources, "", pass, ask, mark).unwrap()
+    fix::run(tree, sources, "", pass, prompt, ask, mark).unwrap()
 }
 
 fn no_marks() -> Result<Vec<fix::Mark>, String> {
@@ -877,7 +918,7 @@ fn f1_8_s7_a_run_places_fixes_merges_and_writes_every_file() {
     textfmt::write_lines(&lines(3), &tree.transcript_tsv(BASE)).unwrap();
     let placed = [source(BASE, "lecture.mkv", 0.0, 60.0, true)];
 
-    let outcome = run_with(&tree, &placed, MarkingPass::None, respeller(), no_marks);
+    let outcome = run_with(&tree, &placed, MarkingPass::None, "", respeller(), no_marks);
 
     assert_eq!(outcome.blocks, 1);
     assert_eq!(outcome.fixed_lines, 3);
@@ -928,6 +969,7 @@ fn f1_8_s7_two_sources_count_once_each_and_the_narrator_is_named() {
         &placed,
         OTHER,
         MarkingPass::None,
+        "",
         respeller(),
         no_marks,
     )
@@ -954,6 +996,7 @@ fn f1_8_s7_a_refused_block_keeps_its_asr_text_and_the_run_goes_on() {
         &refused,
         &placed,
         MarkingPass::None,
+        "",
         |_| {
             Ok(vec![fix::Reply::Fix {
                 n: 99,
@@ -983,6 +1026,7 @@ fn f1_8_s7_a_refused_block_keeps_its_asr_text_and_the_run_goes_on() {
         &flagged,
         &placed,
         MarkingPass::None,
+        "",
         |_| {
             Ok(vec![fix::Reply::Flag {
                 n: 2,
@@ -1002,7 +1046,7 @@ fn f1_8_s7_a_marking_failure_leaves_the_timeline_unmarked_not_lost() {
     textfmt::write_lines(&lines(2), &tree.transcript_tsv(BASE)).unwrap();
     let placed = [source(BASE, "lecture.mkv", 0.0, 60.0, true)];
 
-    let outcome = run_with(&tree, &placed, MarkingPass::Retakes, respeller(), || {
+    let outcome = run_with(&tree, &placed, MarkingPass::Retakes, "", respeller(), || {
         Err("the marker is off".to_string())
     });
 
@@ -1023,7 +1067,7 @@ fn f1_8_s7_a_marking_failure_leaves_the_timeline_unmarked_not_lost() {
         .contains("number 0 about the widget"));
 
     // And a pass that works marks: the fold reaches session.txt.
-    let outcome = run_with(&tree, &placed, MarkingPass::Retakes, respeller(), || {
+    let outcome = run_with(&tree, &placed, MarkingPass::Retakes, "", respeller(), || {
         Ok(vec![fix::Mark {
             start: 0.0,
             end: 10.0,
@@ -1053,6 +1097,7 @@ fn f1_8_s7_policy_none_never_calls_the_marking_pass() {
         &placed,
         "",
         MarkingPass::None,
+        "",
         respeller(),
         &mut mark,
     )

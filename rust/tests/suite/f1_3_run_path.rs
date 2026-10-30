@@ -1394,13 +1394,16 @@ fn f1_3_s5_the_ladder_stops_at_the_first_rung_that_fits() {
         "both passes logged their own count: {log:?}"
     );
     // The turns that served are the two-voice ones, not a refused rung's. Pass 2's answer is the SAME room
-    // (the fake answers every ask with `two`), so its turns arrive renamed: slot 0 claims voice 0's anchor
-    // block and keeps that id, and the slot the anchor has nothing to say about earns a fresh one above it.
+    // (the fake answers every ask with `two`), read on the clock of the file pass 2 sent, whose first 11.2 s
+    // are the anchor (voice 0's block, then voice 1's): slot 0's turn lies wholly inside the anchor, the
+    // reference itself, and is not placed again; slot 1's overlaps voice 1's block and keeps that id, and its
+    // part past the anchor lands at the start of the span. The first rewrite moved every placed turn by the
+    // anchor's start and width and kept the reference's turns, which read here as [0, 1, 2, 0].
     let turns = naivepost::requests::read_turns(&tree, LANE).expect("turns.json was written");
     let voices: Vec<u32> = turns.iter().map(|turn| turn.speaker_id).collect();
     assert_eq!(
         voices,
-        vec![0, 1, 2, 0],
+        vec![0, 1, 1],
         "pass 1's two voices first, then pass 2's slots named against the anchor: {turns:?}"
     );
     assert!(

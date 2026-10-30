@@ -372,6 +372,7 @@ mod render_effect_filters;
 mod repeat_match_share;
 mod repeat_match_skip;
 mod request_timing;
+mod reset;
 mod rescan;
 mod rescan_widgets;
 mod retakes_flow;

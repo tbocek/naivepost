@@ -84,7 +84,7 @@ fn f1_7_wire_pressing_play_reaches_the_describe_stage() {
         RAN_PLAN.store(true, Ordering::SeqCst);
         check_every_frame_refusal_lands_through_the_button(app);
         RAN_REFUSAL.store(true, Ordering::SeqCst);
-        check_a_source_without_frames_is_reported_not_fatal(app);
+        check_a_source_without_frames_is_silent_at_the_press(app);
         RAN_NOTHING.store(true, Ordering::SeqCst);
         app.quit();
     });
@@ -203,9 +203,10 @@ fn check_every_frame_refusal_lands_through_the_button(app: &adw::Application) {
     );
 }
 
-/// A footage source with no frames on disk is reported where the person reads, not panicked, and the
-/// run still carries on.
-fn check_a_source_without_frames_is_reported_not_fatal(app: &adw::Application) {
+/// A footage source with no frames on disk yet says nothing at ▶: the frames stage is about to extract
+/// them, so an empty folder there is not an error (the first rewrite logged "no frames to describe" for
+/// every source of a fresh project). The run still carries on.
+fn check_a_source_without_frames_is_silent_at_the_press(app: &adw::Application) {
     let (_keep, _tree) = pin_session("noframes");
     let mut model = Project::default();
     model.sources = vec![footage("project:sources/gonedeck.mkv")];
@@ -223,9 +224,12 @@ fn check_a_source_without_frames_is_reported_not_fatal(app: &adw::Application) {
 
     let logs = ui::window_logs();
     assert!(
-        logs.iter()
-            .any(|line| line.contains("[gonedeck]") && line.contains("no frames to describe")),
-        "the empty folder is named in the log rather than swallowed: {logs:?}"
+        !logs.iter().any(|line| line.contains("no frames to describe")),
+        "a folder not extracted yet is not reported as empty: {logs:?}"
+    );
+    assert!(
+        !logs.iter().any(|line| line.contains("[gonedeck] describe:")),
+        "and no plan is said for frames that do not exist: {logs:?}"
     );
     assert_eq!(
         naivepost::ui::run_close::last_run_step_for_test(),

@@ -482,7 +482,7 @@ impl Scene {
         let mut log = Vec::new();
         let mut ran = 0usize;
         for task in &stage.tasks {
-            naivepost::describe_call::run_task(task, &mut |line| log.push(line.to_string()))?;
+            naivepost::describe_call::run_task(task, &mut |line| log.push(line.to_string()), &mut |_, _| {})?;
             ran += 1;
         }
         Ok((ran, log))
@@ -821,6 +821,170 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s5_what_is_on_scree
             .exists(),
         "an incomplete answer writes no event log"
     );
+}
+
+/// §3.2's prose floor, on the shape the user's model answers the shipped prompt with (08-dex, 2026-10-29, the
+/// same in 3 of 3 replays): every frame described as an "EVENT [+Ns]:" line and a STATE line in the text, and a
+/// bare `finish` as the only call. Each line lands on the frame its stamp names and the state is the model's.
+/// The first rewrite read such a reply for its calls alone, found no event for any frame, and failed Prepare;
+/// a prose reply without the `finish` was written as "same" for every frame.
+#[test]
+fn sec_02_services_3_tool_catalogue_s3_2_describe_reads_a_prose_reply_beside_a_bare_finish() {
+    let at = |index: usize| index as f64 * SCENE_INTERVAL;
+    let content = format!(
+        "EVENT [+{:.1}s]: Calm; a swap page fills the screen.\\nEVENT [+{:.1}s]: same\\nEVENT [+{:.1}s]: He types 66 into the Sell field.\\nEVENT [+{:.1}s]: A Swapping 66 eUSD notification appears.\\nSTATE: Live demo on the swap page.",
+        at(0),
+        at(1),
+        at(2),
+        at(3)
+    );
+    let fake = Fake::start(format!(
+        r#"{{"choices":[{{"message":{{"content":"{content}","tool_calls":[{{"function":{{"name":"finish","arguments":"{{}}"}}}}]}}}}]}}"#
+    ));
+    let scene = Scene::new("prose", 4, &fake.url);
+    walk(&scene, &mut |_line| {}).expect("a reply describing every frame in its text is an answer");
+    assert_eq!(fake.waited(1).len(), 1, "answered on the first ask, not refused");
+    let events = scene.events();
+    let texts: Vec<&str> = events
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| line.rsplit('\t').next().unwrap_or(""))
+        .collect();
+    assert_eq!(
+        texts,
+        [
+            "Calm; a swap page fills the screen.",
+            "same",
+            "He types 66 into the Sell field.",
+            "A Swapping 66 eUSD notification appears."
+        ],
+        "each line on the frame its stamp names: {events}"
+    );
+    assert_eq!(scene.state().trim(), "Live demo on the swap page.");
+}
+
+/// The other shape the user's model answers with (08-dex 19-30-48, 1 of 4 replays): every frame as text, and
+/// `record_event` beside it numbered by the frame's SECONDS (`frame: 0`, `frame: 40` in a batch of four),
+/// which the tool surface refuses. The text fills what the calls did not record; a call that does name a
+/// frame of the batch wins over the text for that frame. And the cached reply replays to the same words: the
+/// first rewrite read its own stored calls back as none and wrote a replayed chunk "same" throughout.
+#[test]
+fn sec_02_services_3_tool_catalogue_s3_2_describe_text_fills_what_the_calls_did_not_record() {
+    let at = |index: usize| index as f64 * SCENE_INTERVAL;
+    let content = format!(
+        "EVENT [+{:.1}s]: An article page fills the screen.\\nEVENT [+{:.1}s]: same\\nEVENT [+{:.1}s]: Slide 17 appears.\\nEVENT [+{:.1}s]: same\\nSTATE: Slide 17 is shown.",
+        at(0),
+        at(1),
+        at(2),
+        at(3)
+    );
+    let call = |frame: usize, text: &str| {
+        format!(
+            r#"{{"function":{{"name":"record_event","arguments":"{{\"frame\":{frame},\"text\":\"{text}\"}}"}}}}"#
+        )
+    };
+    let fake = Fake::start(format!(
+        r#"{{"choices":[{{"message":{{"content":"{content}","tool_calls":[{},{},{}]}}}}]}}"#,
+        call(0, "refused, frame 0"),
+        call(at(2) as usize, "refused, a second count"),
+        call(3, "Slide 17 with the demo bullets."),
+    ));
+    let scene = Scene::new("mixed", 4, &fake.url);
+    walk(&scene, &mut |_line| {}).expect("every frame is described in the text");
+    assert_eq!(fake.waited(1).len(), 1, "answered on the first ask, not refused");
+    let texts = |events: String| -> Vec<String> {
+        events
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(|line| line.rsplit('\t').next().unwrap_or("").to_string())
+            .collect()
+    };
+    let want = [
+        "An article page fills the screen.",
+        "same",
+        "Slide 17 with the demo bullets.",
+        "same",
+    ];
+    assert_eq!(texts(scene.events()), want, "the text, and the one call naming a frame of the batch");
+
+    // The replay: the chunk's rows gone, its cached reply read back without a socket.
+    let describe_dir = Path::new(&scene.session()).join("prepare/describe/lecture");
+    std::fs::remove_file(describe_dir.join("events.tsv")).expect("the event log");
+    let _ = std::fs::remove_file(describe_dir.join("state.txt"));
+    walk(&scene, &mut |_line| {}).expect("the cached reply answers the chunk");
+    assert_eq!(fake.waited(1).len(), 1, "the replay made no ask");
+    assert_eq!(texts(scene.events()), want, "the replay writes the same words, not \"same\"");
+}
+
+/// §03-shell §2: the describe stage's line counts its requests over the whole stage, what there is and how
+/// many are done: nine frames are three requests, said before the first answer and after each one, and the
+/// total is the one the stage planned from disk. The first rewrite said only the recording's name.
+#[test]
+fn sec_03_shell_2_the_run_bar_the_describe_line_counts_the_stages_requests() {
+    let mut scene = Scene::new("count", 9, UNUSED);
+    let fake = Fake::start(String::new());
+    scene.point_at(&fake.url);
+    fake.answer_batch_sizes();
+    assert_eq!(
+        describe::planned_requests(&scene.tree(), "lecture"),
+        3,
+        "nine frames at four a request are three requests"
+    );
+    let _guard = env_lock();
+    scene.enter();
+    let project = naivepost::project::load(&scene.session()).expect("the session");
+    let stage = naivepost::run_stages::plan(naivepost::run::Step::Prepare, &project)
+        .into_iter()
+        .find(|stage| stage.name == "describe")
+        .expect("a describe stage");
+    let mut queue = naivepost::runqueue::Queue::new();
+    let mut lines: Vec<String> = Vec::new();
+    let drive = naivepost::run_stages::drive_walk_watched_for_test(
+        std::slice::from_ref(&stage),
+        &mut queue,
+        |_| {},
+        &[],
+        &mut |queue, _| lines.push(queue.text_and_tip().0),
+    );
+    Scene::leave();
+    assert!(
+        matches!(drive, naivepost::run_stages::Drive::Done { .. }),
+        "{drive:?}"
+    );
+    for done in 0..=3 {
+        let want = format!("-- {done} of 3 requests");
+        assert!(
+            lines.iter().any(|line| line.starts_with("describe") && line.ends_with(&want)),
+            "the line says `{want}` at some point: {lines:?}"
+        );
+    }
+}
+
+/// A prose reply's stamps are the frames' own seconds in the recording, as the request prints them
+/// (`[+80.0s] FRAME 1 of 2`), so a chunk that does not start at 0 reads its lines too. The first rewrite
+/// compared them with offsets from the chunk's first frame and dropped every line of such a chunk (08-dex
+/// 18-53-15, the chunk at 31.2 s refused twice and Prepare failed).
+#[test]
+fn sec_02_services_3_tool_catalogue_s3_2_describe_reads_a_later_chunks_prose_by_its_own_seconds() {
+    let at = |index: usize| index as f64 * SCENE_INTERVAL;
+    let lines: Vec<String> = (0..6)
+        .map(|index| format!("EVENT [+{:.1}s]: Slide {index} fills the screen.", at(index)))
+        .collect();
+    let content = format!("{}\\nSTATE: The slides go by.", lines.join("\\n"));
+    let fake = Fake::start(format!(
+        r#"{{"choices":[{{"message":{{"content":"{content}"}}}}]}}"#
+    ));
+    let scene = Scene::new("later", 6, &fake.url);
+    walk(&scene, &mut |_line| {}).expect("both chunks read their own lines");
+    assert_eq!(fake.waited(2).len(), 2, "one ask per chunk, none refused");
+    let texts: Vec<String> = scene
+        .events()
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| line.rsplit('\t').next().unwrap_or("").to_string())
+        .collect();
+    let want: Vec<String> = (0..6).map(|index| format!("Slide {index} fills the screen.")).collect();
+    assert_eq!(texts, want, "the second chunk's frames are its own lines, not \"same\"");
 }
 
 /// `speech_around` answers with every recording's words over the span, not the capped two-per-side extract

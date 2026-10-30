@@ -59,12 +59,13 @@ fn f2_14_s1_no_timeline_refuses_naming_describe() {
 
 #[test]
 fn f2_14_s2a_trim_to_words_never_leaves_the_run() {
-    // suggest.trimReachSeconds 0.4 -- the reach is CLAMPED into the run, which is the whole of the
-    // "never outside the run" rule.
+    // With no envelope the word pad stands in, from the first word's start and the last word's END; the clamp is
+    // the whole of the "never outside the run" rule.
     let tight = suggest::SpokenRun {
         span: (10.0, 40.0),
         first_spoken: 10.05,
-        last_spoken: 39.9,
+        last_spoken: 39.95,
+        ..Default::default()
     };
     assert_eq!(suggest::trim_run_to_words(&tight), (10.0, 40.0));
 
@@ -72,8 +73,48 @@ fn f2_14_s2a_trim_to_words_never_leaves_the_run() {
         span: (10.0, 40.0),
         first_spoken: 20.0,
         last_spoken: 25.0,
+        ..Default::default()
     };
-    assert_eq!(suggest::trim_run_to_words(&roomy), (19.6, 25.4));
+    let pad = naivepost::edges::WORD_PAD;
+    assert_eq!(suggest::trim_run_to_words(&roomy), (20.0 - pad, 25.0 + pad));
+
+    // The edges the sound placed win over the pad, and stay inside the run too.
+    let placed = suggest::SpokenRun {
+        placed: Some((19.75, 25.2)),
+        ..roomy.clone()
+    };
+    assert_eq!(suggest::trim_run_to_words(&placed), (19.75, 25.2));
+    let outside = suggest::SpokenRun {
+        placed: Some((9.0, 41.0)),
+        ..roomy
+    };
+    assert_eq!(suggest::trim_run_to_words(&outside), (10.0, 40.0));
+}
+
+/// A mark that takes a recording's last words leaves the tail behind them as a piece with no word in it: not kept.
+/// 08-dex at 1:06: "dass der Akt." (65.92..66.56) marked, the recording's tail to 66.638 left as a green scrap.
+/// The piece that holds words stays, however short, and a word counts by its middle.
+#[test]
+fn f2_14_s2a_a_piece_with_no_word_in_it_is_not_kept() {
+    let run = suggest::SpokenRun {
+        span: (0.0, 70.0),
+        first_spoken: 1.0,
+        last_spoken: 66.56,
+        words: vec![(1.0, 1.5), (65.44, 65.92), (65.92, 66.08), (66.08, 66.24), (66.24, 66.56)],
+        placed: Some((0.8, 66.638)),
+    };
+    let made = suggest::words_cut(std::slice::from_ref(&run), &[(65.92, 66.56)], &[]);
+    assert_eq!(made.segs, vec![(0.8, 65.92)], "the scrap after the mark is gone");
+
+    let short = suggest::drop_wordless(&[(65.5, 65.8)], std::slice::from_ref(&run));
+    assert_eq!(short, vec![(65.5, 65.8)], "a short piece holding a word stays");
+
+    let unknown = suggest::SpokenRun::default();
+    assert_eq!(
+        suggest::drop_wordless(&[(1.0, 2.0)], &[unknown]),
+        vec![(1.0, 2.0)],
+        "runs that know no words leave everything standing"
+    );
 }
 
 #[test]
@@ -139,6 +180,7 @@ fn f2_14_s2a_the_words_cut_status_and_log_are_exact() {
         span: (0.0, 60.0),
         first_spoken: 1.0,
         last_spoken: 59.0,
+        ..Default::default()
     }];
     let out = suggest::words_cut(&runs, &[], &[(20.0, 30.0)]);
 
@@ -159,7 +201,7 @@ fn f2_14_s2a_the_words_cut_status_and_log_are_exact() {
         "// P.policy.deadAirMaxSeconds 8 · // P.policy.deadAirKeepSeconds 0.5"
     );
     // The silence really went: 60 s trimmed minus 9.5 s of dead air.
-    assert_eq!(out.segs, vec![(0.6, 20.5), (30.0, 59.4)]);
+    assert_eq!(out.segs, vec![(0.92, 20.5), (30.0, 59.08)]);
     assert_eq!(out.marks_out, 0);
     assert!((out.silence_out - 9.5).abs() < 1e-9);
 }

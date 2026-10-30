@@ -91,7 +91,7 @@ pub fn draw_picture_rows(
     // height, read as a barcode; and only the first recording's list used to be drawn at all.
     // The cell is the FILM part of the row: the wave strip owns its bottom (`Rows::wave_top`), and drawing under
     // it would have the two painters disagree about who owns those pixels — the strip is painted next.
-    let film_h = (rows.row_h - cut_tracks::ROW_WAVE_PX).max(1.0);
+    let film_h = (rows.row_h - cut_tracks::row_wave_px()).max(1.0);
     let cell_w = (film_h * 16.0 / 9.0).max(8.0);
     let span = cut_tracks::band_span(scene);
     // The live page cuts each cell's picture from the recording itself on the fly (`cut_film_cache`), on a grid

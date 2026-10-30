@@ -174,13 +174,13 @@ fn sec_05_cut_every_surface_answers_real_input() {
         crate::common::real_input::real_hover(&band, x_of(&window, 6.0) + 2.0, picture_y);
         assert_eq!(
             cursor(&band).as_deref(),
-            Some("ew-resize"),
+            Some("col-resize"),
             "near a border on the pictures"
         );
         crate::common::real_input::real_hover(&band, x_of(&window, 6.0) - 2.0, bar_y);
         assert_eq!(
             cursor(&band).as_deref(),
-            Some("ew-resize"),
+            Some("col-resize"),
             "near a border on the green bar"
         );
         // The bar's ✕ sits in its middle: a button, so the pointing hand; the bar beside it, the open hand.

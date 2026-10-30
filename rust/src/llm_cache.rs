@@ -196,13 +196,6 @@ pub fn uses_cache(job: crate::roles::Job) -> bool {
     )
 }
 
-/// §6's second irregularity: the transcript fixer caches only its first attempt. An answer repaired
-/// after a refusal depends on the refusal it was shown, and replaying it would skip the validation
-/// that made it right — so the retry is paid for again rather than trusted from disk.
-pub fn fixer_caches(attempt: u32) -> bool {
-    attempt == 1
-}
-
 /// §6's first irregularity, the half that [`crate::produce_subtitles::cached`] does not cover: the
 /// gap-filling second call is never cached. The two rules are different and both hold — completeness
 /// gates the first call (a partial batch cached is a partial batch forever), and this one says the

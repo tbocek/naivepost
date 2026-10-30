@@ -307,11 +307,33 @@ fn restore_mark(drawn: &str) -> String {
     drawn.to_string()
 }
 
+static BLOCKED_OPENS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// How many opens this test binary has refused, for the test that pins the refusal.
+pub fn blocked_opens_for_test() -> usize {
+    BLOCKED_OPENS.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Whether this process is a cargo test binary: those, and only those, live in a `deps` folder under `target`.
+fn running_as_test() -> bool {
+    std::env::current_exe().is_ok_and(|exe| {
+        exe.parent()
+            .and_then(|dir| dir.file_name())
+            .is_some_and(|dir| dir == "deps")
+    })
+}
+
 /// Open one page: GTK's launcher first, `xdg-open` as §1's named fallback.
 ///
 /// Never panics and never propagates into the call that logged the line (§7: "recording never fails the
 /// call"): failures come back as `Err` and the handler turns them into a log line.
 pub fn open(uri: &str) -> Result<(), String> {
+    // A test presses the buttons that open things, and the launcher reaches the real desktop whatever display the
+    // test window is on: a test run opened the user's files in their session. A test binary opens nothing.
+    if running_as_test() {
+        BLOCKED_OPENS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        return Ok(());
+    }
     // A local file or folder goes through GTK's FILE launcher (the URI launcher is for web pages, and a
     // `file://` folder handed to it through the desktop portal opened nothing and said nothing). A launch the
     // desktop refuses lands in the completion with an error: then the named fallback, and if that fails too, a

@@ -120,6 +120,7 @@ pub fn session_fix(
         &placed_sources(project),
         &narrator_of(project),
         pass,
+        &crate::fix_call::cache_prompt(&paths, &project.context),
         |message| crate::fix_call::ask_block(tree, &paths, &conf, message),
         || run_marking_pass(tree, project, pass, log, reached),
     )?;

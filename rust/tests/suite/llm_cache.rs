@@ -384,13 +384,6 @@ fn sec_09_llm_and_tools_6_cache_s5_which_jobs_cache_and_the_two_irregularities()
         "a partial batch would be partial forever"
     );
 
-    // Irregularity two: the fixer caches only its first attempt.
-    assert!(llm_cache::fixer_caches(1));
-    assert!(
-        !llm_cache::fixer_caches(2),
-        "a repaired-after-refusal answer is not replayed"
-    );
-    assert!(!llm_cache::fixer_caches(3));
 }
 
 // --- S6: a hit comes ahead of the gate and the page ------------------------------------------------------

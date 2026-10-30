@@ -24,6 +24,8 @@ pub struct Stretch {
     pub from: f64,
     pub to: f64,
     pub at: f64,
+    /// Where the stretch starts on the session clock; `None` for a recording shown whole, which no clip places.
+    pub session: Option<f64>,
 }
 
 impl Stretch {
@@ -69,6 +71,7 @@ pub fn kept(cut: &Cut, recordings: &[Recording], narrated: &[(String, PathBuf)])
                 from,
                 to: from + (e - s),
                 at,
+                session: Some(s),
             };
             at += stretch.len();
             stretches.push(stretch);
@@ -87,6 +90,7 @@ pub fn whole(file: PathBuf, seconds: f64) -> Tape {
         from: 0.0,
         to: seconds.max(0.0),
         at: 0.0,
+        session: None,
     }])
 }
 
@@ -109,6 +113,37 @@ impl Tape {
             }
         }
         bases
+    }
+
+    /// The session second under a band second: what a click on the band moves the preview to. `None` past the
+    /// tape's end, or on a stretch no clip places.
+    pub fn session_at(&self, band: f64) -> Option<f64> {
+        let stretch = self
+            .0
+            .iter()
+            .find(|stretch| band >= stretch.at && band < stretch.at + stretch.len())?;
+        stretch.session.map(|start| start + band - stretch.at)
+    }
+
+    /// The band second under a session second: where the preview's position stands on the band, the two clocks
+    /// parting at every stretch the cut took out. In a removed stretch, the next kept one's start; past the last,
+    /// the tape's end. `None` when no clip places the tape.
+    pub fn band_at(&self, session: f64) -> Option<f64> {
+        let placed = || {
+            self.0
+                .iter()
+                .filter_map(|stretch| stretch.session.map(|start| (stretch, start)))
+        };
+        if let Some((stretch, start)) = placed()
+            .find(|(stretch, start)| session >= *start && session < start + stretch.len())
+        {
+            return Some(stretch.at + session - start);
+        }
+        placed()
+            .filter(|(_, start)| *start > session)
+            .min_by(|left, right| left.1.total_cmp(&right.1))
+            .map(|(stretch, _)| stretch.at)
+            .or_else(|| placed().next().map(|_| self.length()))
     }
 
     /// A span of band seconds as the pieces of recordings it covers: `(stretch, file from, file to, band from)`,

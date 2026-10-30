@@ -143,7 +143,9 @@ pub fn floor_pps(view: f64) -> f64 {
 /// stored zoom drive the layout rather than sit beside it. `view` comes from the caller that already knows
 /// its own width; [`live_pps_in`] takes it, because a headless window has no allocation to ask.
 pub fn live_pps(view: f64) -> f64 {
-    pps().clamp(floor_pps(view), cut_screen::ZOOM_MAX)
+    // A session so short that fitting it on screen wants more than the zoom's ceiling sits at the ceiling. The
+    // first rewrite clamped with the floor above the ceiling, which panics: a 1 s session crashed the Cut page.
+    pps().clamp(floor_pps(view).min(cut_screen::ZOOM_MAX), cut_screen::ZOOM_MAX)
 }
 
 /// How far the view starts, in pixels: 0 shows the session from its first filmed second.
@@ -320,8 +322,19 @@ pub fn reveal_playhead(playhead_px: f64, total: f64, view: f64) -> f64 {
 pub fn follow_playhead(window: &adw::ApplicationWindow, at: f64) {
     let view = view_px(surface_width(window));
     let total = total_px(filmed_seconds(), pps());
-    reveal_playhead(at * pps(), total, view);
+    let runs = timeline::filmed_runs(&cut_folds::page_recordings());
+    let folds = crate::ui::window::review_cut_of(window).folds;
+    reveal_playhead(line_px(&runs, &folds, pps(), at), total, view);
     repaint_page(window);
+}
+
+/// The pixel inside the timeline the line is drawn at: through the span the tape is painted by, where the unfilmed
+/// time between recordings and a folded stretch take no width. The first rewrite followed `second * pps`, which is
+/// right only for one unfolded recording: with gaps it named a pixel far right of the line, and the view jumped
+/// there and left the line behind.
+pub fn line_px(runs: &[(f64, f64)], folds: &[[f64; 2]], pps: f64, at: f64) -> f64 {
+    let span = timeline::Span::new(timeline::cells(runs, folds), pps, 0.0);
+    span.x_of(at)
 }
 
 /// §1's three wheel gestures, attached to the widgets they belong to: transport bar and preview step

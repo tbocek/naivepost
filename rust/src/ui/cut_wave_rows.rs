@@ -40,7 +40,7 @@ thread_local! {
 pub fn draw_row_waves(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64) {
     let tree = tree();
     let span = cut_tracks::band_span(scene);
-    let h = cut_tracks::ROW_WAVE_PX;
+    let h = cut_tracks::row_wave_px();
     for (index, recording) in scene.recordings.iter().enumerate() {
         let top = rows.wave_top(scene.row_of(index));
         let x0 = cut_tracks::band_x(scene, recording.start).max(scene.origin);
@@ -48,13 +48,7 @@ pub fn draw_row_waves(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64)
         if x1 <= x0 {
             continue;
         }
-        cut_tracks::fill(cr, GROUND, x0, top, x1 - x0, h, STRIP_ALPHA);
-        let bot = (top + h - 1.0).round() + 0.5;
-        cr.set_source_rgba(BASELINE.0, BASELINE.1, BASELINE.2, 0.35 * STRIP_ALPHA);
-        cr.set_line_width(1.0);
-        cr.move_to(x0, bot);
-        cr.line_to(x1, bot);
-        let _ = cr.stroke();
+        let bot = draw_ground(cr, x0, x1, top, h);
         let Some(wave) = tree
             .as_ref()
             .and_then(|tree| wave_of(tree, &recording.base))
@@ -64,27 +58,49 @@ pub fn draw_row_waves(cr: &cairo::Context, scene: &Scene, rows: Rows, tape: f64)
         let Some(peaks) = wave.chans.first() else {
             continue;
         };
-        let full = h - 2.0;
-        let mut heights: Vec<(f64, f64)> = Vec::new();
-        cr.set_source_rgba(COLUMN.0, COLUMN.1, COLUMN.2, STRIP_ALPHA);
+        let mut levels: Vec<(f64, f64)> = Vec::new();
         let mut x = x0.floor();
         while x < x1 {
             // The second the pixel stands on, through the folds the band is laid out by, on the file's clock.
             let from = span.t_at(x) - recording.start;
             let to = (span.t_at(x + 1.0) - recording.start).max(from + 1.0 / scene.pps.max(1e-9));
-            let level = meter(peak(peaks, wave.hz, from, to));
-            if level > 0.0 {
-                let column = (level * full).max(1.0);
-                cr.rectangle(x, bot - column, 1.0, column);
-                heights.push((x, column));
-            }
+            levels.push((x, meter(peak(peaks, wave.hz, from, to))));
             x += 1.0;
         }
+        draw_columns(cr, &levels, bot, h - 2.0);
+    }
+}
+
+/// A strip's ground and the meter's zero along its foot: Cut's rows and Narrate's take band draw the one strip.
+/// Answers the foot's y, where the columns stand.
+pub fn draw_ground(cr: &cairo::Context, x0: f64, x1: f64, top: f64, h: f64) -> f64 {
+    cut_tracks::fill(cr, GROUND, x0, top, x1 - x0, h, STRIP_ALPHA);
+    let bot = (top + h - 1.0).round() + 0.5;
+    cr.set_source_rgba(BASELINE.0, BASELINE.1, BASELINE.2, 0.35 * STRIP_ALPHA);
+    cr.set_line_width(1.0);
+    cr.move_to(x0, bot);
+    cr.line_to(x1, bot);
+    let _ = cr.stroke();
+    bot
+}
+
+/// One `(x, meter level)` column per pixel standing on `bot`, `full` px at full scale, with the darker cap along
+/// their tops. Filled one by one: side by side in one path they cost cairo time by the square of their number.
+pub fn draw_columns(cr: &cairo::Context, levels: &[(f64, f64)], bot: f64, full: f64) {
+    let columns = || {
+        levels
+            .iter()
+            .filter(|(_, level)| *level > 0.0)
+            .map(|(x, level)| (*x, (level * full).max(1.0)))
+    };
+    cr.set_source_rgba(COLUMN.0, COLUMN.1, COLUMN.2, STRIP_ALPHA);
+    for (x, column) in columns() {
+        cr.rectangle(x, bot - column, 1.0, column);
         let _ = cr.fill();
-        cr.set_source_rgba(CAP.0, CAP.1, CAP.2, STRIP_ALPHA);
-        for (x, column) in heights.into_iter().filter(|(_, column)| *column >= 3.0) {
-            cr.rectangle(x, bot - column, 1.0, 1.0);
-        }
+    }
+    cr.set_source_rgba(CAP.0, CAP.1, CAP.2, STRIP_ALPHA);
+    for (x, column) in columns().filter(|(_, column)| *column >= 3.0) {
+        cr.rectangle(x, bot - column, 1.0, 1.0);
         let _ = cr.fill();
     }
 }

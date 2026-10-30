@@ -82,7 +82,7 @@ pub(crate) use crate::ui::cut_lane_rows::{preview_widget, set_class};
 // these are the doors the rest of the page calls, kept at the paths they had.
 pub(crate) use crate::ui::window_bench::{
     depth, has_label, paint_readouts, paint_tabs, paint_tabs_for, refresh_cut_readouts,
-    tab_buttons, LOG_OPEN_PX,
+    tab_buttons,
 };
 pub use crate::ui::window_bench::{label, paint_progress, paint_run_bar, set_bench_open_row};
 /// Repaint the bottom bar for a folder: the door an Open or a Rescan goes through, and the one a test that
@@ -420,7 +420,7 @@ pub fn build_window_at(
     // content is a text view that vexpands, so the shell can be dragged under 220 px and the log
     // scrolls. That is what makes the run bar + log stop pinning the window's height.
     log_scroller.set_widget_name("log-scroller");
-    log_scroller.set_min_content_height(LOG_OPEN_PX);
+    log_scroller.set_min_content_height(super::window_bench::LOG_MIN_BODY_PX);
     log_scroller.set_child(Some(&log_view));
     // §1: the log keeps its newest line in view while the person is at its end.
     super::log_paint::follow_end(&log_scroller, &log_view);
@@ -436,6 +436,10 @@ pub fn build_window_at(
     log.set_widget_name("log-expander");
     log.set_label_widget(Some(&log_header));
     log.set_child(Some(&log_scroller));
+    // The open log fills its half: whatever height the band is given (the handle dragged up, a taller window)
+    // goes to the text box. The first rewrite left the expander at its 220 px ask, so a band dragged taller
+    // showed the log at the top and blank space under it.
+    log.set_vexpand(true);
     log.set_expanded(false);
     // A collapsed expander must claim nothing, or the band it belongs to is charged a body that is never drawn.
     super::window_log::hide_body_while_collapsed(&log, log_scroller.upcast_ref());
@@ -473,6 +477,8 @@ pub fn build_window_at(
     controls.set_widget_name("run-controls-inner");
     controls.append(&play);
     controls.append(&stop_);
+    // F0.15's ↺, the last of the three: `paint_run_bar` greys it during a run by finding it after ⏹.
+    controls.append(&super::window_reset::button(&window));
     // …and NOTHING else. §2's list is the row's whole content: the controls above, then the readouts.
     // No gear for an editing-policy form lives here either — F0.7 has no form at all, and badge 6's ⓘ is a
     // tooltip and nothing more (wired below);
@@ -1359,7 +1365,7 @@ pub(crate) use crate::ui::window_history_zoom::{
 };
 pub use crate::ui::window_history_zoom::{
     history_key_controller, note_edit, press_clear_cut, press_redo, press_revert, press_thumb,
-    press_undo, press_zoom, press_zoom_apply, press_zoom_cancel, press_zoom_esc, reopen_history_on,
+    press_undo, press_wave, press_zoom, press_zoom_apply, press_zoom_cancel, press_zoom_esc, reopen_history_on,
     zoom_gesture,
 };
 

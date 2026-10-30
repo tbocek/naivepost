@@ -124,20 +124,6 @@ pub fn take_describe_restart() -> bool {
     RESTART_ARMED.swap(false, Ordering::SeqCst)
 }
 
-/// Whether the next Prepare run describes from the start rather than taking the description up where
-/// it stopped.
-///
-/// Either half alone is enough, because both say the same thing about what is on disk: the middle of the
-/// description cannot be trusted. It is untrusted because a ⏹ cut through the stage (`armed`), or
-/// because the last run left its working files behind without finishing them (`resume_marker_present`
-/// — a lane's `events.tsv` / `state.txt`, which only exist mid-description; F1.1 S3 reads exactly
-/// those). Starting over deletes only those two files: the scaled frames, the extracted frames and the
-/// transcripts are kept, and that kept work is what spec/00-principles #4 protects — "a stopped run
-/// resumes" speaks of the outputs, not of resuming a half-written event stream.
-pub fn describes_from_the_start(armed: bool, resume_marker_present: bool) -> bool {
-    armed || resume_marker_present
-}
-
 /// The transport this page's preview must be left in after a ⏹ press, if the press stops one.
 ///
 /// `Some(stopped)` when the page owns a preview ([`run::transport_for`]) that was playing or is parked part way

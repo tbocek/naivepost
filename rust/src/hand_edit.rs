@@ -239,7 +239,7 @@ fn source_key(stored: &str) -> String {
 /// different second, which would place every edge in the wrong audio. A source whose file cannot be
 /// stat-ed contributes no lane at all — there is no recording to have an envelope of — and the word
 /// pad covers that second exactly as it did before this lookup existed.
-fn session_lanes(tree: &Tree, sources: &[String]) -> Vec<edges::Lane> {
+pub(crate) fn session_lanes(tree: &Tree, sources: &[String]) -> Vec<edges::Lane> {
     // The clock is keyed on the file NAME, so take the base for it; but the stat needs the WHOLE
     // stored path, since `project:sources/lecture.mkv` lives inside the project and a bare
     // `lecture.mkv` resolves to nothing. Both travel together so neither is guessed at later.
