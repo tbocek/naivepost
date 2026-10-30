@@ -24,7 +24,8 @@ RUN apk update && apk add --no-cache \
 RUN groupadd --gid 1000 dev \
     && useradd --uid 1000 --gid 1000 -m -s /bin/bash -G wheel dev \
     && echo "dev ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/dev \
-    && install -d -o 1000 -g 1000 /home/dev/.config
+    && install -d -o 1000 -g 1000 /home/dev/.config \
+    && install -d -m 700 -o 1000 -g 1000 /run/user/1000
 
 USER dev
 WORKDIR /home/dev
