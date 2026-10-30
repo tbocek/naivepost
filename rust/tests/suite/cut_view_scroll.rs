@@ -238,6 +238,17 @@ fn sec_05_cut_1_screen_s9_the_view_only_slips_to_follow_a_line_that_left_it() {
     );
 }
 
+/// A wheel zoom never pushes a line that was on screen off it, and moves the view no more than that takes.
+#[test]
+fn sec_05_cut_1_screen_s9_a_wheel_zoom_pulls_the_line_back_on_screen() {
+    common::pin_private_cwd();
+    let (view, total) = (1000.0, 8000.0);
+    cut_view::set_origin(2000.0, total, view);
+    assert_eq!(cut_view::pull_line_on_screen(2500.0, total, view), 2000.0, "still inside: the view stays");
+    assert_eq!(cut_view::pull_line_on_screen(1500.0, total, view), 1500.0, "off the left: to the left edge");
+    assert_eq!(cut_view::pull_line_on_screen(3000.0, total, view), 2000.0, "off the right: to the right edge");
+}
+
 /// §1's three wheel gestures through the live door `apply_wheel` — the same function `attach_wheel`'s
 /// controllers call. Zoom over the tracks, pan with Shift, and a step over the transport that moves no view
 /// state and says nothing here. It needs a real window for the sentence and the repaint, so it rides the one
@@ -288,7 +299,7 @@ fn wheel_over_tracks_and_transport(app: &adw::Application) {
 
     // Shift over the same spot pans an eighth instead, and moves the scroll.
     let before = cut_view::origin();
-    cut_view::apply_wheel(&window, WheelOver::Tracks, true, -1.0, 0.0, |_| {})
+    cut_view::apply_wheel(&window, WheelOver::Tracks, true, 1.0, 0.0, |_| {})
         .expect("a pan has a sentence too");
     assert_ne!(cut_view::origin(), before, "Shift+wheel panned the view");
 

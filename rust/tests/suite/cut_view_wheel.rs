@@ -162,7 +162,7 @@ fn check_a_notch_over_the_tracks_zooms_and_shift_pans(app: &adw::Application) {
     // Shift over the same spot pans instead: the zoom holds still and the scroll moves.
     let pps_now = ui::cut_view::pps();
     let origin_before = ui::cut_view::origin();
-    let panned = ui::cut_view::apply_wheel(&window, WheelOver::Tracks, true, -1.0, 0.0, |_| {})
+    let panned = ui::cut_view::apply_wheel(&window, WheelOver::Tracks, true, 1.0, 0.0, |_| {})
         .expect("a pan has a sentence too");
     settle();
     assert!(panned.contains("scrolled"), "{panned}");
@@ -315,7 +315,7 @@ fn check_a_notch_emitted_on_the_band_zooms_and_pans(app: &adw::Application) {
     // the band's width is only known once GTK has laid the page out, and the zoom notch plus its settle above is
     // what gets it laid out — an eighth taken before that is a different screenful than the one the page panned.
     let view = ui::cut_view::wheel_gestures_view(&window);
-    let said = ui::cut_view::apply_wheel(&window, WheelOver::Tracks, true, -1.0, 0.0, |_| {})
+    let said = ui::cut_view::apply_wheel(&window, WheelOver::Tracks, true, 1.0, 0.0, |_| {})
         .expect("a pan has a sentence");
     settle();
     assert!(said.contains("scrolled"), "{said}");
