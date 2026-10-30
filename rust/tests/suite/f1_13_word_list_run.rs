@@ -539,3 +539,56 @@ fn f1_13_s2_the_wave_cache_a_prepare_run_measures_is_what_finds_the_stray() {
         "the summary counts what moved: {log:?}"
     );
 }
+
+/// A word no fixed line holds does not end the walk: the lines after it are still respelled. It used to stop there,
+/// and every later word of the recording kept what the recogniser heard ("133 Dai und 1,5 Ithers").
+#[test]
+fn f1_13_a_word_between_two_lines_does_not_stop_the_respelling() {
+    let token = |word: &str, start: f64| naivepost::word_list::Token {
+        word: word.to_string(),
+        start,
+        end: start + 0.5,
+    };
+    let sources = vec![(
+        "take".to_string(),
+        vec![token("eins", 0.0), token("zwischen", 2.0), token("und", 3.0), token("ithers", 4.0)],
+    )];
+    let (words, _) = naivepost::word_list::list(
+        &sources,
+        |_, _, _| None,
+        |_| None,
+        |_, start, end| {
+            if start >= 0.0 && end <= 1.0 {
+                Some((1.0, vec!["Eins".to_string()]))
+            } else if start >= 3.0 && end <= 5.0 {
+                Some((5.0, vec!["und".to_string(), "Ether".to_string()]))
+            } else {
+                None
+            }
+        },
+    );
+    let written: Vec<&str> = words.iter().map(|word| word.written.as_str()).collect();
+    assert_eq!(written, ["Eins", "zwischen", "und", "Ether"]);
+
+    // A word straddling two lines goes with the one its middle falls in, and is said once: "133 USDC USDC pro ETH".
+    let sources = vec![(
+        "take".to_string(),
+        vec![token("133", 0.0), token("usdc", 0.9), token("pro", 2.0)],
+    )];
+    let (words, _) = naivepost::word_list::list(
+        &sources,
+        |_, _, _| None,
+        |_| None,
+        |_, start, end| {
+            if start >= 0.0 && end <= 1.0 {
+                Some((1.0, vec!["133".to_string()]))
+            } else if start >= 1.0 && end <= 3.0 {
+                Some((3.0, vec!["USDC".to_string(), "pro".to_string()]))
+            } else {
+                None
+            }
+        },
+    );
+    let written: Vec<&str> = words.iter().map(|word| word.written.as_str()).collect();
+    assert_eq!(written, ["133", "USDC", "pro"]);
+}

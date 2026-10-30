@@ -123,6 +123,33 @@ pub fn press_trim_border(
 /// stop at rather than none, which would let a clip be dragged off the end of a session.
 pub const TRACK_REC_END: f64 = 3600.0;
 
+/// F2.8 S1: where a clip at `s..e` may reach, `(start, end)`: the recording it stands in, once the session's takes
+/// are known. Before they are, the wall is the tape's end, and a clip already at or past that has none: held at [`TRACK_REC_END`] alone, every clip past the first hour had its end clamped to the 1 s minimum the moment
+/// a border was taken, whichever way the hand moved.
+pub fn clip_wall(s: f64, e: f64) -> (f64, f64) {
+    let recordings = crate::ui::cut_folds::page_recordings();
+    let middle = (s + e) / 2.0;
+    if crate::ui::cut_folds::session_declared() {
+        if let Some(take) = recordings
+            .iter()
+            .find(|take| take.start <= middle && middle <= take.end)
+        {
+            return (take.start, take.end);
+        }
+    }
+    let wall = session_wall();
+    (0.0, if e < wall { wall } else { f64::MAX })
+}
+
+/// F2.8 S2: where a slide may reach: the tape's end, or [`TRACK_REC_END`] on a shorter tape. A slide can carry a
+/// selection across recordings, so no one recording fences it.
+pub fn session_wall() -> f64 {
+    crate::ui::cut_folds::page_recordings()
+        .iter()
+        .map(|take| take.end)
+        .fold(TRACK_REC_END, f64::max)
+}
+
 /// F2.8 S2/S3: a right-drag moved. [`cut_trim::right_gesture`] answers the whole gesture; this applies
 /// the answer — the shift map, the row change, the folds to open — and prints the sentence.
 ///

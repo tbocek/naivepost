@@ -747,3 +747,26 @@ fn sec_09_llm_and_tools_7_exchange_log_s7_a_round_with_results_shows_which_call_
         first.messages
     );
 }
+
+/// A streamed answer that is itself JSON, as a join's is: the page keeps the words and the thinking. Read as a chat
+/// reply it parsed as an envelope with no choices, and every join's section said the model answered nothing at all.
+#[test]
+fn a_streamed_answer_that_is_json_stays_on_the_page() {
+    let answer = r#"{"drop_before":"Du.","drop_after":""}"#;
+    let call = naivepost::exchange_leg::call_of(
+        "textedit",
+        "m",
+        "{}",
+        answer,
+        naivepost::exchange_leg::WORDS_AS_RECEIVED,
+        1,
+        None,
+    );
+    assert_eq!(call.reply, answer);
+    let stream = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"read it\"}}]}\n\
+                  data: {\"choices\":[{\"delta\":{\"content\":\"{\\\"drop_before\\\":\\\"\\\"}\"}}]}\n\
+                  data: [DONE]\n";
+    let call = naivepost::exchange_leg::call_of("textedit", "m", "{}", stream, "text/event-stream", 1, None);
+    assert_eq!(call.reply, r#"{"drop_before":""}"#);
+    assert_eq!(call.reasoning.as_deref(), Some("read it"));
+}

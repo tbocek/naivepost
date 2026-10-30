@@ -15,6 +15,7 @@
     "source=${localWorkspaceFolder}/.git,target=${containerWorkspaceFolder}/.git,type=bind",
     "source=${localEnv:HOME}/.gitconfig,target=/home/dev/.gitconfig,type=bind,readonly",
     "source=/mnt/rec,target=/mnt/rec,type=bind",
+    "source=${localEnv:HOME}/.config/naivepost/profiles,target=/home/dev/.config/naivepost/profiles,type=bind",
     "source=${localEnv:XDG_RUNTIME_DIR}/${localEnv:WAYLAND_DISPLAY},target=/run/user/1000/${localEnv:WAYLAND_DISPLAY},type=bind",
     "source=${localEnv:XDG_RUNTIME_DIR}/pulse,target=/run/user/1000/pulse,type=bind"
   ]

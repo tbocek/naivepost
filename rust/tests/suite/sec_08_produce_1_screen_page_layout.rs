@@ -261,6 +261,18 @@ fn assert_order(found: &[String], want: &[&str], column: &str) {
     }
 }
 
+/// A long description scrolls in its box: it must not raise what the page asks for, or the divider above the bottom
+/// bar cannot move up.
+fn check_a_long_description_keeps_the_page_small(window: &adw::ApplicationWindow) {
+    let right = widget(window, "produce-right");
+    let view: gtk::TextView = widget(window, "description-box").downcast().expect("a text view");
+    let least = right.measure(gtk::Orientation::Vertical, -1).0;
+    view.buffer().set_text(&"one line of a long description\n".repeat(200));
+    common::settle();
+    assert_eq!(right.measure(gtk::Orientation::Vertical, -1).0, least);
+    view.buffer().set_text("");
+}
+
 /// §1's two lists, top to bottom, plus the two clauses that name a container: the separator BELOW the
 /// description box, and the encoder grid inside a scroller.
 fn check_both_columns_hold_spec_order(window: &adw::ApplicationWindow) {
@@ -286,7 +298,7 @@ fn check_both_columns_hold_spec_order(window: &adw::ApplicationWindow) {
             "row:title-suggest",
             "title-entry",
             "heading:YouTube description",
-            "description-box",
+            "description-scroller",
             "produce-written-split",
             "row:transcode-save",
             // The grid is inside its scroller, so it never appears among the column's own children; §A asks
@@ -850,6 +862,7 @@ fn layout_round() {
 
         let window = produce_window(app);
         check_both_columns_hold_spec_order(&window);
+        check_a_long_description_keeps_the_page_small(&window);
         window.close();
         common::settle();
 

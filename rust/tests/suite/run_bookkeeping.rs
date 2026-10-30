@@ -540,3 +540,27 @@ fn f0_5_s4_the_audio_unload_is_bounded_and_best_effort() {
     assert!(best_effort);
     assert_eq!(best_effort, UNLOAD_IS_BEST_EFFORT);
 }
+
+/// The merge row is one task of a hundred but the longest by far: the bar keeps a share for it, moving as it works,
+/// and another stage still splits evenly.
+#[test]
+fn f1_1_the_merge_row_has_most_of_the_fix_stages_bar() {
+    use naivepost::run_stages::{stage_at, Stage, Task, MERGE_ROW_SHARE};
+    let task = |program: &str| Task::run_it("a row", program, Vec::new());
+    let stage = |tasks: Vec<Task>| Stage {
+        track: 0,
+        name: "fix",
+        phase: 1,
+        of: 1,
+        kind: "file",
+        tasks,
+    };
+    let mut tasks = vec![task("ask"); 99];
+    tasks.push(task(naivepost::fix_session::SESSION_TASK));
+    let fix = stage(tasks);
+    assert_eq!(stage_at(&fix, 0), 0.0);
+    assert!((stage_at(&fix, 99) - (1.0 - MERGE_ROW_SHARE)).abs() < 1e-9, "the blocks fill only their part");
+    assert_eq!(stage_at(&fix, 100), 1.0, "the row's end is the stage's end");
+    let even = stage(vec![task("ask"); 4]);
+    assert_eq!(stage_at(&even, 1), 0.25);
+}

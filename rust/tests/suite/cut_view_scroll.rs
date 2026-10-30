@@ -238,15 +238,60 @@ fn sec_05_cut_1_screen_s9_the_view_only_slips_to_follow_a_line_that_left_it() {
     );
 }
 
-/// A wheel zoom never pushes a line that was on screen off it, and moves the view no more than that takes.
-#[test]
-fn sec_05_cut_1_screen_s9_a_wheel_zoom_pulls_the_line_back_on_screen() {
-    common::pin_private_cwd();
-    let (view, total) = (1000.0, 8000.0);
-    cut_view::set_origin(2000.0, total, view);
-    assert_eq!(cut_view::pull_line_on_screen(2500.0, total, view), 2000.0, "still inside: the view stays");
-    assert_eq!(cut_view::pull_line_on_screen(1500.0, total, view), 1500.0, "off the left: to the left edge");
-    assert_eq!(cut_view::pull_line_on_screen(3000.0, total, view), 2000.0, "off the right: to the right edge");
+/// A wheel zoom leaves a line that is on screen where it stands; with the line off screen it goes around the pointer.
+fn check_a_wheel_zoom_stays_on_the_line(window: &adw::ApplicationWindow) {
+    use naivepost::cut_screen::WheelOver;
+    naivepost::ui::set_session_recordings(&tape(600.0));
+    cut_view::set_pps(8.0);
+    let view = cut_view::view_px(cut_view::surface_width(window));
+    naivepost::ui::set_playhead(window, 100.0);
+    cut_view::set_origin(800.0 - view * 0.6, cut_view::total_px(600.0, 8.0), view);
+    let on_screen = 800.0 - cut_view::origin();
+    cut_view::apply_wheel_at(window, WheelOver::Tracks, false, -1.0, 0.0, view - 20.0, |_| {}).expect("a zoom");
+    assert!(cut_view::pps() > 8.0, "the notch zoomed");
+    let after = 100.0 * cut_view::pps() - cut_view::origin();
+    assert!((after - on_screen).abs() < 1.0, "the line stays at {on_screen} px, not {after}");
+
+    cut_view::set_pps(8.0);
+    let far = cut_view::set_origin(3000.0, cut_view::total_px(600.0, 8.0), view);
+    let pointer = cut_view::gutter_px() + 100.0;
+    let under = (far + 100.0) / 8.0;
+    cut_view::apply_wheel_at(window, WheelOver::Tracks, false, -1.0, 0.0, pointer, |_| {}).expect("a zoom");
+    let now = (cut_view::origin() + 100.0) / cut_view::pps();
+    assert!((now - under).abs() < 0.5, "off screen the second under the pointer stays: {under} -> {now}");
+}
+
+/// The opening: the line is scrolled to on a tape the cut implied, then the real takes land with gaps between them.
+/// The line stays on screen, and a line the person scrolled away from stays where it is.
+fn check_the_line_stays_on_screen_when_the_takes_land(window: &adw::ApplicationWindow) {
+    let at = 300.0;
+    let take = |start: f64, end: f64| Recording {
+        base: "lecture".to_string(),
+        start,
+        end,
+    };
+    let seed = [take(0.0, 900.0)];
+    let gapped = [take(0.0, 100.0), take(250.0, 900.0)];
+    naivepost::ui::set_session_recordings(&seed);
+    cut_view::set_pps(8.0);
+    naivepost::ui::set_playhead(window, at);
+    let view = cut_view::view_px(cut_view::surface_width(window));
+    let total = cut_view::total_px(900.0, 8.0);
+    cut_view::set_origin(at * 8.0 - view / 2.0, total, view);
+
+    cut_view::keep_line_through_layout(window, || naivepost::ui::set_session_recordings(&gapped));
+    let drawn = cut_view::line_px(&[(0.0, 100.0), (250.0, 900.0)], &[], 8.0, at);
+    assert!(
+        (cut_view::origin()..=cut_view::origin() + view).contains(&drawn),
+        "the line at {drawn} px stays in the view from {} over {view} px",
+        cut_view::origin()
+    );
+
+    naivepost::ui::set_session_recordings(&seed);
+    let away = cut_view::set_origin(at * 8.0 + view * 2.0, total, view);
+    cut_view::keep_line_through_layout(window, || naivepost::ui::set_session_recordings(&gapped));
+    assert_eq!(cut_view::origin(), away, "a line scrolled away from leaves the view alone");
+    naivepost::ui::set_session_recordings(&tape(600.0));
 }
 
 /// §1's three wheel gestures through the live door `apply_wheel` — the same function `attach_wheel`'s
@@ -283,6 +328,9 @@ fn wheel_over_tracks_and_transport(app: &adw::Application) {
         .emit_clicked();
     naivepost::ui::set_session_recordings(&tape(600.0));
     common::settle();
+    check_the_line_stays_on_screen_when_the_takes_land(&window);
+    check_a_wheel_zoom_stays_on_the_line(&window);
+    naivepost::ui::set_playhead(&window, 0.0);
     cut_view::set_pps(8.0);
     let view = cut_view::view_px(cut_view::surface_width(&window));
     cut_view::set_origin(0.0, cut_view::total_px(600.0, 8.0), view);

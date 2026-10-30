@@ -14,6 +14,9 @@ use crate::exchanges::{self, Call, Message, Mode, Part, RunLog, ToolCall};
 use crate::layout::Tree;
 use crate::llm_request;
 
+/// The content type [`call_of`] takes for a reply that is the model's words rather than a server's body.
+pub const WORDS_AS_RECEIVED: &str = "text/plain";
+
 /// Read one chat call out of what went out and what came back.
 ///
 /// The request half comes from the JSON body the program built (`llm_request::body`): the mode is the
@@ -58,6 +61,12 @@ pub fn call_of(
     let answered = match content_type {
         // A call that got no reply at all has nothing to read.
         "" => llm_request::Reply::default(),
+        // Words a stream already gave up: they are the answer as they stand. Read as a chat reply, an answer that is
+        // itself JSON ({"drop_before":…}) parsed as an envelope with no choices, and the page said it answered nothing.
+        WORDS_AS_RECEIVED => llm_request::Reply {
+            content: reply_body.to_string(),
+            ..Default::default()
+        },
         // An event stream whose chunks never carried a `finish_reason` still has an answer: the
         // reassembled deltas. `reply_from` refuses to call non-JSON a reply, which is right for a step
         // parsing words it must trust, wrong for a page whose job is to show what the model said.

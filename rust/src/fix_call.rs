@@ -166,6 +166,7 @@ pub fn stage_chunk(
         // the next run cost nothing; a block that failed every try is re-asked rather than replaying its failure.
         let cached = fix_transcripts::cached_block(tree, &prompt, &block);
         let hit = cached.is_some();
+        WIRE_FAILED.with(|failed| failed.set(false));
         let outcome = match cached {
             Some(reply) => {
                 from_cache += 1;
@@ -180,8 +181,10 @@ pub fn stage_chunk(
             log(&fix_transcripts::give_up_log(lane, index, total));
         }
         // The outcome is filed under the block's input whatever it was, a block that kept its ASR text after its
-        // tries included: the same input asks nothing again. An answer just read back is not written again.
-        if !hit {
+        // tries included: the same input asks nothing again. An answer just read back is not written again, and a
+        // block no answer reached (a ⏹, a server gone) says nothing about its input: filed, its raw text was replayed
+        // as the block's answer on every later run.
+        if !hit && !WIRE_FAILED.with(std::cell::Cell::get) {
             if let Err(err) = fix_transcripts::store_block(tree, &prompt, &block, &outcome.lines) {
                 // A cache that will not write is not a reason to lose the fix.
                 log(&format!("!!! could not keep the fix: {err}"));
@@ -196,6 +199,11 @@ pub fn stage_chunk(
     log(&fix_transcripts::cached_blocks_log(lane, from_cache));
     let _ = asked;
     Ok(total)
+}
+
+thread_local! {
+    /// Whether a call for the block in hand ended without reaching the model.
+    static WIRE_FAILED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// The `ask` closure the Prepare walk hands `fix_transcripts::fix_block`: one block, one chat call.
@@ -274,6 +282,7 @@ fn ask_once(
     ) {
         Ok(sent) => sent,
         Err(why) => {
+            WIRE_FAILED.with(|failed| failed.set(true));
             return Ok(vec![Reply::Unreadable(format!(
                 "the fixer could not be asked: {why}"
             ))])

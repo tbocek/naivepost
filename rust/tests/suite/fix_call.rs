@@ -753,3 +753,26 @@ fn sec_09_llm_and_tools_6_cache_s7_the_fixer_files_its_answer_by_input_whichever
         "and the stage says it answered from the cache: {replay:?}"
     );
 }
+
+/// A block no answer reached keeps its lines for this run and files nothing: stored, its raw text was replayed as the
+/// block's answer on every later run. A ⏹ during the fix pass is the way this happens in practice (08-dex).
+#[test]
+fn sec_09_llm_and_tools_6_cache_a_block_the_server_never_answered_is_not_filed() {
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|listener| listener.local_addr())
+        .expect("a free port")
+        .port();
+    let url = format!("http://127.0.0.1:{port}");
+    naivepost::llm_retry_leg::forget_answer_for_test(&url);
+    let scene = Scene::new("no-answer", &url);
+    let conf = conf_at(&url);
+    scene.fix(&conf, &mut |_| {}).expect("the walk carries on");
+    assert!(!scene.fixed().is_empty(), "the block keeps its lines for this run");
+    let dir = scene
+        .tree()
+        .dir()
+        .join("cache/llm")
+        .join(naivepost::fix_transcripts::FIX_STEP);
+    let slots = std::fs::read_dir(&dir).map(|found| found.count()).unwrap_or(0);
+    assert_eq!(slots, 0, "nothing is filed for a block nobody answered");
+}

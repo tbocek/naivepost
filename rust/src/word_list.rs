@@ -467,8 +467,14 @@ pub fn list(
         // asked for at its first word, so a line never covers the same word twice.
         let mut at = 0usize;
         while at < mine.len() {
-            let Some((end, line)) = fixed(source, mine[at].start, mine[at].end) else {
-                break;
+            // The line is the one the word's middle falls in, the same test that ends a window: a word straddling two
+            // lines belongs to one of them, or the next line's text would say it again. A word in a gap between lines
+            // keeps its spelling and the walk goes on. The first rewrite stopped here, and every later word of the
+            // recording stayed as heard.
+            let middle = (mine[at].start + mine[at].end) / 2.0;
+            let Some((end, line)) = fixed(source, middle, middle) else {
+                at += 1;
+                continue;
             };
             // The window ends where the LINE ends. The first rewrite ended it at its first word's end, so
             // every window was one word, the rest of the line was hung on it as "what the words did not

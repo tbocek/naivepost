@@ -511,12 +511,12 @@ where
             // The status names the task that is running, from its first moment: before, the line kept the label
             // of the task that had just ENDED (Prepare said "building the word list" for the minutes the joins
             // repair after it took).
-            queue.prog(stage.track, position(progress.done, total), &label);
+            queue.prog(stage.track, stage_at(stage, progress.done), &label);
             on_queue(queue, stage.name);
             if task.already_done {
                 skipped += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &label);
+                queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
             // The audio tasks are dials, not processes: same checkpoint, same `take`, same bar, and the
@@ -538,7 +538,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &label);
+                queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
             // The frames rows are this module's own dial too (S2's sweep plus one ffmpeg per frame is far
@@ -553,7 +553,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &label);
+                queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
             // The text gate's rows (F1.6 S6) are chat requests too, a stage of their own before describe.
@@ -580,7 +580,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &label);
+                queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
             // The vision rows are a chat request rather than an audio task: same checkpoint, same
@@ -622,7 +622,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &label);
+                queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
             // §F1.13's word list is a dial of the same fix stage: it reads the files the rows above just
@@ -636,7 +636,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &label);
+                queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
             // The fix rows are a chat request too, same checkpoint and same door shape: the row says
@@ -650,7 +650,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &label);
+                queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
             // Fix's two session rows (S1's placement, S5-S7's merge) are dials of the same stage: the
@@ -677,7 +677,7 @@ where
                 }
                 ran += 1;
                 progress = progress.advanced();
-                queue.prog(stage.track, position(progress.done, total), &label);
+                queue.prog(stage.track, stage_at(stage, progress.done), &label);
                 continue;
             }
             if let Err(why) = spawn_task(task, procs, &mut log) {
@@ -688,12 +688,36 @@ where
             }
             ran += 1;
             progress = progress.advanced();
-            queue.prog(stage.track, position(progress.done, total), &label);
+            queue.prog(stage.track, stage_at(stage, progress.done), &label);
         }
         queue.done(stage.track, 1.0);
         on_queue(queue, stage.name);
     }
     Drive::Done { ran, skipped }
+}
+
+/// How much of the fix stage's bar its merge row takes when it is the stage's last task. The row is one task among
+/// a hundred but asks the model about every join: on 08-dex (94 joins, 2026-10-30) it ran about an hour against some
+/// fifteen minutes for all the blocks before it, and on an even split the bar stood full for that hour.
+pub const MERGE_ROW_SHARE: f64 = 0.75;
+
+/// Where the bar stands in `stage` with `done` of its tasks finished, 0..1. Tasks share the stage evenly, except
+/// that a last task running the marking pass has [`MERGE_ROW_SHARE`] of it.
+pub fn stage_at(stage: &Stage, done: usize) -> f64 {
+    let total = stage.tasks.len();
+    let merges_last = stage
+        .tasks
+        .last()
+        .is_some_and(|task| task.program == crate::fix_session::SESSION_TASK);
+    if !merges_last || total < 2 {
+        return position(done, total);
+    }
+    let before = total - 1;
+    if done <= before {
+        (1.0 - MERGE_ROW_SHARE) * done as f64 / before as f64
+    } else {
+        1.0
+    }
 }
 
 /// A long task's own progress, said while it runs: the bar moves `within` (0..1) through this task's share of the
@@ -708,8 +732,7 @@ fn report_within(
     within: f64,
     words: &str,
 ) {
-    let total = stage.tasks.len();
-    let at = position(done, total) + within.clamp(0.0, 1.0) / total.max(1) as f64;
+    let at = stage_at(stage, done) + within.clamp(0.0, 1.0) * (stage_at(stage, done + 1) - stage_at(stage, done));
     queue.prog(stage.track, at, &format!("{label} -- {words}"));
     on_queue(queue, stage.name);
 }
