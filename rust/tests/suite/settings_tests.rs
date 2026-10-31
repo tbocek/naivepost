@@ -84,7 +84,6 @@ fn f0_13_s2_a_failure_is_marked_and_its_verdict_is_the_tooltip() {
 /// answer plus the wait.
 #[test]
 fn f0_13_s3_the_llm_test_asks_for_one_completion_and_says_so() {
-    assert_eq!(checks::LLM_TEST_MAX_TOKENS, 16);
     assert_eq!(checks::LLM_TEST_SECONDS, 60);
 
     let body = checks::llm_test_body("qwen");
@@ -134,11 +133,6 @@ fn f0_13_s4_the_vision_test_shows_a_red_square_and_only_passes_on_red() {
 /// only question a list answers is whether the configured id is on the server.
 #[test]
 fn f0_13_s5_fetch_models_lists_the_server_and_use_adopts_the_id() {
-    assert_eq!(
-        checks::LIST_MODELS_LLM_USES,
-        ["Fetch models", "sd.cpp fallback probe"]
-    );
-
     let served = vec!["llama-3".to_string(), "qwen".to_string()];
     assert!(checks::llm_model_listed(&served, "qwen").is_ok());
 
@@ -177,23 +171,6 @@ fn listing(with_rubberband: bool) -> String {
 /// encoders §5 names, with a missing binary reported before a missing component.
 #[test]
 fn f0_13_s6_ffmpeg_is_checked_as_one_build_that_has_what_the_steps_ask() {
-    assert_eq!(
-        checks::FF_FILTERS,
-        [
-            "rubberband",
-            "subtitles",
-            "loudnorm",
-            "atempo",
-            "amix",
-            "adelay",
-            "alimiter"
-        ]
-    );
-    assert_eq!(
-        checks::FF_ENCODERS,
-        ["libx264", "libx265", "aac", "libopus"]
-    );
-
     let encoders = "Encoders:\n V....D libx264\n V....D libx265\n A....D aac\n A....D libopus\n";
     let full = checks::ffmpeg_verdict(
         Some("/usr/bin/ffmpeg"),

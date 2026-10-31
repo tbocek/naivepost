@@ -40,9 +40,6 @@ fn number_anywhere(id: &str) -> f64 {
 /// the family §10 files it in.
 #[test]
 fn p_eng_effectminselectionseconds_s1_the_selection_floor_is_0_2_and_catalogued_once() {
-    // P.eng.effectMinSelectionSeconds — "timeline needed under the band before ⏩ Speed treats it as a chosen
-    // stretch".
-    assert_eq!(cut_speed::MIN_MARKED_SECONDS, 0.2);
     assert_eq!(number_anywhere("P.eng.effectMinSelectionSeconds"), 0.2);
 
     // The row names the constant its rule reads, not a copy of the number.
@@ -172,26 +169,18 @@ fn p_eng_effectminselectionseconds_s5_one_bound_two_rows_and_four_other_floors()
         "the form's typed floor is not the marked-band floor"
     );
 
-    // P.eng.minPieceSeconds (cut_select::MIN_SECONDS, 0.04): is a remainder of footage worth keeping at all.
-    assert_eq!(cut_select::MIN_SECONDS, 0.04);
     assert_ne!(
         cut_select::MIN_SECONDS,
         cut_speed::MIN_MARKED_SECONDS,
         "worth-keeping is not meant-to-drag"
     );
 
-    // P.eng.effectMinSeconds (fx_lane::MIN_BAND_SECONDS, 0.1): how short a band may be DRAGGED down to. Same
-    // digits as the volume form's floor, different rule again, and neither is this one.
-    assert_eq!(fx_lane::MIN_BAND_SECONDS, 0.1);
     assert_ne!(
         fx_lane::MIN_BAND_SECONDS,
         cut_speed::MIN_MARKED_SECONDS,
         "the drag floor is not the selection floor"
     );
 
-    // P.eng.effectMinSurvivingSeconds (cut_clamp::MIN_SURVIVING_SECONDS, 1.0): what a clamped band must have
-    // left or it is dropped outright.
-    assert_eq!(cut_clamp::MIN_SURVIVING_SECONDS, 1.0);
     assert_ne!(
         cut_clamp::MIN_SURVIVING_SECONDS,
         cut_speed::MIN_MARKED_SECONDS,

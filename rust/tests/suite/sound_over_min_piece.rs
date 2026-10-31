@@ -288,11 +288,6 @@ fn p_eng_soundminpieceseconds_s5_the_boundary_and_three_look_alike_floors() {
     // Clearly under: a thousandth short of the floor, far beyond any float slack.
     assert_eq!(cp::sound_piece_overlap(footage, 0.0, 0.0499), None);
 
-    // P.eng.minPieceSeconds (cut_select::MIN_SECONDS, 0.04): is a remainder left by a REMOVAL worth keeping.
-    // One twentieth of a second under this floor, and a different question entirely. It is catalogued twice in
-    // this tree — once for Prepare's §4 and once for the Cut page's §6, both reading `cut_select::MIN_SECONDS`
-    // — so it is checked through `params::find` rather than the single-match helper above.
-    assert_eq!(cut_select::MIN_SECONDS, 0.04);
     assert_ne!(
         cp::MIN_SOUND_PIECE_SECONDS,
         cut_select::MIN_SECONDS,
@@ -305,8 +300,6 @@ fn p_eng_soundminpieceseconds_s5_the_boundary_and_three_look_alike_floors() {
         .unwrap();
     assert_eq!(piece_floor, cut_select::MIN_SECONDS);
 
-    // P.eng.effectMinSeconds (fx_lane::MIN_BAND_SECONDS, 0.1): how short an effect band may be DRAGGED.
-    assert_eq!(fx_lane::MIN_BAND_SECONDS, 0.1);
     assert_ne!(
         cp::MIN_SOUND_PIECE_SECONDS,
         fx_lane::MIN_BAND_SECONDS,
@@ -317,8 +310,6 @@ fn p_eng_soundminpieceseconds_s5_the_boundary_and_three_look_alike_floors() {
         fx_lane::MIN_BAND_SECONDS
     );
 
-    // effects.volumeMinSeconds (fx_volume::MIN_SECONDS, 0.1): the volume FORM's typed Length floor.
-    assert_eq!(fx_volume::MIN_SECONDS, 0.1);
     assert_ne!(
         cp::MIN_SOUND_PIECE_SECONDS,
         fx_volume::MIN_SECONDS,

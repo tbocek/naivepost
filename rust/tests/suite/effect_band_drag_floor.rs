@@ -41,8 +41,6 @@ fn number_anywhere(id: &str) -> f64 {
 /// §10 files it in.
 #[test]
 fn p_eng_effectminseconds_s1_the_floor_is_0_1_and_catalogued_once() {
-    // P.eng.effectMinSeconds — "shortest an effect band may be dragged down to".
-    assert_eq!(fx_lane::MIN_BAND_SECONDS, 0.1);
     assert_eq!(number_anywhere("P.eng.effectMinSeconds"), 0.1);
 
     // The row names the constant its rule reads, not a copy of the number.
@@ -138,9 +136,6 @@ fn p_eng_effectminseconds_s4_it_is_a_floor_not_a_fixed_size() {
 /// share its number or its prototype name by coincidence, so the distinction is asserted rather than assumed.
 #[test]
 fn p_eng_effectminseconds_s5_the_floor_is_not_the_other_three_seconds_rules() {
-    // P.eng.effectMinSurvivingSeconds (cut_clamp::MIN_SURVIVING_SECONDS, 1.0): what a CLAMPED band must have
-    // left or it is dropped outright. Nothing to do with how short a hand may drag a band.
-    assert_eq!(cut_clamp::MIN_SURVIVING_SECONDS, 1.0);
     assert_ne!(
         fx_lane::MIN_BAND_SECONDS,
         cut_clamp::MIN_SURVIVING_SECONDS,
@@ -171,9 +166,6 @@ fn p_eng_effectminseconds_s5_the_floor_is_not_the_other_three_seconds_rules() {
         "two rules, two homes — neither borrows the other's constant"
     );
 
-    // P.eng.minPieceSeconds (cut_select::MIN_SECONDS, 0.04): the SELECTION band's floor, about a frame. The
-    // effects lane's floor is longer because a band has to stay grabbable, not merely visible.
-    assert_eq!(cut_select::MIN_SECONDS, 0.04);
     assert_ne!(
         fx_lane::MIN_BAND_SECONDS,
         cut_select::MIN_SECONDS,

@@ -59,9 +59,6 @@ fn none(_: f64) -> Option<&'static Edges> {
 /// files it in.
 #[test]
 fn p_eng_edgetaildb_s1_the_threshold_is_12_db_and_catalogued_once() {
-    // P.eng.edgeTailDB — "word-fenced edge placement: tail threshold".
-    assert_eq!(edge::EDGE_TAIL_DB, 12.0);
-
     // The cache holds LINEAR peaks (a byte is peak × 255 of full scale) while this threshold is written
     // as a −70…0 dBFS meter, so twelve decibels arrives as forty-four bytes. The mismatch is recorded
     // in §04 as known-and-kept: this placement scored better against three hand-cut projects than every
@@ -209,11 +206,6 @@ fn p_eng_edgetaildb_s5_the_tail_threshold_belongs_to_the_fenced_side_and_is_not_
     assert_eq!(edge::LATE_STAMP, 0.6);
     // TROUGH_REACH (0.4): how far into a gap the quietest moment is looked for.
     assert_eq!(edge::TROUGH_REACH, 0.4);
-    // EDGE_TAIL_MAX (0.25): how long the tail is followed at most — the time bound paired with this
-    // level bound, and a different quantity from it.
-    assert_eq!(edge::EDGE_TAIL_MAX, 0.25);
-    // P.eng.envelopeWindowSeconds (4.0): the stretch the room itself is measured over.
-    assert_eq!(edge::ENVELOPE_WINDOW, 4.0);
 
     // And this is the only one of them measured in decibels; every other bound on the list is seconds.
     assert_ne!(

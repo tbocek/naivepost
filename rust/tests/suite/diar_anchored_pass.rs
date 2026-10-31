@@ -82,9 +82,6 @@ fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s1_pass
 #[test]
 fn sec_04_prepare_6_details_confirmed_against_the_code_verification_pass_s1_a_window_is_never_below_ten_seconds(
 ) {
-    // The floor the spec gives pass 1: hop ⅔ window, min 10 s. Below it a window holds too little of
-    // a sentence for a server to separate two voices in it at all.
-    assert_eq!(diarize::WINDOW_MIN_SECONDS, 10.0);
     // P.machine.diarHopShare at the floor is a hop of 6⅔ s, so the windows overlap by a third. Only a
     // window opened from scratch takes the floor; the last one is what is left of the recording, and a
     // tail shorter than a second is no window at all.

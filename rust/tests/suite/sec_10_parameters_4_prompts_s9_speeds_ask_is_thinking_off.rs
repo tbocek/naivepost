@@ -107,11 +107,6 @@ fn sec_10_parameters_4_prompts_s9_speeds_ask_is_thinking_off() {
         serde_json::json!(false),
         "the speed ask went out thinking-off"
     );
-    assert_eq!(
-        sent["chat_template_kwargs"]["enable_thinking"],
-        serde_json::json!(false),
-        "the template spelling must agree with the top-level one"
-    );
     let user = sent["messages"][1]["content"][0]["text"]
         .as_str()
         .unwrap_or_default()

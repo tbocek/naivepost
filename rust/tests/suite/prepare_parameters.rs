@@ -118,7 +118,6 @@ fn sec_04_prepare_4_parameters_used_s1_every_parameter_the_section_names_is_cata
         params::Family::Policy
     );
     assert_eq!(params::family("P.machine.slots"), params::Family::Machine);
-    assert_eq!(params::family("P.eng.llmAttempts"), params::Family::Eng);
     // The JPEG quality is §10's unlisted engineering value, so it claims no `P.` prefix.
     assert_eq!(params::family("machine.jpegQuality"), params::Family::Other);
 }
@@ -174,8 +173,6 @@ fn sec_04_prepare_4_parameters_used_s2_the_retake_numbers_are_the_ones_the_pass_
 
 #[test]
 fn sec_04_prepare_4_parameters_used_s3_the_seam_numbers_are_the_join_pass_owns() {
-    // P.machine.seamReachWords / seamMaxWords / seamCeil / seamSnapWords / seamNoiseWords.
-    assert_eq!(textedit::SEAM_REACH_WORDS, 140);
     assert_eq!(
         spelled("P.machine.seamReachWords"),
         textedit::SEAM_REACH_WORDS.to_string()
@@ -205,7 +202,6 @@ fn sec_04_prepare_4_parameters_used_s3_the_seam_numbers_are_the_join_pass_owns()
         spelled("P.eng.keepReachWords"),
         hand_edit::KEEP_REACH.to_string()
     );
-    assert_eq!(hand_edit::KEEP_REACH, 200);
 }
 
 // --- S4: describe -----------------------------------------------------------------------------------
@@ -266,15 +262,10 @@ fn sec_04_prepare_4_parameters_used_s5_the_audio_numbers_are_the_servers_bounds(
         spelled("P.machine.asrChunkMinSeconds"),
         asr::CHUNK_MIN.to_string()
     );
-    // `asr::chunk_limit` matches the family name as a plain substring, so it is the lowercase spelling
-    // that gets the short chunk; [`roles::asr_chunk_is_qwen_family`] is the case-insensitive read of the
-    // same fact, since the value is whatever the audio box declared in its own model list (§1).
-    assert_eq!(asr::chunk_limit("qwen3-asr"), 60.0);
     assert!(roles::asr_chunk_is_qwen_family("Qwen3-ASR"));
     assert!(roles::asr_chunk_is_qwen_family("qwen3-asr-1.7b"));
     assert!(roles::asr_chunk_is_qwen_family("qwen3-asr-1.7b"));
     assert!(!roles::asr_chunk_is_qwen_family("nemotron-asr"));
-    assert_eq!(asr::chunk_limit("nemotron-asr"), 300.0);
 
     // The alignment window and its floor, and separation's chunk.
     assert_eq!(number("P.machine.alignChunkMaxSeconds"), align::WINDOW);

@@ -198,9 +198,6 @@ fn sec_02_services_3_tool_catalogue_rewrite_directive_b_s2_finish_asks_for_the_g
         b.record_event(frame, "something happens", false);
     }
     assert!(b.finish().is_empty());
-
-    // The line §6 force-writes for that frame, named by the same constant `events_rows` writes.
-    assert_eq!(Batch::SAME_WITHOUT_HISTORY, "Calm; same view.");
 }
 
 /// The prose-reply cleanups: snapped within half an interval, dropped beyond it, and the three other

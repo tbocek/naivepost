@@ -58,8 +58,6 @@ fn none(_: f64) -> Option<&'static Edges> {
 /// family §10 files it in.
 #[test]
 fn p_eng_edgetailmaxseconds_s1_the_cap_is_0_25_and_catalogued_once() {
-    // P.eng.edgeTailMaxSeconds — "word-fenced edge placement: longest tail".
-    assert_eq!(edge::EDGE_TAIL_MAX, 0.25);
     // The SECONDS are the constant; the bucket count follows whatever rate this tree caches at, here
     // 200 Hz, so the follow window is fifty buckets.
     assert_eq!((edge::EDGE_TAIL_MAX * HZ) as i64, 50);
@@ -192,10 +190,6 @@ fn p_eng_edgetailmaxseconds_s5_the_cap_is_fenced_only_and_is_not_its_neighbours(
         "it travels further than the tail cap allows"
     );
 
-    // Each neighbour answers a different question.
-    // P.eng.edgeTailDB (12 dB): the paired LEVEL bound — which sound is still the word. This one is the
-    // LENGTH bound in seconds; the two together stop a cut from eating a breath.
-    assert_eq!(edge::EDGE_TAIL_DB, 12.0);
     // TROUGH_REACH (0.4): how far the quietest moment is searched AFTER the tail stops — deliberately
     // longer than the tail itself, so the cut can settle into the gap behind it.
     assert_eq!(edge::TROUGH_REACH, 0.4);

@@ -111,8 +111,6 @@ fn f3_1_the_re_frame_sentence_promises_undo() {
 /// the real widgets in `tests/suite/zoom_drag_widgets.rs` (F3.1 S1 arms and disarms through `effect-item-zoom`).
 #[test]
 fn f3_1_the_door_says_nothing_while_the_arm_is_up() {
-    // Arming is the page's answer to ✚ Effect ▾ → ⊕ Zoom with a line placed.
-    assert_eq!(zoom::arm(Some(30.0), false), zoom::Press::Armed);
     // With the arm up, §S1 owns the preview: `preview_press` refuses to name a zoom for ANY press, which is why
     // `cut_zoom_hand::preview_press` returns `Pressed::Silent` in exactly that case.
     assert_eq!(

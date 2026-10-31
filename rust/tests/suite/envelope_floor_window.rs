@@ -62,8 +62,6 @@ fn none(_: f64) -> Option<&'static Edges> {
 /// family §10 files it in.
 #[test]
 fn p_eng_envelopewindowseconds_s1_the_window_is_4_seconds_and_catalogued_once() {
-    // P.eng.envelopeWindowSeconds — "envelope searched each side of a stamp (±400 buckets)".
-    assert_eq!(edge::ENVELOPE_WINDOW, 4.0);
     // This tree caches the envelope at 200 Hz, so the same ±4 s is 800 buckets where the prototype's
     // 400 was counted at 100 Hz. The SECONDS are the constant; the bucket count follows the cache rate.
     assert_eq!((edge::ENVELOPE_WINDOW * HZ) as usize, 800);

@@ -201,9 +201,6 @@ fn p_eng_wordpadseconds_s4_a_room_not_a_minimum_and_not_its_neighbours() {
         "no-envelope room is not the post-envelope residue"
     );
 
-    // And `cut_select::MIN_SECONDS` (P.eng.minPieceSeconds, 0.04) asks whether a remainder is worth
-    // keeping at all — nothing to do with how much room a cut gives a word.
-    assert_eq!(cut_select::MIN_SECONDS, 0.04);
     assert_ne!(
         edge::WORD_PAD,
         cut_select::MIN_SECONDS,

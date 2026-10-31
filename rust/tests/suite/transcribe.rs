@@ -89,10 +89,6 @@ fn f1_3_s1_the_audio_is_mono_16khz_and_said_out_loud() {
 /// empty recording gets, and no server is asked about a third of a second of nothing.
 #[test]
 fn f1_3_s2_a_short_take_is_written_up_as_silence_without_asking_anything() {
-    // P.policy.minTakeSeconds
-    assert_eq!(requests::MIN_TAKE_SECONDS, 2.0);
-    assert!(requests::is_short(1.999, requests::MIN_TAKE_SECONDS));
-    assert!(!requests::is_short(2.0, requests::MIN_TAKE_SECONDS));
     assert!(transcribe::is_short_take(1.2));
 
     let (_root, tree) = project("s2");

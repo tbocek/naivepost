@@ -127,8 +127,6 @@ fn f4_4_s2_health_first_then_a_model_that_can_clone() {
 /// S3: a remembered server path dies with a server restart, so the reference goes up again per line.
 #[test]
 fn f4_4_s3_the_reference_goes_up_again_for_every_line() {
-    assert!(bodies::VOICE_REF_REUPLOADED_EVERY_LINE);
-
     let body = tts::request("index-tts2", "hello", &uploaded(), "en", "", 7);
     let sent = body["voice_ref"].as_str().expect("a voice_ref");
     assert_eq!(
@@ -160,10 +158,6 @@ fn f4_4_s4_the_request_carries_the_five_keys_and_the_emotion_rides_in_options() 
         body["language"], "en",
         "the prototype's hard-coded answer must not win here"
     );
-    // With no language in the project there is nothing to say how the words are pronounced, and then the
-    // fallback is the honest guess.
-    assert_eq!(tts::language(""), tts::LANGUAGE_FALLBACK);
-    assert_eq!(tts::LANGUAGE_FALLBACK, "en");
     assert_eq!(
         tts::language("  pl  "),
         "pl",

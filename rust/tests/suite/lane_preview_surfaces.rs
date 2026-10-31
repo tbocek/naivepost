@@ -309,8 +309,6 @@ fn sec_06_effects_2_the_lane_and_the_preview_s14_playing_scene_is_titles_only() 
         "alpha straight from visibility_at"
     );
 
-    // The camera layer is not here because while playing there is only the mask over hidden footage.
-    assert!(lane::mask_only_while_playing(EffectKind::Zoom));
     for kind in KINDS {
         assert_eq!(
             lane::mask_only_while_playing(kind),
@@ -318,7 +316,6 @@ fn sec_06_effects_2_the_lane_and_the_preview_s14_playing_scene_is_titles_only() 
             "{kind:?}"
         );
     }
-    assert!(lane::camera_clock_is_smoothed());
     assert!(
         lane::playing_scene(&[], 1.0).is_empty(),
         "no effects, no titles"

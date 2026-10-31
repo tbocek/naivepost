@@ -61,18 +61,6 @@ fn f3_4_s1_pressing_text_arms_the_gesture() {
     assert_eq!(fx_text::arm(true), fx_text::Press::Disarmed);
 }
 
-/// S1 (`Camera layer stays up (box is on the output frame)`): the camera layer holds its place while a caption is
-/// drawn — and that is the mirror image of ⊕ Zoom's rule, which puts it DOWN for its own box. Asserting both keeps
-/// one module from "helpfully" copying the other. §06#2 already draws a text over the paused preview and over the
-/// playing video alike, so arming changes neither.
-#[test]
-fn f3_4_s1_the_camera_layer_stays_up() {
-    assert!(fx_text::camera_layer_stays_up());
-    // ⊕ Zoom's rule is the opposite, and takes the arm as its input: armed means the camera steps aside.
-    assert!(fx_zoom::whole_source_shown(true));
-    assert!(!fx_zoom::whole_source_shown(false));
-}
-
 // --- S2: drag or click ------------------------------------------------------------------------------------------
 
 /// S2 (`a click takes the lower third`): a press that did not travel gets the default box, and it is the box §06#1

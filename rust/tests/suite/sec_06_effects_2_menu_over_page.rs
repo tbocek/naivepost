@@ -112,7 +112,20 @@ fn paint_the_shot(app: &adw::Application) {
         || match snapshot_effect_menu::paint_staged(&window, &staged, &out) {
             Ok(result) => {
                 painted = Some(result);
-                true
+                // Under load the first ask can come before the panel is laid out: black means ask again.
+                let _ = ui::cut_picture::refresh(&window);
+                let Some(bounds) =
+                    ui::find_source_widget(&window, "preview-picture").and_then(|picture| {
+                        picture.compute_bounds(window.upcast_ref::<gtk4::Widget>())
+                    })
+                else {
+                    return false;
+                };
+                pixel_at(
+                    &out,
+                    (bounds.x() + bounds.width() / 2.0).round() as i32,
+                    (bounds.y() + bounds.height() / 2.0).round() as i32,
+                ) != (0, 0, 0)
             }
             Err(_) => false,
         },

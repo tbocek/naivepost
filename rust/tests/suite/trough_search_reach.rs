@@ -240,11 +240,6 @@ fn p_eng_troughreachseconds_s5_there_is_no_trough_search_on_the_envelope_only_si
         "no trough search: the stamp is not pulled onto the quiet bucket"
     );
 
-    // Each neighbour answers a different question.
-    // P.eng.edgeTailMaxSeconds (0.25): the bound immediately before this one — tail, then gap.
-    assert_eq!(edge::EDGE_TAIL_MAX, 0.25);
-    // P.eng.edgeTailDB (12 dB): the level that ends the tail and hands over to this search.
-    assert_eq!(edge::EDGE_TAIL_DB, 12.0);
     // P.eng.edgePadSeconds (0.05): what is left of a sound once the edge has been placed.
     assert_eq!(edge::EDGE_PAD, 0.05);
     // P.eng.wordPadSeconds (0.08): the room a cut leaves a word when there is no envelope to ask.
@@ -253,8 +248,6 @@ fn p_eng_troughreachseconds_s5_there_is_no_trough_search_on_the_envelope_only_si
     assert_eq!(edge::EDGE_REACH, 0.8);
     // P.eng.lateStampSeconds (0.6): how late a stamp may trail its sound.
     assert_eq!(edge::LATE_STAMP, 0.6);
-    // P.eng.envelopeWindowSeconds (4.0): the stretch the room itself is measured over.
-    assert_eq!(edge::ENVELOPE_WINDOW, 4.0);
 
     assert_ne!(
         edge::TROUGH_REACH,

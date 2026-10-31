@@ -542,6 +542,11 @@ fn sec_03_shell_1_the_window_s1_band_rule_arithmetic() {
         0,
         "a band the divider's own height leaves the page nothing"
     );
+    assert_eq!(
+        rest_position(0, 0),
+        0,
+        "an unallocated divider has no split to honour"
+    );
     for (total, band) in [(844, 1), (844, 843), (100, 100), (1, 1), (10, 0)] {
         let handle = rest_position(total, band);
         assert!(

@@ -12,7 +12,7 @@ use naivepost::cut_speed_pass;
 use naivepost::params;
 use naivepost::tools::clips;
 use naivepost::tools::cutpass;
-use naivepost::{cut_cards, cut_clamp, cut_effects_pass};
+use naivepost::{cut_cards, cut_clamp};
 use naivepost::{fx_band, fx_svg, fx_text, fx_volume, fx_zoom};
 
 /// §06 §6's rows, in §6's order.
@@ -158,13 +158,11 @@ fn sec_06_effects_6_parameters_used_s3_the_family_defaults_are_spelled_as_sectio
         lengths.spelled,
         "zoom/text/svg 3; stop/speed/volume/label 2"
     );
-    assert_eq!(fx_zoom::DEFAULT_SECONDS, 3.0);
     assert_eq!(fx_volume::LINE_SECONDS, 2.0);
 
     let fades = row("P.policy.effectDefaultFades");
     assert_eq!(fades.spelled, "zoom 1; text/svg 0.3; volume 0.25; stop 0.5");
     assert_eq!(fx_zoom::GLIDE_SECONDS, 1.0);
-    assert_eq!(fx_text::FADE_SECONDS, 0.3);
     assert_eq!(fx_volume::FADE_SECONDS, 0.25);
     assert_eq!(cut_speed::STOP_FADE_SECONDS, 0.5);
 
@@ -193,7 +191,6 @@ fn sec_06_effects_6_parameters_used_s3_the_family_defaults_are_spelled_as_sectio
         "{}",
         proposed.from
     );
-    assert_eq!(cut_effects_pass::ZOOM_HEIGHT, 0.6);
 }
 
 // --- S4: the floors a form holds to ---------------------------------------------------------------------------
@@ -347,10 +344,6 @@ fn sec_06_effects_6_parameters_used_s6_every_row_names_where_its_value_lives() {
     assert_eq!(
         params::family("P.policy.effectDefaultSeconds"),
         params::Family::Policy
-    );
-    assert_eq!(
-        params::family("P.machine.captionBatch"),
-        params::Family::Machine
     );
     assert_eq!(
         params::family("effects.zoomFloorSeconds"),

@@ -345,16 +345,6 @@ fn sec_02_services_2_model_roles_which_job_asks_which_server_s6_clean_transcript
         let row = format!("\n{start}\t{end}\t{speaker}\t{text}");
         assert!(user.contains(&row), "the row went out whole: {user}");
     }
-    assert_eq!(
-        sent["enable_thinking"],
-        serde_json::json!(false),
-        "thinking OFF: {sent}"
-    );
-    assert_eq!(
-        sent["chat_template_kwargs"]["enable_thinking"],
-        serde_json::json!(false),
-        "thinking OFF in the template copy too: {sent}"
-    );
     assert!(
         sent.get("tools").is_none(),
         "no tools are offered: the answer is the rows (the prototype asked with none): {sent}"

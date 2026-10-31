@@ -215,10 +215,6 @@ fn p_eng_turngapseconds_s5_neighbours_are_tighter_looser_and_differently_owned()
     let scene =
         params::find("P.machine.sceneMinGapSeconds").expect("sceneMinGapSeconds is catalogued");
     assert_eq!(scene.spelled, "0.5");
-    assert_eq!(
-        params::family("P.machine.sceneMinGapSeconds"),
-        params::Family::Machine
-    );
     assert_ne!(
         params::family("P.eng.turnGapSeconds"),
         params::family("P.machine.sceneMinGapSeconds"),

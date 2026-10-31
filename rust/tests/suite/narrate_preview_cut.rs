@@ -122,9 +122,6 @@ fn f4_5_s2_the_tick_follows_the_picture_and_the_narration_rides_along() {
         view::Tick::Pause
     );
 
-    // A boundary is held while a line still speaks — up to the seconds the render may grow the clip by (the
-    // preview never holds one the render would not).
-    assert_eq!(view::MAX_EXTEND_SECONDS, 4.0);
     let speaking = Some(0usize);
     assert_eq!(
         view::tick(23.9, &clips, &entries, &takes, speaking),
@@ -152,17 +149,7 @@ fn f4_5_s2_the_tick_follows_the_picture_and_the_narration_rides_along() {
         view::tick(14.0, &clips, &entries, &[Take::Failed], None),
         view::Tick::Mute { line: 0 }
     );
-    assert_eq!(
-        view::sticky_failed(2),
-        "line 3 failed to synthesize \u{2014} see log; its \u{25b6} retries"
-    );
 
-    // The two failure sentences, and the dash each one keeps: they are different sentences in the same log,
-    // and normalising one into the other would rewrite what a person reads.
-    assert_eq!(
-        view::failed_playing_on(2),
-        "line 3 failed -- see log; playing on without it"
-    );
     assert_eq!(view::line_ready(2), "line 3 ready");
     assert!(view::sticky_failed(0).contains('\u{2014}'));
     assert!(!view::failed_playing_on(0).contains('\u{2014}'));

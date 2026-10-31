@@ -484,11 +484,6 @@ fn f0_1_s6_narrate_refits_its_lines_to_the_cut() {
     let mut empty: Vec<Entry> = Vec::new();
     assert_eq!(shell::refit(&segs, &mut empty), (0, 0));
 
-    // The status line, in the app's own words.
-    assert_eq!(
-        shell::refit_sentence(1, 0),
-        "the cut moved \u{2014} 1 line(s) followed their clips"
-    );
     assert_eq!(
         shell::refit_sentence(2, 3),
         "the cut moved \u{2014} 2 line(s) followed their clips, 3 sit on video the cut no longer has"

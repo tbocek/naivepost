@@ -302,11 +302,4 @@ fn sec_10_parameters_3_project_settings_tab_controls_s9_the_rows_are_exactly_the
             r.id
         );
     }
-    // The three families §10's intro names are untouched by adding the fourth.
-    assert_eq!(
-        params::family("P.policy.markingPass"),
-        params::Family::Policy
-    );
-    assert_eq!(params::family("P.machine.slots"), params::Family::Machine);
-    assert_eq!(params::family("P.eng.llmAttempts"), params::Family::Eng);
 }

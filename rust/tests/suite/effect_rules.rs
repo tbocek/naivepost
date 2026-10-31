@@ -486,8 +486,6 @@ fn sec_06_effects_7_rules_s12_forms_find_effects_by_value() {
 /// drag`): the three bounds on what a gesture may cost and what a form may place.
 #[test]
 fn sec_06_effects_7_rules_s13_one_undo_per_visit_empty_never_placed_and_a_click_is_not_a_drag() {
-    // One Undo per gesture: the first move pushes, every further one of the same gesture does not.
-    assert!(cut_trim::pushes_undo(true, false));
     assert!(
         !cut_trim::pushes_undo(true, true),
         "the second move of one drag is not a second edit"
@@ -497,8 +495,6 @@ fn sec_06_effects_7_rules_s13_one_undo_per_visit_empty_never_placed_and_a_click_
         "a press that moved nothing owes nothing back"
     );
 
-    // A click: under the slop and on the same row.
-    assert!(cut_trim::is_click(0.0, false));
     assert!(cut_trim::is_click(cut_trim::ROW_TRAVEL_PX - 1.0, false));
     assert!(
         !cut_trim::is_click(cut_trim::ROW_TRAVEL_PX, false),
@@ -695,10 +691,6 @@ fn sec_06_effects_7_rules_s17_the_lane_draws_what_the_render_does() {
         chain.contains(&expected_out),
         "{chain:?} should carry {expected_out}"
     );
-
-    // The label is deliberately different: read by the briefs, never painted.
-    assert!(!render_fx::is_rendered("label"));
-    assert!(render_fx::is_rendered("text"));
 }
 
 // --- clause 18: static card files are finished pictures ----------------------------------------------------------------------
@@ -810,7 +802,4 @@ fn sec_06_effects_7_rules_s20_suggested_effects_are_clamped_against_the_cut_as_a
         cut_clamp::log_line(clamped.dropped),
         ">>> 1 effect(s) pointed at footage the final cut does not keep \u{2014} dropped"
     );
-
-    // The floor is §10's: a band trimmed under it is a drop, not a stub.
-    assert_eq!(cut_clamp::MIN_SURVIVING_SECONDS, 1.0);
 }

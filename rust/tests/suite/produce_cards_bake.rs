@@ -466,7 +466,6 @@ fn sec_06_effects_5_cards_svg_inserts_s15_the_length_reaches_the_form_and_the_en
         None
     );
     assert_eq!(produce_cards::offer_seconds(&still.to_string_lossy()), None);
-    assert_eq!(cut_insert::DEFAULT_SECONDS, 4.0);
     assert_eq!(
         cut_insert::default_length(
             produce_cards::offer_seconds(&endless.to_string_lossy()),

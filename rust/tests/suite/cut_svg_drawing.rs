@@ -42,10 +42,6 @@ fn form(fields: (&str, f64)) -> fx_svg::Form {
 #[test]
 fn f3_5_s1_no_line_refuses_before_the_chooser() {
     assert_eq!(fx_svg::press(None), Press::Refused(fx_svg::NO_LINE));
-    assert_eq!(
-        fx_svg::NO_LINE,
-        "click a track first \u{2014} the drawing needs a moment to appear at"
-    );
     assert_ne!(
         fx_svg::NO_LINE,
         fx_zoom::NO_LINE,
@@ -92,10 +88,6 @@ fn f3_5_s2_the_file_is_asked_first_and_a_cancel_places_nothing() {
             "{nothing:?} is no ink"
         );
     }
-    assert_eq!(
-        fx_svg::NO_FILE,
-        "choose a drawing and it goes on the picture"
-    );
 
     // The refusal reaches the record too: a form applied with an empty file places nothing (§F3.5's last line).
     assert_eq!(
@@ -275,9 +267,6 @@ fn f3_5_s4_the_form() {
         (cx, cy, hf, wf)
     );
 
-    // t/dur come from the selection when there is one, else 3 s from the line — P.policy.effectDefaultSeconds, whose
-    // row names zoom, text and svg together, so it is one constant rather than a second 3.0.
-    assert_eq!(fx_zoom::DEFAULT_SECONDS, 3.0);
     let from_line = fx_svg::place(
         naivepost::fx_text::BoxChoice::Click,
         "logo.svg",

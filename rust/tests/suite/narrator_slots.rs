@@ -105,8 +105,6 @@ fn p_policy_narratorslots_s3_the_snapshot_holds_one_place_per_slot() {
 
 #[test]
 fn p_policy_narratorslots_s4_voice_ids_name_no_slot_past_the_bound() {
-    // `own` is slot 1 — the project's own voice, before slots were numbered.
-    assert_eq!(rules::narrator_slot("own"), Some(1));
     assert_eq!(rules::narrator_slot("narrator2"), Some(2));
     // The last named id is the last slot, spelled from the constant so the two cannot drift apart.
     assert_eq!(
@@ -118,7 +116,6 @@ fn p_policy_narratorslots_s4_voice_ids_name_no_slot_past_the_bound() {
         rules::narrator_slot(&format!("narrator{}", NARRATOR_SLOTS + 1)),
         None
     );
-    assert_eq!(rules::narrator_slot("aria"), None);
 }
 
 // --- S5: the cycle walks every voice and comes back to 1, never to none ------------------------

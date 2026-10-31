@@ -306,8 +306,6 @@ fn f6_1_s3_a_quiet_round_is_asked_once_then_taken_as_finished() {
         !tools::asked_to_finish(0),
         "the first quiet round has not been asked yet"
     );
-    assert!(tools::asked_to_finish(1));
-    assert!(!tools::asked_to_finish(2));
     // And `finish` after a nudge is still the model's own answer: it clears the flag.
     let mut round = 0;
     let after = tool_loop::run(

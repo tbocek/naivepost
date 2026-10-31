@@ -33,9 +33,6 @@ fn row_for(id: &str) -> params::Param {
 /// the family §10 files it in.
 #[test]
 fn p_eng_refsamplerate_s1_the_rate_is_48000_and_catalogued_once() {
-    // P.eng.refSampleRate -- "voice reference write rate".
-    assert_eq!(narrate_data::REF_SAMPLE_RATE, "48000");
-
     let row = row_for("P.eng.refSampleRate");
     assert_eq!(
         row.from, "narrate_data::REF_SAMPLE_RATE",

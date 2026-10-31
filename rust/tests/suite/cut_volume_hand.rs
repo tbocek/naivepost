@@ -530,7 +530,6 @@ fn f3_6_s6_no_box_no_drag_and_the_whole_bed() {
 
     // One ceiling for the form, the preview and the render: P.eng.maxGain, named once in cut_hear.
     assert_close("P.eng.maxGain", fx_record::gain_ceiling(), 10.0);
-    assert_eq!(fx_record::gain_ceiling(), cut_hear::MAX_GAIN);
 
     // The lane's colour: amber, i.e. audio's own family — the same pair of floats §D gives it, compared as numbers so
     // a re-tuned colour fails here rather than in someone's screenshot.

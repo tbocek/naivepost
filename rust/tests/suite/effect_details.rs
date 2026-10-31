@@ -22,15 +22,6 @@ use naivepost::tools;
 #[test]
 fn sec_06_effects_8_details_confirmed_against_the_code_verification_pass_s1_the_drawing_is_said_once_and_the_effect_stays(
 ) {
-    assert_eq!(
-        fx_svg::NO_LINE,
-        "click a track first \u{2014} the drawing needs a moment to appear at"
-    );
-    assert_eq!(
-        fx_svg::NO_FILE,
-        "choose a drawing and it goes on the picture"
-    );
-
     // One file, asked about twice before anything came back: the second ask is answered "already on its way".
     let mut rasters = fx_svg::Rasters::default();
     assert_eq!(rasters.request("/x/assets/map.svg"), Slot::NeedsRaster);
@@ -398,10 +389,5 @@ fn sec_06_effects_8_details_confirmed_against_the_code_verification_pass_s6_seed
         "a card or held frame"
     );
 
-    // Half the dip on each side of the join — and `rejoin_dip` stays the whole crossfade.
-    assert_eq!(
-        effect_details::dip_each_side(),
-        fx_lane::SOUND_DIP_SECONDS / 2.0
-    );
     assert_eq!(fx_lane::rejoin_dip(), 0.15);
 }

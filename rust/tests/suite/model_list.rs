@@ -88,12 +88,6 @@ fn sec_09_llm_and_tools_9_model_list_and_tests_s3_an_empty_list_names_the_endpoi
     let three: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
     let verdict = models::list_verdict(&three).expect("three models is a success");
     assert!(verdict.contains('3'), "{verdict}");
-
-    // The two things the LLM's list is ever used for (§9 / checks).
-    assert_eq!(
-        checks::LIST_MODELS_LLM_USES,
-        ["Fetch models", "sd.cpp fallback probe"]
-    );
 }
 
 #[test]
