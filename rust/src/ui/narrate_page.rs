@@ -976,7 +976,7 @@ pub fn press_line_speak(window: &adw::ApplicationWindow, index: usize) -> String
         s.busy,
         index + 1,
         prev_speaks_at,
-        entry.at,
+        entry.s + entry.at,
     );
     let (case, said) = if line_covered(&s, entry.s + entry.at) {
         (case, said)
@@ -1044,7 +1044,7 @@ pub fn press_line_reroll(window: &adw::ApplicationWindow, index: usize) -> Strin
         say(window, &narrate_details::new_take_status(index));
         // A re-roll speaks the NEW take in place (§C.3), so the audition starts at the line's own offset
         // rather than 3 s ahead: those seconds belong to the take the person just heard.
-        return speak_this_line(window, &after, entry, entry.at);
+        return speak_this_line(window, &after, entry, entry.s + entry.at);
     };
     say(window, &refused)
 }

@@ -221,7 +221,7 @@ pub fn tts_seed(key: &str) -> u32 {
 pub fn lines_to_speak(entries: &[Entry]) -> Vec<Entry> {
     entries
         .iter()
-        .filter(|entry| !entry.text.trim().is_empty())
+        .filter(|entry| !entry.text.trim().is_empty() && entry.pos.is_empty())
         .cloned()
         .collect()
 }

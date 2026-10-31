@@ -236,6 +236,8 @@ pub fn tick(
         let entry = &entries[line];
         let offset = t - (entry.s + entry.at);
         return match takes.get(line).copied().unwrap_or(Take::Missing) {
+            // Already playing: starting it again would stack a second voice on every tick.
+            Take::Exists if speaking == Some(line) => Tick::Idle,
             Take::Exists => Tick::Speak { line, offset },
             Take::Missing => Tick::Synthesize { line },
             Take::Failed => Tick::Mute { line },

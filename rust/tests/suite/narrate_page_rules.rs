@@ -145,7 +145,7 @@ fn sec_07_narrate_5_rules_s3_a_line_never_starts_in_the_last_second() {
     let (at, clamped) = page::tag_moves_line(10.0, 20.0, 19.0, 2.0);
     assert_eq!(
         (at, clamped),
-        (19.0, false),
+        (9.0, false),
         "19.0 is the last keepable second"
     );
     let (at, clamped) = page::tag_moves_line(10.0, 20.0, 19.5, 2.0);

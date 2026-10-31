@@ -162,7 +162,7 @@ fn sec_07_narrate_1_screen_s4_the_box_reads_a_tag_and_never_writes_the_second_ba
 #[test]
 fn sec_07_narrate_1_screen_s5_the_tag_second_moves_the_line_but_not_into_the_last_second() {
     // A second inside the clip moves it and nothing is reported.
-    assert_eq!(page::tag_moves_line(60.0, 90.0, 65.0, 61.0), (65.0, false));
+    assert_eq!(page::tag_moves_line(60.0, 90.0, 65.0, 61.0), (5.0, false));
 
     // The last second belongs to §5's `at never in the last second`, and a tag naming it is refused: the line stays
     // where it was and the page says the move did not happen.
@@ -173,7 +173,7 @@ fn sec_07_narrate_1_screen_s5_the_tag_second_moves_the_line_but_not_into_the_las
     assert_eq!(page::tag_moves_line(60.0, 90.0, 12.0, 61.0), (61.0, true));
 
     // The clip's own first second is a legal placement.
-    assert_eq!(page::tag_moves_line(60.0, 90.0, 60.0, 61.0), (60.0, false));
+    assert_eq!(page::tag_moves_line(60.0, 90.0, 60.0, 61.0), (0.0, false));
 }
 
 // --- S6: the row's status (§1's numbers 14, 15) ---------------------------------------------------------------

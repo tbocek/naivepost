@@ -535,10 +535,7 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s8_prev
     ));
     assert!(matches!(
         narrate_preview::tick(3.5, &segs, &entries, &taken, Some(0)),
-        Tick::Speak {
-            line: 0,
-            offset: 2.5
-        }
+        Tick::Idle
     ));
     // Idle is a clip with no line over it, or a second before any line's own start.
     assert!(matches!(

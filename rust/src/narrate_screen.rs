@@ -435,7 +435,7 @@ pub fn tag_moves_line(clip_s: f64, clip_e: f64, requested: f64, at: f64) -> (f64
     if !(clip_s..=last).contains(&requested) {
         return (at, true);
     }
-    (requested, false)
+    (requested - clip_s, false)
 }
 
 /// §1 / inventory §A.5 (`monospace, word wrap, 1–3 lines tall`): the box grows to three and then scrolls. A box

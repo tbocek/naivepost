@@ -423,6 +423,37 @@ pub fn fill_speech(
     }
 }
 
+/// The fit over the takes' real lengths, which the planner could not know: lines that would overlap or run off the clip
+/// are moved, sped up or given room, and a clip that grows shows that much more of its footage.
+pub fn fit_spoken(clips: &mut [render::Clip], footage_left: &dyn Fn(&Seg) -> f64) -> Vec<String> {
+    let mut logs = Vec::new();
+    for clip in clips.iter_mut().filter(|clip| !clip.lines.is_empty()) {
+        let lines: Vec<(usize, f64, f64)> = clip
+            .lines
+            .iter()
+            .map(|line| (line.entry_index, line.at, line.speech))
+            .collect();
+        let seg = Seg {
+            s: clip.seg_s,
+            e: clip.seg_s + clip.on_screen * clip.rate,
+            ..Default::default()
+        };
+        let (fitted, said) = render::fit_in(&lines, clip.on_screen, clip.no, footage_left(&seg));
+        logs.extend(said);
+        let grown = fitted.iter().map(|line| line.extend).fold(0.0, f64::max);
+        clip.on_screen += grown;
+        clip.lines = fitted
+            .into_iter()
+            .zip(clip.lines.iter())
+            .map(|(line, was)| render::Placed {
+                text: was.text.clone(),
+                ..line
+            })
+            .collect();
+    }
+    logs
+}
+
 /// S3–S9, decided before anything runs. Every field is a call into the module that owns the rule; this
 /// function only puts the calls in the spec's order and turns their answers into paths.
 pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
@@ -485,6 +516,8 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
     // Speech lengths before the cues are cut, so a cue spans what will actually be heard on it.
     let mut clips = clips;
     fill_speech(&mut clips, &run.lines, mats.wav_seconds);
+    let mut plan_logs = plan_logs;
+    plan_logs.extend(fit_spoken(&mut clips, mats.footage_left));
     // §4's effects need two things the planner cannot guess: where their files go and what the footage looks like.
     // The scratch folder is this run's `produce/clips/`, already created above; the shape came in with `Materials`.
     for clip in clips.iter_mut() {

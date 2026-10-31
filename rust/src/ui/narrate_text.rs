@@ -60,7 +60,7 @@ pub fn apply_box(window: &adw::ApplicationWindow, index: usize, typed: &str) -> 
         // The tag names a second on the session clock; `tag_moves_line` owns the clamp out of the clip's
         // last second, so this call site only converts between the two clocks.
         let (offset, refused) =
-            narrate_screen::tag_moves_line(entry.s, entry.e, requested - entry.s, entry.at);
+            narrate_screen::tag_moves_line(entry.s, entry.e, requested, entry.at);
         if refused {
             said = format!(
                 "{} is outside this clip \u{2014} the line stays at {}",

@@ -85,8 +85,7 @@ pub fn move_line(entry: &Entry, target: &Seg, requested: f64) -> MoveResult {
     }
     // Never in the clip's last second: the clamp is the same one the `@N` tag obeys, taken through
     // `tag_moves_line` so the bound is stated once in this tree.
-    let offset = requested - target.s;
-    let (clamped, _) = narrate_screen::tag_moves_line(target.s, target.e, offset, entry.at);
+    let (clamped, _) = narrate_screen::tag_moves_line(target.s, target.e, requested, entry.at);
     MoveResult::Moved { at: clamped }
 }
 

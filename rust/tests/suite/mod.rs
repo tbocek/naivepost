@@ -312,6 +312,7 @@ mod narrate_surface_widgets;
 mod narrate_write_and_speak;
 mod narration_json;
 mod narration_key_vector;
+mod narration_on_the_clock;
 mod narrator_slots;
 mod new_project;
 mod new_project_widgets;

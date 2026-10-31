@@ -629,7 +629,10 @@ pub fn step(
                     &voice_program(),
                     &voice_args(&wav.to_string_lossy(), offset, gain),
                 ) {
-                    preview.voice = Some(child);
+                    if let Some(mut previous) = preview.voice.replace(child) {
+                        let _ = previous.kill();
+                        let _ = previous.wait();
+                    }
                 }
             }
             Stepped::Speaking { line, offset, gain }
