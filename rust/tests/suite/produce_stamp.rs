@@ -414,7 +414,6 @@ fn f5_3_s7_the_stamp_lives_beside_the_video_named_after_its_stem() {
     // both names, so one stamp file serves every container — switching mp4→webm is a settings change inside
     // the hash, not a second stamp nobody would ever clear.
     assert_eq!(stamp::STAMP_FILE, "final.stamp");
-    assert_eq!(tree.final_stamp(), tree.final_stamp());
     assert_eq!(
         tree.final_stamp(),
         root.join("demo.naivepost/produce/final.stamp")

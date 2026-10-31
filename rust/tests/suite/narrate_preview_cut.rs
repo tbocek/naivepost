@@ -343,7 +343,6 @@ fn f4_5_s5_the_row_follows_the_playhead_and_selecting_one_seeks_to_its_lead_in()
 
     let entries = [line(10.0, "spoken")];
     assert_eq!(view::line_at(21.0, &entries), None);
-    assert_eq!(view::line_at(19.0, &entries), view::line_at(19.0, &entries));
 
     // Three seconds ahead of the line — and never back before the clip starts, where there is no video.
     assert_eq!(view::lead_in(0, &entries), 17.0);

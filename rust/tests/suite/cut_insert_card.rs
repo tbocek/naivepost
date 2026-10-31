@@ -103,7 +103,6 @@ fn f2_12_s2_the_chooser_asks_for_what_the_scope_is() {
 #[test]
 fn f2_12_s2_the_chooser_opens_in_the_cards_folder() {
     let root = Path::new("/home/dev/lecture");
-    assert_eq!(layout::assets_dir(root), layout::assets_dir(root));
     assert_eq!(
         layout::assets_dir(root),
         Path::new("/home/dev/lecture/assets")

@@ -199,10 +199,7 @@ impl Defect {
                 "audit_gaps::reprint_title_on_change, mirroring \
                                      youtube_title_redraws_picture"
             }
-            Self::AtThreeReadings => {
-                "narration::output_seconds, reached through \
-                                    audit_gaps::lands_at"
-            }
+            Self::AtThreeReadings => "narration::output_seconds",
         }
     }
 }

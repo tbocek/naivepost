@@ -424,14 +424,6 @@ fn f3_4_s4_the_edge_is_a_dark_dilation() {
 #[test]
 fn f3_4_s4_the_preview_is_the_render() {
     assert!(fx_text::preview_is_the_render());
-    let words = "a caption that has to be broken across a few lines";
-    for (w, h) in [(200.0, 60.0), (320.0, 40.0), (90.0, 200.0)] {
-        assert_eq!(
-            fx_text::fit(words, w, h),
-            fx_text::fit(words, w, h),
-            "{w}×{h}"
-        );
-    }
 }
 
 // --- S5: moving and sizing on the preview --------------------------------------------------------------------------

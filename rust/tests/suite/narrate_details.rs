@@ -100,7 +100,6 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s2_vali
         pass::no_line_fault(),
         "every clip came back with no line at all"
     );
-    assert_eq!(pass::no_line_fault(), pass::no_line_fault());
 
     // Forward-only: the fault says "or is out of order" because a reply that walks back to an earlier clip
     // matches nothing and is refused rather than quietly re-sorted.
@@ -257,10 +256,6 @@ fn sec_07_narrate_6_details_confirmed_against_the_code_verification_pass_s4_rero
         Some("clip 3 has no line to re-roll".to_string())
     );
     assert_eq!(screen::re_roll_refusal(3, true), None);
-    assert_eq!(
-        screen::replace_refusal(true, false),
-        screen::replace_refusal(true, false)
-    );
     assert_eq!(
         screen::replace_refusal(true, false).unwrap(),
         "this narration was already heard or edited \u{2014} tick \u{201c}Replace\u{201d} to write another take over it"

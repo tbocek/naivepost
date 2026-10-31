@@ -59,15 +59,6 @@ fn f3_5_s1_no_line_refuses_before_the_chooser() {
         "Choose a drawing to lay over the video"
     );
     assert_eq!(fx_svg::CHOOSE_FILTER, "SVG drawing");
-    let root = std::path::Path::new("/home/dev/eth");
-    assert_eq!(
-        naivepost::layout::assets_dir(root),
-        naivepost::layout::assets_dir(root)
-    );
-    assert_eq!(
-        naivepost::layout::assets_dir(root),
-        naivepost::layout::assets_dir(root)
-    );
 }
 
 // --- S2: the file first, then the arm ------------------------------------------------------------------------------

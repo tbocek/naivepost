@@ -269,11 +269,6 @@ fn f1_2_s3_a_chunk_is_cut_at_the_plan_times_and_named_after_its_recording() {
         "lecture-c02.wav",
         "lane first, then the part number"
     );
-    assert_eq!(
-        naivepost::asr::part(2),
-        naivepost::asr::part(2),
-        "and the bare name stays asr::part's twin"
-    );
 
     media::cut(
         &dir.join("ffmpeg").display().to_string(),

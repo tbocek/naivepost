@@ -435,11 +435,6 @@ fn f3_8_s4_edit_refinds_by_kind_and_start_within_one_ms() {
     assert_eq!(effect_rules::find_by_value(&lane, "zoom", 30.0), None);
     assert_eq!(effect_rules::find_by_value(&lane, "volume", 20.0), None);
 
-    // The delegation and the miss sentence, whole.
-    assert_eq!(
-        effect_rules::find_by_value(&lane, "zoom", 20.0005),
-        effect_rules::find_by_value(&lane, "zoom", 20.0005)
-    );
     assert_eq!(effect_rules::REACH_SECONDS, 0.001);
     assert_eq!(
         fx_band::GONE,

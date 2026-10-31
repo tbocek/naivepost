@@ -483,8 +483,6 @@ fn sec_08_produce_5_rules_s3_a_run_leaves_an_up_to_date_video_alone() {
 
     stamp::write_stamp(&tree, &current).expect("stamp");
     assert!(stamp::skip_encode(Some(&current), &current), "{current}");
-    // The stamp lives beside the video, in `produce/` — not under `publish/`, which is the picture's own.
-    assert_eq!(tree.final_stamp(), tree.final_stamp());
 
     // A change to anything the render reads asks for the encode again: a codec is one keystroke on §A.
     let retuned = Produce {

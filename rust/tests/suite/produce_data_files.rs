@@ -241,8 +241,6 @@ fn sec_08_produce_3_data_s5_resolve_names_only_the_single_files() {
 fn sec_08_produce_3_data_s6_the_stamp_sits_beside_the_video_and_decides_the_encode() {
     assert_eq!(ITEM, "§08-produce#3-data");
     let (_root, tree) = tree_in("s6");
-    // One path, two modules: §3 lists the file and F5.3 owns what is in it.
-    assert_eq!(tree.final_stamp(), tree.final_stamp());
     assert_eq!(tree.final_stamp(), tree.dir().join("produce/final.stamp"));
     assert_ne!(tree.final_stamp(), tree.final_video("mp4"));
 
@@ -372,7 +370,6 @@ fn sec_08_produce_3_data_s9_the_record_exists_or_it_does_not() {
     publish::save(&record, &tree).unwrap();
     assert!(publish::is_written(&tree));
     assert_eq!(data::written(&tree), [data::DATA_FILES[10]]);
-    assert_eq!(tree.publish_dir(), tree.publish_dir());
     assert_eq!(
         data::resolve(&tree, "publish/publish.json"),
         Some(tree.publish_json())

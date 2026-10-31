@@ -226,10 +226,6 @@ fn f2_14_s2a_the_words_cut_status_and_log_are_exact() {
 fn f2_14_s2b_target_window_present_and_absent() {
     // P.policy.targetLengthSeconds
     assert!(suggest::has_target(300.0));
-    assert_eq!(
-        cutpass::footage_window(300.0),
-        cutpass::footage_window(300.0)
-    );
     assert!(!suggest::has_target(0.0));
     assert_eq!(
         cutpass::footage_window(0.0),

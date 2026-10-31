@@ -243,12 +243,6 @@ fn sec_07_narrate_5_rules_s5_the_preview_hears_what_the_render_will_hear() {
         rate: 2.0,
         ..Default::default()
     }];
-    for t in [5.0, 12.0, 25.0] {
-        assert_eq!(
-            cut_hear::rate_under(&fast, t),
-            cut_hear::rate_under(&fast, t)
-        );
-    }
     assert_eq!(cut_hear::rate_under(&fast, 12.0), 2.0);
     assert_eq!(cut_hear::rate_under(&fast, 5.0), 1.0);
 }
