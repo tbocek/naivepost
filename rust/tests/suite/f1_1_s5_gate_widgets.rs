@@ -12,7 +12,6 @@
 //! whole process and the conf here names a DEAD port, the opposite of theirs. One application drives
 //! the check: GTK's main loop may only be run once per thread.
 
-use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -38,10 +37,7 @@ fn pin_session(tag: &str) -> (PathBuf, Tree) {
 
 /// A port nothing listens on: every dial to it is refused, which is §S5's "not answering".
 fn dead_port() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
-    let port = listener.local_addr().expect("an address").port();
-    drop(listener);
-    format!("http://127.0.0.1:{port}")
+    "http://127.0.0.1:1".to_string()
 }
 
 /// Point the settings this process reads at `url`, and keep audio.cpp's own override variables out of

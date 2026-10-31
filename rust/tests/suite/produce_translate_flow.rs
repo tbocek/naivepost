@@ -591,10 +591,7 @@ fn tick_language(window: &adw::ApplicationWindow, language: &str) {
 /// refused connection, which is §F5.4 S3's unanswered batch: the track ships as the original with the
 /// warning. `just test` runs one binary per process, so reading it here touches no other test's env.
 fn dead_server_url() -> String {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind a loopback port");
-    let port = listener.local_addr().expect("a local address").port();
-    drop(listener);
-    format!("http://127.0.0.1:{port}")
+    "http://127.0.0.1:1".to_string()
 }
 
 /// Rewrite the settings' LLM address — the seam the real leg reads per batch.

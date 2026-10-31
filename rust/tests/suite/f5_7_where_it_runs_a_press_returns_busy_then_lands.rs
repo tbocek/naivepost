@@ -87,10 +87,7 @@ fn slow_model(arrivals: Arc<AtomicUsize>) -> String {
 
 /// A port nothing listens on, for sd.cpp: no leg waits on a connect.
 fn dead_address() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a port to hand out");
-    let port = listener.local_addr().expect("an address").port();
-    drop(listener);
-    format!("http://127.0.0.1:{port}")
+    "http://127.0.0.1:1".to_string()
 }
 
 /// Pin cwd into a folder of our own, point the settings at `server`, and lay down the plain picture a

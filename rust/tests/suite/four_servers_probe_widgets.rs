@@ -323,12 +323,7 @@ fn check_sd_row_asks_capabilities(window: &adw::ApplicationWindow) {
 
     // And the same press against a dead address fails with §5's "not reachable" story rather than
     // a silent pass: nothing is listening, so both probes fail and the row says so.
-    let dead = {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind then release");
-        let port = listener.local_addr().expect("a local address").port();
-        drop(listener);
-        format!("http://127.0.0.1:{port}")
-    };
+    let dead = { "http://127.0.0.1:1".to_string() };
     type_and_test(window, "sd", &dead);
     let badge = ui::badge(window, "sd").expect("the sd row still has its badge");
     assert_eq!(

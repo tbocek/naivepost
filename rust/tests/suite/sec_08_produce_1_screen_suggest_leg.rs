@@ -126,10 +126,7 @@ fn serve_one(mut stream: std::net::TcpStream, reply: &str) -> Option<String> {
 /// A port nothing listens on: handed out by binding and dropping, so it is a real refused address rather
 /// than a made-up number that might be taken by something else on a busy machine.
 fn dead_address() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a port to hand out");
-    let port = listener.local_addr().expect("an address").port();
-    drop(listener);
-    format!("http://127.0.0.1:{port}")
+    "http://127.0.0.1:1".to_string()
 }
 
 /// Pin cwd into a folder of our own and point the SETTINGS at `server`. Everything the press writes lands

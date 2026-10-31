@@ -94,3 +94,33 @@ fn a_lanes_cross_takes_only_what_is_its_own() {
     remove_lane(&mut cut, "Copied-2");
     assert!(cut.segs.is_empty());
 }
+
+#[test]
+fn a_copy_from_a_lane_counts_from_the_second_the_lane_windows() {
+    let cut = Cut {
+        lanes: vec![Lane {
+            name: "Copied".to_string(),
+            src: "a.mp4".to_string(),
+            at: 10.0,
+            off: 100.0,
+            dur: 20.0,
+        }],
+        ..Default::default()
+    };
+    let filmed = [naivepost::timeline::Recording {
+        base: "Copied".to_string(),
+        start: 10.0,
+        end: 30.0,
+    }];
+    let held = hand(
+        Scope::Sound {
+            recording: "Copied".to_string(),
+        },
+        12.0,
+        15.0,
+    );
+    assert_eq!(
+        naivepost::cut_copy::file_seconds(&cut, &filmed, &held),
+        102.0
+    );
+}

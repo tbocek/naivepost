@@ -124,10 +124,7 @@ impl Fake {
 
 /// A port nothing listens on: the honest stand-in for a server that is down.
 fn closed_port_url() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a spare port");
-    let port = listener.local_addr().expect("an address").port();
-    drop(listener);
-    format!("http://127.0.0.1:{port}")
+    "http://127.0.0.1:1".to_string()
 }
 
 /// Point the settings file at `server` and name `model`, so the LIVE provider reads those values back.

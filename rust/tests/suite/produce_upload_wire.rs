@@ -697,12 +697,7 @@ fn f5_6_s2_a_down_llm_is_named() {
     let live = FakeLlm::start(vec![]);
     let scene = fixture("down_llm", &live.url());
     // Hand out a port nothing listens on, then point the settings at it — the same seam a real edit uses.
-    let dead = {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("a port to hand out");
-        let port = listener.local_addr().expect("an address").port();
-        drop(listener);
-        format!("http://127.0.0.1:{port}")
-    };
+    let dead = { "http://127.0.0.1:1".to_string() };
     point_at(&dead);
     let moments = [1.0f64];
     let starts = [0.0f64];

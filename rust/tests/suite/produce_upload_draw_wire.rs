@@ -272,12 +272,7 @@ fn f5_6_s6_a_down_image_server_keeps_the_published_text() {
     let live = FakeSd::start(vec![]);
     let scene = fixture("down", &live.url());
     // Point the settings at a port nothing listens on — the same edit a user makes in the dialog.
-    let dead = {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("a port to hand out");
-        let port = listener.local_addr().expect("an address").port();
-        drop(listener);
-        format!("http://127.0.0.1:{port}")
-    };
+    let dead = { "http://127.0.0.1:1".to_string() };
     let paths = settings::from_environment().expect("settings folder");
     let mut conf = settings::read(&paths).expect("settings read back");
     conf.sd_server = dead.clone();

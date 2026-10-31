@@ -29,8 +29,16 @@ pub fn note_pitch_for_session(semitones: f64) -> Option<String> {
 /// row): each press cuts the reference from different seconds. `None` = nothing to write, or it worked.
 pub fn note_takes_for_session(takes: &[(f64, f64)]) -> Option<String> {
     let tree = crate::ui::window::narrate_session_tree()?;
+    let voice = crate::ui::narrate_page::read_state().voice;
+    // With its recording gone the picks have nowhere to go, and the reference is all that is left of the voice.
+    let project = crate::project::load(tree.dir()).ok()?;
+    if crate::narrate_band_face::tape(&tree, &project, &voice).is_empty()
+        && narrate_data::base_reference(&tree).exists()
+    {
+        return Some("the recording behind this voice is gone".to_string());
+    }
     crate::voice_ref::invalidate_for_change(&tree, crate::voice_ref::Changed::Takes);
-    note_takes(&tree, &crate::ui::narrate_page::read_state().voice, takes)
+    note_takes(&tree, &voice, takes)
 }
 
 /// `narrate/voice.txt` after a voice pick, plus S4's invalidation of the reference cut from the old one
@@ -169,6 +177,15 @@ pub fn note_takes(tree: &Tree, voice: &str, takes: &[(f64, f64)]) -> Option<Stri
         Ok(stored) => stored,
         Err(why) => return Some(why),
     };
+    // The last take off the band: "no takes left" has to be true of the seconds outside the cut as well.
+    if takes.is_empty() {
+        for recording in stored.keys().filter(|base| tape.bases().contains(base)) {
+            if let Err(why) = narrate_data::save_takes(tree, recording, &[]) {
+                return Some(why);
+            }
+        }
+        return None;
+    }
     for (recording, picked) in tape.store(takes, &stored) {
         if let Err(why) = narrate_data::save_takes(tree, &recording, &picked) {
             return Some(why);

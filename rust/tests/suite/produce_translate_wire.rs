@@ -640,12 +640,7 @@ fn f5_4_s3_wire_a_dead_server_is_named() {
     let llm = FakeLlm::start();
     point_at(&llm.url());
     let cancelled = stop_flag();
-    let dead = {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("a port to hand out");
-        let port = listener.local_addr().expect("an address").port();
-        drop(listener);
-        format!("http://127.0.0.1:{port}")
-    };
+    let dead = { "http://127.0.0.1:1".to_string() };
     point_at(&dead);
     let ask = ask_leg::ask(&scene.tree, &cancelled);
     let err = ask(&subs::message(1, "German"), &[1]).expect_err("nothing listens there");

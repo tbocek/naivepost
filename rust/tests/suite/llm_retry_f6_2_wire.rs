@@ -455,12 +455,7 @@ fn f6_2_s1_the_ladder_ends_and_a_stop_ends_it_early() {
 #[test]
 fn f6_2_s1_a_server_that_never_answered_is_not_waited_through() {
     // Nothing listens at this port at all: refused from the first contact, with no answer ever.
-    let listener = TcpListener::bind("127.0.0.1:0").expect("hand out a dead port");
-    let dead = format!(
-        "http://127.0.0.1:{}",
-        listener.local_addr().expect("a local address").port()
-    );
-    drop(listener);
+    let dead = "http://127.0.0.1:1".to_string();
     let scene = fixture("never", &dead);
     let sink = Sink::default();
     let waits = Waits::default();

@@ -134,10 +134,7 @@ fn server(health: u16, models: &'static str) -> String {
 
 /// A port nothing listens on: every dial to it is refused.
 fn dead_url() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a port to hand out");
-    let port = listener.local_addr().expect("a local address").port();
-    drop(listener);
-    format!("http://127.0.0.1:{port}")
+    "http://127.0.0.1:1".to_string()
 }
 
 /// S5: a server that answers nothing refuses with §S5's first sentence — the server itself, because

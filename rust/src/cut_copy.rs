@@ -370,10 +370,16 @@ pub fn file_seconds(cut: &Cut, filmed: &[Recording], hand: &Hand) -> f64 {
     let Some(recording) = recording else {
         return 0.0;
     };
+    // A lane windows its file from its own second, not from the file's head.
+    let off = cut
+        .lanes
+        .iter()
+        .find(|lane| lane.name == recording.base)
+        .map_or(0.0, |lane| lane.off);
     timeline::local_at(
         hand.from,
         recording.start,
-        0.0,
+        off,
         timeline::shift_of(cut, &recording.base),
     )
     .max(0.0)
