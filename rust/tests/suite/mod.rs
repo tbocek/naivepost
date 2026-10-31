@@ -273,6 +273,7 @@ mod lane_preview_surfaces;
 mod lane_preview_widgets;
 mod late_stamp_window;
 mod layout;
+mod llm_blank_stream;
 mod llm_cache;
 mod llm_cache_live_paths;
 mod llm_liveness_f6_3;

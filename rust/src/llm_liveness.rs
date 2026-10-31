@@ -627,3 +627,33 @@ pub fn in_flight(independent: bool, slots: u32) -> usize {
         1
     }
 }
+
+/// Does this read of a reply carry anything but blank text? Only a read made wholly of complete stream events whose
+/// text is whitespace says nothing. Anything else counts as life, half an event and a plain body included.
+pub fn says_something(read: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(read);
+    let mut events = 0;
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+        let Some(json) = line.strip_prefix("data:") else {
+            return true;
+        };
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(json.trim()) else {
+            return true;
+        };
+        let delta = &event["choices"][0]["delta"];
+        let blank = |key: &str| {
+            delta[key]
+                .as_str()
+                .is_none_or(|said| said.trim().is_empty())
+        };
+        if !delta.is_object()
+            || !blank("content")
+            || !blank("reasoning_content")
+            || !delta["tool_calls"].is_null()
+        {
+            return true;
+        }
+        events += 1;
+    }
+    events == 0
+}

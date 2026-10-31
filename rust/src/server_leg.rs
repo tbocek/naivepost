@@ -296,9 +296,12 @@ fn send_pinged(
             Ok(0) => break started.elapsed().as_millis() as i64,
             Ok(n) => {
                 let elapsed = started.elapsed().as_millis() as i64;
-                // Any byte at all counts (§4), including one the event parser never turns into anything.
+                // Any byte counts (§4), except a stream of nothing but blank text: a model stuck on newlines is
+                // not answering, and only the stall watch can end it.
                 if let Some(probe) = probe {
-                    probe.byte();
+                    if crate::llm_liveness::says_something(&chunk[..n]) {
+                        probe.byte();
+                    }
                 }
                 buf.extend_from_slice(&chunk[..n]);
                 // The split is looked for in THIS read's bytes only: re-scanning the whole buffer would
