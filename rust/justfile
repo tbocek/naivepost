@@ -30,6 +30,9 @@ _files filter:
     #!/usr/bin/env bash
     set -uo pipefail
     export GSK_RENDERER=cairo GDK_BACKEND=x11 GTK_A11Y=none GSETTINGS_BACKEND=memory
+    # No test is heard: the players they start find no sound server and fall back to a silent sink.
+    export PULSE_SERVER=unix:/nonexistent PIPEWIRE_REMOTE=nonexistent
+    export GST_PLUGIN_FEATURE_RANK=pulsesink:NONE,alsasink:NONE,pipewiresink:NONE,jackaudiosink:NONE,oss4sink:NONE,osssink:NONE
     jobs=${JOBS:-30}
     base=100
     # The display pool: started once and left running for the next run; a lock without its server is stale.

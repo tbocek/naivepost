@@ -906,6 +906,11 @@ pub fn serve_body(mut stream: std::net::TcpStream, answer: &str) -> Option<Strin
 /// test walks its own checks inside this single main loop. `checks` runs once, then the app quits; a
 /// second call from the same binary finds `ONCE` used and returns with the checks already recorded.
 pub fn one_app_round(checks: impl FnOnce(&adw::Application) + 'static) {
+    // A test run by hand gets what `just test` sets: nothing it starts may be heard.
+    unsafe {
+        std::env::set_var("PULSE_SERVER", "unix:/nonexistent");
+        std::env::set_var("PIPEWIRE_REMOTE", "nonexistent");
+    }
     static ONCE: std::sync::Once = std::sync::Once::new();
     let checks = std::rc::Rc::new(std::cell::RefCell::new(Some(checks)));
     ONCE.call_once(move || {
