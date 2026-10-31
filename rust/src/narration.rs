@@ -106,11 +106,7 @@ impl Narration {
     /// leans on it — a line's window runs to the next entry — and a hand-edited time can
     /// break it, so both [`load`] and [`save`] put it back.
     pub fn sort(&mut self) {
-        self.entries.sort_by(|a, b| {
-            a.s.partial_cmp(&b.s)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then(a.at.partial_cmp(&b.at).unwrap_or(std::cmp::Ordering::Equal))
-        });
+        sort_entries(&mut self.entries);
     }
 
     /// Is this clip marked silent — its last line deleted on purpose, kept by bounds?
@@ -213,6 +209,11 @@ pub fn tts_file(key: &str) -> String {
 pub fn tts_seed(key: &str) -> u32 {
     let digest = Sha1::digest(key.as_bytes());
     u32::from_be_bytes([digest[8], digest[9], digest[10], digest[11]])
+}
+
+/// Lines in playing order: by clip, then by placement within it.
+pub fn sort_entries(entries: &mut [Entry]) {
+    entries.sort_by(|a, b| a.s.total_cmp(&b.s).then(a.at.total_cmp(&b.at)));
 }
 
 /// The lines a voice speaks: every entry with words. A blank line is a deliberate silence and is never spoken.

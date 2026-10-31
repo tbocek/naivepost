@@ -26,6 +26,8 @@ fn preview_covered(s: &NarrateState) -> Vec<(f64, f64)> {
 /// the refusal verbatim, or names the second playback starts from.
 pub fn press_preview_picture(window: &adw::ApplicationWindow) -> String {
     let s = narrate_page::read_state();
+    // The takes it looks for are this voice's, on a first press and after a change.
+    narrate_preview_leg::set_voice(&s.voice);
     let line_start = narrate_preview::line_at(s.session, &s.entries)
         .map(|index| s.entries[index].s + s.entries[index].at);
     let pressed =

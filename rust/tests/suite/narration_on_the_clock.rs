@@ -102,3 +102,29 @@ fn a_clip_grows_to_hear_a_line_out_and_keeps_room_it_does_not_need() {
     assert_eq!(fits[0].on_screen, 10.0);
     assert_eq!(fits[0].lines[0].at, 1.0);
 }
+
+#[test]
+fn lines_sort_by_clip_then_place() {
+    let line = |s: f64, at: f64| Entry {
+        s,
+        at,
+        ..Default::default()
+    };
+    let mut lines = [line(10.0, 5.0), line(10.0, 1.0), line(0.0, 9.0)];
+    naivepost::narration::sort_entries(&mut lines);
+    let order: Vec<(f64, f64)> = lines.iter().map(|l| (l.s, l.at)).collect();
+    assert_eq!(order, [(0.0, 9.0), (10.0, 1.0), (10.0, 5.0)]);
+}
+
+#[test]
+fn a_new_take_is_a_different_file_for_the_render_too() {
+    let dir = std::env::temp_dir().join(format!("roll-{}.naivepost", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let tree = naivepost::layout::Tree::new(&dir).unwrap();
+    let mut line = entry("words", "");
+    let first = naivepost::produce_stamp::wav_of(&tree, &line, Some("own"), line.roll);
+    line.roll = 1;
+    let second = naivepost::produce_stamp::wav_of(&tree, &line, Some("own"), line.roll);
+    assert_ne!(first, second);
+    let _ = std::fs::remove_dir_all(&dir);
+}

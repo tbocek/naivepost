@@ -43,6 +43,7 @@ pub fn press_line_add_below(window: &adw::ApplicationWindow, index: usize) -> St
                     ..Default::default()
                 };
                 state.entries.insert(index + 1, fresh);
+                crate::narration::sort_entries(&mut state.entries);
             });
             narrate_page::refresh(window);
             // §F4.7: the new row is part of the narration record, so it is written like a typed line.
@@ -107,6 +108,7 @@ pub fn press_line_move(window: &adw::ApplicationWindow, index: usize, typed: &st
                     row.e = target.e;
                     row.at = at;
                 }
+                crate::narration::sort_entries(&mut state.entries);
             });
             // §F4.7: a move rewrites the entry's bounds in the same file — owed like any other edit,
             // and written BEFORE the emptied-clip marker for the reason given on `record_silence`.

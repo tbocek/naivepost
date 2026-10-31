@@ -257,7 +257,9 @@ pub fn render_half(
             // §9: the first footage clip's frame is the whole video's frame; §10's resolution can only
             // shrink it, and `frame_box` falls back to this when the cut names no aspect.
             src_shape: snap.src_shape,
-            wav_of: &|entry| crate::produce_stamp::wav_of(&snap.tree, entry, Some(&run.voice), 0),
+            wav_of: &|entry| {
+                crate::produce_stamp::wav_of(&snap.tree, entry, Some(&run.voice), entry.roll)
+            },
             // The press hands over only the LANGUAGES: the cues themselves are cut by the render from the
             // clips it planned (`produce_exec::plan`), because a cue needs the clip's rate, its placed
             // lines and its own words — none of which exist before the plan. An `all` handed in here would
@@ -291,7 +293,7 @@ pub fn render_half(
             footage_left: &|seg: &crate::cut::Seg| snap.footage_left(seg),
             // F4.3: speech length is the wav's duration.
             wav_seconds: &|entry| {
-                crate::produce_stamp::wav_of(&snap.tree, entry, Some(&run.voice), 0)
+                crate::produce_stamp::wav_of(&snap.tree, entry, Some(&run.voice), entry.roll)
                     .as_ref()
                     .and_then(|wav| crate::voice_ref::wav_seconds(std::path::Path::new(wav)))
             },

@@ -919,6 +919,7 @@ pub fn press_narrate_add_line(window: &adw::ApplicationWindow) -> String {
                         at: (at - clip.s).max(0.0),
                         ..Default::default()
                     });
+                    crate::narration::sort_entries(&mut state.entries);
                 });
                 format!("a line starts at {}", narrate_screen::time_field(at))
             };
@@ -1034,6 +1035,7 @@ pub fn press_line_reroll(window: &adw::ApplicationWindow, index: usize) -> Strin
                 entry.roll = narrate_edit::reroll(entry.roll);
             }
         });
+        crate::ui::narrate_text::note_structure_change(window);
         let after = read_state();
         let Some(entry) = after.entries.get(index) else {
             return say(window, narrate_details::nothing_picked());

@@ -46,24 +46,21 @@ pub fn speak_one(
 /// the record no longer holds (or a line with no tag) keeps the flat delivery, which is what an untagged
 /// line sounds like on the Narrate page too.
 fn spoken_entry(tree: &Tree, line: &crate::produce_exec::ToSpeak) -> Entry {
-    let emotion = crate::narration::load(tree)
-        .map(|record| {
-            record
-                .entries
-                .iter()
-                .find(|held| held.text == line.text)
-                .map(|held| held.emotion.clone())
-                .unwrap_or_default()
-        })
-        .unwrap_or_default();
+    let record = crate::narration::load(tree).unwrap_or_default();
+    let held = crate::narration::lines_to_speak(&record.entries);
+    // By its place first: two lines with the same words may be delivered differently.
+    let found = held
+        .get(line.index)
+        .filter(|held| held.text == line.text)
+        .or_else(|| held.iter().find(|held| held.text == line.text));
     Entry {
         s: 0.0,
         e: 0.0,
         at: 0.0,
         text: line.text.clone(),
-        emotion,
+        emotion: found.map(|held| held.emotion.clone()).unwrap_or_default(),
         pos: String::new(),
-        roll: 0,
+        roll: found.map_or(0, |held| held.roll),
     }
 }
 

@@ -386,7 +386,7 @@ pub fn speech_plan(run: &Run, tree: &Tree, mats: &Materials, speaking: bool) -> 
                 index,
                 text: entry.text.clone(),
                 wav: (mats.wav_of)(entry)
-                    .or_else(|| produce_stamp::wav_of(tree, entry, Some(&run.voice), 0))
+                    .or_else(|| produce_stamp::wav_of(tree, entry, Some(&run.voice), entry.roll))
                     .unwrap_or_else(|| tree.tts_wav("pending")),
             })
             .collect(),
