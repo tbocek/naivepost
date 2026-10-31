@@ -99,11 +99,11 @@ fn play_renders_a_cut_with_effects_across_a_split_to_a_finished_file() {
                 "-f",
                 "lavfi",
                 "-i",
-                "color=black:s=320x180:r=25:d=20",
+                "color=black:s=320x180:r=25:d=30",
                 "-f",
                 "lavfi",
                 "-i",
-                "sine=frequency=440:duration=20",
+                "sine=frequency=440:duration=30",
                 "-shortest",
             ],
             &dir.join("sources/2026-10-18 19-21-52.mkv"),
@@ -118,12 +118,17 @@ fn play_renders_a_cut_with_effects_across_a_split_to_a_finished_file() {
             dir.join("cut/cut.json"),
             r#"{"segs": [{"s": 0.0, "e": 8.0},
                          {"s": 8.0, "e": 8.0, "dur": 3.0, "ins": "project:card.svg"},
-                         {"s": 8.0, "e": 16.0}, {"s": 16.0, "e": 20.0}],
+                         {"s": 8.0, "e": 16.0}, {"s": 16.0, "e": 20.0},
+                         {"s": 20.0, "e": 24.0, "ins": "project:quiet.wav"}],
                 "fx": [{"kind": "text", "t": 5.0, "dur": 6.0, "text": "WORDS"},
                        {"kind": "speed", "t": 16.0, "dur": 4.0, "rate": 2.0},
                        {"kind": "volume", "t": 12.0, "dur": 3.0, "gain": 0.05}]}"#,
         )
         .unwrap();
+        ffmpeg(
+            &["-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", "6"],
+            &dir.join("quiet.wav"),
+        );
         std::fs::write(
             dir.join("card.svg"),
             r#"<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="gray"/></svg>"#,
@@ -146,9 +151,9 @@ fn play_renders_a_cut_with_effects_across_a_split_to_a_finished_file() {
             common::status_text(&window),
             ui::window_logs().iter().rev().take(14).collect::<Vec<_>>()
         );
-        // 8 s, the 3 s card, 8 s, and 4 s of footage at 2×.
+        // 8 s, the 3 s card, 8 s, 4 s of footage at 2×, and 4 s under a sound.
         assert!(
-            (seconds(&done) - 21.0).abs() < 0.5,
+            (seconds(&done) - 25.0).abs() < 0.5,
             "{} {:?}",
             seconds(&done),
             ui::window_logs()
@@ -169,6 +174,15 @@ fn play_renders_a_cut_with_effects_across_a_split_to_a_finished_file() {
         assert!(
             loudest(&done, 15.5, 17.5) < loudest(&done, 12.0, 14.0) - 15.0,
             "the duck lands where its seconds play"
+        );
+        // The footage hums; the file laid over its last four seconds is silent, and the picture goes on.
+        assert!(
+            loudest(&done, 18.5, 20.5) > -40.0,
+            "the footage's own sound"
+        );
+        assert!(
+            loudest(&done, 21.5, 24.5) < -60.0,
+            "the laid sound in its place"
         );
         RAN.store(true, Ordering::SeqCst);
         window.close();

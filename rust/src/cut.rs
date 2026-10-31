@@ -508,12 +508,9 @@ pub fn exists(tree: &layout::Tree) -> bool {
 /// returns to after a suggestion is the model's answer and not whatever was on disk an hour ago.
 pub fn keep_inserts(suggested: &[Seg], current: &[Seg]) -> Vec<Seg> {
     let inserts: Vec<&Seg> = current.iter().filter(|seg| !seg.ins.is_empty()).collect();
-    // A picture laid over the footage replaces those seconds; a sound plays over them.
+    // An overwriting insert stands in the list in place of those seconds, a sound as well as a picture.
     let mut kept: Vec<Seg> = suggested.to_vec();
-    for over in inserts.iter().filter(|seg| {
-        seg.is_overwrite_insert()
-            && crate::cut_insert::kind(&seg.ins) != crate::cut_insert::Kind::Audio
-    }) {
+    for over in inserts.iter().filter(|seg| seg.is_overwrite_insert()) {
         kept = kept
             .into_iter()
             .flat_map(|seg| outside(seg, over.s, over.e))

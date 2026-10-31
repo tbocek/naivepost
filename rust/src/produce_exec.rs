@@ -642,6 +642,20 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
                 .collect();
             let source = (mats.source_file)(&clip);
             let insert = !clip.source.is_empty() && !clip.source.starts_with("copy:");
+            // A sound has no picture: the clip shows the footage at its seconds and hears the file.
+            let sound_file = (insert
+                && crate::cut_insert::kind(&clip.source) == crate::cut_insert::Kind::Audio)
+                .then(|| source.as_ref().map(|(path, _)| path.clone()))
+                .flatten();
+            let source = if sound_file.is_some() {
+                let footage = render::Clip {
+                    source: String::new(),
+                    ..clip.clone()
+                };
+                (mats.source_file)(&footage)
+            } else {
+                source
+            };
             let picture_kind = if insert {
                 match crate::cut_insert::kind(&clip.source) {
                     crate::cut_insert::Kind::Still => "image",
@@ -652,12 +666,13 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             };
             // A card or a picture brings no sound, and a video insert may not: the graph needs one all the same.
             let silent = insert
+                && sound_file.is_none()
                 && source.as_ref().is_some_and(|(path, _)| {
                     picture_kind == "image"
                         || is_card_source(&clip.source)
                         || !crate::produce_probe::has_sound(std::path::Path::new(path))
                 });
-            clip.sound_input = usize::from(silent);
+            clip.sound_input = usize::from(silent || sound_file.is_some());
             let clip = &clip;
             let seek = source.as_ref().map_or(clip.seg_s, |(_, seek)| *seek);
             let mut inputs: Vec<(&str, Option<&str>)> = match source.as_ref() {
@@ -696,6 +711,9 @@ pub fn plan(run: &Run, tree: &Tree, mats: &Materials) -> Plan {
             }
             if silent {
                 inputs.push(("sound", None));
+            }
+            if let Some(file) = sound_file.as_deref() {
+                inputs.push(("soundfile", Some(file)));
             }
             // Last: `video_graph` counts the overlays' inputs back from here.
             for (kind, path) in built.inputs.iter() {

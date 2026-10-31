@@ -57,7 +57,7 @@ fn a_picture_laid_over_takes_its_seconds_from_a_suggestion() {
 }
 
 #[test]
-fn a_sound_laid_over_leaves_the_suggestion_whole() {
+fn a_sound_laid_over_takes_its_seconds_too() {
     let over = Seg {
         s: 10.0,
         e: 14.0,
@@ -65,7 +65,7 @@ fn a_sound_laid_over_leaves_the_suggestion_whole() {
         ..Default::default()
     };
     let out = keep_inserts(&[seg(0.0, 30.0)], &[over]);
-    assert_eq!(spans(&out), [(0.0, 30.0), (10.0, 14.0)]);
+    assert_eq!(spans(&out), [(0.0, 10.0), (10.0, 14.0), (14.0, 30.0)]);
 }
 
 #[test]

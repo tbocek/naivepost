@@ -1143,6 +1143,9 @@ pub fn encode_command_with(
                     filter_inputs += 1;
                     continue;
                 }
+                if *kind == "soundfile" && clip.ss > 0.0 {
+                    argv.extend([SEEK_FLAG.into(), format!("{:.3}", clip.ss)]);
+                }
                 if matches!(*kind, "text" | "svg" | "image") {
                     argv.extend([
                         "-loop".into(),
