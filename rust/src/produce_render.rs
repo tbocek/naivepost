@@ -1,18 +1,8 @@
-//! F5.2 The render — the steps between ▶ on the Produce page and `produce/final.<container>`
-//! (`spec/08-produce.md` §F5.2, wording in `spec/inventory/produce.md` §B). This file covers S1–S4:
-//! clearing the scratch folder, deciding what still has to be spoken, planning one clip per segment and
-//! putting the cues on the produced clock. S5–S10 (encode, join, translate, mux, sidecars, checkpoints)
-//! continue in the same module below.
-//!
-//! **Nothing is executed here.** The container this is built in has no `ffmpeg`/`ffprobe` (`command -v`
-//! finds neither), so a subprocess would fail for the wrong reason; this module decides *what* each step
-//! does, what it logs and the argv it would hand ffmpeg, and returns those as plain data. The caller that
-//! has ffmpeg runs them in order and forwards every string here to the log. Keeping the decisions separate
-//! is also what makes them testable: a plan can be asserted, a run cannot.
-//!
-//! Ids cited: `P.eng.minClipSeconds` (the shortest clip the render makes — [`crate::tools::cutpass::MIN_CLIP_SECONDS`]),
-//! `P.policy.gameVolume` (the narration's bed-mate, applied in S5), `P.eng.laneMinMixSeconds` (the shortest
-//! lane overlap worth an input), `tool:ffmpeg.encode` (every codec/preset/CRF argument is ffmpeg's own).
+//! F5.2 The render: the steps between ▶ on the Produce page and `produce/final.<container>` (`spec/08-produce.md`
+//! §F5.2, wording in `spec/inventory/produce.md` §B). Nothing is executed here: each step's decision, log line and
+//! ffmpeg argv come back as plain data (S1–S10), and the caller runs them in order ([`crate::produce_exec`]).
+//! Ids cited: `P.eng.minClipSeconds` ([`crate::tools::cutpass::MIN_CLIP_SECONDS`]), `P.policy.gameVolume`,
+//! `P.eng.laneMinMixSeconds`, `tool:ffmpeg.encode`.
 
 use crate::cut::{Fx, Lane, Seg};
 use crate::cut_hear;
@@ -24,17 +14,11 @@ use crate::render_fx;
 use crate::tools::cutpass::MIN_CLIP_SECONDS;
 use crate::tools::mm_ss;
 
-// ---- S1: the scratch folder -------------------------------------------------------
-
-/// §F5.2 S1 / inventory §B step 0 (`scratch produce/clips/ cleared`): where the per-clip encodes, burned
-/// cues and `final.srt` live between a run's start and its join.
+/// §F5.2 S1 / inventory §B step 0: where per-clip encodes, burned cues and `final.srt` live between a run's start and its join.
 pub const SCRATCH: &str = "produce/clips/";
 
-/// S1: empty the scratch folder — every file inside it, never the folder itself. It is emptied rather than
-/// reused because a stale `c007_….mp4` from an earlier cut would be concatenated by name if anything ever
-/// listed the folder; and it is not deleted, because the render writes into it seconds later and a missing
-/// folder is an ffmpeg error with a worse message. A folder that does not exist yet has nothing to clear:
-/// `Ok(0)`, no directory created.
+/// S1: empty the scratch folder's files, never the folder: a stale `c007_….mp4` would be concatenated by name, and the
+/// render writes into it seconds later. A missing folder is `Ok(0)`, none created.
 pub fn clear_scratch(dir: &std::path::Path) -> Result<usize, String> {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
@@ -52,23 +36,15 @@ pub fn clear_scratch(dir: &std::path::Path) -> Result<usize, String> {
     Ok(gone)
 }
 
-// ---- S2: what still has to be spoken ---------------------------------------------
-
-/// S2's answer: nothing at all (a captions-only voice — the lines ride the subtitle track and no request is
-/// made), or the lines that have text and no wav, in the record's order so the bar counts up the way the
-/// rows are read.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Speak {
     Nothing,
     Missing(Vec<String>),
 }
 
-/// S2 (`speak every line with no wav`) — unless the voice is captions only, which speaks nothing at all:
-/// `spec/07-narrate.md` §5 short-circuits everything that could speak, and here that means the whole of
-/// job 1/2. A line whose text is empty is a deliberate silence and is never synthesized (the same seam
-/// [`crate::narrate_off::lines_to_speak`] uses). The list holds the **words** to speak, in the record's
-/// order: which wav each one lands in is [`crate::narration::tts_key`]'s answer, and asking it here would
-/// make this function depend on the voice and the emotion blend it does not have.
+/// S2: speak every line with no wav, unless the voice is captions only (`spec/07-narrate.md` §5 short-circuits job 1/2).
+/// A blank line is a deliberate silence ([`crate::narrate_off::lines_to_speak`]). The list holds the **words**; which wav
+/// each lands in is [`crate::narration::tts_key`]'s answer.
 pub fn speak_job(
     voice_is_captions: bool,
     entries: &[Entry],
@@ -85,24 +61,18 @@ pub fn speak_job(
     Speak::Missing(missing)
 }
 
-/// S2's job line: the speaking job is `1/2`, so it carries half the bar and the encode carries the rest.
 pub fn speaking_job_line(done: usize, total: usize) -> String {
     format!("speaking {done}/{total}")
 }
 
-/// Why the speaking job is worth a half: nothing else on this page can be waited for as long, and a run
-/// that never got to the encoder has to look different from one that did.
 pub const SPEAKING_FRACTION: f64 = 0.5;
 
-/// S2 (`"synthesis for Ns: …" on failure`): the seconds are the ones already spent, because that is what
-/// makes a stalled server distinguishable from a refusal.
+/// S2 (`"synthesis for Ns: …" on failure`): the seconds already spent tell a stalled server from a refusal.
 pub fn synthesis_failure_log(seconds: f64, reason: &str) -> String {
     format!("synthesis for {seconds:.1}s: {reason}")
 }
 
-/// S2's branch: captions only with Subtitles "none in the video" is the one combination where the words
-//  exist nowhere in the finished file — the .srt beside it is all that is left, and the log says so. Any
-/// other choice already carries them in the picture or in a track.
+/// S2's branch: captions only with Subtitles "none in the video" leaves the words only in the .srt beside it, and the log says so.
 pub fn captions_only_warning(subtitles: Subtitles) -> Option<&'static str> {
     match subtitles {
         Subtitles::None => {
@@ -112,64 +82,39 @@ pub fn captions_only_warning(subtitles: Subtitles) -> Option<&'static str> {
     }
 }
 
-// ---- S3: one clip per segment -----------------------------------------------------
-
-/// What the render will do with one segment: its clock, its box, the lanes it hears, the lines placed on it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Clip {
-    /// 1-based, because every log line about a clip names it to a person.
     pub no: usize,
     pub seg_s: f64,
-    /// Seconds on screen — the segment's own length divided by its rate, or its `dur` when spliced.
     pub on_screen: f64,
     pub rate: f64,
-    /// The asset, in the cut's own spelling (`""` for footage, `copy:<s>` for a pasted stretch).
     pub source: String,
     pub frame: (i32, i32),
     pub lanes: Vec<String>,
     pub lines: Vec<Placed>,
-    /// Volume cues the clip carries; [`crate::produce_fx_chain`] reads them back when it builds the real per-cue
-    /// filters.
     pub cues: usize,
-    /// How deep the camera goes into the frame (1.0 = no zoom), capped by S5's caller before encoding.
     pub camera_depth: f64,
-    /// The effects this segment carries — what every §4 filter is built from, read through the same `fx_for` door
-    /// as the cues. The footage's own shape and `produce/clips/` come along for the same reason: a camera rectangle
-    /// needs the first, a generated title sheet needs the second, and both belong beside the clip rather than being
-    /// guessed at by whoever builds its filters.
+    /// The effects this segment carries, read through the same `fx_for` door as the cues; every §4 filter is built from them.
     pub fx: Vec<Fx>,
-    /// §8 bullet 4: the planned 1× read head for this clip, in its own seconds,
-    /// `None` when the head does not open (no drift, a card, or no tape under it).
-    /// [`crate::produce_fx_chain`] dips the joins it is given and nothing else.
+    /// §8 bullet 4: the planned 1× read head in the clip's own seconds, `None` when it does not open (no drift, a card, no tape).
     pub read_head: Option<(f64, f64)>,
-    /// Set by [`crate::produce_exec`] before the filters are built: does this
-    /// session have tape? A clip on no recording cannot read its sound back.
     pub on_recording: bool,
     pub src: (i32, i32),
     pub scratch: std::path::PathBuf,
-    /// The heard lanes as the encode reads them, filled by [`crate::produce_exec`] once it can resolve their files.
     pub lane_files: Vec<LaneFile>,
-    /// The second inside an insert's own file this clip starts at.
     pub ss: f64,
-    /// Which input the clip's own sound comes from: its picture, unless that has none.
     pub sound_input: usize,
-    /// Each spoken line's take (a line in `lines` with speech), in that order, filled beside `lane_files`.
     pub voice_files: Vec<String>,
 }
 
-/// One lane recording a clip mixes into its bed: the file, the second inside it the clip starts reading at, and
-/// how many output seconds into the clip the lane begins (a lane that starts after the clip does).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LaneFile {
-    /// The lane's name, which a volume cue aims at.
     pub name: String,
     pub path: String,
     pub seek: f64,
     pub delay: f64,
 }
 
-/// One narration line as the render places it: clip-relative output seconds, the tempo it has to be spoken
-/// at, and how far past the clip the render may grow to make room.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Placed {
     pub entry_index: usize,
@@ -177,14 +122,10 @@ pub struct Placed {
     pub tempo: f64,
     pub extend: f64,
     pub text: String,
-    /// Seconds of speech: the wav's length, or 0.0 when there is no synthesis (S3/F4.3: it takes no room).
     pub speech: f64,
 }
 
-/// S3 (`lines matched to clips, overlap ≥ half the shorter span`): a line belongs to the clip it spends at
-/// least half of its shorter span over. "Any overlap" is not the rule, because a two-second line that
-/// grazes the last frame of a long clip would be moved out of the clip it was written for — and the fit
-/// then applies to the wrong room.
+/// S3 (`overlap ≥ half the shorter span`): not "any overlap", which would move a two-second line grazing a long clip's last frame out of its clip.
 pub fn matches(entry: &Entry, seg: &Seg) -> bool {
     let line = entry.e - entry.s;
     let clip = seg.e - seg.s;
@@ -195,8 +136,6 @@ pub fn matches(entry: &Entry, seg: &Seg) -> bool {
     overlap >= line.min(clip) / 2.0
 }
 
-/// The one clip a line is spoken in. A speed effect splits a scene into pieces that all match its line, so the piece
-/// holding the line's own second takes it, else the first that matches.
 fn holding_clip(entry: &Entry, segs: &[Seg]) -> Option<usize> {
     let second = entry.s + entry.at;
     let matching = || {
@@ -210,22 +149,14 @@ fn holding_clip(entry: &Entry, segs: &[Seg]) -> Option<usize> {
         .map(|(index, _)| index)
 }
 
-/// The answer a caller gives when it has no footage in hand: the produce page falls back here for a clip
-/// that sits in no filmed run ([`crate::ui::produce_page`]'s `footage_left` door), and a caller with no
-/// session timeline at all answers the same. `0.0`, which lets [`fit_in`] keep §10's own ceiling instead
-/// of silently forbidding any grow — not knowing is not the same as having no tape left.
+/// For a caller with no footage in hand: `0.0` lets [`fit_in`] keep §10's ceiling; not knowing is not having no tape left.
 pub fn unknown_footage(_: &Seg) -> f64 {
     0.0
 }
 
-/// S3: the render's pass over the segments — one clip each, in order. The caller hands the list **after**
-/// the speed splits ([`crate::cut_speed`] owns those; a rate boundary is what makes two clips), so this is
-/// arithmetic over an already-cut list and never touches the cut itself.
-///
-/// `exists` answers whether an insert's file is still there (the caller resolves it with
-/// [`Seg::insert_asset`]), which keeps this a pure function; `entries` are the narration's lines, matched to
-/// clips by [matches](fn@matches) and fitted by [`fit`]; `lanes` is the project's lane list, asked per clip
-/// through [`cut_hear`] rather than re-derived here.
+/// S3: one clip per segment, in order, over the list AFTER the speed splits ([`crate::cut_speed`]). `exists` says whether an
+/// insert's file is there ([`Seg::insert_asset`]); `entries` are matched by [matches](fn@matches) and fitted by [`fit`];
+/// `lanes` are asked per clip through [`cut_hear`].
 #[allow(clippy::too_many_arguments)] // the plan reads the session through these doors by design
 pub fn plan_clips(
     segs: &[Seg],
@@ -238,24 +169,18 @@ pub fn plan_clips(
     on_recording: bool,
     footage_left: impl Fn(&Seg) -> f64,
 ) -> (Vec<Clip>, Vec<String>) {
-    // §9 (`both MUST use the first footage clip's frame`): `src_shape` IS that shape — the
-    // door the produce page fills from the project's footage row — and `frame_box` returns it
-    // unchanged under aspect "source", so every clip in the video is cut to one frame however
-    // many cameras filmed it. The preview reads the same rule at its own seam
-    // ([`crate::ui::cut_picture`] names this call as the agreeing side).
+    // §9 (`both MUST use the first footage clip's frame`): `frame_box` returns `src_shape` unchanged under aspect "source"
+    // ([`crate::ui::cut_picture`] is the agreeing preview side).
     let frame = render_fx::frame_box(aspect, src_shape.0, src_shape.1);
     let mut clips: Vec<Clip> = Vec::new();
     let mut logs: Vec<String> = Vec::new();
-    // One number per segment asked for, including the ones dropped: "clip 7" has to mean the same thing in
-    // this log as it does on the Cut page's rows and in every earlier line of this run.
     for (index, seg) in segs.iter().enumerate() {
         let no = index + 1;
         if !seg.ins.is_empty() && !seg.ins.starts_with("copy:") && !exists(&seg.ins) {
             logs.push(missing_insert_log(no, &seg.ins));
             continue;
         }
-        // A rate of nought is a stop: the footage runs on at 1× and the still rides over it (§4), so the
-        // clip's own clock stays 1× even though an effect in its list says otherwise.
+        // A rate of nought is a stop: footage runs on at 1× and the still rides over it (§4).
         let fx = crate::effect_overlap::drawn_on_scene(&fx_for(seg), seg);
         let rate = if seg.rate > 0.0 { seg.rate } else { 1.0 };
         let on_screen = crate::narrate_pass::on_screen(seg);
@@ -273,17 +198,12 @@ pub fn plan_clips(
             .filter(|lane| lane_heard(lane, seg))
             .map(|lane| lane.name.clone())
             .collect();
-        // §9's reach rule, asked per clip: a lane-named cue acts only where that lane is heard, so a duck
-        // aimed at a silent recording is not counted as work the encode has to do. A whole-bed cue reaches
-        // whatever the scene hears — INCLUDING nothing at all, which is a card's own sound (§9: the render
-        // applies a volume over a card's own sound, as the preview does; asking "is any of these lanes heard"
-        // of a bed cue dropped every cue for a card, because a card hears no lane).
+        // §9's reach rule: a lane-named cue acts only where that lane is heard; a whole-bed cue reaches whatever the scene hears,
+        // INCLUDING nothing (a card's own sound), which a "is any lane heard" test dropped.
         let cues = render_fx::all_gain_cues(&fx, seg.s, rate, on_screen)
             .into_iter()
             .filter(|cue| cue.reaches_the_clip(&heard))
             .count();
-        // The lines this clip was written for, in placement order, with the room the clip has after the
-        // previous clips were counted — the fit is per clip, so each gets its own call.
         let mine: Vec<(usize, f64, f64)> = entries
             .iter()
             .enumerate()
@@ -293,16 +213,10 @@ pub fn plan_clips(
                 (entry_index, narration::output_seconds(into_clip, rate), 0.0)
             })
             .collect();
-        // F4.3 with its eyes open: the CLIP number (not the entry index) names the log, and the
-        // footage still running past this clip's end caps how far the clip may be grown. What the
-        // ladder decided is logged — "moved X s earlier" / "sped up Zx" — because a render that
-        // silently slid or squeezed the narration is a render the user cannot explain afterwards.
+        // F4.3: the CLIP number names the log, footage past the clip's end caps the grow, and what the ladder did is logged.
         let (lines, fit_logs) = fit_in(&mine, on_screen, no, footage_left(seg));
         logs.extend(fit_logs);
-        // §8 bullet 4: the run is PLANNED here, not assumed by the filter builder.
-        // A speed effect says the sound keeps its own clock; the debt is the footage's
-        // own seconds less what the picture will show, the same arithmetic the Cut
-        // page's debt tail uses, and the head only opens where that debt is worth it.
+        // §8 bullet 4: planned here. The debt is the footage's seconds less what the picture shows (as the Cut page's debt tail).
         let head = read_head_plan(seg, &fx).filter(|_| {
             crate::produce_read_head::opens(
                 seg.e - seg.s,
@@ -329,7 +243,6 @@ pub fn plan_clips(
             on_recording: false,
             src: src_shape,
             scratch: std::path::PathBuf::new(),
-            // The files are the plan's to resolve; the clip only knows the lanes' names and its lines.
             lane_files: Vec::new(),
             voice_files: Vec::new(),
         });
@@ -337,10 +250,8 @@ pub fn plan_clips(
     (clips, logs)
 }
 
-/// The lines written on one clip that the render is dropping — counted for S3's "lost narration named", so a
-/// dropped clip says what it took with it instead of leaving the listener to count rows. Every line that
-/// touches the segment counts: a clip under [`MIN_CLIP_SECONDS`] has no room for any of them whatever the
-/// overlap, so `matches` would be too generous an answer here.
+/// The lines on a clip being dropped, counted for S3's "lost narration named". Every touching line counts, since a clip
+/// under [`MIN_CLIP_SECONDS`] has no room for any.
 fn lost_lines(entries: &[Entry], seg: &Seg) -> usize {
     entries
         .iter()
@@ -348,16 +259,12 @@ fn lost_lines(entries: &[Entry], seg: &Seg) -> usize {
         .count()
 }
 
-/// S3 (`clip N: <file> is not there any more — skipped`): an insert whose file went away. The same sentence
-/// covers a sound insert with no picture, which is the same failure seen from the other side — the render
-/// cannot place material it cannot open, and both name what is missing rather than the step that noticed.
+/// S3 (`clip N: <file> is not there any more — skipped`); also covers a sound insert with no picture.
 pub fn missing_insert_log(no: usize, file: &str) -> String {
     format!("clip {no}: {file} is not there any more \u{2014} skipped")
 }
 
-/// S3 (`clips under P.eng.minClipSeconds dropped, log line naming any narration lost`): the shortest clip
-/// the render makes. Naming the lost lines is the point of the sentence — a dropped half-second of picture
-/// is nothing on its own, and the line spoken over it is everything.
+/// S3 (`clips under P.eng.minClipSeconds dropped, log line naming any narration lost`).
 pub fn too_short_log(no: usize, at: f64, length: f64, lost_lines: usize) -> String {
     let mut log = format!(
         "clip {no} at {} is {length:.1} s \u{2014} too short to render, dropped",
@@ -369,57 +276,37 @@ pub fn too_short_log(no: usize, at: f64, length: f64, lost_lines: usize) -> Stri
     log
 }
 
-/// S3: every segment went somewhere the render cannot place — no clip at all. The run stops here rather
-/// than encoding nothing into an empty file.
 pub fn no_clip_log() -> &'static str {
     "no clip could be placed on a recording"
 }
 
-// ---- S3's fitting: the render's half of F4.3 --------------------------------------
-
-/// P.eng.narrationLeadSeconds (§10: 0.3): where a clip's first line may start from. The id is deliberately
-/// **not** in [`crate::params`] yet — `tests/suite/narrate_parameters.rs`'s s6 and `tests/suite/narrate_screen_widgets.rs`
-/// both assert its absence, because the row belongs with the rule that reads it; when a parameters round
-/// moves these rows into the catalogue it deletes this comment and the constant together.
+/// P.eng.narrationLeadSeconds (§10: 0.3). Deliberately **not** in [`crate::params`]: `tests/suite/narrate_parameters.rs`'s s6
+/// and `tests/suite/narrate_screen_widgets.rs` assert its absence until the row moves with the rule that reads it.
 pub const LEAD_SECONDS: f64 = 0.3;
 
-/// P.eng.narrationGapSeconds (§10: 0.3): the shortest silence between two lines of one clip. Packing them
-/// tighter turns two sentences into one run-on, which is what the row warnings promise against.
+/// P.eng.narrationGapSeconds (§10: 0.3): the shortest silence between two lines of one clip.
 pub const GAP_SECONDS: f64 = 0.3;
 
-/// P.eng.narrationTailSeconds (§10: 0.2): the breath after a line before the next may start, so the last
-/// word is not cut by the splice. One home for the number: [`narrate_screen::SPEECH_TAIL_SECONDS`].
+/// P.eng.narrationTailSeconds (§10: 0.2): the breath after a line; one home, [`narrate_screen::SPEECH_TAIL_SECONDS`].
 pub const TAIL_SECONDS: f64 = narrate_screen::SPEECH_TAIL_SECONDS;
 
-/// P.eng.narrationMaxExtendSeconds (§10: 4): how far past its own end the render may grow a clip to fit its
-/// line. Same value as the preview's hold bound, and it is read from there rather than written again.
+/// P.eng.narrationMaxExtendSeconds (§10: 4): same value as the preview's hold bound, read from there.
 pub const MAX_EXTEND_SECONDS: f64 = narrate_preview::MAX_EXTEND_SECONDS;
 
-/// P.eng.narrationMaxTempo (§10: 1.25): the fastest a take may be sped up to fit. Past this a line is
-/// placed as it is and simply runs over — an unnaturally fast voice is worse than a late cut, which is why
-/// the ceiling exists at all. Not in [`crate::params`] for the same reason as [`LEAD_SECONDS`].
+/// P.eng.narrationMaxTempo (§10: 1.25): past this a line is placed as it is and runs over. Not in [`crate::params`], as [`LEAD_SECONDS`].
 pub const MAX_TEMPO: f64 = 1.25;
 
-/// S3 / F4.3: place a clip's lines in its room, in four steps and in this order — pack from where each was
-/// placed (never before the previous line's end plus [`GAP_SECONDS`] and the tail); still over → grow the
-/// clip by up to [`MAX_EXTEND_SECONDS`]; still over → slide the whole run earlier, down to the lead; still
-/// over → speed every line up to [`MAX_TEMPO`] and pack again. Only then is it logged.
-///
-/// `lines` are `(entry_index, at, speech)` in placement order; `room` is the clip's on-screen length. A line
-/// with no synthesis arrives with `speech` 0.0: it takes no room and its cue is held to the next line or the
-/// clip's end, so a missing wav never moves the lines after it.
+/// S3 / F4.3: place a clip's lines in its room, in order: pack from where each was placed (previous end plus
+/// [`GAP_SECONDS`] and the tail); still over, grow the clip by up to [`MAX_EXTEND_SECONDS`]; still over, slide the run earlier
+/// to the lead; still over, speed every line up to [`MAX_TEMPO`] and pack again. Only then is it logged.
+/// `lines` are `(entry_index, at, speech)`; a line with `speech` 0.0 takes no room, so a missing wav never moves later lines.
 pub fn fit(lines: &[(usize, f64, f64)], room: f64) -> (Vec<Placed>, Vec<String>) {
-    // The page's view of the ladder: no footage is in hand there, so the grow step keeps only §10's
-    // own ceiling, and the log names the entry because the page has no clip numbers to name.
+    // The page's view: no footage in hand, so only §10's ceiling caps the grow, and the log names the entry.
     fit_in(lines, room, entry_no(lines), MAX_EXTEND_SECONDS)
 }
 
-/// The same ladder with the two facts only a caller can supply: WHICH clip this is, and how much
-/// footage is left past its end. §F4.3 step 1 grows the clip "≤ P.eng.narrationMaxExtendSeconds,
-/// never past the footage", and only `plan_clips` knows the second half — so the grow is capped by
-/// `min(MAX_EXTEND_SECONDS, footage_left)`. A `footage_left` of 0 means the caller does not know
-/// (or there is no tape behind the clip): the grow then keeps the plain ceiling rather than
-/// silently forbidding any grow at all.
+/// The same ladder with the two facts only a caller knows: which clip, and the footage left past its end (§F4.3 step 1:
+/// "never past the footage"). The grow is capped by `min(MAX_EXTEND_SECONDS, footage_left)`; 0 means unknown.
 pub fn fit_in(
     lines: &[(usize, f64, f64)],
     room: f64,
@@ -437,21 +324,17 @@ pub fn fit_in(
         MAX_EXTEND_SECONDS
     };
 
-    // 0 · pack as placed. Fits? Nothing to say and nothing to change.
     let placed = pack(lines, 1.0, 0.0);
     if fits(&placed, room) {
         return (placed, logs);
     }
 
-    // 1 · grow the clip, never past the ceiling §10 gives. Growing is free of logs: it is what the render is
-    // allowed to do silently, and the only reason to mention it would be that it stopped at the ceiling.
+    // 1 · grow the clip, silently; only stopping at the ceiling is worth a mention.
     let extend = (run_end(&placed) + TAIL_SECONDS - room).clamp(0.0, grow);
     if fits_at(&placed, room, extend) {
         return (with_extend(placed, extend), logs);
     }
 
-    // 2 · slide the whole run earlier, down to the lead: a clip may start talking before its first frame is
-    // interesting, but not before it exists.
     let room = room + extend;
     let slide = (run_end(&placed) + TAIL_SECONDS - room).clamp(0.0, slide_of(lines));
     let slid = pack(lines, 1.0, -slide);
@@ -460,8 +343,6 @@ pub fn fit_in(
         return (with_extend(slid, extend), logs);
     }
 
-    // 3 · speed up to the ceiling and pack again at the new tempo. The line that gets a tempo is the one
-    // whose wav will be asked for it, so the log names what the listener is about to hear.
     let tempo = needed_tempo(lines, room).min(MAX_TEMPO);
     let final_slide =
         (run_end(&pack(lines, tempo, 0.0)) + TAIL_SECONDS - room).clamp(0.0, slide_of(lines));
@@ -473,8 +354,6 @@ pub fn fit_in(
     (with_extend(sped, extend), logs)
 }
 
-/// Pack the run at `shift` seconds off every placement and `tempo` off every line's length: each line starts
-/// where it was placed, never before the previous line's end + gap + tail, and never before the lead.
 fn pack(lines: &[(usize, f64, f64)], tempo: f64, shift: f64) -> Vec<Placed> {
     let mut placed: Vec<Placed> = Vec::new();
     let mut previous_end: Option<f64> = None;
@@ -497,15 +376,12 @@ fn pack(lines: &[(usize, f64, f64)], tempo: f64, shift: f64) -> Vec<Placed> {
     placed
 }
 
-/// The pack rung on its own, for a caller that must know WHERE the lines actually landed rather than
-/// whether they fit: [`crate::narrate_screen::mirror_fit`] reads it to tell a run that is tight against
-/// the clip's end apart from one whose later line was pushed off its placement by the previous line's
-/// gap — §1 spells those two warnings differently, and only the packed run can say which happened.
+/// The pack rung alone, for [`crate::narrate_screen::mirror_fit`], which tells a run tight against the clip's end from one
+/// pushed off its placement by the previous gap (§1 spells those warnings differently).
 pub fn packed(lines: &[(usize, f64, f64)]) -> Vec<Placed> {
     pack(lines, 1.0, 0.0)
 }
 
-/// Where the run finishes speaking.
 pub fn run_end(placed: &[Placed]) -> f64 {
     placed
         .iter()
@@ -528,13 +404,10 @@ fn with_extend(mut placed: Vec<Placed>, extend: f64) -> Vec<Placed> {
     placed
 }
 
-/// How much room the run needs, spoken at 1×: where it finishes.
 fn run_seconds(lines: &[(usize, f64, f64)]) -> f64 {
     run_end(&pack(lines, 1.0, 0.0))
 }
 
-/// How far the run can slide: back to the lead of the first line, no further — seconds before the clip
-/// starts do not exist for it.
 fn slide_of(lines: &[(usize, f64, f64)]) -> f64 {
     lines
         .iter()
@@ -544,8 +417,6 @@ fn slide_of(lines: &[(usize, f64, f64)]) -> f64 {
         - LEAD_SECONDS
 }
 
-/// The tempo the run needs to fit if it is sped up uniformly — capped by the caller at [`MAX_TEMPO`]. Every
-/// line starts as early as it may, so what matters is the total time spent speaking.
 fn needed_tempo(lines: &[(usize, f64, f64)], room: f64) -> f64 {
     let speaking: f64 = lines.iter().map(|(_, _, speech)| speech).sum::<f64>();
     let gaps = GAP_SECONDS + TAIL_SECONDS;
@@ -558,57 +429,42 @@ fn needed_tempo(lines: &[(usize, f64, f64)], room: f64) -> f64 {
     }
 }
 
-/// Which clip the logs name: a fitting runs belong to one clip, so its number is the first line's index + 1
-/// unless the caller passes a real one (indices are 0-based entries; §B counts clips from 1).
 fn entry_no(lines: &[(usize, f64, f64)]) -> usize {
     lines.first().map(|(index, _, _)| *index + 1).unwrap_or(1)
 }
 
-/// F4.3 (`"clip N: the narration does not fit where it was placed — moved X s earlier"`).
 pub fn moved_log(no: usize, seconds: f64) -> String {
     format!("clip {no}: the narration does not fit where it was placed \u{2014} moved {seconds:.1} s earlier")
 }
 
-/// F4.3 (`"clip N: narration X s does not fit Y s — sped up Zx"`).
 pub fn sped_up_log(no: usize, speech: f64, room: f64, tempo: f64) -> String {
     format!(
         "clip {no}: narration {speech:.1} s does not fit {room:.1} s \u{2014} sped up {tempo:.2}x"
     )
 }
 
-// ---- S3's lane mixes -------------------------------------------------------------
-
-/// P.eng.laneMinMixSeconds (§10: 0.1, inventory §B `overlap ≥ 0.1 s`): the shortest overlap worth an ffmpeg
-/// input of its own. Under it the lane is inaudible either way and every extra input costs a decode.
+/// P.eng.laneMinMixSeconds (§10: 0.1, inventory §B `overlap ≥ 0.1 s`): the shortest overlap worth an ffmpeg input.
 pub const LANE_MIN_MIX_SECONDS: f64 = 0.1;
 
-/// Inventory §B step 2's per-lane report — the count is what makes a missing lane findable: "mixed into 3 of
-/// the 5 clips" says which clips to go and look at.
 pub fn lane_report(lane: &str, mixed: usize, total: usize) -> String {
     format!("{lane} is mixed into {mixed} of the {total} clips")
 }
 
-/// The lane runs, but every clip it underlies leaves it out — a `quiet` list on all of them. §B's sentence
-/// starts with the lane's own name, which is why this takes it and returns the tail.
+/// The lane runs but every clip it underlies leaves it out (a `quiet` list); returns the tail of §B's sentence, which starts with the lane's name.
 pub fn lane_left_out(lane: &str) -> String {
     format!("{lane} runs under 0 clip(s) and every one of them leaves it out \u{2014} it is not in the render")
 }
 
-/// The lane was not playing while any clip was: its window lies outside the cut entirely.
 pub fn lane_not_running(lane: &str) -> String {
     format!("{lane} was not running while any clip was \u{2014} it is not in the render")
 }
 
-/// Does this clip hear this lane? The scene's `quiet` list answers, through [`cut_hear`] so the same rule
-/// serves the preview and the render.
 fn lane_heard(lane: &Lane, seg: &Seg) -> bool {
     seg.hears(&lane.name) && cut_hear::lane_covers(lane, cut_hear::lane_seconds(lane, seg.s), seg.s)
 }
 
-/// S3 (`sound plan for own-clock runs`): a speed effect whose sound stayed at 1× is read from the recording
-/// on its own clock while the picture runs ahead — this is where that run is planned, and [`render_fx`]
-/// puts the 0.15 s dips ([`crate::fx_lane::SOUND_DIP_SECONDS`]) at its ends. A pitched or muted sound has
-/// no run to read: it follows the picture's clock or is silent.
+/// S3 (`sound plan for own-clock runs`): a speed effect whose sound stayed at 1× is read on its own clock while the picture
+/// runs ahead; [`render_fx`] puts the 0.15 s dips ([`crate::fx_lane::SOUND_DIP_SECONDS`]) at its ends. Pitched or muted sound has no run.
 pub fn read_head_plan(seg: &Seg, fx: &[Fx]) -> Option<(f64, f64)> {
     let own = fx.iter().any(|effect| {
         effect.effect_kind() == Some(crate::cut::EffectKind::Speed)
@@ -617,12 +473,8 @@ pub fn read_head_plan(seg: &Seg, fx: &[Fx]) -> Option<(f64, f64)> {
     own.then_some((seg.s, seg.e))
 }
 
-// ---- S4: subtitles on the produced clock -----------------------------------------
-
-/// S4 (`subtitles built on the produced clock`): where each clip begins in the finished file. A clip at 2×
-/// runs half as long as its footage and a sped clip's cues move with it — [`narration::output_seconds`] is
-/// what converts, the same function the narration's own placement uses. The second of each pair is the
-/// clip's length on screen, so a cue can be asked for either end.
+/// S4 (`subtitles built on the produced clock`): where each clip begins in the finished file, and its on-screen length;
+/// [`narration::output_seconds`] converts, as the narration's own placement does.
 pub fn produced_clocks(clips: &[Clip]) -> Vec<(f64, f64)> {
     let mut at = 0.0;
     let mut clocks = Vec::with_capacity(clips.len());
@@ -633,14 +485,11 @@ pub fn produced_clocks(clips: &[Clip]) -> Vec<(f64, f64)> {
     clocks
 }
 
-/// S4 (`clips/final.srt`): the cue sheet's own name, before any language is added to it.
 pub fn final_srt_name() -> &'static str {
     "final.srt"
 }
 
-/// S4 (`stale sidecars deleted by exact name first`): every file this run may overwrite beside the video,
-/// by name — never a glob. A `*.de.srt` pattern would delete a translation of something else that happens
-/// to share the folder, and the render cannot tell that apart from its own leftovers.
+/// S4 (`stale sidecars deleted by exact name first`): by name, never a glob, which would delete a translation of something else in the folder.
 pub fn stale_sidecars(stem: &str, languages: &[&str]) -> Vec<String> {
     let mut names = vec![format!("{stem}.srt"), format!("{stem}.vtt")];
     for code in languages {
@@ -650,47 +499,31 @@ pub fn stale_sidecars(stem: &str, languages: &[&str]) -> Vec<String> {
     names
 }
 
-// ---- S5: encode one clip ---------------------------------------------------------
-
-/// S5's "limiter −1 dBFS" (`P.eng.clipLimiter`): ffmpeg takes an amplitude, and 0.891 is the amplitude of
-/// −1 dBFS. Written as the number rather than a dB expression because that is what `alimiter` accepts, and
-/// named because §4 lists it as one of the page's two mix targets — the catalogue reads it off this string
-/// rather than carrying a third copy of the figure.
+/// S5's "limiter −1 dBFS" (`P.eng.clipLimiter`): the amplitude `alimiter` accepts; the catalogue reads it off this string.
 pub const LIMITER: &str = "alimiter=limit=0.891:level=disabled";
 
-/// §4's frame-edge blur: how far the blown-up backdrop is smeared, as a fraction of the finished
-/// frame's height. Enough that no detail survives to be read as a second picture, not so much
-/// that a bright scene turns into one flat glow. (Prototype `blurSigma`, go/produce.go:1310.)
+/// §4's frame-edge blur: the backdrop's smear as a fraction of the frame's height (prototype `blurSigma`, go/produce.go:1310).
 /// §10 files the pair as `P.eng.blurSigma` ("0.02·height, min 4").
 pub const BLUR_SIGMA_FRACTION: f64 = 0.02;
 
-/// The floor on the derived sigma. Below 200 px of frame height `0.02 * height` drops under 4, and at
-/// that size the smear stops hiding the edge seam at all — so a small frame still gets a blur wide
-/// enough to read as intentional rather than as a hard border.
+/// The floor on the derived sigma: below 200 px of frame height the smear stops hiding the edge seam.
 pub const BLUR_SIGMA_MIN: f64 = 4.0;
 
-/// The sigma `gblur` is asked for at a given frame height: [`BLUR_SIGMA_FRACTION`] of it, floored at
-/// [`BLUR_SIGMA_MIN`], rounded up to a whole pixel. Ceil rather than round so the blur is never
-/// thinner than the rule asked for; a sub-pixel sigma would only make the seam cheaper to see.
+/// The sigma `gblur` is asked for: [`BLUR_SIGMA_FRACTION`] of the height, floored at [`BLUR_SIGMA_MIN`], ceiled to a whole pixel.
 pub fn blur_sigma(frame_height: i32) -> i32 {
     (f64::from(frame_height) * BLUR_SIGMA_FRACTION)
         .max(BLUR_SIGMA_MIN)
         .ceil() as i32
 }
 
-/// S5 / inventory §B (`stems c%03d_<stamp>`): the per-clip file's name. The stamp is in it because the
-/// concat list is rebuilt from the scratch folder and a leftover `c000.mp4` of an older cut would join into
-/// this one by name alone.
+/// S5 / inventory §B (`stems c%03d_<stamp>`): the stamp is in the name because the concat list is rebuilt from the
+/// scratch folder and a leftover `c000.mp4` of an older cut would join in by name.
 pub fn clip_stem(no: usize, stamp: &str) -> String {
     format!("c{:03}_{}", no, stamp)
 }
 
-/// S5's `-fps_mode` piece, kept separate because it is the one part of the command a test can pin without
-/// building a whole clip. `source` adds nothing at all: the recording's own rate is what ffmpeg gets when it is
-/// told nothing. With the frame-timing tick off the `fps` filter has already set the grid and the output is
-/// told it is constant; with it on the rate is a ceiling (§A: "peak rate (VFR)"), `-fpsmax` ALONE: ffmpeg
-/// refuses it beside `-fps_mode vfr` ("One of -r/-fpsmax was specified together a non-CFR -fps_mode. This is
-/// contradictory."), which the first rewrite sent, so every VFR encode failed (the prototype's `fpsArgs`).
+/// S5's `-fps_mode` piece. `source` adds nothing. With frame timing off the `fps` filter set the grid, so the output is
+/// constant; with it on the rate is a ceiling (§A "peak rate (VFR)"), `-fpsmax` ALONE: ffmpeg rejects it beside `-fps_mode vfr`.
 pub fn frame_rate_args(frame_rate: &str, vfr: bool) -> Vec<String> {
     if frame_rate == "source" {
         return Vec::new();
@@ -701,7 +534,6 @@ pub fn frame_rate_args(frame_rate: &str, vfr: bool) -> Vec<String> {
     vec!["-fps_mode".into(), "cfr".into()]
 }
 
-/// The Preset row's spelling of a preset — the same words §A lists, and the words x264 takes.
 pub fn preset_name(preset: project::Preset) -> &'static str {
     use crate::project::Preset::*;
     match preset {
@@ -714,8 +546,7 @@ pub fn preset_name(preset: project::Preset) -> &'static str {
     }
 }
 
-/// The Frame rate row's spelling: `source` for the recording's own rate, otherwise the number as §A writes
-/// it. Kept separate from the enum's serde names because those are file bytes and these are argv.
+/// The Frame rate row's spelling: `source` for the recording's own rate. Separate from the enum's serde names, which are file bytes.
 pub fn frame_rate_name(frame_rate: project::FrameRate) -> &'static str {
     use crate::project::FrameRate::*;
     match frame_rate {
@@ -726,14 +557,11 @@ pub fn frame_rate_name(frame_rate: project::FrameRate) -> &'static str {
     }
 }
 
-/// S5's video chain, in inventory §B's order — the order **is** the behaviour: speed first so every later
-/// filter works in on-screen seconds, the frozen spans of a stop over the footage that runs on beneath
-/// them, then the frame rate, the edges, the camera, and only then the things printed on top. Burned
-/// subtitles go before the text overlays because §4 composites an effect after the camera *and* the burned
-/// cues, which is what keeps a title above a caption rather than under it.
+/// S5's video chain in inventory §B's order, which **is** the behaviour: speed first so later filters work in on-screen
+/// seconds, stop freezes, frame rate, edges, camera, then things printed on top. Burned subtitles go before the text
+/// overlays (§4) so a title sits above a caption.
 pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec<String> {
-    // §4's order for one clip: camera under the burned cues, printed things after them (`picture_order()`);
-    // `produce_fx_chain` builds both halves. The speed step goes FIRST so later filters work in on-screen seconds.
+    // §4: camera under the burned cues, printed things after them (`picture_order()`); `produce_fx_chain` builds both halves.
     let built = crate::produce_fx_chain::for_clip(clip, &clip.fx, clip.src, &clip.scratch);
     let mut chain = Vec::new();
     if (clip.rate - 1.0).abs() > f64::EPSILON {
@@ -764,14 +592,11 @@ pub fn video_chain(clip: &Clip, settings: &Produce, burned: Option<&str>) -> Vec
     if let Some(cues) = burned {
         chain.push(format!("subtitles={cues}"));
     }
-    // The effects' picture filters land last, under nothing (§4: a title holds still while the camera moves under it).
     chain.extend(built.video);
     chain
 }
-/// The frame rate as a filter, the in-graph half of [`frame_rate_args`]: the `fps` filter pins a stream to a
-/// grid by duplicating and dropping frames, so it is there only for a constant rate. Under VFR the rate is a
-/// ceiling, the encoder's job and not a filter's; a moving camera brings its own grid (`zoompan`'s `fps`). The
-/// first rewrite put the grid in under VFR too, so the tick changed nothing about the frames.
+/// The frame rate as a filter, the in-graph half of [`frame_rate_args`]: only for a constant rate; under VFR the rate is the
+/// encoder's ceiling, and a moving camera brings its own grid (`zoompan`'s `fps`).
 fn frame_rate_filter(frame_rate: &str, vfr: bool) -> Vec<String> {
     if frame_rate == "source" || vfr {
         return Vec::new();
@@ -779,11 +604,9 @@ fn frame_rate_filter(frame_rate: &str, vfr: bool) -> Vec<String> {
     vec![format!("fps=fps={frame_rate}")]
 }
 
-/// S5's audio chain, in the order §B and S5 give it: speed → hush → the lane bed → gain cues → seam dips →
-/// the narration at `P.policy.gameVolume` → limiter → format. This is the clip's OWN sound's path, flat: each
-/// `amix` is a mix point where other inputs join it (the `lanes` heard under the clip, then the spoken lines),
-/// and is there only when something joins. [`audio_graph`] wires the same steps with the inputs' labels; what a
-/// lane or a line does before it joins is [`lane_chain`] and [`voice_chain`].
+/// S5's audio chain in §B/S5's order: speed → hush → lane bed → gain cues → seam dips → narration at `P.policy.gameVolume` →
+/// limiter → format. Each `amix` is a mix point and exists only when something joins; [`audio_graph`] wires the same steps
+/// with labels, and [`lane_chain`] and [`voice_chain`] cover what happens before an input joins.
 pub fn audio_chain(
     clip: &Clip,
     settings: &Produce,
@@ -802,22 +625,15 @@ pub fn audio_chain(
     chain
 }
 
-/// The lines of a clip that are spoken: a line with no synthesis takes no room and joins no mix.
 fn spoken_lines(clip: &Clip) -> Vec<&Placed> {
     clip.lines.iter().filter(|line| line.speech > 0.0).collect()
 }
 
-/// [`audio_chain`] cut at its two mix points.
 struct AudioParts {
-    /// Speed and hush: the clip's own sound before anything joins it.
     head: Vec<String>,
-    /// The bed: the clip's sound and every lane heard under it, mixed at their recorded level.
     lane_mix: Option<String>,
-    /// Gain cues and seam dips, on the bed.
     middle: Vec<String>,
-    /// The bed turned down to the game volume, and the narration mixed over it.
     voice_mix: Option<(String, String)>,
-    /// Limiter and format.
     tail: Vec<String>,
 }
 
@@ -829,7 +645,6 @@ fn audio_parts(
     hush: &[(f64, f64)],
 ) -> AudioParts {
     let mut head = Vec::new();
-    // A read head keeps the sound at 1× while the picture runs on.
     if (clip.rate - 1.0).abs() > f64::EPSILON && clip.read_head.is_none() {
         head.push(render_fx::atempo_chain(clip.rate));
     }
@@ -839,15 +654,11 @@ fn audio_parts(
         ));
     }
     let lane_mix = (lanes > 0).then(|| mix(lanes + 1));
-    // §4's volume cues: ONE `volume=<expr>:eval=frame` per cue, chained in turn so overlapping ones multiply, after
-    // the bed and before the narration. `produce_fx_chain` builds them and the seam dips (a read head's two, where
-    // the sound rejoins the picture); nothing here restates a filter. A clip with no seam has no dip: the first
-    // rewrite put `afade=t=out:st=0` on every other clip, a fade OUT from its first second, and every such clip
-    // came out silent after 0.15 s.
+    // §4's volume cues: one `volume=<expr>:eval=frame` per cue, chained so overlapping ones multiply, after the bed and before the narration.
+    // A clip with no seam has no dip: `afade=t=out:st=0` on such clips silenced them after 0.15 s.
     let built = crate::produce_fx_chain::for_clip(clip, &clip.fx, clip.src, &clip.scratch);
     let middle: Vec<String> = built.audio.to_vec();
-    // P.policy.gameVolume is the bed's level, not the voice's: the narration rides at full level over a bed turned
-    // down to it, which is why the number appears on the bed side of the mix.
+    // P.policy.gameVolume is the bed's level, not the voice's: the narration rides at full level over a bed turned down to it.
     let voice_mix = (voices > 0).then(|| {
         (
             format!("volume={:.2}", settings.game_volume),
@@ -872,9 +683,8 @@ fn mix(inputs: usize) -> String {
     format!("amix=inputs={inputs}:duration=first:normalize=0")
 }
 
-/// What one spoken line's take goes through before it joins the bed: its tempo (atempo takes no less than 0.5),
-/// 48 kHz, panned across the output layout (a mono voice otherwise lands in one speaker), and its place in the
-/// clip as a delay in whole milliseconds, once per channel.
+/// What a spoken line's take goes through before joining the bed: tempo (atempo takes no less than 0.5), 48 kHz, panned across
+/// the output layout, and its delay in whole milliseconds once per channel.
 pub fn voice_chain(line: &Placed, settings: &Produce) -> Vec<String> {
     let ms = (line.at * 1000.0).round() as i64;
     vec![
@@ -889,8 +699,6 @@ pub fn voice_chain(line: &Placed, settings: &Produce) -> Vec<String> {
     ]
 }
 
-/// What one lane recording goes through before it joins the bed: the output format, the clip's own speed (a lane
-/// was recorded with the picture and goes with it), and its delay when it starts after the clip does.
 pub fn lane_chain(lane: &LaneFile, clip: &Clip, settings: &Produce) -> Vec<String> {
     let layout = if settings.mono { "mono" } else { "stereo" };
     let mut chain = vec![format!(
@@ -906,9 +714,7 @@ pub fn lane_chain(lane: &LaneFile, clip: &Clip, settings: &Produce) -> Vec<Strin
     chain
 }
 
-/// The clip's sound as `-filter_complex` wires it, ending in `[a]`: the clip's own sound from `[0:a]` through
-/// [`audio_chain`]'s steps, each lane (input `lane_base + k`) joining the bed and each spoken line (input
-/// `voice_base + k`) joining the narration mix, every branch labelled (the prototype's graph).
+/// The clip's sound as `-filter_complex` wires it, ending in `[a]`: lanes join the bed at inputs `lane_base + k` and spoken lines the narration mix at `voice_base + k`.
 pub fn audio_graph(clip: &Clip, settings: &Produce, lane_base: usize, voice_base: usize) -> String {
     let voices: Vec<&Placed> = spoken_lines(clip)
         .into_iter()
@@ -970,10 +776,8 @@ pub fn audio_graph(clip: &Clip, settings: &Produce, lane_base: usize, voice_base
     graph
 }
 
-/// S5's codec arguments — `tool:ffmpeg.encode`: these are ffmpeg's encoder names and flags, not this app's
-/// vocabulary. h264 carries `-refs 4` because that is what the prototype shipped and what makes the joins
-/// cheap; vp9 takes `-b:v 0` (constant-quality mode) and `-cpu-used` from the same preset the x264 branch
-/// uses, so one row of the settings page drives both.
+/// S5's codec arguments (`tool:ffmpeg.encode`, ffmpeg's own names and flags). h264 carries `-refs 4` as the prototype shipped;
+/// vp9 takes `-b:v 0` and `-cpu-used` from the same preset row.
 pub fn codec_args(settings: &Produce) -> Vec<String> {
     let preset = preset_name(settings.preset).to_string();
     match settings.codec {
@@ -1016,8 +820,7 @@ pub fn codec_args(settings: &Produce) -> Vec<String> {
     }
 }
 
-/// vp9 has no preset ladder, so the one setting is walked to ffmpeg's `-cpu-used` (0 = slowest and smallest,
-/// 5 = fastest): the same trade the Preset row promises, on the encoder that has only this dial.
+/// vp9 has no preset ladder: the one setting is walked to `-cpu-used` (0 = slowest and smallest, 5 = fastest).
 fn cpu_used(preset: &str) -> u32 {
     match preset {
         "ultrafast" => 5,
@@ -1029,7 +832,6 @@ fn cpu_used(preset: &str) -> u32 {
     }
 }
 
-/// The audio codec the container will actually hold: Opus in webm (the only one it defines), AAC elsewhere.
 pub fn audio_codec(container: project::Container) -> &'static str {
     match container {
         project::Container::Webm => "libopus",
@@ -1037,23 +839,9 @@ pub fn audio_codec(container: project::Container) -> &'static str {
     }
 }
 
-/// S5: the whole command for one clip, in the order ffmpeg wants it — `-ss` **before** `-i` so the seek
-/// happens on input and a clip that starts at 40 minutes does not decode 40 minutes first; then one `-i`
-/// per input (the picture, its own-clock sound or `anullsrc`, one per spoken line, one per lane overlap, the
-/// looped text/svg inputs, the stills); then the graph, the codec arguments and the frame-rate flags.
-///
-/// `inputs` is what the caller resolved: `(kind, path_or_none)` pairs in that order, where a `None` path is
-/// the silent `anullsrc` source. Nothing here is executed; [`command_log`] prints it.
-/// §5 (`-t` on the output for inserts, sounds, freezes, rated clips): how long this clip's file runs, when
-/// its input's own clock does not already answer that.
-///
-/// An insert or a pasted stretch names an asset in [`Clip::source`] whose length is its own; a rated clip
-/// must stop when the cut says, not when the recording does. A **freeze** is covered by the rate arm: §5's
-/// stop reaches here as `rate == 0.0` with [`Clip::on_screen`] holding the still's length
-/// ([`crate::narrate_pass::on_screen`]), and 0.0 differs from 1.0, so it is trimmed like any other rated clip.
-///
-/// Plain footage at 1× answers `None`: the recording's remaining length is already the right length, and a
-/// `-t` computed from session seconds would trim a frame off the end for no reason.
+/// §5 (`-t` on the output for inserts, sounds, freezes, rated clips): how long this clip's file runs when its input's own clock
+/// does not answer that. A **freeze** arrives as `rate == 0.0` with [`Clip::on_screen`] holding the still's length
+/// ([`crate::narrate_pass::on_screen`]), so the rate arm trims it. Plain footage at 1× is `None`: a `-t` from session seconds would trim a frame.
 pub fn output_limit(clip: &Clip) -> Option<String> {
     let rated = (clip.rate - 1.0).abs() > f64::EPSILON;
     (!clip.source.is_empty() || rated).then(|| format!("{:.3}", clip.on_screen))
@@ -1069,9 +857,7 @@ pub fn encode_command(
     encode_command_with(clip, settings, inputs, burned, out, false, clip.seg_s)
 }
 
-/// [`encode_command`] with one extra answer: does this clip read a baked card that has no own length? Then its
-/// frames are looped (`-stream_loop -1`), because the cut's slot is longer than one pass of an endlessly repeating
-/// document and `-t` on the output trims it back to the seconds the cut asked for.
+/// [`encode_command`] plus whether the clip reads a baked card with no own length; its frames loop (`-stream_loop -1`) and `-t` trims to the cut's seconds.
 pub fn encode_command_with(
     clip: &Clip,
     settings: &Produce,
@@ -1083,9 +869,7 @@ pub fn encode_command_with(
 ) -> Vec<String> {
     #![allow(clippy::too_many_arguments)]
     let mut argv = vec!["ffmpeg".into()];
-    // The picture's own seek first, always before its -i (inventory §B: "0 picture (-ss before -i)"): `seek` is the
-    // second inside the picture's own FILE, which for footage is the session second less where its recording
-    // starts (the caller knows which recording), not the session second itself.
+    // The picture's own seek is always before its -i (inventory §B); `seek` is the second inside the FILE, i.e. the session second less where its recording starts.
     if seek > 0.0 {
         argv.push(SEEK_FLAG.into());
         argv.push(format!("{seek:.3}"));
@@ -1096,8 +880,6 @@ pub fn encode_command_with(
         argv.push(format!("{:.3}", clip.on_screen * clip.rate));
     }
     let mut filter_inputs = 0;
-    // §5 (`-t` on the output for inserts, sounds, freezes, rated clips) trims the loop to the slot; `-stream_loop -1`
-    // only belongs on a card with no strip of its own, which is what `loops_card` says.
     if loops_card {
         argv.extend(["-stream_loop".into(), "-1".into()]);
     }
@@ -1112,7 +894,6 @@ pub fn encode_command_with(
                 ]);
             }
             (_, Some(path)) => {
-                // A still names its moment: read off the clip's own footage, however far from this clip it lies.
                 if *kind == "still" {
                     let moment: f64 = path.parse().unwrap_or(clip.seg_s);
                     argv.extend([
@@ -1139,10 +920,7 @@ pub fn encode_command_with(
                         render_fx::OVERLAY_FPS.to_string(),
                     ]);
                 }
-                // §5 (`to frames at the render fps (default 25)`): a baked card is an image2 sequence, not a looped
-                // still — its own frame rate is the bake's, so ffmpeg must be told that number and nothing else.
-                // The number itself belongs to `produce_cards`, which owns the bake and spells it the way the
-                // demuxer wants it (an integer rate; no card is timed for a fractional one).
+                // §5: a baked card is an image2 sequence at the bake's frame rate, which `produce_cards` owns and spells as an integer.
                 if *kind == "card" {
                     argv.extend(["-framerate".into(), crate::produce_cards::bake_fps_arg()]);
                 }
@@ -1153,8 +931,7 @@ pub fn encode_command_with(
         }
         filter_inputs += 1;
     }
-    // The lanes and then the spoken lines go in after everything the picture reads, so their indices only
-    // append (§5: input indices append-only); each lane is read from its own second for the clip's length.
+    // Lanes then spoken lines go after everything the picture reads, so indices only append (§5).
     let lane_base = argv.iter().filter(|arg| *arg == "-i").count();
     for lane in &clip.lane_files {
         argv.extend([
@@ -1173,7 +950,7 @@ pub fn encode_command_with(
     argv.extend([
         "-filter_complex".into(),
         format!("{video};{audio}"),
-        // The graph's two labelled outputs ARE the clip: ffmpeg maps only unlabelled outputs by itself.
+        // The graph's labelled outputs ARE the clip: ffmpeg maps only unlabelled outputs by itself.
         "-map".into(),
         "[v]".into(),
         "-map".into(),
@@ -1192,8 +969,7 @@ pub fn encode_command_with(
         "-ac".into(),
         if settings.mono { "1" } else { "2" }.into(),
     ]);
-    // §5: the length goes on the output, after every input and filter argument — never before `-i`, where it
-    // would trim what the filters were built from.
+    // §5: the length goes on the output after every input and filter argument; before `-i` it would trim what the filters were built from.
     if let Some(limit) = output_limit(clip) {
         argv.extend(["-t".into(), limit]);
     }
@@ -1202,8 +978,6 @@ pub fn encode_command_with(
     argv
 }
 
-/// The clip's picture ending in `[v]`: its chain, then each overlay laid on what came before. The overlays' inputs are
-/// the last ones the picture reads, so they end at `first_after`.
 fn video_graph(
     clip: &Clip,
     settings: &Produce,
@@ -1235,33 +1009,22 @@ fn video_graph(
     graph
 }
 
-/// S5 (`every command logged`): the whole argv on one line, prefixed by the clip it belongs to. Logged
-/// before it runs rather than after, because the command that hung is the one worth reading.
 pub fn command_log(no: usize, argv: &[String]) -> String {
     format!(">>> clip {no}: ffmpeg {}", argv.join(" ").trim_start())
 }
 
-/// S5 (`size mismatch vs clip 0 logged`): the join is a stream copy and cannot mix sizes, so a clip that
-/// ffprobe reports at a different size than clip 0 breaks the video at exactly that clip. Detected after
-/// the encode because only the encoder knows what it actually wrote — which is why the live comparison
-/// compares PROBED frame sizes ([`crate::produce_probe::probe`], asked by `produce_exec::walk`) and never
-/// byte counts: two clips at one size differ in bytes every time.
+/// S5 (`size mismatch vs clip 0 logged`): the join is a stream copy and cannot mix sizes. Compares PROBED frame sizes
+/// ([`crate::produce_probe::probe`], asked by `produce_exec::walk`), never byte counts.
 pub fn join_mismatch(first: (i32, i32), size: (i32, i32)) -> Option<String> {
     (size != first).then(|| JOIN_MISMATCH.to_string())
 }
 
-/// The sentence [`join_mismatch`] says, spelled once so the walk's probed-size loop and the rule test quote
-/// the same spec line (§B: "…the join is a stream copy and cannot mix sizes, so the video breaks at this
-/// clip").
+/// The sentence [`join_mismatch`] says, spelled once for the walk and the rule test (§B).
 pub const JOIN_MISMATCH: &str =
     "!!! the join is a stream copy and cannot mix sizes, so the video breaks \
 at this clip";
 
-// ---- S6: join by stream copy -----------------------------------------------------
-
-/// S6 (`join by stream copy`): the concat demuxer's list, one `file '…'` line per clip in the order they
-/// play. Single quotes because that is the demuxer's own quoting and a stem with a space in it is a stamp,
-/// not a filename somebody typed.
+/// S6 (`join by stream copy`): the concat demuxer's list, one `file '…'` per clip in play order.
 pub fn concat_list(stems: &[String]) -> String {
     stems
         .iter()
@@ -1270,8 +1033,7 @@ pub fn concat_list(stems: &[String]) -> String {
         .join("\n")
 }
 
-/// S6: the join itself. `-c copy` is the whole point — re-encoding the joined file would mean a second
-/// generation of loss on top of the per-clip encodes, and minutes more on the clock.
+/// S6: `-c copy`, since re-encoding the joined file would add a second generation of loss.
 pub fn join_command(list: &std::path::Path, out: &std::path::Path) -> Vec<String> {
     vec![
         "ffmpeg".into(),
@@ -1287,16 +1049,10 @@ pub fn join_command(list: &std::path::Path, out: &std::path::Path) -> Vec<String
     ]
 }
 
-/// S6's job line, and the fraction of the bar it is worth: everything before it (the speaking and the
-/// encodes) has already been counted per line and per clip, and what follows is quick.
 pub const JOINING: &str = "joining";
 pub const JOIN_FRACTION: f64 = 0.92;
 
-// ---- S7: translate after the encodes ---------------------------------------------
-
-/// The run's ten steps in order — the same list the progress line walks, written down so a test can pin that
-/// translation comes *after* the encodes and before the mux rather than trusting where a callback happens to
-/// be placed.
+/// The run's ten steps in order, so a test can pin that translation comes after the encodes and before the mux.
 pub fn stages() -> Vec<(&'static str, &'static str)> {
     vec![
         ("scratch", "clear produce/clips/"),
@@ -1315,44 +1071,30 @@ pub fn stages() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
-/// S7's fraction: after every encode, before the mux that needs their result.
 pub const TRANSLATE_FRACTION: f64 = 0.94;
 
-/// S7 (`translate the cues after the encodes`): deliberately last-but-two, so the encoder never idles
-/// behind the LLM gate — a translation that takes a minute is a minute an encode could have been doing
-/// something. The languages are the page's ticks minus the session's own (§1, [`crate::produce_screen`]).
+/// S7 (`translate the cues after the encodes`): late so the encoder never idles behind the LLM gate. Languages are the page's ticks minus the session's own (§1, [`crate::produce_screen`]).
 pub fn translate_log(lines: usize, language: &str) -> String {
     format!(">>> subtitles: translating {lines} lines into {language}")
 }
 
-// ---- S8: loudness and mux --------------------------------------------------------
-
-/// S8's audio filter, verbatim from §B step 7: the resample first so `loudnorm`'s two passes see a constant
-/// rate, then the target every upload platform expects.
+/// S8's audio filter, verbatim from §B step 7: resample first so `loudnorm`'s two passes see a constant rate.
 pub const LOUDNORM: &str = "aresample=async=1:first_pts=0,loudnorm=I=-14:TP=-1.5:LRA=11";
 
-/// S8's fraction of the bar.
 pub const MUX_FRACTION: f64 = 0.96;
 
-/// S8: the mux. `-c:v copy` because the video was encoded per clip and joined by copy already — this step
-/// only rewrites the audio (loudnorm has to) and repacks. Subtitle tracks are added **only** when the page
-/// chose "track in file", and never for webm, which has no text track: that is decided by
-/// [`crate::produce_screen::apply_container_rules`] rather than guessed again here, so the settings row and
-/// the command cannot disagree about what webm carries.
+/// S8's mp4 stream flags. The mux is `-c:v copy`; subtitle tracks go in only for "track in file", never for webm
+/// ([`crate::produce_screen::apply_container_rules`] decides).
 pub const MP4_STREAM_FLAGS: [&str; 2] = ["-movflags", "+faststart+negative_cts_offsets"];
 
-// No edit list, so there is no start offset for players to read two ways (browsers and VLC disagree about them,
-// and the picture ran two frames behind the sound in one of them).
+// No edit list, so there is no start offset to read two ways (browsers and VLC disagree; the picture ran two frames behind the sound).
 pub const MP4_START_FLAGS: [&str; 2] = ["-use_editlist", "0"];
 
-/// The picture's own seek flag, and the input flag it must precede (inventory §B: "0 picture (-ss before -i)").
-/// Named so §08 §4's "input ordering" has one home: `encode_command` pushes them and `params_produce` spells them.
+/// The picture's seek flag, which must precede [`INPUT_FLAG`] (inventory §B "0 picture (-ss before -i)").
 pub const SEEK_FLAG: &str = "-ss";
-/// The input flag [`SEEK_FLAG`] goes in front of.
 pub const INPUT_FLAG: &str = "-i";
 
-/// `languages` is the app's own subtitle-language list (`SUBTITLE_LANGUAGES`, read by the caller rather than
-/// here so this stays a pure argv builder): each track is tagged from it through [`crate::produce_details::language_tag`].
+/// `languages` is the app's `SUBTITLE_LANGUAGES`, read by the caller to keep this a pure argv builder; tracks are tagged via [`crate::produce_details::language_tag`].
 pub fn mux_command(
     video: &std::path::Path,
     audio: &std::path::Path,
@@ -1421,8 +1163,6 @@ pub fn mux_command(
     argv
 }
 
-/// The subtitle codec the container takes: `mov_text` in mp4, `srt` in mkv. Webm never reaches here —
-/// [`crate::produce_screen::apply_container_rules`] has already turned its tracks into "none".
 pub fn subtitle_codec(container: project::Container) -> &'static str {
     match container {
         project::Container::Mp4 => "mov_text",
@@ -1430,18 +1170,12 @@ pub fn subtitle_codec(container: project::Container) -> &'static str {
     }
 }
 
-/// S8 (`"!!! nothing to put in a subtitle"`): the page asked for cues and there are none — no narration, and
-//  no speech inside the clips either. A warning rather than an error, because the video itself is finished
-/// and correct; it is the file beside it that will not exist.
+/// S8 (`"!!! nothing to put in a subtitle"`): the page asked for cues and there are none. A warning: the video itself is finished and correct.
 pub fn no_subtitle_cue_log() -> &'static str {
     "!!! nothing to put in a subtitle: no narration, and no speech in the clips"
 }
 
-// ---- S9: sidecars ----------------------------------------------------------------
-
-/// S9 (`sidecars <stem>[.code].srt and .vtt per language`): the two files written beside the video for one
-/// language. The session's own language carries no code — it is the track a player picks by default, and a
-/// second copy named after its own language would be two files saying the same thing.
+/// S9: the two files beside the video for one language; the session's own language carries no code.
 pub fn sidecar_names(stem: &str, language: Option<&str>) -> [String; 2] {
     let stem = match language {
         Some(code) => format!("{stem}.{code}"),
@@ -1450,19 +1184,14 @@ pub fn sidecar_names(stem: &str, language: Option<&str>) -> [String; 2] {
     [format!("{stem}.srt"), format!("{stem}.vtt")]
 }
 
-/// S9 (`each logged`): one line per language, naming both files. The .vtt is mentioned because it is the
-/// one a browser needs and the one people look for first when subtitles do not show up in an embed.
+/// S9 (`each logged`): one line per language naming both files; the .vtt is the one a browser needs.
 pub fn sidecar_log(stem: &str, language: Option<&str>) -> String {
     let [srt, _] = sidecar_names(stem, language);
     format!(">>> subtitles: {srt} and .vtt")
 }
 
-// ---- S10: checkpoints and the stamp ----------------------------------------------
-
-/// S10 (`checkpoints between every subprocess`) / inventory §B's list: the five points a run asks whether it
-/// should go on. Each sits *between* subprocesses, so a stop never leaves half an ffmpeg command running;
-/// the fifth is before the model call because that is the one step that costs somebody something they cannot
-/// get back (a cache miss and a minute of GPU).
+/// S10 (`checkpoints between every subprocess`) / inventory §B: the five points a run asks whether to go on, each *between*
+/// subprocesses; the fifth is before the model call, the one step with a cost that cannot be got back.
 pub fn checkpoints() -> Vec<&'static str> {
     vec![
         "after each line spoken",
@@ -1473,31 +1202,22 @@ pub fn checkpoints() -> Vec<&'static str> {
     ]
 }
 
-/// S10 (`the run writes the stamp once the render returns without error; a press that skipped the encode
-/// writes none`): the stamp is the promise that this file matches these settings, so it may only be written
-/// by the run that made the file. A ▶ that found everything up to date and encoded nothing has proved
-/// nothing new — and writing the stamp again would hide a stale render from the next press.
+/// S10: the stamp may only be written by the run that made the file; a ▶ that encoded nothing would hide a stale render.
 pub fn stamp_written(encoded: bool, failed: bool) -> bool {
     encoded && !failed
 }
 
-/// The bar's last word, and the three ways a run ends that are not "done".
 pub const STAGE_DONE: &str = "done";
 
-/// S10 / §B (`">>> <file>  (X s, size)"`): the file, how long it took, what it weighs. Two spaces before
-/// the parenthesis because that is how the prototype writes it and people read these lines side by side in a
-/// log after comparing two runs.
+/// S10 / §B (`">>> <file>  (X s, size)"`): two spaces before the parenthesis, as the prototype writes it.
 pub fn finished_log(file: &str, seconds: f64, size: &str) -> String {
     format!(">>> {file}  ({size}, took {seconds:.1} s)")
 }
 
-/// The status line for a run that failed: the log has the reason, and this page does not repeat it.
 pub fn failure_log() -> &'static str {
     "production failed \u{2014} see log"
 }
 
-/// The status line for a run somebody stopped. Not a failure — nothing was left half-written that the next
-/// press cannot redo.
 pub fn stopped_log() -> &'static str {
     "production stopped"
 }

@@ -1,110 +1,64 @@
-//! §07-narrate#1-screen — what the Narrate page shows and what a press would do.
-//!
-//! The page renders this module and forwards to it; nothing here imports gtk, so which row is greyed,
-//! what its tooltip says and where a take's seconds go can be answered without a display
-//! (spec/00-principles.md §5). §1's numbered widgets are the inventory's rows in spec/inventory/narrate.md
-//! §A, which the spec calls normative for tooltips.
-//!
-//! What this module does NOT own, and where it reads from instead:
-//!
-//! * the record — [`crate::narration::Entry`] / [`crate::narration::Narration]`, its `sort`, `has_line`,
-//!   `is_silent` and the placement `at` — lives in [`crate::narration`], which is the file format;
-//! * whether a line's end time is estimated comes from whether its take exists, so it is asked of
-//!   [`crate::narration::tts_file`] by the caller and handed to [`status`] as `wav_exists`;
-//! * the shell's one-line Inputs summary is [`crate::shell::inputs`] (pinned by other rounds' tests);
-//!   [`inputs_readout`] below is the page's own fuller row, the same split §05-cut#1-screen set for Cut;
-//! * ▶ and its refusal are [`crate::run::Step::Narrate`]'s, the clock face is [`crate::preview::clock`],
-//!   `mm:ss` is [`crate::tools::mm_ss`] and a session second in a sentence is [`crate::cut_hear::scene_clock`];
-//! * every number §10 lists by area lives once here, in the module whose rule uses it, and
-//!   [`crate::params`] catalogues them.
-//!
-//! Fitting a line to its clip — extending, sliding, speeding — is F4.3's and belongs to the render. What
-//! lives here is only what a row says about it (§1's two warnings), which is why [`fit`] takes the numbers
-//! rather than computing them.
+//! §07-narrate#1-screen: what the Narrate page shows and what a press would do; no gtk, so greying, tooltips and take
+//! seconds are answerable without a display (spec/00-principles.md §5). §1's numbered widgets are spec/inventory/narrate.md §A.
+//! The record is [`crate::narration`] (`wav_exists` for [`status`] comes from [`crate::narration::tts_file`]); the shell's one-line
+//! summary is [`crate::shell::inputs`] and [`inputs_readout`] is the page's fuller row. Fitting a line to its clip is F4.3's
+//! (the render); [`mirror_fit`] takes the numbers. Every §10 number lives once, in the module whose rule uses it ([`crate::params`] catalogues them).
 
 use crate::cut::Seg;
 use crate::narration::Entry;
 use crate::{cut_hear, preview, tools};
 
-/// The toolbar's groups, left to right (§1's numbers 3–8: transport, preview volume, who speaks, the take
-/// band's ＋ − ▶, the sample row, pitch). The window builds one box per entry in this order, which is what
-/// makes the order a fact a test can hold rather than a fact about how a file happens to read.
-///
-/// The shot lays these out as two rows rather than one: §1's 3–6 (‹‹ ▶ ›› ＋, the slider and its clock, the shared
-/// volume) sit under the picture, and 7–8 (who speaks, `Add file…` and the take band's ＋ − ▶) in the voice column
-/// under that. The sample row (§1's 11–13: the sentence, ▶ ⏹ ⟳, pitch) is a third row below the band. Reading left
-/// to right, top to bottom, that is this order — which is why the list runs transport → volume → voice → takes →
-/// sample → pitch rather than grouping the two ＋ − ▶ pairs together.
+/// The toolbar's groups in order (§1's 3–8): the order is a fact a test can hold. The shot lays them out as rows (3–6 under the
+/// picture, 7–8 in the voice column, sample row below), which reads transport → volume → voice → takes → sample → pitch.
 pub const TOOLBAR_GROUPS: [&str; 6] = ["transport", "volume", "voice", "takes", "sample", "pitch"];
 
-/// §1's Prototype note: the prototype's ＋ is the full-width sign U+FF0B, which only CJK fonts carry and
-/// which draws as a missing-glyph box on a machine without one. The rewrite uses the named icon, which every
-/// theme has — the transport's ＋ already did (inventory §A.4).
+/// §1's Prototype note: the prototype's full-width ＋ (U+FF0B) is CJK-only and draws as a missing-glyph box, so use the named icon.
 pub const ADD_LINE_ICON: &str = "list-add";
 
-/// The take row's −, the other half of §1's Prototype note: U+FF0D is as CJK-only as U+FF0B was. Named with
-/// the `-symbolic` suffix on purpose — `list-remove-symbolic` is a real file in the Adwaita theme this app
-/// ships against, whereas the bare `list-remove` name resolves to nothing there (checked in the container).
+/// The take row's −, same note (U+FF0D). `-symbolic` on purpose: the bare `list-remove` resolves to nothing in the shipped Adwaita theme.
 pub const TAKE_REMOVE_ICON: &str = "list-remove-symbolic";
 
-/// ‹‹ and ›› (§1's numbers 3 and 5): three seconds, snapped to the cut by the caller.
 pub const BACK_SECONDS: f64 = 3.0;
 
-/// Where a line added below another starts: half a second after the one above ends (inventory C.5). A line
-/// butted flush against its neighbour reads as one word continuing, which is not what a second ＋ means.
+/// Where a line added below another starts: half a second after the one above ends (inventory C.5).
 pub const ADD_BELOW_SECONDS: f64 = 0.5;
 
-/// §1 (`audition from 3 s ahead where those seconds are its own`): how far the row's ▶ reaches back. Three
-/// seconds is enough to hear a line arrive rather than to have arrived, and it is the same reach as ‹‹.
+/// §1 (`audition from 3 s ahead where those seconds are its own`): the row's ▶ reach, the same as ‹‹.
 pub const AUDITION_LEAD_SECONDS: f64 = 3.0;
 
-/// A take's label ("4.2s") only fits in a band this wide; narrower and the words would be cut mid-digit.
 pub const TAKE_LABEL_MIN_PX: f64 = 34.0;
 
-/// P.eng.takeMinSeconds — the shortest hand-picked take. Shorter than this the model is cloned from a
-/// breath, which is a noise rather than a voice.
+/// P.eng.takeMinSeconds: the shortest hand-picked take; shorter is a breath, not a voice to clone.
 pub const TAKE_MIN_SECONDS: f64 = 0.4;
 
-/// P.eng.takeMinSeconds, read as a function so a caller cannot pick its own floor.
 pub fn take_min() -> f64 {
     TAKE_MIN_SECONDS
 }
 
-/// §1 (`pitch −6..+6 semitones`): the slider's ends. Beyond these the reference stops being the person on
-/// the recording, which is the point of the tooltip below.
+/// §1 (`pitch −6..+6 semitones`): the slider's ends.
 pub const PITCH_MIN_SEMITONES: f64 = -6.0;
 
-/// §1: the top of the same slider.
 pub const PITCH_MAX_SEMITONES: f64 = 6.0;
 
-/// Half a semitone: finer and the slider cannot be aimed by hand, coarser and the useful range is skipped.
 pub const PITCH_STEP: f64 = 0.5;
 
-/// §1 (`applied 400 ms after the last move`) — spec/10-parameters.md:133's `typing debounce 400 ms`. A shift
-/// re-cuts the reference with rubberband, so applying it per pixel of a drag would rebuild it dozens of times.
+/// §1 (`applied 400 ms after the last move`), spec/10-parameters.md:133 `typing debounce 400 ms`: a shift re-cuts the reference with rubberband.
 pub const PITCH_APPLY_MS: u64 = 400;
 
-/// The pitch slider's own limits, clamped rather than refused: a stored value outside them (an edited
-/// `narrate/pitch.txt`) still means "shift it that way", and the reference is built at the nearest end.
+/// Clamped rather than refused: a stored value outside the limits still means "shift it that way".
 pub fn clamp_pitch(semitones: f64) -> f64 {
     semitones.clamp(PITCH_MIN_SEMITONES, PITCH_MAX_SEMITONES)
 }
 
-/// §1 (`pitch −6..+6 semitones`), as the screen draws it: the number beside the slider, one decimal
-/// (`0.0`, `1.5`, `-6.0`) — spec/img/07-narrate.png badge 13 shows `pitch: ─── 0.0`, so the shift has to be
-/// readable, not only draggable. Clamped first for the same reason [`clamp_pitch`] is: an out-of-range stored
-/// value acts as the end it is clamped to, so that is the number it gets to show.
+/// §1: the number beside the slider, one decimal (`0.0`, `1.5`, `-6.0`; spec/img/07-narrate.png badge 13), clamped as [`clamp_pitch`].
 pub fn pitch_readout(semitones: f64) -> String {
     format!("{:.1}", clamp_pitch(semitones))
 }
 
-/// Is there a shift at all? Zero writes no `narrate/pitch.txt` and no shifted copy — the reference is used as
-/// cut, which keeps every take cached before the slider existed valid.
+/// Zero writes no `narrate/pitch.txt` and no shifted copy, keeping every take cached before the slider valid.
 pub fn pitch_is_shifted(semitones: f64) -> bool {
     semitones != 0.0
 }
-
-// --- The take band (§1's number 10, inventory §A.7) --------------------------------------------------
 
 /// spec/10-parameters.md:133 `Narrate take band: ruler 12 …`.
 pub const BAND_RULER_PX: f64 = 12.0;
@@ -112,43 +66,30 @@ pub const BAND_RULER_PX: f64 = 12.0;
 /// spec/10-parameters.md:133 `… lane 56 …`.
 pub const BAND_LANE_PX: f64 = 56.0;
 
-/// spec/10-parameters.md:133 `… max 200 px/s`. Shallower than the Cut page's 240 because this band is a few
-/// minutes of one recording, not a session, and its wheel is for aiming at a sentence.
+/// spec/10-parameters.md:133 `… max 200 px/s`; shallower than the Cut page's 240 (this band is one recording's few minutes).
 pub const BAND_MAX_PPS: f64 = 200.0;
 
 /// spec/10-parameters.md:133 `… click slop 3 px`: under this a press-release is a click on the red bar.
 pub const CLICK_SLOP_PX: f64 = 3.0;
 
-/// F4.5's tick: how often the preview follows the players. Fast enough that a person never sees the picture
-/// and the clock disagree, slow enough not to be a second clock of its own.
-///
-/// §4's engineering tick is ONE rate for the app, so this is `preview::TICK_MS` under the narrate page's name,
-/// not a second value: retuning it moves both pages' loops together, and `narrate.tickMs` catalogues the same
-/// number the narration loop asks `glib` for.
+/// F4.5's tick. §4's engineering tick is ONE rate for the app: this is `preview::TICK_MS`, and `narrate.tickMs` catalogues the same number.
 pub const TICK_MS: u64 = crate::preview::TICK_MS;
 
-/// §1's slider (`Drag to seek; paused, the wheel steps a frame at a time`; inventory §A.4's `debounced 120 ms`):
-/// how long a drag is quiet before the seek is issued. One seek per gesture rather than one per pixel — the cut is
-/// played from a file and every seek reloads it, so an undebounced slider makes the drag itself stutter.
+/// §1's slider (`Drag to seek …`, inventory §A.4 `debounced 120 ms`): one seek per gesture, as every seek reloads the cut's file.
 pub const SEEK_DEBOUNCE_MS: u64 = 120;
 
-/// A take labelled with its duration alone (§1's `"4.2s"`): the seconds are the only thing two takes differ in.
 pub fn take_label(seconds: f64) -> String {
     format!("{:.1}s", seconds)
 }
 
-/// What one press-release on the band means: a drag selects seconds, a click puts the red bar down.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TakePress {
     SetBar,
     Select { from: f64, to: f64 },
 }
 
-/// A press that travelled less than [`CLICK_SLOP_PX`] is a click: the person aimed at a second, not at a span.
-/// Left to right, whichever way the pointer went: a take's seconds have no direction. The two px ends
-/// become seconds through `x_to_second`, so `start` is the view's OFFSET (px scrolled from the start),
-/// exactly as [`crate::narrate_band::x_to_second`] defines it and as the ruler, the red bar and
-/// [`crate::narrate_band::take_box`] all read the view — not a number of seconds added to pixels.
+/// A press that travelled less than [`CLICK_SLOP_PX`] is a click. Left to right whichever way the pointer went. `start` is the
+/// view's OFFSET in px ([`crate::narrate_band::x_to_second`]), not seconds.
 pub fn take_press(pressed_x: f64, released_x: f64, start: f64) -> TakePress {
     let travel = (released_x - pressed_x).abs();
     if travel <= CLICK_SLOP_PX {
@@ -165,13 +106,10 @@ pub fn take_press(pressed_x: f64, released_x: f64, start: f64) -> TakePress {
     }
 }
 
-/// Does this selection reach [`TAKE_MIN_SECONDS`]? Asked before the take is made so the answer is the sentence
-/// below rather than a take nobody wanted.
 pub fn can_make_take(selection: (f64, f64)) -> bool {
     selection.1 - selection.0 >= TAKE_MIN_SECONDS
 }
 
-/// Would these seconds be dropped by the band's own clean-up? Asked before `－` so removing nothing says so.
 pub fn take_seconds_too_short(seconds: f64) -> bool {
     seconds < TAKE_MIN_SECONDS
 }
@@ -184,16 +122,13 @@ pub fn take_too_short(seconds: f64) -> String {
     )
 }
 
-/// The band's clean-up (inventory §A.7): sorted, no take shorter than [`TAKE_MIN_SECONDS`], touching or
-/// overlapping takes merged. Sorting and merging are what let `－` split a take without leaving two edges at
-/// the same second for the next drag to trip over.
+/// The band's clean-up (inventory §A.7): sorted, takes under [`TAKE_MIN_SECONDS`] dropped, touching or overlapping takes merged.
 fn clean(mut takes: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
     takes.retain(|(from, to)| to - from >= TAKE_MIN_SECONDS);
     takes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     let mut merged: Vec<(f64, f64)> = Vec::with_capacity(takes.len());
     for (from, to) in takes {
         match merged.last_mut() {
-            // Touching counts as overlapping: two takes with no gap between them are one take.
             Some(last) if from <= last.1 => last.1 = last.1.max(to),
             _ => merged.push((from, to)),
         }
@@ -201,8 +136,7 @@ fn clean(mut takes: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
     merged
 }
 
-/// `＋`: these seconds join the takes. Kept only if they reach [`TAKE_MIN_SECONDS`] — the same floor a hand-picked
-/// take has to clear, so a press of ＋ on a 0.2 s sliver cannot smuggle one in past [`can_make_take`].
+/// `＋`: these seconds join the takes, kept only if they reach [`TAKE_MIN_SECONDS`] (the floor [`can_make_take`] enforces).
 pub fn add_takes(existing: &[(f64, f64)], span: (f64, f64)) -> Vec<(f64, f64)> {
     let mut takes = existing.to_vec();
     if can_make_take(span) {
@@ -211,8 +145,7 @@ pub fn add_takes(existing: &[(f64, f64)], span: (f64, f64)) -> Vec<(f64, f64)> {
     clean(takes)
 }
 
-/// `－`: these seconds come out of the takes, which splits a take when they fall inside it. Subtracting rather
-/// than deleting whole takes is what lets a person keep a good sentence and drop one cough in it.
+/// `－`: these seconds come out of the takes, splitting one when they fall inside it.
 pub fn remove_takes(existing: &[(f64, f64)], span: (f64, f64)) -> Vec<(f64, f64)> {
     let mut out: Vec<(f64, f64)> = Vec::with_capacity(existing.len() * 2);
     for (from, to) in existing {
@@ -230,8 +163,7 @@ pub fn remove_takes(existing: &[(f64, f64)], span: (f64, f64)) -> Vec<(f64, f64)
     clean(out)
 }
 
-/// §1 (`With no takes the seconds are chosen for you.`): the band's own sentence about having none. It is a
-/// promise rather than a warning because F4.6's automatic pick is a good answer most of the time.
+/// §1 (`With no takes the seconds are chosen for you.`): a promise, not a warning, as F4.6's automatic pick is usually good.
 pub fn band_status(takes: &[(f64, f64)]) -> &'static str {
     if takes.is_empty() {
         "With no takes the seconds are chosen for you."
@@ -240,24 +172,17 @@ pub fn band_status(takes: &[(f64, f64)]) -> &'static str {
     }
 }
 
-// --- The voice picker (§1's numbers 7, 9, 11–13) --------------------------------------------------------
-
-/// §1 (`unlabelled dropdown`): the id of the first row. `captions` is what short-circuits everything that
-/// speaks, so it is an id and not a label with no id behind it.
+/// §1 (`unlabelled dropdown`): the first row's id; `captions` short-circuits everything that speaks.
 pub const CAPTIONS: &str = "captions";
 
-/// One row of the dropdown: the id stored in `narrate/voice.txt` and the words on the row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VoiceOption {
     pub id: String,
     pub label: String,
 }
 
-/// §1 (`No audio — captions only; Narrator 1..4 — the recording tagged on Prepare; every .wav in the voices
-/// folder`): the rows, in that order. `narrators` is how many slots Prepare has a recording for (slot 1
-/// always, 2..4 when tagged), and `files` are the voices folder's .wav names. The dropdown itself stays
-/// unlabelled — the shot shows it carrying the chosen voice as its own face (`Narrator 1 — 2026-09-16 18-43-01.mkv`)
-/// with no label widget beside it — and `Add file…` sits to its right, so nothing here carries a label.
+/// §1: the rows in order: `No audio — captions only`, `Narrator 1..4` (slot 1 always, 2..4 when Prepare tagged one), then
+/// every .wav in the voices folder (`files`). The dropdown is unlabelled; `Add file…` sits to its right.
 pub fn voice_options(narrators: usize, files: &[&str]) -> Vec<VoiceOption> {
     let mut options = vec![VoiceOption {
         id: CAPTIONS.to_string(),
@@ -265,14 +190,12 @@ pub fn voice_options(narrators: usize, files: &[&str]) -> Vec<VoiceOption> {
     }];
     for slot in 1..=narrators {
         options.push(VoiceOption {
-            // Slot 1 is spelled `own` (inventory §voice ids, frozen): it is the id every take of the project's own
-            // voice is keyed without, so picking Narrator 1 by hand does not re-speak every line under a new key.
+            // Slot 1 is spelled `own` (inventory §voice ids, frozen): the id every take of the project's own voice is keyed without.
             id: if slot == 1 {
                 crate::narrate_data::OWN_VOICE.to_string()
             } else {
                 format!("narrator{slot}")
             },
-            // Every recording tagged with the slot, as far as the cut keeps it: what the take band shows.
             label: format!("Narrator {slot} \u{2014} everything they say in the cut"),
         });
     }
@@ -283,44 +206,33 @@ pub fn voice_options(narrators: usize, files: &[&str]) -> Vec<VoiceOption> {
     options
 }
 
-/// §1 / inventory §A.6, the dropdown's tooltip quoted verbatim. It says what every line is made from, which
-/// is the one thing a person picking a voice has to understand before they have written anything.
+/// §1 / inventory §A.6, the dropdown's tooltip verbatim.
 pub fn sample_tip() -> String {
     "Who speaks the narration. Every line is spoken by cloning the selected recording; switching voices keeps \
      what you already synthesized"
         .to_string()
 }
 
-/// The lines column's own empty state: what the page says where its rows go before anyone has written a
-/// line. A blank list box reads as a panel that failed to fill, which is not what it means.
 pub fn no_lines_note() -> &'static str {
     "no narration lines yet \u{2014} \u{ff0b} puts one at the playhead"
 }
 
 /// §1 (`Shift the reference recording before it is cloned — a different speaker, not the same one transposed`).
-/// The distinction matters because the slider is next to a pitch control for the *video* on another page.
 pub fn pitch_tip() -> String {
     "Shift the reference recording before it is cloned \u{2014} a different speaker, not the same one transposed"
         .to_string()
 }
 
-/// §1 (`Add file…` / inventory: `Copy one recording into the voices folder and use it`). Copies, because a
-/// voice that lives inside the project keeps working when the recording is untagged or moved.
+/// §1 (`Add file…`): copies, so the voice keeps working when the recording is untagged or moved.
 pub fn add_file_tip() -> String {
     "Copy one recording into the voices folder and use it".to_string()
 }
 
-/// §1's default sample sentence. Spoken in the selected voice, it is the shortest test that shows whether a
-/// cloned voice will be listenable for minutes rather than seconds.
 pub const DEFAULT_SAMPLE: &str =
     "This is the voice the narration will be spoken in. It should stay clear and \
                                   easy to follow for a couple of minutes.";
 
-// --- The transport's clock (§1's number 5) ---------------------------------------------------------------
-
-/// §1 (`clock "session · cut/length"`): where the line is on the recording, then where it is in the finished
-/// video. Two clocks because the edit removed seconds and the person needs both to aim at a picture and at a
-/// moment in the output. Built from [`tools::mm_ss`]; the tenths belong to [`preview::clock`] on the Cut page.
+/// §1 (`clock "session · cut/length"`): the line on the recording, then in the finished video; tenths are [`preview::clock`]'s on the Cut page.
 pub fn clock_line(session: f64, cut_at: f64, length: f64) -> String {
     format!(
         "{} \u{b7} {}/{}",
@@ -330,16 +242,12 @@ pub fn clock_line(session: f64, cut_at: f64, length: f64) -> String {
     )
 }
 
-/// §1 (`paused, wheel steps a frame`): while ▶ is running the wheel has nothing to step to, and stepping it
-/// under a moving picture would fight the tick.
+/// §1 (`paused, wheel steps a frame`): stepping under a moving picture would fight the tick.
 pub fn wheel_steps_a_frame(playing: bool) -> bool {
     !playing
 }
 
-// --- The text box (§1's number 20, inventory §B.4) --------------------------------------------------------
-
-/// What a leading tag means. A placement is a caption and not an emotion because the viewer reads it; the two
-/// cannot both be true of one line, which is why this is an enum and not two booleans.
+/// What a leading tag means. A placement is a caption (the viewer reads it) and not an emotion; an enum because both cannot be true.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoxRole {
     None,
@@ -347,8 +255,6 @@ pub enum BoxRole {
     Emotion,
 }
 
-/// A box's text read apart: the words, the tag inside the brackets without its `@N`, the second the tag asked
-/// for, and what the tag was.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoxText {
     pub body: String,
@@ -357,9 +263,7 @@ pub struct BoxText {
     pub role: BoxRole,
 }
 
-/// §1 (`[emotion] words`, `[top|center|bottom] words` for captions; may carry the line's second in the tag as
-/// `@N`). The five placement spellings are inventory §B.4's, `centre` and `middle` included: a person typing a
-/// caption should not have to remember which of the four spellings this app chose.
+/// §1 (`[emotion] words`, `[top|center|bottom] words`; the tag may carry `@N`). The five placement spellings are inventory §B.4's, `centre` and `middle` included.
 pub fn parse_box(text: &str) -> BoxText {
     let trimmed = text.trim_start();
     let mut parsed = BoxText {
@@ -377,7 +281,6 @@ pub fn parse_box(text: &str) -> BoxText {
     let raw = &trimmed[1..end];
     parsed.body = trimmed[end + 1..].trim_start().to_string();
 
-    // A trailing `@N` is the second, not part of a name: no emotion or placement is spelled with an @.
     let (tag, at) = match raw.rfind('@') {
         Some(at_sign) => {
             let seconds = raw[at_sign + 1..].trim().parse::<f64>().ok();
@@ -396,7 +299,6 @@ pub fn parse_box(text: &str) -> BoxText {
         first.as_str(),
         "top" | "center" | "centre" | "middle" | "bottom"
     );
-    // §1 / F4.7: a placement is a caption and clears the emotion, so an entry never carries both.
     if placement {
         parsed.role = BoxRole::Caption;
         parsed.tag = String::new();
@@ -406,9 +308,7 @@ pub fn parse_box(text: &str) -> BoxText {
     parsed
 }
 
-/// The box as the page writes it back (§1: `write-only: the time field owns the number, the box never prints
-/// it back`). So `@N` is dropped here even though [`parse_box`] reads it: printing it would put the same second
-/// in two widgets, and only one of them would be the one that moved the line.
+/// The box as the page writes it back (§1: `write-only: the time field owns the number`); `@N` is dropped though [`parse_box`] reads it.
 pub fn write_box(entry: &Entry) -> String {
     let tag = if !entry.pos.is_empty() {
         entry.pos.clone()
@@ -416,7 +316,6 @@ pub fn write_box(entry: &Entry) -> String {
         entry.emotion.clone()
     };
     if entry.text.is_empty() {
-        // A deliberately silent clip's box stays empty rather than showing a bare tag nobody asked for.
         return String::new();
     }
     if tag.is_empty() {
@@ -425,11 +324,8 @@ pub fn write_box(entry: &Entry) -> String {
     format!("[{tag}] {}", entry.text)
 }
 
-/// §1 (`[excited @65] Weee` moves the line, clamped out of the clip's last second`). The clamp is the same rule
-/// as §5's `at never in the last second`: a line starting there has no room to be heard before the cut moves on.
-/// Returns the placement **inside the clip** — so a tag naming a second outside it moves the line nowhere and says
-/// so — and the `bool` is "the tag asked for a second that could not be kept", which the page reports rather than
-/// hushes. `at` is the line's current placement, since a refused move leaves it exactly where it was.
+/// §1 (`[excited @65] Weee` moves the line, clamped out of the clip's last second), §5's `at never in the last second`. Returns the placement
+/// **inside the clip** and whether the tag's second could not be kept (reported, not hushed); `at` is the current placement, kept on a refused move.
 pub fn tag_moves_line(clip_s: f64, clip_e: f64, requested: f64, at: f64) -> (f64, bool) {
     let last = (clip_e - 1.0).max(clip_s);
     if !(clip_s..=last).contains(&requested) {
@@ -438,9 +334,8 @@ pub fn tag_moves_line(clip_s: f64, clip_e: f64, requested: f64, at: f64) -> (f64
     (requested - clip_s, false)
 }
 
-/// §1 (`Tooltip explains the tag, judge vs weighted mixes, the eight base emotions`). P.policy.narrationEmotionTag
-/// — the tag itself, which has no row of its own in §10 and is spelled by spec/prompts/system.md:72. The order is
-/// that line's, so the tooltip and the prompt the model reads name the same eight in the same order.
+/// §1 (`Tooltip explains the tag, judge vs weighted mixes, the eight base emotions`). P.policy.narrationEmotionTag has no §10 row;
+/// spec/prompts/system.md:72 spells it, and the order is that line's.
 pub fn row_tooltip() -> String {
     format!(
         "[emotion] words \u{2014} the emotion is sent to the voice as the delivery and never spoken; the field on \
@@ -452,7 +347,6 @@ pub fn row_tooltip() -> String {
     )
 }
 
-/// §1's `the eight base emotions`, in spec/prompts/system.md:72's order.
 pub const EMOTIONS: [&str; 8] = [
     "happy",
     "angry",
@@ -464,9 +358,6 @@ pub const EMOTIONS: [&str; 8] = [
     "calm",
 ];
 
-// --- The row's status and warnings (§1's numbers 14, 15, 21) -------------------------------------------------
-
-/// What the row says after its time: §1's `– end time`, `(~)` while estimated, `(no line …)` and `(caption …)`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RowStatus {
     Silent,
@@ -475,11 +366,8 @@ pub enum RowStatus {
     Known(f64),
 }
 
-/// §1: which of the four. The estimated flag is not this module's guess at a speaking rate — it is whether the
-/// take exists yet, which the caller asks of [`crate::narration::tts_file`] and hands over as `wav_exists`. A
-/// caption never has a take, so it answers before that question rather than reading as an estimate forever.
+/// §1: which of the four. Estimated means the take does not exist yet (`wav_exists`, asked by the caller); a caption never has one, so it answers first.
 pub fn status(entry: &Entry, wav_exists: bool) -> RowStatus {
-    // The line starts where §4 stores it — the clip's head plus the placement inside it.
     let end = entry.s + entry.at;
     if entry.text.is_empty() {
         return RowStatus::Silent;
@@ -494,8 +382,7 @@ pub fn status(entry: &Entry, wav_exists: bool) -> RowStatus {
     }
 }
 
-/// §1's four spellings. The dash is U+2013 as the inventory writes it and the tenths come from
-/// [`preview::clock`], so a row and the Cut page's clock cannot disagree about what a second looks like.
+/// §1's four spellings. The dash is U+2013; tenths come from [`preview::clock`].
 pub fn status_line(status: RowStatus) -> String {
     match status {
         RowStatus::Silent => "(no line \u{2014} this clip plays on its own audio)".to_string(),
@@ -505,8 +392,6 @@ pub fn status_line(status: RowStatus) -> String {
     }
 }
 
-/// How the row marks a line that does not fit: §1's two warnings. The arithmetic behind the numbers is F4.3's —
-/// this is only what the row says about it, which is why [`fit`] is handed the measurements.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Fit {
     Fits,
@@ -521,8 +406,6 @@ pub enum Fit {
     },
 }
 
-/// §1's `⚠ ~N s of speech, M s before the clip ends|the next line` and
-/// `⚠ this clip's lines run N s past it — the render will have them moved earlier[ and sped up]`.
 pub fn fit_warning(fit: Fit) -> Option<String> {
     match fit {
         Fit::Fits => None,
@@ -553,24 +436,16 @@ pub fn fit_warning(fit: Fit) -> Option<String> {
     }
 }
 
-/// §1 (`warnings … and the row marked red`): both warnings mark the row, since either one means the render will
-/// not do what the row's time says. `Fits` is the only state that leaves the row its normal colour.
+/// §1 (`warnings … and the row marked red`): `Fits` is the only state that keeps the row's normal colour.
 pub fn row_is_red(fit: Fit) -> bool {
     fit_warning(fit).is_some()
 }
 
-// --- F4.3: the row's warning mirrors the render's own ladder -------------------------------------
-
-/// §F4.3 (`characters / the narration's own measured rate (default 15 chars/s, clamped 8..28)`): the band a
-/// speech estimate may be taken at. The *measured* rate — what this narration's wavs actually ran at — is not
-/// implemented yet, so every caller passes an estimate; this is the bound any caller that later has a
-/// measurement must push it through, so a wild measurement cannot make a line look free or endless.
-/// [`SPEECH_CHARS_PER_SECOND`] sits inside the band as the default.
+/// §F4.3 (`default 15 chars/s, clamped 8..28`): the band a speech estimate may be taken at, so a wild measurement cannot make a line look free or endless.
 pub const CHAR_RATE_MIN: f64 = 8.0;
 pub const CHAR_RATE_MAX: f64 = 28.0;
 
-/// A chars-per-second rate clamped into [`CHAR_RATE_MIN`]..=[`CHAR_RATE_MAX`]. Non-positive and non-finite rates
-/// fall back to the default rather than dividing by zero or yielding `NaN` seconds.
+/// A rate clamped into [`CHAR_RATE_MIN`]..=[`CHAR_RATE_MAX`]; non-positive and non-finite rates fall back to the default.
 pub fn char_rate_clamped(rate: f64) -> f64 {
     if !rate.is_finite() || rate <= 0.0 {
         return SPEECH_CHARS_PER_SECOND;
@@ -578,12 +453,8 @@ pub fn char_rate_clamped(rate: f64) -> f64 {
     rate.clamp(CHAR_RATE_MIN, CHAR_RATE_MAX)
 }
 
-/// §F4.3's `characters / the narration's own measured rate (default 15 chars/s, clamped 8..28)`: the rate a
-/// line's take MEASURED at — its characters over the seconds its wav actually ran — pushed through
-/// [`char_rate_clamped`]. A wav's real length replaces the [`SPEECH_CHARS_PER_SECOND`] estimate as soon as the
-/// take exists; the clamp is what stops one odd measurement (a truncated file, a line padded with silence)
-/// making a row look free or endless. `None` when there is nothing to measure: no take, a caption, an empty
-/// line, or a wav whose header says zero audio.
+/// §F4.3: the rate a take MEASURED at (characters over its wav's seconds), through [`char_rate_clamped`]. `None` with nothing
+/// to measure: no take, a caption, an empty line, or a zero-audio wav.
 pub fn measured_char_rate(chars: usize, wav_seconds: f64) -> Option<f64> {
     if chars == 0 || !wav_seconds.is_finite() || wav_seconds <= 0.0 {
         return None;
@@ -591,69 +462,41 @@ pub fn measured_char_rate(chars: usize, wav_seconds: f64) -> Option<f64> {
     Some(char_rate_clamped(chars as f64 / wav_seconds))
 }
 
-/// §F4.3's page-only half of "speech length": **on the Narrate page** a line whose take does not exist yet is
-/// estimated as its characters over the rate, because the row has to warn before there is anything to measure.
-/// In the RENDER the same line has length 0.0 and takes no room at all — its cue is held to the next line or
-/// the clip's end — and that rule lives with the render's caller ([`crate::produce_render::fit`]'s input),
-/// which this function deliberately does not touch.
+/// §F4.3's page-only half: on the Narrate page a line with no take is estimated as characters over the rate, so the row can warn.
+/// In the RENDER the same line has length 0.0 ([`crate::produce_render::fit`]'s input), which this does not touch.
 pub fn page_speech_seconds(chars: usize, rate: f64) -> f64 {
     chars as f64 / char_rate_clamped(rate)
 }
 
-/// F4.3 S1–S4 for the ROW: decide the warning by running the SAME ladder the render runs
-/// ([`crate::produce_render::fit`]) rather than by estimating on the page, so a row can never promise a
-/// remedy the render would not apply — which is exactly what the old per-line estimate did wrong: it looked at
-/// one line against one clip and could only ever say "moved earlier", never "and sped up".
-///
-/// `clip_len` is the clip's on-screen length (the render's `room`); `lines` are that ONE clip's lines in
-/// placement order as `(entry index, clip-relative at, speech seconds)`, speech from
-/// [`page_speech_seconds`] until a take exists to measure.
-///
-/// Which rung fired is read out of the ladder's own log strings — matched against [`crate::produce_render::
-/// moved_log`] / [`sped_up_log`]-shaped text rather than by re-reading its internals — because those two
-/// sentences ARE the record of the step, and matching them keeps this mirror honest if the ladder changes:
-/// - no log at all and the run's tail lands with slack → [`Fit::Fits`];
-/// - no log at all but the run needs the whole tail to land (it fits only because the breath after the last
-///   word is squeezed) → [`Fit::Tight`], the row says how close it is without blaming the render;
-/// - the slide rung logged (with or without growth) → [`Fit::Overruns`] with `sped_up: false`: the render's
-///   answer is "moved earlier";
-/// - the tempo rung logged → [`Fit::Overruns`] with `sped_up: true`: "moved earlier and sped up".
-///
-/// `past` is what the ladder could NOT remove at the clip's own end — where the run finishes plus the tail,
-/// less the clip's length — floored at 0.0, since the spec's last rung says what still overruns is simply cut
-/// there, and a negative overrun would read as spare time that does not exist.
+/// F4.3 S1–S4 for the ROW: run the SAME ladder the render runs ([`crate::produce_render::fit`]), so a row cannot promise a remedy
+/// the render would not apply. `clip_len` is the render's `room`; `lines` are that ONE clip's `(entry index, clip-relative at, speech)`.
+/// The rung that fired is read out of the ladder's log strings: no log and slack → [`Fit::Fits`]; no log but the whole tail is
+/// needed → [`Fit::Tight`]; the slide logged → [`Fit::Overruns`] with `sped_up: false`; the tempo rung logged → `sped_up: true`.
+/// `past` is what the ladder could NOT remove at the clip's end, floored at 0.0.
 pub fn mirror_fit(clip_len: f64, lines: &[(usize, f64, f64)]) -> Fit {
     if lines.is_empty() {
         return Fit::Fits;
     }
     let (placed, logs) = crate::produce_render::fit(lines, clip_len);
-    // The tempo rung also logs the slide, so check it first: its presence means the run went past sliding.
     let sped_up = logs.iter().any(|line| line.contains("sped up"));
     let slid = logs
         .iter()
         .any(|line| line.contains("moved") && line.contains("earlier"));
     if sped_up || slid {
         return Fit::Overruns {
-            // The shortfall is read off the very placements `fit` settled on, below.
             past: overrun_after(placed.iter(), clip_len).max(0.0),
             sped_up,
         };
     }
     drop(placed);
-    // Nothing was logged: either it fits with room to breathe, or it fits only by spending the tail.
     let speech: f64 = lines.iter().map(|(_, _, speak)| speak).sum();
-    // The PACKED run, not the raw placements: the render measures its need off the packed line starts
-    // (each held to the previous end + gap + tail), so a row that measured `at + speech` straight would
-    // disagree with the render about where the last word finishes — the one thing this mirror exists to
-    // prevent.
+    // The PACKED run, as the render measures its need off packed starts; `at + speech` would disagree about where the last word finishes.
     let packed = crate::produce_render::packed(lines);
     let end = crate::produce_render::run_end(&packed);
     let slack = clip_len - (end + SPEECH_TAIL_SECONDS);
     if slack < 0.0 {
-        // Two reasons a run lands tight, and §1 says them in different words: the CLIP ends before the
-        // last word's breath is spent, or a later line had to be pushed off its placement because the
-        // line in front of it is still speaking. A push is visible here and nowhere else: the packed
-        // start sits past the `at` the line was written at.
+        // Two reasons a run lands tight, worded differently in §1: the CLIP ends before the last breath is spent, or a later line was
+        // pushed off its placement by the line in front (packed start past `at`).
         let pushed = packed
             .iter()
             .zip(lines.iter())
@@ -667,11 +510,8 @@ pub fn mirror_fit(clip_len: f64, lines: &[(usize, f64, f64)]) -> Fit {
     Fit::Fits
 }
 
-/// What is left over the clip's end once the ladder has done everything it may. The render's own last rung
-/// decides this: it speeds to [`crate::produce_render::MAX_TEMPO`] (P.eng.narrationMaxTempo) and slides back
-/// to the lead, so what remains over the clip's length is exactly the shortfall that rung could not remove —
-/// the spec's "what still overruns is cut by the clip's end". Re-derived from `fit`'s returned placements
-/// rather than from a fresh model of the ladder, so it cannot drift from what the render actually did.
+/// What is left over the clip's end after the ladder's last rung (speed to [`crate::produce_render::MAX_TEMPO`], slide to the
+/// lead), re-derived from `fit`'s placements so it cannot drift from what the render did.
 fn overrun_after<'a>(
     placed: impl Iterator<Item = &'a crate::produce_render::Placed>,
     clip_len: f64,
@@ -683,10 +523,6 @@ fn overrun_after<'a>(
         - clip_len
 }
 
-// --- The row's ▶ (§1's number 16, inventory C.4) -------------------------------------------------------------
-
-/// What a press of the row's ▶ means. Six answers because the same button is asked to do six different things
-/// depending on what it is sitting next to, and §1 wants each one said in its own words.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Audition {
     Pause,
@@ -696,10 +532,8 @@ pub enum Audition {
     Speak { from: f64 },
 }
 
-/// §1 (`▶ speak this line — audition from 3 s ahead where those seconds are its own, then continue down the
-/// cut; five other cases, each in its own words`). The lead-in is only "its own" when the line above has finished
-/// speaking by then, so `prev_speaks_at` (the second the previous line's audio ends) sets the floor rather than a
-/// fixed 3 s being subtracted and hoping.
+/// §1 (`▶ speak this line — audition from 3 s ahead where those seconds are its own …`): the lead-in is "its own" only when the
+/// line above has finished by then, so `prev_speaks_at` sets the floor.
 pub fn audition(
     row_live: bool,
     blank: bool,
@@ -709,12 +543,10 @@ pub fn audition(
     prev_speaks_at: f64,
     at: f64,
 ) -> (Audition, Option<String>) {
-    // A press while this row is speaking is the same gesture as ⏸ over the transport: it stops.
     if row_live {
         return (Audition::Pause, None);
     }
-    // §1's order puts a synthesis in flight ahead of the other refusals: the person is being told to wait, and
-    // whether the line has words is not what is holding them up.
+    // §1's order puts a synthesis in flight ahead of the other refusals.
     if busy {
         return (
             Audition::Busy,
@@ -747,9 +579,7 @@ pub fn audition(
     )
 }
 
-/// §1's other half of the wordless and caption cases: when no recording covers the clip there is no game sound to
-/// play either, so the sentence grows. Inventory C.4 gives these as one sentence plus a tail (`…and no recording
-/// covers it`), which is why they extend the first rather than replace it.
+/// §1's other half of the wordless and caption cases: with no recording covering the clip there is no game sound either, so the sentence extends (inventory C.4).
 pub fn audition_without_recording(case: Audition, line_no: usize) -> (Audition, Option<String>) {
     match case {
         Audition::OwnAudio { .. } => (
@@ -769,30 +599,22 @@ pub fn audition_without_recording(case: Audition, line_no: usize) -> (Audition, 
     }
 }
 
-/// §1 (`"synthesizing… (first line after a cold start also loads the model)"`). The parenthetical is the point: a
-/// first line takes far longer than every line after it, and without that sentence it looks like a hang. §1 gives
-/// this one no line number, unlike its neighbours ("line N ready", "entry N — …"), so it takes none either.
+/// §1 (`"synthesizing… (first line after a cold start also loads the model)"`): the parenthetical keeps a slow first line from looking like a hang. No line number, as §1 gives none.
 pub fn speaking_line() -> String {
     "synthesizing\u{2026} (first line after a cold start also loads the model)".to_string()
 }
 
-/// §1 (`"entry N — no recording covers this clip, so the line plays on its own"`).
 pub fn spoken_alone(entry_no: usize) -> String {
     format!("entry {entry_no} \u{2014} no recording covers this clip, so the line plays on its own")
 }
 
-/// §1 (`failure "synthesis failed — see log"`): named and local, per spec/00-principles.md. The log has the
-/// server's reason; the status line only says where to look.
+/// §1 (`failure "synthesis failed — see log"`): the log has the server's reason.
 pub fn synthesis_failed() -> &'static str {
     "synthesis failed \u{2014} see log"
 }
 
-// --- Adding, moving and removing lines (§1's numbers 4, 17–19) -------------------------------------------------
-
-/// §1's row order, which is what the window builds and what a test can hold: time entry (14), status with its end
-/// time, `(~)` and warnings (15, 21), then ▶ speak this line (16), ↻ re-roll (17), ＋ add below (18), 🗑 remove (19) —
-/// the four buttons right-aligned on the row's head — with the text box (20) below them. The shot draws exactly this,
-/// in this order, on every one of its four rows.
+/// §1's row order, which the window builds: time entry (14), status (15, 21), ▶ speak (16), ↻ re-roll (17), ＋ add below (18),
+/// 🗑 remove (19) right-aligned on the head, then the text box (20) below.
 pub const ROW_CONTROLS: [&str; 7] = [
     "time",
     "status",
@@ -803,32 +625,24 @@ pub const ROW_CONTROLS: [&str; 7] = [
     "text",
 ];
 
-/// §1 / inventory C.5 (`within 1 s of an existing line → jump to it`): a press that close to a line means the
-/// same line, not a second one on top of it. One second is roughly the shortest gap two lines can usefully have.
+/// §1 / inventory C.5 (`within 1 s of an existing line → jump to it`).
 pub const ADD_NEAR_SECONDS: f64 = 1.0;
 
-/// §C.2 (`chars / measured rate (default 15 chars/s…)`): how long a line runs when its take does not exist yet. The
-/// page needs it for one thing — saying until when the seconds at the playhead are already spoken for.
+/// §C.2 (`chars / measured rate (default 15 chars/s…)`): how long a line runs with no take, used for "speaking until mm:ss".
 pub const SPEECH_CHARS_PER_SECOND: f64 = 15.0;
 
-/// §C.2's `tail` (P.eng.narrationTailSeconds): the silence after the last word, which is part of how long a line
-/// holds the seconds. Without it "speaking until mm:ss" would name the last consonant rather than the end.
+/// §C.2's `tail` (P.eng.narrationTailSeconds): the silence after the last word, so "speaking until mm:ss" names the end, not the last consonant.
 pub const SPEECH_TAIL_SECONDS: f64 = 0.2;
 
-/// The clip a line was written against: the record stores the bounds, so that is what "the same clip" means here.
 fn same_clip(clip: &Seg, entry: &Entry) -> bool {
     clip.s == entry.s && clip.e == entry.e
 }
 
-/// The clip the playhead stands on, half-open like every other range in the app.
 fn clip_at(clips: &[Seg], at: f64) -> Option<&Seg> {
     clips.iter().find(|seg| seg.s <= at && at < seg.e)
 }
 
-/// How long a line runs when there is nothing to measure it by: §C.2's default of 15 characters a second plus its
-/// tail (P.eng.narrationTailSeconds), which together are the only estimate available before its take exists — the
-/// tail counts because "speaking until mm:ss" names the end of the line, not its last consonant. `0.0` for a caption
-/// or a deliberate silence — neither speaks.
+/// How long a line runs with nothing to measure: §C.2's 15 chars/s plus the tail. `0.0` for a caption or a deliberate silence.
 fn estimated_speech(entry: &Entry) -> f64 {
     if entry.text.is_empty() || !entry.pos.is_empty() {
         return 0.0;
@@ -836,15 +650,11 @@ fn estimated_speech(entry: &Entry) -> f64 {
     entry.text.chars().count() as f64 / SPEECH_CHARS_PER_SECOND + SPEECH_TAIL_SECONDS
 }
 
-/// The second a line stops speaking, as far as the page can tell before its take exists: §C.2's 15 characters a
-/// second until there is a wav to measure. A caption or a deliberate silence speaks for no time at all.
 fn speech_end(entry: &Entry) -> f64 {
     entry.s + entry.at + estimated_speech(entry)
 }
 
-/// The line the playhead would speak over, if any: a spoken (not captioned, not silent) line **on the clip the
-/// playhead stands on**, whose window holds that second. A line on another clip says nothing about these seconds —
-/// the record stores the bounds it was written against, so those are what "the same clip" means here.
+/// The spoken (not captioned, not silent) line **on the clip the playhead stands on** whose window holds that second; the record stores the bounds it was written against.
 fn speaking_at<'a>(clip: &Seg, entries: &'a [Entry], at: f64) -> Option<&'a Entry> {
     entries.iter().find(|entry| {
         same_clip(clip, entry)
@@ -855,13 +665,11 @@ fn speaking_at<'a>(clip: &Seg, entries: &'a [Entry], at: f64) -> Option<&'a Entr
     })
 }
 
-/// Until when this line holds the clip's seconds: its own spoken length, cut short by the next line's start. Two
-/// lines' windows never overlap (§5), so the earlier of the two is what a new line cannot be placed under.
+/// Until when this line holds the clip's seconds: its own spoken length, cut short by the next line's start (windows never overlap, §5).
 fn line_end(entries: &[Entry], entry: &Entry) -> f64 {
     let started = entry.s + entry.at;
     let mut end = speech_end(entry);
-    // The next line's second bounds this one's window. Entries arrive sorted, but a hand-edited file need not be, so
-    // it is the minimum over the later ones rather than the first one found.
+    // The minimum over the later lines, since a hand-edited file need not be sorted.
     for other in entries.iter().filter(|other| {
         other.s == entry.s
             && other.e == entry.e
@@ -873,8 +681,7 @@ fn line_end(entries: &[Entry], entry: &Entry) -> f64 {
     end
 }
 
-/// §1's transport ＋: three reasons a line cannot start here, in F4.7's order — nothing to narrate, already
-/// written here, and still speaking. `Ok` is the second the new line starts, on the clip it landed in.
+/// §1's transport ＋: refused when there is nothing to narrate, a line is already here, or one is still speaking (F4.7's order). `Ok` is the new line's second.
 pub fn add_at_playhead(at: f64, segs: &[Seg], entries: &[Entry]) -> Result<f64, String> {
     let Some(clip) = clip_at(segs, at) else {
         return Err(
@@ -883,17 +690,13 @@ pub fn add_at_playhead(at: f64, segs: &[Seg], entries: &[Entry]) -> Result<f64, 
         );
     };
     if let Some(start) = near_line_start(at, entries) {
-        // Not a refusal the person has to argue with: the page jumps to the line instead, and says so.
         return Err(format!(
             "a line already starts here \u{2014} edit it, or move the playhead (it is at {})",
             preview::clock(Some(start))
         ));
     }
-    // §1's `a line is speaking here until mm:ss — add after it`, and F4.7's flowchart asks the same of every line on
-    // this clip rather than only the last: a second voice laid under one already speaking is what the branch refuses,
-    // wherever in the clip it was pressed. Until when is the next line's second, or this line's estimate — §C.2's 15
-    // chars/s while no take exists to measure — whichever comes first. Adding after an estimate is what puts two lines
-    // on one another, so the refusal names the second to add after.
+    // §1's `a line is speaking here until mm:ss — add after it`: F4.7 asks this of every line on the clip, not only the last. Until
+    // when is the next line's second or this line's estimate (§C.2), whichever is first; the refusal names the second to add after.
     let speaking = speaking_at(clip, entries, at);
     if let Some(speaking) = speaking {
         return Err(format!(
@@ -901,21 +704,16 @@ pub fn add_at_playhead(at: f64, segs: &[Seg], entries: &[Entry]) -> Result<f64, 
             preview::clock(Some(line_end(entries, speaking)))
         ));
     }
-    // §F4.7's free add is "a line HERE": the playhead second, not the clip's head. The clip only decides
-    // that there IS something to narrate at this second (the refusals above), and bounds where a line can
-    // still be heard — never in the clip's last second, the same bound §F4.7 states for a move.
+    // §F4.7's free add is "a line HERE": the playhead second, never in the clip's last second (the bound §F4.7 states for a move).
     Ok(at.clamp(clip.s, (clip.e - 1.0).max(clip.s)))
 }
 
-/// The start of the line that already begins within [`ADD_NEAR_SECONDS`] of `at`, if any (§F4.7's node
-/// J: "within 1 s of a line \u2192 jump to it"). One function owns both halves of that branch \u2014 the
-/// second named in the refusal and the second the page moves the playhead to \u2014 so the sentence and the
-/// jump can never disagree about which line was meant.
+/// The start of the line beginning within [`ADD_NEAR_SECONDS`] of `at` (§F4.7's node J: "within 1 s of a line → jump to it").
+/// One function, so the refusal's sentence and the jump agree on which line was meant.
 pub fn near_line_start(at: f64, entries: &[Entry]) -> Option<f64> {
     entries
         .iter()
         .enumerate()
-        // A silent marker is no line to jump to: ＋ turns it into one.
         .filter(|(index, entry)| {
             crate::narrate_edit::silent_marker_on(entry.s, entries) != Some(*index)
         })
@@ -923,10 +721,8 @@ pub fn near_line_start(at: f64, entries: &[Entry]) -> Option<f64> {
         .map(|(_, entry)| entry.s + entry.at)
 }
 
-/// §1's row ＋ (`starting where its audio ends`): [`ADD_BELOW_SECONDS`] after the line above, refused when the clip
-/// ends first — a line placed past its clip is one the render will move anyway, and silently. The bound is the same
-/// last-second rule as [`tag_moves_line`]: a line starting inside the clip's final second has no room to be heard
-/// before the cut moves on, so `audio_end + 0.5` has to land at least a second short of the clip's end.
+/// §1's row ＋ (`starting where its audio ends`): [`ADD_BELOW_SECONDS`] after the line above, refused when the clip ends first;
+/// same last-second rule as [`tag_moves_line`], so `audio_end + 0.5` must land at least a second short of the clip's end.
 pub fn add_below(audio_end: f64, clip_end: f64) -> Result<f64, String> {
     let at = audio_end + ADD_BELOW_SECONDS;
     if at > clip_end - 1.0 {
@@ -935,8 +731,7 @@ pub fn add_below(audio_end: f64, clip_end: f64) -> Result<f64, String> {
     Ok(at)
 }
 
-/// §1's 🗑 (`remove this line — the video plays its own audio here instead`). The longer sentence, and the silent
-/// marker behind it, are only owed when this was the clip's last line: otherwise the clip still speaks.
+/// §1's 🗑 (`remove this line — the video plays its own audio here instead`): the longer sentence is owed only when this was the clip's last line.
 pub fn remove_line(clip_has_other_line: bool, clip_s: f64) -> String {
     if clip_has_other_line {
         return "line removed".to_string();
@@ -947,27 +742,22 @@ pub fn remove_line(clip_has_other_line: bool, clip_s: f64) -> String {
     )
 }
 
-/// §1's ↻ (§6: `"clip N has no line to re-roll"`): a re-roll draws again, and there is nothing to draw again of.
 pub fn re_roll_refusal(clip_no: usize, has_line: bool) -> Option<String> {
     (!has_line).then(|| format!("clip {clip_no} has no line to re-roll"))
 }
 
-/// §6 (`re-rolling an already heard or edited narration needs the Replace tick`): ▶ refuses to overwrite a
-/// take somebody has listened to or changed until the page is told that is what it is for. The refusal says
-/// what to click, because nothing else clears it — and the tick never defaults on ([`crate::narrate_details`]).
+/// §6 (`re-rolling an already heard or edited narration needs the Replace tick`): the refusal says what to click; the tick never defaults on ([`crate::narrate_details`]).
 pub fn replace_refusal(heard_or_edited: bool, replace_ticked: bool) -> Option<&'static str> {
     (heard_or_edited && !replace_ticked).then_some(
         "this narration was already heard or edited \u{2014} tick \u{201c}Replace\u{201d} to write another take over it",
     )
 }
 
-/// §1's time entry (`mm:ss.s, session clock`): the face is [`preview::clock`]'s, so a row and the transport agree.
 pub fn time_field(shown: f64) -> String {
     preview::clock(Some(shown))
 }
 
-/// §1 (`a time in a gap is refused and written back`). The sentence names all three numbers a person needs: the
-/// second they typed, the clip's bounds, and where the line stayed — so writing it back reads as an answer.
+/// §1 (`a time in a gap is refused and written back`): names the typed second, the clip's bounds and where the line stayed.
 pub fn time_refused(requested: f64, clip_s: f64, clip_e: f64, at: f64) -> String {
     format!(
         "{} is outside the cut \u{2014} this line stays in its clip ({}\u{2013}{}), at {}",
@@ -978,11 +768,8 @@ pub fn time_refused(requested: f64, clip_s: f64, clip_e: f64, at: f64) -> String
     )
 }
 
-// --- The readouts (§1's number 22) ------------------------------------------------------------------------------
-
-/// §1 (`Inputs: "N clip(s) · mm:ss[ · ⚠ N clip(s) unwritten, N line(s) off the cut][ · no timeline]"`). The two
-/// counts are [`crate::shell::refit`]'s answers: a clip is unwritten when no entry sits on it and it is not
-/// deliberately silent, and a line is off the cut when it sits on video the cut no longer has.
+/// §1 (`Inputs: "N clip(s) · mm:ss[ · ⚠ N clip(s) unwritten, N line(s) off the cut][ · no timeline]"`). Counts are
+/// [`crate::shell::refit`]'s: unwritten = no entry and not deliberately silent; off the cut = on video the cut no longer has.
 pub fn inputs_readout(
     clips: usize,
     length: f64,
@@ -1006,20 +793,16 @@ pub fn inputs_readout(
     line
 }
 
-/// §1 (`Outputs: "narrate/ — narration.json, the voice reference and the synthesis cache"`). The page's
-/// Outputs READOUT: the wording that names the three things the page owns, stated once, here.
+/// §1 (`Outputs: "narrate/ — narration.json, the voice reference and the synthesis cache"`): the page's Outputs READOUT wording.
 pub fn outputs_readout() -> &'static str {
     "narrate/ \u{2014} narration.json, the voice reference and the synthesis cache"
 }
 
-/// The Outputs folder button's tooltip: what pressing it DOES. Deliberately NOT [`outputs_readout`], which
-/// is the readout's own line — repeating it on the button made the readout look like a copy of a tooltip.
+/// The Outputs folder button's tooltip: what pressing it DOES, deliberately not [`outputs_readout`] (it looked like a copy of a tooltip).
 pub const OUTPUTS_FOLDER_TIP: &str = "Open the narration folder";
 
-/// §1 **8** ▶ (prototype `takeQueue`): what the take band plays, from the red bar `at`. The takes from the bar on,
-/// the one the bar stands inside trimmed to begin there, one after another; with no take after the bar, the
-/// recording itself from the bar to its end (`false`: these are not takes, which is how takes get found). Nothing
-/// when the bar is at or past the recording's end.
+/// §1 **8** ▶ (prototype `takeQueue`): the takes from the red bar `at` on, the one the bar stands inside trimmed to begin there; with
+/// none after it, the recording from the bar to its end (`false`: not takes). Nothing when the bar is at or past the end.
 pub fn take_queue(takes: &[(f64, f64)], at: f64, duration: f64) -> (Vec<(f64, f64)>, bool) {
     let queued: Vec<(f64, f64)> = takes
         .iter()
