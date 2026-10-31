@@ -361,6 +361,7 @@ pub fn level_args(input: &str, out: &str) -> Vec<String> {
         "-hide_banner".into(),
         "-loglevel".into(),
         "error".into(),
+        "-y".into(),
         "-i".into(),
         input.to_string(),
         "-vn".into(),
@@ -384,10 +385,11 @@ pub fn shift_args(input: &str, out: &str, semitones: f64) -> Vec<String> {
         "-hide_banner".into(),
         "-loglevel".into(),
         "error".into(),
+        "-y".into(),
         "-i".into(),
         input.to_string(),
         "-af".into(),
-        format!("rubberband=pitch={ratio:.6}:formant=y"),
+        format!("rubberband=pitch={ratio:.6}:formant=preserved"),
         "-c:a".into(),
         "pcm_s16le".into(),
         out.to_string(),
@@ -419,6 +421,8 @@ pub fn wav_header(path: &Path) -> Option<(u16, u32)> {
     Some((tag, rate))
 }
 
+const WAV_HEAD_BYTES: u64 = 64 * 1024;
+
 /// How long a wav is, measured from its own header and size: the seconds of PCM the file
 /// holds. F4.3's render half needs this — speech length is THE WAV's duration when a wav
 /// exists, and nothing else may stand in for it (an entry's own span would make a line
@@ -429,12 +433,28 @@ pub fn wav_header(path: &Path) -> Option<(u16, u32)> {
 /// ([`crate::ui::narrate_band::recording_seconds`]), without that function's floor: a real
 /// recording is never shorter than 0.1 s, a measured wav may be any length at all.
 pub fn wav_seconds(path: &Path) -> Option<f64> {
-    let bytes = std::fs::read(path).ok()?;
-    let (channels, rate) = wav_header(path)?;
-    // 16-bit PCM: the header's channels and rate say how many samples the body holds, and
-    // a canonical header is 44 bytes. A shorter file has no audio at all, not a negative one.
-    let bytes_per_second = (channels.max(1) as u64) * (rate.max(1) as u64) * 2;
-    Some((bytes.len().saturating_sub(44)) as f64 / bytes_per_second as f64)
+    use std::io::Read;
+    let size = std::fs::metadata(path).ok()?.len();
+    let mut head = Vec::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(WAV_HEAD_BYTES)
+        .read_to_end(&mut head)
+        .ok()?;
+    let (_, rate) = wav_header(path)?;
+    let fmt = (12..head.len().saturating_sub(4)).find(|&i| &head[i..i + 4] == b"fmt ")? + 8;
+    let channels = u16::from_le_bytes([*head.get(fmt + 2)?, *head.get(fmt + 3)?]).max(1) as u64;
+    let bits = match u16::from_le_bytes([*head.get(fmt + 14)?, *head.get(fmt + 15)?]) {
+        0 => 16,
+        bits => bits as u64,
+    };
+    // Whatever chunks come before it, the sound starts after `data`. A streamed file's size field is unset, so
+    // the sound is whatever the file holds past that point.
+    let start = (12..head.len().saturating_sub(4))
+        .find(|&i| &head[i..i + 4] == b"data")
+        .map_or(44, |at| at as u64 + 8);
+    let bytes_per_second = channels * (rate.max(1) as u64) * bits / 8;
+    Some(size.saturating_sub(start) as f64 / bytes_per_second as f64)
 }
 
 /// Whether a picked wav needs re-cutting before the server will read it: no readable header, the
@@ -488,8 +508,9 @@ pub fn recut_for_voice(
     // S2's first question is not about diarization at all but about the project: the spec's "nothing
     // is tagged as narrator N on the Prepare step" is answered of the recording this build was asked
     // to cut from, and it comes BEFORE the rule because the rule cannot see the project file.
-    if nothing_is_tagged(tree, source) {
-        return Err(nothing_tagged(FLOW_SLOT));
+    let slot = voice_slot(tree);
+    if let Some(slot) = slot.filter(|_| nothing_is_tagged(tree, source)) {
+        return Err(nothing_tagged(slot as usize));
     }
     // §6 (`Automatic ranking`): the reference is cut from whoever holds the most turn time. The flow's slot
     // is the fallback when there is no diarization to rank at all, so S2 answers "no diarization" rather
@@ -503,7 +524,7 @@ pub fn recut_for_voice(
         turns,
         &words_in,
         &words_span,
-        ranked_speaker(turns).unwrap_or(FLOW_SLOT as u32),
+        ranked_speaker(turns).unwrap_or(slot.unwrap_or(1)),
     );
     let (pieces, hand_picked) = match &plan {
         ReferencePlan::HandPicked(pieces) => (pieces.clone(), pieces.len()),
@@ -560,7 +581,12 @@ pub fn recut_for_voice(
         let list = list_path(tree);
         let body: String = parts
             .iter()
-            .map(|part| format!("file '{}'\n", part.display()))
+            .map(|part| {
+                format!(
+                    "file '{}'\n",
+                    part.display().to_string().replace('\'', "'\\''")
+                )
+            })
             .collect();
         std::fs::write(&list, body).map_err(|err| format!("{}: {err}", list.display()))?;
         let args = concat_args(&list.display().to_string(), &base.display().to_string());
@@ -616,17 +642,22 @@ fn nothing_is_tagged(tree: &Tree, source: &str) -> bool {
     })
 }
 
-/// The slot this flow cuts for. §1 makes the first tagged recording the one the narration is spoken
-/// in, so the automatic reference is always built for narrator 1; the same number appears in the
-/// `nothing_tagged` sentence the refusal carries.
-const FLOW_SLOT: usize = 1;
+/// The narrator slot the project's voice names, `None` for a voices-folder file.
+pub fn voice_slot(tree: &Tree) -> Option<u32> {
+    narrator_slot(&narrate_data::read_voice(tree)).map(|slot| slot as u32)
+}
+
+/// Whether a person picked seconds for this voice, which beats everything automatic.
+pub fn has_picked_takes(tree: &Tree, source: &str) -> bool {
+    !picked_takes(tree, source).is_empty()
+}
 
 /// Whether two paths name the same recording, by file name: `takes.json` and the prepare folders are
 /// keyed by stem for the same reason, so the comparison here stays on the same identity the rest of
 /// the flow uses rather than on a string that differs by one trailing slash.
 fn same_file(a: &str, b: &str) -> bool {
     let name = |p: &str| {
-        Path::new(p)
+        Path::new(p.strip_prefix("project:").unwrap_or(p))
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default()
@@ -641,14 +672,16 @@ fn same_file(a: &str, b: &str) -> bool {
 /// mean "nobody picked anything", which sends the plan to S2's automatic branch rather than failing the build.
 fn picked_takes(tree: &Tree, source: &str) -> Vec<(String, f64, f64)> {
     let all = narrate_data::load_takes(tree).unwrap_or_default();
+    let slot = voice_slot(tree);
+    let root = std::env::current_dir().unwrap_or_default();
     let mut files: Vec<String> = crate::project::load(tree.dir())
         .map(|project| {
             project
                 .sources
                 .iter()
-                .filter(|tagged| tagged.narrator == FLOW_SLOT as u32)
+                .filter(|tagged| Some(tagged.narrator) == slot)
                 .map(|tagged| {
-                    crate::layout::resolve(tree.dir(), tree.dir(), &tagged.path)
+                    crate::layout::resolve(&root, tree.dir(), &tagged.path)
                         .display()
                         .to_string()
                 })
@@ -705,6 +738,7 @@ pub fn concat_args(list: &str, out: &str) -> Vec<String> {
         "-hide_banner".into(),
         "-loglevel".into(),
         "error".into(),
+        "-y".into(),
         "-f".into(),
         "concat".into(),
         "-safe".into(),

@@ -644,11 +644,7 @@ fn lane_of(window: &adw::ApplicationWindow) -> Option<gtk::DrawingArea> {
 pub fn recording_seconds() -> Option<f64> {
     let tree = crate::ui::window::narrate_session_tree()?;
     let reference = crate::narrate_data::base_reference(&tree);
-    let (channels, rate) = crate::voice_ref::wav_header(&reference)?;
-    let bytes = std::fs::metadata(&reference).ok()?.len();
-    // 16-bit mono PCM: the header's channels and rate say how many samples the file holds.
-    let bytes_per_second = (channels.max(1) as u64) * (rate.max(1) as u64) * 2;
-    Some(((bytes.saturating_sub(44)) as f64 / bytes_per_second as f64).max(0.1))
+    Some(crate::voice_ref::wav_seconds(&reference)?.max(0.1))
 }
 
 /// The peaks to draw, straight off the wave cache: measured by the same code Prepare's envelope step

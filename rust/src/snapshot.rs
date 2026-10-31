@@ -1496,10 +1496,8 @@ fn seed_narrator_recording(tree: &crate::layout::Tree) -> bool {
 /// How long one audio file holds, by header first and ffprobe second — [`crate::narrate_band_face`]'s
 /// reading, reached through the same door the band uses so the shot and the page can never disagree.
 fn recording_seconds_of(path: &Path) -> Option<f64> {
-    if let Some((channels, rate)) = crate::voice_ref::wav_header(path) {
-        let bytes = std::fs::metadata(path).ok()?.len();
-        let per_second = (channels.max(1) as u64) * (rate.max(1) as u64) * 2;
-        return Some(((bytes.saturating_sub(44)) as f64 / per_second as f64).max(0.1));
+    if let Some(seconds) = crate::voice_ref::wav_seconds(path) {
+        return Some(seconds.max(0.1));
     }
     let configured = crate::settings::from_environment()
         .map(|paths| crate::settings::read(&paths).unwrap_or_default().ffmpeg)

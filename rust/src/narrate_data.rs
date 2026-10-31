@@ -299,6 +299,7 @@ pub fn reference_needs_shift(base: &Path, served: &Path) -> bool {
 /// a slot/captions voice makes the base itself wrong. A file that was never there is not a
 /// failure: an error here would fail a setting change over nothing. Returns how many went.
 pub fn drop_reference(tree: &Tree, keep_base: bool) -> usize {
+    REFERENCE_TURN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let mut dropped = 0;
     if remove_if_there(&served_reference(tree)) {
         dropped += 1;
@@ -307,6 +308,13 @@ pub fn drop_reference(tree: &Tree, keep_base: bool) -> usize {
         dropped += 1;
     }
     dropped
+}
+
+static REFERENCE_TURN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Moves whenever the reference is dropped, so a build can tell the file it wrote is already out of date.
+pub fn reference_turn() -> u64 {
+    REFERENCE_TURN.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 fn remove_if_there(path: &Path) -> bool {

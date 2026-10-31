@@ -151,8 +151,5 @@ fn probe_seconds(path: &Path) -> Option<f64> {
 /// How long a 16-bit PCM wav holds, from its own header and size — the same reading
 /// [`crate::ui::narrate_band::recording_seconds`] makes of the reference file, applied to any recording.
 fn wav_seconds(path: &Path) -> Option<f64> {
-    let (channels, rate) = voice_ref::wav_header(path)?;
-    let bytes = std::fs::metadata(path).ok()?.len();
-    let per_second = (channels.max(1) as u64) * (rate.max(1) as u64) * 2;
-    Some(((bytes.saturating_sub(44)) as f64 / per_second as f64).max(0.1))
+    Some(voice_ref::wav_seconds(path)?.max(0.1))
 }

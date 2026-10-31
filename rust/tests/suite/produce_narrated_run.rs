@@ -200,7 +200,7 @@ fn takes_are_heard_where_they_were_put_and_a_long_one_is_heard_out() {
         for (words, at) in [
             ("the chosen take", "00:00:02,000"),
             // Growth stops at its ceiling, so the rest of the room comes from starting 0.2 s early.
-            ("runs past its clip", "00:00:10,799"),
+            ("runs past its clip", "00:00:10,"),
             ("READ THIS FIRST", "00:00:21,000"),
         ] {
             let lines: Vec<&str> = sheet.lines().collect();

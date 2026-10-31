@@ -594,6 +594,7 @@ mod turn_gap_glue;
 mod voice_ref_build_door_widgets;
 mod voice_ref_rules;
 mod voice_ref_wire_widgets;
+mod voice_reference_real;
 mod volume_form_widgets;
 mod wave_cache;
 mod wave_cut_points;

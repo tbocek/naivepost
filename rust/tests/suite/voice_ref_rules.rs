@@ -456,7 +456,7 @@ fn f4_6_s3_the_pitch_shift_keeps_the_formants() {
     let args = voice_ref::shift_args("/tmp/base.wav", "/tmp/served.wav", 3.0);
     let joined = args.join(" ");
     assert!(
-        joined.contains("rubberband=") && joined.contains("formant=y"),
+        joined.contains("rubberband=") && joined.contains("formant=preserved"),
         "formants preserved: a shift is a different speaker, not the same one transposed: {joined}"
     );
     // +3 semitones is 2^(3/12) ~= 1.189207.

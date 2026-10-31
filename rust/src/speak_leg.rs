@@ -350,14 +350,42 @@ pub fn speak(
 /// tagged as the narrator's. Every part of the decision is voice_ref's (S2's floors and cap, S3's
 /// level/shift); this resolves only what this leg already has to know — the source, the diarized turns
 /// and the word counts that go with them — and which ffmpeg to run.
-fn build_missing_reference(tree: &Tree) -> Result<voice_ref::Built, String> {
-    let source = narrator_source(tree).ok_or_else(|| voice_ref::nothing_tagged(1))?;
+/// Under this a reference holds nothing to clone.
+const MIN_REFERENCE_SECONDS: f64 = 0.1;
+
+pub fn build_missing_reference(tree: &Tree) -> Result<voice_ref::Built, String> {
+    // A press that changes the takes, the voice or the pitch while ffmpeg runs makes this build stale.
+    loop {
+        let turn = crate::narrate_data::reference_turn();
+        let built = cut_reference(tree);
+        if crate::narrate_data::reference_turn() == turn {
+            if built.is_err() {
+                crate::narrate_data::drop_reference(tree, false);
+            }
+            return built;
+        }
+        crate::narrate_data::drop_reference(tree, false);
+    }
+}
+
+fn cut_reference(tree: &Tree) -> Result<voice_ref::Built, String> {
+    let source = voice_source(tree)?;
     let lane = source_lane(&source);
     let turns = speaker_turns(tree, &lane);
     let words = transcript_words(tree, &lane);
     let conf = current_conf();
     let ffmpeg = ffmpeg_program(&conf);
-    voice_ref::recut_for_voice(
+    if voice_ref::voice_slot(tree).is_none() && !voice_ref::has_picked_takes(tree, &source) {
+        // A voices-folder file with no picks is the reference whole.
+        let built = voice_ref::build(
+            tree,
+            &source,
+            &ffmpeg,
+            crate::narrate_data::read_pitch(tree),
+        )?;
+        return Ok(built);
+    }
+    let built = voice_ref::recut_for_voice(
         tree,
         &ffmpeg,
         &source,
@@ -366,7 +394,15 @@ fn build_missing_reference(tree: &Tree) -> Result<voice_ref::Built, String> {
         // §6's narrowing: the transcript lines inside the turn give its spoken span — first line's start
         // to last line's end. No lines means no candidate at all.
         |from, until| word_span(&words, from, until),
-    )
+    )?;
+    // ffmpeg answers success for seconds past a recording's end, leaving a file with no sound.
+    if voice_ref::wav_seconds(&built.served).is_some_and(|seconds| seconds < MIN_REFERENCE_SECONDS)
+    {
+        return Err(format!(
+            "{source} has no sound in the seconds picked for this voice"
+        ));
+    }
+    Ok(built)
 }
 
 /// The span the transcript's own words occupy inside a window: the earliest line start and the latest
@@ -385,7 +421,8 @@ pub fn word_span(lines: &[(f64, f64, usize)], from: f64, until: f64) -> Option<(
 /// §6 (`Reference build`): the log names the recording the reference was cut FROM, by file name — a path
 /// would bury the one fact that says whether this is the right speaker.
 fn source_file_name(tree: &Tree) -> String {
-    narrator_source(tree)
+    voice_source(tree)
+        .ok()
         .map(|path| {
             std::path::Path::new(&path)
                 .file_name()
@@ -395,13 +432,29 @@ fn source_file_name(tree: &Tree) -> String {
         .unwrap_or_else(|| "the tagged recording".to_string())
 }
 
-/// The recording the narration is cut from: the project's narrator 1. Only slot 1 is ever cloned from
-/// automatically (§1's "the first recording carries voice 1"); a project that tagged nothing cannot
-/// have a reference built and says so.
-fn narrator_source(tree: &Tree) -> Option<String> {
-    let project = crate::project::load(tree.dir()).ok()?;
-    // Voice 1's dedicated microphone when it has one, else its first recording (`sources::narrator_of`).
-    crate::sources::narrator_of(&project, 1).map(str::to_string)
+/// The recording the project's voice is cut from: a narrator's own, or a file in the voices folder.
+fn voice_source(tree: &Tree) -> Result<String, String> {
+    let Some(slot) = voice_ref::voice_slot(tree) else {
+        let voice = crate::narrate_data::read_voice(tree);
+        let folder = crate::ui::narrate_voices::voices_folder();
+        let file = folder.join(&voice);
+        return if file.is_file() {
+            Ok(file.display().to_string())
+        } else {
+            Err(format!(
+                "voice {voice} is no longer in {} \u{2014} pick another",
+                folder.display()
+            ))
+        };
+    };
+    let project =
+        crate::project::load(tree.dir()).map_err(|_| voice_ref::nothing_tagged(slot as usize))?;
+    let written = crate::sources::narrator_of(&project, slot)
+        .ok_or_else(|| voice_ref::nothing_tagged(slot as usize))?;
+    let root = std::env::current_dir().unwrap_or_default();
+    Ok(crate::layout::resolve(&root, tree.dir(), written)
+        .display()
+        .to_string())
 }
 
 /// Prepare keys everything per source by the file's own stem, not by its full path; that is what

@@ -13,7 +13,6 @@
 use crate::layout::Tree;
 use crate::narrate_details;
 use crate::narrate_preview_leg;
-use crate::narrate_tts;
 use crate::voice_ref;
 
 /// S5's door, before any dial: is this voice and these words already on disk? Answering here rather
@@ -52,13 +51,15 @@ pub fn speak(
         if roll == 0 { None } else { Some(roll) },
         text,
     ));
-    // F4.4 S1 asks this before ANY dial: with no reference there is nothing to clone, and asking a
-    // live server about its health would put two requests on the wire for a sample that cannot be
-    // spoken.
-    if let Some(problem) = narrate_tts::reference_problem(tree) {
-        return Err(problem);
-    }
-    let key = voice_ref::sample_key(voice, text);
+    // A roll is a new take of the same words, so it is a new seed.
+    let key = crate::narration::key_for(
+        &crate::narration::Entry {
+            text: text.to_string(),
+            roll: roll as i32,
+            ..Default::default()
+        },
+        Some(voice),
+    );
     let seed = crate::narration::tts_seed(&key);
     let language = crate::project::load(tree.dir())
         .map(|project| project.policy.language.value)
